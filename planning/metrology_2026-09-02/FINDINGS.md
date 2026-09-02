@@ -1132,3 +1132,20 @@ hops retract. Expect the iso op's retract count to rise (correctly)
 and the channel to vanish. The speckled fillet observation is still
 UNATTRIBUTED (candidates: arc-fit sag on curved fillets; sub-threshold
 short chords) — re-examine after regeneration under the fix.
+
+### G-RAMPTERRAIN (2026-09-03) — the channel was the RAMP DRESSUP; charter filed, handed to a future session
+
+Post-fix regeneration still showed the channel; the operator pinned it
+("ring 70 starts right with it"), and G-code analysis found **877 feed
+chords, 19–21 mm, exactly 1.0 mm drop each** — the ramp-entry dressup
+(3°) drawing terrain-blind zigzag legs at every ring entry. The
+scallop op's DEFAULT dressups carry `entry_style = "ramp"`; the legacy
+cascade has shipped with this class for months (too few entries to
+see). G-ISOCHANNEL (`62237834`) was a real but separate class; the
+operator's channel was the dressup. Attribution correction recorded.
+
+Operator ruling: **"All entry moves should be stock aware"** — design
+target, chartered at `planning/entry_moves_2026-09-03/CHARTER.md`.
+Immediate mitigation: the iso project is saved with
+`entry_style = "none"`. The iso feature's default-off status is
+unchanged; its adoption gates now include the entry-chord sentry.
