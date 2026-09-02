@@ -314,6 +314,19 @@ pub struct PlannedRegions {
     pub regions: Vec<PlannedRegion>,
     pub creases: Vec<PlannedCrease>,
     pub stats: DecomposeStats,
+    /// The post-conditioning band label per classification cell, row-major
+    /// `rows x cols` on the input [`SlopeMap`] grid. `None` = the cell is
+    /// not covered (or was excluded by the stencil-safe coverage step).
+    ///
+    /// This is the planner's OWNERSHIP map — the labels after hysteresis,
+    /// morphological close, min-area absorption, and crease claims, i.e.
+    /// exactly what step 6 extracts polygons from. A band's region polygon
+    /// is NOT its territory: the `overlap_mm` dilation grows polygons over
+    /// neighbouring bands' cells, and polygon extraction can fill small
+    /// holes. Audits that need "which band owns this ground" must read
+    /// this grid, not the polygons (Track H V1 finding 2). Empty when
+    /// `decompose` returned early on an empty/mismatched grid.
+    pub labels: Vec<Option<FinishBand>>,
 }
 
 /// Iteration order used everywhere a definite band ordering matters:
@@ -370,6 +383,7 @@ pub fn decompose(
             regions: Vec::new(),
             creases: Vec::new(),
             stats: DecomposeStats::default(),
+            labels: Vec::new(),
         };
     }
 
@@ -544,6 +558,7 @@ pub fn decompose(
         regions,
         creases: planned_creases,
         stats,
+        labels,
     }
 }
 
@@ -1954,6 +1969,7 @@ mod tests {
             regions: Vec::new(),
             creases: Vec::new(),
             stats: DecomposeStats::default(),
+            labels: Vec::new(),
         };
         let empty_svg = planned_regions_to_svg(&empty, 800.0, 800.0);
         assert!(empty_svg.contains("svg"));
