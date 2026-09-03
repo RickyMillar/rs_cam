@@ -189,8 +189,6 @@
     clippy::too_many_lines
 )]
 
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -266,8 +264,6 @@ const LAND_Z_MM: f64 = 0.0;
 /// Along-chain half-window (mm) the valley tangent is measured over. Raw D8
 /// links quantise to 45 degrees; a multi-cell chord does not.
 const TANGENT_HALF_WINDOW_MM: f64 = 3.0;
-/// Depression-fill increment (mm) — the "+epsilon" of Barnes' priority flood.
-const FILL_EPSILON_MM: f64 = 1.0e-6;
 /// Arc tessellation tolerance handed to the DXF importer (degrees).
 const DXF_ARC_TOLERANCE_DEG: f64 = 1.0;
 
@@ -296,23 +292,22 @@ const MAX_COSTED_REGIONS: usize = 16;
 // Part 0 — a rasterised heightfield and the hydrology on it
 // ═══════════════════════════════════════════════════════════════════════
 
-/// A rasterised heightfield: row-major, `nodata` where nothing verified there
-/// is surface.
-struct Field {
-    nx: usize,
-    ny: usize,
-    ox: f64,
-    oy: f64,
-    cell: f64,
-    z: Vec<f64>,
-    nodata: Vec<bool>,
+/// The rasterised heightfield and its D8 hydrology now live in
+/// `rs_cam_core::flow_accum` (promoted from three verbatim copies for the
+/// pencil watershed-spine experiment). This census keeps its file-local
+/// helpers as an extension trait so the call sites below do not change.
+use rs_cam_core::flow_accum::{
+    FILL_EPSILON_MM, FlowField as Field, d8_accumulation, d8_receivers, priority_flood_epsilon,
+};
+
+/// File-local geometry and masking helpers on the shared [`Field`].
+trait FieldExt {
+    fn xy(&self, i: usize) -> P2;
+    fn index_at(&self, x: f64, y: f64) -> Option<usize>;
+    fn land_view(&self, land_z: f64) -> Field;
 }
 
-impl Field {
-    fn len(&self) -> usize {
-        self.nx * self.ny
-    }
-
+impl FieldExt for Field {
     fn xy(&self, i: usize) -> P2 {
         let row = i / self.nx;
         let col = i % self.nx;
@@ -333,27 +328,13 @@ impl Field {
     }
 
     /// The same lattice with everything at or below `land_z` marked nodata —
-    /// the LAND view, on which the hydrology runs.
-    ///
-    /// **Why this exists.** The first run of this instrument flooded the whole
-    /// board: the priority flood raised **99.50 %** of data cells, and the
-    /// accumulation field it produced was an artefact of flood order rather
-    /// than a drainage network. The cause is geometry, not code — the rivmap
-    /// export writes a RAISED OUTER EDGE BAND (`edge_profile = 3`,
-    /// `edge_wall_deg = 41`, `edge_top_offset_mm = 0.0` in `rivmap_data.toml`),
-    /// so the board's interior is one closed basin with its rim as the only
-    /// exit, and a correct priority flood fills it to that rim. The whole-board
-    /// flood is still run and its raised fraction printed, as the evidence for
-    /// this restriction; the DECIDING mask uses the land view, in which the
-    /// coastline is the base level and lakes on land still fill to their own
-    /// spill points.
-    fn land_view(&self, land_z: f64) -> Self {
+    /// the LAND view, on which the hydrology runs. See the census header for
+    /// why the whole-board flood is restricted to land.
+    fn land_view(&self, land_z: f64) -> Field {
         let nodata = (0..self.len())
-            // NaN at a nodata cell is already excluded by the first term, so
-            // `<=` here is a total comparison in practice.
             .map(|i| self.nodata[i] || self.z[i] <= land_z)
             .collect();
-        Self {
+        Field {
             nx: self.nx,
             ny: self.ny,
             ox: self.ox,
@@ -363,163 +344,6 @@ impl Field {
             nodata,
         }
     }
-}
-
-/// The eight D8 offsets and their step lengths in cells.
-const NB8: [(isize, isize); 8] = [
-    (-1, 0),
-    (1, 0),
-    (0, -1),
-    (0, 1),
-    (-1, -1),
-    (-1, 1),
-    (1, -1),
-    (1, 1),
-];
-
-fn neighbour(field: &Field, i: usize, k: usize) -> Option<(usize, f64)> {
-    let (dr, dc) = NB8[k];
-    let row = (i / field.nx) as isize + dr;
-    let col = (i % field.nx) as isize + dc;
-    if row < 0 || col < 0 || row >= field.ny as isize || col >= field.nx as isize {
-        return None;
-    }
-    let step = if dr != 0 && dc != 0 {
-        std::f64::consts::SQRT_2
-    } else {
-        1.0
-    };
-    Some(((row as usize) * field.nx + col as usize, step))
-}
-
-/// Ordering shim: `f64` has no `Ord`, and the priority flood needs a min-heap.
-#[derive(PartialEq)]
-struct HeapItem(f64, usize);
-
-impl Eq for HeapItem {}
-
-impl Ord for HeapItem {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.total_cmp(&other.0).then(self.1.cmp(&other.1))
-    }
-}
-
-impl PartialOrd for HeapItem {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-/// Barnes/Lehman/Soille **priority flood + epsilon**. Returns the filled
-/// height at every data cell (`f64::NAN` at nodata).
-///
-/// The plain fill leaves flats, and a flat has no D8 downslope neighbour, so
-/// accumulation dies inside it. This board HAS lakes (`lakes.dxf` sits beside
-/// the mesh in the export), so the epsilon variant is required, not optional:
-/// every filled cell gets a strictly-lower path to its outlet.
-///
-/// Seeds are the grid border plus every data cell adjacent to nodata — the
-/// board's rim and the trench ring are the outlets, which is correct.
-fn priority_flood_epsilon(field: &Field) -> Vec<f64> {
-    let n = field.len();
-    let mut out = vec![f64::NAN; n];
-    let mut closed = field.nodata.clone();
-    let mut open: BinaryHeap<Reverse<HeapItem>> = BinaryHeap::new();
-    let mut pit: VecDeque<usize> = VecDeque::new();
-
-    for i in 0..n {
-        if field.nodata[i] {
-            continue;
-        }
-        let row = i / field.nx;
-        let col = i % field.nx;
-        let border = row == 0 || col == 0 || row + 1 == field.ny || col + 1 == field.nx;
-        let beside_nodata =
-            (0..8).any(|k| neighbour(field, i, k).is_none_or(|(j, _)| field.nodata[j]));
-        if border || beside_nodata {
-            closed[i] = true;
-            out[i] = field.z[i];
-            open.push(Reverse(HeapItem(field.z[i], i)));
-        }
-    }
-
-    while !open.is_empty() || !pit.is_empty() {
-        let c = if let Some(c) = pit.pop_front() {
-            c
-        } else {
-            match open.pop() {
-                Some(Reverse(HeapItem(_, c))) => c,
-                None => break,
-            }
-        };
-        let zc = out[c];
-        for k in 0..8 {
-            let Some((j, _)) = neighbour(field, c, k) else {
-                continue;
-            };
-            if closed[j] {
-                continue;
-            }
-            closed[j] = true;
-            if field.z[j] <= zc + FILL_EPSILON_MM {
-                out[j] = zc + FILL_EPSILON_MM;
-                pit.push_back(j);
-            } else {
-                out[j] = field.z[j];
-                open.push(Reverse(HeapItem(out[j], j)));
-            }
-        }
-    }
-    out
-}
-
-/// D8 receivers on the filled surface: the steepest-descent neighbour, or
-/// `None` where nothing is lower (an outlet).
-fn d8_receivers(field: &Field, filled: &[f64]) -> Vec<Option<u32>> {
-    let n = field.len();
-    let mut out = vec![None; n];
-    for i in 0..n {
-        if field.nodata[i] {
-            continue;
-        }
-        let zi = filled[i];
-        let mut best: Option<(f64, u32)> = None;
-        for k in 0..8 {
-            let Some((j, step)) = neighbour(field, i, k) else {
-                continue;
-            };
-            if field.nodata[j] {
-                continue;
-            }
-            let drop = (zi - filled[j]) / (step * field.cell);
-            if drop > 0.0 && best.is_none_or(|(b, _)| drop > b) {
-                best = Some((drop, j as u32));
-            }
-        }
-        out[i] = best.map(|(_, j)| j);
-    }
-    out
-}
-
-/// Upstream cell count per cell, by processing cells in decreasing filled
-/// height (a valid topological order for D8 on a strictly-descending field).
-fn d8_accumulation(field: &Field, filled: &[f64], receivers: &[Option<u32>]) -> Vec<f64> {
-    let n = field.len();
-    let mut acc = vec![0.0f64; n];
-    let mut order: Vec<u32> = (0..n as u32)
-        .filter(|&i| !field.nodata[i as usize])
-        .collect();
-    order.sort_by(|&a, &b| filled[b as usize].total_cmp(&filled[a as usize]));
-    for &i in &order {
-        acc[i as usize] += 1.0;
-    }
-    for &i in &order {
-        if let Some(r) = receivers[i as usize] {
-            let carried = acc[i as usize];
-            acc[r as usize] += carried;
-        }
-    }
-    acc
 }
 
 /// Total length (mm) of the D8 links whose BOTH ends are in the network.

@@ -113,7 +113,7 @@
 //! treated as flats: they drain off the board and are legitimate outlets.
 //!
 //! `FLAT_EPSILON_MM` is 1e-6 mm and the total imposed rise is capped at
-//! [`FLAT_MAX_RISE_MM`], so flat resolution can never reorder real terrain.
+//! `FLAT_MAX_RISE_MM`, so flat resolution can never reorder real terrain.
 //! **Trunk-link counts are reported at every rung BEFORE and AFTER flat
 //! resolution**, so the correction's effect is measured rather than asserted.
 //!
@@ -165,8 +165,7 @@
     clippy::too_many_lines
 )]
 
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -203,12 +202,6 @@ const OP_TOLERANCE_MM: f64 = 0.05;
 /// CONNECTED TO THE BORDER at or below this level is base level — see the
 /// header.
 const WATER_LEVEL_MM: f64 = 0.0;
-const FILL_EPSILON_MM: f64 = 1.0e-6;
-/// Height step imposed per BFS ring of the Garbrecht–Martz flat gradient.
-const FLAT_EPSILON_MM: f64 = 1.0e-6;
-/// Hard cap on the total rise flat resolution may impose on any cell, so it
-/// can never reorder real terrain. The board's relief is ~9.8 mm.
-const FLAT_MAX_RISE_MM: f64 = 1.0e-3;
 
 // ── W0 dials, pre-registered ────────────────────────────────────────────
 
@@ -241,21 +234,22 @@ fn equal_cusp_stepover_mm(cusp_radius_mm: f64, h: f64) -> f64 {
 // ═══════════════════════════════════════════════════════════════════════
 /// A rasterised heightfield: row-major, `nodata` where nothing verified there
 /// is surface.
-struct Field {
-    nx: usize,
-    ny: usize,
-    ox: f64,
-    oy: f64,
-    cell: f64,
-    z: Vec<f64>,
-    nodata: Vec<bool>,
+use rs_cam_core::flow_accum::{
+    FILL_EPSILON_MM, FLAT_EPSILON_MM, FLAT_MAX_RISE_MM, FlowField as Field, d8_accumulation,
+    d8_receivers, priority_flood_epsilon, resolve_flats,
+};
+
+/// File-local geometry and the border-connected sea mask on the shared
+/// [`Field`]. The rasterised heightfield and its D8 hydrology now live in
+/// `rs_cam_core::flow_accum` (promoted from three verbatim copies); this census
+/// keeps these helpers local so the call sites below do not change.
+trait FieldExt {
+    fn index_at(&self, x: f64, y: f64) -> Option<usize>;
+    fn xy(&self, i: usize) -> P2;
+    fn land_view_border_connected(&self, water_level: f64) -> (Field, SeaReport);
 }
 
-impl Field {
-    fn len(&self) -> usize {
-        self.nx * self.ny
-    }
-
+impl FieldExt for Field {
     fn index_at(&self, x: f64, y: f64) -> Option<usize> {
         let col = ((x - self.ox) / self.cell).round();
         let row = ((y - self.oy) / self.cell).round();
@@ -275,38 +269,15 @@ impl Field {
         )
     }
 
-    /// The same lattice with everything at or below `land_z` marked nodata —
-    /// the LAND view, on which the hydrology runs.
-    ///
-    /// **Why this exists.** The first run of this instrument flooded the whole
-    /// board: the priority flood raised **99.50 %** of data cells, and the
-    /// accumulation field it produced was an artefact of flood order rather
-    /// than a drainage network. The cause is geometry, not code — the rivmap
-    /// export writes a RAISED OUTER EDGE BAND (`edge_profile = 3`,
-    /// `edge_wall_deg = 41`, `edge_top_offset_mm = 0.0` in `rivmap_data.toml`),
-    /// so the board's interior is one closed basin with its rim as the only
-    /// exit, and a correct priority flood fills it to that rim. The whole-board
-    /// flood is still run and its raised fraction printed, as the evidence for
-    /// this restriction; the DECIDING mask uses the land view, in which the
-    /// coastline is the base level and lakes on land still fill to their own
-    /// spill points.
-    /// **W0b.** The LAND view: everything except water CONNECTED TO THE BOARD
-    /// BORDER at or below `water_level`.
-    ///
-    /// The sea is found by a 4-connected flood fill inward from the grid
-    /// border, never by a global `z <= level` test. 4-connectivity, not 8, so
-    /// the fill cannot leak diagonally into an interior lake that merely
-    /// touches the trench at a corner.
-    ///
-    /// Returns the view plus `(sea_cells, interior_water_cells)` — the second
-    /// being cells at or below the water level the fill did NOT reach, i.e.
-    /// the interior lake beds this correction recovers as land. W0's global
-    /// threshold discarded exactly those.
-    fn land_view_border_connected(&self, water_level: f64) -> (Self, SeaReport) {
+    /// The LAND view: everything except water CONNECTED TO THE BOARD BORDER at
+    /// or below `water_level`. The sea is found by a 4-connected flood fill
+    /// inward from the grid border, never by a global `z <= level` test, so an
+    /// interior lake that merely touches the trench at a corner is not drained.
+    /// Returns the view plus a [`SeaReport`]. See the file header for why the
+    /// whole-board flood is restricted to land.
+    fn land_view_border_connected(&self, water_level: f64) -> (Field, SeaReport) {
         let n = self.len();
         let is_water = |i: usize| -> bool { !self.nodata[i] && self.z[i] <= water_level };
-        // Every connected water body, 4-connected, with the two facts that
-        // decide which of them is the sea.
         let mut comp = vec![u32::MAX; n];
         let mut sizes: Vec<usize> = Vec::new();
         let mut touches_border: Vec<bool> = Vec::new();
@@ -348,13 +319,10 @@ impl Field {
             sizes.push(size);
             touches_border.push(border);
         }
-        // The PRE-REGISTERED rule: the sea is whatever touches the grid border.
         let border_cells: usize = (0..sizes.len())
             .filter(|&k| touches_border[k])
             .map(|k| sizes[k])
             .sum();
-        // The ALTERNATIVE, used only when the pre-registered rule seeds
-        // nothing, and reported as such: the largest water body.
         let largest = (0..sizes.len()).max_by_key(|&k| sizes[k]);
         let used_fallback = border_cells == 0;
         let sea: Vec<bool> = (0..n)
@@ -385,7 +353,7 @@ impl Field {
         };
         let nodata = (0..n).map(|i| self.nodata[i] || sea[i]).collect();
         (
-            Self {
+            Field {
                 nx: self.nx,
                 ny: self.ny,
                 ox: self.ox,
@@ -415,309 +383,6 @@ struct SeaReport {
     interior_water_cells: usize,
     /// `(cells, id, touches_border)` for the six largest bodies.
     largest_bodies: Vec<(usize, usize, bool)>,
-}
-
-/// The eight D8 offsets and their step lengths in cells.
-const NB8: [(isize, isize); 8] = [
-    (-1, 0),
-    (1, 0),
-    (0, -1),
-    (0, 1),
-    (-1, -1),
-    (-1, 1),
-    (1, -1),
-    (1, 1),
-];
-
-fn neighbour(field: &Field, i: usize, k: usize) -> Option<(usize, f64)> {
-    let (dr, dc) = NB8[k];
-    let row = (i / field.nx) as isize + dr;
-    let col = (i % field.nx) as isize + dc;
-    if row < 0 || col < 0 || row >= field.ny as isize || col >= field.nx as isize {
-        return None;
-    }
-    let step = if dr != 0 && dc != 0 {
-        std::f64::consts::SQRT_2
-    } else {
-        1.0
-    };
-    Some(((row as usize) * field.nx + col as usize, step))
-}
-
-/// Ordering shim: `f64` has no `Ord`, and the priority flood needs a min-heap.
-#[derive(PartialEq)]
-struct HeapItem(f64, usize);
-
-impl Eq for HeapItem {}
-
-impl Ord for HeapItem {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.total_cmp(&other.0).then(self.1.cmp(&other.1))
-    }
-}
-
-impl PartialOrd for HeapItem {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-/// Barnes/Lehman/Soille **priority flood + epsilon**. Returns the filled
-/// height at every data cell (`f64::NAN` at nodata).
-///
-/// The plain fill leaves flats, and a flat has no D8 downslope neighbour, so
-/// accumulation dies inside it. This board HAS lakes (`lakes.dxf` sits beside
-/// the mesh in the export), so the epsilon variant is required, not optional:
-/// every filled cell gets a strictly-lower path to its outlet.
-///
-/// Seeds are the grid border plus every data cell adjacent to nodata — the
-/// board's rim and the trench ring are the outlets, which is correct.
-fn priority_flood_epsilon(field: &Field) -> Vec<f64> {
-    let n = field.len();
-    let mut out = vec![f64::NAN; n];
-    let mut closed = field.nodata.clone();
-    let mut open: BinaryHeap<Reverse<HeapItem>> = BinaryHeap::new();
-    let mut pit: VecDeque<usize> = VecDeque::new();
-
-    for i in 0..n {
-        if field.nodata[i] {
-            continue;
-        }
-        let row = i / field.nx;
-        let col = i % field.nx;
-        let border = row == 0 || col == 0 || row + 1 == field.ny || col + 1 == field.nx;
-        let beside_nodata =
-            (0..8).any(|k| neighbour(field, i, k).is_none_or(|(j, _)| field.nodata[j]));
-        if border || beside_nodata {
-            closed[i] = true;
-            out[i] = field.z[i];
-            open.push(Reverse(HeapItem(field.z[i], i)));
-        }
-    }
-
-    while !open.is_empty() || !pit.is_empty() {
-        let c = if let Some(c) = pit.pop_front() {
-            c
-        } else {
-            match open.pop() {
-                Some(Reverse(HeapItem(_, c))) => c,
-                None => break,
-            }
-        };
-        let zc = out[c];
-        for k in 0..8 {
-            let Some((j, _)) = neighbour(field, c, k) else {
-                continue;
-            };
-            if closed[j] {
-                continue;
-            }
-            closed[j] = true;
-            if field.z[j] <= zc + FILL_EPSILON_MM {
-                out[j] = zc + FILL_EPSILON_MM;
-                pit.push_back(j);
-            } else {
-                out[j] = field.z[j];
-                open.push(Reverse(HeapItem(out[j], j)));
-            }
-        }
-    }
-    out
-}
-
-/// D8 receivers on the filled surface: the steepest-descent neighbour, or
-/// `None` where nothing is lower (an outlet).
-/// **Garbrecht–Martz (1997) combined flat gradient**, two-BFS form after
-/// Barnes, Lehman & Soille (2014). See the file header for why both terms are
-/// kept.
-///
-/// Returns the corrected surface plus `(flats, flat_cells, max_increment)`.
-/// A cell adjacent to nodata (the sea) or on the grid border is never part of
-/// a flat: it drains off the board and is a legitimate outlet.
-fn resolve_flats(field: &Field, filled: &[f64]) -> (Vec<f64>, usize, usize, usize) {
-    let n = field.len();
-    let drains_off_board = |i: usize| -> bool {
-        let (r, c) = (i / field.nx, i % field.nx);
-        if r == 0 || c == 0 || r + 1 == field.ny || c + 1 == field.nx {
-            return true;
-        }
-        (0..8).any(|k| neighbour(field, i, k).is_none_or(|(j, _)| field.nodata[j]))
-    };
-    // A cell with no strictly-lower land neighbour, that does not drain off
-    // the board, is where routing currently dies.
-    let mut stalls: Vec<usize> = Vec::new();
-    for i in 0..n {
-        if field.nodata[i] || drains_off_board(i) {
-            continue;
-        }
-        let has_lower = (0..8).any(|k| {
-            neighbour(field, i, k).is_some_and(|(j, _)| !field.nodata[j] && filled[j] < filled[i])
-        });
-        if !has_lower {
-            stalls.push(i);
-        }
-    }
-
-    let mut out = filled.to_vec();
-    let mut member = vec![u32::MAX; n];
-    let mut flats = 0usize;
-    let mut flat_cells = 0usize;
-    let mut max_inc = 0usize;
-    let mut queue: VecDeque<usize> = VecDeque::new();
-
-    for &seed in &stalls {
-        if member[seed] != u32::MAX {
-            continue;
-        }
-        // Grow the flat: cells of EQUAL height, 8-connected.
-        let id = flats as u32;
-        let level = filled[seed];
-        let mut cells: Vec<usize> = Vec::new();
-        member[seed] = id;
-        queue.push_back(seed);
-        while let Some(c) = queue.pop_front() {
-            cells.push(c);
-            for k in 0..8 {
-                let Some((j, _)) = neighbour(field, c, k) else {
-                    continue;
-                };
-                if field.nodata[j] || member[j] != u32::MAX {
-                    continue;
-                }
-                if filled[j] == level {
-                    member[j] = id;
-                    queue.push_back(j);
-                }
-            }
-        }
-        flats += 1;
-        flat_cells += cells.len();
-
-        // Low and high edges of THIS flat.
-        let mut d_low = vec![usize::MAX; cells.len()];
-        let mut d_high = vec![usize::MAX; cells.len()];
-        let mut slot = std::collections::HashMap::with_capacity(cells.len());
-        for (idx, &c) in cells.iter().enumerate() {
-            slot.insert(c, idx);
-        }
-        let mut low_q: VecDeque<usize> = VecDeque::new();
-        let mut high_q: VecDeque<usize> = VecDeque::new();
-        for (idx, &c) in cells.iter().enumerate() {
-            let mut beside_lower = false;
-            let mut beside_higher = false;
-            for k in 0..8 {
-                let Some((j, _)) = neighbour(field, c, k) else {
-                    continue;
-                };
-                if field.nodata[j] {
-                    continue;
-                }
-                if filled[j] < level {
-                    beside_lower = true;
-                } else if filled[j] > level {
-                    beside_higher = true;
-                }
-            }
-            if beside_lower {
-                d_low[idx] = 0;
-                low_q.push_back(idx);
-            }
-            if beside_higher {
-                d_high[idx] = 0;
-                high_q.push_back(idx);
-            }
-        }
-        let sweep = |dist: &mut Vec<usize>, q: &mut VecDeque<usize>| {
-            while let Some(idx) = q.pop_front() {
-                let c = cells[idx];
-                let d = dist[idx];
-                for k in 0..8 {
-                    let Some((j, _)) = neighbour(field, c, k) else {
-                        continue;
-                    };
-                    let Some(&nidx) = slot.get(&j) else { continue };
-                    if dist[nidx] == usize::MAX {
-                        dist[nidx] = d + 1;
-                        q.push_back(nidx);
-                    }
-                }
-            }
-        };
-        sweep(&mut d_low, &mut low_q);
-        sweep(&mut d_high, &mut high_q);
-
-        let max_low = d_low.iter().filter(|&&d| d != usize::MAX).copied().max();
-        let Some(max_low) = max_low else {
-            // No low edge at all: a closed flat the priority flood should have
-            // filled. Leave it — a silent gradient here would invent an
-            // outlet that does not exist.
-            continue;
-        };
-        for idx in 0..cells.len() {
-            let toward_low = if d_low[idx] == usize::MAX {
-                0
-            } else {
-                max_low - d_low[idx]
-            };
-            let from_high = if d_high[idx] == usize::MAX {
-                0
-            } else {
-                d_high[idx]
-            };
-            let inc = toward_low + from_high;
-            max_inc = max_inc.max(inc);
-            let rise = (FLAT_EPSILON_MM * inc as f64).min(FLAT_MAX_RISE_MM);
-            out[cells[idx]] += rise;
-        }
-    }
-    (out, flats, flat_cells, max_inc)
-}
-
-fn d8_receivers(field: &Field, filled: &[f64]) -> Vec<Option<u32>> {
-    let n = field.len();
-    let mut out = vec![None; n];
-    for i in 0..n {
-        if field.nodata[i] {
-            continue;
-        }
-        let zi = filled[i];
-        let mut best: Option<(f64, u32)> = None;
-        for k in 0..8 {
-            let Some((j, step)) = neighbour(field, i, k) else {
-                continue;
-            };
-            if field.nodata[j] {
-                continue;
-            }
-            let drop = (zi - filled[j]) / (step * field.cell);
-            if drop > 0.0 && best.is_none_or(|(b, _)| drop > b) {
-                best = Some((drop, j as u32));
-            }
-        }
-        out[i] = best.map(|(_, j)| j);
-    }
-    out
-}
-
-/// Upstream cell count per cell, by processing cells in decreasing filled
-/// height (a valid topological order for D8 on a strictly-descending field).
-fn d8_accumulation(field: &Field, filled: &[f64], receivers: &[Option<u32>]) -> Vec<f64> {
-    let n = field.len();
-    let mut acc = vec![0.0f64; n];
-    let mut order: Vec<u32> = (0..n as u32)
-        .filter(|&i| !field.nodata[i as usize])
-        .collect();
-    order.sort_by(|&a, &b| filled[b as usize].total_cmp(&filled[a as usize]));
-    for &i in &order {
-        acc[i as usize] += 1.0;
-    }
-    for &i in &order {
-        if let Some(r) = receivers[i as usize] {
-            let carried = acc[i as usize];
-            acc[r as usize] += carried;
-        }
-    }
-    acc
 }
 
 // ═══════════════════════════════════════════════════════════════════════

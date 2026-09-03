@@ -61,6 +61,7 @@ pub mod fingerprint;
 pub mod finish_planner;
 pub mod finish_setup;
 pub mod finish_surface_cache;
+pub mod flow_accum;
 pub mod gcode;
 pub mod gcode_validator;
 pub mod geo;

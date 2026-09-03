@@ -132,8 +132,6 @@
     clippy::too_many_lines
 )]
 
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -191,7 +189,6 @@ const MAX_COSTED_REGIONS: usize = 16;
 
 const TPI_HALF_WINDOW_MM: f64 = 30.0;
 const LAND_Z_MM: f64 = 0.0;
-const FILL_EPSILON_MM: f64 = 1.0e-6;
 const BUFFER_REDUNDANCY_FRACTION: f64 = 0.25;
 /// The rung the V0 stability rule picked, and the one V1 is pre-registered
 /// against.
@@ -233,21 +230,22 @@ fn equal_cusp_stepover_mm(cusp_radius_mm: f64, h: f64) -> f64 {
 // Part 0 — the rasterised heightfield and its hydrology (copied from V0)
 // ═══════════════════════════════════════════════════════════════════════
 
-struct Field {
-    nx: usize,
-    ny: usize,
-    ox: f64,
-    oy: f64,
-    cell: f64,
-    z: Vec<f64>,
-    nodata: Vec<bool>,
+/// The rasterised heightfield and its D8 hydrology now live in
+/// `rs_cam_core::flow_accum` (promoted from three verbatim copies for the
+/// pencil watershed-spine experiment). This census keeps its file-local
+/// helpers as an extension trait so the call sites below do not change.
+use rs_cam_core::flow_accum::{
+    FlowField as Field, d8_accumulation, d8_receivers, priority_flood_epsilon,
+};
+
+/// File-local geometry and masking helpers on the shared [`Field`].
+trait FieldExt {
+    fn xy(&self, i: usize) -> P2;
+    fn index_at(&self, x: f64, y: f64) -> Option<usize>;
+    fn land_view(&self, land_z: f64) -> Field;
 }
 
-impl Field {
-    fn len(&self) -> usize {
-        self.nx * self.ny
-    }
-
+impl FieldExt for Field {
     fn xy(&self, i: usize) -> P2 {
         let row = i / self.nx;
         let col = i % self.nx;
@@ -267,14 +265,14 @@ impl Field {
         (col < self.nx && row < self.ny).then_some(row * self.nx + col)
     }
 
-    /// The LAND view — the hydrology's domain. The board carries a raised
-    /// outer edge band, so a whole-board flood drowns the interior; V0
-    /// measured that at 99.50 % of cells raised and restricted to land.
-    fn land_view(&self, land_z: f64) -> Self {
+    /// The LAND view — everything at or below `land_z` marked nodata. The
+    /// board carries a raised outer edge band, so a whole-board flood drowns
+    /// the interior; V0 measured 99.50 % of cells raised. See the header.
+    fn land_view(&self, land_z: f64) -> Field {
         let nodata = (0..self.len())
             .map(|i| self.nodata[i] || self.z[i] <= land_z)
             .collect();
-        Self {
+        Field {
             nx: self.nx,
             ny: self.ny,
             ox: self.ox,
@@ -284,148 +282,6 @@ impl Field {
             nodata,
         }
     }
-}
-
-const NB8: [(isize, isize); 8] = [
-    (-1, 0),
-    (1, 0),
-    (0, -1),
-    (0, 1),
-    (-1, -1),
-    (-1, 1),
-    (1, -1),
-    (1, 1),
-];
-
-fn neighbour(field: &Field, i: usize, k: usize) -> Option<(usize, f64)> {
-    let (dr, dc) = NB8[k];
-    let row = (i / field.nx) as isize + dr;
-    let col = (i % field.nx) as isize + dc;
-    if row < 0 || col < 0 || row >= field.ny as isize || col >= field.nx as isize {
-        return None;
-    }
-    let step = if dr != 0 && dc != 0 {
-        std::f64::consts::SQRT_2
-    } else {
-        1.0
-    };
-    Some(((row as usize) * field.nx + col as usize, step))
-}
-
-#[derive(PartialEq)]
-struct HeapItem(f64, usize);
-
-impl Eq for HeapItem {}
-
-impl Ord for HeapItem {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.total_cmp(&other.0).then(self.1.cmp(&other.1))
-    }
-}
-
-impl PartialOrd for HeapItem {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-/// Barnes priority flood + epsilon.
-fn priority_flood_epsilon(field: &Field) -> Vec<f64> {
-    let n = field.len();
-    let mut out = vec![f64::NAN; n];
-    let mut closed = field.nodata.clone();
-    let mut open: BinaryHeap<Reverse<HeapItem>> = BinaryHeap::new();
-    let mut pit: VecDeque<usize> = VecDeque::new();
-
-    for i in 0..n {
-        if field.nodata[i] {
-            continue;
-        }
-        let row = i / field.nx;
-        let col = i % field.nx;
-        let border = row == 0 || col == 0 || row + 1 == field.ny || col + 1 == field.nx;
-        let beside_nodata =
-            (0..8).any(|k| neighbour(field, i, k).is_none_or(|(j, _)| field.nodata[j]));
-        if border || beside_nodata {
-            closed[i] = true;
-            out[i] = field.z[i];
-            open.push(Reverse(HeapItem(field.z[i], i)));
-        }
-    }
-
-    while !open.is_empty() || !pit.is_empty() {
-        let c = if let Some(c) = pit.pop_front() {
-            c
-        } else {
-            match open.pop() {
-                Some(Reverse(HeapItem(_, c))) => c,
-                None => break,
-            }
-        };
-        let zc = out[c];
-        for k in 0..8 {
-            let Some((j, _)) = neighbour(field, c, k) else {
-                continue;
-            };
-            if closed[j] {
-                continue;
-            }
-            closed[j] = true;
-            if field.z[j] <= zc + FILL_EPSILON_MM {
-                out[j] = zc + FILL_EPSILON_MM;
-                pit.push_back(j);
-            } else {
-                out[j] = field.z[j];
-                open.push(Reverse(HeapItem(out[j], j)));
-            }
-        }
-    }
-    out
-}
-
-fn d8_receivers(field: &Field, filled: &[f64]) -> Vec<Option<u32>> {
-    let n = field.len();
-    let mut out = vec![None; n];
-    for i in 0..n {
-        if field.nodata[i] {
-            continue;
-        }
-        let zi = filled[i];
-        let mut best: Option<(f64, u32)> = None;
-        for k in 0..8 {
-            let Some((j, step)) = neighbour(field, i, k) else {
-                continue;
-            };
-            if field.nodata[j] {
-                continue;
-            }
-            let drop = (zi - filled[j]) / (step * field.cell);
-            if drop > 0.0 && best.is_none_or(|(b, _)| drop > b) {
-                best = Some((drop, j as u32));
-            }
-        }
-        out[i] = best.map(|(_, j)| j);
-    }
-    out
-}
-
-fn d8_accumulation(field: &Field, filled: &[f64], receivers: &[Option<u32>]) -> Vec<f64> {
-    let n = field.len();
-    let mut acc = vec![0.0f64; n];
-    let mut order: Vec<u32> = (0..n as u32)
-        .filter(|&i| !field.nodata[i as usize])
-        .collect();
-    order.sort_by(|&a, &b| filled[b as usize].total_cmp(&filled[a as usize]));
-    for &i in &order {
-        acc[i as usize] += 1.0;
-    }
-    for &i in &order {
-        if let Some(r) = receivers[i as usize] {
-            let carried = acc[i as usize];
-            acc[r as usize] += carried;
-        }
-    }
-    acc
 }
 
 /// Two-pass chamfer DT: for each set cell, distance in CELLS to the nearest
