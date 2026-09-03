@@ -6,10 +6,14 @@
 > Status: **CLOSED — REJECT (2026-09-03).** P0 promoted `crate::flow_accum`
 > (all Track H censuses green). P1's A/B instrument
 > (`tests/pencil_spine_ab_p1.rs`) measured both extractors on one rest field.
-> On the wanaka terrain, flow-accumulation over-traces the whole drainage
-> network (71 km vs A's 3 km) — the drainage-deletion lesson (`53293c96`)
-> confirmed. The shipped NMS pipeline (`29a6d61`) stands. Full ruling +
-> numbers + renders in `FINDINGS.md`.
+> The first wanaka ruling was RETRACTED — the operator caught it running on a
+> flooded board (a rimmed part is a closed basin; the flood ramped into
+> cardinal fuzz). Amendment A4 routes B inside the rest mask. On the CORRECTED
+> data, flow-accumulation traces the dendritic drainage within each rest
+> region — 26.8 m vs A's 3.1 m (8.7×), even 2T is 6.1× — because surface
+> drainage lines are a different curve family from the rest RIDGES pencil
+> wants. The drainage-deletion lesson (`53293c96`) holds; the NMS pipeline
+> (`29a6d61`) stands. Full record + RE-RULING in `FINDINGS.md`.
 
 ## The question — sharpened
 

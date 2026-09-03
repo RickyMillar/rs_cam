@@ -225,6 +225,11 @@ DRAINAGE NETWORK (71 km, 2083 outlets, draining to the grid edges), not a
 sparse pencil-seam set. A (blue) is the faint sparse network of the actual
 significant rest ridges underneath.
 
+> ⚠ **RETRACTED — this ruling ran on a FLOODED board (the 71 km / 23× figure
+> is a flood artifact). See the CORRECTION and RE-RULING sections below. The
+> reject DIRECTION survives, but on 8.7×, not 23×, and for a corrected
+> reason.**
+
 **RULING — REJECT (flow-accumulation is not adopted).**
 
 By the decision rule ("B1 or B3 or B5 fails → REJECT"), and directly:
@@ -269,3 +274,104 @@ a more coherent, higher-recall spine than NMS (with wall-spurs A would
 prune). But no real-part fixture has been found where that isolation holds —
 every real rest valley sits in a terrain field with competing drainage, which
 is what wanaka showed. This is not a follow-up lead.
+
+---
+
+## ⚠ CORRECTION (2026-09-03) — the first wanaka ruling was on a FLOODED board
+
+**The operator looked at the wanaka render and said it was "pure fuzz" — not
+the dendritic river lines Track H produced. He was right; the instrument had
+a bug, and the REJECT above is RETRACTED pending the corrected re-run.**
+
+**The bug.** Extractor B ran D8 flow-accumulation on the raw `surface_z`
+without masking the board. A wanaka relief carries a raised machining rim
+(Track H's w0 header documents this), so the whole surface is ONE CLOSED
+BASIN with no outlet. The priority flood then fills ~all of it, and the
+flat-resolver ramps that giant flat toward the rim — producing perfectly
+CARDINAL parallel lines (every B spine had constant x in the SVG), a flood
+artifact, not drainage. The "71 km / 23× over-trace" measured a flooded
+board. This is the exact failure Track H's w0 census had already diagnosed
+and fixed with `land_view`; extractor B skipped that step.
+
+**Proof (no re-run needed — measured on the fast synthetic fixtures):** a
+`raised_fraction` diagnostic (`filled > z + eps`, Track H's own flood test)
+plus a receiver-direction histogram now run in `flow_diag`.
+
+| synthetic fixture | raw surface RAISED by flood | receiver directions |
+|---|---|---|
+| sloped-exit (real outlet) | **0.2 %** | mostly one (down-slope) |
+| flat-closed (no outlet) | **97.9 %** | ramped |
+
+The closed groove floods 97.9 %; the one that exits the edge floods 0.2 %.
+That is the mechanism.
+
+**Amendment A4 — the general fix (no wanaka constant).** Extractor B now sets
+`nodata` wherever `rest < 0.5 × threshold` — it routes INSIDE THE REST MASK
+(A's own hysteresis-LO domain), so every rest valley drains to its own rim
+and gets a real outlet. This is defensible on any part, not a terrain-
+specific sea mask, and it is the same rest gate B applies afterwards. A
+generic machined part is ALWAYS a closed basin (bounded stock), so flow
+accumulation needs an outlet the part geometry does not supply; the rest mask
+is that outlet set.
+
+**Corrected synthetic results with A4** (the fix helps B substantially —
+fewer, longer, coherent spines):
+
+| fixture | extractor | lines | median_len | recall | valley_fid |
+|---|---|---|---|---|---|
+| flat-closed | A NMS | 86 | 1.301 | 0.680 | 0.969 |
+| flat-closed | B @ T (A4) | **13** | 25.854 | 0.989 | 0.666 |
+| sloped-exit | A NMS | 87 | 1.258 | 0.602 | 0.972 |
+| sloped-exit | B @ T (A4) | **7** | 27.255 | 0.975 | 0.854 |
+
+B is now coherent on BOTH synthetics (flat 229→13 lines, sloped 32→7).
+
+### Corrected wanaka result with A4 + the RE-RULING
+
+Flood fixed: raw surface RAISED 95.9% → A4-masked surface RAISED **8.9%**;
+receiver directions now spread across all 8 bins. Render
+`target/pencil_spine_ab_p1/wanaka_a4_spines.png` shows real branching rivers
+(matching Track H), NOT the earlier cardinal fuzz.
+
+| extractor | lines | traced_mm | valley_fid |
+|---|---|---|---|
+| A NMS | 1,139 | 3,084 | 0.935 |
+| B @ T (A4) | 5,360 | 26,763 | 0.919 |
+
+T-sweep (the A2 "why not raise T" falsifier, now with real numbers): traced
+length **0.5T = 41,024 mm · T = 26,763 mm · 2T = 18,813 mm**. Even 2T is
+**6.1× A**. No threshold rescues it.
+
+**RE-RULING — REJECT (same direction as the retracted ruling, corrected
+mechanism and magnitude).**
+
+The sharp finding: **surface drainage lines and rest-RIDGE lines are different
+curves, and pencil wants the ridge.** B traces the dendritic surface drainage
+within each rest region (5,360 lines, 26.8 m); A traces the rest ridges (1,139
+lines, 3.1 m). B4 tying at 0.919 is consistent — a drainage line sits low in
+the valley, so it reads deep rest, but it is NOT the medial line of the rest
+region. That is why B is 8.7× the length yet not simply "A's job done longer":
+it is the wrong curve family for the feature.
+
+- **B5 (cost) fails.** Read on TRACED LENGTH as a lower bound on cost (links
+  only add, and B's 5,360 fragments link worse than A's 1,139): 26,763 mm vs
+  3,084 mm = **8.7×**, against a ≤ 1.02× bar. The full `relink_and_cost_under`
+  was not run; an 8.7× length gap makes the costed number moot, and the length
+  is a floor, not the whole cost.
+- **B2 (coherence) fails.** 5,360 lines > A's 1,139 — more, not fewer.
+- **B4 passes** (0.919 ≥ 0.885) and **B1 passes** — but a metric passing on
+  the wrong curve family is not a reason to adopt.
+- **B3/M6 is NOT cited.** The footprint stamp is one cell at 0.5 mm and A's
+  polylines are resampled, so B-covers-A is biased low; the number is not
+  load-bearing and is dropped from the ruling. B5 carries the verdict alone.
+
+**Why raising T cannot fix it (A2, resolved):** the T-sweep above — even 2T
+stays 6.1× A. And the gate that separates a tool ridge from a drainage line is
+ridge detection, which IS A. Flow-accumulation adds nothing A does not already
+have.
+
+The drainage-deletion lesson (`53293c96`) holds — now demonstrated on CORRECT
+dendritic drainage, not a flood artifact. The shipped NMS pipeline (`29a6d61`)
+stands. **Credit: the operator caught the flood by eye ("pure fuzz, nothing
+like the river lines") — the aggregate numbers alone read as a confident,
+wrong REJECT.**
