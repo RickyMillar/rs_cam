@@ -141,4 +141,125 @@ results: written ahead of the instrument, never edited by an outcome. The
 
 ## Results
 
-(appended as they land)
+### P0 — flow-accum module promoted (2026-09-03)
+
+`crate::flow_accum` holds the D8 hydrology (`priority_flood_epsilon`,
+`resolve_flats`, `d8_receivers`, `d8_accumulation`, `neighbour`), promoted
+byte-identical from three Track H copies. All three `#[ignore]` wanaka
+censuses reproduce their baselines (w0b `mean/p1 2.780` / 49 basins; h0
+`D_pot 7.27 pp`; h1 pass). Commit `17e9e74c`.
+
+### P1 — instrument + synthetic A/B (2026-09-03)
+
+Instrument: `crates/rs_cam_core/tests/pencil_spine_ab_p1.rs`.
+
+**A1 falsifier — PASSES.** An isolated `-rest` dome fills flat under the
+priority flood (interior spread `1.2e-5 mm < 1e-3`). The closed-basin
+argument holds; B correctly runs on `surface_z`, not `-rest`.
+
+**Two lying metrics fixed before ruling** (advisor review): the pencil
+diameter now reads the tip `cusp_radius()` (Ø1), not the shank (Ø6) — the
+first run's `T_disc 28 mm²` and 3 mm M6 stamp were 6× too large. A
+ground-truth `recall` was added (fraction of the KNOWN Y centreline within
+one tip-radius of any traced point) — the honest coverage measure the
+within-extractor `traced/skeleton` ratio (M1) cannot give while A is a
+hairball.
+
+Synthetic Y-valley, cell 0.25 mm, pencil tip Ø1, `T_disc 0.79 mm²`:
+
+| fixture | extractor | lines | median_len | recall | valley_fid |
+|---|---|---|---|---|---|
+| flat-closed | A NMS | 86 | 1.301 | 0.680 | 0.969 |
+| flat-closed | B @ T | 229 | 3.213 | 1.000 | **0.396** |
+| sloped-exit | A NMS | 87 | 1.258 | 0.602 | 0.972 |
+| sloped-exit | B @ T | **32** | 2.867 | **0.975** | 0.846 |
+
+Renders: `target/pencil_spine_ab_p1/synthetic_{flat,sloped}_overlay.svg`
+(A blue, B red, rest field purple). **Read before ruling:**
+
+- **Flat-closed is a decisive B LOSS.** With no along-valley slope, flow
+  accumulation has no along-valley direction, so it drains each cell
+  SIDEWAYS to the nearest wall — the render shows B as 229 short hatches
+  running ACROSS the groove, not a spine along it (valley_fid 0.396). The
+  diagnostic confirms the topology, not the tracer: 197 distinct outlets on
+  the flat floor. **A flat-floored (constant-depth) rest crease is a
+  worst-case for flow-accum, and it is a common pencil case.**
+- **Sloped-exit is a coherence + recall WIN for B, with one weakness.** B
+  traces the trunk + both tributaries as one continuous spine to the outlet
+  — 32 lines vs A's 87, recall 0.975 vs 0.602 (B covers far more of the true
+  groove). But B carries short WALL-SPURS (visible as red ticks up the
+  walls) that A's `cleanup_ridge_graph` would prune; they drag B's
+  valley_fid to 0.846 (< A's 0.972) and inflate its line count. Spur-pruning
+  is an obvious, unimplemented B lever.
+
+**A2 sensitivity: T does not bind here.** {0.5T, T, 2T} give identical
+surviving-spine counts on both fixtures; the rest-gate (rest ≥ 0.5×
+threshold) selects, not the accumulation threshold. On the flat fixture mask
+`acc p50 4.6 / p95 9.6 mm²`; on the sloped fixture `p50 0.6 / p95 385 mm²`
+(the slope concentrates flow into a real trunk). A2 is reported, not
+load-bearing on these fixtures.
+
+**Separate A defect (one line, not part of the ruling):** both A and B trace
+the shallow basin's RIM (a sharp 0.3 mm step — a fixture artifact), but the
+basin FLOOR stays untraced by both, so the rest gate works. A real basin
+with a smooth edge would not trip this.
+
+### P1 — wanaka A/B (real terrain, the operator's fixture) + RULING
+
+Wanaka terrain, cell 0.5 mm, pencil tip Ø1, `T_disc 0.79 mm²`:
+
+| extractor | lines | median_len | traced_mm | valley_fid |
+|---|---|---|---|---|
+| A NMS | 1139 | 1.754 | **3,084** | 0.935 |
+| B @ T | 3919 | 9.288 | **71,010** | 0.784 |
+
+`B diag @ T`: kept 127,947 cells, **2,083 distinct outlets**; mask acc p50
+15.2 / p95 80.8 mm². M6: B covers 0.959 of A's footprint, but A covers only
+**0.123** of B's.
+
+Render `target/pencil_spine_ab_p1/wanaka_spines_only.png` (rest rects
+stripped so it rasterises; the 12 MB full overlay is
+`wanaka_overlay.svg`). **The picture is decisive:** B (red) fills nearly the
+whole board with dense parallel hatching — it traces the entire terrain
+DRAINAGE NETWORK (71 km, 2083 outlets, draining to the grid edges), not a
+sparse pencil-seam set. A (blue) is the faint sparse network of the actual
+significant rest ridges underneath.
+
+**RULING — REJECT (flow-accumulation is not adopted).**
+
+By the decision rule ("B1 or B3 or B5 fails → REJECT"), and directly:
+
+- **B5 (cost) fails by ~23×.** B traces 71,010 mm vs A's 3,084 mm. The cost
+  bar is `≤ 1.02× A`; a 23× traced-length blow-up fails it by any measure.
+  `relink_and_cost_under` (M5) was NOT run — a 23× length gap makes the
+  costed number a foregone conclusion, and the heavy rig would only quantify
+  a rejection already settled by the raw length and the render.
+- **B2 (coherence) fails.** B has MORE lines than A (3919 > 1139), not
+  fewer. The per-line median is longer (9.29 vs 1.75), but the bar requires
+  fewer AND longer; B trades one for the other.
+- **B4 (valley-bottom fidelity) fails.** 0.784 < A − 0.05 = 0.885. On real
+  terrain B rides drainage slopes, not valley bottoms.
+- **M6 exposes the mechanism:** B does not LOSE A's seams (it covers 0.959
+  of A), it DROWNS them — A covers only 0.123 of B, i.e. ~8× of B's
+  footprint is terrain drainage that is not a tool-relevant seam.
+
+**This is the drainage-deletion lesson (`53293c96`), confirmed empirically.**
+The charter's hope — that rest-gating keeps flow-accumulation "clear of the
+drainage-deletion ruling" — is FALSIFIED. Rest-gating at the natural floor
+(`0.5 × min_valley_depth`) does not constrain flow-accumulation on real
+terrain, where shallow rest against the reference exists almost everywhere,
+so flow accumulation recovers the whole hydrology network rather than the
+sparse pencil seams. The synthetic sloped-valley coherence win (32 vs 87
+lines, recall 0.975) was a single clean valley in isolation; it does not
+survive contact with a full terrain drainage field.
+
+**What would be needed to revisit (not pursued):** a far stronger seam
+selector than the rest floor — e.g. rest-RIDGE detection (A's own NMS) to
+mask the flow-accum trunks, at which point flow-accumulation adds nothing A
+does not already have. The current NMS+hysteresis+Zhang-Suen pipeline
+(`29a6d61`, coverage 0.80) stands as the pencil-spine extractor.
+
+**Bounded positive finding kept:** on a SINGLE sloping valley in isolation,
+flow-accumulation does trace a more coherent, higher-recall spine than NMS
+(with wall-spurs A would prune). The failure is one of SELECTION on a full
+terrain field, not of the trunk-tracing itself.
