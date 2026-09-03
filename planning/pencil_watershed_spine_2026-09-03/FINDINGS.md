@@ -253,13 +253,19 @@ sparse pencil seams. The synthetic sloped-valley coherence win (32 vs 87
 lines, recall 0.975) was a single clean valley in isolation; it does not
 survive contact with a full terrain drainage field.
 
-**What would be needed to revisit (not pursued):** a far stronger seam
-selector than the rest floor — e.g. rest-RIDGE detection (A's own NMS) to
-mask the flow-accum trunks, at which point flow-accumulation adds nothing A
-does not already have. The current NMS+hysteresis+Zhang-Suen pipeline
-(`29a6d61`, coverage 0.80) stands as the pencil-spine extractor.
+**Raising T does not fix it — the failure is SELECTION, and A2's T is the
+wrong knob.** On wanaka the mask `acc p95 = 80.8 mm²`, so `2T = 1.58 mm²`
+selects essentially everything; to cut 71 km down to A's 3 km you would need
+`T` roughly two orders of magnitude larger, and at that point B keeps only
+the DEEP major terrain valleys — which are exactly the ones A's ridge
+detector already finds. The gate that would actually separate a tool-relevant
+seam from terrain drainage is rest-RIDGE detection — and that IS A's NMS.
+Flow-accumulation adds nothing on top of it. The NMS+hysteresis+Zhang-Suen
+pipeline (`29a6d61`, coverage 0.80) stands as the pencil-spine extractor.
 
-**Bounded positive finding kept:** on a SINGLE sloping valley in isolation,
-flow-accumulation does trace a more coherent, higher-recall spine than NMS
-(with wall-spurs A would prune). The failure is one of SELECTION on a full
-terrain field, not of the trunk-tracing itself.
+**Bounded positive, stated so it is not a lead:** on a single sloping valley
+IN ISOLATION (one junction, no competing drainage), flow-accumulation traces
+a more coherent, higher-recall spine than NMS (with wall-spurs A would
+prune). But no real-part fixture has been found where that isolation holds —
+every real rest valley sits in a terrain field with competing drainage, which
+is what wanaka showed. This is not a follow-up lead.
