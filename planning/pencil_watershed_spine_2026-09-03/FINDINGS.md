@@ -98,6 +98,47 @@ connectivity a right answer:
   wanaka200 here).
 - Not resurrecting the Track H tree-tracing strategy (refuted).
 
+## P1 design amendments — pre-registered before the instrument (2026-09-03)
+
+These fix extractor B's construction BEFORE it runs. They are bars, not
+results: written ahead of the instrument, never edited by an outcome. The
+`P0` module (`crate::flow_accum`) is the shared hydrology they build on.
+
+- **A1 — B runs on `surface_z`, rest-gated; NOT on the rest field.**
+  Extractor B computes D8 flow-accumulation on `RestGrid::surface_z` — the
+  real drop-cutter topography, which has real outlets — not on the rest
+  field or its negation. The rest field is a CLOSED-BASIN field (rest → 0 at
+  every rim), so `priority_flood_epsilon` on `-rest` fills each valley flat
+  and routes only along the artificial epsilon gradient — confetti, not a
+  spine. `surface_z` is the DEM the Track H kit was verified on. The pencil
+  CRITERION is preserved by **rest-gating the trunks**: a trunk cell is kept
+  only where the field clears A's own thresholds — mask at `threshold`,
+  extended to the hysteresis LO floor `0.5 × threshold` to match A's reach.
+  This is what "rest-gated by construction" means operationally. X3 holds:
+  both fields (`surface_z`, `rest`) come off the one `RestGrid`, computed
+  once. **Falsifier:** P1's first assertion is a 1-D toy (`rest = bump,
+  rim = 0`) — if `priority_flood_epsilon` on `-rest` yields a non-flat,
+  routable gradient, the closed-basin argument is wrong; record and
+  reconsider A1 before ruling.
+
+- **A2 — trunk→skeleton threshold `T`, pre-registered.** `{acc ≥ T}` is
+  closed under the D8 receiver map, so the kept set is already an ~1-cell
+  forest; B traces it by FOLLOWING RECEIVERS, no Zhang-Suen. `T` sets
+  fragment count and coverage directly, so it is fixed here, not after the
+  bars: `T = π·(d/cell)² / 4` upstream cells, the area of a disc one pencil
+  DIAMETER `d` across (rationale: a trunk must drain at least the tool's own
+  footprint to earn a pass). Report M1–M6 at `T` PLUS a sensitivity sweep at
+  `{0.5·T, T, 2·T}`; the single pick is reported-not-load-bearing. Expected
+  failure locus: **B3 (seam loss)** at short, steep gullies whose small
+  upstream area falls under `T`.
+
+- **A3 — smoothing asymmetry, stated.** `rest_grid.rest` is the RAW
+  continuous field; extractor A box-smooths it internally before NMS.
+  Field CONSTRUCTION (the dual-tool drop) is shared; per-extractor
+  CONDITIONING is each pipeline's own — A: box-smooth; B: priority-flood +
+  flat-resolve. M4 (valley-bottom fidelity) samples `rest_grid.rest` (raw)
+  for BOTH extractors, so the depth read that M4 compares is shared.
+
 ## Results
 
 (appended as they land)
