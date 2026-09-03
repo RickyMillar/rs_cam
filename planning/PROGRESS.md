@@ -75,11 +75,18 @@ checker audits only rapids, so nothing flagged it. Operator ruling:
   (`perf_golden_sim_metrics` 3D arm): the Waterline fixture's
   `Helix` class WAS the blind ramp legs; its fed air fell 54.8 s →
   15.4 s on the test dome.
+- **Scope of the shipped exposure:** every mesh-finish operation
+  with default dressups (the Finish role: ramp entry + lead-in/out)
+  shipped blind approach moves for as long as those defaults
+  existed. Re-export any G-code generated before `8451e87c` that
+  used ramp/helix entries, leads, or `arc_fitting` on terrain. The
+  fix is verified by mechanism and sentry; the live wanaka
+  re-measure is still owed.
 - Open follow-ons (ledgered in FINDINGS.md): triage promotion of
-  deep-biting entries to a safety row, and the live wanaka
-  re-measure (ramp + lead + arcs restored, regenerate, re-run the
-  buried-chord analysis) — the latter belongs to the lane that owns
-  the running GUI.
+  deep-biting entries to a safety row, an adaptive3d-door on-mesh
+  clip test, and the live wanaka re-measure (ramp + lead + arcs
+  restored, regenerate, re-run the buried-chord analysis) — the
+  latter belongs to the lane that owns the running GUI.
 
 ## Recent work (2026-09-02)
 

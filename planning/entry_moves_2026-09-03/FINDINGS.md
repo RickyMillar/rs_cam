@@ -199,6 +199,39 @@ The wanaka re-measure (does the `entry_load` CRITICAL stay gone with
 `arc_fitting = true` under this fix?) belongs to the lane that owns
 the running GUI, alongside the S2/ramp re-measure.
 
+### Post-commit verification probes (2026-09-03, throwaway test, not committed)
+
+Two claims were verified by measurement instead of inference after
+`8451e87c`:
+
+1. **Arcfit vs clipped entries.** On the ridge fixture, after full
+   dressups: the clipped RAMP legs stay linear (66 linear entry
+   moves, 0 arcs — near-collinear XY defeats the circle fit). The
+   clipped HELIX turns DO refit into arcs (5 arc moves inside the
+   entry intents). The sentry samples arcs along the arc, so its
+   green covers them — and the unconditional S3 Z check is what
+   holds those refit arcs faithful. The order dependency (arc fit
+   runs AFTER entry) is therefore audited, not assumed.
+2. **The golden's mechanism.** On a hemisphere + waterline + default
+   ramp dressups reconstruction: `EntryRamp = 0`,
+   `EntryPlunge = 20` — every entry took the plunge FALLBACK (legs
+   poke past the mesh edge), exactly as the re-baseline note says.
+   The alternative mechanism (silent clipping changing the
+   kinematics class) did not occur.
+
+Also noted: the full core suite's nine other arc-fitting test
+binaries stayed green through the S3 change with no re-pinning —
+consistent with the hole firing only on narrow knolls.
+
+### Coverage gap, ledgered
+
+The adaptive3d door's clip has NO dedicated test. The pre-existing
+`test_helix_entry_no_vertical_plunge` proves its `Unconstrained`
+off-mesh policy keeps edge helixes alive; nothing yet proves the
+ON-mesh clip fires through that door (its default entry style is
+`Plunge`, so no shipped default is exposed). Follow-on: an adaptive3d
+ramp-entry-over-ridge arm in the sentry file.
+
 ### S2 results (2026-09-03)
 
 - **S2-red is a permanent in-test arm**, not a one-off number: the
