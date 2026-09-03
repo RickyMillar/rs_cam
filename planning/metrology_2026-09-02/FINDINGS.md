@@ -1238,3 +1238,26 @@ plane residual):
 - 13.9 % of chamfer points are PROUD > 0.06 mm (material left) —
   concentrated at the strip's lower junction where the ball bridges
   the concave blend; expected geometry, not a defect.
+
+### G-LIFTDEFICIT RETRACTED — the drop cutter is correct; the speckle chain closes on the model itself (2026-09-03)
+
+Bisection cleared the geometry tests (facet/vertex/edge all agree),
+brute force over EVERY mesh triangle cleared the spatial index
+(identical z, "index consistent" at all probes), and the band census
+cleared the toolpath: the chamfer strip's mesh has ZERO vertices more
+than 0.04 mm below the fitted plane, the path core sits at exact ball
+standoff (±65 µm cusp), and the remaining "buried" points resolve to
+REAL geometry — the west-corner miter and a river-exit notch crossing
+the chamfer diagonally (the diagonal failure chains in the probe map
+ARE the river). Every layer of the lift stack was accused and
+acquitted in turn: dressups (three real defects, fixed by the
+entry-moves session), ring chaining (one real defect, fixed), and the
+core query (innocent).
+
+**Remaining speckle candidates, for the operator's 10-second check:**
+(a) the model's own micro-relief and river exits, faithfully machined;
+(b) 0.25 mm sim-cell aliasing of 0.03 mm cusp texture (known:
+`CLAUDE.md` — the sim mesh cannot resolve cusp texture). Decisive
+check: view the MODEL (not the stock) in the same viewport region —
+if the speckling is in the model, the toolpath is exonerated end to
+end.
