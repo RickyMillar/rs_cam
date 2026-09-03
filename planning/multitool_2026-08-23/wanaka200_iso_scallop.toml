@@ -1061,18 +1061,18 @@ intra_pass_hookup_mm = 3.0
 iso_field = true
 
 [setups.toolpaths.dressups]
-entry_style = "none"
+entry_style = "ramp"
 ramp_angle = 3.0
 helix_radius = 2.0
 helix_pitch = 1.0
 dogbone = false
 dogbone_angle = 90.0
-lead_in_out = false
+lead_in_out = true
 lead_radius = 2.0
 link_moves = true
 link_max_distance = 10.0
 link_feed_rate = 500.0
-arc_fitting = false
+arc_fitting = true
 arc_tolerance = 0.05
 segment_merge = false
 segment_merge_tolerance = 0.3

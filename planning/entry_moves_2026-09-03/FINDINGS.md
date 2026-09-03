@@ -344,3 +344,79 @@ Two amendments, recorded before the code changed:
 With both amendments the failing adaptive3d test is expected green
 again with its original meaning intact, and the S1 sentry semantics
 do not change.
+
+## LIVE WANAKA RE-MEASURE — the real pipeline, fresh binary (2026-09-03)
+
+GUI/MCP ownership transferred to this session. Rebuilt the release
+GUI (`12:55:24`), verified the running process started AFTER the
+binary (`13:01:21`) — no stale-binary false negative. Loaded
+`wanaka200_iso_scallop.toml`, restored toolpath 8 (id 18, "ISO
+Scallop R1.5") to the shipped defaults `entry_style = ramp`,
+`arc_fitting = true`, `lead_in_out = true`, ran `generate_all`
+(fixpoint, sim 0.1 mm) — front rough → sim → scallop → sim — and
+exported the G-code.
+
+### Buried-chord analysis — the G-RAMPTERRAIN defect: GREEN
+
+Method as recorded in `planning/metrology_2026-09-02/FINDINGS.md`
+(§"attribution PROVEN"): terrain mean-z in 0.5 mm bins from
+`terrain.stl`, frame = gcode − (20, 25), section G1 chords with
+XY > 1.5 mm sampled at t = 0.25/0.5/0.75, flagged only if ALL
+samples sit > 0.5 mm below mean terrain; arcs linearised and sampled
+the same way.
+
+| class | pre-fix baseline | post-fix (all dressups ON) |
+|-------|------------------|----------------------------|
+| ramp G1 chords (strict) | 3 (19–21 mm) | **0** |
+| ramp G1 chords (loose) | 45 | **0** |
+| buried arcs | the `entry_load` arc class | **0** |
+| lead-in chord | 1 at model (140.5, 138.9) | **0** |
+
+Frame validated, not assumed: 923 079 of 1 309 929 sampled points
+landed ON the terrain bins (70.5 %); of those the deepest excursion
+below mean terrain is **0.18 mm** (mean-z binning noise on a real
+surface cut), and **not one sample exceeds the 0.5 mm bury
+threshold**. 97 % of on-terrain samples ride above the binned
+surface. The 29.5 % off-terrain samples are the boundary/edge and
+approach air, which cannot be buried by definition.
+
+### Triage — `entry_load` critical PERSISTS, but it is not a gouge
+
+`run_simulation(0.25)`: `safety` empty, `collision_count` 0,
+`rapid_collision_count` 0, `average_engagement` 0.30. Two tool-load
+actions remain:
+
+- `project.entry_load` **critical** — 1076 of 26221 entry samples
+  remove > 0.40 mm (2× the pass's 0.20 mm median), peak **2.24 mm**
+  at gcode (47.5, 114.7, 0.56). Pre-fix this was 2242 samples, peak
+  3.90 mm — the fix HALVED it. The worst sample is at model
+  (27.5, 89.7) where mean terrain is 0.617; tool z 0.56 is AT the
+  surface, not below it. So the residual is the entry removing
+  standing **rough** stock down to the finish surface, NOT a
+  below-surface gouge — consistent with the 0 buried chords.
+- `project.crosses_standing_material` caution — 14.1 % of scallop
+  samples remove > 0.60 mm (peak 3.75 mm): the scallop crossing the
+  3D rough's leftover stock.
+
+Both are artifacts of THIS test config: the scallop is the only
+finish enabled, so it does the entire rough→finish transition alone.
+The shipped multi-tool plan places unified-finish tiers 0 (R1.5) and
+1 (R1.0) between the rough and the scallop (both present in the
+project, DISABLED here); with them enabled the scallop enters
+pre-finished stock and these loads collapse. The `entry_load`
+metric grades material removed on entry, a different quantity from
+below-surface burial — the fix's job was the burial, and that is 0.
+
+### Ruling and the save decision
+
+The G-RAMPTERRAIN gouge class is FIXED in the real pipeline on a
+fresh binary: zero buried chords, zero buried arcs, with all three
+dressups ON. The `entry_load` critical is a cascade artifact of the
+tiers-disabled test, proven above-surface, not a survivor of the
+defect. Because the literal acceptance criterion ("no `entry_load`
+critical") is not met — for a reason unrelated to the fix — the save
+of the shipped-defaults-ON project is put to the operator rather than
+taken unilaterally (it overwrites a shared file). Export analysed:
+`scratchpad/wanaka_iso_postfix.nc`.
+
+GUI/MCP released back after this measurement.
