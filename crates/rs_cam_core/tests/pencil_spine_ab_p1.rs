@@ -42,7 +42,8 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::flow_accum::{
-    FlowField, d8_accumulation, d8_receivers, priority_flood_epsilon, resolve_flats,
+    FILL_EPSILON_MM, FlowField, d8_accumulation, d8_receivers, priority_flood_epsilon,
+    resolve_flats,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -77,16 +78,29 @@ impl Spine {
 }
 
 /// Build a [`FlowField`] from the rest grid's SURFACE topography. `nodata`
-/// where the drop found no surface (NaN). This is the DEM the D8 kit runs on.
-fn flow_field_from_surface(grid: &RestGrid) -> FlowField {
+/// where the drop found no surface (NaN), and — when `rest_floor` is set
+/// (amendment A4) — where `rest < rest_floor`, so the REST MASK is the routing
+/// domain and each rest valley drains to its own rim.
+///
+/// Without A4, an arbitrary part surface is a CLOSED BASIN (a raised machining
+/// rim, or just bounded stock), so the priority flood fills the whole board
+/// and the flat-resolver ramps it into cardinal parallel lines — a flood
+/// artifact, not drainage. Masking to the rest mask supplies the outlets the
+/// part geometry does not.
+fn flow_field_from_surface(grid: &RestGrid, rest_floor: Option<f64>) -> FlowField {
     let n = grid.nx * grid.ny;
     let mut z = vec![0.0f64; n];
     let mut nodata = vec![false; n];
     for i in 0..n {
         let s = grid.surface_z[i];
-        if s.is_finite() {
-            z[i] = s as f64;
-        } else {
+        if !s.is_finite() {
+            nodata[i] = true;
+            continue;
+        }
+        z[i] = s as f64;
+        if let Some(floor) = rest_floor
+            && (grid.rest[i] as f64) < floor
+        {
             nodata[i] = true;
         }
     }
@@ -110,10 +124,11 @@ fn flow_field_from_surface(grid: &RestGrid) -> FlowField {
 /// total traced length BEFORE the `min_cut_length` filter (the coverage
 /// denominator, mirroring `RestFieldReport`).
 fn extractor_b(grid: &RestGrid, trunk_area_mm2: f64, min_cut_length_mm: f64) -> (Vec<Spine>, f64) {
-    let field = flow_field_from_surface(grid);
+    let lo_floor = 0.5 * grid.threshold;
+    // A4: route inside the rest mask so each valley drains to its own rim.
+    let field = flow_field_from_surface(grid, Some(lo_floor));
     let n = field.len();
     let cell_area = grid.cell_mm * grid.cell_mm;
-    let lo_floor = 0.5 * grid.threshold;
 
     let raw_filled = priority_flood_epsilon(&field);
     let (filled, _flats, _fc, _mi) = resolve_flats(&field, &raw_filled);
@@ -469,42 +484,79 @@ fn out_dir() -> PathBuf {
 // A/B driver — shared by the synthetic and wanaka fixtures
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Receiver-field diagnostics for extractor B — to tell a flat-floor
-/// fragmentation (many distinct outlets) from a tracer that shreds ONE chain
-/// (few outlets). If `outlets ≫ spine count`, the topology fragments; if
-/// `outlets ≈ 1–2`, the tracer is at fault, not flow-accum.
+/// Receiver-field diagnostics for extractor B.
+///
+/// `raised_frac_unmasked` is Track H's own flood test (`filled > z + eps`) on
+/// the RAW surface — if it is ~1.0 the whole board floods into a closed basin
+/// and the flat-resolver ramps it into cardinal lines (the bug the operator
+/// caught). `raised_frac_masked` is the same on the A4 rest-masked surface —
+/// it should be far lower, because each rest valley now drains to its own rim.
+/// `recv_hist` is a 3×3 receiver-direction histogram over the kept set (index
+/// `(dr+1)*3 + (dc+1)`, slot 4 = self); one dominant off-centre bin means the
+/// flow is a single-direction ramp, not real drainage.
 struct BDiag {
     kept_cells: usize,
     outlets: usize,
     acc_p50_mm2: f64,
     acc_p95_mm2: f64,
+    raised_frac_unmasked: f64,
+    raised_frac_masked: f64,
+    recv_hist: [usize; 9],
+}
+
+/// Fraction of data cells the priority flood RAISED above their own height —
+/// the closed-basin flood signature.
+fn raised_fraction(field: &FlowField) -> f64 {
+    let filled = priority_flood_epsilon(field);
+    let mut data = 0usize;
+    let mut raised = 0usize;
+    for ((&f, &z), &nd) in filled.iter().zip(&field.z).zip(&field.nodata) {
+        if nd {
+            continue;
+        }
+        data += 1;
+        if f > z + FILL_EPSILON_MM {
+            raised += 1;
+        }
+    }
+    if data == 0 {
+        0.0
+    } else {
+        raised as f64 / data as f64
+    }
 }
 
 fn flow_diag(grid: &RestGrid, trunk_area_mm2: f64) -> BDiag {
-    let field = flow_field_from_surface(grid);
+    let lo_floor = 0.5 * grid.threshold;
+    let raised_frac_unmasked = raised_fraction(&flow_field_from_surface(grid, None));
+
+    // The A4 masked pipeline — the one extractor B actually routes on.
+    let field = flow_field_from_surface(grid, Some(lo_floor));
+    let raised_frac_masked = raised_fraction(&field);
     let n = field.len();
     let cell_area = grid.cell_mm * grid.cell_mm;
-    let lo_floor = 0.5 * grid.threshold;
     let raw = priority_flood_epsilon(&field);
     let (filled, ..) = resolve_flats(&field, &raw);
     let receivers = d8_receivers(&field, &filled);
     let acc = d8_accumulation(&field, &filled, &receivers);
     let kept: Vec<bool> = (0..n)
-        .map(|i| {
-            !field.nodata[i]
-                && acc[i] * cell_area >= trunk_area_mm2
-                && (grid.rest[i] as f64) >= lo_floor
-        })
+        .map(|i| !field.nodata[i] && acc[i] * cell_area >= trunk_area_mm2)
         .collect();
     let kept_cells = kept.iter().filter(|&&k| k).count();
-    // Distinct exit cells: where each kept chain leaves the kept set.
     let mut outlet_set = std::collections::BTreeSet::new();
+    let mut recv_hist = [0usize; 9];
     for i in 0..n {
         if !kept[i] {
             continue;
         }
         match receivers[i] {
-            Some(r) if kept[r as usize] => {}
+            Some(r) if kept[r as usize] => {
+                let (ri, ci) = (i / field.nx, i % field.nx);
+                let (rr, cr) = (r as usize / field.nx, r as usize % field.nx);
+                let dr = (rr as i64 - ri as i64).signum() + 1;
+                let dc = (cr as i64 - ci as i64).signum() + 1;
+                recv_hist[(dr * 3 + dc) as usize] += 1;
+            }
             Some(r) => {
                 outlet_set.insert(r as usize);
             }
@@ -513,9 +565,8 @@ fn flow_diag(grid: &RestGrid, trunk_area_mm2: f64) -> BDiag {
             }
         }
     }
-    // acc percentiles among rest-MASK cells (rest ≥ threshold — the mask A uses).
     let mut mask_acc: Vec<f64> = (0..n)
-        .filter(|&i| !field.nodata[i] && (grid.rest[i] as f64) >= grid.threshold)
+        .filter(|&i| !field.nodata[i])
         .map(|i| acc[i] * cell_area)
         .collect();
     mask_acc.sort_by(f64::total_cmp);
@@ -531,6 +582,9 @@ fn flow_diag(grid: &RestGrid, trunk_area_mm2: f64) -> BDiag {
         outlets: outlet_set.len(),
         acc_p50_mm2: pick(0.5),
         acc_p95_mm2: pick(0.95),
+        raised_frac_unmasked,
+        raised_frac_masked,
+        recv_hist,
     }
 }
 
@@ -639,6 +693,16 @@ fn run_ab(fixture: &str, mesh: &TriangleMesh, cell_mm: f64, truth_xy: Option<&[(
             eprintln!(
                 "    B diag @ T: kept {} cells, {} distinct outlets; mask acc p50 {:.1} p95 {:.1} mm² (T={:.2})",
                 d.kept_cells, d.outlets, d.acc_p50_mm2, d.acc_p95_mm2, t
+            );
+            eprintln!(
+                "    FLOOD test: priority-flood RAISED {:.1}% of the raw surface (closed-basin flood), \
+                 {:.1}% of the A4 rest-masked surface",
+                100.0 * d.raised_frac_unmasked,
+                100.0 * d.raised_frac_masked
+            );
+            eprintln!(
+                "    recv dir 3x3 [NW N NE / W . E / SW S SE]: {:?} (one dominant off-centre bin = ramp, not drainage)",
+                d.recv_hist
             );
             let (b_cov_a, a_cov_b) = footprint_overlap(grid, &a, &b, cut_radius);
             eprintln!(
