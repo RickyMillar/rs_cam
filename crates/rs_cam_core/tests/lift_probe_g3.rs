@@ -3,7 +3,12 @@
 //! query z at the five worst gouge XYs from the v4 G-code analysis vs the
 //! ball-standoff z the 47.44° chamfer plane demands. Evidence run.
 
-#![allow(clippy::print_stderr, clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    clippy::print_stderr,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing
+)]
 
 use std::path::Path;
 

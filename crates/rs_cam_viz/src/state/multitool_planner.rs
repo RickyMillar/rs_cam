@@ -79,6 +79,9 @@ pub struct PlannerToolRow {
     /// call the project's Ø1-tip finisher the coarsest tool on the ladder.
     pub cusp_radius_mm: f64,
     pub selected: bool,
+    /// Which operation cuts this tool's tier (regions are unchanged by
+    /// this — territory comes from the tier map).
+    pub strategy: rs_cam_core::session::TierStrategy,
 }
 
 /// Lifecycle of one preview run, mirroring
@@ -332,7 +335,18 @@ impl MultitoolPlannerState {
             cusp_height_mm: self.cusp_height_mm,
             coarse_skips_fine_islands: self.coarse_skips_fine_islands,
             monotone_cell_decomposition: self.monotone_cell_decomposition,
+            tier_strategies: self.ladder_tier_strategies(),
         }
+    }
+
+    /// The selected rows' strategies in LADDER order (coarse → fine, cusp
+    /// radius descending — the same sort the core planner applies), so the
+    /// spec's per-tier list lines up with the emitted tiers.
+    #[must_use]
+    pub fn ladder_tier_strategies(&self) -> Vec<rs_cam_core::session::TierStrategy> {
+        let mut rows: Vec<&PlannerToolRow> = self.tools.iter().filter(|t| t.selected).collect();
+        rows.sort_by(|a, b| b.cusp_radius_mm.total_cmp(&a.cusp_radius_mm));
+        rows.iter().map(|r| r.strategy).collect()
     }
 
     /// The preview the dialog is holding, if any.
@@ -382,6 +396,7 @@ mod tests {
             name: format!("tool {tool_id}"),
             cusp_radius_mm,
             selected,
+            strategy: rs_cam_core::session::TierStrategy::UnifiedFinish,
         }
     }
 

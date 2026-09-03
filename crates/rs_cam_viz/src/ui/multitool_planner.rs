@@ -142,13 +142,25 @@ fn draw_tool_list(ui: &mut egui::Ui, planner: &mut MultitoolPlannerState) {
     ui.add_space(4.0);
 
     egui::Grid::new("multitool_planner_tools")
-        .num_columns(3)
+        .num_columns(4)
         .spacing([10.0, 4.0])
         .striped(true)
         .show(ui, |ui| {
             ui.label(egui::RichText::new("use").small().strong());
             ui.label(egui::RichText::new("tool").small().strong());
             ui.label(egui::RichText::new("tip radius").small().strong());
+            ui.label(egui::RichText::new("strategy").small().strong())
+                .on_hover_text(
+                    "Which operation cuts this tool's tier. The tier's TERRITORY is \
+                     the same whichever you pick — regions come from the tier map; \
+                     this only chooses the toolpath type. Unified = the band mix \
+                     (raster/scallop/waterline per slope). Scallop = one continuous \
+                     ring spiral over the whole territory. Iso Scallop = per-point \
+                     ring spacing with the spec-correct slope law — measured faster \
+                     than the band mix at better coverage on ONE large organic \
+                     territory; on a tier of many small islands each island gets its \
+                     own ring cascade, which costs entry plunges.",
+                );
             ui.end_row();
             for row in &mut planner.tools {
                 ui.checkbox(&mut row.selected, "");
@@ -158,6 +170,35 @@ fn draw_tool_list(ui: &mut egui::Ui, planner: &mut MultitoolPlannerState) {
                         .small()
                         .color(theme::TEXT_MUTED),
                 );
+                if row.selected {
+                    use rs_cam_core::session::TierStrategy;
+                    let label = match row.strategy {
+                        TierStrategy::UnifiedFinish => "Unified (bands)",
+                        TierStrategy::Scallop => "Scallop (rings)",
+                        TierStrategy::IsoScallop => "Iso Scallop",
+                    };
+                    egui::ComboBox::from_id_salt(("tier_strategy", row.tool_id))
+                        .selected_text(egui::RichText::new(label).small())
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut row.strategy,
+                                TierStrategy::UnifiedFinish,
+                                "Unified (bands)",
+                            );
+                            ui.selectable_value(
+                                &mut row.strategy,
+                                TierStrategy::Scallop,
+                                "Scallop (rings)",
+                            );
+                            ui.selectable_value(
+                                &mut row.strategy,
+                                TierStrategy::IsoScallop,
+                                "Iso Scallop",
+                            );
+                        });
+                } else {
+                    ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
+                }
                 ui.end_row();
             }
         });

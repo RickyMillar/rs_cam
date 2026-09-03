@@ -22,7 +22,7 @@ pub mod wizard;
 pub use compute::{MutationKind, StaleSet, compute_stale_set};
 pub use eval_context::SetupEvalContext;
 pub use multitool::{
-    MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, equal_cusp_stepover_mm,
+    MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, TierStrategy, equal_cusp_stepover_mm,
 };
 pub use wizard::{OutputLayout, WizardState};
 

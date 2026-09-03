@@ -697,6 +697,15 @@ pub struct PlanMultitoolFinishingParam {
     /// pattern, so review the rendered surface. Default true since
     /// 2026-09-01 (C4 operator surface review passed).
     pub monotone_cell_decomposition: Option<bool>,
+    /// Per-tier operation choice, LADDER order (coarse → fine):
+    /// "unified_finish" | "scallop" | "iso_scallop". Unset or shorter than
+    /// the ladder = unified_finish for the unnamed tiers (the historical
+    /// planner). The tier's TERRITORY is identical whichever strategy cuts
+    /// it — regions come from the tier map; this only picks the operation.
+    /// Evidence for the scallop/iso options:
+    /// planning/metrology_2026-09-02/FINDINGS.md §M7–M8.
+    #[serde(default)]
+    pub tier_strategies: Option<Vec<String>>,
 }
 
 /// Phase U — the look-before-emit twin of [`PlanMultitoolFinishingParam`].
@@ -756,6 +765,11 @@ pub struct PreviewTierMapParam {
     /// but the value is threaded through so the previewed spec IS the
     /// planned spec. Default true since 2026-09-01 (C4 ruling).
     pub monotone_cell_decomposition: Option<bool>,
+    /// Accepted for dial parity with `plan_multitool_finishing` and
+    /// IGNORED: a tier's strategy picks its OPERATION, not its territory,
+    /// so the island preview is identical whichever strategies you pass.
+    #[serde(default)]
+    pub tier_strategies: Option<Vec<String>>,
     /// Absolute path ending in `.svg` to write the island preview to.
     /// Unset = numbers only. The parent directory must already exist —
     /// the call refuses rather than creating one. Polygons only, so a

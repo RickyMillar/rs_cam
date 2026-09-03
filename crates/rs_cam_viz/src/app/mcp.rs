@@ -61,6 +61,29 @@ pub(crate) struct MultitoolDials {
     pub max_regions_per_tier: Option<usize>,
     pub coarse_skips_fine_islands: Option<bool>,
     pub monotone_cell_decomposition: Option<bool>,
+    /// Per-tier strategy strings, LADDER order (coarse → fine). `None` =
+    /// all unified (the historical planner).
+    pub tier_strategies: Option<Vec<String>>,
+}
+
+pub(crate) fn parse_tier_strategies(
+    raw: &Option<Vec<String>>,
+) -> Result<Vec<rs_cam_core::session::TierStrategy>, String> {
+    use rs_cam_core::session::TierStrategy;
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    raw.iter()
+        .map(|s| match s.as_str() {
+            "unified_finish" | "unified" => Ok(TierStrategy::UnifiedFinish),
+            "scallop" => Ok(TierStrategy::Scallop),
+            "iso_scallop" | "iso" => Ok(TierStrategy::IsoScallop),
+            other => Err(format!(
+                "unknown tier strategy '{other}' — expected unified_finish | scallop | \
+                 iso_scallop"
+            )),
+        })
+        .collect()
 }
 
 impl super::RsCamApp {
@@ -4083,6 +4106,7 @@ impl super::RsCamApp {
                 max_regions_per_tier: spec.max_regions_per_tier,
                 coarse_skips_fine_islands: spec.coarse_skips_fine_islands,
                 monotone_cell_decomposition: spec.monotone_cell_decomposition,
+                tier_strategies: spec.tier_strategies.clone(),
             },
         ) {
             Ok(plan_spec) => plan_spec,
@@ -4250,6 +4274,7 @@ impl super::RsCamApp {
             monotone_cell_decomposition: dials
                 .monotone_cell_decomposition
                 .unwrap_or(plan_defaults.monotone_cell_decomposition),
+            tier_strategies: parse_tier_strategies(&dials.tier_strategies)?,
         })
     }
 
@@ -4282,6 +4307,10 @@ impl super::RsCamApp {
                 // tier's shallow band emits, not the island map — and is
                 // threaded through for the same dial-parity contract.
                 monotone_cell_decomposition: spec.monotone_cell_decomposition,
+                // Strategies do not move the island map; threaded (not
+                // swallowed) for the dial-parity contract, same as the two
+                // emission dials above.
+                tier_strategies: spec.tier_strategies.clone(),
             },
         ) {
             Ok(plan_spec) => plan_spec,

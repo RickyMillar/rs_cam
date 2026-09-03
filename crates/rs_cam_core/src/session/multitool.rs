@@ -186,11 +186,39 @@ pub struct MultitoolPlanSpec {
     /// [`restore_planned_geometry`] re-applies it after the Suggest funnel
     /// rewrites the operation.
     pub monotone_cell_decomposition: bool,
+    /// Which OPERATION cuts each tier — the operator's separation of
+    /// "region generation" from "toolpath choice" (2026-09-03). Indexed by
+    /// LADDER TIER (coarse → fine, i.e. the sorted order, not `tool_ids`
+    /// order); a missing entry means [`TierStrategy::UnifiedFinish`], so an
+    /// empty vec reproduces the pre-dial planner byte-identically. The
+    /// tier's TERRITORY is unchanged by this choice — it rides the
+    /// boundary (`PlannedTierRegions`), which is op-agnostic.
+    pub tier_strategies: Vec<TierStrategy>,
+}
+
+/// The operation family that cuts one planner tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TierStrategy {
+    #[default]
+    /// The band mix (raster / scallop / waterline per slope band) — the
+    /// planner's historical only choice, and still the default.
+    UnifiedFinish,
+    /// The shipped offset-cascade scallop, whole territory as rings.
+    Scallop,
+    /// The iso-field scallop (M8: per-point spacing, cosine slope law,
+    /// completion by construction). Measured 0.875× the unified op's time
+    /// at 2.5 pp better envelope coverage on the wanaka board — on ONE
+    /// large organic territory. On confetti territory (many small
+    /// islands) per-island ring cascades pay plunges (the S1 arm-R
+    /// lesson); the GUI shows the island count next to the dial.
+    IsoScallop,
 }
 
 impl Default for MultitoolPlanSpec {
     fn default() -> Self {
         Self {
+            tier_strategies: Vec::new(),
             setup_index: 0,
             model_id: 0,
             tool_ids: Vec::new(),
@@ -315,13 +343,27 @@ impl ProjectSession {
                 continue;
             };
             let cusp = cusp_radii.get(tier_usize).copied().unwrap_or(0.0);
-            let mut operation = plan_tier_operation(cusp, spec);
+            let strategy = spec
+                .tier_strategies
+                .get(tier_usize)
+                .copied()
+                .unwrap_or_default();
+            let mut operation = plan_tier_operation(cusp, spec, strategy);
             let feeds_provenance = self.suggest_feeds_for(&mut operation, tool);
+            let strategy_tag = match strategy {
+                TierStrategy::UnifiedFinish => "",
+                TierStrategy::Scallop => " scallop",
+                TierStrategy::IsoScallop => " iso",
+            };
+            let dressup_op = match strategy {
+                TierStrategy::UnifiedFinish => OperationType::UnifiedFinish,
+                TierStrategy::Scallop | TierStrategy::IsoScallop => OperationType::Scallop,
+            };
             let cfg = ToolpathConfig {
                 id: ToolpathId(0),
-                name: format!("Finish tier {tier} (R{cusp:.1})"),
+                name: format!("Finish tier {tier}{strategy_tag} (R{cusp:.1})"),
                 enabled: true,
-                dressups: DressupConfig::for_op(OperationType::UnifiedFinish),
+                dressups: DressupConfig::for_op(dressup_op),
                 heights: heights.clone(),
                 tool_id: tool.id.0,
                 model_id: spec.model_id,
@@ -710,8 +752,30 @@ impl ProjectSession {
 /// A free function rather than a method because it reads nothing from the
 /// session — the tier's cusp radius and the spec are the whole input, which
 /// is what lets a UI pre-fill show the same numbers the plan will emit.
-fn plan_tier_operation(cusp_radius_mm: f64, spec: &MultitoolPlanSpec) -> OperationConfig {
+fn plan_tier_operation(
+    cusp_radius_mm: f64,
+    spec: &MultitoolPlanSpec,
+    strategy: TierStrategy,
+) -> OperationConfig {
     let stepover = equal_cusp_stepover_mm(cusp_radius_mm, spec.cusp_height_mm);
+    match strategy {
+        TierStrategy::Scallop | TierStrategy::IsoScallop => {
+            let defaults = crate::compute::operation_configs::ScallopConfig::default();
+            return OperationConfig::Scallop(crate::compute::operation_configs::ScallopConfig {
+                // Equal cusp across tiers, same as the unified arm below.
+                scallop_height: spec.cusp_height_mm,
+                // One continuous spiral is the measured win (S1: one entry
+                // plunge, metres of rapids instead of kilometres).
+                continuous: true,
+                slope_from: 0.0,
+                slope_to: 90.0,
+                stock_to_leave: 0.0,
+                iso_field: matches!(strategy, TierStrategy::IsoScallop),
+                ..defaults
+            });
+        }
+        TierStrategy::UnifiedFinish => {}
+    }
     let defaults = UnifiedFinishConfig::default();
     OperationConfig::UnifiedFinish(UnifiedFinishConfig {
         // Equal cusp across tiers — the seam blends two patterns of the same
@@ -760,16 +824,28 @@ fn plan_tier_operation(cusp_radius_mm: f64, spec: &MultitoolPlanSpec) -> Operati
 /// Re-apply the planner-owned geometry dials after the Suggest funnel has
 /// rewritten the operation. See [`ProjectSession::suggest_feeds_for`].
 fn restore_planned_geometry(operation: &mut OperationConfig, planned: &OperationConfig) {
-    if let (OperationConfig::UnifiedFinish(out), OperationConfig::UnifiedFinish(want)) =
-        (&mut *operation, planned)
-    {
-        out.scallop_height = want.scallop_height;
-        out.raster_stepover = want.raster_stepover;
-        out.stock_to_leave = want.stock_to_leave;
-        // C2: the Suggest funnel rebuilds the whole operation from the
-        // config type's defaults, so a planner-set `true` would be silently
-        // clobbered back to `false` without this line.
-        out.monotone_cell_decomposition = want.monotone_cell_decomposition;
+    match (&mut *operation, planned) {
+        (OperationConfig::UnifiedFinish(out), OperationConfig::UnifiedFinish(want)) => {
+            out.scallop_height = want.scallop_height;
+            out.raster_stepover = want.raster_stepover;
+            out.stock_to_leave = want.stock_to_leave;
+            // C2: the Suggest funnel rebuilds the whole operation from the
+            // config type's defaults, so a planner-set `true` would be
+            // silently clobbered back to `false` without this line.
+            out.monotone_cell_decomposition = want.monotone_cell_decomposition;
+        }
+        (OperationConfig::Scallop(out), OperationConfig::Scallop(want)) => {
+            // The same clobber class for a scallop tier: the funnel
+            // rebuilds from type defaults, which would drop the planner's
+            // cusp target, the continuous spiral and the iso-field choice.
+            out.scallop_height = want.scallop_height;
+            out.stock_to_leave = want.stock_to_leave;
+            out.continuous = want.continuous;
+            out.iso_field = want.iso_field;
+            out.slope_from = want.slope_from;
+            out.slope_to = want.slope_to;
+        }
+        _ => {}
     }
 }
 
@@ -1151,12 +1227,41 @@ mod tests {
     #[test]
     fn the_planner_sizes_z_step_by_the_equal_cusp_law() {
         let spec = MultitoolPlanSpec::default();
-        let op = plan_tier_operation(2.0, &spec);
+        let op = plan_tier_operation(2.0, &spec, TierStrategy::UnifiedFinish);
         let OperationConfig::UnifiedFinish(cfg) = op else {
             panic!("planner emits unified_finish");
         };
         let expected = equal_cusp_stepover_mm(2.0, spec.cusp_height_mm);
         assert!((cfg.z_step - expected).abs() < 1e-12);
         assert!((cfg.raster_stepover - expected).abs() < 1e-12);
+    }
+
+    /// The operator's separation (2026-09-03): a tier strategy changes the
+    /// OPERATION, never the territory. A scallop tier carries the planner's
+    /// cusp target, the continuous spiral, and the iso choice; a missing
+    /// strategy entry is the historical unified planner.
+    #[test]
+    fn tier_strategy_picks_the_operation_and_keeps_the_planner_dials() {
+        let spec = MultitoolPlanSpec::default();
+        let op = plan_tier_operation(2.0, &spec, TierStrategy::IsoScallop);
+        let OperationConfig::Scallop(cfg) = op else {
+            panic!("iso strategy emits a scallop op");
+        };
+        assert!((cfg.scallop_height - spec.cusp_height_mm).abs() < 1e-12);
+        assert!(cfg.continuous, "planner scallop tiers are one spiral");
+        assert!(cfg.iso_field, "iso strategy sets the iso_field dial");
+        assert!((cfg.stock_to_leave).abs() < 1e-12);
+
+        let op = plan_tier_operation(2.0, &spec, TierStrategy::Scallop);
+        let OperationConfig::Scallop(cfg) = op else {
+            panic!("scallop strategy emits a scallop op");
+        };
+        assert!(!cfg.iso_field, "plain scallop keeps the cascade");
+
+        // Absent entries default to unified — byte-identical legacy plans.
+        assert_eq!(
+            spec.tier_strategies.first().copied().unwrap_or_default(),
+            TierStrategy::UnifiedFinish
+        );
     }
 }
