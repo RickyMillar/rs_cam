@@ -1275,3 +1275,16 @@ the G83/18a0a79e class resurfacing for milling on tall stock — the
 wanaka200 test board was too shallow to show it. A/B pending (dressup
 off → expect 0); pre-existing exposure: every op with the reorder
 dressup on tall or terraced stock.
+
+### OOM kill during the production-board fixpoint (2026-09-03 18:02, journal-confirmed)
+
+`generate_all` at 0.25 mm on the 240×250×25 production board OOM-killed
+the GUI (systemd oom-kill on its tmux scope; 54 GB machine, ~14 GB held
+by two rust-analyzer instances). Cost drivers, in order: one FULL
+checkpoint stock per toolpath (9 ops × ~1M dexel columns at 0.25 mm),
+the fixpoint running multiple sims, and the R0.5 iso tier's 0.125 mm
+generation field (cusp-quarter on a 240×250 board ≈ 3.8M cells).
+Product finding (not yet ticketed): checkpoint memory scales
+op-count × columns with no cap or spill; a big board at fine sim
+resolution is a foreseeable OOM. Retry recipe: 0.35 mm sims, disable
+ops not under test, fewer live checkpoints.
