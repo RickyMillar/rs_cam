@@ -47,7 +47,9 @@ fn wanaka_lift_probe_g3() {
     // character map of tip-above-line so an index-aligned stripe is
     // visible at a glance.
     for (cx, cy) in [(4.8_f64, 196.5_f64), (131.3, 197.4)] {
-        eprintln!("map around ({cx},{cy}) — 0.1 mm grid, '#'=deficit>0.3, 'o'=0.1..0.3, '.'=normal:");
+        eprintln!(
+            "map around ({cx},{cy}) — 0.1 mm grid, '#'=deficit>0.3, 'o'=0.1..0.3, '.'=normal:"
+        );
         for row in 0..17 {
             let y = cy + 0.8 - row as f64 * 0.1;
             let mut line = String::new();
