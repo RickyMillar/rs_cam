@@ -1261,3 +1261,17 @@ core query (innocent).
 check: view the MODEL (not the stock) in the same viewport region —
 if the speckling is in the model, the toolpath is exonerated end to
 end.
+
+### G-TSPMILLCEILING candidate (2026-09-03, production board) — the rapid reorder has no ceiling on MILLING ops
+
+First run of the tier-strategy plan on the operator's production board
+(240×250×25 stock): 22 rapid-collision safety criticals — 7 on the
+operator's Back Rough, 15 on "Finish tier 0 iso (R1.5)", the iso ones
+LATERAL rapids at ring heights (z 20–26, one at 0.125 mm above stock
+top). Code reading: `compute::execute::internal_link_ceiling_z` gives
+`optimize_rapid_order` a ceiling ONLY for drill cycles
+(`toolpath_is_drill_cycle`); every milling op passes `None`. This is
+the G83/18a0a79e class resurfacing for milling on tall stock — the
+wanaka200 test board was too shallow to show it. A/B pending (dressup
+off → expect 0); pre-existing exposure: every op with the reorder
+dressup on tall or terraced stock.
