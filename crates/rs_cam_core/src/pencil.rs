@@ -1055,7 +1055,14 @@ pub const ENTRY_RAMP_MAX_BITE_MM: f64 = 0.50;
 /// (a plunge is the 90 degree case). Vertical moves in the entry — only the
 /// air descent down to the stock ceiling survives as one — still use
 /// `params.plunge_rate`.
-pub const ENTRY_RAMP_MAX_ANGLE_DEG: f64 = 8.0;
+///
+/// 2026-09-06: raised 8 -> 12 degrees. On a realistic (post-finish) pencil the
+/// entry ramps are ~90% of the pass; a steeper cap shortens each lap
+/// (`window = budget / (2·tan θ)`) without touching the per-lap bite budget, so
+/// the lap COUNT and the anti-gouge guarantee (G-ENTRYLOAD) are unchanged and
+/// only the wasted travel drops. 12 degrees is the operator-set cap for the
+/// R1.0 tapered ball in white oak — conservative for a small ball tip.
+pub const ENTRY_RAMP_MAX_ANGLE_DEG: f64 = 12.0;
 /// Shortest window (mm of path) worth ramping over. Below this the run is
 /// treated as too short to enter along and the legacy descent is kept.
 pub const ENTRY_RAMP_MIN_WINDOW_MM: f64 = 0.5;
