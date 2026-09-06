@@ -19,7 +19,7 @@ use crate::compute::config::effective_safe_z;
 use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use crate::geo::{BoundingBox3, P3};
 
-use super::{ProjectSession, SetupData};
+use super::{ProjectSession, SetupData, ZDatum};
 
 /// Single source of truth for a (session, setup) tuple's stock-frame
 /// and transform decisions.
@@ -85,6 +85,12 @@ pub struct SetupEvalContext {
     /// `setup_z_flipped` flag, AS-style cut-direction selection).
     pub face_up: FaceUp,
     pub z_rotation: ZRotation,
+
+    /// How this setup establishes program Z zero. Consumed only by
+    /// [`Self::export_datum_shift`] to place the emitted Z0.
+    /// `ZDatum::StockTop` (the default) shifts the emitted stock top to
+    /// Z0; every other method leaves Z unshifted (see the shift method).
+    pub z_datum: ZDatum,
 }
 
 impl SetupEvalContext {
@@ -118,6 +124,11 @@ impl SetupEvalContext {
             safe_z,
             face_up,
             z_rotation,
+            // `build` has no `SetupData`, so it cannot read a per-setup
+            // datum. `StockTop` is the type default and the historic
+            // export behaviour on a correctly-configured stock (top at
+            // Z0). `build_for_setup` overrides this from the setup.
+            z_datum: ZDatum::default(),
         }
     }
 
@@ -131,7 +142,9 @@ impl SetupEvalContext {
     ) -> SetupEvalContext {
         let face_up = setup.map(|s| s.face_up).unwrap_or_default();
         let z_rotation = setup.map(|s| s.z_rotation).unwrap_or_default();
-        Self::build(session, face_up, z_rotation)
+        let mut ctx = Self::build(session, face_up, z_rotation);
+        ctx.z_datum = setup.map(|s| s.datum.z_method.clone()).unwrap_or_default();
+        ctx
     }
 
     /// `true` when the setup applies a non-identity face_up / z_rotation
@@ -170,20 +183,40 @@ impl SetupEvalContext {
     /// physically registers the flip), and it names a datum the operator
     /// can actually find: the stock's own corner.
     ///
-    /// **Z is deliberately NOT shifted.** See the module note on
-    /// `gcode::export_datum_shift_for_toolpath`.
+    /// **Z follows `self.z_datum`.** The `StockTop` default puts program
+    /// Z0 at the emitted-frame stock top (`heights_stock_bbox.max.z` — the
+    /// stock top in the same frame the toolpath emits in, world for an
+    /// identity setup, local for a flipped one). On a stock that already
+    /// follows the 2D `origin_z` convention (top at world Z0) this is a
+    /// zero shift, so those projects stay byte-identical; a 3D job whose
+    /// stock top sits above world Z0 (e.g. terrain at +7) now zeroes to
+    /// the top instead of to the model origin. A flipped setup zeroes to
+    /// its presented (now up-facing) surface, `local_stock_bbox.max.z`.
+    /// `MachineTable`, `FixedOffset` and `Manual` do NOT auto-shift Z; see
+    /// the module note on `gcode::export_datum_shift_for_toolpath`.
     pub fn export_datum_shift(&self) -> P3 {
-        if self.local_to_global.is_some() {
-            // Non-identity: the toolpath is already stock-relative.
-            P3::new(0.0, 0.0, 0.0)
+        // XY: stock-relative in every setup. Non-identity setups already
+        // emit stock-relative (their frame's first step is -stock_origin);
+        // identity setups translate world → stock-relative.
+        let (dx, dy) = if self.local_to_global.is_some() {
+            (0.0, 0.0)
         } else {
-            // Identity: world → stock-relative is a pure XY translation.
-            P3::new(
-                -self.world_stock_bbox.min.x,
-                -self.world_stock_bbox.min.y,
-                0.0,
-            )
-        }
+            (-self.world_stock_bbox.min.x, -self.world_stock_bbox.min.y)
+        };
+        let dz = match self.z_datum {
+            // Put the emitted-frame stock top at program Z0.
+            ZDatum::StockTop => -self.heights_stock_bbox.max.z,
+            // MachineTable / FixedOffset would RAISE the emitted frame
+            // relative to the stock top, so fixed positive Z literals the
+            // emitter writes but does NOT shift — the post `safe_z`
+            // retract, the postamble Z, the dry-run clamp — would land
+            // inside the stock (the SAFEZ-LOCAL class). They are not
+            // auto-applied here; the export header names the declared
+            // datum and the operator zeroes to it. `Manual` is operator-set
+            // by definition. All three shift Z by zero.
+            ZDatum::MachineTable | ZDatum::FixedOffset(_) | ZDatum::Manual => 0.0,
+        };
+        P3::new(dx, dy, dz)
     }
 
     /// The simulator's per-setup local bbox slot. F-024 requires `None`

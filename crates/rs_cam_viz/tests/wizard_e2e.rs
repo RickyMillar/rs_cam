@@ -754,11 +754,20 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
          shift must be a no-op for them:\n{bottom_gcode}"
     );
 
-    // Z is deliberately NOT shifted (see
-    // `rs_cam_core::gcode::export_datum_shift_for_toolpath`): the stub's
-    // cutting Z of -1 must survive in both files.
+    // Z now follows each setup's StockTop datum (2026-09-07,
+    // `export_datum_shift_for_toolpath`). The identity setup's stock top is
+    // at world Z0 (origin_z = -z), so its cutting Z of -1 survives
+    // unshifted. The flipped setup zeroes to its presented up-facing
+    // surface (local stock top = 12), so every Z drops by 12 and the -1 cut
+    // becomes Z-13.000 — previously it emitted an implicit spoilboard datum.
     assert!(
-        top_gcode.contains("Z-1.000") && bottom_gcode.contains("Z-1.000"),
-        "Z must not be shifted by the export datum correction"
+        top_gcode.contains("Z-1.000"),
+        "identity setup's stock top is at world Z0, so its cut Z-1 is \
+         unshifted:\n{top_gcode}"
+    );
+    assert!(
+        bottom_gcode.contains("Z-13.000") && !bottom_gcode.contains("Z-1.000"),
+        "flipped setup's StockTop datum zeroes to its presented top (local \
+         stock top = 12), so its cut Z-1 shifts to Z-13.000:\n{bottom_gcode}"
     );
 }

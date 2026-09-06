@@ -3,33 +3,65 @@
 Captured before compaction. Context for the plywood test run of wanaka200 and
 the datum-location fixes the operator wants.
 
-## PRIORITY FIX — the work datum belongs in SETUP, not export
+## PRIORITY FIX — export must CONSUME the setup datum (IMPLEMENTED, 2026-09-07)
 
 **Operator ruling:** the work origin / datum (where the machine is zeroed) is a
-property of the SETUP (the physical placement of the board on the bed), NOT an
-export-time choice. Today it lives in Export Wizard step 3 "Coordinate & units"
-and is invisible everywhere else.
+property of the SETUP, NOT an export-time choice.
 
-- **Move the datum into the setup model + UI.** A setup already carries
-  `face_up` and `z_rotation` (the physical orientation); add the **work-zero**:
-  - **Z-zero reference**: stock top (default) / model origin / stock bottom.
-  - **XY origin**: stock min corner (default) / stock centre / model origin.
-  Surface it in the Setup panel next to face/rotation, and show the resulting
-  datum in the viewport (an origin gizmo at the chosen zero).
-- **Export CONSUMES the setup datum** — the wizard's step 3 becomes a read-only
-  echo (or an override), not the source of truth. This makes single-file and
-  split exports agree by construction.
-- **Why it matters here:** the single-file export datums at MODEL origin; the
-  split export datums at the STOCK surface. They disagree because there is no
-  single setup-owned datum. That divergence is the root cause of the whole
-  datum confusion below.
+**Correction to the premise (found during implementation):** the datum ALREADY
+lives in the setup and always did. `SetupData.datum` carries `XYDatum`
+(`CornerProbe(Corner)` / `CenterOfStock` / `AlignmentPins` / `Manual`) and
+`ZDatum` (`StockTop` / `MachineTable` / `FixedOffset(f64)` / `Manual`), it is
+edited in the Setup Properties panel next to face/rotation
+(`crates/rs_cam_viz/src/ui/properties/setup.rs`), and it round-trips through
+project IO (`tests/setup_datum_round_trip_p2.rs`). Export Wizard step 3 holds
+WCS (G54..G59) + units + safe-Z, NOT the datum — there was nothing to demote.
+
+**The real gap:** export never CONSUMED `setup.datum`. `export_datum_shift`
+hardcoded XY = stock-min-corner and **Z = 0 (world frame)**, ignoring the
+setup's `z_method`. So a 3D job whose stock top sits above world Z0 (wanaka
+terrain at +7) emitted Z0 at the MODEL origin, 7 mm below the stock top — the
+operator's "the z should be stock top!" and the reason the .nc needed Z-surgery.
+
+**What landed (Phase 1):**
+- `SetupEvalContext` gained a `z_datum` field (from `setup.datum.z_method`);
+  `export_datum_shift` now sets Z from it. `ZDatum::StockTop` (the default)
+  puts the emitted-frame stock top at program Z0 (`-heights_stock_bbox.max.z`).
+  On a 2D stock already at world Z0 the shift is 0 → byte-identical. A flipped
+  setup zeroes to its presented up-facing surface (`-stock_h`) instead of the
+  old implicit spoilboard datum.
+- **XY is unchanged** (stock-min-corner = the default `CornerProbe(FrontLeft)`),
+  deferred deliberately: XY is never re-zeroed between setups, so a per-setup XY
+  datum would reintroduce the G-EXPORT-DATUM two-datum defect. XY needs a
+  cross-setup consistency guard before `CenterOfStock`/other corners can ship.
+- **`MachineTable` / `FixedOffset` do NOT auto-shift Z yet.** They RAISE the
+  frame, which would drive the emitter's fixed positive Z literals (post
+  `safe_z` retract, postamble Z, dry-run clamp) INTO the stock (the SAFEZ-LOCAL
+  class). `StockTop` only LOWERS the frame, so it is safe. Wiring the raising
+  methods needs every non-toolpath Z emission audited first. The export header
+  states the declared datum for these; the operator zeroes to it.
+- **MCP export inherits it for free** (`io/export.rs` routes through the same
+  `export_datum_shift_for_toolpath`), so secondary fix #1 below is DISSOLVED:
+  no MCP datum parameter is needed; the datum comes from the setup.
+- Files: `crates/rs_cam_core/src/session/eval_context.rs`,
+  `crates/rs_cam_core/src/gcode/mod.rs` (module note),
+  `crates/rs_cam_viz/src/app/mcp.rs` (split-export header wording). Sentries:
+  `tests/export_datum_setup_frame.rs` (rewrote the Z arm + added a 3D-stock arm)
+  and `wizard_e2e.rs`. Verified: targeted core + viz export tests green; full
+  gate pending.
+
+**Still open (follow-ups, NOT in Phase 1):**
+- The Setup panel's datum controls exist but there is no viewport origin gizmo;
+  add one showing the chosen zero.
+- XY: consume `xy_method` with a cross-setup consistency guard (warn/refuse when
+  enabled setups resolve different XY zeros).
+- Audit every non-toolpath Z literal, then wire `MachineTable` / `FixedOffset`.
 
 ## SECONDARY FIXES (found this session)
 
-1. **MCP `export_gcode` must expose the datum** (Z-zero + XY origin), or read it
-   from the setup once the priority fix lands. Right now MCP export has no
-   coordinate control, so every agent/automation export silently uses
-   model-origin.
+1. **MCP `export_gcode` datum — DISSOLVED by the priority fix.** MCP export now
+   inherits the setup's datum through the shared shift helper; no coordinate
+   parameter is needed. (Was: "MCP export silently uses model-origin.")
 2. **`split_setups` bugs:** (a) it FAILS when a setup has no enabled/computed
    toolpaths — a front-only run of a two-setup project can't get the stock
    datum. (b) it is IGNORED for single-setup projects, so you cannot force the

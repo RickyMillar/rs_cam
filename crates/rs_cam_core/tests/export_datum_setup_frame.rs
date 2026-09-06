@@ -33,12 +33,15 @@
 //! in XY at emit time. The stored toolpath is untouched, so the simulator,
 //! viewport, screenshots and metrics are unaffected.
 //!
-//! **Z is deliberately not shifted** — see the module note on
-//! `gcode::export_datum_shift_for_toolpath`. Shifting it would move program
-//! Z0 to the stock's underside for every identity setup, breaking the
-//! repo's 2D convention (`StockConfig::update_from_bbox` puts the stock TOP
-//! at Z0 for 2D models so 2D ops cut at negative Z), and Z — unlike XY — is
-//! explicitly re-zeroed between setups.
+//! **Z follows the setup's `datum.z_method`** (2026-09-07) — see the module
+//! note on `gcode::export_datum_shift_for_toolpath`. The `StockTop` default
+//! shifts the emitted-frame stock top to program Z0. This fixture's stock
+//! top already sits at world Z0 (`ORIGIN_Z = -STOCK_Z`, the 2D convention),
+//! so the identity setup's Z shift is 0 and its G-code is unchanged; the
+//! flipped setup zeroes to its presented up-facing surface, a
+//! `-STOCK_Z` shift. A separate test uses a stock top above world Z0 to pin
+//! the non-zero identity case. Z — unlike XY — is re-zeroed between setups,
+//! so a per-setup Z datum is safe.
 //!
 //! ## Fixture
 //!
@@ -356,12 +359,15 @@ fn identity_and_flipped_setups_agree_on_one_physical_feature() {
     );
 }
 
-/// The shift itself: XY only, and only for identity setups. This pins the
-/// Z decision — a Z component here would move program Z0 to the stock's
-/// underside for every identity setup and break the 2D `origin_z = -z`
-/// convention (`StockConfig::update_from_bbox`).
+/// The shift itself. XY is stock-relative (identity `-stock_bbox.min`,
+/// non-identity zero). Z follows `ZDatum::StockTop`: the emitted-frame
+/// stock top → Z0. This fixture's world stock top is at Z0
+/// (`ORIGIN_Z = -STOCK_Z`), so the identity Z shift is 0 *because the top
+/// is already there*, not because Z is never shifted; the flipped setup's
+/// presented top is at `local_stock_bbox.max.z = STOCK_Z`, a `-STOCK_Z`
+/// shift.
 #[test]
-fn export_datum_shift_is_xy_only_and_identity_only() {
+fn export_datum_shift_is_stock_relative_xy_and_stock_top_z() {
     let session = build_two_setup_session();
 
     let identity = rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, 0);
@@ -371,18 +377,25 @@ fn export_datum_shift_is_xy_only_and_identity_only() {
     );
     assert!(
         identity.z.abs() < 1e-9,
-        "Z is deliberately NOT shifted (see gcode::export_datum_shift_for_toolpath): \
-         shifting it would move program Z0 to the stock underside for every \
-         identity setup and break the 2D stock-top-at-Z0 convention; got \
-         z = {}",
+        "StockTop Z shift is 0 here because this fixture's world stock top is \
+         already at Z0 (ORIGIN_Z = -STOCK_Z, the 2D convention); got z = {}",
         identity.z
     );
 
     let flipped = rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, 1);
     assert!(
-        flipped.x.abs() < 1e-9 && flipped.y.abs() < 1e-9 && flipped.z.abs() < 1e-9,
-        "non-identity setups already emit stock-relative — shift must be zero; \
+        flipped.x.abs() < 1e-9 && flipped.y.abs() < 1e-9,
+        "non-identity setups already emit stock-relative — XY shift must be zero; \
          got {flipped:?}"
+    );
+    assert!(
+        (flipped.z - (-STOCK_Z)).abs() < 1e-9,
+        "a flipped setup's StockTop datum zeroes to its presented up-facing \
+         surface, local_stock_bbox.max.z = STOCK_Z, so the Z shift is -STOCK_Z \
+         ({}); pre-2026-09-07 the flipped setup emitted an implicit spoilboard \
+         (table) Z datum with a zero shift. got z = {}",
+        -STOCK_Z,
+        flipped.z
     );
 }
 
@@ -413,5 +426,54 @@ fn zero_origin_stock_is_unchanged() {
         shift.x == 0.0 && shift.y == 0.0 && shift.z == 0.0,
         "zero-origin stock must produce a zero shift (no emitted-G-code change \
          for the common case); got {shift:?}"
+    );
+}
+
+/// The 3D case the operator hit: a stock whose top sits ABOVE world Z0 (a
+/// terrain STL zeroed at sea level, 7 mm below its peak). The `StockTop`
+/// default must zero program Z0 to the stock top — a non-zero shift, and
+/// the exact defect that forced hand-editing the .nc. `Manual` must NOT
+/// shift Z, so the operator keeps their hand-set zero.
+#[test]
+fn stock_top_above_world_zero_shifts_z_to_the_top() {
+    use rs_cam_core::session::ZDatum;
+
+    // Stock top at world +7 (z = 25 over origin_z = -18), like wanaka200.
+    const TOP_Z: f64 = 7.0;
+    let build = |z_method: ZDatum| -> rs_cam_core::geo::P3 {
+        let mut session = ProjectSession::new_empty();
+        session.set_stock_config(StockConfig {
+            x: STOCK_X,
+            y: STOCK_Y,
+            z: 25.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            origin_z: TOP_Z - 25.0,
+            auto_from_model: false,
+            ..StockConfig::default()
+        });
+        let tool_idx = session.add_tool(make_endmill_6mm());
+        let tool_id = session.tools()[tool_idx].id.0;
+        let model_id = session.add_model(polygon_model(vec![square_model_polygon()], "square30"));
+        session
+            .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
+            .expect("add identity-setup trace");
+        session.setups_mut()[0].datum.z_method = z_method;
+        rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, 0)
+    };
+
+    let stock_top = build(ZDatum::StockTop);
+    assert!(
+        (stock_top.z - (-TOP_Z)).abs() < 1e-9,
+        "StockTop must zero program Z0 to the stock top: expected z = {}, got {}",
+        -TOP_Z,
+        stock_top.z
+    );
+
+    let manual = build(ZDatum::Manual);
+    assert!(
+        manual.z.abs() < 1e-9,
+        "Manual Z datum must NOT shift Z (operator sets it by hand); got z = {}",
+        manual.z
     );
 }

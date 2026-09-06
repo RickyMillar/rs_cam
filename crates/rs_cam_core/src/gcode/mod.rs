@@ -229,34 +229,46 @@ fn prepend_t_collision_warnings<'a>(
 // same vector inside `compute::simulate`; the two never compose because
 // neither writes back to the toolpath.)
 //
-// ── Why Z is NOT shifted ────────────────────────────────────────────
+// ── The Z datum (2026-09-07) ────────────────────────────────────────
 //
-// The shift is XY-only, deliberately:
+// Z follows the setup's own `datum.z_method` (`SetupEvalContext::z_datum`),
+// where XY is fixed stock-relative. The two axes are unlike:
 //
 //  * XY is never re-zeroed between setups — the operator flips the part
 //    against the same pins and keeps the same XY zero. A disagreement in
-//    XY is therefore silent and fatal. Z *is* explicitly re-zeroed between
-//    setups (the split-export header says so), so a per-file Z datum is
-//    an instruction problem, not a registration problem. The fix for Z is
-//    to NAME the datum in the header, which the split export now does.
-//  * Shifting Z would move program Z0 to the stock's UNDERSIDE for every
-//    identity setup. That breaks the repo's documented 2D convention —
-//    `StockConfig::update_from_bbox` sets `origin_z = bbox.min.z - z` for
-//    2D models precisely so the stock TOP sits at Z0 and 2D ops cut at
-//    negative Z. Every 2D project would move from "zero to the top of the
-//    stock" (self-correcting for actual stock thickness, and the near
-//    universal router convention) to "zero to the spoilboard" (every cut
-//    depth then carries the nominal-vs-actual thickness error).
-//  * It buys nothing physical. The retract plane is already derived from
-//    the LOCAL stock top (F-024, `SetupEvalContext::safe_z`), so a Z shift
-//    would re-express the same physical height with a bigger number, not
-//    change any motion.
+//    XY is therefore silent and fatal, which is why XY is forced to one
+//    stock-relative frame for every setup.
+//  * Z *is* re-zeroed between setups, so a per-setup Z datum is safe. The
+//    operator ruled that the datum belongs to the setup, not the export:
+//    the default `ZDatum::StockTop` now shifts program Z0 to the emitted
+//    stock top. On a 2D stock that already follows the `origin_z`
+//    convention (top at world Z0, set by `StockConfig::update_from_bbox`)
+//    the shift is zero, so those projects stay byte-identical and keep
+//    "zero to the top of the stock". A 3D job whose stock top sits above
+//    world Z0 (terrain at +7) previously emitted Z0 at the MODEL origin —
+//    7 mm below the stock top — and only a header comment said so; it now
+//    emits Z0 AT the stock top. A flipped setup, which used to emit an
+//    implicit spoilboard (table) Z datum, now zeroes to its presented
+//    up-facing surface.
+//  * The shift changes no motion. The retract plane is derived from the
+//    emitted-frame stock top (F-024 / G-SAFEZ-LOCAL, `SetupEvalContext::
+//    safe_z`) and rides in the toolpath, so a uniform Z translation
+//    re-expresses every height against the new zero and preserves every
+//    clearance. `StockTop` always LOWERS the frame, so the fixed positive
+//    Z literals the emitter writes but does not shift (post `safe_z`,
+//    postamble Z) end up farther above the stock — never inside it.
+//
+// `MachineTable` / `FixedOffset` would RAISE the frame and are therefore
+// NOT auto-applied yet (they would drive those fixed literals into the
+// stock); the header names the declared datum instead.
 
 /// Translation from the frame `toolpath_index`'s toolpath was generated
-/// in to the shared export datum. See the module note above; XY only,
-/// zero for non-identity setups, `-stock_bbox.min` in XY for identity
-/// setups. A toolpath that belongs to no setup is treated as identity
-/// (that is the frame the generator used for it).
+/// in to the shared export datum. See the module note above: XY is
+/// stock-relative (zero for non-identity setups, `-stock_bbox.min` for
+/// identity ones); Z follows the setup's `datum.z_method` (`StockTop`
+/// puts the emitted stock top at Z0). A toolpath that belongs to no setup
+/// is treated as identity with the `StockTop` default (the frame the
+/// generator used for it).
 pub fn export_datum_shift_for_toolpath(
     session: &ProjectSession,
     toolpath_index: usize,
