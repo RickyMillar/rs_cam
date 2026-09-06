@@ -400,6 +400,38 @@ fragmented.
 already in this project), or a coarser finish that deliberately leaves valley
 stock for the pencil — NOT rest-cleanup on an already-finished surface.
 
+## "DEFINE, DON'T FINISH" VALIDATED — rough + projected rivers (2026-09-07)
+
+Operator strategy: skip the full-surface finish; give definition by carving the
+creases. Built a front `project_curve` op (V-bit id 5) that projects
+`rivers_aligned.dxf` (model 1, 5,191 mm of connected river lines) onto the
+terrain (surface 0), `from_above`, depth 0.3, chain_distance 15, on
+rough-only remaining stock. Scallop + pencil disabled. Fixture:
+`scratchpad/wanaka_front_rivers.toml`.
+
+| pipeline | total | entry share (definition op) | collisions |
+|---|---|---|---|
+| rough + scallop + pencil | 279 min | pencil 86% | 0 |
+| **rough + rivers** | **52 min (5.4×)** | **rivers 4.5%** | **0** |
+
+Front Rivers op: 4,663 moves, cutting_s 157 (30%), entry_s 23.6 (**4.5%**),
+linking 123, rapid 218; total 8.7 min. **Connected geometry solves the entry
+problem** — the pencil's 86% entry becomes 4.5% because 5.2 m of linked river
+lines is a handful of long cuts, not thousands of dabs. Advisor's hazard
+(project_curve terrain-blind on rough stock) did NOT bite: 0 rapid collisions,
+no entry_load flag on tp 20.
+
+Render `scratchpad/rough_plus_rivers_stock.png`: dendritic river network cut as
+channels through roughed terrain; flats left rough-textured. That last point is
+the OPERATOR'S look decision (rough flats acceptable? add a light finish only on
+non-valley areas? V-bit vs R1.0 ball for the channel? deepen past 0.3?).
+
+**Session outcome:** the pencil "not worth it" is correct on well-finished
+parts (scattered sub-tool remnants). The real win is a workflow change —
+rough + connected valley definition instead of full finish + scattered cleanup.
+5.4× on this fixture. Lever A (12° entry ramp) committed on branch
+`pencil-entry-ramp-12deg` (52c2d054) as an independent correct improvement.
+
 ## Files
 
 - `crates/rs_cam_core/src/pencil.rs` — `emit_paths_with_entry_stock`
