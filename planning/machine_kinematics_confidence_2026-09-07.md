@@ -471,3 +471,27 @@ S20 reproduce to the millisecond on reload). Three more ledger items:
   autocontrast were used and captioned honestly; a surfacing gap.
 - Flat-tool arms, the modulated Arm G rerun and the plunge before/after
   reruns wait for the G-DCFLAT rebuild + MCP reset.
+
+Review corrections to the deep-DOC doc (rs-cam-38, committed with this
+note): the pass rule's baseline is the WHOLE job (rough + finish), never the
+rough alone; ball arms' air readings carry the degraded-measurability flag
+(blind fraction B15 0.14, S20 0.10, B10 0.20); deflection confidence is
+`validated` on flat arms and `approximate` on every ball arm; ×D bite uses
+6.0 (flat) and 3.0 (tapered-ball tip); absolute air seconds are approximate
+where arms did not share one commanded base feed; A-ply 43.8 % and C2-ply
+42.9 % are over the 40 % roughing bar. The 4.35× headline was
+CROSS-MATERIAL (plywood single pass vs the oak pair) — the same-material
+plywood pair is being measured.
+
+**F-LUT2 / G-SUGGESTGATE (ledger, mechanism NOT yet verified in code):** on
+every R1.5 drop_cutter arm `apply_feeds` wrote F776 @ 18 500 = 0.0210
+mm/tooth and reported it "clamped to the matched band ceiling", while the
+post-sim gate's band on the same tool/material read 0.0079–0.0145; the
+modulator then cut the feed by a median 31 % to land on 0.0145. Ratio
+1.45×. Likely: drop_cutter gives Suggest no axial hint (INTEGRATION.md
+"none"), so Suggest derates at a default DOC while the gate derates at the
+measured ~9 mm bite. Un-modulated, these arms would have run 45 % over the
+gate's ceiling on Suggest's own numbers. Same class as the
+probe-the-same-code-path lesson: Suggest (recipe resolver) and the gate
+(envelope resolver) must quote one band. Follow-up: verify in code, then
+give drop_cutter an axial hint or make Suggest derate on the planned DOC.

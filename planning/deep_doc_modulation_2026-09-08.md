@@ -161,8 +161,9 @@ faked with stepover.
 
 Fixture copy: `planning/deep_doc_modulation_2026-09-08/wanaka200_plywood.toml`
 (material Baltic Birch, everything else as the original). Every arm: fresh
-`load_project` of that copy, all fixture toolpaths disabled, ONE new
-toolpath on the front setup, `apply_feeds(scope = speeds)` so the feed,
+`load_project` of that copy, all fixture toolpaths disabled, ONE toolpath
+on the front setup (a new one for the ball and flat arms; the fixture's
+index 5 re-enabled for A-ply, C2-ply and E-ply), `apply_feeds(scope = speeds)` so the feed,
 plunge and RPM come from the plywood band, `generate_all` (0.2 mm),
 `run_simulation(0.2)`. Modulation ON (session default: `ConstrainedMax`,
 aggressiveness 1.0). Each arm is the WHOLE job on fresh stock unless the row
@@ -188,10 +189,30 @@ Time = `total_runtime_s` (modulated kinematic wall clock). Air seconds =
 G-AIRDENOM ruling: compare arms on absolute air seconds, because the two
 percentages have different time bases). "Achieved" is the time-weighted
 achieved feed after modulation; "cmd" is the operation's commanded feed.
+The arms did not share one commanded base feed (776 / 925 / 954 / 1 100
+mm/min after `apply_feeds`), so the absolute air seconds are approximate
+in the sense of the G-AIRDENOM ruling; the cutting distance and achieved
+feed are in the table for the cross-check. "Peak bite" is the axial depth
+removed at one column; the ×D figures use the ENGAGED diameter — 6.0 mm on
+the flat arms, and on the tapered balls the 3.0 mm tip (a 9 mm bite on a
+tapered ball engages the 6 mm shank, which is why deflection stays low).
+The BASELINE for the pass rule's "time materially below the adaptive
+baseline" is the WHOLE job on the front setup — an adaptive3d rough PLUS
+the R1.5 finish — never the rough alone; the rough-only rows (A-ply,
+C2-ply, E-ply) are references for the roughing lever, and the measured
+pairs are in §2.4.
+
+Two instrument notes on the winners: the `air_cut` and
+`radial_engagement` metrics carry a `degraded` measurability flag on the
+ball arms (`cell_too_coarse_for_tip_contact`; blind fraction B15 0.14, S20
+0.10, B10 0.20, B20 / SP15 / WL15 measurable), so the air bar is judged on
+a degraded metric for B15 and S20; and the deflection gate's confidence is
+`validated` on the flat arms but `approximate` on every ball arm ("slot
+engagement; climb/conventional split not modeled").
 
 | Arm | Op / tool / geometry | Time s | Air s (tot % / cut %) | Coll. | Chipload | Deflection mm | Peak bite mm | Achieved / cmd mm/min | Retracts | Cusp proxy | Verdict |
 |---|---|---:|---:|---|---|---:|---:|---:|---:|---|---|
-| A-ply | adaptive3d rough, 6 mm flat, s1.2, DPP 4.2 (2 levels) — ROUGH ONLY | 2 475 | 1 083 (43.8 / 38.1) | 0/0 | MODELED Within (pocket row, at max) | 0.008 | 4.20 (0.70 D) | 1 538 / 1 100 (+64 %) | 471 | leaves 0.5 axial for a finish | reference; plunge 7/588 at 2.1× (pre-fix) |
+| A-ply | adaptive3d rough, 6 mm flat, s1.2, DPP 4.2 (2 levels) — ROUGH ONLY | 2 475 | 1 083 (43.8 / 38.1) | 0/0 | MODELED Within (pocket row, at max) | 0.008 | 4.20 (0.70 D) | 1 538 / 1 100 (+64 %) | 471 | leaves 0.5 axial for a finish | reference; air 43.8 % is over the 40 % roughing bar; plunge 7/588 at 2.1× (pre-fix) |
 | S15 | iso-scallop R1.5 taper, h 0.38 (s≈2.0) | 8 001 | 6 481 (81.0 / 63.9) | 0/0 | MODELED Within (extrap. hardwood scallop 3175 row, at max) | 0.018 | 8.54 | 405 / 925 (−22 %) | 359 | 0.38 ball cusp | FAIL air 81 % > 45; plunge 3/706 at 3.6× (pre-fix) |
 | S20 | iso-scallop R2.0 taper, h 0.27 (s≈2.0) | **2 389** | 878 (36.8 / 35.3) | 0/0 | MODELED Within (hardwood scallop 6000 row, no extrap., at max) | 0.007 | 8.54 | 798 / 925 (−4 %) | 45 | 0.27 ball cusp | PASSES all bars except 1/109 plunge at 2.7× (pre-fix) — rerun |
 | B15 | drop_cutter raster R1.5 taper, s 1.5 | **3 274** | 321 (9.8 / 14.1) | 0/0 | MODELED Within (MDF parallel 3175 row, at max) | 0.019 | 9.61 | 538 / 776 (−31 %) | 2 | 0.20 ball cusp | **PASSES every bar**; no triage actions at all |
@@ -200,7 +221,7 @@ achieved feed after modulation; "cmd" is the operation's commanded feed.
 | RA06 | radial_finish R1.5 taper, 0.6° (1.5 mm at the rim) | 8 718 | 6 039 (69.3 / 57.5) | 0/0 | MODELED Within (MDF parallel row, at max) | 0.018 | 8.62 | 452 / 776 (−26 %) | 539 | 0.20 at rim, denser inward | FAIL air 69 %; plunge 178/536 at 3.0×; wrong pattern for a square part |
 | WL15 | waterline R1.5 taper, z_step 1.5 (heights pinned 7 / −3) | 18 368 | 7 081 (38.6 / 41.9) | 0/0 | **UNMODELED** no_vendor_data | 0.019 | 8.37 | 192 / 954 | 1 327 | 1.5 mm lateral at 45°, ridges taller than the ball on shallow slopes | FAIL: unmodeled gate, plunge 498/1480 at 3.7×, 13 700 s of the fed time is link motion at ~130 mm/min |
 | B20 | drop_cutter raster R1.5 taper, s 2.0 | 2 438 | 163 (6.7 / 9.8) | 0/0 | MODELED Within (MDF parallel row, at max) | 0.019 | 9.75 | 532 / 776 (−31 %) | 2 | 0.38 ball cusp | PASSES every bar; no triage actions |
-| C2-ply | adaptive3d rough, by_area, else as A-ply — ROUGH ONLY | 2 277 | 976 (42.9 / 36.4) | 0/0 | MODELED Within (pocket row, at max) | 0.008 | 4.20 (0.70 D) | 1 544 / 1 100 (+64 %) | 433 | leaves 0.5 axial | reference; ZERO over-limit plunges emitted |
+| C2-ply | adaptive3d rough, by_area, else as A-ply — ROUGH ONLY | 2 277 | 976 (42.9 / 36.4) | 0/0 | MODELED Within (pocket row, at max) | 0.008 | 4.20 (0.70 D) | 1 544 / 1 100 (+64 %) | 433 | leaves 0.5 axial | reference; air 42.9 % is over the 40 % roughing bar; ZERO over-limit plunges emitted |
 | E-ply | adaptive3d rough, DPP 5.46 = ONE Z level, else as A-ply — ROUGH ONLY | 1 632 | 729 (44.7 / 35.7) | 0/0 | MODELED Within (pocket row, at max) | 0.010 | 5.46 (0.91 D) | 1 604 / 1 100 (+64 %) | 223 | leaves 0.5 axial | the deep-DOC adaptive control: −34 % vs A-ply; air 44.7 % is over the 40 % roughing bar; plunge 1/270 (pre-fix) |
 
 Reference pairs from the oak fixture (2026-09-07 and §1.3): A rough + R1.5
@@ -341,6 +362,22 @@ was regulating: the CHIPLOAD band, not deflection or power, which were
 never close. Peak bites of 8.5–9.8 mm (up to 3.2 × the 3 mm tip diameter)
 went through at 0.019 mm deflection because the engaged diameter on a
 tapered ball at that depth is the shank.
+
+One more thing the data shows, and it is the premise proving itself
+against Suggest's own recipe: **Suggest and the gate quoted different
+chipload ceilings on the R1.5 tapered ball.** `apply_feeds` wrote F776 at
+18 500 rpm on every R1.5 drop_cutter arm, which is 0.0210 mm/tooth, and
+reported it as clamped to the matched band ceiling. The gate's band on the
+same tool and material read 0.0079–0.0145, and the modulator then cut the
+feed by a median 31 % to land on 0.0145. The ratio is 1.45×. The likely
+mechanism is the DOC derate: Suggest gets no axial hint from `drop_cutter`
+(`feeds/INTEGRATION.md`, "none") and derates at a default depth, while
+the gate derates at the measured 9 mm bite. The mechanism is not verified
+here (no code was run). Un-modulated, these arms would have run 45 % over
+the gate's ceiling on Suggest's numbers alone, so on this fixture the
+modulator is not a safety net for engagement variation only, it is the
+correction for Suggest's blind DOC. Handed to the ledger as a resolver-pair
+observation (the F-LUT2 class).
 
 Where the modulator could not rescue a cut: nowhere on the ball arms. Where
 the pattern, not the modulator, decided the result: S15 (fragmented
