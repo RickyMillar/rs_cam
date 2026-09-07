@@ -84,6 +84,48 @@ intent-based; geometry is not folded into it, or the distinction between
 "operator-tuned, leave alone" and "physically a plunge, cap it" is lost.
 Sentries at 14° and 16° bracket the 15° class threshold.
 
+Phase 3 implementation pins (read 2026-09-07, `feed_modulation.rs`):
+- Insertion point: `adaptive_feed_modulate`, inside the per-move loop, AFTER the
+  strategy match returns `(new_feed, binding)` (`~636-650`) and BEFORE
+  `outcome.per_move.insert(i, ..)` (`~652`). The guard reads the move's
+  geometry (`toolpath.moves[i].target − toolpath.moves[i-1].target`, the seed
+  move has no predecessor) through `kinematic_utilization::classify_move`
+  (Phase 2, one construction site) and, for `MotionClass::Plunge`, sets
+  `new_feed = new_feed.min(plunge_rate)` with binding
+  `BindingConstraint::PlungeRate`. `should_skip_modulation` is untouched.
+- `ModulationContext` gains `plunge_rate_mm_min: f64` (the op's own; the
+  session build site at `session/compute.rs:~2907` already has
+  `tc.operation.plunge_rate()` in scope — it is read at `~4362`). Construction
+  sites to update: `session/compute.rs:~2907`, the in-file tests in
+  `feed_modulation.rs`, `tests/constrained_max_modulation_f039.rs`,
+  `tests/lead_in_out_feed_rates_f040.rs`.
+- `BindingConstraint` gains `PlungeRate`; exhaustive matches / renderers to
+  extend live in `feed_modulation.rs`, `session/compute.rs`,
+  `tool_load/verdict.rs`, and the tests `constrained_max_modulation_f039.rs`,
+  `chipload_boundary_g_chip_ulp.rs`.
+- Paired A/B instrument: `kinematic_utilization::analyse_toolpath` over
+  EMITTED motion, i.e. only AFTER a simulation. Verified by the Wave 2
+  verifier (an earlier note here was wrong): the modulator modulates a
+  clone and `session/compute.rs:~3095-3106` writes it back into
+  `results[idx]` after the simulation, so post-sim the stored result carries
+  emitted feeds (`SimulationCutTrace::modulated_feeds` yields the same;
+  re-applying is idempotent); pre-sim it is the PLAN. Bars on the wanaka
+  front rough: `plunge.peak_ratio` falls from ≈1.95 (the 1807 command after
+  the `$112 = 1000` clamp) to ≤ 1.0; every `Lateral`/`Ramp` move's feed is
+  byte-identical to the pre-guard arm; total fed-time delta reported.
+- Wording consequence for Phase 4 surfaces: `narrate_toolpath` and the GUI
+  pill are reachable on a generated-but-not-simulated toolpath and then read
+  planned feeds beside gate pills saying `SimulationRequired`; five texts
+  (`diagnostics/ids.rs:60,63`, `sim_triage.rs:393,886,943`) assert
+  "emitted" unconditionally. Phase 3 keys the wording on whether a
+  simulation with modulation has run (planned vs emitted).
+
+Deferred from Wave 2 (verifier's flag): `SimulationState::cached_load_report`
+returns `report.clone()` per call from three panels per frame, and `Clone`
+still copies the kernel's `moves` vec (~1.5 MB per 12.6k-move toolpath per
+panel per frame); `#[serde(skip)]` bounds the wire, not memory. Triage itself
+is memoised on `edit_counter`. Acceptable now; a perf follow-up.
+
 ### Phase 1 — complete the machine model (~½ day)
 
 - `MachineKinematics::max_rate_xyz_mm_min: Option<[f64; 3]>` — GRBL
