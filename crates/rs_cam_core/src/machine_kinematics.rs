@@ -30,6 +30,34 @@
 //!   penalty per accel/decel ramp (the asymmetry between trapezoidal
 //!   and S-curve profiles is second-order for v1).
 //!
+//! ## Per-axis maximum rate (P1, 2026-09-07)
+//!
+//! `MachineKinematics::max_rate_xyz_mm_min` carries GRBL `$110/$111/$112`.
+//! The integrator caps every move's cruise ceiling by the direction-aware
+//! `min_i(rate_i / |dir_i|)` (see
+//! [`MachineKinematics::effective_max_rate_mm_min`]), so a Z-dominant move
+//! is throttled by the slow `$112` while a planar move keeps the X/Y rate.
+//! Two integrator rulings go with it:
+//!
+//! * **Rapids obey the rate cap too.** GRBL clamps `G0` by `$110-112`
+//!   exactly as it clamps `G1`, so a Z-only rapid runs at `$112`, not at
+//!   the machine's XY travel rate. The cap therefore applies to every
+//!   move, cutting or rapid, and does not read the rapid flag.
+//! * **Junction velocity is capped by the rate too.** GRBL computes a
+//!   block's nominal speed (command ∧ `$110-112`) before the junction
+//!   limiter runs, so the corner speed entering or leaving a Z-dominant
+//!   move can never exceed that move's own rate ceiling. Measured on the
+//!   wanaka Back Rough calibration fixture (827 s wall-clock, 2026-05-26)
+//!   the two arms both predict 1053 s — see
+//!   [`MachineKinematics::shapeoko_xxl_ricky_tuned`] for the recorded
+//!   numbers — because a cornering limit at δ = 0.020 sits far below the
+//!   16.7 mm/s Z ceiling on every non-straight junction. The
+//!   GRBL-faithful arm is the one that ships.
+//!
+//! All of this is inert while `max_rate_xyz_mm_min` is `None`: the cruise
+//! ceiling is then the commanded feed itself, so old project files and
+//! every built-in preset integrate byte-identically.
+//!
 //! Refinements (jerk-limited S-curve integrator, junction velocity
 //! derived from path curvature, look-ahead planner emulation) can
 //! land in follow-up findings once F-034's predictions are
@@ -78,6 +106,19 @@ pub struct MachineKinematics {
     /// preset deserialize byte-identically.
     #[serde(default)]
     pub acceleration_xyz_mm_s2: Option<[f64; 3]>,
+    /// Optional per-axis maximum rate limits `[X, Y, Z]` (mm/min), e.g.
+    /// from GRBL `$110/$111/$112`. When `Some`, the integrator computes
+    /// a **direction-aware** cruise ceiling `min_i(rate_i / |dir_i|)`
+    /// per move (see
+    /// [`MachineKinematics::effective_max_rate_mm_min`]), so a Z-dominant
+    /// descent is correctly throttled by the slow `$112` while a planar
+    /// XY move keeps the X/Y rate. The cap applies to rapids as well as
+    /// fed moves, because the controller clamps `G0` the same way. When
+    /// `None` the cruise ceiling is the commanded feed alone — the
+    /// pre-per-axis-rate behaviour, so old project files and every
+    /// built-in preset deserialize byte-identically.
+    #[serde(default)]
+    pub max_rate_xyz_mm_min: Option<[f64; 3]>,
     /// GRBL junction-deviation (`$11`) in mm — sets how far the virtual
     /// cornering arc may bow from the exact corner. GRBL's stock
     /// default is 0.010 mm and few users change it. Old project files
@@ -104,13 +145,15 @@ pub fn default_junction_deviation_mm() -> f64 {
 
 impl Default for MachineKinematics {
     /// Conservative isotropic wood-router default (200 mm/s², no
-    /// per-axis limits, stock junction deviation, no jerk/clamp).
+    /// per-axis limits, no per-axis rates, stock junction deviation, no
+    /// jerk/clamp).
     /// Lets new struct literals spread `..Default::default()` so a
     /// future field add stays one-line at each call site.
     fn default() -> Self {
         Self {
             acceleration_mm_s2: 200.0,
             acceleration_xyz_mm_s2: None,
+            max_rate_xyz_mm_min: None,
             junction_deviation_mm: default_junction_deviation_mm(),
             jerk_mm_s3: None,
             max_junction_velocity_mm_min: None,
@@ -139,6 +182,12 @@ pub struct GrblImport {
     /// above intentionally ignores the slow Z axis so planar cutting
     /// isn't throttled to the plunge rate).
     pub max_z_feed_mm_min: Option<f64>,
+    /// Per-axis maximum rates `[X, Y, Z]` (mm/min) from `$110/$111/$112`.
+    /// `Some` only when the dump carries all three, mirroring how
+    /// `kinematics.acceleration_xyz_mm_s2` needs all of `$120/$121/$122`.
+    /// The apply site (GUI machine panel, MCP `import_machine_settings`)
+    /// copies this onto `MachineKinematics::max_rate_xyz_mm_min`.
+    pub max_rate_xyz_mm_min: Option<[f64; 3]>,
     /// Arc tolerance (`$12`, mm) — feeds the post / arc-fit advice.
     pub arc_tolerance_mm: Option<f64>,
     /// Max spindle RPM (`$30`), if the dump carries it.
@@ -199,10 +248,26 @@ impl MachineKinematics {
     /// doubled δ (0.020 vs the old 0.010 const) widens the cornering arc
     /// and pulls the Phase-4 over-prediction back down toward the real
     /// wall-clock.
+    /// P1 (2026-09-07): the per-axis **rates** from the same capture join
+    /// the accels — `$110/$111 = 10000`, `$112 = 1000` mm/min. Before
+    /// this the model ran every Z-dominant move at the X/Y travel rate,
+    /// which the controller never permits. Measured on the wanaka Back
+    /// Rough calibration (827 s wall-clock, measured 2026-09-07): the
+    /// prediction moves **1030 s → 1053 s** with the rate cap applied to
+    /// fed moves, rapids and junction velocities alike (ratio 1.246 →
+    /// 1.273). The junction-uncapped arm reads **1053 s** as well — the
+    /// two agree to the nearest second, because at δ = 0.020 every
+    /// non-straight corner is limited far below the 16.7 mm/s Z ceiling,
+    /// so the fixture does not discriminate them. The GRBL-faithful
+    /// capped arm therefore ships. The +23 s is the model learning a
+    /// real controller limit that was already inside the 827 s
+    /// measurement; the residual over-prediction is the known
+    /// stale-anchor / cornering-model conservatism, not this cap.
     pub fn shapeoko_xxl_ricky_tuned() -> Self {
         Self {
             acceleration_mm_s2: (500.0 + 500.0 + 270.0) / 3.0,
             acceleration_xyz_mm_s2: Some([500.0, 500.0, 270.0]),
+            max_rate_xyz_mm_min: Some([10_000.0, 10_000.0, 1_000.0]),
             junction_deviation_mm: 0.020,
             ..Self::default()
         }
@@ -239,6 +304,39 @@ impl MachineKinematics {
         }
     }
 
+    /// Direction-aware path velocity ceiling (mm/min) for a **unit** move
+    /// direction `dir` — the exact analogue of [`Self::effective_accel`].
+    ///
+    /// With per-axis rates set (`max_rate_xyz_mm_min = Some`), returns the
+    /// GRBL per-axis cap `min_i(rate_i / |dir_i|)`: the path may travel
+    /// *faster* than any single axis on a diagonal (each axis carries only
+    /// its own component) and is throttled on a Z-heavy move by the slow
+    /// `$112`. Returns `None` when the field is `None`, and also for a
+    /// degenerate direction whose every component is below the 1e-9
+    /// epsilon (unreachable from the integrator, which builds unit
+    /// vectors and skips zero-length moves).
+    pub fn effective_max_rate_mm_min(&self, dir: &[f64; 3]) -> Option<f64> {
+        self.governing_max_rate(dir).map(|(rate, _)| rate)
+    }
+
+    /// [`Self::effective_max_rate_mm_min`] plus the index of the axis that
+    /// produced it — the smallest `rate_i / |dir_i|`, first axis on a tie.
+    /// Feeds `KinematicBinding::RateBound { axis }`.
+    fn governing_max_rate(&self, dir: &[f64; 3]) -> Option<(f64, usize)> {
+        let rates = self.max_rate_xyz_mm_min?;
+        let mut best: Option<(f64, usize)> = None;
+        for (axis, (r, d)) in rates.iter().zip(dir.iter()).enumerate() {
+            let d_abs = d.abs();
+            if d_abs > 1e-9 {
+                let lim = r.max(1e-3) / d_abs;
+                if best.is_none_or(|(cur, _)| lim < cur) {
+                    best = Some((lim, axis));
+                }
+            }
+        }
+        best
+    }
+
     /// Parse a GRBL / grblHAL `$$` settings dump into kinematics + rate
     /// caps. Accepts the universal `$N=value` line format, tolerating
     /// trailing `(description)` comments (grblHAL verbose form), CRLF,
@@ -253,6 +351,8 @@ impl MachineKinematics {
     ///   set just updates the scalar.)
     /// * `$110/$111` → `max_feed_mm_min` (XY travel; the larger)
     /// * `$112` → `max_z_feed_mm_min`
+    /// * `$110/$111/$112` → per-axis `max_rate_xyz_mm_min` (all three
+    ///   required for the array, like the accel triple above)
     /// * `$12`  → `arc_tolerance_mm`
     /// * `$30`  → `max_spindle_rpm`
     ///
@@ -302,21 +402,203 @@ impl MachineKinematics {
             kinematics.acceleration_mm_s2 = a;
         }
 
-        let max_feed_mm_min = match (map.get(&110).copied(), map.get(&111).copied()) {
+        let (rx, ry, rz) = (
+            map.get(&110).copied(),
+            map.get(&111).copied(),
+            map.get(&112).copied(),
+        );
+        let max_feed_mm_min = match (rx, ry) {
             (Some(x), Some(y)) => Some(x.max(y)),
             (Some(x), None) => Some(x),
             (None, Some(y)) => Some(y),
             (None, None) => None,
         };
+        // All three required, mirroring the `$120/$121/$122` accel triple:
+        // a partial set cannot describe a direction-aware ceiling.
+        let max_rate_xyz_mm_min = match (rx, ry, rz) {
+            (Some(x), Some(y), Some(z)) => Some([x, y, z]),
+            _ => None,
+        };
 
         GrblImport {
             kinematics,
             max_feed_mm_min,
-            max_z_feed_mm_min: map.get(&112).copied(),
+            max_z_feed_mm_min: rz,
+            max_rate_xyz_mm_min,
             arc_tolerance_mm: map.get(&12).copied(),
             max_spindle_rpm: map.get(&30).copied(),
             ignored_count,
         }
+    }
+}
+
+/// What limited a single move's peak velocity (P1, 2026-09-07).
+///
+/// Named by [`move_kinematics`], which is the one site that solves a
+/// move's trapezoid. Phase 2's confidence instrument and the runtime
+/// integrator both read it, so a verdict and a runtime prediction can
+/// never disagree about which limit bound a move.
+///
+/// The variants are decided in this order:
+///
+/// 1. The move reached its cruise ceiling and the ceiling is the
+///    commanded feed → [`Self::FeedBound`]. The machine did what it was
+///    asked; the only way to go faster is to command more.
+/// 2. The move reached its cruise ceiling but a per-axis rate had
+///    lowered that ceiling below the command →
+///    [`Self::RateBound`], naming the axis with the smallest
+///    `rate_i / |dir_i|`. The command was not realisable.
+/// 3. The move never reached the ceiling and never rose above its faster
+///    junction velocity → [`Self::JunctionBound`]. Cornering, not the
+///    ramp, set the speed.
+/// 4. The move never reached the ceiling but did rise above both
+///    junctions → [`Self::AccelBound`]. It ran out of length.
+///
+/// Note that 3 and 4 outrank 2: when a rate cap lowered the ceiling AND
+/// the move was too short to reach even that, the rate never bound, so
+/// the move is not reported as `RateBound`.
+///
+/// Named `KinematicBinding`, not `BindingConstraint` — `feed_modulation`
+/// owns that name for the modulator's own cap list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum KinematicBinding {
+    /// The peak equals the commanded feed — the machine reached the
+    /// command.
+    FeedBound,
+    /// The trapezoid could not reach the cruise ceiling within the
+    /// move's length, having risen above both junction velocities.
+    AccelBound,
+    /// A per-axis maximum rate (`$110/$111/$112`) capped the cruise
+    /// ceiling below the commanded feed. `axis` is 0 = X, 1 = Y, 2 = Z.
+    RateBound { axis: usize },
+    /// The entry / exit junction velocities set the peak: the move never
+    /// rose above the faster of the two.
+    JunctionBound,
+}
+
+/// One move's solved kinematics (P1, 2026-09-07) — what
+/// [`move_kinematics`] returns.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MoveKinematics {
+    /// Peak velocity the move actually reaches (mm/min).
+    pub peak_mm_min: f64,
+    /// What limited that peak.
+    pub binding: KinematicBinding,
+}
+
+/// Internal result of the one physics site. Carries the integrated time
+/// as well as the peak so the runtime integrator and the Phase 2
+/// instrument read the *same* trapezoid rather than two copies of it.
+struct MoveSolution {
+    /// Peak velocity actually reached, mm/s.
+    peak_mm_s: f64,
+    /// Integrated time for the move, seconds (no jerk penalty).
+    time_s: f64,
+    binding: KinematicBinding,
+}
+
+/// The one cruise-ceiling site: the commanded velocity, throttled by the
+/// direction-aware per-axis rate when the machine carries one.
+///
+/// `v_command_mm_s` must already be the commanded feed capped by the
+/// machine's scalar `max_feed`. Returns the ceiling and, when a per-axis
+/// rate is what lowered it, the governing axis.
+///
+/// With no per-axis rates the ceiling is `v_command_mm_s` **unchanged**
+/// — not `min`-ed against an infinity — so the integrator stays
+/// bit-identical to its pre-P1 self on every machine that has none.
+fn cruise_ceiling(
+    v_command_mm_s: f64,
+    dir: &[f64; 3],
+    kinematics: &MachineKinematics,
+) -> (f64, Option<usize>) {
+    match kinematics.governing_max_rate(dir) {
+        Some((rate_mm_min, axis)) => {
+            let rate_mm_s = rate_mm_min / 60.0;
+            if rate_mm_s < v_command_mm_s {
+                (rate_mm_s, Some(axis))
+            } else {
+                (v_command_mm_s, None)
+            }
+        }
+        None => (v_command_mm_s, None),
+    }
+}
+
+/// The one physics site (P1 reviewer ruling): solve one move's
+/// trapezoid. Everything is in mm/s; `v_command_mm_s` is the commanded
+/// feed already capped by the machine's scalar `max_feed`.
+fn solve_move(
+    length: f64,
+    dir: &[f64; 3],
+    v_in_mm_s: f64,
+    v_out_mm_s: f64,
+    v_command_mm_s: f64,
+    kinematics: &MachineKinematics,
+) -> MoveSolution {
+    let accel = kinematics.effective_accel(dir);
+    let (ceiling_mm_s, rate_axis) = cruise_ceiling(v_command_mm_s, dir, kinematics);
+    let peak_mm_s = trapezoidal_peak_velocity(length, v_in_mm_s, v_out_mm_s, ceiling_mm_s, accel);
+    let time_s = trapezoidal_time(length, v_in_mm_s, v_out_mm_s, ceiling_mm_s, accel);
+    // `trapezoidal_peak_velocity` returns the ceiling exactly when the
+    // move reaches it, so this comparison needs no epsilon.
+    let binding = if peak_mm_s < ceiling_mm_s {
+        if peak_mm_s <= v_in_mm_s.max(v_out_mm_s) {
+            KinematicBinding::JunctionBound
+        } else {
+            KinematicBinding::AccelBound
+        }
+    } else if let Some(axis) = rate_axis {
+        KinematicBinding::RateBound { axis }
+    } else {
+        KinematicBinding::FeedBound
+    };
+    MoveSolution {
+        peak_mm_s,
+        time_s,
+        binding,
+    }
+}
+
+/// P1 — solve one move's kinematics: the peak velocity the machine
+/// reaches, and what limited it.
+///
+/// This is the single trapezoid the runtime integrator
+/// ([`compute_cycle_time_breakdown`]), the predicted-feed map
+/// ([`predicted_feeds_for_toolpath`]) and the Phase 2 confidence
+/// instrument all share, so a "the machine cannot realise this command"
+/// verdict and the cycle time it implies always agree.
+///
+/// * `dir` is the **unit** move direction.
+/// * The cruise ceiling is `min(v_cmd, max_feed, effective_max_rate(dir))`.
+/// * The trapezoid uses `effective_accel(dir)`.
+/// * `binding` follows the order documented on [`KinematicBinding`].
+///
+/// Velocities in and out are mm/min, matching the IR's `feed_rate`.
+pub fn move_kinematics(
+    length_mm: f64,
+    dir: &[f64; 3],
+    v_in_mm_min: f64,
+    v_out_mm_min: f64,
+    v_cmd_mm_min: f64,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+) -> MoveKinematics {
+    let max_feed_mm_s = (max_feed_mm_min / 60.0).max(1e-6);
+    let v_command_mm_s = (v_cmd_mm_min / 60.0).max(1e-6).min(max_feed_mm_s);
+    let v_in_mm_s = (v_in_mm_min / 60.0).max(0.0);
+    let v_out_mm_s = (v_out_mm_min / 60.0).max(0.0);
+    let solution = solve_move(
+        length_mm,
+        dir,
+        v_in_mm_s,
+        v_out_mm_s,
+        v_command_mm_s,
+        kinematics,
+    );
+    MoveKinematics {
+        peak_mm_min: solution.peak_mm_s * 60.0,
+        binding: solution.binding,
     }
 }
 
@@ -340,11 +622,17 @@ pub struct LinkKinematics {
 /// see its junction velocity with the previous and next move. For
 /// each move the time is the standard trapezoidal-profile integral:
 ///
-/// 1. accelerate from `v_in` toward `v_cmd` at `kinematics.acceleration_mm_s2`,
+/// 1. accelerate from `v_in` toward the move's cruise ceiling at
+///    [`MachineKinematics::effective_accel`] for that direction,
 /// 2. cruise at the peak velocity actually reached,
 /// 3. decelerate to `v_out` at the same accel limit.
 ///
-/// If the move is too short to reach `v_cmd` even using all of its
+/// The cruise ceiling is the commanded feed capped by `max_feed_mm_min`
+/// and, when the machine carries per-axis rates, by
+/// [`MachineKinematics::effective_max_rate_mm_min`]. [`move_kinematics`]
+/// is the one site that solves it.
+///
+/// If the move is too short to reach that ceiling even using all of its
 /// length on the accel + decel ramps, the integrator solves for the
 /// triangular profile's peak velocity.
 ///
@@ -480,6 +768,10 @@ pub fn compute_cycle_time_breakdown(
         length: f64,
         dir: [f64; 3],
         v_cmd_mm_s: f64,
+        /// Cruise ceiling: `v_cmd_mm_s` throttled by the direction-aware
+        /// per-axis rate. Equals `v_cmd_mm_s` when the machine carries no
+        /// per-axis rates.
+        v_ceiling_mm_s: f64,
         accel: f64,
         is_rapid: bool,
         intent: crate::toolpath::MoveIntent,
@@ -496,6 +788,8 @@ pub fn compute_cycle_time_breakdown(
             continue;
         }
         let dir = unit_vec(p0, p1);
+        // A rapid is capped by the per-axis rate exactly like a fed move —
+        // GRBL clamps `G0` by `$110-112` too.
         let (v_cmd_mm_s, is_rapid) = match toolpath.moves[i].move_type {
             MoveType::Rapid => (rapid_feed_mm_s, true),
             MoveType::Linear { feed_rate }
@@ -506,10 +800,12 @@ pub fn compute_cycle_time_breakdown(
             }
         };
         let accel = kinematics.effective_accel(&dir);
+        let (v_ceiling_mm_s, _) = cruise_ceiling(v_cmd_mm_s, &dir, kinematics);
         digests.push(MoveDigest {
             length,
             dir,
             v_cmd_mm_s,
+            v_ceiling_mm_s,
             accel,
             is_rapid,
             intent: toolpath.moves[i].intent,
@@ -528,13 +824,16 @@ pub fn compute_cycle_time_breakdown(
     // SAFETY: i bounded by digests.len(); i+1 guarded by `i < n - 1`.
     for i in 0..n {
         let v_cmd = digests[i].v_cmd_mm_s;
-        // Junction with the next move. Last move ends at rest.
+        // Junction with the next move. Last move ends at rest. The
+        // junction limiter sees each block's CEILING (command ∧ per-axis
+        // rate), which is what GRBL calls the block's nominal speed —
+        // see the module doc's "Per-axis maximum rate" section.
         let v_out = if i + 1 < n {
             junction_velocity(
                 &digests[i].dir,
                 &digests[i + 1].dir,
-                v_cmd,
-                digests[i + 1].v_cmd_mm_s,
+                digests[i].v_ceiling_mm_s,
+                digests[i + 1].v_ceiling_mm_s,
                 digests[i].accel.min(digests[i + 1].accel),
                 kinematics.junction_deviation_mm,
                 kinematics.max_junction_velocity_mm_min,
@@ -543,21 +842,32 @@ pub fn compute_cycle_time_breakdown(
         } else {
             0.0
         };
-        let t = trapezoidal_time(digests[i].length, v_in, v_out, v_cmd, digests[i].accel);
+        let t = solve_move(
+            digests[i].length,
+            &digests[i].dir,
+            v_in,
+            v_out,
+            v_cmd,
+            kinematics,
+        )
+        .time_s;
         // Jerk penalty: if a jerk limit is configured, the accel and
         // decel ramps each take an additional `accel / jerk` seconds
         // to round their edges. This is a first-order approximation
-        // of the S-curve profile and only fires when v_in != v_cmd
-        // or v_out != v_cmd (i.e. there's an actual ramp to round).
+        // of the S-curve profile and only fires when v_in != ceiling
+        // or v_out != ceiling (i.e. there's an actual ramp to round).
+        // The ceiling, not the raw command: a move the per-axis rate
+        // caps has no ramp up to the command it never runs at.
         let jerk_penalty = if let Some(jerk) = kinematics.jerk_mm_s3 {
             if jerk > 1e-3 {
                 let rounding = digests[i].accel / jerk;
-                let in_ramp = if (v_cmd - v_in).abs() > 1e-6 {
+                let v_ceiling = digests[i].v_ceiling_mm_s;
+                let in_ramp = if (v_ceiling - v_in).abs() > 1e-6 {
                     rounding
                 } else {
                     0.0
                 };
-                let out_ramp = if (v_cmd - v_out).abs() > 1e-6 {
+                let out_ramp = if (v_ceiling - v_out).abs() > 1e-6 {
                     rounding
                 } else {
                     0.0
@@ -654,6 +964,9 @@ pub fn predicted_feeds_for_toolpath(
         length: f64,
         dir: [f64; 3],
         v_cmd_mm_s: f64,
+        /// Cruise ceiling: `v_cmd_mm_s` throttled by the direction-aware
+        /// per-axis rate (see [`cruise_ceiling`]).
+        v_ceiling_mm_s: f64,
         accel: f64,
         is_rapid: bool,
     }
@@ -679,11 +992,13 @@ pub fn predicted_feeds_for_toolpath(
             }
         };
         let accel = kinematics.effective_accel(&dir);
+        let (v_ceiling_mm_s, _) = cruise_ceiling(v_cmd_mm_s, &dir, kinematics);
         digests.push(MoveDigest {
             source_index: i,
             length,
             dir,
             v_cmd_mm_s,
+            v_ceiling_mm_s,
             accel,
             is_rapid,
         });
@@ -702,8 +1017,8 @@ pub fn predicted_feeds_for_toolpath(
             junction_velocity(
                 &digests[i].dir,
                 &digests[i + 1].dir,
-                v_cmd,
-                digests[i + 1].v_cmd_mm_s,
+                digests[i].v_ceiling_mm_s,
+                digests[i + 1].v_ceiling_mm_s,
                 digests[i].accel.min(digests[i + 1].accel),
                 kinematics.junction_deviation_mm,
                 kinematics.max_junction_velocity_mm_min,
@@ -712,8 +1027,15 @@ pub fn predicted_feeds_for_toolpath(
         } else {
             0.0
         };
-        let v_peak_mm_s =
-            trapezoidal_peak_velocity(digests[i].length, v_in, v_out, v_cmd, digests[i].accel);
+        let v_peak_mm_s = solve_move(
+            digests[i].length,
+            &digests[i].dir,
+            v_in,
+            v_out,
+            v_cmd,
+            kinematics,
+        )
+        .peak_mm_s;
         out.insert(digests[i].source_index, v_peak_mm_s * 60.0);
         v_in = v_out;
     }
@@ -753,7 +1075,17 @@ pub fn predicted_achieved_feed(
 /// * Triangular profile (move too short for full ramps) → returns the
 ///   smaller peak velocity solved from
 ///   `v_peak² = a·length + (v_in² + v_out²)/2`, clamped to `v_cmd`.
-fn trapezoidal_peak_velocity(length: f64, v_in: f64, v_out: f64, v_cmd: f64, accel: f64) -> f64 {
+///
+/// All velocities are mm/s and `v_cmd` is the move's **cruise ceiling**
+/// (command ∧ machine max feed ∧ per-axis rate), not the raw command —
+/// [`solve_move`] is the site that resolves the ceiling.
+pub fn trapezoidal_peak_velocity(
+    length: f64,
+    v_in: f64,
+    v_out: f64,
+    v_cmd: f64,
+    accel: f64,
+) -> f64 {
     if length <= 1e-9 || accel <= 1e-9 {
         return v_cmd.max(0.0);
     }
@@ -1278,6 +1610,7 @@ mod tests {
         assert!((imp.kinematics.acceleration_mm_s2 - (500.0 + 500.0 + 270.0) / 3.0).abs() < 1e-9);
         assert_eq!(imp.max_feed_mm_min, Some(10000.0));
         assert_eq!(imp.max_z_feed_mm_min, Some(1000.0));
+        assert_eq!(imp.max_rate_xyz_mm_min, Some([10000.0, 10000.0, 1000.0]));
         assert_eq!(imp.arc_tolerance_mm, Some(0.002));
         assert_eq!(imp.max_spindle_rpm, Some(24000.0));
         // $100 (steps/mm) is seen but not consumed.
@@ -1291,6 +1624,7 @@ mod tests {
         let kin = MachineKinematics {
             acceleration_mm_s2: 423.3,
             acceleration_xyz_mm_s2: Some([500.0, 500.0, 270.0]),
+            max_rate_xyz_mm_min: Some([10_000.0, 10_000.0, 1_000.0]),
             junction_deviation_mm: 0.02,
             jerk_mm_s3: Some(1000.0),
             max_junction_velocity_mm_min: None,
@@ -1309,6 +1643,7 @@ mod tests {
             r#"{"acceleration_mm_s2":250.0,"jerk_mm_s3":null,"max_junction_velocity_mm_min":null}"#;
         let kin: MachineKinematics = serde_json::from_str(legacy).expect("legacy deserialize");
         assert_eq!(kin.acceleration_xyz_mm_s2, None);
+        assert_eq!(kin.max_rate_xyz_mm_min, None);
         assert!((kin.junction_deviation_mm - 0.010).abs() < 1e-12);
         assert!((kin.acceleration_mm_s2 - 250.0).abs() < 1e-12);
     }
@@ -1336,16 +1671,18 @@ $130=845.000\n$131=850.000\n$132=95.000\n";
         assert!((imp.kinematics.junction_deviation_mm - 0.020).abs() < 1e-9);
         assert_eq!(imp.max_feed_mm_min, Some(10000.0));
         assert_eq!(imp.max_z_feed_mm_min, Some(1000.0));
+        assert_eq!(imp.max_rate_xyz_mm_min, Some([10000.0, 10000.0, 1000.0]));
         assert_eq!(imp.arc_tolerance_mm, Some(0.010));
         assert_eq!(imp.max_spindle_rpm, Some(1000.0));
 
         // The canonical preset must equal what importing this dump produces
-        // (per-axis accel + δ) — keeps preset and parser from drifting.
+        // (per-axis accel + rates + δ) — keeps preset and parser from drifting.
         let preset = MachineKinematics::shapeoko_xxl_ricky_tuned();
         assert_eq!(
             preset.acceleration_xyz_mm_s2,
             imp.kinematics.acceleration_xyz_mm_s2
         );
+        assert_eq!(preset.max_rate_xyz_mm_min, imp.max_rate_xyz_mm_min);
         assert!((preset.junction_deviation_mm - imp.kinematics.junction_deviation_mm).abs() < 1e-9);
     }
 

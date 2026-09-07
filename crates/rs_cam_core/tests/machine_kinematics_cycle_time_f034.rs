@@ -345,6 +345,31 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     // wall-clock of the CURRENT Back Rough path (planning/cycle_time_rebench.md).
     // Upper bound tightened 2.0 → 1.6 now that the real δ/accel are in (the 2.0
     // only existed to admit the wrong-δ 1.63); still catches a gross break.
+    //
+    // P1 SENTRY (e) — per-axis max rate, measured 2026-09-07 on this
+    // fixture. `shapeoko_xxl_ricky_tuned` now also carries the machine's
+    // real `$110/$111/$112 = 10000/10000/1000`, so the integrator caps
+    // every move's cruise velocity by the direction-aware
+    // `min_i(rate_i / |dir_i|)`. Both arms of the junction decision were
+    // run:
+    //
+    //   before P1 (no per-axis rates)                 1030 s, ratio 1.246
+    //   P1, junction velocity capped by the ceiling   1053 s, ratio 1.273
+    //   P1, junction velocity left at the command     1053 s, ratio 1.273
+    //
+    // The two junction arms agree to the nearest second — at δ = 0.020
+    // every non-straight corner is limited far below the 16.7 mm/s Z
+    // ceiling, so this fixture does not discriminate them. The
+    // GRBL-faithful capped arm ships (a block's nominal speed already
+    // includes `$110-112` before GRBL's junction limiter runs).
+    //
+    // The prediction moved +23 s AWAY from the 827 s anchor. That is the
+    // model learning a real controller limit that was already inside the
+    // 827 s measurement — the machine ran with `$112 = 1000` live on the
+    // day it was timed — so the residual over-prediction sits where it
+    // already sat: the stale anchor (a .nc the planner no longer emits)
+    // plus cornering-model conservatism. The band below is unchanged;
+    // 1.273 sits inside it. Do NOT loosen it to absorb a further drift.
     assert!(
         (0.30..=1.6).contains(&ratio),
         "F-034: model predicted {model_predicted_s:.1}s vs measured {BACK_ROUGH_MEASURED_S:.1}s \
@@ -352,6 +377,20 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
          max_feed used: {max_feed} mm/min. The MEASURED constant is a stale pre-F-038 \
          wall-clock; re-bench the current path before tightening further \
          (planning/cycle_time_rebench.md)."
+    );
+
+    // P1 sentry (e) proper: pin the recorded post-change prediction, so a
+    // regression in the per-axis rate cap shows up as a moved number
+    // rather than hiding inside the wide [0.30, 1.6] anchor band.
+    const P1_RECORDED_PREDICTION_S: f64 = 1053.0;
+    const P1_TOLERANCE_S: f64 = 25.0;
+    let delta_s = model_predicted_s - P1_RECORDED_PREDICTION_S;
+    assert!(
+        delta_s.abs() <= P1_TOLERANCE_S,
+        "P1 sentry (e): model predicted {model_predicted_s:.1}s, recorded 2026-09-07 value is \
+         {P1_RECORDED_PREDICTION_S:.1}s (delta {delta_s:+.1}s, tolerance ±{P1_TOLERANCE_S:.0}s). \
+         The per-axis max-rate cap ($110/$111/$112) or the generator moved. If the generator \
+         moved, re-record; if the cap moved, that is the regression."
     );
 }
 

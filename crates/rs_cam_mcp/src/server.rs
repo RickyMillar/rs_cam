@@ -577,6 +577,13 @@ pub struct SetMachineKinematicsParam {
     /// per-axis triple is absent; when all three axes are given this is
     /// set to their mean unless explicitly passed.
     pub acceleration_mm_s2: Option<f64>,
+    /// X-axis maximum rate in mm/min (GRBL `$110`).
+    pub max_rate_x_mm_min: Option<f64>,
+    /// Y-axis maximum rate in mm/min (GRBL `$111`).
+    pub max_rate_y_mm_min: Option<f64>,
+    /// Z-axis maximum rate in mm/min (GRBL `$112`). On a typical router
+    /// this is far below X/Y, so it is what throttles a Z-dominant move.
+    pub max_rate_z_mm_min: Option<f64>,
     /// GRBL junction deviation `$11` in mm (stock GRBL default 0.010).
     pub junction_deviation_mm: Option<f64>,
     /// Optional hard cap on junction velocity in mm/min. Omit to leave
@@ -1888,6 +1895,7 @@ mod tests {
     fn set_machine_kinematics_param_is_an_all_optional_patch() {
         let p: SetMachineKinematicsParam = serde_json::from_value(serde_json::json!({})).unwrap();
         assert!(p.acceleration_x_mm_s2.is_none() && p.junction_deviation_mm.is_none());
+        assert!(p.max_rate_x_mm_min.is_none() && p.max_rate_z_mm_min.is_none());
 
         let p: SetMachineKinematicsParam = serde_json::from_value(serde_json::json!({
             "acceleration_x_mm_s2": 500.0,
@@ -1898,5 +1906,17 @@ mod tests {
         .unwrap();
         assert_eq!(p.acceleration_z_mm_s2, Some(270.0));
         assert_eq!(p.junction_deviation_mm, Some(0.02));
+        // The rate triple is its own independent patch (P1).
+        assert_eq!(p.max_rate_z_mm_min, None);
+
+        let p: SetMachineKinematicsParam = serde_json::from_value(serde_json::json!({
+            "max_rate_x_mm_min": 10000.0,
+            "max_rate_y_mm_min": 10000.0,
+            "max_rate_z_mm_min": 1000.0
+        }))
+        .unwrap();
+        assert_eq!(p.max_rate_x_mm_min, Some(10000.0));
+        assert_eq!(p.max_rate_z_mm_min, Some(1000.0));
+        assert_eq!(p.acceleration_x_mm_s2, None);
     }
 }

@@ -2082,19 +2082,24 @@ impl super::RsCamApp {
             }
         };
 
-        // Acceleration-aware kinematics ($11 + per-axis $120-122). `None`
-        // means the cycle-time model falls back to the naive distance/feed
-        // sum (the F-034 feature flag).
+        // Acceleration-aware kinematics ($11 + per-axis $120-122 + per-axis
+        // rates $110-112). `None` means the cycle-time model falls back to
+        // the naive distance/feed sum (the F-034 feature flag).
         let kinematics = match &machine.kinematics {
             Some(k) => {
                 let per_axis = match k.acceleration_xyz_mm_s2 {
                     Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
                     None => serde_json::Value::Null,
                 };
+                let per_axis_rate = match k.max_rate_xyz_mm_min {
+                    Some([rx, ry, rz]) => serde_json::json!([rx, ry, rz]),
+                    None => serde_json::Value::Null,
+                };
                 serde_json::json!({
                     "configured": true,
                     "acceleration_mm_s2": k.acceleration_mm_s2,
                     "acceleration_xyz_mm_s2": per_axis,
+                    "max_rate_xyz_mm_min": per_axis_rate,
                     "junction_deviation_mm": k.junction_deviation_mm,
                     "jerk_mm_s3": k.jerk_mm_s3,
                     "max_junction_velocity_mm_min": k.max_junction_velocity_mm_min,
@@ -2149,10 +2154,14 @@ impl super::RsCamApp {
         }
 
         let prev_max_feed = self.controller.state().session.machine().max_feed_mm_min;
+        // The parser reports the per-axis rates on the import, not inside
+        // `kinematics` — land them on the machine model here (P1).
+        let mut kinematics = imp.kinematics;
+        kinematics.max_rate_xyz_mm_min = imp.max_rate_xyz_mm_min;
         {
             let session = &mut self.controller.state_mut().session;
             let machine = session.machine_mut();
-            machine.kinematics = Some(imp.kinematics);
+            machine.kinematics = Some(kinematics);
             if let Some(mf) = imp.max_feed_mm_min {
                 machine.max_feed_mm_min = mf;
             }
@@ -2165,12 +2174,17 @@ impl super::RsCamApp {
             Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
             None => serde_json::Value::Null,
         };
+        let per_axis_rate = match imp.max_rate_xyz_mm_min {
+            Some([rx, ry, rz]) => serde_json::json!([rx, ry, rz]),
+            None => serde_json::Value::Null,
+        };
         let new_max_feed = self.controller.state().session.machine().max_feed_mm_min;
         json_str(serde_json::json!({
             "ok": true,
             "applied": {
                 "acceleration_xyz_mm_s2": per_axis,
                 "acceleration_mm_s2": imp.kinematics.acceleration_mm_s2,
+                "max_rate_xyz_mm_min": per_axis_rate,
                 "junction_deviation_mm": imp.kinematics.junction_deviation_mm,
                 "max_feed_mm_min": { "from": prev_max_feed, "to": new_max_feed },
                 "arc_tolerance_mm": imp.arc_tolerance_mm,
@@ -3766,12 +3780,16 @@ impl super::RsCamApp {
             .machine()
             .effective_kinematics();
         let had_per_axis = kin.acceleration_xyz_mm_s2.is_some();
+        let had_per_axis_rate = kin.max_rate_xyz_mm_min.is_some();
 
         for (label, value) in [
             ("acceleration_x_mm_s2", spec.acceleration_x_mm_s2),
             ("acceleration_y_mm_s2", spec.acceleration_y_mm_s2),
             ("acceleration_z_mm_s2", spec.acceleration_z_mm_s2),
             ("acceleration_mm_s2", spec.acceleration_mm_s2),
+            ("max_rate_x_mm_min", spec.max_rate_x_mm_min),
+            ("max_rate_y_mm_min", spec.max_rate_y_mm_min),
+            ("max_rate_z_mm_min", spec.max_rate_z_mm_min),
             ("junction_deviation_mm", spec.junction_deviation_mm),
             (
                 "max_junction_velocity_mm_min",
@@ -3825,6 +3843,42 @@ impl super::RsCamApp {
                 kin.acceleration_xyz_mm_s2 = Some([ex, ey, ez]);
             }
         }
+
+        // Per-axis max rates ($110/$111/$112), same triple / none /
+        // partial-patch-or-refuse contract as the accelerations above.
+        let rates = (
+            spec.max_rate_x_mm_min,
+            spec.max_rate_y_mm_min,
+            spec.max_rate_z_mm_min,
+        );
+        match rates {
+            (Some(rx), Some(ry), Some(rz)) => {
+                kin.max_rate_xyz_mm_min = Some([rx, ry, rz]);
+            }
+            (None, None, None) => {}
+            (rx, ry, rz) => {
+                let Some(existing) = kin.max_rate_xyz_mm_min else {
+                    return json_str(serde_json::json!({
+                        "ok": false,
+                        "error": "A partial per-axis max-rate set was given, but this machine has \
+                                  no per-axis rates yet to patch. Pass all three of \
+                                  max_rate_x_mm_min / _y_ / _z_. Nothing was written.",
+                    }));
+                };
+                let [mut ex, mut ey, mut ez] = existing;
+                if let Some(v) = rx {
+                    ex = v;
+                }
+                if let Some(v) = ry {
+                    ey = v;
+                }
+                if let Some(v) = rz {
+                    ez = v;
+                }
+                kin.max_rate_xyz_mm_min = Some([ex, ey, ez]);
+            }
+        }
+
         if let Some(v) = spec.acceleration_mm_s2 {
             kin.acceleration_mm_s2 = v;
         }
@@ -3857,21 +3911,28 @@ impl super::RsCamApp {
             Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
             None => serde_json::Value::Null,
         };
+        let per_axis_rate = match kin.max_rate_xyz_mm_min {
+            Some([rx, ry, rz]) => serde_json::json!([rx, ry, rz]),
+            None => serde_json::Value::Null,
+        };
         json_str(serde_json::json!({
             "ok": true,
             "applied": {
                 "acceleration_xyz_mm_s2": per_axis,
                 "acceleration_mm_s2": kin.acceleration_mm_s2,
+                "max_rate_xyz_mm_min": per_axis_rate,
                 "junction_deviation_mm": kin.junction_deviation_mm,
                 "max_junction_velocity_mm_min": kin.max_junction_velocity_mm_min,
                 "jerk_mm_s3": kin.jerk_mm_s3,
                 "per_axis_was_set_before": had_per_axis,
+                "per_axis_rate_was_set_before": had_per_axis_rate,
                 "machine_library_link_cleared": machine_ref_before,
             },
             "note": "Kinematics applied inline; any machine-library link is cleared. \
                      Acceleration feeds the cycle-time integrator and the \
-                     recommend_clearing_strategy verdict — re-run both if you relied on them. \
-                     Verify with inspect_machine.",
+                     recommend_clearing_strategy verdict; the per-axis max rates cap every \
+                     move's cruise velocity, so a Z-dominant move is throttled by $112 — \
+                     re-run both if you relied on them. Verify with inspect_machine.",
         }))
     }
 

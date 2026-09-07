@@ -1512,6 +1512,15 @@ fn draw_grbl_import(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<Ap
                     ))
                     .small(),
                 );
+                if let Some(r) = imp.max_rate_xyz_mm_min {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "• Max rate X/Y/Z = {:.0}/{:.0}/{:.0} mm/min",
+                            r[0], r[1], r[2]
+                        ))
+                        .small(),
+                    );
+                }
                 if let Some(mf) = imp.max_feed_mm_min {
                     let cur = state.session.machine().max_feed_mm_min;
                     ui.label(
@@ -1539,8 +1548,12 @@ fn draw_grbl_import(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<Ap
 
                 if ui.button("Apply import").clicked() {
                     let max_feed = imp.max_feed_mm_min;
+                    // The parser reports the per-axis rates on the import,
+                    // not inside `kinematics` — land them here (P1).
+                    let mut kinematics = imp.kinematics;
+                    kinematics.max_rate_xyz_mm_min = imp.max_rate_xyz_mm_min;
                     let m = state.session.machine_mut();
-                    m.kinematics = Some(imp.kinematics);
+                    m.kinematics = Some(kinematics);
                     if let Some(mf) = max_feed {
                         m.max_feed_mm_min = mf;
                     }
