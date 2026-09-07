@@ -411,3 +411,46 @@ apart from NOT MEASURED (drop_cutter sets no MoveIntent with
 `entry_style = none`); (b) simulation order is toolpath INDEX order, not
 dependency order — a finish at a lower index than its rough simulates
 first (the peer lost one run to this).
+
+## Plywood single-pass matrix — the thesis holds (rs-cam-38, 2026-09-08)
+
+Nine ball-tool arms, 0.2 mm, modulation ON, all 0/0 collisions, all gates
+MODELED (except waterline). Whole-job single-pass times on plywood vs the
+oak rough+finish pairs (A 14 245 s, G 12 739 s):
+
+| arm | time | air | notes |
+|---|---|---|---|
+| iso-scallop R2.0 h0.27 | **2389 s** | 36.8 % | chipload Within (un-extrapolated 6000 scallop row), deflection 0.007, one 2.7× plunge (G-BOUNDARYPLUNGE class, pre-fix binary) |
+| drop_cutter raster R1.5 s1.5 | **3274 s** | 9.8 % | 2 retracts, ZERO triage actions — passes every bar as written; cusp 0.20 mm |
+| drop_cutter raster R1.5 s1.0 | 4788 s | | finer cusp |
+| spiral R1.5 s1.5 | 3806 s | | 108/197 plunges at 3.6× (pre-fix), 18.7 km rapids from the square clip |
+| iso-scallop R1.5 h0.38 | 8001 s | 81 % | 436 rings, fragmented; 1.7× the cutting distance of the R2.0 arm |
+| radial 0.6° | 8718 s | 69 % | centre plunge cluster |
+| waterline z1.5 | 18 368 s | | see flags below |
+
+Rough-only references on plywood: A 2475 s; C2 (by_area) 2277 s with zero
+over-limit plunges. Every arm ≥ 99 % feed-bound; the modulator binds on the
+chipload band max on every ball arm. **A ball single pass on plywood is a
+4–6× job at a 0.20–0.27 mm cusp.** Caveat stated in the results doc: no
+plywood_hardwood tapered-ball pocket row exists, so the ball arms resolved
+the MDF parallel row by category scoring (hardness × 0.957) — the band is a
+proxy. Flat-tool arms (G-fine) wait for the G-DCFLAT rebuild.
+
+Recommendation for plywood terrain (pending the flat arms and the post-fix
+reruns): **drop_cutter with the R1.5 ball at 1.5 mm stepover, modulation
+ON, as the only pass** — 55 min against the 4-hour pair, zero findings,
+cusp 0.20 mm; iso-scallop R2.0 (40 min) if a 0.27 mm cusp is acceptable.
+
+New instrument/generator flags (ledger):
+- **G-WATERLINEAUTO** — a standalone waterline with Auto heights generates
+  ZERO moves: `depth_semantics None` makes Auto `bottom_z` = stock top and
+  the ladder collapses (the DroppedBandFinding mechanism at
+  `config.rs:~1031`, but the standalone op has no band and no finding — only
+  `project.generated_empty` fires). Pinning heights 7 / −3 fixed the arm.
+- **G-WATERLINELINK** — waterline's helix-classified link class is emitted
+  at ~130 mm/min by the generator/dressup (13 700 of 16 867 fed seconds),
+  with no modulation summary — that is why the arm took 18 368 s. And
+  waterline + the R1.5 tapered ball reads chipload UNMODELED
+  (no_vendor_data) while drop_cutter with the same tool matched — the
+  family-filter hole again (waterline family), same follow-up as the flat
+  case.
