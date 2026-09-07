@@ -45,7 +45,7 @@ The calculator is fed from:
 | Trace | `Trace` | `Finish` | none |
 | Drill | `Pocket` | `Roughing` | none |
 | Chamfer | `Trace` | `Finish` | none |
-| DropCutter | `Parallel` | `Finish` | none |
+| DropCutter | `Parallel` (FLAT tool: routed to `Pocket`) | `Finish` (FLAT tool: routed to `Roughing`) | none — G-DCFLAT routes a flat end mill to the roughing pocket row; ball tools unchanged |
 | Adaptive3d | `Adaptive` | `Roughing` | none |
 | Waterline | `Parallel` | `Finish` | `z_step` as axial hint |
 | Pencil | `Trace` | `Finish` | none |

@@ -11,8 +11,25 @@ use crate::material::{Material, PlasticHardness};
 /// **The single site that decides which vendor-LUT family a query names.**
 /// Checkpoint K (a4), 2026-08-13.
 ///
-/// Two operation kinds do not query under their declared `feeds_family`:
+/// Three operation kinds do not query under their declared `feeds_family`:
 ///
+/// - **`DropCutter` with a FLAT end mill** (G-DCFLAT, 2026-09-08). The
+///   operation declares `(Parallel, Finish)`, and the LUT publishes no
+///   flat-end row in the `Parallel` family at all, so a flat tool on a
+///   drop-cutter raster read `Unmodeled(NoVendorData)` on the chipload
+///   gate and the feed modulator had no band to drive. A flat tool on a
+///   mesh raster is a ROUGHING use (the operator's 6 mm serpentine rough
+///   of the wanaka terrain: one pass, full local relief, zero leave), so
+///   the query routes to `(Pocket, Roughing)` — the same row the
+///   `Adaptive3d` rough on the same tool and material resolves. **Read
+///   the band as a roughing band.** A flat-tool finish raster inherits
+///   the pocket roughing chipload (higher than any finish band); the
+///   deflection and power gates still bound it, and the raster is a
+///   roughing pattern, but the band is not a finish recommendation.
+///   Ball and tapered-ball tools on `DropCutter` keep `(Parallel,
+///   Finish)`. `Waterline`, `RadialFinish`, `HorizontalFinish`,
+///   `SteepShallow` and `RampFinish` have the same hole for a flat tool
+///   and are NOT routed here — listed follow-up, not widened scope.
 /// - **`Adaptive3d`** declares `feeds_family: Adaptive` so it shares F&S
 ///   inputs with 2D adaptive HSM, but its path geometry is closer to
 ///   pocket-style clearing in wood. The vendor's 2D adaptive rows narrow
@@ -59,6 +76,15 @@ pub fn lut_query_for(
         && operation_family == LutOperationFamily::Adaptive
     {
         return Some((LutOperationFamily::Pocket, pass_role));
+    }
+    // G-DCFLAT: a flat end mill on a drop-cutter raster is a roughing
+    // use. Route it to the roughing pocket row the Adaptive3d rough
+    // resolves; the LUT has no flat-end Parallel row to answer with.
+    if operation_kind == OperationType::DropCutter
+        && tool_family == ToolFamily::FlatEnd
+        && operation_family == LutOperationFamily::Parallel
+    {
+        return Some((LutOperationFamily::Pocket, LutPassRole::Roughing));
     }
     if operation_kind != OperationType::ProjectCurve {
         return Some((operation_family, pass_role));

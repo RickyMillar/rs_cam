@@ -386,9 +386,13 @@ fn lut_resolver_selection_census_report() {
 //    the asserted bar below is written that way.
 
 /// The rerouted operation kinds and the family each declares.
-const REROUTES: [(OperationType, LutOperationFamily); 2] = [
+///
+/// G-DCFLAT (2026-09-08) added `DropCutter`: a FLAT tool routes
+/// `(Parallel, Finish)` → `(Pocket, Roughing)`; ball tools are untouched.
+const REROUTES: [(OperationType, LutOperationFamily); 3] = [
     (OperationType::Adaptive3d, LutOperationFamily::Adaptive),
     (OperationType::ProjectCurve, LutOperationFamily::Trace),
+    (OperationType::DropCutter, LutOperationFamily::Parallel),
 ];
 
 /// **The band consequence of the reroute, measured.** This is the census

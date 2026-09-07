@@ -394,8 +394,9 @@ pub enum LutQueryStamp {
     /// A row query was formed. `queried_*` is what the LUT saw;
     /// `declared_*` is the operation's own `feeds_family` /
     /// `feeds_pass_role` before routing. They differ for `Adaptive3d`
-    /// (→ `Pocket`) and `ProjectCurve` (→ `Parallel`/`Contour` +
-    /// `Finish`).
+    /// (→ `Pocket`), `ProjectCurve` (→ `Parallel`/`Contour` +
+    /// `Finish`) and `DropCutter` on a FLAT tool (→ `Pocket` +
+    /// `Roughing`, G-DCFLAT).
     Routed {
         declared_family: crate::feeds::vendor_lut::LutOperationFamily,
         declared_pass_role: crate::feeds::vendor_lut::LutPassRole,
