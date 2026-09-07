@@ -320,6 +320,54 @@ Reproducibility: B15 and S20 were reloaded from their saved TOMLs for the
 close-ups, regenerated and re-simulated, and read the same
 `total_runtime_s` to the millisecond (3274.427 and 2389.176).
 
+### 2.4 The same-material pair — MEASURED
+
+The cross-material ratio in §3 (plywood B15 against the OAK A + finish
+pair) needed a same-material partner. Run on the plywood copy: fixture
+index 5 (adaptive3d rough, C2 default, DOC 4.2) and index 6 (R1.5
+drop_cutter finish, stepover 0.3, from_remaining_stock), both through
+`apply_feeds` (speeds), modulation ON, 0.2 mm, generate_all fixpoint (2
+rounds, 1 simulation) and one final simulation. Binary `1af25c87`.
+
+| | A-ply rough (idx 5) | R1.5 finish (idx 6) | pair |
+|---|---:|---:|---:|
+| commanded feed / plunge / rpm | 1 100 / 512 / 16 500 | 776 / 256 / 18 500 | |
+| fed time (s) | 1 921 | 11 630 | |
+| total runtime (s) | | | **14 263.8** |
+| air, % of total / % of cutting | 43.8 / 38.1 | 45.1 / 45.8 | 44.8 / 44.3 |
+| air, absolute (s, approx.) | ≈ 1 150 | ≈ 5 250 | ≈ 6 400 |
+| collisions / rapid collisions | 0 / 0 | 0 / 0 | 0 / 0 |
+| chipload gate | MODELED Within, validated, row `amana-flat-plywood-hardwood-pocket-6000-2f`, band 0.032–0.055, median 0.0548 (at max) | MODELED Within, validated, row `amana-tapered-mdf-parallel-3175-2f`, band 0.0114–0.0209, median 0.0209 (at max) | |
+| deflection gate | Within 0.008 mm, validated | Within 0.007 mm, approximate | |
+| power gate | Within 0.017 / 0.773 kW | Within 0.002 / 0.867 kW | |
+| peak bite (mm) | 4.20 (= one DOC step) | 2.93 | |
+| crosses_standing | 10.4 % > 4.11 mm | 12.2 % > 0.56 mm, peak 2.93 | |
+| plunge over 1× | 7 / 588 at 2.1× (pre-fix binary) | 0 / 45 | |
+| modulator touched / median Δ / binding | 10 647 / 11 109, +64.3 %, chipload_max 70 % / kin_reach 25 % | 437 136 / 444 221, −0.2 %, chipload_max 98 % | |
+| achieved vs commanded (time-weighted) | 1 538 / 1 538 | 774 / 774 | |
+| utilization / feed_bound / machine_bound | 0.9995 / 0.990 / 0.010 | 1.000 / 1.000 / 0.000 | |
+| feeds_provenance | emitted | emitted | |
+| air measurability | degraded, blind 0.22 | degraded, blind 0.21 | |
+
+Reading: the plywood pair takes 14 264 s against 14 245 s for the oak
+pair, so the material changes almost nothing about the pair, because both
+finishes are feed-bound on the same R1.5 raster at stepover 0.3. The
+finish is 81.5 % of the plywood pair. The same-material ratio for B15 is
+**14 264 / 3 274 = 4.36×**; the cross-material ratio was 4.35×. S20 reads
+5.97× on the same base. The pair's finish peak bite (2.93 mm) equals the
+oak finish's on the same rough, and its 0/45 plunge count shows the
+G-BOUNDARYPLUNGE class lives in the rough, not the finish.
+
+One reading here bears on the Suggest-vs-gate item in §3: on THIS finish
+(median bite 0.19 mm) the gate's band max read 0.0209 and Suggest's 0.0210
+sat exactly on it, so the modulator moved the feed by −0.2 %. On B15 (the
+same tool, material, row and Suggest recipe, but a 9 mm peak bite as the
+only pass) the gate's band max read 0.0145. The band the gate quotes
+moves with the measured bite; Suggest's recipe does not. That is
+consistent with the DOC-derate mechanism and still not verified in code.
+
+Artifacts: `PLY_pair_A_finish.toml`, `PLY_pair_A_finish_sim.png`.
+
 ## 3. Verdict on the hypothesis, and a ranked recommendation
 
 The hypothesis passes, on the ball tools, on every bar the orchestrator set:
@@ -327,8 +375,9 @@ The hypothesis passes, on the ball tools, on every bar the orchestrator set:
 - **drop_cutter raster, R1.5 tapered ball, stepover 1.5 (B15): 3 274 s as
   the WHOLE job** — chipload, deflection and power all MODELED and Within,
   0 collisions, air 9.8 % against a 45 % bar, `feeds_provenance = emitted`,
-  and 4.35 × faster than the oak A rough + R1.5 finish pair (14 245 s) and
-  3.9 × faster than Arm G + finish (12 739 s). Cusp 0.20 mm. No triage
+  and 4.36 × faster than the PLYWOOD A rough + R1.5 finish pair (14 264 s,
+  §2.4, same material), 4.35 × faster than the oak pair (14 245 s) and
+  3.9 × faster than Arm G + finish (12 739 s, oak). Cusp 0.20 mm. No triage
   action of any kind. This is the recommendation for "rough + finish on
   plywood terrain": there is no rough; one ball raster does the job.
 - **iso-scallop, R2.0 tapered ball, h 0.27 (S20): 2 389 s** — the fastest
@@ -373,7 +422,9 @@ feed by a median 31 % to land on 0.0145. The ratio is 1.45×. The likely
 mechanism is the DOC derate: Suggest gets no axial hint from `drop_cutter`
 (`feeds/INTEGRATION.md`, "none") and derates at a default depth, while
 the gate derates at the measured 9 mm bite. The mechanism is not verified
-here (no code was run). Un-modulated, these arms would have run 45 % over
+here (no code was run); §2.4 adds one supporting reading — the same
+tool, row and recipe on a 0.19 mm median bite gave a gate band max of
+0.0209, equal to Suggest's number. Un-modulated, these arms would have run 45 % over
 the gate's ceiling on Suggest's numbers alone, so on this fixture the
 modulator is not a safety net for engagement variation only, it is the
 correction for Suggest's blind DOC. Handed to the ledger as a resolver-pair
@@ -394,11 +445,13 @@ Ranked, whole job on plywood, this fixture:
 4. B10 — 4 788 s, cusp 0.086; when the cusp must be under 0.1 mm.
 5. Arm G flat raster + R1.5 finish (oak) — 12 739 s; the flat rough saves
    10 % of the pair but the finish is 90 % of it.
-6. A + finish (oak) — 14 245 s.
+6. A + finish (plywood, §2.4) — 14 264 s; every gate MODELED Within, 0
+   collisions, but both ops over the air bar (43.8 % / 45.1 %).
+7. A + finish (oak) — 14 245 s.
 
 Against the adaptive3d family the deep-DOC single level (E-ply, 1 632 s
 rough only) confirms the roughing lever from 2026-09-07 (−34 % on plywood),
-but a rough at any DOC still needs the 11 400 s finish. The hypothesis is
+but a rough at any DOC still needs the 11 630 s finish (§2.4, measured). The hypothesis is
 answered by removing the finish, not by deepening the rough.
 
 ## 4. Not run / cannot run without code
@@ -409,9 +462,11 @@ answered by removing the finish, not by deepening the rough.
   G-DCFLAT build lands (§1.1). Scheduled after the rebuild and MCP reset.
 - **Before/after plunge reruns** (S20, SP15, S15, RA06, WL15, A-ply, E-ply):
   NOT RUN; the fix is `301f2cbc`, the binary is `1af25c87`.
-- **Rough + finish pair on plywood** for A / C2 / E: NOT RUN (the oak pairs
-  in §1.3 carry that comparison; the plywood finish would be ~11 400 s
-  again).
+- **Rough + finish pair on plywood**: MEASURED for A + R1.5 finish (§2.4,
+  14 264 s, finish 11 630 s fed). The C2 and E pairs were not run; their
+  finish would be the same op on a slightly different remaining stock, and
+  the oak §1.3 pair totals differ by under 5 % across the A, BE and C2E
+  roughs.
 - **A DOC cap on drop_cutter**: CANNOT RUN WITHOUT CODE (§1.4).
 - **Flat tool on waterline / radial / horizontal / steep_shallow /
   ramp_finish**: CANNOT be gated without the same routing fix widened
@@ -435,7 +490,8 @@ answered by removing the finish, not by deepening the rough.
 (fixture copy), one `<arm>.toml` + `<arm>_sim.png` + `<arm>_path.png` per
 arm (S15, S20, B10, B15, B20, SP15, RA06, WL15, A_ply_adaptive3d,
 C2_ply_adaptive3d_by_area, E_ply_adaptive3d_dpp546), the six close-up
-crops, `armG_finish_pair.toml` + `armG_finish_pair_sim.png`. Uncommitted
+crops, `armG_finish_pair.toml` + `armG_finish_pair_sim.png`,
+`PLY_pair_A_finish.toml` + `PLY_pair_A_finish_sim.png`. Uncommitted
 code: `crates/rs_cam_core/src/feeds/vendor_normalize.rs`,
 `crates/rs_cam_core/src/feeds/INTEGRATION.md`,
 `crates/rs_cam_core/src/tool_load/optimize/outcome.rs`,
