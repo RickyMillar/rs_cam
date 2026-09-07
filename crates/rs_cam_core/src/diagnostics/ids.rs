@@ -56,6 +56,32 @@ pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_ma
 /// `plunge_descent_mm`, which the crosses-standing rule above does not read.
 /// See [`crate::sim_triage::entry_load_observation`].
 pub const PROJECT_ENTRY_LOAD: &str = "project.entry_load";
+/// Phase 4 (2026-09-07). The plunge-class BACKSTOP: a vertical-dominant fed
+/// descent in the EMITTED motion runs faster in Z than the operation's own
+/// `plunge_rate`. Measured by [`crate::kinematic_utilization`] on the stored
+/// moves after the machine's rate clamp, for every tool and every operation
+/// family — not on the plan, and not on a configured number.
+///
+/// Complementary to [`PROJECT_PLUNGE_STRESS`], which is a STATIC check: it
+/// compares the CONFIGURED `plunge_rate` against a ball-tip safety cap and
+/// excludes flat and V tools. The two never overlap. A flat endmill whose
+/// generator emits an untagged vertical descent at the lateral band feed is
+/// invisible to the static rule and visible to this one.
+///
+/// NON-BLOCKING by design: `fix: None`, no export gate reads it. It sits in
+/// the `actions` list beside [`PROJECT_ENTRY_LOAD`], and after the Phase 3
+/// generator fix it should be silent on the shipped fixtures — a monitor that
+/// speaks the day a generator regresses.
+pub const PROJECT_PLUNGE_CLASS_LOAD: &str = "project.plunge_class_load";
+/// Phase 4 (2026-09-07). The two-sided kinematic reading for one toolpath:
+/// what fraction of the commanded feed the machine actually achieves, which
+/// constraint binds each move (feed / accel / per-axis rate / junction), and
+/// the headroom a constant-chipload feed rise would release.
+///
+/// INFORMATIONAL. It carries no threshold and no verdict — it answers "how
+/// hard is the machine working, and where is the headroom" for an operator
+/// who otherwise has to hand-analyse an exported `.nc`.
+pub const PROJECT_KINEMATIC_UTILIZATION: &str = "project.kinematic_utilization";
 
 // ── Feeds calculator warnings ───────────────────────────────────────
 pub const FEEDS_FEED_CLAMPED: &str = "feeds.feed_clamped";
@@ -250,6 +276,8 @@ pub const ALL: &[&str] = &[
     PROJECT_MEASURABILITY_ABSTAINED,
     PROJECT_CROSSES_STANDING_MATERIAL,
     PROJECT_ENTRY_LOAD,
+    PROJECT_PLUNGE_CLASS_LOAD,
+    PROJECT_KINEMATIC_UTILIZATION,
     FEEDS_FEED_CLAMPED,
     FEEDS_POWER_LIMITED,
     FEEDS_SHANK_TOO_LARGE,

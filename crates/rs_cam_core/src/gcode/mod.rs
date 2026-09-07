@@ -615,12 +615,22 @@ pub fn project_load_report(
             spans,
             drill_op: drill_op.map(|arc| arc.as_ref()),
         };
-        per_toolpath.push(crate::tool_load::evaluate_toolpath(
+        let mut verdict = crate::tool_load::evaluate_toolpath(
             &load_ctx,
             sim_trace,
             Some(machine),
             &strict_tolerance,
-        ));
+        );
+        // Phase 4 — the kinematic reading. `evaluate_toolpath` cannot build
+        // it: `ToolpathLoadContext` carries neither the emitted `Toolpath`
+        // nor the operation's `plunge_rate`. This site holds the whole
+        // `ProjectSession`, so it fills the slot from the session's single
+        // producer, `kinematic_utilization_of`. This caller holds no result
+        // of its own, so it takes the by-index convenience over the
+        // session's stored result; the MCP narration, which DOES hold one,
+        // passes its own move list to `_of` instead.
+        verdict.kinematic_utilization = project.kinematic_utilization_for(idx);
+        per_toolpath.push(verdict);
     }
     // PR-4: if we threw away a stale trace upstream, rewrite the
     // resulting `SimulationRequired` verdicts to `StaleSimulation`
@@ -1956,6 +1966,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             }],
         }
     }

@@ -3399,6 +3399,89 @@ impl ProjectSession {
             .collect()
     }
 
+    /// The Phase 4 kinematic reading for the toolpath at `index`, measured
+    /// over the move list the CALLER holds.
+    ///
+    /// This is the single construction site for
+    /// [`crate::kinematic_utilization::analyse_toolpath`] in the session.
+    /// It takes `toolpath` rather than fetching one, because a caller that
+    /// already holds a result must be measured on THAT result. The GUI's
+    /// MCP narration is the case: it narrates the move list on its own
+    /// runtime overlay, and re-fetching by index would describe one
+    /// toolpath's motion with another generation's numbers — the "B7
+    /// divergence" class its handler already fought once.
+    ///
+    /// Returns `None` when the toolpath is disabled or does not exist. The
+    /// caller's `toolpath` is the evidence; this function never asks
+    /// whether a result exists.
+    ///
+    /// The feed envelope MIRRORS the production runtime integrator in
+    /// `apply_adaptive_feed_modulation` (`max_feed` is the CUTTING
+    /// ceiling, `rapid_feed` honours `high_feedrate_mode`, kinematics come
+    /// from `effective_kinematics`, which never returns `None`). Keep the two
+    /// in step: the instrument and the integrator must not disagree about the
+    /// machine — that is the "one physics site" ruling of the Phase 1 plan.
+    pub fn kinematic_utilization_of(
+        &self,
+        index: usize,
+        toolpath: &crate::toolpath::Toolpath,
+    ) -> Option<crate::kinematic_utilization::ToolpathKinematicUtilization> {
+        let tc = self.toolpath_configs.get(index)?;
+        if !tc.enabled {
+            return None;
+        }
+        let kinematics = self.machine.effective_kinematics();
+        let max_feed = self.machine.cutting_feed_ceiling_mm_min().max(1.0);
+        let rapid_feed = if self.post.high_feedrate_mode {
+            self.post.high_feedrate.max(1.0)
+        } else {
+            self.machine.max_feed_mm_min.max(1.0)
+        };
+        Some(crate::kinematic_utilization::analyse_toolpath(
+            toolpath,
+            tc.id,
+            &kinematics,
+            max_feed,
+            rapid_feed,
+            tc.operation.plunge_rate(),
+        ))
+    }
+
+    /// [`Self::kinematic_utilization_of`] on the session's OWN stored result
+    /// for `index`, or `None` when there is none.
+    ///
+    /// The convenience form, for a caller that holds no result of its own —
+    /// the tool-load report, the triage builder and the CLI. A caller that
+    /// does hold one must call [`Self::kinematic_utilization_of`] with it.
+    pub fn kinematic_utilization_for(
+        &self,
+        index: usize,
+    ) -> Option<crate::kinematic_utilization::ToolpathKinematicUtilization> {
+        let result = self.results.get(&index)?;
+        self.kinematic_utilization_of(index, &result.annotated().toolpath)
+    }
+
+    /// [`Self::kinematic_utilization_for`] over every enabled toolpath that
+    /// carries a result, keyed by [`ToolpathId`].
+    ///
+    /// Drill ops are NOT excluded. A drill cycle's descents are exactly the
+    /// population the plunge-class backstop exists to grade, and the
+    /// engagement-metric exclusion that keeps drills out of
+    /// `toolpath_summaries` says nothing about their Z rates.
+    pub fn kinematic_utilizations(
+        &self,
+    ) -> std::collections::BTreeMap<
+        ToolpathId,
+        crate::kinematic_utilization::ToolpathKinematicUtilization,
+    > {
+        (0..self.toolpath_configs.len())
+            .filter_map(|idx| {
+                let util = self.kinematic_utilization_for(idx)?;
+                Some((util.toolpath_id, util))
+            })
+            .collect()
+    }
+
     /// Same as [`Self::diagnostics`] but takes a borrow view over
     /// simulation evidence. Used by the GUI MCP handler where the
     /// active sim lives on viz-side state, not on the core session.
@@ -3477,6 +3560,12 @@ impl ProjectSession {
             .map(|tc| tc.id)
             .collect();
 
+        // Phase 4 — the plunge-class backstop's population. Every enabled
+        // toolpath with a result, drill ops included; the finding itself is
+        // NOT gated on `rest_driven`, because an untagged vertical descent is
+        // a defect on fresh stock exactly as it is on rest stock.
+        let kinematic_utilization = self.kinematic_utilizations();
+
         SimulationTriage::build_with_rest_context(
             &TriageInputs {
                 trace,
@@ -3485,6 +3574,7 @@ impl ProjectSession {
                 rapid_collisions: evidence.rapid_collisions,
                 holder_collisions: &evidence.holder_collisions,
                 tool_diameters_mm: &tool_diameters_mm,
+                kinematic_utilization: &kinematic_utilization,
                 region_of: None,
             },
             &rest_driven,

@@ -94,6 +94,7 @@ fn abstaining_verdict(reason: UnmodeledReason) -> ToolpathLoadVerdict {
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,
+        kinematic_utilization: None,
     }
 }
 

@@ -87,6 +87,7 @@ fn verdict_with(drill: DrillGatesVerdict) -> ToolpathLoadVerdict {
         drill_gates: Some(drill),
         modulation_summary: None,
         feed_explanation: None,
+        kinematic_utilization: None,
     }
 }
 

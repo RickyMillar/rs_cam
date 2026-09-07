@@ -1356,6 +1356,11 @@ fn bench_viz_triage_build(c: &mut Criterion) {
         });
 
         let measurability = MeasurabilityReport::from_trace(&trace, Some(0.25));
+        // Phase 4: the kinematic reading is produced by the session, not by
+        // this synthetic trace, so the benchmark measures the triage builder
+        // with an empty map — the same shape a caller that measured nothing
+        // passes.
+        let kinematic_utilization = BTreeMap::new();
         group.bench_function(BenchmarkId::new("triage", n_samples), |b| {
             b.iter(|| {
                 let inputs = TriageInputs {
@@ -1365,6 +1370,7 @@ fn bench_viz_triage_build(c: &mut Criterion) {
                     rapid_collisions: &[],
                     holder_collisions: &[],
                     tool_diameters_mm: &tool_diameters_mm,
+                    kinematic_utilization: &kinematic_utilization,
                     region_of: None,
                 };
                 black_box(SimulationTriage::build(&inputs).advisories.total_matching)

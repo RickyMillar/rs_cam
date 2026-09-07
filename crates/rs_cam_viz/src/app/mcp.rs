@@ -1352,14 +1352,87 @@ impl super::RsCamApp {
         };
         context.absorb_stats(&result.stats);
 
-        rs_cam_core::narrate::narrate_toolpath_with_context(
+        let mut narration = rs_cam_core::narrate::narrate_toolpath_with_context(
             result.annotated.as_ref(),
             semantic_trace,
             cut_trace,
             debug_trace,
             &tool,
             &context,
-        )
+        );
+        // Phase 4 — the two-sided kinematic sentence.
+        //
+        // Built by the session's single producer, which is the SAME call
+        // that fills `ToolpathLoadVerdict::kinematic_utilization` in
+        // `gcode::project_load_report`. Going through the load report here
+        // would evaluate every gate on every toolpath to publish one
+        // sentence; narration is a 4 ms call and must stay one.
+        //
+        // B7 divergence 4, again: the sentence measures `result`, the SAME
+        // move list `narrate_toolpath_with_context` just described, handed
+        // to `kinematic_utilization_of`. The by-index form would re-fetch
+        // `session.results[index]` and could report a later generation's
+        // motion under this narration's heading. One result source.
+        if let Some(util) = state
+            .session
+            .kinematic_utilization_of(index, &result.annotated.toolpath)
+            && let Some(sentence) = Self::kinematics_narration_sentence(&util)
+        {
+            narration.push_str("\n\n");
+            narration.push_str(&sentence);
+        }
+        narration
+    }
+
+    /// The `kinematics` sentence appended to a narration, or `None` when
+    /// nothing was measurable.
+    ///
+    /// Both sides are stated on equal footing: headroom (feed-bound time a
+    /// feed rise converts) and over-command (machine-bound time, plus any
+    /// plunge-class descent that outruns the operation's own plunge rate).
+    /// Every reading is guarded on its own `Option` — an unmeasured value is
+    /// omitted rather than printed as a zero, because a zero utilization and
+    /// an unmeasured utilization are opposite facts.
+    fn kinematics_narration_sentence(
+        util: &rs_cam_core::kinematic_utilization::ToolpathKinematicUtilization,
+    ) -> Option<String> {
+        let mut utilization: Option<f64> = None;
+        if util.is_measured() {
+            utilization = util.utilization;
+        }
+        let mut clauses: Vec<String> = Vec::new();
+        if let Some(u) = utilization {
+            clauses.push(format!("runs at {:.0}% of commanded feed", u * 100.0));
+        }
+        if let Some(b) = util.bindings.as_ref() {
+            let mut feed = format!("{:.0}% feed-bound", b.feed_bound * 100.0);
+            // The PRECOMPUTED field, never `headroom_estimate`: that method
+            // re-solves every move, and this is an MCP handler path.
+            if let Some(headroom) = util.headroom_at_1_30 {
+                feed.push_str(&format!(
+                    " (+{:.0}% at a x1.30 feed rise)",
+                    headroom * 100.0
+                ));
+            }
+            clauses.push(feed);
+            clauses.push(format!(
+                "{:.0}% machine-bound and will not move",
+                b.machine_bound * 100.0
+            ));
+        }
+        if util.plunge_is_measured()
+            && let Some(ratio) = util.plunge.peak_ratio
+        {
+            clauses.push(format!(
+                "plunge-class peak {:.1}x this op's own plunge rate ({} of {} \
+                 vertical-dominant moves over 1x)",
+                ratio, util.plunge.over_1x, util.plunge.population
+            ));
+        }
+        if clauses.is_empty() {
+            return None;
+        }
+        Some(format!("kinematics: {}.", clauses.join("; ")))
     }
 
     /// v3.2 (2026-06-04): Combined-Suggest rationale for the toolpath

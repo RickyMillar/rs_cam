@@ -204,6 +204,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             },
             stage: SearchStage::Refined,
             reconciled_cycle_time_s: None,

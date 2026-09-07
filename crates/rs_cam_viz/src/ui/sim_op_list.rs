@@ -946,7 +946,72 @@ fn draw_toolpath_status_flags(
             )
             .on_hover_text(stack);
         }
+        // Phase 4 — the kinematic pill, beside the verdict pills rather
+        // than inside the worst-of rollup: it is INFORMATIONAL, it carries
+        // no threshold, and it must not compete with a safety flag for the
+        // single worst slot.
+        if let Some(util) = verdict.and_then(|v| v.kinematic_utilization.as_ref())
+            && let Some((label, detail)) = kinematics_pill(util)
+        {
+            ui.label(egui::RichText::new(label).small().color(theme::TEXT_DIM))
+                .on_hover_text(detail);
+        }
     });
+}
+
+/// The compact kinematic pill and its hover text, or `None` when nothing
+/// was measurable.
+///
+/// Two-sided by construction: the pill shows how much of the commanded feed
+/// the machine achieves, and the hover carries BOTH the headroom (feed-bound
+/// time a feed rise would convert) and the over-command reading (machine-bound
+/// time, and any plunge-class descent that outruns the op's own plunge rate).
+/// Every field is guarded on its own `Option`; an unmeasured reading is
+/// omitted, never rendered as a zero.
+fn kinematics_pill(
+    util: &rs_cam_core::kinematic_utilization::ToolpathKinematicUtilization,
+) -> Option<(String, String)> {
+    let mut utilization: Option<f64> = None;
+    if util.is_measured() {
+        utilization = util.utilization;
+    }
+    let mut lines: Vec<String> = Vec::new();
+    if let Some(u) = utilization {
+        lines.push(format!("Achieves {:.0}% of the commanded feed.", u * 100.0));
+    }
+    if let Some(b) = util.bindings.as_ref() {
+        let mut feed = format!("{:.0}% of fed time is feed-bound", b.feed_bound * 100.0);
+        // The PRECOMPUTED field, never `headroom_estimate`: this runs once
+        // per row per FRAME, and that method re-solves every move.
+        if let Some(headroom) = util.headroom_at_1_30 {
+            feed.push_str(&format!(
+                " — a ×1.30 feed rise lands about +{:.0}%",
+                headroom * 100.0
+            ));
+        }
+        lines.push(format!("{feed}."));
+        lines.push(format!(
+            "{:.0}% is machine-bound (accel / per-axis rate / junction) and will not move.",
+            b.machine_bound * 100.0
+        ));
+    }
+    if util.plunge_is_measured()
+        && let Some(ratio) = util.plunge.peak_ratio
+    {
+        lines.push(format!(
+            "Plunge-class peak is {ratio:.1}× this op's own plunge rate \
+             ({} of {} vertical-dominant moves over 1×).",
+            util.plunge.over_1x, util.plunge.population
+        ));
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    let label = match utilization {
+        Some(u) => format!("⚙ {:.0}%", u * 100.0),
+        None => "⚙ —".to_owned(),
+    };
+    Some((label, lines.join("\n")))
 }
 
 /// Per-toolpath status flags, sorted worst-first (see

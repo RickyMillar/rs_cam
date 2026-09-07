@@ -1150,12 +1150,16 @@ fn unit_vec(p0: &P3, p1: &P3) -> [f64; 3] {
 /// accels). Result is capped by the smaller of the two commanded feeds and any
 /// explicit `max_junction_velocity_mm_min`. Rapid-adjacent junctions full-stop,
 /// matching the conservative planner convention (clean accel/decel transition).
-// Private integrator helper: the corner geometry genuinely needs both
+///
+/// P2 (2026-09-07): `pub` so
+/// [`crate::kinematic_utilization`] reads the SAME corner model the two
+/// integrators read. Do not reimplement it.
+// Shared integrator helper: the corner geometry genuinely needs both
 // directions, both commanded feeds, corner accel, δ, the optional clamp,
 // and the rapid flag. Bundling them into a struct would only obscure the
 // call sites in the two pairwise integrators above.
 #[allow(clippy::too_many_arguments)]
-fn junction_velocity(
+pub fn junction_velocity(
     dir_in: &[f64; 3],
     dir_out: &[f64; 3],
     v_cmd_in: f64,

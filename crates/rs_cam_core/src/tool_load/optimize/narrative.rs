@@ -1079,6 +1079,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         }
     }
 
@@ -1378,6 +1379,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             },
             None,
         );

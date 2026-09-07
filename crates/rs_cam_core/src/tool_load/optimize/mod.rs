@@ -1931,6 +1931,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         }
     }
 
@@ -1943,6 +1944,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         }
     }
 
@@ -2086,6 +2088,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             }
         };
         // Faster but parked at LUT max (chipload 0.07 → distance 1.0
@@ -2491,6 +2494,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         }
     }
 
@@ -2539,6 +2543,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         };
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let advisory_candidate = synthetic_candidate(2100.0, 75.0, verdict);

@@ -523,6 +523,22 @@ pub fn evaluate_toolpath(
         modulation_summary: sim_trace
             .and_then(|trace| trace.modulation_summaries.get(&ctx.toolpath_id).cloned()),
         feed_explanation,
+        // P4b (verifier): wire kinematic_utilization — needs the EMITTED
+        // `&Toolpath` (the move list) and the operation's own
+        // `plunge_rate_mm_min`. Neither is on `ToolpathLoadContext`, and
+        // `GateEnv` carries only the trace, the machine and the tolerance
+        // bands, so `analyse_toolpath` cannot be called here.
+        //
+        // `gcode::project_load_report` DOES hold both (it has the
+        // `ProjectSession`), so it fills this slot after the call — see
+        // `ProjectSession::kinematic_utilization_for`. The optimizer path
+        // (`tool_load::optimize`, which calls `evaluate_toolpath` directly)
+        // therefore leaves it `None`. Closing that divergence — the exact
+        // shape the Phase 6 doc comment above warns about — means threading
+        // `toolpath: Option<&'a Toolpath>` and `plunge_rate_mm_min: f64`
+        // through `ToolpathLoadContext`, which has 22 literal sites across
+        // the workspace. That is the verifier's call, not a scaffold's.
+        kinematic_utilization: None,
     }
 }
 

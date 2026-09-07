@@ -306,6 +306,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         };
 
         let candidates = strategy.candidates(&view, &verdict);
@@ -358,6 +359,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }
@@ -386,6 +388,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         };
         assert_eq!(strategy.candidates(&view, &verdict).len(), 1);
     }
@@ -415,6 +418,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }

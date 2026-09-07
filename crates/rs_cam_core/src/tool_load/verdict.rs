@@ -234,6 +234,22 @@ pub struct ToolpathLoadVerdict {
     /// winner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feed_explanation: Option<Box<crate::feeds::FeedExplanation>>,
+    /// Phase 4 (2026-09-07) — the per-toolpath kinematic reading:
+    /// utilization of the commanded feed, which constraint binds each
+    /// move, the headroom a feed rise would release, and the
+    /// plunge-class observation that backs `project.plunge_class_load`.
+    ///
+    /// `Some` only where the producer had the emitted toolpath, the
+    /// machine kinematics and the operation's own `plunge_rate` in
+    /// scope — today that is `gcode::project_load_report`, through
+    /// [`crate::session::ProjectSession::kinematic_utilization_for`].
+    /// The optimizer path leaves it `None`; see the note at
+    /// [`crate::tool_load::evaluate_toolpath`].
+    ///
+    /// Report-only and additive: no gate, threshold or severity reads
+    /// it, and nothing in export consumes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kinematic_utilization: Option<crate::kinematic_utilization::ToolpathKinematicUtilization>,
 }
 
 impl ToolpathLoadVerdict {
@@ -1484,6 +1500,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         };
         assert_eq!(v.modeled_count(), 2);
         assert!(!v.any_exceeded());
@@ -1532,6 +1549,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             }],
         };
         let v = serde_json::to_value(&r).expect("must round-trip");
@@ -1579,6 +1597,7 @@ mod tests {
                     drill_gates: None,
                     modulation_summary: None,
                     feed_explanation: None,
+                    kinematic_utilization: None,
                 },
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId(1),
@@ -1615,6 +1634,7 @@ mod tests {
                     drill_gates: None,
                     modulation_summary: None,
                     feed_explanation: None,
+                    kinematic_utilization: None,
                 },
             ],
         };
@@ -1666,6 +1686,7 @@ mod tests {
             }),
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         };
 
         let healthy = drill_verdict(DrillGateOutcome::Within {
@@ -1743,6 +1764,7 @@ mod tests {
                     drill_gates: None,
                     modulation_summary: None,
                     feed_explanation: None,
+                    kinematic_utilization: None,
                 },
                 // Sim wasn't run yet — every gate `SimulationRequired`.
                 // Operator action: run the sim.
@@ -1760,6 +1782,7 @@ mod tests {
                     drill_gates: None,
                     modulation_summary: None,
                     feed_explanation: None,
+                    kinematic_utilization: None,
                 },
                 // Mixed: one gate N/A, one needs sim. Operator still
                 // has an action item, so this rolls up as
@@ -1778,6 +1801,7 @@ mod tests {
                     drill_gates: None,
                     modulation_summary: None,
                     feed_explanation: None,
+                    kinematic_utilization: None,
                 },
             ],
         };
@@ -1834,6 +1858,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             }],
         };
         // Resolver hit — name flows into the entry.
@@ -2102,6 +2127,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             }],
         };
         let s = serde_json::to_string(&r).expect("serialize");
@@ -2169,6 +2195,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             }],
         };
         let exceeded = r.exceeded_criteria();
@@ -2240,6 +2267,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         };
         for status in v.criteria() {
             assert_eq!(
@@ -2281,6 +2309,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         }
     }
 
@@ -2301,6 +2330,7 @@ mod tests {
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
+            kinematic_utilization: None,
         }
     }
 
@@ -2383,6 +2413,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             }],
         };
         let s = r.summary(|id| {
@@ -2436,6 +2467,7 @@ mod tests {
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
+                kinematic_utilization: None,
             }],
         };
         let s = r.summary(|_| None);

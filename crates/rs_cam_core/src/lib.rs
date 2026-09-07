@@ -73,6 +73,7 @@ pub mod ids;
 pub mod inlay;
 pub mod interrupt;
 pub mod io;
+pub mod kinematic_utilization;
 pub mod machine;
 pub mod machine_kinematics;
 pub mod machine_library;

@@ -641,12 +641,22 @@ pub fn run_project_command(
             );
         }
 
+        // Phase 4 — the kinematic reading, from the session's single
+        // producer (the same one that fills the tool-load verdict slot and
+        // feeds the triage), so the CLI cannot report a different trapezoid
+        // from the GUI for the same project.
+        let kinematics = session.kinematic_utilizations();
         for entry in &project_summary.per_toolpath {
             let status_icon = if entry.status == "ok" { " " } else { "!" };
             eprintln!(
                 "  [{status_icon}] #{} {} ({}) — {} moves, {} collisions",
                 entry.id, entry.name, entry.operation, entry.move_count, entry.collision_count,
             );
+            if let Some(util) = kinematics.get(&entry.id)
+                && let Some(line) = kinematics_report_line(util)
+            {
+                eprintln!("      {line}");
+            }
         }
         eprintln!("Adaptive feed modulation: {modulation_state}");
         eprintln!("Verdict: {verdict}");
@@ -793,6 +803,68 @@ fn fmt_opt_u32(v: Option<u32>) -> String {
         Some(x) => x.to_string(),
         None => "-".to_owned(),
     }
+}
+
+/// Phase 4 — the two-sided kinematic reading for one toolpath, or `None`
+/// when nothing was measurable.
+///
+/// Both sides carry equal weight, and each half is guarded on its own
+/// `Option`: headroom ("feed-bound, so a feed rise lands time") and
+/// over-command ("machine-bound, and a plunge-class descent outruns the op's
+/// own plunge rate"). A metric that was not measured is OMITTED — this
+/// function never prints a zero for an absent reading, because a zero
+/// utilization and an unmeasured utilization are opposite facts.
+fn kinematics_report_line(
+    util: &rs_cam_core::kinematic_utilization::ToolpathKinematicUtilization,
+) -> Option<String> {
+    let mut bound: Vec<String> = Vec::new();
+    if let Some(bindings) = util.bindings.as_ref() {
+        let mut feed = format!("{:.0}% feed-bound", bindings.feed_bound * 100.0);
+        // The PRECOMPUTED field. This path is one-shot, not a render loop,
+        // but the field is also the only headroom reading that survives
+        // serialisation — `moves` is `#[serde(skip)]` — so every surface
+        // reads the same one.
+        if let Some(headroom) = util.headroom_at_1_30 {
+            feed.push_str(&format!(" → +{:.0}% at ×1.30", headroom * 100.0));
+        }
+        bound.push(feed);
+        bound.push(format!(
+            "{:.0}% machine-bound",
+            bindings.machine_bound * 100.0
+        ));
+    }
+    let mut plunge: Option<String> = None;
+    if util.plunge_is_measured()
+        && let Some(ratio) = util.plunge.peak_ratio
+    {
+        plunge = Some(format!("plunge peak {ratio:.1}× plunge rate"));
+    }
+    let mut utilization: Option<f64> = None;
+    if util.is_measured() {
+        utilization = util.utilization;
+    }
+    if utilization.is_none() && bound.is_empty() && plunge.is_none() {
+        return None;
+    }
+
+    let mut line = match utilization {
+        Some(u) => format!("kinematics: {:.0}% of commanded", u * 100.0),
+        // The utilization itself was not measurable; the binding split or
+        // the plunge reading still may be, and saying which one is missing
+        // beats printing a zero that reads as a measurement.
+        None => "kinematics: utilization not measured".to_owned(),
+    };
+    let mut detail = bound.join(", ");
+    if let Some(plunge) = plunge {
+        if !detail.is_empty() {
+            detail.push_str("; ");
+        }
+        detail.push_str(&plunge);
+    }
+    if !detail.is_empty() {
+        line.push_str(&format!(" ({detail})"));
+    }
+    Some(line)
 }
 
 /// Render the shared [`SimulationTriage`] contract.

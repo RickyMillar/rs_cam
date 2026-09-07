@@ -51,6 +51,7 @@ use crate::diagnostics::{
     Severity, Source, ids,
 };
 use crate::ids::ToolpathId;
+use crate::kinematic_utilization::ToolpathKinematicUtilization;
 use crate::sim_measurability::MeasurabilityReport;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::toolpath_spans::{RegionSpanRole, SpanId};
@@ -263,6 +264,12 @@ pub struct TriageInputs<'a> {
     pub holder_collisions: &'a [(ToolpathId, usize)],
     /// Tool diameter per toolpath, for the spatial bucket edge.
     pub tool_diameters_mm: &'a BTreeMap<ToolpathId, f64>,
+    /// Phase 4 — the per-toolpath kinematic reading, keyed by toolpath id.
+    /// Built by [`crate::session::ProjectSession::kinematic_utilizations`].
+    /// An EMPTY map means the caller measured nothing, so
+    /// `project.plunge_class_load` is simply absent — it never reads as
+    /// clean.
+    pub kinematic_utilization: &'a BTreeMap<ToolpathId, ToolpathKinematicUtilization>,
     pub region_of: Option<RegionResolver<'a>>,
 }
 
@@ -376,6 +383,19 @@ impl SimulationTriage {
             if rest_driven.contains(&tp.toolpath_id)
                 && let Some(f) = entry_load_finding(inputs.trace, tp.toolpath_id)
             {
+                actions.push(f);
+            }
+        }
+
+        // Phase 4 — the plunge-class backstop. Iterated over the utilization
+        // map, NOT over `toolpath_summaries`: that list drops drill ops
+        // (`metrics_not_applicable`) and covers only what the dexel run
+        // touched, while this reading is over EMITTED motion and applies to
+        // every operation family. It is also not gated on `rest_driven` —
+        // a descent faster than its own plunge rate is a defect on fresh
+        // stock exactly as it is on rest stock.
+        for util in inputs.kinematic_utilization.values() {
+            if let Some(f) = plunge_class_finding(util) {
                 actions.push(f);
             }
         }
@@ -853,6 +873,105 @@ fn entry_load_finding(trace: &SimulationCutTrace, toolpath_id: ToolpathId) -> Op
     })
 }
 
+/// Report a pass whose VERTICAL-DOMINANT fed motion descends faster than the
+/// operation's own `plunge_rate` (Phase 4, 2026-09-07).
+///
+/// The physics: a sloped fed descent is a RAMP — the flutes cut laterally at
+/// the ramp angle and the chipload gate governs it, so its Z component
+/// exceeding `plunge_rate` is not a hazard. Only a vertical-dominant descent
+/// is a plunge (centre cutting, chip evacuation, tip load), and only that
+/// class is graded here. [`crate::kinematic_utilization`] does the
+/// classification; this function only reads the verdict.
+///
+/// NON-BLOCKING. `fix: None`, no export gate reads it, and it grades EMITTED
+/// motion after the machine's rate clamp — not the plan, and not a configured
+/// number. Complementary to the static `project.plunge_stress` rule, which
+/// checks the configured plunge rate against a ball-tip cap and excludes flat
+/// and V tools.
+///
+/// Fires only on a measured reading with a real population
+/// ([`ToolpathKinematicUtilization::plunge_is_measured`]); an op with no
+/// plunge-class moves is absent from the list, never reported clean.
+pub fn plunge_class_finding(util: &ToolpathKinematicUtilization) -> Option<Finding> {
+    if !util.plunge_is_measured() {
+        return None;
+    }
+    let ratio = util.plunge.peak_ratio?;
+    if ratio <= 1.0 {
+        return None;
+    }
+    let severity = if ratio > 2.0 {
+        Severity::Critical
+    } else {
+        Severity::Caution
+    };
+    let toolpath_id = util.toolpath_id;
+    let plunge_rate = util.plunge.plunge_rate_mm_min;
+    // The achieved Z rate the ratio was taken from. When the kernel did not
+    // publish it, restate the ratio against the op's own plunge rate — the
+    // same quantity, expressed from the number that IS published, rather
+    // than a zero standing in for a missing measurement.
+    let achieved_z = util
+        .plunge
+        .worst_achieved_z_rate_mm_min
+        .unwrap_or(ratio * plunge_rate);
+    let position = util.plunge.worst_position;
+    let at = position.unwrap_or_default();
+    let move_index = util.plunge.worst_move_index;
+
+    Some(Finding {
+        dedup_key: DedupKey {
+            id: DiagnosticId::from(ids::PROJECT_PLUNGE_CLASS_LOAD),
+            toolpath_id: Some(toolpath_id),
+            region: None,
+            semantic_item_id: None,
+            bucket: [0, 0, 0],
+        },
+        diagnostic: Diagnostic {
+            id: DiagnosticId::from(ids::PROJECT_PLUNGE_CLASS_LOAD),
+            scope: Scope::Toolpath { id: toolpath_id },
+            category: Category::ToolLoad,
+            severity,
+            confidence: Confidence::Verified,
+            state: DiagnosticState::Current,
+            source: Source::Simulation,
+            message: format!(
+                "plunge-class motion descends faster than this op's own plunge rate: {} of \
+                 {} vertical-dominant moves exceed {:.0} mm/min, peaking at {:.0} mm/min \
+                 ({:.1}x) at move {} ({:.1},{:.1},{:.2}). The modulator lifts untagged \
+                 descents to the lateral band; the load gates skip nothing here — this \
+                 reading is emitted motion after the machine's rate clamp.",
+                util.plunge.over_1x,
+                util.plunge.population,
+                plunge_rate,
+                achieved_z,
+                ratio,
+                move_index.unwrap_or_default(),
+                at[0],
+                at[1],
+                at[2],
+            ),
+            evidence: move_index.map(|move_index| DiagnosticEvidence::Move {
+                toolpath_id,
+                move_index,
+                position,
+            }),
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
+        occurrences: util.plunge.over_1x.max(1),
+        worst: WorstEvidence {
+            position: at,
+            move_index: move_index.unwrap_or_default(),
+            duration_s: 0.0,
+            wasted_runtime_s: 0.0,
+            min_radial_engagement: 0.0,
+            sample_count: util.plunge.over_1x,
+        },
+    })
+}
+
 fn collision_finding(
     id: &str,
     message: String,
@@ -1029,6 +1148,7 @@ mod tests {
         rapids: &'a [RapidCollision],
         holders: &'a [(ToolpathId, usize)],
         diameters: &'a BTreeMap<ToolpathId, f64>,
+        kinematics: &'a BTreeMap<ToolpathId, ToolpathKinematicUtilization>,
     ) -> TriageInputs<'a> {
         TriageInputs {
             trace,
@@ -1037,6 +1157,7 @@ mod tests {
             rapid_collisions: rapids,
             holder_collisions: holders,
             tool_diameters_mm: diameters,
+            kinematic_utilization: kinematics,
             region_of: None,
         }
     }
@@ -1057,7 +1178,7 @@ mod tests {
 
         let m = MeasurabilityReport::default();
         let d = BTreeMap::new();
-        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d));
+        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d, &BTreeMap::new()));
 
         assert!(t.advisories.items.len() <= ADVISORY_CAP_PER_PROJECT);
         assert!(t.advisories.truncated, "the cap must announce itself");
@@ -1114,6 +1235,7 @@ mod tests {
             std::slice::from_ref(&rapid),
             &[(ToolpathId(1), 1)],
             &d,
+            &BTreeMap::new(),
         ));
 
         assert_eq!(t.safety.len(), 2, "one rapid + one holder collision");
@@ -1154,7 +1276,8 @@ mod tests {
         ];
         let m = MeasurabilityReport::default();
         let d = BTreeMap::new();
-        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &rapids, &[], &d));
+        let k = BTreeMap::new();
+        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &rapids, &[], &d, &k));
 
         assert_eq!(
             t.safety.len(),
@@ -1282,7 +1405,7 @@ mod tests {
         let trace = SimulationCutTrace::from_samples(0.5, samples);
         let m = MeasurabilityReport::default();
         let d = BTreeMap::new();
-        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d));
+        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d, &BTreeMap::new()));
 
         let f = t
             .actions
@@ -1317,7 +1440,7 @@ mod tests {
         let trace = SimulationCutTrace::from_samples(0.5, samples);
         let m = MeasurabilityReport::default();
         let d = BTreeMap::new();
-        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d));
+        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d, &BTreeMap::new()));
         assert!(
             !t.actions
                 .iter()
@@ -1355,6 +1478,7 @@ mod tests {
             &[],
             &[],
             &d,
+            &BTreeMap::new(),
         ));
         assert!(t.actions.is_empty());
         assert!(t.is_clear());
@@ -1434,7 +1558,8 @@ mod tests {
         // Without rest context the rule must NOT reach actions — a
         // fresh-stock entry plunge is planned motion, and the perf golden's
         // drop-cutter fixture pins that silence.
-        let plain = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d));
+        let k = BTreeMap::new();
+        let plain = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d, &k));
         assert!(
             !plain
                 .actions
@@ -1445,7 +1570,7 @@ mod tests {
 
         let rest: BTreeSet<ToolpathId> = [ToolpathId(1)].into_iter().collect();
         let t = SimulationTriage::build_with_rest_context(
-            &inputs(&trace, &m, &[], &[], &[], &d),
+            &inputs(&trace, &m, &[], &[], &[], &d, &BTreeMap::new()),
             &rest,
         );
         let f = t
