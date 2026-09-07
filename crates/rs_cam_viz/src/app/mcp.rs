@@ -1438,10 +1438,29 @@ impl super::RsCamApp {
         // motion the post-processor emits. This handler narrates the WORKER's
         // move list, which the modulation post-pass never rewrites, so the
         // qualifier here is load-bearing (`feedback_measure_emitted_motion`).
+        //
+        // The Planned wording is THIS SURFACE's, not the shared
+        // `FeedsProvenance::qualifier()`. The shared text ends "run a
+        // simulation for emitted", which is true where it is read from
+        // `session.results` (the CLI and the GUI) and FALSE here: this
+        // handler narrates `state.gui.toolpath_rt`, the worker's
+        // pre-modulation IR, which a simulation never rewrites. An operator
+        // who follows that instruction runs a simulation and reads the same
+        // number again. Narrating the emitted result is the open follow-up
+        // (G-MODEXPORT class); until it lands, this surface states what it
+        // reads and names the surface that does carry the emitted figure.
+        let provenance = match util.feeds_provenance {
+            rs_cam_core::kinematic_utilization::FeedsProvenance::Planned => {
+                "planned — this surface narrates the pre-modulation plan; the \
+                 emitted reading is in get_tool_load_report after a simulation"
+            }
+            rs_cam_core::kinematic_utilization::FeedsProvenance::Emitted => {
+                util.feeds_provenance.qualifier()
+            }
+        };
         Some(format!(
-            "kinematics: {} ({}).",
-            clauses.join("; "),
-            util.feeds_provenance.qualifier()
+            "kinematics: {} ({provenance}).",
+            clauses.join("; ")
         ))
     }
 

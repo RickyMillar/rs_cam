@@ -193,6 +193,9 @@ fn a_collapsed_user_offset_reaches_the_clip_as_a_reported_pass_through() {
         &[],
         6.0,
         20.0,
+        // G-BOUNDARYPLUNGE: no operation in this fixture, so the re-entry
+        // keeps the crossing move's cut feed (this test's pinned behaviour).
+        None,
         &semantic_ctx,
         &mut rs_cam_core::transform_provenance::ReconcileSet::new(Some(&recorder), None),
         &mut findings,

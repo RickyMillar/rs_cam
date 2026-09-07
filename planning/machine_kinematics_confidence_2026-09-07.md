@@ -262,16 +262,39 @@ visited over-1× == 0, and whole-population peak < 1.5 against the pre-guard
 1.848.
 
 Follow-ups opened by Phase 3:
-- **G-BOUNDARYPLUNGE** — `boundary.rs:311-316` must emit the re-tagged
-  `EntryPlunge` at the op's plunge rate, not the preserved cut feed; instrument
-  the emission before fixing (the attribution is by exact feed match plus
-  clustered move indices, not by a trace).
+- **G-BOUNDARYPLUNGE — FIXED 2026-09-07 (pre-merge).** The clip walk
+  `boundary::clip_toolpath_to_boundary_set_with_provenance`
+  (`crates/rs_cam_core/src/boundary.rs:332-423`, re-entry arm at `:369-390`)
+  now re-emits the re-tagged
+  `EntryPlunge` at the OPERATION's plunge rate instead of the preserved cut
+  feed. The rate is threaded in as a new `plunge_rate_mm_min: Option<f64>`
+  parameter on that walk, on `boundary::clip_annotated_to_boundary_set`, and
+  on `ProjectSession::apply_boundary_clip` / `..._multi`; the three session
+  call sites and the two GUI-worker call sites pass
+  `Some(operation.plunge_rate())`. `None` means the caller holds no
+  operation (the two convenience wrappers `clip_toolpath_to_boundary` /
+  `clip_toolpath_to_boundary_with_provenance`, which no production path
+  uses) and keeps the old cut feed; a non-finite or non-positive rate is
+  read the same way, mirroring the Phase 3 guard's own disable condition.
+  The rate is NOT capped to the cut feed — a generator-emitted plunge takes
+  the plunge dial as commanded, exactly like the adaptive3d peck ladder. A
+  re-entry that also moves in XY is plunge-rated too, deliberately: it is
+  tagged `EntryPlunge`, so the modulator will never touch it. Sentry:
+  `crates/rs_cam_core/tests/boundary_reentry_plunge_rate_g_boundaryplunge.rs`
+  (red-then-green: the pre-fix walk emits F).
 - **Narration source** — MCP `narrate_toolpath` narrates `state.gui.toolpath_rt`,
   the worker's PRE-modulation IR, so its kinematics sentence reads "planned"
   even after a simulation; export reads `session.results` (emitted). Same
   class as G-MODEXPORT. Ruling 3 pinned narration to one source — the wrong
   one for emitted readings. Fix: narrate the emitted result when a trace
-  exists.
+  exists. **Still deferred.** The misleading *string* is fixed
+  2026-09-07 (pre-merge): the Planned case on this surface no longer borrows
+  `FeedsProvenance::qualifier()`'s "planned feeds — run a simulation for
+  emitted", an instruction that cannot change this reading. It now says
+  `planned — this surface narrates the pre-modulation plan; the emitted
+  reading is in get_tool_load_report after a simulation`
+  (`crates/rs_cam_viz/src/app/mcp.rs`, `kinematics_narration_sentence`). The
+  CLI and GUI keep the shared wording, where it is true.
 - The guard also caps an untagged zero-engagement vertical move that the
   strategy left at commanded (sentried in Phase 3's follow-up).
 

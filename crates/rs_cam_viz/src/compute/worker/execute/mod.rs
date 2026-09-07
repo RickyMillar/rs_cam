@@ -742,6 +742,10 @@ pub(super) fn run_compute_with_phase_tracker(
                     &req.keep_out_footprints,
                     req.tool.envelope_diameter(),
                     effective_safe_z(req),
+                    // G-BOUNDARYPLUNGE: the re-entry descent the clipper
+                    // emits is a plunge, so it runs at the operation's own
+                    // plunge rate, not the crossing move's cut feed.
+                    Some(req.operation.plunge_rate()),
                     &semantic_ctx,
                     &mut channels,
                     &mut generation_findings,
@@ -858,10 +862,17 @@ pub(super) fn run_compute_with_phase_tracker(
                     // the offset used to keep piece 1 and clip everything
                     // outside it away; the multi-region path already kept
                     // them all, and that is the semantics that won.
-                    current =
-                        clip_annotated_to_boundary_set(current, &boundaries, effective_safe_z(req))
-                            .reconcile(&mut channels)
-                            .into_inner();
+                    // G-BOUNDARYPLUNGE: the re-entry descent the clipper
+                    // emits is a plunge, so it runs at the operation's own
+                    // plunge rate, not the crossing move's cut feed.
+                    current = clip_annotated_to_boundary_set(
+                        current,
+                        &boundaries,
+                        effective_safe_z(req),
+                        Some(req.operation.plunge_rate()),
+                    )
+                    .reconcile(&mut channels)
+                    .into_inner();
                     if let Some(root) = semantic_root.as_ref() {
                         let scope =
                             root.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");

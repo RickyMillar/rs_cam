@@ -58,6 +58,9 @@ fn boundary_clip_preserves_spans_when_all_moves_inside() {
         &[],
         2.0,
         20.0,
+        // G-BOUNDARYPLUNGE: no operation in this fixture, so the re-entry
+        // keeps the crossing move's cut feed (this test's pinned behaviour).
+        None,
         &semantic_ctx,
         &mut ReconcileSet::new(Some(&recorder), None),
         &mut GenerationFindings::default(),
@@ -109,6 +112,9 @@ fn boundary_clip_with_no_input_spans_emits_no_spans() {
         &[],
         2.0,
         20.0,
+        // G-BOUNDARYPLUNGE: no operation in this fixture, so the re-entry
+        // keeps the crossing move's cut feed (this test's pinned behaviour).
+        None,
         &semantic_ctx,
         &mut ReconcileSet::new(Some(&recorder), None),
         &mut GenerationFindings::default(),

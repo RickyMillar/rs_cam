@@ -426,7 +426,9 @@ fn face_full_chain_fingerprint() {
     // Stage 2 — boundary clip against a rectangle that actually cuts the
     // path (inset from the faced area, so moves leave and re-enter).
     let boundary = Polygon2::rectangle(2.0, 2.0, 34.0, 26.0);
-    current = clip_annotated_to_boundary_set(current, &[boundary], 30.0)
+    // G-BOUNDARYPLUNGE: `None` keeps the re-entry at the crossing move's cut
+    // feed, so the pinned fingerprint below still describes the same motion.
+    current = clip_annotated_to_boundary_set(current, &[boundary], 30.0, None)
         .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
         .into_inner();
     assert_eq!(

@@ -172,6 +172,9 @@ fn the_pre_fix_shape_emits_an_unclipped_path_on_a_failed_containment() {
         annotated,
         boundaries.first().map(std::slice::from_ref).unwrap_or(&[]),
         20.0,
+        // G-BOUNDARYPLUNGE: no operation in this fixture, so the re-entry
+        // keeps the crossing move's cut feed (this test's pinned behaviour).
+        None,
     )
     .reconcile(&mut rs_cam_core::transform_provenance::ReconcileSet::new(
         Some(&recorder),
@@ -262,6 +265,9 @@ fn a_failed_region_refuses_end_to_end_through_apply_boundary_clip_multi() {
         &[],
         6.0,
         20.0,
+        // G-BOUNDARYPLUNGE: no operation in this fixture, so the re-entry
+        // keeps the crossing move's cut feed (this test's pinned behaviour).
+        None,
         &semantic_ctx,
         &mut rs_cam_core::transform_provenance::ReconcileSet::new(Some(&recorder), None),
         &mut findings,
@@ -325,6 +331,9 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
         &[],
         tool_diameter,
         20.0,
+        // G-BOUNDARYPLUNGE: no operation in this fixture, so the re-entry
+        // keeps the crossing move's cut feed (this test's pinned behaviour).
+        None,
         &semantic_ctx,
         &mut rs_cam_core::transform_provenance::ReconcileSet::new(Some(&recorder), None),
         &mut findings,

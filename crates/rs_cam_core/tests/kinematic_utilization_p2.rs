@@ -511,6 +511,15 @@ fn headroom_estimate_is_positive_and_below_the_feed_rise() {
 /// defect with its own follow-up, not a guard failure, so the bar below
 /// is scoped to the guard's own population.
 ///
+/// That generator defect is attributed to the boundary clipper — by exact
+/// feed match plus clustered move indices, NOT by a trace — and the
+/// mechanism is FIXED as G-BOUNDARYPLUNGE (2026-09-07): the clipper now
+/// emits its re-entry descent at the operation's plunge rate. The 1.3863
+/// figure above is therefore the reading BEFORE that fix; a re-run should
+/// read 1.0 if the attribution is right, and is what would confirm it. The
+/// bar below is unchanged and still passes — it was never scoped to the
+/// residual.
+///
 /// The measured figures print to stderr on every run, pass or fail — see
 /// `tests/plunge_guard_ab_p3.rs` for the paired A/B they came from.
 #[test]

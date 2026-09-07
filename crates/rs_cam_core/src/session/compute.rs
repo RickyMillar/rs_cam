@@ -1706,6 +1706,7 @@ impl ProjectSession {
                                 &keep_out_footprints,
                                 tool_def.diameter(),
                                 heights.retract_z,
+                                Some(tc.operation.plunge_rate()),
                                 &semantic_root,
                                 &mut channels,
                                 &mut findings,
@@ -1729,6 +1730,7 @@ impl ProjectSession {
                                 &keep_out_footprints,
                                 tool_def.diameter(),
                                 heights.retract_z,
+                                Some(tc.operation.plunge_rate()),
                                 &semantic_root,
                                 &mut channels,
                                 &mut findings,
@@ -1743,6 +1745,7 @@ impl ProjectSession {
                                 &keep_out_footprints,
                                 tool_def.diameter(),
                                 heights.retract_z,
+                                Some(tc.operation.plunge_rate()),
                                 &semantic_root,
                                 &mut channels,
                                 &mut findings,
@@ -2069,6 +2072,10 @@ impl ProjectSession {
     /// between them, so a Region span that originally covered "the moves
     /// doing the cut for region X" still covers them post-clip plus any
     /// retracts inserted into the middle. `spans_valid` stays `true`.
+    ///
+    /// `plunge_rate_mm_min` is the operation's own plunge rate, used for the
+    /// re-entry descent the clipper emits (G-BOUNDARYPLUNGE) — see
+    /// [`crate::boundary::clip_toolpath_to_boundary_set_with_provenance`].
     #[allow(clippy::too_many_arguments)]
     pub fn apply_boundary_clip(
         annotated: crate::toolpath_spans::AnnotatedToolpath,
@@ -2082,6 +2089,7 @@ impl ProjectSession {
         keep_out_footprints: &[crate::polygon::Polygon2],
         tool_diameter: f64,
         safe_z: f64,
+        plunge_rate_mm_min: Option<f64>,
         semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
         channels: &mut crate::transform_provenance::ReconcileSet<'_>,
         findings: &mut crate::compute::execute::GenerationFindings,
@@ -2120,9 +2128,11 @@ impl ProjectSession {
                 1,
                 findings,
             )?;
-            return Ok(clip_annotated_to_boundary_set(annotated, &[], safe_z)
-                .reconcile(channels)
-                .into_inner());
+            return Ok(
+                clip_annotated_to_boundary_set(annotated, &[], safe_z, plunge_rate_mm_min)
+                    .reconcile(channels)
+                    .into_inner(),
+            );
         };
 
         // Map BoundaryContainment -> ToolContainment.
@@ -2156,9 +2166,10 @@ impl ProjectSession {
         // `apply_boundary_clip_multi` already disagreed by keeping them all.
         // The multi-region semantics win: membership downstream is "inside
         // ANY", which is what a split containment means.
-        let clipped = clip_annotated_to_boundary_set(annotated, &boundaries, safe_z)
-            .reconcile(channels)
-            .into_inner();
+        let clipped =
+            clip_annotated_to_boundary_set(annotated, &boundaries, safe_z, plunge_rate_mm_min)
+                .reconcile(channels)
+                .into_inner();
 
         // Recorded AFTER the reconcile so this item's own link is bound to
         // post-clip indices and is not then remapped a second time.
@@ -2257,6 +2268,10 @@ impl ProjectSession {
     /// Span remapping contract is identical to [`Self::apply_boundary_clip`]
     /// — the set clipper never drops input moves, so `spans_valid` stays
     /// `true`.
+    ///
+    /// `plunge_rate_mm_min` is the operation's own plunge rate, used for the
+    /// re-entry descent the clipper emits (G-BOUNDARYPLUNGE) — see
+    /// [`crate::boundary::clip_toolpath_to_boundary_set_with_provenance`].
     #[allow(clippy::too_many_arguments)]
     pub fn apply_boundary_clip_multi(
         annotated: crate::toolpath_spans::AnnotatedToolpath,
@@ -2265,6 +2280,7 @@ impl ProjectSession {
         keep_out_footprints: &[crate::polygon::Polygon2],
         tool_diameter: f64,
         safe_z: f64,
+        plunge_rate_mm_min: Option<f64>,
         semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
         channels: &mut crate::transform_provenance::ReconcileSet<'_>,
         findings: &mut crate::compute::execute::GenerationFindings,
@@ -2324,9 +2340,10 @@ impl ProjectSession {
             )?;
         }
 
-        let clipped = clip_annotated_to_boundary_set(annotated, &boundaries, safe_z)
-            .reconcile(channels)
-            .into_inner();
+        let clipped =
+            clip_annotated_to_boundary_set(annotated, &boundaries, safe_z, plunge_rate_mm_min)
+                .reconcile(channels)
+                .into_inner();
 
         // Recorded AFTER the reconcile so this item's own link is bound to
         // post-clip indices and is not then remapped a second time.
@@ -6505,6 +6522,9 @@ mod tests {
             &[],
             2.0,
             safe_z,
+            // No operation here — the re-entry keeps the crossing move's
+            // cut feed, which is what this test has always pinned.
+            None,
             &semantic_ctx,
             &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
             &mut crate::compute::execute::GenerationFindings::default(),
@@ -6571,6 +6591,9 @@ mod tests {
             &[],
             2.0,
             20.0,
+            // No operation here — the re-entry keeps the crossing move's
+            // cut feed, which is what this test has always pinned.
+            None,
             &semantic_ctx,
             &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
             &mut findings,

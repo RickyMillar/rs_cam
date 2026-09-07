@@ -89,6 +89,18 @@
 //! The A/B therefore isolates the guard exactly: it removed **118 of the
 //! 125** over-1x plunges — every one it is allowed to touch — for 0.43 %
 //! of fed time and no change to a single lateral feed.
+//!
+//! **Update 2026-09-07 (pre-merge).** The residual 7 are attributed to the
+//! boundary clipper rather than the adaptive3d entry planner — by exact
+//! feed match plus clustered move indices, NOT by a trace — and that
+//! mechanism is FIXED as G-BOUNDARYPLUNGE:
+//! `boundary::clip_toolpath_to_boundary_set_with_provenance` now emits its
+//! re-entry descent at the operation's plunge rate (sentry
+//! `boundary_reentry_plunge_rate_g_boundaryplunge.rs`). The sentry proves
+//! the mechanism, not that these seven moves came through it. The 1.3863
+//! whole-population peak recorded above is the reading BEFORE the fix; a
+//! re-run of this instrument should read 1.0 if the attribution is right,
+//! and is what would confirm it. The bars below are unchanged.
 
 #![allow(
     clippy::unwrap_used,

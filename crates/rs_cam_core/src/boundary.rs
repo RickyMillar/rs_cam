@@ -153,6 +153,14 @@ pub fn subtract_keepouts(boundary: &Polygon2, keepouts: &[Polygon2]) -> Polygon2
 ///
 /// Convenience wrapper around [`clip_toolpath_to_boundary_with_provenance`]
 /// for callers that don't need the input→output move mapping.
+///
+/// Passes `None` for the re-entry plunge rate (G-BOUNDARYPLUNGE): a caller
+/// that holds only a toolpath and a polygon has no operation, so the
+/// re-entry descent keeps the crossing move's cut feed. No production path
+/// calls this — it serves tests and probes that build a synthetic toolpath.
+/// A production caller must use
+/// [`clip_toolpath_to_boundary_set_with_provenance`] (or
+/// [`clip_annotated_to_boundary_set`]) and pass the operation's own rate.
 pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64) -> Toolpath {
     clip_toolpath_to_boundary_with_provenance(tp, boundary, safe_z).0
 }
@@ -172,10 +180,15 @@ pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64
 /// error and not a clip: the toolpath passes through with an identity
 /// mapping, which still has to be reconciled — so the collapsed path and
 /// the clipped path leave the channels in provably the same state.
+///
+/// `plunge_rate_mm_min` is the operation's own plunge rate, handed straight
+/// to the walk for the re-entry descent (G-BOUNDARYPLUNGE). See
+/// [`clip_toolpath_to_boundary_set_with_provenance`] for what `None` means.
 pub fn clip_annotated_to_boundary_set(
     annotated: crate::toolpath_spans::AnnotatedToolpath,
     boundaries: &[Polygon2],
     safe_z: f64,
+    plunge_rate_mm_min: Option<f64>,
 ) -> crate::transform_provenance::Transformed {
     use crate::toolpath_spans::AnnotatedToolpath;
     use crate::transform_provenance::Transformed;
@@ -193,7 +206,12 @@ pub fn clip_annotated_to_boundary_set(
         let n = toolpath.moves.len();
         (toolpath, (0..=n).collect::<Vec<usize>>())
     } else {
-        clip_toolpath_to_boundary_set_with_provenance(&toolpath, boundaries, safe_z)
+        clip_toolpath_to_boundary_set_with_provenance(
+            &toolpath,
+            boundaries,
+            safe_z,
+            plunge_rate_mm_min,
+        )
     };
 
     // The clipper never DROPS an input move — it only inserts retract/rapid
@@ -230,10 +248,11 @@ pub fn clip_annotated_to_boundary_set(
 /// Kept in-boundary moves clone the input's original intent unchanged.
 ///
 /// Re-entry always feeds the *entire* height from `safe_z` down to the
-/// target at the original move's cutting feed. A rapid-down-to-clearance
-/// split is NOT done here — the actual input stock (not the boundary clip's
-/// view of the move) is the only safe source for a descent ceiling, and that
-/// stock is only in scope after generation. See
+/// target at `plunge_rate_mm_min` (G-BOUNDARYPLUNGE — see
+/// [`clip_toolpath_to_boundary_set_with_provenance`]). A
+/// rapid-down-to-clearance split is NOT done here — the actual input stock
+/// (not the boundary clip's view of the move) is the only safe source for a
+/// descent ceiling, and that stock is only in scope after generation. See
 /// [`crate::dressup::optimize_entry_descents`], a post-pass that runs after
 /// this clip with the real stock in scope.
 ///
@@ -246,12 +265,15 @@ pub fn clip_annotated_to_boundary_set(
 ///
 /// Thin wrapper over [`clip_toolpath_to_boundary_set_with_provenance`] with a
 /// single-element boundary set — see that function for the shared walk.
+///
+/// Passes `None` for the re-entry plunge rate — see
+/// [`clip_toolpath_to_boundary`] for why this wrapper has none to give.
 pub fn clip_toolpath_to_boundary_with_provenance(
     tp: &Toolpath,
     boundary: &Polygon2,
     safe_z: f64,
 ) -> (Toolpath, Vec<usize>) {
-    clip_toolpath_to_boundary_set_with_provenance(tp, std::slice::from_ref(boundary), safe_z)
+    clip_toolpath_to_boundary_set_with_provenance(tp, std::slice::from_ref(boundary), safe_z, None)
 }
 
 /// Clip a toolpath to stay within the union of a *set* of boundary polygons,
@@ -272,10 +294,46 @@ pub fn clip_toolpath_to_boundary_with_provenance(
 /// one-element slice, so the two can never disagree on move-order or
 /// retract/re-entry behaviour — this function is the sole implementation of
 /// the walk.
+///
+/// # `plunge_rate_mm_min` (G-BOUNDARYPLUNGE, 2026-09-07)
+///
+/// The re-entry descent this walk emits is a NEW move the clipper invents,
+/// not the operator's cutting move. It descends the whole height from
+/// `safe_z`, so it is a plunge and it is tagged `EntryPlunge`. It therefore
+/// runs at the OPERATION's plunge rate — the same dial the adaptive3d peck
+/// ladder uses — and the rate is NOT capped to the crossing move's cut
+/// feed: a generator-emitted plunge takes the plunge dial as commanded,
+/// exactly like every other plunge in the operation.
+///
+/// Before this fix the walk preserved the crossing move's CUT feed
+/// (`feed_rate_of(&m.move_type)`), so a boundary re-entry descended
+/// vertically at the lateral cutting feed. The Phase 3 feed-modulation
+/// guard cannot repair that: it skips a move already tagged `EntryPlunge`
+/// by design, so these descents reached the post-processor at the cut feed.
+/// Measured on the wanaka front rough: 7 such descents at 750 mm/min
+/// against the op's 541 mm/min plunge rate
+/// (`planning/machine_kinematics_confidence_2026-09-07.md`).
+///
+/// The descent this walk emits is pure-vertical BY CONSTRUCTION — the rapid
+/// before it goes to the target's own XY — so it is a plunge in
+/// [`crate::kinematic_utilization::classify_move`]'s terms too, not only by
+/// its tag. The rate does not depend on that: a descent that also moved in
+/// XY would still be tagged `EntryPlunge`, the modulator would still never
+/// touch it, and the plunge dial would still be the only rate that bounds
+/// it, so it would be plunge-rated as well.
+///
+/// `None` means the caller holds no operation and no rate (the two
+/// convenience wrappers, and tests that build a synthetic toolpath): the
+/// re-entry keeps the crossing move's cut feed, which is what this walk
+/// always did. A non-finite or non-positive `Some` is read the same way —
+/// the same disable condition the Phase 3 guard uses, because
+/// `OperationConfig::plunge_rate` returns a bare `f64` and a zero rate
+/// would stop the machine.
 pub fn clip_toolpath_to_boundary_set_with_provenance(
     tp: &Toolpath,
     boundaries: &[Polygon2],
     safe_z: f64,
+    plunge_rate_mm_min: Option<f64>,
 ) -> (Toolpath, Vec<usize>) {
     let mut result = Toolpath::new();
     let mut mapping: Vec<usize> = Vec::with_capacity(tp.moves.len() + 1);
@@ -287,6 +345,13 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
 
     let mut prev_inside = false;
     let mut prev_pos: Option<P3> = None;
+
+    // G-BOUNDARYPLUNGE: the same disable condition the Phase 3 modulation
+    // guard uses (`feed_modulation.rs`). `OperationConfig::plunge_rate`
+    // returns a bare `f64`, an operation may carry none, and a zero rate
+    // would stop the machine — so an unusable rate falls back to the
+    // crossing move's own feed, which is what this walk always did.
+    let usable_plunge_rate = plunge_rate_mm_min.filter(|rate| rate.is_finite() && *rate > 1e-9);
 
     let inside_any = |p: &P2| boundaries.iter().any(|b| b.contains_point(p));
 
@@ -308,11 +373,16 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
                     MoveIntent::Linking,
                 );
 
-                // Preserve feed rate from the original move for the plunge.
+                // G-BOUNDARYPLUNGE. A rapid crossing stays a rapid (there is
+                // nothing to descend at a feed), so the plunge rate applies
+                // only where the crossing move was a fed one. The descent
+                // itself runs at the OPERATION's plunge rate, not the cut
+                // feed this arm used to preserve.
                 let feed = feed_rate_of(&m.move_type);
                 match feed {
                     Some(fr) => {
-                        result.feed_to_with_intent(m.target, fr, MoveIntent::EntryPlunge);
+                        let descent_feed = usable_plunge_rate.unwrap_or(fr);
+                        result.feed_to_with_intent(m.target, descent_feed, MoveIntent::EntryPlunge);
                     }
                     None => {
                         result.rapid_to_with_intent(m.target, MoveIntent::Linking);
@@ -1118,7 +1188,7 @@ mod tests {
         let (single_clipped, single_mapping) =
             clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
         let (set_clipped, set_mapping) =
-            clip_toolpath_to_boundary_set_with_provenance(&tp, &[boundary], 20.0);
+            clip_toolpath_to_boundary_set_with_provenance(&tp, &[boundary], 20.0, None);
 
         assert_eq!(single_mapping, set_mapping);
         assert_eq!(single_clipped.moves.len(), set_clipped.moves.len());
@@ -1145,7 +1215,7 @@ mod tests {
         tp.feed_to(P3::new(105.0, 105.0, -5.0), 1000.0); // inside region B
 
         let (clipped, _mapping) =
-            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, 20.0);
+            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, 20.0, None);
 
         // Both targets should survive as cutting moves (not converted to
         // rapids), since each is inside at least one region of the set.
@@ -1175,7 +1245,7 @@ mod tests {
         tp.feed_to(P3::new(105.0, 105.0, -5.0), 1000.0); // inside region B
 
         let (clipped, _mapping) =
-            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, safe_z);
+            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, safe_z, None);
 
         let gap_moves: Vec<&Move> = clipped
             .moves
@@ -1213,7 +1283,7 @@ mod tests {
         tp.feed_to(P3::new(6.0, 5.0, -5.0), 1000.0);
 
         let (clipped, _mapping) =
-            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, safe_z);
+            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, safe_z, None);
 
         for m in &clipped.moves {
             assert_eq!(m.move_type, MoveType::Rapid);
