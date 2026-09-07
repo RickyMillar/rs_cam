@@ -374,7 +374,7 @@ finish stock → C2E is the strict winner**, not C2. Arm C (raised
 stay-down) is the only genuine air loser. BE's 1.6× finish-bite penalty is
 a geometry measure and stands.
 
-Fix (code follow-up, NOT done): put all three time figures on one base —
+Fix DONE (G-AIRDENOM commit, 2026-09-08): all three time figures share the integrator's modulated wall clock, rebased per sample. Original note — put all three time figures on one base —
 integrate `air_cut_time_s` and `cutting_runtime_s` at the modulated feed
 (or compute the total-runtime percentage against the naive total) — then
 correct the two doc comments and the CLAUDE.md caveat (replacement wording
@@ -495,3 +495,10 @@ gate's ceiling on Suggest's own numbers. Same class as the
 probe-the-same-code-path lesson: Suggest (recipe resolver) and the gate
 (envelope resolver) must quote one band. Follow-up: verify in code, then
 give drop_cutter an axial hint or make Suggest derate on the planned DOC.
+
+**G-CLIAIR (ledger, found by the lane agent, NOT fixed):**
+`crates/rs_cam_cli/src/main.rs:~320` prints `air:` as
+`trace.summary.total_runtime_s − ts.cutting_runtime_s − ts.rapid_runtime_s`
+— the PROJECT total minus one toolpath's slices. That was never the air
+time; after G-AIRDENOM it prints 0.0 on a single-toolpath project. The
+correct value is `ts.air_cut_time_s`. One-line fix, outside this wave.
