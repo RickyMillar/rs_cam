@@ -594,6 +594,20 @@ pub struct SimulationCutSummary {
 /// Neither is wrong; publishing either as a bare "air cut %" is
 /// (`MEASUREMENT_DOMAINS.md` LH-1 / X-3).
 ///
+/// **That order holds only while all three fields share one time base, and
+/// between 2026-08 and 2026-09-08 they did not (G-AIRDENOM).**
+/// `air_cut_time_s` and `cutting_runtime_s` were naive dexel seconds at the
+/// pre-modulation COMMANDED feed while `total_runtime_s` was overwritten
+/// with the kinematics-integrated wall clock at the MODULATED feed
+/// (`compute/simulate.rs` F-034, `session/compute.rs` F-036b). Where
+/// modulation raised the feed the order inverted — 1.76× on a wanaka rough.
+/// [`rebase_cutting_times`] now moves the cutting slices onto the
+/// integrator's clock at the F-036b site, so the three agree again and
+/// `cutting_runtime_s + rapid_runtime_s == total_runtime_s`. With
+/// modulation OFF nothing is rebased and the fields keep their naive
+/// values; the order still holds there because F-034's accel model can only
+/// LENGTHEN the total.
+///
 /// **Thresholds follow the total-runtime measure.** Every shipped threshold
 /// — the GUI's 40%, the CLI's 40%, and every per-operation value in
 /// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`] —
@@ -625,8 +639,15 @@ pub trait AirCutRatios {
     }
 
     /// Air-cut time as a percentage of **cutting time (rapids excluded)** —
-    /// always ≥ [`Self::air_cut_pct_of_total_runtime`], and the measure the
-    /// MCP narration reports. `0.0` when the toolpath has no cutting time.
+    /// ≥ [`Self::air_cut_pct_of_total_runtime`], and the measure the MCP
+    /// narration reports. `0.0` when the toolpath has no cutting time.
+    ///
+    /// The `≥` relation requires all three fields on one time base. It was
+    /// FALSE under feed modulation between 2026-08 and 2026-09-08
+    /// (G-AIRDENOM — see the trait doc). [`rebase_cutting_times`] restores
+    /// it. Two populations still fall outside the guarantee, because
+    /// nothing rebases them: [`SimulationSemanticCutSummary`] rows and any
+    /// summary a caller builds by hand.
     #[must_use]
     fn air_cut_pct_of_cutting_time(&self) -> f64 {
         let cutting = self.cutting_runtime_seconds();
@@ -661,6 +682,141 @@ impl_air_cut_ratios!(
     SimulationCutHotspot,
     SummaryAccumulator,
 );
+
+// ── G-AIRDENOM: one time base for the air / cutting / total figures ─────
+
+/// The cutting-time slices of one toolpath summary, re-expressed on the
+/// kinematics integrator's wall clock. See [`rebase_cutting_times`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RebasedCuttingTimes {
+    /// `total_s − rapid_s − retract_s` from the integrator, distributed
+    /// over the dexel's cutting samples.
+    pub cutting_runtime_s: f64,
+    /// The share of [`Self::cutting_runtime_s`] at
+    /// `radial_woc_fraction < 0.02`.
+    pub air_cut_time_s: f64,
+    /// The share at `0.02 ≤ radial_woc_fraction < 0.10`.
+    pub low_engagement_time_s: f64,
+    /// `rapid_s + retract_s` — the integrator's answer for the moves the
+    /// dexel marks `is_cutting = false`.
+    pub rapid_runtime_s: f64,
+}
+
+/// **G-AIRDENOM (2026-09-08) — put a toolpath's cutting seconds on the
+/// same clock as its `total_runtime_s`.**
+///
+/// # The defect this closes
+///
+/// `SummaryAccumulator::observe` accumulates `air_cut_time_s`,
+/// `cutting_runtime_s` and `rapid_runtime_s` from `segment_time_s`, which
+/// is naive: `segment_len / commanded_feed × 60`
+/// (`dexel_stock/simulation.rs`). It carries no acceleration and it uses
+/// the PRE-modulation commanded feed. Two later passes then overwrite
+/// `total_runtime_s` alone with the kinematics-integrated wall clock
+/// (`compute/simulate.rs`, F-034 — accel only; `session/compute.rs`,
+/// F-036b — accel plus the MODULATED feed). The result was a ratio whose
+/// numerator and denominator came from two different time models: where
+/// modulation raised the feed, `cutting_runtime_s` exceeded
+/// `total_runtime_s` and [`AirCutRatios::air_cut_pct_of_cutting_time`]
+/// read BELOW [`AirCutRatios::air_cut_pct_of_total_runtime`] — the
+/// opposite of the documented order. Measured factor 1.76× on a wanaka
+/// rough (`planning/ab_instrument_flags_2026-09-08.md` Flag 1).
+///
+/// # Why the rebase is per SAMPLE, not one factor per toolpath
+///
+/// The modulator does not move every cutting move by the same factor. A
+/// move with no measured engagement short-circuits at its COMMANDED feed
+/// (`feed_modulation::adaptive_feed_modulate`, `ConstrainedMax` arm),
+/// and an air-cut sample is exactly a sample whose engagement is at or
+/// near zero. Scaling the whole toolpath by one average factor would
+/// therefore shrink the air seconds along with the engaged seconds and
+/// UNDER-report air under a feed raise — the same defect in a smaller
+/// coat. Each sample is rebased by its own move's
+/// `commanded ÷ modulated` ratio instead.
+///
+/// The remaining difference between that sum and the integrator's answer
+/// is acceleration, which does not correlate with engagement the way
+/// modulation does, so it is applied as one uniform factor. The result
+/// satisfies `cutting_runtime_s + rapid_runtime_s == breakdown.total_s`
+/// exactly, which restores the invariant: the cutting-time percentage is
+/// again ≥ the total-runtime percentage.
+///
+/// # What is NOT rebased
+///
+/// `average_engagement` stays the time-weighted mean over the COMMANDED
+/// clock. It is a comparative signal the repo is calibrated against, and
+/// re-weighting it is a separate judgement (CLAUDE.md names it explicitly
+/// as relative, not absolute). `KinematicsSummary::cutting_runtime_s`, the
+/// `SimulationSemanticCutSummary` rows and `SimulationCutHotspot` keep the
+/// naive clock too, so the per-class times no longer sum to the toolpath's.
+///
+/// The caller DOES move `average_mrr_mm3_s` with the rebase, because it is
+/// `total_removed_volume_est_mm3 ÷ cutting_runtime_s` — an identity a
+/// reader can check from two published fields.
+///
+/// # Returns
+///
+/// `None` when the toolpath has no cutting samples, or when the
+/// integrator reports no fed time — leave the summary untouched in both
+/// cases rather than writing a zero.
+#[must_use]
+pub fn rebase_cutting_times(
+    samples: &[SimulationCutSample],
+    toolpath_id: ToolpathId,
+    modulated_feeds: &BTreeMap<(ToolpathId, usize), (f64, crate::tool_load::BindingConstraint)>,
+    breakdown: &crate::machine_kinematics::CycleTimeBreakdown,
+) -> Option<RebasedCuttingTimes> {
+    // The dexel marks a move `is_cutting = false` for `MoveType::Rapid`
+    // and for a `Linear` move tagged `MoveIntent::Retract`. The
+    // integrator buckets exactly those two sets as `rapid_s` and
+    // `retract_s`, so the fed-cutting clock is the remainder.
+    let integrated_cutting_s = breakdown.total_s - breakdown.rapid_s - breakdown.retract_s;
+    if integrated_cutting_s <= 0.0 {
+        return None;
+    }
+
+    let mut modulated_sum = 0.0;
+    let mut air_sum = 0.0;
+    let mut low_sum = 0.0;
+    for sample in samples {
+        if sample.toolpath_id != toolpath_id || !sample.is_cutting {
+            continue;
+        }
+        let commanded = sample.feed_rate_mm_min;
+        if commanded <= 0.0 {
+            continue;
+        }
+        // A move the modulator never visited keeps its commanded feed.
+        let achieved = modulated_feeds
+            .get(&(toolpath_id, sample.move_index))
+            .map_or(commanded, |&(feed, _binding)| feed);
+        let scaled = if achieved > 1e-9 {
+            sample.segment_time_s * commanded / achieved
+        } else {
+            sample.segment_time_s
+        };
+        modulated_sum += scaled;
+        // The two thresholds mirror `SummaryAccumulator::observe`; they
+        // must stay in step with it or the slices stop partitioning the
+        // same population.
+        if sample.engagement.radial_woc_fraction < 0.02 {
+            air_sum += scaled;
+        } else if sample.engagement.radial_woc_fraction < 0.10 {
+            low_sum += scaled;
+        }
+    }
+    if modulated_sum <= 1e-12 {
+        return None;
+    }
+
+    let accel_factor = integrated_cutting_s / modulated_sum;
+    Some(RebasedCuttingTimes {
+        cutting_runtime_s: integrated_cutting_s,
+        air_cut_time_s: air_sum * accel_factor,
+        low_engagement_time_s: low_sum * accel_factor,
+        rapid_runtime_s: breakdown.rapid_s + breakdown.retract_s,
+    })
+}
 
 /// One toolpath's kinematics-integrated runtime — see
 /// [`SimulationCutTrace::toolpath_runtimes`] for why this is a separate list

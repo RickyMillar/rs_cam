@@ -895,9 +895,12 @@ pub struct SimulationOptions {
     ///   whose request type carries no modulation fields, and modulation
     ///   arrives as a main-thread post-pass (`modulate_simulation_trace`).
     /// * CLI `project.rs` builds a full struct literal whose field comes
-    ///   from `--adaptive-feed-modulation`, still defaulting **off**.
-    ///   That GUI/CLI divergence is deliberate and unruled: J-3 ruled the
-    ///   library default only.
+    ///   from `--adaptive-feed-modulation`. **That flag defaulted `false`
+    ///   at the census and defaults `true` since (g1)**
+    ///   (`crates/rs_cam_cli/src/project.rs`), so the GUI/CLI divergence
+    ///   this bullet recorded is gone; J-3 ruled the library default only,
+    ///   and (g1) closed the CLI side separately. Corrected 2026-09-08
+    ///   (found alongside G-AIRDENOM).
     /// * CLI `smoke.rs` and `tool_load::optimize::candidate` pin `false`
     ///   in full struct literals, protecting the smoke baseline and
     ///   keeping the optimizer's candidate ranking un-conflated.

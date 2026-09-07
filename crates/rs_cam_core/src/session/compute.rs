@@ -3151,6 +3151,20 @@ impl ProjectSession {
         let trace = Arc::make_mut(trace_arc);
         let mut project_total = 0.0;
         let mut project_breakdown = crate::machine_kinematics::CycleTimeBreakdown::default();
+        // G-AIRDENOM (2026-09-08) — the loop below rewrites
+        // `total_runtime_s` onto the integrator's clock. The cutting
+        // slices must move with it or the two air-cut percentages divide
+        // one numerator by two different time models. Deltas are folded
+        // into the project summary after the loop, the same way
+        // `project_total` is, so a toolpath the loop skips keeps whatever
+        // the accumulator gave it.
+        let mut air_delta = 0.0;
+        let mut cutting_delta = 0.0;
+        let mut low_engagement_delta = 0.0;
+        let mut rapid_delta = 0.0;
+        // Disjoint field borrows: the loop takes `toolpath_summaries`
+        // mutably while the rebase reads `samples`.
+        let samples = &trace.samples;
         for tp_summary in &mut trace.toolpath_summaries {
             let Some((idx, _)) = self
                 .toolpath_configs
@@ -3180,9 +3194,45 @@ impl ProjectSession {
             tp_summary.runtime_by_intent = Some(b);
             project_total += b.total_s;
             project_breakdown += b;
+            // G-AIRDENOM — rebase this toolpath's cutting seconds onto the
+            // clock just written above. `None` means the toolpath carried
+            // no cutting samples (drill-only, all-rapid); leave it alone
+            // rather than writing a zero over a measured value.
+            if let Some(rebased) = crate::simulation_cut::rebase_cutting_times(
+                samples,
+                tp_summary.toolpath_id,
+                &modulated_feeds,
+                &b,
+            ) {
+                cutting_delta += rebased.cutting_runtime_s - tp_summary.cutting_runtime_s;
+                air_delta += rebased.air_cut_time_s - tp_summary.air_cut_time_s;
+                low_engagement_delta +=
+                    rebased.low_engagement_time_s - tp_summary.low_engagement_time_s;
+                rapid_delta += rebased.rapid_runtime_s - tp_summary.rapid_runtime_s;
+                tp_summary.cutting_runtime_s = rebased.cutting_runtime_s;
+                tp_summary.air_cut_time_s = rebased.air_cut_time_s;
+                tp_summary.low_engagement_time_s = rebased.low_engagement_time_s;
+                tp_summary.rapid_runtime_s = rebased.rapid_runtime_s;
+                // `average_mrr_mm3_s` is `removed_volume / cutting_runtime_s`,
+                // baked at build time. Leaving it would break an identity a
+                // reader can check from two published fields, so it moves to
+                // the wall clock with its own denominator.
+                if rebased.cutting_runtime_s > 1e-9 {
+                    tp_summary.average_mrr_mm3_s =
+                        tp_summary.total_removed_volume_est_mm3 / rebased.cutting_runtime_s;
+                }
+            }
         }
         trace.summary.total_runtime_s = project_total;
         trace.summary.runtime_by_intent = Some(project_breakdown);
+        trace.summary.cutting_runtime_s += cutting_delta;
+        trace.summary.air_cut_time_s += air_delta;
+        trace.summary.low_engagement_time_s += low_engagement_delta;
+        trace.summary.rapid_runtime_s += rapid_delta;
+        if trace.summary.cutting_runtime_s > 1e-9 {
+            trace.summary.average_mrr_mm3_s =
+                trace.summary.total_removed_volume_est_mm3 / trace.summary.cutting_runtime_s;
+        }
         // F-039 — stamp the per-move binding map + per-toolpath
         // modulation summaries onto the trace. Both fields are
         // `#[serde(skip)]` so artifact round-tripping is unaffected;
