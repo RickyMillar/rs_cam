@@ -390,3 +390,24 @@ level ladder collapses to one level so the only sub-level is below the
 deepest surface (empty grid); plus the sub-pass dispatch emits no DepthPass
 span, so a working sub-pass is invisible to `per_depth_pass` — a separate
 instrument gap.
+
+## Arm G finish pair + the real prize (rs-cam-38, 2026-09-08)
+
+Arm G rough + R1.5 finish, oak, 0.2 mm: pair total 12739 s vs A pair 14245
+(−10.6 %), BE 13545, C2E 13783; 0/0 collisions. The flat raster hands the
+finish a slightly deeper but LESS peaky surface (crosses_standing peak 2.59
+vs A 2.93, BE 3.14); finish gates Within, modulator lowered the finish's
+feed (median −38 %, chipload_max binding). **The finish is ~90 % of the
+pair (11415 of 12739 s).** Roughing strategy can only move the job ~10 %;
+the finish is the prize — which is the operator's deep-DOC + modulation
+thesis. Added to the plywood study: the 6 mm flat drop_cutter raster as
+the ONLY pass (stepover 1.0 / 1.5 / 2.0) vs the rough+finish pair, with a
+flat-tool cusp proxy (stepover × tan(slope), median + p90 slope), and the
+same single-pass with the R1.5 ball.
+
+Instrument gaps logged: (a) `EntryLoadObservation::is_measured` is not on
+the `get_diagnostics` wire — an absent `project.entry_load` cannot be told
+apart from NOT MEASURED (drop_cutter sets no MoveIntent with
+`entry_style = none`); (b) simulation order is toolpath INDEX order, not
+dependency order — a finish at a lower index than its rough simulates
+first (the peer lost one run to this).
