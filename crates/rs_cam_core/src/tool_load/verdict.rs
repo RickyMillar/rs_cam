@@ -13,11 +13,12 @@ use std::ops::Range;
 use serde::{Deserialize, Serialize};
 
 /// F-039 — Which physical constraint set the modulated feed for a
-/// single cutting move (constrained-max solver). One of six bound
+/// single cutting move (constrained-max solver). One of seven bound
 /// types: the chipload band's upper edge, the deflection cap, the
 /// power cap, the machine's hard feed cap, the kinematic-reach cap
-/// from the F-034 / F-035 integrator, or the chipload band's lower
-/// edge (applied last).
+/// from the F-034 / F-035 integrator, the chipload band's lower
+/// edge (applied last), or Phase 3's geometric plunge-rate cap
+/// (applied after all of them, on vertical-dominant moves only).
 ///
 /// **This vocabulary describes the MODULATOR only.** It reports which
 /// bound the per-move constrained-max solver hit. It deliberately does
@@ -62,6 +63,23 @@ pub enum BindingConstraint {
     /// clamp's 0.011525 = `band.max`). A docstring that names a
     /// constant the code does not use is a lie a reader then cites.
     ChiploadMin,
+    /// Phase 3 (2026-09-07). A vertical-dominant move was capped at the
+    /// operation's own `plunge_rate` by GEOMETRY: the intent skip did not
+    /// fire because the move carried no plunge tag.
+    ///
+    /// The modulator's other five bounds are lateral-cutting physics. This
+    /// one is not: the classifier
+    /// ([`crate::kinematic_utilization::classify_move`]) reads the move's
+    /// own vector, and a descent inside the plunge cone cuts on its centre,
+    /// where the chipload band does not apply. The adaptive3d rough emits
+    /// its step-down descents as plain cutting moves, so before this guard
+    /// they were lifted to the lateral band maximum — 1807 mm/min against a
+    /// 512 mm/min plunge rate on the wanaka front rough.
+    ///
+    /// The guard is a FLOOR UNDER THE LIFT, not a skip. A move that already
+    /// sits at or below the plunge rate keeps the strategy's own binding, so
+    /// this variant always means "the plunge rate LOWERED this feed".
+    PlungeRate,
 }
 
 impl BindingConstraint {
@@ -73,6 +91,7 @@ impl BindingConstraint {
             BindingConstraint::MachineMaxFeed => "machine-max-feed",
             BindingConstraint::KinematicReach => "kinematic-reach",
             BindingConstraint::ChiploadMin => "chipload-min",
+            BindingConstraint::PlungeRate => "plunge-rate",
         }
     }
 }

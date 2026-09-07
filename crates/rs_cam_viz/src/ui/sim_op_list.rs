@@ -1007,9 +1007,16 @@ fn kinematics_pill(
     if lines.is_empty() {
         return None;
     }
+    // Phase 3 — say WHICH feeds were read. The modulator runs after a
+    // simulation, so before one this pill describes the plan, not the motion
+    // the post-processor emits (`feedback_measure_emitted_motion`).
+    use rs_cam_core::kinematic_utilization::FeedsProvenance;
+    lines.push(format!("({})", util.feeds_provenance.qualifier()));
+    let planned = util.feeds_provenance == FeedsProvenance::Planned;
+    let suffix = if planned { " planned" } else { "" };
     let label = match utilization {
-        Some(u) => format!("⚙ {:.0}%", u * 100.0),
-        None => "⚙ —".to_owned(),
+        Some(u) => format!("⚙ {:.0}%{suffix}", u * 100.0),
+        None => format!("⚙ —{suffix}"),
     };
     Some((label, lines.join("\n")))
 }

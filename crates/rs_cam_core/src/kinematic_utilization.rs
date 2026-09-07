@@ -156,6 +156,47 @@ pub fn classify_move(move_type: MoveType, delta: [f64; 3]) -> MotionClass {
     }
 }
 
+/// Whether the analysed move list carries PLANNED or EMITTED feeds
+/// (Phase 3, 2026-09-07).
+///
+/// The instrument reads whatever move list its caller hands it, and the
+/// two are not the same thing. The feed modulator runs AFTER a
+/// simulation; before one, a generated toolpath carries the operation's
+/// commanded feeds — the plan. A surface that prints a kinematic reading
+/// without saying which one it read invites the operator to act on a
+/// number that the post-processor will not emit
+/// (`feedback_measure_emitted_motion`).
+///
+/// [`analyse_toolpath`] cannot know: it is a pure function over one move
+/// list, with no session and no trace. It therefore reports the
+/// CONSERVATIVE answer, [`Self::Planned`], and
+/// [`crate::session::ProjectSession::kinematic_utilization_of`] — the
+/// session's single producer — stamps the measured one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedsProvenance {
+    /// The move list carries the operation's commanded feeds. Either no
+    /// simulation has run, or the feeds on this list do not match the
+    /// modulated feeds the run recorded.
+    #[default]
+    Planned,
+    /// The move list carries the feeds the post-processor will emit: a
+    /// simulation has run and every modulated feed it recorded for this
+    /// toolpath is present on this list.
+    Emitted,
+}
+
+impl FeedsProvenance {
+    /// The parenthetical every operator surface appends to its kinematic
+    /// reading, so the number is never quoted without its provenance.
+    pub fn qualifier(self) -> &'static str {
+        match self {
+            Self::Emitted => "emitted",
+            Self::Planned => "planned feeds — run a simulation for emitted",
+        }
+    }
+}
+
 /// One move's kinematic reading.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MoveUtilization {
@@ -335,6 +376,13 @@ pub struct ToolpathKinematicUtilization {
     pub kinematics: MachineKinematics,
     /// The machine's travel-rate cap (mm/min) the analysis ran against.
     pub max_feed_mm_min: f64,
+    /// Whether the analysed move list carried planned or emitted feeds
+    /// (Phase 3). [`analyse_toolpath`] always writes
+    /// [`FeedsProvenance::Planned`]; the session's producer stamps the
+    /// measured value. `#[serde(default)]` so a value that came from an
+    /// older wire format reads the conservative answer.
+    #[serde(default)]
+    pub feeds_provenance: FeedsProvenance,
 }
 
 impl ToolpathKinematicUtilization {
@@ -734,6 +782,8 @@ pub fn analyse_toolpath(
         kinematics: *kinematics,
         max_feed_mm_min,
         headroom_at_1_30: None,
+        // The pure kernel cannot know. The session's producer stamps it.
+        feeds_provenance: FeedsProvenance::Planned,
     };
     // Stage 4 — solve the display headroom ONCE, here. Every surface
     // reads the field; none re-solves the move list per row per frame,

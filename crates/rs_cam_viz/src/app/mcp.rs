@@ -1373,9 +1373,10 @@ impl super::RsCamApp {
         // to `kinematic_utilization_of`. The by-index form would re-fetch
         // `session.results[index]` and could report a later generation's
         // motion under this narration's heading. One result source.
-        if let Some(util) = state
-            .session
-            .kinematic_utilization_of(index, &result.annotated.toolpath)
+        if let Some(util) =
+            state
+                .session
+                .kinematic_utilization_of(index, &result.annotated.toolpath, cut_trace)
             && let Some(sentence) = Self::kinematics_narration_sentence(&util)
         {
             narration.push_str("\n\n");
@@ -1432,7 +1433,16 @@ impl super::RsCamApp {
         if clauses.is_empty() {
             return None;
         }
-        Some(format!("kinematics: {}.", clauses.join("; ")))
+        // Phase 3 — say WHICH feeds were read. The modulator runs after a
+        // simulation, so before one this sentence describes the plan, not the
+        // motion the post-processor emits. This handler narrates the WORKER's
+        // move list, which the modulation post-pass never rewrites, so the
+        // qualifier here is load-bearing (`feedback_measure_emitted_motion`).
+        Some(format!(
+            "kinematics: {} ({}).",
+            clauses.join("; "),
+            util.feeds_provenance.qualifier()
+        ))
     }
 
     /// v3.2 (2026-06-04): Combined-Suggest rationale for the toolpath

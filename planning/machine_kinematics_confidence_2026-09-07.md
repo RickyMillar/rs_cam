@@ -231,6 +231,50 @@ Phase 3 (feeds change) and is contained by the Phase 2 instrument and the
 paired A/B rule. Phase 1 is byte-identical when unset; the Shapeoko preset
 change is deliberate and calibrated against recorded wall-clock data.
 
+## Phase 3 result (2026-09-07, measured)
+
+Paired A/B on the wanaka front rough (0.5 mm, ConstrainedMax, aggr 1.0; the
+op's dials are plunge 541 / feed 750 mm/min — the "512" above was the earlier
+hand-analysis figure). Arm A = guard disabled (`plunge_rate_mm_min =
+f64::INFINITY`), arm B = guard on:
+
+| | A | B |
+|---|---|---|
+| `plunge.peak_ratio` | 1.8484 (= 1000/541) | **1.3863** (= 750/541) |
+| `plunge.over_1x` | 125 | 7 |
+| — modulator-visited | 118 | **0** |
+| — `EntryPlunge`-tagged (intent-skipped) | 7 | 7 |
+| fed time | 2056.1 s | 2065.0 s (+0.43 %) |
+| Lateral/Ramp feeds | — | **byte-identical** (6116 lines) |
+
+The guard removed every over-limit plunge it is permitted to touch. **The
+bar `peak_ratio ≤ 1.0` as written spanned two owners**: the residual 7 are
+correctly tagged `EntryPlunge` moves descending at the op's 750 mm/min CUT
+feed instead of its 541 mm/min plunge rate — a GENERATOR defect the guard
+is forbidden to touch by the reviewer ruling that keeps
+`should_skip_modulation` intent-based. Strong-but-uninstrumented
+attribution: `crates/rs_cam_core/src/boundary.rs:311-316` re-tags a cutting
+move as `EntryPlunge` on a boundary crossing while preserving its cut feed
+(`feed_rate_of(&m.move_type)` → `feed_to_with_intent(.., EntryPlunge)`);
+the adaptive3d peck ladder itself uses `params.plunge_rate`
+(`adaptive3d/path.rs:89-101`). Test 9 is scoped accordingly: modulator-
+visited over-1× == 0, and whole-population peak < 1.5 against the pre-guard
+1.848.
+
+Follow-ups opened by Phase 3:
+- **G-BOUNDARYPLUNGE** — `boundary.rs:311-316` must emit the re-tagged
+  `EntryPlunge` at the op's plunge rate, not the preserved cut feed; instrument
+  the emission before fixing (the attribution is by exact feed match plus
+  clustered move indices, not by a trace).
+- **Narration source** — MCP `narrate_toolpath` narrates `state.gui.toolpath_rt`,
+  the worker's PRE-modulation IR, so its kinematics sentence reads "planned"
+  even after a simulation; export reads `session.results` (emitted). Same
+  class as G-MODEXPORT. Ruling 3 pinned narration to one source — the wrong
+  one for emitted readings. Fix: narrate the emitted result when a trace
+  exists.
+- The guard also caps an untagged zero-engagement vertical move that the
+  strategy left at commanded (sentried in Phase 3's follow-up).
+
 ## Deferred, deliberately
 
 - Tool centre-cutting capability and maximum ramp angle as tool-library

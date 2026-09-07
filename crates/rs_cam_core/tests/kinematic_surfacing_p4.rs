@@ -85,6 +85,10 @@ fn utilization(population: usize, peak_ratio: Option<f64>) -> ToolpathKinematicU
         // this literal can carry one with an empty move list — and why a
         // value that arrived over the wire still has a headroom to show.
         headroom_at_1_30: Some(0.12),
+        // Phase 3 (2026-09-07): the surfacing layer reads this only to
+        // qualify its own wording; the finding does not branch on it, so
+        // the healthy reading is the emitted one.
+        feeds_provenance: rs_cam_core::kinematic_utilization::FeedsProvenance::Emitted,
     }
 }
 

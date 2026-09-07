@@ -293,6 +293,10 @@ fn modulation_skips_lead_in_lead_out_moves() {
         deflection_inputs: None,
         power_inputs: None,
         nominal_axial_doc_mm: 2.0,
+        // Phase 3 (2026-09-07): the operation's plunge rate. The F-040
+        // claim is about the INTENT skip, which the geometric plunge guard
+        // does not touch — a tagged LeadIn / LeadOut move never reaches it.
+        plunge_rate_mm_min: 300.0,
     };
     let _ = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
 

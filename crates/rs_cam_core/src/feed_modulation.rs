@@ -42,6 +42,19 @@
 //!   `MoveIntent::EntryPlunge`). The chip-thinning + force corrections
 //!   are only well-defined for lateral / arc / helix engagement.
 //!
+//! ## The Phase 3 plunge guard (2026-09-07)
+//!
+//! The skip above is keyed on the move's INTENT tag. A generator that
+//! emits a vertical descent as a plain cutting move escapes it, and every
+//! strategy then lifts that descent to the lateral chipload band. So
+//! [`adaptive_feed_modulate`] adds one GEOMETRIC cap after the strategy
+//! decides: a move the shared classifier
+//! ([`crate::kinematic_utilization::classify_move`]) calls
+//! [`crate::kinematic_utilization::MotionClass::Plunge`] is capped at
+//! [`ModulationContext::plunge_rate_mm_min`] and reports
+//! [`BindingConstraint::PlungeRate`]. The intent skip is UNCHANGED — a
+//! tagged plunge still keeps its operator-tuned feed exactly.
+//!
 //! See `planning/acceptance_loop/findings/F-039-constrained-max-feed-modulation.md`
 //! for the design narrative + acceptance bars.
 
@@ -242,6 +255,15 @@ pub struct ModulationContext<'a> {
     /// limits via `engagement.axial_doc_fraction`. Falls back to
     /// `engagement_diameter_mm` when zero/None.
     pub nominal_axial_doc_mm: f64,
+    /// Phase 3 (2026-09-07) — the OPERATION's own plunge rate
+    /// (mm/min). [`adaptive_feed_modulate`] caps a vertical-dominant
+    /// move at this rate whatever its intent tag says.
+    ///
+    /// A value that is not finite and positive DISABLES the guard: an
+    /// operation legitimately carries no plunge rate, and `min(feed,
+    /// 0.0)` would stop the machine. Pass `f64::INFINITY` to disable
+    /// the guard deliberately (the Phase 3 A/B's control arm).
+    pub plunge_rate_mm_min: f64,
 }
 
 /// Errors the modulator can return for malformed inputs. Kept small so
@@ -617,7 +639,8 @@ pub fn adaptive_feed_modulate(
     let mut outcome = ModulationOutcome::default();
     #[allow(clippy::indexing_slicing)]
     // SAFETY: `i` bounded by `engagements.len()`, which we just
-    // verified equals `toolpath.moves.len()`.
+    // verified equals `toolpath.moves.len()`. The Phase 3 guard also
+    // reads `moves[i - 1]`, under its own `i > 0` test.
     for (i, &engagement) in engagements.iter().enumerate() {
         let move_intent = toolpath.moves[i].intent;
         let move_type = toolpath.moves[i].move_type;
@@ -633,7 +656,7 @@ pub fn adaptive_feed_modulate(
             .unwrap_or(ctx.max_feed_mm_min)
             .max(1e-3);
 
-        let (new_feed, binding) = match ctx.strategy {
+        let (mut new_feed, mut binding) = match ctx.strategy {
             ModulationStrategy::BandMid => {
                 band_mid_feed_for_move(commanded, engagement, predicted_cap, ctx)
             }
@@ -648,6 +671,37 @@ pub fn adaptive_feed_modulate(
                 }
             }
         };
+
+        // Phase 3 (2026-09-07) — the GEOMETRIC plunge guard.
+        //
+        // `should_skip_modulation` above protects a plunge that carries a
+        // plunge INTENT. The adaptive3d rough emits its step-down and
+        // re-entry descents as plain cutting moves, so they fall through
+        // that filter and every branch above lifts them to the lateral
+        // chipload band. On the wanaka front rough that produced 1807
+        // mm/min of pure-vertical descent against a 512 mm/min plunge
+        // rate. Intent-keyed protection; untagged geometry escaped it.
+        //
+        // The guard reads the move's own vector through
+        // `kinematic_utilization::classify_move` — the ONE construction
+        // site, shared with the Phase 2 instrument, so the guard and the
+        // instrument can never disagree about what a plunge is.
+        //
+        // It is a FLOOR UNDER THE LIFT, not a skip: a move already at or
+        // below the plunge rate keeps the strategy's binding, and a tagged
+        // `EntryPlunge` never reaches here at all.
+        if i > 0 && ctx.plunge_rate_mm_min.is_finite() && ctx.plunge_rate_mm_min > 1e-9 {
+            let prev = toolpath.moves[i - 1].target;
+            let curr = toolpath.moves[i].target;
+            let delta = [curr.x - prev.x, curr.y - prev.y, curr.z - prev.z];
+            if crate::kinematic_utilization::classify_move(move_type, delta)
+                == crate::kinematic_utilization::MotionClass::Plunge
+                && new_feed > ctx.plunge_rate_mm_min
+            {
+                new_feed = ctx.plunge_rate_mm_min;
+                binding = BindingConstraint::PlungeRate;
+            }
+        }
 
         outcome.per_move.insert(i, (new_feed, binding));
         if (new_feed - commanded).abs() > 1e-6 {
@@ -687,6 +741,11 @@ mod tests {
             deflection_inputs: None,
             power_inputs: None,
             nominal_axial_doc_mm: 0.0,
+            // A realistic operation plunge rate. Every fixture in this
+            // module cuts laterally or ramps at 45 degrees, so the Phase 3
+            // guard classifies nothing here as a plunge and no expectation
+            // below moves. `tests/plunge_guard_p3.rs` exercises the guard.
+            plunge_rate_mm_min: 300.0,
         }
     }
 

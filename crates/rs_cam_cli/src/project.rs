@@ -645,7 +645,11 @@ pub fn run_project_command(
         // producer (the same one that fills the tool-load verdict slot and
         // feeds the triage), so the CLI cannot report a different trapezoid
         // from the GUI for the same project.
-        let kinematics = session.kinematic_utilizations();
+        let kinematics = session.kinematic_utilizations(
+            session
+                .simulation_result()
+                .and_then(|sim| sim.cut_trace.as_deref()),
+        );
         for entry in &project_summary.per_toolpath {
             let status_icon = if entry.status == "ok" { " " } else { "!" };
             eprintln!(
@@ -864,6 +868,10 @@ fn kinematics_report_line(
     if !detail.is_empty() {
         line.push_str(&format!(" ({detail})"));
     }
+    // Phase 3 — say WHICH feeds were read. The modulator runs after a
+    // simulation, so before one this whole line describes the plan, not the
+    // motion the post-processor emits (`feedback_measure_emitted_motion`).
+    line.push_str(&format!(" ({})", util.feeds_provenance.qualifier()));
     Some(line)
 }
 

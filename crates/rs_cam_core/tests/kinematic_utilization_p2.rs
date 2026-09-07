@@ -20,7 +20,12 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    // The ignored instrument run at the end of this file MEASURES; a
+    // measurement nobody can read is not one. Opted in explicitly, as
+    // `tests/power_ceiling_parity_f2.rs` does — `print_stderr` is denied
+    // in tests otherwise.
+    clippy::print_stderr
 )]
 
 use rs_cam_core::geo::P3;
@@ -466,18 +471,48 @@ fn headroom_estimate_is_positive_and_below_the_feed_rise() {
 ///
 /// This is the 2026-09-07 incident, measured through the instrument.
 /// The adaptive3d rough emits its vertical step-down descents as plain
-/// cutting moves with no `EntryPlunge` tag, so the feed modulator lifts
+/// cutting moves with no `EntryPlunge` tag, so the feed modulator lifted
 /// them to the lateral chipload-band maximum — 1807 mm/min against the
-/// operation's 512 mm/min plunge rate. The modulated feed lives on the
-/// cut trace, not on the stored toolpath, so the test rebuilds the
-/// EMITTED motion before it measures (`feedback_measure_emitted_motion`).
+/// operation's 512 mm/min plunge rate.
 ///
-/// The expected reading is NOT 1807 / 512 = 3.53. `$112 = 1000` clamps
-/// the descent, so the achieved Z rate is 1000 mm/min and the ratio is
-/// about 1000 / 512 = 1.95. The bar is `> 1.5`, and the actual value is
-/// in the failure message. AFTER Phase 3 lands its geometric guard this
-/// test must be re-read: the ratio should fall to 1.0 or below, and the
-/// assertion below then becomes the proof the guard works.
+/// # Where the emitted feeds live (corrected 2026-09-07, Phase 3)
+///
+/// This doc used to say the modulated feed "lives on the cut trace, not
+/// on the stored toolpath". That is WRONG, and it matters, because it
+/// invites a reader to analyse a pre-simulation result and call the
+/// answer emitted motion. The modulator modulates a CLONE, and
+/// `session/compute.rs` writes that clone back into `self.results[idx]`
+/// after the simulation. So:
+///
+/// * BEFORE a simulation the stored result is the PLAN;
+/// * AFTER a simulation in which modulation fired the stored result
+///   already carries the emitted feeds, and rebuilding them from
+///   `SimulationCutTrace::modulated_feeds` gives the same numbers
+///   (re-applying is idempotent).
+///
+/// Either source is therefore fine post-simulation, and neither is
+/// acceptable pre-simulation. The rebuild below is kept because it also
+/// PROVES the modulator fired (`feedback_measure_emitted_motion`).
+///
+/// # The reading
+///
+/// The pre-Phase-3 reading was NOT 1807 / 541 = 3.34. `$112 = 1000`
+/// clamps the descent, so the achieved Z rate was 1000 mm/min and the
+/// ratio **1.8484 = 1000 / 541**, measured 2026-09-07. (The operation's
+/// plunge rate in the project file is 541 mm/min; the plan's "512" was
+/// the earlier hand-analysis figure.) 125 of 588 plunges were over 1x.
+///
+/// Phase 3 landed the modulator's geometric plunge guard. It removed
+/// **118 of those 125** — every plunge the modulator visits. The
+/// remaining 7 are `MoveIntent::EntryPlunge` moves, which
+/// `should_skip_modulation` claims by ruling and the guard never sees;
+/// they descend at the op's 750 mm/min FEED rate, so the whole-population
+/// peak now reads `1.3863 = 750 / 541`. That residual is a GENERATOR
+/// defect with its own follow-up, not a guard failure, so the bar below
+/// is scoped to the guard's own population.
+///
+/// The measured figures print to stderr on every run, pass or fail — see
+/// `tests/plunge_guard_ab_p3.rs` for the paired A/B they came from.
 #[test]
 #[ignore = "instrument run: needs the user-local wanaka200 project and a full simulation"]
 fn wanaka_front_rough_reports_the_plunge_class_peak() {
@@ -493,8 +528,7 @@ fn wanaka_front_rough_reports_the_plunge_class_peak() {
     path.push("airrun_2026-08-19");
     path.push("wanaka200.toml");
     if !path.exists() {
-        // Not this machine. A silent skip, because `print_stderr` is
-        // denied in tests.
+        eprintln!("SKIP: {} is not on this machine.", path.display());
         return;
     }
 
@@ -542,8 +576,9 @@ fn wanaka_front_rough_reports_the_plunge_class_peak() {
     let kinematics = session.machine().effective_kinematics();
     let max_feed = session.machine().max_feed_mm_min;
 
-    // Rebuild the EMITTED motion: the modulator writes its feeds onto
-    // the cut trace, never back onto the stored toolpath.
+    // Rebuild the EMITTED motion from the trace. Post-simulation the
+    // stored result already carries these feeds (see the doc block); the
+    // rebuild is kept because it is also the proof the modulator fired.
     let sim = session.simulation_result().expect("simulation result");
     let trace = sim.cut_trace.as_ref().expect("cut trace");
     let result = session.get_result(index).expect("front rough result");
@@ -591,16 +626,49 @@ fn wanaka_front_rough_reports_the_plunge_class_peak() {
         .plunge
         .peak_ratio
         .expect("a measured plunge population");
-    assert!(
-        peak > 1.5,
-        "PRE-PHASE-3 READING: plunge-class peak ratio {peak:.3} against a \
-         {plunge_rate:.0} mm/min plunge rate ({} of {} plunges above 1x, worst \
-         achieved z-rate {:?} mm/min at move {:?}). Expected about 1.95 \
-         (the 1807 mm/min command clamped to $112 = 1000). A reading at or \
-         below 1.0 means the Phase 3 guard has landed — update this sentry.",
+    // The measurement itself, printed on every run. Before this file
+    // opted into `print_stderr` the run said nothing on success, so the
+    // number the plan wanted was never captured.
+    eprintln!(
+        "wanaka front rough — plunge peak_ratio {peak:.4}, over_1x {}, population {}, \
+         plunge_rate {plunge_rate:.0} mm/min, worst achieved z-rate {:?} mm/min at move {:?}, \
+         fed_time {:.1} s, fed_moves {}",
         util.plunge.over_1x,
         util.plunge.population,
         util.plunge.worst_achieved_z_rate_mm_min,
-        util.plunge.worst_move_index
+        util.plunge.worst_move_index,
+        util.fed_time_s,
+        util.fed_moves,
+    );
+    // The guard's OWN population: the moves the modulator visited. A move
+    // the intent skip claimed keeps its commanded feed by reviewer ruling,
+    // so the two owners must be told apart before a residual is read as a
+    // guard failure. Measured 2026-09-07: 0 visited, 7 intent-skipped.
+    let over_1x_visited = util
+        .moves
+        .iter()
+        .filter(|m| m.plunge_ratio.is_some_and(|r| r > 1.0))
+        .filter(|m| {
+            trace
+                .modulated_feeds
+                .contains_key(&(front_id, m.move_index))
+        })
+        .count();
+    assert_eq!(
+        over_1x_visited, 0,
+        "POST-PHASE-3 BAR: no plunge the modulator VISITED may exceed the operation's \
+         own {plunge_rate:.0} mm/min plunge rate. Whole-population peak {peak:.4}, \
+         {} of {} plunges over 1x. Pre-guard this fixture read 1.8484 with 125 over \
+         1x; the guard removed 118 of them. A nonzero count here means the \
+         modulator's geometric plunge guard stopped firing.",
+        util.plunge.over_1x, util.plunge.population,
+    );
+    assert!(
+        peak < 1.5,
+        "POST-PHASE-3 BAR: the whole-population peak must fall well below the \
+         pre-guard 1.8484; read {peak:.4}. The residual above 1.0 is the generator's: \
+         seven `EntryPlunge`-tagged descents carry the op's 750 mm/min FEED rate \
+         instead of its {plunge_rate:.0} mm/min plunge rate, and the intent skip \
+         claims them. See `tests/plunge_guard_ab_p3.rs`.",
     );
 }

@@ -615,6 +615,10 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
         BindingConstraint::PowerMax,
         BindingConstraint::MachineMaxFeed,
         BindingConstraint::KinematicReach,
+        // Phase 3 (2026-09-07). The geometric plunge cap. It is a
+        // vertical-motion bound, not a chip-formation floor, so it does
+        // not answer rider 3 — the rubbing-floor clamp is still unnamed.
+        BindingConstraint::PlungeRate,
     ];
     for v in all {
         // Exhaustiveness guard: a new variant fails to compile here.
@@ -624,7 +628,8 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
             | BindingConstraint::DeflectionMax
             | BindingConstraint::PowerMax
             | BindingConstraint::MachineMaxFeed
-            | BindingConstraint::KinematicReach => {}
+            | BindingConstraint::KinematicReach
+            | BindingConstraint::PlungeRate => {}
         }
         assert!(
             !v.label().contains("rubbing"),

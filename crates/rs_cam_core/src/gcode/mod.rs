@@ -629,7 +629,10 @@ pub fn project_load_report(
         // of its own, so it takes the by-index convenience over the
         // session's stored result; the MCP narration, which DOES hold one,
         // passes its own move list to `_of` instead.
-        verdict.kinematic_utilization = project.kinematic_utilization_for(idx);
+        // Phase 3: `sim_trace` is the trace this report is judging (already
+        // `None` when it was thrown away as stale), so it is what decides
+        // whether the reading describes planned or emitted feeds.
+        verdict.kinematic_utilization = project.kinematic_utilization_for(idx, sim_trace);
         per_toolpath.push(verdict);
     }
     // PR-4: if we threw away a stale trace upstream, rewrite the

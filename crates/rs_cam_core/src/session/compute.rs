@@ -241,7 +241,17 @@ fn regime_from_binding(
         .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
         .map(|(binding, _)| *binding);
     match dominant {
-        Some(BindingConstraint::DeflectionMax) => LoadRegime::ToolLimited,
+        // Phase 3: a dominant `PlungeRate` binding means the CUTTER's
+        // centre-cutting capability held the feed down — the operation's
+        // plunge rate is set for what the tool can plunge, not for what the
+        // machine can drive. It joins deflection as a tool limit, not the
+        // comfortable regime: `Unconstrained` would report a path that is
+        // mostly capped descents as a light cut. On a real path this
+        // binding is never dominant (plunges are a small minority of moves),
+        // so the arm is close to unreachable.
+        Some(BindingConstraint::DeflectionMax | BindingConstraint::PlungeRate) => {
+            LoadRegime::ToolLimited
+        }
         Some(
             BindingConstraint::PowerMax
             | BindingConstraint::MachineMaxFeed
@@ -2916,6 +2926,10 @@ impl ProjectSession {
             deflection_inputs,
             power_inputs,
             nominal_axial_doc_mm: nominal_axial,
+            // Phase 3 (2026-09-07) — the operation's OWN plunge rate, the
+            // ceiling the geometric guard applies to a vertical-dominant
+            // move whose generator emitted it without a plunge tag.
+            plunge_rate_mm_min: operation.plunge_rate(),
         };
 
         let mut modulated_toolpath = annotated.toolpath.clone();
@@ -3421,10 +3435,17 @@ impl ProjectSession {
     /// from `effective_kinematics`, which never returns `None`). Keep the two
     /// in step: the instrument and the integrator must not disagree about the
     /// machine — that is the "one physics site" ruling of the Phase 1 plan.
+    ///
+    /// `trace` is the simulation the caller is reading, or `None`. It decides
+    /// only the reading's [`crate::kinematic_utilization::FeedsProvenance`],
+    /// never a number. Pass the trace the caller displays beside this reading;
+    /// the GUI keeps its trace on viz state, so the session's own
+    /// `self.simulation` is the wrong source there.
     pub fn kinematic_utilization_of(
         &self,
         index: usize,
         toolpath: &crate::toolpath::Toolpath,
+        trace: Option<&crate::simulation_cut::SimulationCutTrace>,
     ) -> Option<crate::kinematic_utilization::ToolpathKinematicUtilization> {
         let tc = self.toolpath_configs.get(index)?;
         if !tc.enabled {
@@ -3437,14 +3458,55 @@ impl ProjectSession {
         } else {
             self.machine.max_feed_mm_min.max(1.0)
         };
-        Some(crate::kinematic_utilization::analyse_toolpath(
+        let mut util = crate::kinematic_utilization::analyse_toolpath(
             toolpath,
             tc.id,
             &kinematics,
             max_feed,
             rapid_feed,
             tc.operation.plunge_rate(),
-        ))
+        );
+        util.feeds_provenance = Self::feeds_provenance_of(tc.id, toolpath, trace);
+        Some(util)
+    }
+
+    /// Does `toolpath` carry the feeds the post-processor will emit?
+    ///
+    /// The question is answered from the EVIDENCE, never from timing: every
+    /// modulated feed the trace recorded for this toolpath must be present on
+    /// this move list. That is true of `self.results` after
+    /// [`Self::apply_adaptive_feed_modulation`] wrote the modulated clone
+    /// back, and false of a worker's pre-modulation IR — which is exactly the
+    /// list the GUI's MCP narration holds.
+    ///
+    /// A trace that records NO modulated feed for the toolpath reads
+    /// `Emitted`: the modulator did not fire (no vendor band, no cut
+    /// samples), so the stored plan IS what export emits. No trace at all
+    /// reads `Planned`.
+    fn feeds_provenance_of(
+        id: ToolpathId,
+        toolpath: &crate::toolpath::Toolpath,
+        trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+    ) -> crate::kinematic_utilization::FeedsProvenance {
+        use crate::kinematic_utilization::FeedsProvenance;
+        let Some(trace) = trace else {
+            return FeedsProvenance::Planned;
+        };
+        for ((tp_id, move_index), (feed, _binding)) in &trace.modulated_feeds {
+            if *tp_id != id {
+                continue;
+            }
+            let Some(m) = toolpath.moves.get(*move_index) else {
+                return FeedsProvenance::Planned;
+            };
+            let Some(actual) = m.move_type.feed_rate() else {
+                return FeedsProvenance::Planned;
+            };
+            if (actual - feed).abs() > 1e-6 {
+                return FeedsProvenance::Planned;
+            }
+        }
+        FeedsProvenance::Emitted
     }
 
     /// [`Self::kinematic_utilization_of`] on the session's OWN stored result
@@ -3456,9 +3518,10 @@ impl ProjectSession {
     pub fn kinematic_utilization_for(
         &self,
         index: usize,
+        trace: Option<&crate::simulation_cut::SimulationCutTrace>,
     ) -> Option<crate::kinematic_utilization::ToolpathKinematicUtilization> {
         let result = self.results.get(&index)?;
-        self.kinematic_utilization_of(index, &result.annotated().toolpath)
+        self.kinematic_utilization_of(index, &result.annotated().toolpath, trace)
     }
 
     /// [`Self::kinematic_utilization_for`] over every enabled toolpath that
@@ -3470,13 +3533,14 @@ impl ProjectSession {
     /// `toolpath_summaries` says nothing about their Z rates.
     pub fn kinematic_utilizations(
         &self,
+        trace: Option<&crate::simulation_cut::SimulationCutTrace>,
     ) -> std::collections::BTreeMap<
         ToolpathId,
         crate::kinematic_utilization::ToolpathKinematicUtilization,
     > {
         (0..self.toolpath_configs.len())
             .filter_map(|idx| {
-                let util = self.kinematic_utilization_for(idx)?;
+                let util = self.kinematic_utilization_for(idx, trace)?;
                 Some((util.toolpath_id, util))
             })
             .collect()
@@ -3564,7 +3628,10 @@ impl ProjectSession {
         // toolpath with a result, drill ops included; the finding itself is
         // NOT gated on `rest_driven`, because an untagged vertical descent is
         // a defect on fresh stock exactly as it is on rest stock.
-        let kinematic_utilization = self.kinematic_utilizations();
+        // The trace the caller is triaging decides the readings' feeds
+        // provenance (Phase 3), so it is the one to pass — not
+        // `self.simulation`, which the GUI never populates.
+        let kinematic_utilization = self.kinematic_utilizations(Some(trace));
 
         SimulationTriage::build_with_rest_context(
             &TriageInputs {
