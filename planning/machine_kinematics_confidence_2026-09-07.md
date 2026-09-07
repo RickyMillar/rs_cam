@@ -312,3 +312,41 @@ Import `$$` once (or use the preset). Every simulation then reports, for every
 toolpath and every movement: what the machine will actually do, where it is the
 bottleneck, where there is headroom to push, and any command it cannot
 realise — with the plunge hazard as one corner of that same instrument.
+
+## Findings from the roughing A/B (rs-cam-38, 2026-09-07 evening)
+
+Results: `planning/roughing_strategy_ab_results_2026-09-07.md` (+ artifacts dir).
+Eight rough-only arms + three finish-stock runs on the wanaka200 fixture,
+0.2 mm, all 0 collisions, all gates Within, `feeds_provenance = emitted`.
+
+- **Kinematic answer (the instrument's first field use):** EVERY arm is
+  ≥ 97 % feed-bound; `machine_bound` ≤ 0.7 % on parallel arms, 3–4.5 % on
+  spiral arms only. The belt router's acceleration is NOT the binding limit
+  on this terrain — the 0.025 mm/tooth rubbing-floor feed clamp is.
+- **Hypothesis answer:** no arm reaches 40 % air (best 55.3 %); the residual
+  is IN-CUT drape air (51 % of in-cut samples < 0.02 engagement on baseline),
+  not inter-island rapids (baseline rapid 11.4 km, not the scoping doc's
+  42.7 km). A boustrophedon fill (Arm F) would drape through the same air.
+- Practical ranking: C2 (by_area ordering) −8.1 % with finish stock
+  byte-identical to baseline; C2E (by_area + DPP 5.46) −18.1 % with finish
+  peak bite at baseline but an 8.19 mm (1.37×D) peak axial bite; BE −25.7 %
+  but air 56.5→73.8 % and 1.6× finish peak bite. Raised stay-down REFUTED
+  (+12.5 %: fed links through air cost more than retract trips); ramp entry
+  −5.8 % worse; spiral matched `recommend_clearing_strategy`'s prediction
+  (1.244× predicted, 1.238× measured).
+
+Open flags from the run (not investigated; no heavy work until the
+terminal is stable):
+1. **G-AIRDENOM** — on every one-op run `air_cut_pct_of_total_runtime` >
+   `air_cut_pct_of_cutting_time` (56.5 > 36.3), the OPPOSITE of the
+   documented relation (rapids excluded ⇒ cutting-time reading ≥ total-
+   runtime reading); it flips to the documented order on the two-op finish
+   runs (33 < 42). Mathematically impossible if both share one numerator —
+   one of the two percentages has a different population. Instrument
+   defect; find which surface aggregates differently before citing either.
+2. `project.entry_load` absent from the finish's diagnostics — expected
+   when no entry exceeds the bar (it is emitted only on rest-driven ops
+   whose entries exceed), so probably not a defect; confirm the finish is
+   rest-driven and its entries were under the bar.
+3. `mill_shallow_areas = true` produced no visible sub-pass on any arm —
+   possibly inert without `shallow_stepdown`; check before relying on it.
