@@ -71,6 +71,19 @@ Order follows the repo's own rules: commit the measuring instrument before
 changing the thing it measures (`feedback_commit_instruments_before_gates`),
 and measure emitted motion, never the plan (`feedback_measure_emitted_motion`).
 
+Orchestration (reviewer-ruled): Phase 1 runs SOLO and self-verifies (it owns
+the cargo lane). Wave 2 = Phase 2 kernel ‖ Phase 4 scaffold (diagnostic ids +
+surfacing plumbing on disjoint files, no cargo), then one sequential verifier.
+Wave 3 = Phase 3 alone with its paired A/B — it changes emitted feeds and must
+be measured, not raced. Implementers do not commit; the orchestrator commits
+per verified phase.
+
+Phase 3 guard placement: it sits BEFORE the band lift — a `Plunge`-class move
+is capped at `min(commanded, plunge_rate)`. `should_skip_modulation` stays
+intent-based; geometry is not folded into it, or the distinction between
+"operator-tuned, leave alone" and "physically a plunge, cap it" is lost.
+Sentries at 14° and 16° bracket the 15° class threshold.
+
 ### Phase 1 — complete the machine model (~½ day)
 
 - `MachineKinematics::max_rate_xyz_mm_min: Option<[f64; 3]>` — GRBL
@@ -85,9 +98,23 @@ and measure emitted motion, never the plan (`feedback_measure_emitted_motion`).
   `$110/$111`) and `max_z_feed_mm_min` (`$112`). Populate `max_rate_xyz` from
   `$110/$111/$112` at the apply site (GUI + MCP `import_machine_settings`),
   so importing `$$` once persists all three.
-- Shapeoko VFD preset: `max_rate_xyz = [10000, 10000, 1000]` — the values the
-  code comment at `machine_kinematics.rs:173-176` records from the 2026-05-26
-  `$$` capture. The wanaka `.toml`s carry the same profile.
+- The tuned kinematics fn at `machine_kinematics.rs:~205` (the one carrying
+  `Some([500, 500, 270])` and the 2026-05-26 `$$`-capture comment) gains
+  `max_rate_xyz = [10000, 10000, 1000]`. **Do NOT attach kinematics to any
+  `MachineProfile` preset**: every preset sets `kinematics: None`
+  (`machine.rs:204`) and falls back to `generic_wood_router`; the `[500, 500,
+  270]` the wanaka project reports is an inline `$$` import saved in its
+  `.toml`. Attaching would silently change runtime predictions for every
+  project on the VFD preset — the blast radius the byte-identical sentry
+  forbids. The live project receives its rates by `$$` re-import or through
+  the extended `set_machine_kinematics` MCP tool (new optional
+  `max_rate_x/y/z_mm_min`).
+- **One physics site (reviewer ruling).** P1 exposes
+  `pub fn move_kinematics(length, dir, v_in, v_out, v_cmd, &kin, max_feed) ->
+  MoveKinematics { peak_mm_min, binding: KinematicBinding }` and the
+  integrator's per-move step CALLS it. Phase 2's instrument consumes the same
+  struct, so the A/B verdict (instrument) and the modulator's `KinematicReach`
+  cap (integrator) can never read two different trapezoids.
 - Sentries: (a) unset ⇒ integrator output byte-identical to today on the
   existing kinematics fixtures; (b) a pure-Z move with `$112 = 1000` and a
   commanded 1807 integrates at 1000; (c) a planar move is untouched by `$112`;
