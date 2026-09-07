@@ -350,3 +350,43 @@ terminal is stable):
    rest-driven and its entries were under the bar.
 3. `mill_shallow_areas = true` produced no visible sub-pass on any arm —
    possibly inert without `shallow_stepdown`; check before relying on it.
+
+## G-AIRDENOM resolved as a DEFECT — and it reverses Reading 2 (2026-09-08)
+
+Read-only investigation: `planning/ab_instrument_flags_2026-09-08.md`.
+Both air percentages share one numerator (`air_cut_time_s`) and one
+population. The inversion is possible only because `cutting_runtime_s` >
+`total_runtime_s`: `air_cut_time_s` and `cutting_runtime_s` are naive dexel
+seconds at the PRE-modulation commanded feed (`dexel_stock/simulation.rs:
+~937`), while `total_runtime_s` is overwritten with the kinematics-
+integrated wall clock at the MODULATED feed (`compute/simulate.rs:~1533`,
+`session/compute.rs:~3184`). A mixed time base. The documented invariant
+(`simulation_cut.rs:592-593`, `:628`, and the CLAUDE.md caveat) is false
+whenever modulation changes the feed; the sign flips with the modulator's
+direction (rough sped up → total % > cutting %; finish slowed → reverse).
+
+Consequence for the roughing A/B: absolute air seconds
+(`pct_total × total_runtime_s / 100`, comparable because every arm
+commanded 750 mm/min) — A 1457, B 1450, C 2687, C2 1311, D 1662, E 1321,
+BE 1414, **C2E 1241**. B/E/BE/C2E did NOT raise air; they shortened the
+denominator. **C2E has the least absolute air of any arm and near-baseline
+finish stock → C2E is the strict winner**, not C2. Arm C (raised
+stay-down) is the only genuine air loser. BE's 1.6× finish-bite penalty is
+a geometry measure and stands.
+
+Fix (code follow-up, NOT done): put all three time figures on one base —
+integrate `air_cut_time_s` and `cutting_runtime_s` at the modulated feed
+(or compute the total-runtime percentage against the naive total) — then
+correct the two doc comments and the CLAUDE.md caveat (replacement wording
+is in the report). Until then, compare arms on ABSOLUTE air seconds, never
+on either percentage.
+
+Flag 2 (`entry_load` absent) = method error: the finish IS rest-driven
+and eligible, but the finding lives only in triage `actions`
+(`get_diagnostics`), never in `get_toolpath_diagnostics`; and drop_cutter
+sets no `MoveIntent` with `entry_style = none`, so it may also be NOT
+MEASURED. Flag 3 (`mill_shallow_areas`) = by design at dpp 5.46: the
+level ladder collapses to one level so the only sub-level is below the
+deepest surface (empty grid); plus the sub-pass dispatch emits no DepthPass
+span, so a working sub-pass is invisible to `per_depth_pass` — a separate
+instrument gap.
