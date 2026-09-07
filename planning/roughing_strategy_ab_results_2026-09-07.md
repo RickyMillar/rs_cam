@@ -325,3 +325,75 @@ changes the XY pattern of the fill.
 - artifacts: `planning/roughing_strategy_ab_2026-09-07/` (11 PNG, 11 TOML)
 - scoping: `planning/roughing_strategy_terrain_2026-09-07.md`
 - fixture (unmodified): `planning/airrun_2026-08-19/wanaka200.toml`
+
+## Addendum — Arm G run after all: raw drop_cutter rough with the 6 mm flat (operator request, same day)
+
+The operator asked whether a drop_cutter pass with the 6 mm flat end mill had
+been tried. It had not. It turns out to be runnable today without code:
+`DropCutterConfig` has no stock-to-leave and no depth-of-cut dial, and `min_z`
+clamps are filtered as holes by the raster builder (`toolpath.rs:621-650`), so
+the operation cuts from the stock top down to the mesh surface in ONE pass
+wherever it cuts. The depth of cut is the local relief, not a setting.
+
+Arm G as run: new toolpath index 8, `drop_cutter`, tool 0 (6 mm 2F flat),
+model 0, `stock_source = fresh`, `stepover = 3.0` (50 % of D),
+`feed_rate = 750`, `plunge_rate = 541`, `spindle_rpm = 15000`, slope 0–90,
+`min_z` default (floors at the mesh bottom). Every other toolpath disabled.
+Sim 0.2 mm, same as every arm above.
+
+| Metric | Arm G (DC 6 mm, s 3.0) | BE (best adaptive3d) | A (baseline) |
+|---|---|---|---|
+| total_runtime_s | **1117.8** (−56.6 % vs A) | 1916.4 | 2578.1 |
+| air_cut_pct_of_total_runtime | **30.91** | 73.78 | 56.51 |
+| cutting mm / rapid mm | 13 944 / 8 | 37 012 / 3 527 | 49 237 / 11 407 |
+| moves / retract_trips | 4 492 / 2 | 19 071 / 35 | 13 239 / 471 |
+| collisions / rapid collisions | 0 / 0 | 0 / 0 | 0 / 0 |
+| avg engagement | 0.353 | 0.216 | 0.240 |
+| peak axial bite mm | **9.27** (median 2.72) | 8.19 | 4.20 |
+| deflection peak mm (bar 0.05) | 0.036 | 0.039 | 0.022 |
+| power peak / avail kW | 0.043 / 0.703 | 0.084 / 0.703 | 0.047 / 0.703 |
+| chipload gate | **UNMODELED — no_vendor_data** | Within | Within |
+| kinematic: utilization / feed_bound / machine_bound | 1.000 / 1.000 / 0.000 | 0.997 / 0.970 / 0.030 | 0.9998 / 0.993 / 0.007 |
+| headroom_at_1_30 / plunge.peak_ratio / provenance | 0.231 / 1.0 (0 of 1) / emitted | 0.179 / 1.386 / emitted | 0.216 / 1.386 / emitted |
+| time-weighted achieved feed mm/min | **750** (no modulation) | 1395 | 1451 |
+
+Screenshots: `planning/roughing_strategy_ab_2026-09-07/armG_dc6mm_s3_sim.png`
+(stock) and `armG_dc6mm_s3_path.png` (path, rapids hidden). Saved arm:
+`armG_dc6mm_s3.toml`.
+
+What the renders show: the path is one continuous serpentine over the full
+model footprint, terrain-following, with no fragmentation. The simulated
+stock shows the terrain roughed with the 3 mm raster terraces visible and no
+missed region. This is the operator's "simple raster rough" hypothesis, and
+on wall-clock it beats every adaptive3d arm by a wide margin.
+
+Three things stop this from being a verdict:
+
+1. **The chipload gate did not run.** It reads `unmodeled / no_vendor_data`.
+   The drop_cutter queries the vendor LUT in the finish pass role, and no row
+   matches a 6 mm flat in that role. The cut therefore has no chipload check
+   at all. The feed of 750 at 15 000 RPM and 2 flutes is 0.025 mm per tooth,
+   the rubbing floor, against a roughing band of 0.033–0.057 at 4.2 mm DOC
+   that derates further with depth. Whether 750 is safe at a 9.27 mm bite is
+   not answered by any gate here.
+2. **No feed modulation ran.** Achieved feed equals commanded feed (750). The
+   adaptive3d arms ran at about 1400–1450 through the modulator. The 1118 s
+   is therefore an un-modulated figure; the two families were not driven the
+   same way. It is also why utilization reads exactly 1.0 and feed_bound 1.0.
+3. **The bite is a full-relief slot.** Peak 9.27 mm axial at one column
+   (1.55 × D), median 2.72 mm. The first raster row is a full-width slot at
+   that depth. Deflection reads 0.036 mm on the validated model, inside the
+   0.05 bar. Power is trivial. The deflection and power gates did run with a
+   real population (99 261 contributing samples).
+
+Also note: the drop_cutter cuts to the mesh with zero leave. What it leaves
+for the R1.5 finish is the flat-tool terrace on every slope (up to
+stepover × tan(slope)) and every valley narrower than 6 mm. The finish-stock
+run for this arm was NOT done (session limit). It is the next measurement:
+enable index 6 with `from_remaining_stock` on this arm and read
+`crosses_standing_material`.
+
+Recommendation: fund a chipload row (or the roughing-role lookup) for a flat
+end mill on drop_cutter before trusting this arm, then re-run it with the
+modulator active and the finish-stock pair. If it holds, it is the rough for
+this terrain and Arm F is moot.
