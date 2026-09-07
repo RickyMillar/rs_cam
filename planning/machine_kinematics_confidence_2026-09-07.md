@@ -454,3 +454,20 @@ New instrument/generator flags (ledger):
   (no_vendor_data) while drop_cutter with the same tool matched — the
   family-filter hole again (waterline family), same follow-up as the flat
   case.
+
+Deliverable landed: `planning/deep_doc_modulation_2026-09-08.md` (+ artifacts
+dir). Verdict paragraph (rs-cam-38): on plywood the hypothesis PASSES on
+the ball tools; the win comes from DELETING the finish, not deepening the
+rough (E-ply single-level adaptive3d = 1632 s rough-only still needs the
+11 400 s finish); the modulator regulated the chipload band max on every
+ball arm (median −22…−31 % on R1.5, −4 % on R2.0), deflection never above
+0.020 mm, power 0.015 kW — never load-bound. Reproducibility clean (B15 /
+S20 reproduce to the millisecond on reload). Three more ledger items:
+- **G-LOADAUTOGEN** — `load_project` auto-generates DISABLED toolpaths too
+  (Back Rough / front rough queue on every reload of an arm TOML); cancel
+  until idle before touching the project. A disabled op must not generate.
+- MCP `screenshot_simulation` cannot produce a lit close-up of cusps (flat
+  colour map, no camera/light control) — crops of 4800-px renders with
+  autocontrast were used and captioned honestly; a surfacing gap.
+- Flat-tool arms, the modulated Arm G rerun and the plunge before/after
+  reruns wait for the G-DCFLAT rebuild + MCP reset.
