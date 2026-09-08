@@ -741,6 +741,57 @@ Artifacts: `T1_r20_then_r10_rest.toml` + `_sim.png`,
 `T2_r20_raster_then_r10_iso_islands.toml` + `_sim.png`,
 `T3_r20_raster_then_r10_scallop_islands.toml` + `_sim.png`.
 
+### 2.8 The cusp the passes actually leave — raster vs iso-scallop (2026-09-09)
+
+Every raster cusp quoted above is the flat-ground law
+h = r − sqrt(r² − (s/2)²). On a flank the raster's passes are spaced in
+plan, so the spacing measured on the surface grows with the slope, while
+an iso-scallop holds its cusp on the surface by construction. The
+operator pushed for scallop on exactly that ground, and the time ranking
+in §2.1 never measured it. Measured now: the simulated stock top (0.2 mm
+dexel, one column per 0.2 mm cell, 980 100 columns inside 1–199 mm) minus
+the terrain height at the same XY, binned by the terrain's slope from the
+STL gradient (`cusp_measure.py`, this directory, on the `stockVerts` of
+the simulation's HTML export). Same tool (R1.5 tapered ball), same
+nominal cusp (0.20 mm), fresh plywood stock, both arms reproduced to the
+millisecond (B15 3 274.43 s, Q3 4 372.33 s).
+
+| slope band (share of board) | B15 raster s1.5: p50 / p90 / > 0.3 mm | Q3 iso-scallop h0.20: p50 / p90 / > 0.3 mm |
+|---|---|---|
+| 0–25° (34 %) | 0.130 / 0.762 / 26.5 % | 0.093 / 0.507 / 17.2 % |
+| 25–45° (28 %) | 0.283 / 0.817 / 47.6 % | 0.143 / 0.545 / 25.0 % |
+| 45–60° (31 %) | 0.380 / 0.868 / 60.6 % | 0.178 / 0.564 / 29.5 % |
+| 60–90° (7 %) | 0.550 / 1.215 / 75.7 % | 0.303 / 0.812 / 50.3 % |
+| whole board | 0.269 / 0.870 / — | 0.141 / 0.573 / — |
+
+Column by column over the 980 100 common cells: the raster leaves a
+median 0.105 mm more than the scallop, the scallop is the better surface
+on 70.7 % of the board and the raster on 19.2 %. Two readings:
+
+1. **The raster's cusp is not its flat-law number.** Its median residual
+   is 0.13 mm on the flats and 0.55 mm on the steep flanks — the flat law
+   said 0.20 everywhere. The iso-scallop rises too (0.09 → 0.30) but by
+   less, and stays under the raster in every band. The tails (p90 and
+   beyond) are reach — valley floors the R1.5 ball cannot enter — and are
+   the same for both patterns, which is why the reach map, not the cusp,
+   governs them.
+2. **The §2.1 time ranking compared unequal surfaces.** "Q3 is 34 %
+   slower than B15" holds at equal NOMINAL cusp; at equal DELIVERED
+   surface the raster needs roughly half the stepover. B10 (s 1.0,
+   4 788 s) is the raster arm nearest that, and it is already slower than
+   Q3's 4 372 s before its surface has been measured. So on this terrain
+   the iso-scallop is the better single pass at matched finish, and the
+   raster's win is a win at a coarser finish. This does not change the
+   two-tool result (§2.7): the second pass there is a raster only because
+   the island clip cannot yet carry a raster, and the whole-board R1.0
+   raster on rest stock was the only pairing that passed.
+
+Caveats: the residual is quantised to the 0.2 mm dexel cell, so the
+0.09–0.13 flat-band medians are at the instrument's floor; the scallop
+arm shows a deeper overcut minimum (−0.71 mm against the raster's
+−0.37 mm) that has not been traced to a move; and both arms are measured
+against the model, not against each other's stock.
+
 ## 3. Verdict on the hypothesis, and a ranked recommendation
 
 The hypothesis passes, on the ball tools, on every bar the orchestrator set:
@@ -754,7 +805,10 @@ The hypothesis passes, on the ball tools, on every bar the orchestrator set:
   action of any kind. This is the recommendation for "rough + finish on
   plywood terrain": there is no rough; one ball raster does the job.
 - **iso-scallop, R2.0 tapered ball, h 0.27 (S20): 2 389 s** — the fastest
-  arm, chipload Within on an un-extrapolated row, air 36.8 %, one 2.7 ×
+  arm (and see §2.8: at matched DELIVERED surface the iso-scallop beats
+  the raster on this terrain; the raster rankings here are at a coarser
+  finish than their flat-law cusp states), chipload Within on an
+  un-extrapolated row, air 36.8 %, one 2.7 ×
   plunge that is the G-BOUNDARYPLUNGE class on a pre-fix binary (rerun
   scheduled). Cusp 0.27 mm. The alternative when the bigger ball is in the
   holder.

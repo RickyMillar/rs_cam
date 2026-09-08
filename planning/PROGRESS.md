@@ -171,6 +171,13 @@ lateral rapid on the iso arm, emitter not found), G-LEADGATE.
   zero triage actions (cusp 0.20 mm) — **4.36× the 14 264 s same-material
   pair**; iso-scallop R2.0 at h 0.27 is 5.97×. Caveat carried in the
   recommendation: the R1.5 band rides the MDF parallel row by category.
+  **Correction 2026-09-09 (§2.8):** every raster cusp above is the
+  flat-ground law; measured on the simulated stock the R1.5 raster s1.5
+  leaves a median 0.27 mm (0.55 mm on the 60–90° flanks) against the iso
+  scallop h0.20's 0.14 mm on the same tool — the "34 % slower" iso arm
+  delivered the finer surface, so the time ranking compared unequal
+  finishes. At matched delivered finish the iso-scallop wins on this
+  terrain; the raster's matched-finish time is being measured (B10 s1.0).
 
 ### Open ledger (not fixed)
 
