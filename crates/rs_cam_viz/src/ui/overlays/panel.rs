@@ -337,7 +337,8 @@ fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend) {
                 ui.label(
                     egui::RichText::new(if measured {
                         format!(
-                            "unreachable {:.1}% \u{00B7} worst gap {:.3} mm",
+                            "unreachable {:.1}% of MEASURED area \u{00B7} \
+                             worst gap {:.3} mm",
                             map.unreachable_pct(),
                             map.max_gap_mm
                         )
@@ -347,6 +348,33 @@ fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend) {
                     .small()
                     .color(theme::TEXT_FAINT),
                 );
+                // The grid, always, and on its own line: two percentages are
+                // comparable only on one grid (F5, 2026-09-08). It also
+                // carries the "the bar is under the floor" sentence, which is
+                // what the wanaka red terrain needed said.
+                if measured {
+                    let below = map.tolerance_below_floor();
+                    ui.label(
+                        egui::RichText::new(map.grid_note())
+                            .small()
+                            .color(if below {
+                                theme::WARNING
+                            } else {
+                                theme::TEXT_FAINT
+                            }),
+                    );
+                    if below {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{:.1}% unresolved \u{2014} this cell cannot answer at \
+                                 this bar",
+                                map.unresolved_pct()
+                            ))
+                            .small()
+                            .color(theme::WARNING),
+                        );
+                    }
+                }
             }
         }
         Legend::Deviation => {

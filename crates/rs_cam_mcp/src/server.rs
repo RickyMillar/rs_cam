@@ -234,6 +234,14 @@ pub struct ScreenshotToolpathParam {
     /// call refuses when the toolpath is not a finishing operation a reach
     /// map speaks about, and it takes a second or two on a cold map — the
     /// same memo `reach_map` fills.
+    ///
+    /// When this is on the SHADING is the subject: the model keeps its own
+    /// colours undimmed and the cutting moves are drawn thin and dimmed over
+    /// it. Before F4 (2026-09-08) the moves were full width and full colour
+    /// over a background dimmed to 0.35, and on a 200 mm board with 17 959
+    /// moves the top panel came back an opaque green mat — the shading only
+    /// showed in the bottom panel, where the moves are edge-on. Ask for a
+    /// plain `screenshot_toolpath` when the PATH is what you need to read.
     pub reach_overlay: Option<bool>,
 }
 

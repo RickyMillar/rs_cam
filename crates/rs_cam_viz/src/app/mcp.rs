@@ -5231,22 +5231,27 @@ impl super::RsCamApp {
             "ok": true,
             // Plan-time read: this handler takes `&self`.
             "modified": false,
+            // FIRST LINE, deliberately: the grid the answer sits on. Two
+            // percentages from two calls are comparable only on one grid, and
+            // an agent that reads the number before the grid cannot know
+            // (F5, 2026-09-08).
+            "grid_note": map.grid_note(),
             "toolpath_index": index,
             "tool_id": map.tool_id,
             "model_id": map.model_id,
             "tolerance_mm": map.tolerance_mm,
-            "tolerance_source": if spec.tolerance_mm.is_some() {
-                "caller override"
-            } else {
-                "the operation's own cusp / scallop height, else the 0.05 mm default"
-            },
+            "tolerance_source": request.tolerance_source.key(),
+            "tolerance_note": request.tolerance_source.describe(map.tolerance_mm),
             "is_measured": map.is_measured(),
             "unreachable_pct_of_measured_area": map.unreachable_pct(),
+            "unresolved_pct_of_measured_area": map.unresolved_pct(),
+            "tolerance_below_floor": map.tolerance_below_floor(),
             "max_gap_mm": map.max_gap_mm,
             "area_mm2": {
                 "surface": map.surface_area_mm2,
                 "measured": map.measured_area_mm2,
                 "unreachable": map.unreachable_area_mm2,
+                "unresolved": map.unresolved_area_mm2,
             },
             "grid": {
                 "cell_mm": map.cell_mm,
@@ -5254,17 +5259,27 @@ impl super::RsCamApp {
                 "ny": map.ny,
                 "cells": map.cells.len(),
                 "not_measured_cells": not_measured,
+                "cell_rule": "the TOOL's tip sphere and the model bbox, never the tolerance \
+                              \u{2014} so a series of probes at moving tolerances is comparable",
             },
             "gap_histogram": {
                 "upper_edges_mm": edges,
                 "counts": counts,
             },
             "discretisation_floor_mm": map.discretisation_floor_mm,
+            "profile_floor_mm": map.profile_floor_mm,
+            "curvature_floor_p95_mm": map.curvature_floor_p95_mm,
             "rim_erosion_mm": map.rim_erosion_mm,
             "note": "Top-down measure. Undersides, walls and a band one envelope radius wide \
-                     inside the part outline are NOT MEASURED — read `is_measured` and the \
-                     measured-against-surface areas before believing the percentage. A gap of \
-                     the order of `discretisation_floor_mm` is arithmetic, not geometry.",
+                     inside the part outline are NOT MEASURED \u{2014} read `is_measured` and \
+                     the measured-against-surface areas before believing the percentage. \
+                     `discretisation_floor_mm` is what this grid can resolve ON THIS SURFACE: \
+                     the larger of the plane-only `profile_floor_mm` and the curvature term \
+                     `curvature_floor_p95_mm`. When `tolerance_below_floor` is true the bar is \
+                     under the arithmetic, `unreachable_pct_of_measured_area` is a LOWER BOUND, \
+                     and `unresolved_pct_of_measured_area` is the share this cell size cannot \
+                     answer for \u{2014} raise the tolerance (the operation's own cusp is the \
+                     honest bar) rather than reading the residual as tool geometry.",
         }))
     }
 
@@ -5306,9 +5321,15 @@ impl super::RsCamApp {
             // removed against what this tool can form), and compositing one
             // over the other would leave the reader unable to say which
             // colour they were looking at.
+            // F4: when the reach shading is the subject, the moves must not
+            // bury it. See `CompositeSubject` for the measurement.
+            let mut subject = rs_cam_core::fingerprint::CompositeSubject::Moves;
             let bg = if reach_overlay.unwrap_or(false) {
                 match self.reach_overlay_background(index) {
-                    Ok(mesh) => Some(mesh),
+                    Ok(mesh) => {
+                        subject = rs_cam_core::fingerprint::CompositeSubject::Background;
+                        Some(mesh)
+                    }
                     Err(message) => return text(message),
                 }
             } else if show_stock.unwrap_or(false) {
@@ -5325,16 +5346,26 @@ impl super::RsCamApp {
             } else {
                 None
             };
-            let pixels = rs_cam_core::fingerprint::render_toolpath_composite(
+            let pixels = rs_cam_core::fingerprint::render_toolpath_composite_subject(
                 &result.annotated,
                 bg.as_ref(),
+                None,
                 w,
                 h,
                 include_rapids.unwrap_or(true),
+                subject,
             );
+            let layer_note = match subject {
+                rs_cam_core::fingerprint::CompositeSubject::Background => {
+                    " \u{2014} reach shading at full brightness, moves drawn thin and \
+                     dimmed so the shading reads from above"
+                }
+                rs_cam_core::fingerprint::CompositeSubject::Moves => "",
+            };
             match image::save_buffer(Path::new(path), &pixels, w, h, image::ColorType::Rgba8) {
                 Ok(()) => text(format!(
-                    "Toolpath {index} exported to {path} ({w}x{h}, {} moves, {:.0}mm cutting)",
+                    "Toolpath {index} exported to {path} ({w}x{h}, {} moves, \
+                     {:.0}mm cutting){layer_note}",
                     result.toolpath().moves.len(),
                     result.stats.cutting_distance,
                 )),
@@ -5582,6 +5613,23 @@ impl super::RsCamApp {
                 }));
             };
             self.controller.state_mut().selection = Selection::Toolpath(tp_id);
+            // The selection write is not the whole selection. Overlays whose
+            // precondition reads a DERIVED per-selection artefact — the reach
+            // map is the one — are answered from state the pump refreshes,
+            // not from `selection` itself, and the pump runs after this call
+            // returns. So `set_ui_view(toolpath_index: 13, overlays:
+            // {reach_map: true})` in ONE call was refused with "select a
+            // finishing operation" while the same overlays map in a SECOND
+            // call applied (F3, 2026-09-08).
+            //
+            // Pumping it here is the same fix, and for the same reason, as
+            // the synchronous workspace switch above: everything an
+            // `overlays` map in this call will be judged against must
+            // already be in force. `process_reach_overlay` resolves
+            // `reach_map_spec` (two memoised geometry reads, no drop-cutter
+            // work) and hands the walk to the Reach lane, so this stays a
+            // cheap call on the request thread.
+            self.controller.process_reach_overlay();
         }
 
         // 3. Properties tab — one-shot override consumed by the

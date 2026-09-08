@@ -361,6 +361,46 @@ impl OperationType {
             && !matches!(spec.ui_process_role, UiProcessRole::Roughing)
     }
 
+    /// Is this operation's `stepover()` a **lateral pass spacing over the
+    /// surface** — the distance that leaves a cusp between neighbouring
+    /// passes of a spherical tip?
+    ///
+    /// Only true where the closed form
+    /// `cusp = R − sqrt(R² − (stepover/2)²)` describes what the operator
+    /// will actually feel on the part, because
+    /// [`crate::session::ProjectSession::reach_tolerance_for`] uses it as the
+    /// reach map's bar for an op that declares no scallop height of its own
+    /// (F2, 2026-09-08). The default 0.05 mm bar is a **finish-quality
+    /// guess**; the raster's own cusp is a measurement of the same surface,
+    /// and on the operator's wanaka case the two were 0.146 against 0.050 —
+    /// so the map was judging a 1.5 mm raster against a bar three times
+    /// finer than the pass spacing could ever deliver.
+    ///
+    /// Declared one arm at a time rather than derived from "has a
+    /// `stepover()`", because four of the ten reach-map operations carry a
+    /// `stepover()` that is NOT a surface raster spacing:
+    ///
+    /// * `Waterline` — its step is `z_step`, a VERTICAL drop between
+    ///   contours, and it publishes no `stepover()` at all.
+    /// * `Pencil` — `offset_stepover` is the spacing of an offset fan either
+    ///   side of one valley seam, and only exists when
+    ///   `num_offset_passes > 1`. A pencil pass does not cover the surface,
+    ///   so it has no raster cusp.
+    /// * `RadialFinish` — spokes at an `angular_step`, so the spacing varies
+    ///   from zero at the hub to a maximum at the rim. One cusp number would
+    ///   be wrong nearly everywhere.
+    /// * `RampFinish` — publishes no `stepover()`.
+    ///
+    /// `Scallop` and `UnifiedFinish` are absent for the opposite reason:
+    /// they declare a `scallop_height()`, which is consulted first.
+    #[must_use]
+    pub fn lateral_raster_stepover(self) -> bool {
+        matches!(
+            self,
+            Self::DropCutter | Self::SteepShallow | Self::SpiralFinish | Self::HorizontalFinish
+        )
+    }
+
     /// Stable snake_case identifier for serialized / diagnostic use. Unlike
     /// [`Self::label`] (which is for human-facing UI text), this is suitable
     /// for JSON wire formats and for consumers that need to branch on op

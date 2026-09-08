@@ -672,3 +672,115 @@ fn the_retired_controls_have_no_second_home() {
         "the properties panel no longer delegates to the one row-control home"
     );
 }
+
+// ── F5 / F3 (P5.1, 2026-09-08) ─────────────────────────────────────────────
+
+/// The moves family is ON in Toolpaths — UX §6.4's "Cutting, Rapids, Entry
+/// markers | off | on | on" row, pinned by NAME.
+///
+/// # Why by name, when `the_constructed_state_equals_the_toolpaths_default_column`
+/// already covers every row
+///
+/// Because a live look reported these two OFF in Toolpaths and asked for the
+/// default to be fixed, and the investigation found the default was already
+/// `Some(true)`: the `Overlays (2)` badge in the same screenshot is
+/// `non_default_count`, which counts rows that DIFFER from the workspace
+/// default — and exactly the two unchecked rows were counted. So the live
+/// state was an override (very likely a previous session hiding the moves to
+/// see the reach shading under them, which is F4), not a wrong default.
+///
+/// That is worth one named test rather than a note in a report. The generic
+/// sentry would still pass if someone "fixed" this by flipping
+/// `moves_default`'s Toolpaths arm to `false` and moving `AppState::new`'s
+/// initialiser to match — both halves would agree, and the operator would
+/// lose the moves. This test names the answer the design gives.
+#[test]
+fn the_moves_family_is_on_in_toolpaths_and_off_in_setup() {
+    for id in ["cutting_moves", "rapids", "entry_markers"] {
+        let row = registry::row(id).unwrap_or_else(|| panic!("`{id}` has no row"));
+        assert_eq!(
+            (row.default_for)(Workspace::Toolpaths),
+            Some(true),
+            "UX 6.4 puts `{id}` ON in Toolpaths"
+        );
+        assert_eq!(
+            (row.default_for)(Workspace::Simulation),
+            Some(true),
+            "UX 6.4 puts `{id}` ON in Simulation"
+        );
+        assert_eq!(
+            (row.default_for)(Workspace::Setup),
+            Some(false),
+            "UX 6.4 puts `{id}` OFF in Setup"
+        );
+    }
+
+    // And a workspace round trip through Setup restores them, which is the
+    // path the live look most plausibly took.
+    let mut state = AppState::new();
+    assert!(state.viewport.show_cutting && state.viewport.show_rapids);
+    registry::switch_workspace(&mut state, Workspace::Setup);
+    assert!(
+        !state.viewport.show_cutting && !state.viewport.show_rapids,
+        "Setup's column hides the moves"
+    );
+    registry::switch_workspace(&mut state, Workspace::Toolpaths);
+    assert!(
+        state.viewport.show_cutting && state.viewport.show_rapids,
+        "returning to Toolpaths must bring the moves back"
+    );
+    assert_eq!(registry::non_default_count(&state), 0);
+}
+
+/// F3 — a toolpath selection in a `set_ui_view` call is in force, DERIVED
+/// STATE INCLUDED, before that same call's `overlays` map is judged.
+///
+/// The defect: `set_ui_view(toolpath_index: 13, overlays: {reach_map: true})`
+/// in one call was refused with the reach row's own "select a finishing
+/// operation", while the identical overlays map in a SECOND call applied. The
+/// selection write itself was already synchronous; what was not was the
+/// per-selection artefact the reach row's precondition actually reads
+/// (`gui.reach_overlay`, which `AppController::process_reach_overlay`
+/// refreshes on the frame pump — after the request returns).
+///
+/// A SOURCE sentry, for the same reason the two above it are: the ordering is
+/// the claim, `mcp_set_ui_view` is 200 lines of `&mut self` on the App, and
+/// an integration test cannot construct one. What can be checked, and is
+/// exactly what broke, is that the reach pump sits between the selection
+/// write and `apply_overlays`.
+#[test]
+fn a_selection_is_pumped_before_the_same_calls_overlays_map() {
+    let mcp = source("src/app/mcp.rs");
+    let marker = "fn mcp_set_ui_view";
+    let start = mcp
+        .find(marker)
+        .unwrap_or_else(|| panic!("`{marker}` no longer exists in app/mcp.rs"));
+    let body = &mcp[start..];
+    let end = body
+        .find("\n    // ── Simulation scrubbing")
+        .unwrap_or(body.len());
+    let body = &body[..end];
+
+    let select = body
+        .find("selection = Selection::Toolpath(tp_id)")
+        .expect("mcp_set_ui_view no longer writes the toolpath selection");
+    let pump = body.find("process_reach_overlay()").expect(
+        "mcp_set_ui_view no longer pumps the reach overlay — a `toolpath_index` \
+             plus `overlays: {reach_map: true}` in ONE call will be refused again \
+             (F3, 2026-09-08)",
+    );
+    let apply = body
+        .find("registry::apply_overlays")
+        .expect("mcp_set_ui_view no longer applies the overlays map");
+
+    assert!(
+        select < pump,
+        "the reach pump must run AFTER the selection write, or it refreshes \
+         against the previous selection"
+    );
+    assert!(
+        pump < apply,
+        "the reach pump must run BEFORE apply_overlays, or the overlay \
+         precondition is judged against stale derived state"
+    );
+}

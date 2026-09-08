@@ -30,8 +30,8 @@ use std::sync::Arc;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::reach_map::{
-    ReachMapParams, ReachMapRequest, compute_reach_map, reach_color, reach_colors,
-    reach_map_for_mesh,
+    ReachMapParams, ReachMapRequest, ReachToleranceSource, compute_reach_map, reach_color,
+    reach_colors, reach_map_for_mesh,
 };
 use rs_cam_core::reach_map_cache;
 use rs_cam_core::tier_map::cl_offset_bias_mm;
@@ -372,11 +372,13 @@ fn request_for(mesh: &Arc<TriangleMesh>, diameter: f64, tolerance_mm: f64) -> Re
     ReachMapRequest {
         mesh: Arc::clone(mesh),
         index: Arc::new(SpatialIndex::build_auto(mesh.as_ref())),
-        // The production rule: the cell follows the tool and the tolerance.
+        // The production rule: the cell follows the TOOL and the model, and
+        // the tolerance classifies on it (F5, 2026-09-08).
         params: ReachMapParams::for_cutter(cutter.as_ref(), tolerance_mm),
         cutter,
         tool_id: 7,
         model_id: 3,
+        tolerance_source: ReachToleranceSource::CallerOverride,
     }
 }
 
@@ -473,9 +475,12 @@ fn a_map_over_a_downward_facing_mesh_reports_no_population() {
 ///
 /// The second figure matters as much. `ReachMapParams::for_cutter` runs on
 /// the UI thread's own selection path, and on the shipped tapered ball it
-/// takes **100 us** in the same debug build. It bisects a profile sweep, so
-/// it would have been twenty times that had the continuum half of the floor
-/// not been hoisted out of the loop.
+/// took **100 us** in the same debug build while it still bisected a profile
+/// sweep. F5 (2026-09-08) retired the bisection — the cell follows the tool's
+/// tip sphere and the model, never the tolerance — so the figure this
+/// instrument now prints should be a small fraction of that. It is kept
+/// because the call is still on a click path and a future rule could put
+/// work back on it.
 ///
 /// The assertion below is a generous ceiling that catches an
 /// order-of-magnitude regression, never a timing bar.
@@ -506,8 +511,9 @@ fn cold_build_wall_clock_on_a_board_sized_terrain() {
     let index = SpatialIndex::build_auto(&mesh);
     let ball = BallEndmill::new(3.0, 25.0);
     // `for_cutter` runs on the UI thread's selection path, so its own cost
-    // is part of the answer. The tapered ball is the worst case: its profile
-    // query does trig, and its tip radius drives the bisection off the cap.
+    // is part of the answer. The tapered ball is the shape whose tip radius
+    // and envelope radius disagree by 6x, so it is the one a cell rule can
+    // get wrong.
     let taper = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
     let params_start = std::time::Instant::now();
     let mut taper_cell = 0.0;

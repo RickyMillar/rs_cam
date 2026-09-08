@@ -74,14 +74,36 @@
 //! # The discretisation floor
 //!
 //! The minimum is taken over sampled positions, not over the continuum, so
-//! it **over**-states `machined_z` — i.e. over-states the gap. The amount is
-//! measured rather than assumed ([`sampling_floor_mm`]): the largest
-//! shortfall, over the slopes the map is used on, between the continuum
-//! support function and the same maximum taken over the kernel's own radii.
-//! It is reported as [`ReachMap::discretisation_floor_mm`] rather than
-//! subtracted, and [`ReachMapParams::for_cutter`] sizes the cell so it stays
-//! at or below half the tolerance. Read it before believing a gap of its own
-//! order.
+//! it **over**-states `machined_z` — i.e. over-states the gap. Two terms
+//! carry that, and until 2026-09-08 only the smaller one was measured:
+//!
+//! * the **profile** term ([`sampling_floor_mm`]): the largest shortfall,
+//!   over the slopes the map is used on, between the continuum support
+//!   function and the same maximum over the kernel's own radii. It is a
+//!   *plane* measurement, and barely cell-sensitive because the kernel radii
+//!   are sine-spaced: 0.010 mm on a Ø6 ball, 0.132 mm on the Ø4 tapered ball
+//!   of the wanaka case at its 0.645 mm cell. Do not quote one tool's figure
+//!   for another; the spread across two shipped tools is thirteenfold.
+//! * the **curvature** term ([`curvature_floor_plane`]): the CL set is spaced
+//!   at the cell and read back between its points by [`sample_tip_z`], so on
+//!   a curved `tip_z` field the answer is high by about `cell² · κ / 8`.
+//!   For a tool of radius `R` bridging a concave feature of radius `ρ`,
+//!   `κ = 1/(ρ − R)` — **0.052 mm at a 0.645 mm cell and `ρ − R` of 1 mm,
+//!   the whole default tolerance.** Measured from the second difference of
+//!   the built `tip_z` plane, and read at the tap that ATTAINED each cell's
+//!   minimum ([`gap_plane`]), because the error of a minimum is the error of
+//!   the one term that won it.
+//!
+//! [`ReachMap::discretisation_floor_mm`] is the larger of the two (the
+//! curvature term at p95), and the verdict ABSTAINS per cell wherever the
+//! tolerance sits under a cell's own floor —
+//! [`ReachMap::unresolved_area_mm2`], never counted as unreachable. Read
+//! [`ReachMap::tolerance_below_floor`] before believing the percentage.
+//!
+//! The cell is chosen from the **tool and the model only**
+//! ([`ReachMapParams::for_cutter`]); the tolerance classifies on the grid and
+//! never re-sizes it, so a series of probes at moving tolerances is
+//! comparable.
 //!
 //! # What this map does NOT answer
 //!
@@ -125,6 +147,67 @@ use crate::tool::{MillingCutter, ToolDefinition};
 /// step tighter, so an op with no declared quality target is judged against a
 /// finish bar rather than a roughing one. Do not cite it to a vendor.
 pub const DEFAULT_REACH_TOLERANCE_MM: f64 = 0.05;
+
+/// Where a reach tolerance came from. Carried beside the number so every
+/// surface that prints the bar can print its provenance — the operator's F2
+/// finding was that a 0.05 mm bar looked authoritative while being a bare
+/// default under a 1.5 mm raster.
+///
+/// Resolved by
+/// [`crate::session::ProjectSession::reach_tolerance_with_override`]; this
+/// module owns the vocabulary because it owns the tolerance.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ReachToleranceSource {
+    /// The caller's own probe dial (the MCP `tolerance_mm` argument).
+    CallerOverride,
+    /// The operation declares a scallop / cusp height of its own (`scallop`,
+    /// `unified_finish`, or a `drop_cutter` with the Suggest dial set).
+    DeclaredScallopHeight,
+    /// Derived from the operation's own lateral raster spacing and the tool's
+    /// TIP-sphere radius: `cusp = R − sqrt(R² − (s/2)²)`.
+    CuspOfStepover {
+        stepover_mm: f64,
+        tip_radius_mm: f64,
+    },
+    /// Nothing to derive from: [`DEFAULT_REACH_TOLERANCE_MM`].
+    Default,
+}
+
+impl ReachToleranceSource {
+    /// One phrase naming the source, for a panel line or an MCP reply. Shared
+    /// so the two cannot describe one bar two ways.
+    #[must_use]
+    pub fn describe(self, tolerance_mm: f64) -> String {
+        match self {
+            Self::CallerOverride => format!("tol {tolerance_mm:.3} mm \u{2014} caller override"),
+            Self::DeclaredScallopHeight => {
+                format!("tol {tolerance_mm:.3} mm \u{2014} the operation's declared scallop height")
+            }
+            Self::CuspOfStepover {
+                stepover_mm,
+                tip_radius_mm,
+            } => format!(
+                "tol {tolerance_mm:.3} mm \u{2014} cusp of stepover {stepover_mm:.3} mm \
+                 on a R{tip_radius_mm:.2} tip"
+            ),
+            Self::Default => format!(
+                "tol {tolerance_mm:.3} mm \u{2014} the default; this operation declares \
+                 neither a scallop height nor a lateral raster stepover"
+            ),
+        }
+    }
+
+    /// A stable snake_case key for a JSON wire field, beside the prose.
+    #[must_use]
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::CallerOverride => "caller_override",
+            Self::DeclaredScallopHeight => "declared_scallop_height",
+            Self::CuspOfStepover { .. } => "cusp_of_stepover",
+            Self::Default => "default",
+        }
+    }
+}
 
 /// Smallest cell (mm) [`ReachMapParams::for_cutter`] will choose. Below this
 /// the drop pass dominates the interaction budget for no visible gain — the
@@ -183,58 +266,42 @@ impl Default for ReachMapParams {
 }
 
 impl ReachMapParams {
-    /// The coarsest cell whose measured sampling floor
-    /// ([`ReachMap::discretisation_floor_mm`]) stays at or below **half the
-    /// tolerance**, clamped to `MIN_REACH_CELL_MM..=MAX_REACH_CELL_MM`.
+    /// The cell for one cutter: **half its TIP sphere**, clamped to
+    /// `MIN_REACH_CELL_MM..=MAX_REACH_CELL_MM`, and coarsened further only by
+    /// [`MAX_REACH_CELLS`] once the model bbox is known.
     ///
-    /// Half, not all of it, so a reported gap at the bar is geometry rather
-    /// than arithmetic. A flat tip has no profile rise inside its envelope
-    /// and its binding radius is always sampled, so it takes
-    /// [`MAX_REACH_CELL_MM`] — correctly: the min-filter is exact there
-    /// whatever the cell.
+    /// Half the TIP sphere, so the grid resolves a crevice the tip could sit
+    /// in. On a tapered ball that is the Ø1 tip, not the Ø6 shank — reading
+    /// the envelope here would hand the finest tool in the library the
+    /// coarsest grid.
+    ///
+    /// # Why the tolerance does not appear
+    ///
+    /// It used to. `for_cutter` bisected for the coarsest cell whose
+    /// [`sampling_floor_mm`] stayed under half the tolerance, and the
+    /// operator's own bug report is what retired that rule (F5, 2026-09-08):
+    /// three probes of one tool at three tolerances came back on cells
+    /// 0.645, 0.75 and 0.625 mm, so **three percentages that were meant to be
+    /// compared sat on three different grids**. The map is asked "how much
+    /// does this tool miss at bar X" over and over with X moving; a dial that
+    /// re-grids under each answer makes the series meaningless.
+    ///
+    /// The rule is now: the **tool and the model** fix the grid, and the
+    /// tolerance only classifies on it. What the tolerance bought before —
+    /// the promise that a reported gap at the bar is geometry rather than
+    /// arithmetic — is not lost, it moved to where it can be *measured*
+    /// instead of assumed: [`ReachMap::discretisation_floor_mm`] is now
+    /// measured on the surface the walk actually built (see
+    /// [`curvature_floor_plane`]) and the verdict abstains per cell wherever
+    /// the bar is under it. The bisection could never have delivered that
+    /// promise anyway — it scored the cell against a **plane**, where the
+    /// floor is 0.010 mm on a Ø6 ball and barely moves with the cell, while
+    /// the term that actually bites is `cell² / (8·(ρ − R))` on a concave
+    /// feature of radius ρ, which the plane sweep cannot see.
     #[must_use]
     pub fn for_cutter(cutter: &dyn MillingCutter, tolerance_mm: f64) -> Self {
-        let target = (tolerance_mm.max(1e-6)) / 2.0;
-        // Feature scale first: half the TIP sphere, so the grid resolves a
-        // crevice the tip could sit in. On a tapered ball that is the Ø1 tip,
-        // not the Ø6 shank — reading the envelope here would hand the finest
-        // tool in the library the coarsest grid.
-        let feature_cap =
-            (cutter.cusp_radius_mm() / 2.0).clamp(MIN_REACH_CELL_MM, MAX_REACH_CELL_MM);
-        // Taken ONCE. The continuum half of the floor does not move with the
-        // cell, and this whole function sits on the UI thread's selection
-        // path (`ProjectSession::reach_map_spec`), so re-deriving it inside
-        // the bisection would be twenty-odd needless profile sweeps per
-        // click.
-        let reach = cutter.envelope_radius_mm().max(0.0);
-        let continuum = continuum_support(cutter, reach);
-        let floor = |cell: f64| -> f64 {
-            if reach <= 0.0 {
-                return 0.0;
-            }
-            floor_against(cutter, reach, cell, &continuum)
-        };
-        // The floor is monotone non-decreasing in the cell (a coarser cell is
-        // a coarser sampling of the same profile), so it bisects. Twenty
-        // halvings takes the bracket below a micron.
-        let (mut lo, mut hi) = (MIN_REACH_CELL_MM, feature_cap);
-        let cell_mm = if floor(hi) <= target {
-            hi
-        } else if floor(lo) >= target {
-            lo
-        } else {
-            for _ in 0..20 {
-                let mid = f64::midpoint(lo, hi);
-                if floor(mid) <= target {
-                    lo = mid;
-                } else {
-                    hi = mid;
-                }
-            }
-            lo
-        };
         Self {
-            cell_mm,
+            cell_mm: (cutter.cusp_radius_mm() / 2.0).clamp(MIN_REACH_CELL_MM, MAX_REACH_CELL_MM),
             tolerance_mm,
             margin_mm: 0.5,
         }
@@ -260,6 +327,11 @@ pub struct ReachMapRequest {
     pub params: ReachMapParams,
     pub tool_id: usize,
     pub model_id: usize,
+    /// Where `params.tolerance_mm` came from. Not part of the memo key — it
+    /// is derived from the tolerance, which is keyed — but it rides the
+    /// request so a surface that reports the answer can name the bar's
+    /// provenance without re-resolving it.
+    pub tolerance_source: ReachToleranceSource,
 }
 
 impl std::fmt::Debug for ReachMapRequest {
@@ -272,6 +344,7 @@ impl std::fmt::Debug for ReachMapRequest {
             .field("params", &self.params)
             .field("tool_id", &self.tool_id)
             .field("model_id", &self.model_id)
+            .field("tolerance_source", &self.tolerance_source)
             .finish()
     }
 }
@@ -313,12 +386,56 @@ pub struct ReachMap {
     /// facing and topmost at their own centroid, with a measured cell under
     /// them.
     pub measured_area_mm2: f64,
-    /// 3D area (mm²) of the measured triangles whose gap exceeds the
-    /// tolerance.
+    /// 3D area (mm²) of the measured triangles whose gap exceeds the bar —
+    /// the tolerance, or this cell's own resolution floor where that is
+    /// coarser. See [`Self::unresolved_area_mm2`] for the band between.
     pub unreachable_area_mm2: f64,
-    /// How much of a gap this grid cannot resolve (mm) — see the module doc.
-    /// A reported gap of this order is discretisation, not geometry.
+    /// 3D area (mm²) of the measured triangles whose gap is above the
+    /// tolerance but **at or under the grid's own resolution floor there** —
+    /// neither reached nor proven missed. `0.0` means the whole population
+    /// was resolved; it is never `None`, because the walk always evaluates
+    /// this.
+    ///
+    /// This is the band that made the operator's wanaka terrain read red on
+    /// slopes a ball forms: at a 0.05 mm bar and a 0.645 mm cell the grid's
+    /// own floor on that surface was 0.03–0.07 mm, so the bar sat *under*
+    /// the arithmetic. A gap in this band is a statement about the grid, not
+    /// about the tool.
+    #[serde(default)]
+    pub unresolved_area_mm2: f64,
+    /// How much of a gap this grid cannot resolve (mm) — the larger of
+    /// [`Self::profile_floor_mm`] and [`Self::curvature_floor_p95_mm`]. A
+    /// reported gap of this order is discretisation, not geometry.
+    ///
+    /// **This number changed meaning on 2026-09-08 (F1).** It used to be the
+    /// profile term alone, which is a *plane* measurement and nearly
+    /// cell-independent because the kernel radii are sine-spaced. Measured on
+    /// the wanaka case (Ø4 tapered ball, 0.645 mm cell): the profile term is
+    /// **0.132 mm** and the curvature term **0.234 mm**, so the old published
+    /// figure understated the grid's real limit there by 1.8x.
+    ///
+    /// The understatement is the smaller half of the finding. The larger half
+    /// is that 0.132 mm was ALREADY far above the 0.05 mm default bar, so the
+    /// module's own advice — treat a gap of this order as arithmetic — was
+    /// enough to distrust that reading, and **no operator surface said so**.
+    /// The verdict counted the whole sub-floor band as unreachable and
+    /// nothing printed the comparison. That is what
+    /// [`Self::unresolved_area_mm2`] and [`Self::tolerance_below_floor`]
+    /// exist for.
     pub discretisation_floor_mm: f64,
+    /// The old plane-only floor: the profile-sampling shortfall of
+    /// [`sampling_floor_mm`], kept under its own name so the two terms can be
+    /// read apart. Exact on a plane of any slope, blind to curvature.
+    #[serde(default)]
+    pub profile_floor_mm: f64,
+    /// p95 of the per-cell curvature term ([`curvature_floor_plane`]) over
+    /// the measured cells — the term the profile sweep cannot see.
+    ///
+    /// p95 rather than the maximum: one apex cell on a V-groove would
+    /// otherwise set the floor for a whole board. Exactly `0.0` on any plane
+    /// at any slope, because `tip_z` is linear there.
+    #[serde(default)]
+    pub curvature_floor_p95_mm: f64,
     /// Width (mm) of the band inside the mesh footprint boundary that the
     /// map ABSTAINS on — one envelope radius. See [`rim_keep_mask`] for what
     /// the min-filter cannot know there and the 0.20 mm artefact that
@@ -344,6 +461,48 @@ impl ReachMap {
     #[must_use]
     pub fn unreachable_pct(&self) -> f64 {
         self.unreachable_fraction * 100.0
+    }
+
+    /// Share of the measured area the grid could not resolve at this
+    /// tolerance, as a percentage. Read it beside
+    /// [`Self::unreachable_pct`]: a large unresolved share means the answer
+    /// is grid-limited and the two percentages should be quoted together.
+    #[must_use]
+    pub fn unresolved_pct(&self) -> f64 {
+        if self.measured_area_mm2 > 0.0 {
+            self.unresolved_area_mm2 / self.measured_area_mm2 * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Is the bar under the grid's own arithmetic? When this is true the
+    /// unreachable percentage is a **lower bound** and the unresolved share
+    /// is the part of the answer this cell size cannot give. Every surface
+    /// that prints the percentage must print this too.
+    #[must_use]
+    pub fn tolerance_below_floor(&self) -> bool {
+        self.discretisation_floor_mm > self.tolerance_mm
+    }
+
+    /// One line naming the grid and what it can resolve, for the panel
+    /// legend, the MCP reply and the CLI to share — so three surfaces cannot
+    /// describe one grid three ways.
+    #[must_use]
+    pub fn grid_note(&self) -> String {
+        let mut note = format!(
+            "cell {:.3} mm \u{00B7} floor {:.3} mm \u{00B7} tol {:.3} mm",
+            self.cell_mm, self.discretisation_floor_mm, self.tolerance_mm
+        );
+        if self.tolerance_below_floor() {
+            note.push_str(&format!(
+                " \u{2014} the bar is UNDER the floor, so {:.1} % of the measured \
+                 area is unresolved and {:.1} % unreachable is a lower bound",
+                self.unresolved_pct(),
+                self.unreachable_pct()
+            ));
+        }
+        note
     }
 
     /// The grid cell whose centre is nearest `(x, y)`, or `None` off the
@@ -812,9 +971,11 @@ fn floor_slope_tangents() -> [f64; 16] {
 /// scored against.
 ///
 /// **Cell-independent by construction**, which is why it is a separate
-/// function: [`ReachMapParams::for_cutter`] bisects on the cell, and folding
-/// this into the loop body would re-derive an unchanging answer twenty-odd
-/// times on a surface a selection change calls.
+/// function. It was hoisted out of a bisection in
+/// [`ReachMapParams::for_cutter`] that no longer exists (F5, 2026-09-08); the
+/// split is kept because [`sampling_floor_mm`] still wants the two halves
+/// apart, and because it documents which half of the floor moves with the
+/// cell and which does not.
 fn continuum_support(cutter: &dyn MillingCutter, reach_mm: f64) -> [f64; 16] {
     const SAMPLES: usize = 256;
     let mut best = [f64::NEG_INFINITY; 16];
@@ -860,6 +1021,184 @@ fn floor_against(
         }
     }
     worst.max(0.0)
+}
+
+/// The per-cell resolution floor (mm) the CELL SIZE imposes on this
+/// surface — the term [`sampling_floor_mm`] cannot see.
+///
+/// # What it measures, and why the plane sweep misses it
+///
+/// `machined_z` is a minimum over CL positions **spaced at the cell**, read
+/// back between them by [`sample_tip_z`]. A minimum over a subset over-states,
+/// and an interpolation of a locally convex field over-reads, so both halves
+/// push the gap the SAME way: up. On a plane neither happens — `tip_z` is
+/// linear, bilinear interpolation of a linear field is exact, and the only
+/// residual is the profile term. On a curved surface the error is of order
+/// `cell² · κ / 8` where `κ` is the curvature of the `tip_z` field, which for
+/// a tool of radius `R` bridging a concave feature of radius `ρ` is
+/// `1/(ρ − R)`. At a 0.645 mm cell and `ρ − R = 1 mm` that is **0.052 mm —
+/// the whole 0.05 mm default tolerance**.
+///
+/// So it is measured, not assumed, and measured on the field that carries it:
+/// the second difference of the built `tip_z` plane. For a twice-differentiable
+/// field the bilinear interpolation error over one cell is bounded by
+/// `(|∂²/∂x²| + |∂²/∂y²|) · cell² / 8`, and a second difference over the
+/// lattice IS `∂² · cell²` — so the bound is simply
+/// `(|Δ²ₓ tip_z| + |Δ²_y tip_z|) / 8`, in millimetres, with no cell factor to
+/// get wrong.
+///
+/// # The evidence this was written from
+///
+/// The wanaka terrain (661 212 triangles, Ø4 tapered ball R2.0, cell
+/// 0.645 mm) reported **68.2 %** of its measured area unreachable at the
+/// 0.05 mm default. An independent closing of the same STL on a 0.15 mm
+/// lattice — same law, no code in common — put the true answer at **55.0 %**,
+/// with the worst gap agreeing to three figures (4.32 against 4.35 mm). The
+/// residual was reproduced exactly by replicating this module's own sampling
+/// scheme at 0.645 mm (**63.7 %**, median gap 0.101 mm against a true
+/// 0.051 mm) and it shrank on refinement — 59.5 % at 0.4 mm, 58.6 % at
+/// 0.3 mm. The prototype's own floor reading over that board — see the
+/// caveat below on which instrument that was — came out median 0.030 mm,
+/// p75 0.050 mm, p95 0.075 mm: the same order as the excess it is meant to
+/// bound.
+///
+/// Read together with the truth those figures say something an operator needs
+/// said out loud: **the terrain really is mostly unreachable at 0.05 mm** —
+/// its own facet roughness puts the MEDIAN gap at the bar — and the map was
+/// additionally reporting arithmetic as geometry on top of it. The first half
+/// is answered by the bar ([`crate::session`]'s cusp derivation); this
+/// function answers the second.
+///
+/// # Why a 3 x 3 maximum, and not the second difference at the cell itself
+///
+/// The textbook bound is `(h²·max|∂²f/∂x²| + k²·max|∂²f/∂y²|) / 8` with the
+/// maxima taken **over the interpolation cell**, not at one node. A centred
+/// second difference estimates `∂² · cell²` *near* the node it is taken at,
+/// and the corners of the cell a tap lands in are one node away — so the
+/// bound wants the neighbourhood, and a single-node reading would understate
+/// it wherever the curvature is itself changing, which on a terrain is
+/// everywhere. One cell of dilation is the discrete form of "over this cell".
+///
+/// # The regime this bound does NOT cover
+///
+/// `(|Δ²x| + |Δ²y|) / 8` is the bilinear bound for a **twice-differentiable**
+/// field. `tip_z` is not one: it has a slope KINK wherever the binding
+/// contact switches feature — a ridge, a rim, the two sides of a trench the
+/// tool bridges. Across a kink the interpolation over-read is
+/// `O(cell · Δslope)`, not `O(cell² · ∂²)`, and this term is blind to it.
+///
+/// Measured, on the `ρ = 1.5` trough of
+/// `tests/reach_map_residual_p5_1.rs` (a R2.0 ball bridging two rims, so
+/// `tip_z` kinks at the centre with a one-sided slope of 0.750):
+///
+/// | cell mm | worst-gap excess over the closed form | this bound | kink envelope `s·cell/2` |
+/// |---|---|---|---|
+/// | 0.2 | 0.0006 | 0.033 | 0.075 |
+/// | 0.3 | 0.0000 | 0.047 | 0.113 |
+/// | 0.4 | 0.0000 | 0.058 | 0.150 |
+/// | 0.5 | **0.1471** | 0.032 | 0.188 |
+/// | 0.6 | 0.0000 | 0.077 | 0.225 |
+/// | 0.645 | **0.0889** | 0.061 | 0.242 |
+///
+/// The excess is **non-monotone in the cell**, which is the signature of grid
+/// PHASE against a feature only four cells wide, not of a smooth
+/// discretisation law. The kink envelope covers every row; this bound does
+/// not cover two of them.
+///
+/// So read this floor as a bound on the SMOOTH term. It is the term that
+/// dominates on a terrain, and it is the one the wanaka reading needed. A
+/// kink term of the form `2·t(1−t)·Δ²` (measured as the tight form, `t` being
+/// the tap's fractional position in its cell) would cover both regimes, at
+/// the cost of being 4x conservative on a smooth surface — which would move
+/// the unresolved share on every real part, so it is an operator's call and
+/// not a silent one. Ledgered, not fixed.
+///
+/// The other term this does not cover is the polar tap set's own pitch
+/// (`min(cell/2, envelope/8)`), whose contribution scales as `(pitch/cell)²`
+/// of the same curvature — a quarter of it at most, and in practice inside
+/// the slack the dilation adds.
+///
+/// **The wanaka figures quoted in this module are the PROTOTYPE's, not this
+/// function's.** They were taken with `(|Δ²x| + |Δ²y|)/8` read at the query
+/// cell and UNDILATED — median 0.030 mm, p75 0.050, p95 0.075 over that
+/// board, against a replicated sampling excess of median 0.050 mm, which is
+/// what established the order of magnitude and the sign. This function reads
+/// the same quantity at the BINDING TAP and after a 3 x 3 dilation, so its
+/// own figure is a different number and is not yet recorded. Print it with
+/// `tests/reach_map_residual_p5_1.rs::the_wanaka_terrain_reach_table` before
+/// citing one.
+///
+/// # Where it is READ
+///
+/// This function returns the bound *at each grid cell*. The consumer is
+/// [`gap_plane`], which reads it at the tap that attained each cell's
+/// minimum, not at the cell being answered for — see that function for why
+/// the two differ by more than a factor of two on a concave flank.
+///
+/// `NaN` for a cell with no `tip_z`, or on the grid edge where no second
+/// difference exists.
+#[must_use]
+pub fn curvature_floor_plane(tip_z: &[f64], nx: usize, ny: usize) -> Vec<f64> {
+    fn second(a: Option<&f64>, b: Option<&f64>, c: Option<&f64>) -> Option<f64> {
+        let (a, b, c) = (a?, b?, c?);
+        let d = a - 2.0 * b + c;
+        d.is_finite().then_some(d.abs())
+    }
+    let mut raw = vec![f64::NAN; nx.saturating_mul(ny)];
+    if nx < 3 || ny < 3 {
+        return raw;
+    }
+    for row in 1..ny - 1 {
+        for col in 1..nx - 1 {
+            let at = |r: usize, c: usize| tip_z.get(r * nx + c);
+            let dx = second(at(row, col - 1), at(row, col), at(row, col + 1));
+            let dy = second(at(row - 1, col), at(row, col), at(row + 1, col));
+            let (Some(dx), Some(dy)) = (dx, dy) else {
+                continue;
+            };
+            let floor = (dx + dy) / 8.0;
+            if let Some(slot) = raw.get_mut(row * nx + col) {
+                *slot = floor;
+            }
+        }
+    }
+    // One cell of dilation. NaN neighbours are skipped rather than poisoning
+    // the maximum, so the band just inside the measurable region keeps a
+    // floor instead of losing one.
+    let mut out = raw.clone();
+    for row in 0..ny {
+        for col in 0..nx {
+            let mut best = f64::NAN;
+            for dr in row.saturating_sub(1)..(row + 2).min(ny) {
+                for dc in col.saturating_sub(1)..(col + 2).min(nx) {
+                    let Some(v) = raw.get(dr * nx + dc).copied() else {
+                        continue;
+                    };
+                    if v.is_finite() && (!best.is_finite() || v > best) {
+                        best = v;
+                    }
+                }
+            }
+            if let Some(slot) = out.get_mut(row * nx + col) {
+                *slot = best;
+            }
+        }
+    }
+    out
+}
+
+/// The `q`-quantile of the finite entries, or `0.0` when there are none.
+///
+/// Nearest-rank on a sorted copy. The population is one grid, so the sort is
+/// O(cells log cells) once per walk — negligible beside the drop pass.
+fn finite_quantile(values: &[f64], q: f64) -> f64 {
+    let mut finite: Vec<f64> = values.iter().copied().filter(|v| v.is_finite()).collect();
+    if finite.is_empty() {
+        return 0.0;
+    }
+    finite.sort_by(f64::total_cmp);
+    let rank = ((finite.len() as f64 - 1.0) * q.clamp(0.0, 1.0)).round() as usize;
+    finite.get(rank).copied().unwrap_or(0.0)
 }
 
 /// Pass A: one drop-cutter CL and one exact surface Z per grid cell.
@@ -1021,46 +1360,90 @@ fn rim_keep_mask(surface_z: &[f64], grid: &GridSpec, radius_mm: f64) -> Vec<bool
         .collect()
 }
 
-/// Pass B: the machined surface, and the gap against the true mesh.
+/// Pass B: the machined surface, the gap against the true mesh, and **the
+/// resolution floor of the tap that set the answer**.
+///
+/// The third return is the F1 correction. `machined_z` is a minimum, so its
+/// error is the error of the ONE tap that attained the minimum — not the
+/// worst over the kernel, and not the value at the query cell. Those two
+/// naive choices are both wrong in a way that matters:
+///
+/// * At the query cell. On a concave trough of radius `ρ` the binding CL sits
+///   `R·sin θ` away, and `tip_z`'s curvature at the binding CL can be several
+///   times its curvature under the query point — measured 1.54 against 0.70
+///   per mm halfway up a `ρ = 3` flank for a R2 ball, so the query-cell
+///   reading understates the bound by more than half and the flank reads
+///   unreachable on a surface the ball forms.
+/// * The worst over the kernel footprint. Correct as a bound and far too
+///   pessimistic to use: it maxes a rough second-difference field over a disc
+///   an envelope radius wide, so on a terrain nearly every cell would abstain.
+///
+/// Reading it at the argmin is exact and costs one array load per improvement.
 fn gap_plane(
     tip_z: &[f64],
     surface_z: &[f64],
     keep: &[bool],
     kernel: &[KernelTap],
+    cell_floor: &[f64],
     grid: &GridSpec,
     cancel: &(dyn CancelCheck + Sync),
-) -> Result<Vec<Option<f32>>, Cancelled> {
-    let row_fn = |row: usize| -> Vec<Option<f32>> {
+) -> Result<(Vec<Option<f32>>, Vec<f64>), Cancelled> {
+    let row_fn = |row: usize| -> Vec<(Option<f32>, f64)> {
         let y = grid.y_of(row);
         (0..grid.nx)
             .map(|col| {
                 let cell = row * grid.nx + col;
                 if !keep.get(cell).copied().unwrap_or(false) {
-                    return None;
+                    return (None, f64::NAN);
                 }
                 let mesh_z = surface_z.get(cell).copied().unwrap_or(f64::NAN);
                 if !mesh_z.is_finite() {
-                    return None;
+                    return (None, f64::NAN);
                 }
                 let x = grid.x_of(col);
                 let mut machined = f64::INFINITY;
+                let mut floor = f64::NAN;
                 for tap in kernel {
-                    let Some(z) = sample_tip_z(tip_z, grid, x + tap.dx_mm, y + tap.dy_mm) else {
+                    let (tx, ty) = (x + tap.dx_mm, y + tap.dy_mm);
+                    let Some(z) = sample_tip_z(tip_z, grid, tx, ty) else {
                         continue;
                     };
-                    machined = machined.min(z + tap.rise_mm);
+                    let candidate = z + tap.rise_mm;
+                    if candidate < machined {
+                        machined = candidate;
+                        floor = floor_at(cell_floor, grid, tx, ty);
+                    }
                 }
                 if !machined.is_finite() {
-                    return None;
+                    return (None, f64::NAN);
                 }
                 // A drop cutter cannot gouge, so the machined surface is
                 // never below the mesh; a negative reading is arithmetic
                 // noise and is clamped, not reported as a gouge.
-                Some((machined - mesh_z).max(0.0) as f32)
+                (Some((machined - mesh_z).max(0.0) as f32), floor)
             })
             .collect()
     };
-    walk_rows(grid, cancel, row_fn)
+    Ok(walk_rows(grid, cancel, row_fn)?.into_iter().unzip())
+}
+
+/// The per-cell floor at the grid cell nearest `(x, y)`, or `NaN` off the
+/// grid. Nearest rather than interpolated: the floor is a bound, and a bound
+/// read between two cells of a dilated maximum is not a tighter bound.
+fn floor_at(cell_floor: &[f64], grid: &GridSpec, x: f64, y: f64) -> f64 {
+    let col = ((x - grid.origin_x) / grid.cell_mm).round();
+    let row = ((y - grid.origin_y) / grid.cell_mm).round();
+    if !col.is_finite() || !row.is_finite() || col < 0.0 || row < 0.0 {
+        return f64::NAN;
+    }
+    let (col, row) = (col as usize, row as usize);
+    if col >= grid.nx || row >= grid.ny {
+        return f64::NAN;
+    }
+    cell_floor
+        .get(row * grid.nx + col)
+        .copied()
+        .unwrap_or(f64::NAN)
 }
 
 /// The area-weighted verdict over the mesh's own triangles.
@@ -1072,64 +1455,91 @@ struct AreaVerdict {
     surface_area_mm2: f64,
     measured_area_mm2: f64,
     unreachable_area_mm2: f64,
+    unresolved_area_mm2: f64,
 }
 
+/// Area totals per triangle: `(surface, measured, unreachable, unresolved)`.
+type FaceAreas = (f64, f64, f64, f64);
+
+/// The verdict, THREE ways.
+///
+/// A cell is `unreachable` only when its gap clears BOTH the tolerance and
+/// the cell's own resolution floor ([`curvature_floor_plane`]). Above the
+/// tolerance but under the floor it is `unresolved` — the bar sits below the
+/// arithmetic there, so the reading is a statement about the grid, not about
+/// the tool, and it is counted into neither side.
+///
+/// A cell with no floor of its own (the grid rim, where no second difference
+/// exists) takes the tolerance alone. That is the conservative direction: the
+/// rim band is already abstained on by [`rim_keep_mask`].
 fn area_verdict(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     map_cells: &[Option<f32>],
+    floor: &[f64],
     grid: &GridSpec,
     tolerance_mm: f64,
 ) -> AreaVerdict {
-    let per_face = |tri: &crate::geo::Triangle| -> (f64, f64, f64) {
+    let per_face = |tri: &crate::geo::Triangle| -> FaceAreas {
         let area = triangle_area(tri);
         if tri.normal.z <= 0.0 {
-            return (area, 0.0, 0.0);
+            return (area, 0.0, 0.0, 0.0);
         }
         let Some(centroid) = triangle_centroid(tri) else {
-            return (area, 0.0, 0.0);
+            return (area, 0.0, 0.0, 0.0);
         };
         match surface_z_at(centroid.x, centroid.y, mesh, index) {
-            Some(top) if top - centroid.z > TOP_SURFACE_EPS_MM => (area, 0.0, 0.0),
+            Some(top) if top - centroid.z > TOP_SURFACE_EPS_MM => (area, 0.0, 0.0, 0.0),
             Some(_) => {
                 let col = ((centroid.x - grid.origin_x) / grid.cell_mm).round();
                 let row = ((centroid.y - grid.origin_y) / grid.cell_mm).round();
                 if !col.is_finite() || !row.is_finite() || col < 0.0 || row < 0.0 {
-                    return (area, 0.0, 0.0);
+                    return (area, 0.0, 0.0, 0.0);
                 }
                 let (col, row) = (col as usize, row as usize);
                 if col >= grid.nx || row >= grid.ny {
-                    return (area, 0.0, 0.0);
+                    return (area, 0.0, 0.0, 0.0);
                 }
-                match map_cells.get(row * grid.nx + col).copied().flatten() {
-                    None => (area, 0.0, 0.0),
-                    Some(gap) if f64::from(gap) > tolerance_mm => (area, area, area),
-                    Some(_) => (area, area, 0.0),
+                let cell = row * grid.nx + col;
+                match map_cells.get(cell).copied().flatten() {
+                    None => (area, 0.0, 0.0, 0.0),
+                    Some(gap) => {
+                        let gap = f64::from(gap);
+                        if gap <= tolerance_mm {
+                            return (area, area, 0.0, 0.0);
+                        }
+                        let local = floor.get(cell).copied().filter(|f| f.is_finite());
+                        if gap > tolerance_mm.max(local.unwrap_or(0.0)) {
+                            (area, area, area, 0.0)
+                        } else {
+                            (area, area, 0.0, area)
+                        }
+                    }
                 }
             }
-            None => (area, 0.0, 0.0),
+            None => (area, 0.0, 0.0, 0.0),
         }
     };
+    let add = |a: FaceAreas, b: FaceAreas| (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3);
 
     #[cfg(feature = "parallel")]
-    let (surface, measured, unreachable) = mesh
+    let (surface, measured, unreachable, unresolved) = mesh
         .faces
         .par_iter()
         .map(per_face)
-        .reduce(|| (0.0, 0.0, 0.0), |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2));
+        .reduce(|| (0.0, 0.0, 0.0, 0.0), add);
     #[cfg(not(feature = "parallel"))]
-    let (surface, measured, unreachable) = mesh
+    let (surface, measured, unreachable, unresolved) = mesh
         .faces
         .iter()
         .map(per_face)
-        .fold((0.0, 0.0, 0.0), |a: (f64, f64, f64), b: (f64, f64, f64)| {
-            (a.0 + b.0, a.1 + b.1, a.2 + b.2)
-        });
+        .fold((0.0, 0.0, 0.0, 0.0), add);
 
     AreaVerdict {
         surface_area_mm2: surface,
         measured_area_mm2: measured,
         unreachable_area_mm2: unreachable,
+        unresolved_area_mm2: unresolved,
     }
 }
 
@@ -1171,10 +1581,36 @@ pub fn compute_reach_map(
     let kernel = profile_kernel(cutter, grid.cell_mm);
     let rim_erosion_mm = cutter.envelope_radius_mm().max(0.0);
     let keep = rim_keep_mask(&surface_z, &grid, rim_erosion_mm);
-    let cells = gap_plane(&tip_z, &surface_z, &keep, &kernel, &grid, cancel)?;
+    // The floor is measured on the surface this walk built — see
+    // `curvature_floor_plane` for the wanaka evidence that the plane-only
+    // term understated it by 1.8x on the wanaka case — and `gap_plane` then reports it at
+    // the tap that ATTAINED each cell's minimum, which is the only place the
+    // error of a minimum can come from.
+    let cell_floor = curvature_floor_plane(&tip_z, grid.nx, grid.ny);
+    let (cells, binding_floor) = gap_plane(
+        &tip_z,
+        &surface_z,
+        &keep,
+        &kernel,
+        &cell_floor,
+        &grid,
+        cancel,
+    )?;
+
+    let profile_floor_mm = sampling_floor_mm(cutter, grid.cell_mm);
+    // `binding_floor` is `NaN` wherever the map reports nothing, so the
+    // quantile's population is the answer's own footprint. That matters:
+    // `tip_z` is finite for a band one envelope radius OUTSIDE the mesh
+    // footprint too — the tool still contacts the part edge from there — and
+    // that band is where `tip_z` stops following the surface and starts
+    // pivoting on the rim, so its second difference is large and says nothing
+    // about the answer. On a 45° plane fixture that band is 40 % of the grid,
+    // which would have put a plane's published floor in the millimetres.
+    let curvature_floor_p95_mm = finite_quantile(&binding_floor, 0.95);
+    let discretisation_floor_mm = profile_floor_mm.max(curvature_floor_p95_mm);
 
     let tolerance_mm = params.tolerance_mm.max(0.0);
-    let verdict = area_verdict(mesh, index, &cells, &grid, tolerance_mm);
+    let verdict = area_verdict(mesh, index, &cells, &binding_floor, &grid, tolerance_mm);
     let max_gap_mm = cells
         .iter()
         .filter_map(|c| c.map(f64::from))
@@ -1184,7 +1620,6 @@ pub fn compute_reach_map(
     } else {
         0.0
     };
-    let discretisation_floor_mm = sampling_floor_mm(cutter, grid.cell_mm);
 
     tracing::debug!(
         target: "rs_cam_core::reach_map",
@@ -1192,7 +1627,10 @@ pub fn compute_reach_map(
         cell_mm = grid.cell_mm,
         tolerance_mm,
         unreachable_pct = unreachable_fraction * 100.0,
+        unresolved_mm2 = verdict.unresolved_area_mm2,
         max_gap_mm,
+        profile_floor_mm,
+        curvature_floor_p95_mm,
         "reach map build"
     );
 
@@ -1209,7 +1647,10 @@ pub fn compute_reach_map(
         surface_area_mm2: verdict.surface_area_mm2,
         measured_area_mm2: verdict.measured_area_mm2,
         unreachable_area_mm2: verdict.unreachable_area_mm2,
+        unresolved_area_mm2: verdict.unresolved_area_mm2,
         discretisation_floor_mm,
+        profile_floor_mm,
+        curvature_floor_p95_mm,
         rim_erosion_mm,
         tool_id: None,
         model_id: None,
@@ -1248,7 +1689,10 @@ pub fn reach_map_for_mesh(
         surface_area_mm2: 0.0,
         measured_area_mm2: 0.0,
         unreachable_area_mm2: 0.0,
+        unresolved_area_mm2: 0.0,
         discretisation_floor_mm: 0.0,
+        profile_floor_mm: 0.0,
+        curvature_floor_p95_mm: 0.0,
         rim_erosion_mm: 0.0,
         tool_id: None,
         model_id: None,

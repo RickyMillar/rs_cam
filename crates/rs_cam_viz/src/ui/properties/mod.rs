@@ -637,6 +637,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                                 ReachPanelSummary::Measured {
                                     unreachable_pct: map.unreachable_pct(),
                                     max_gap_mm: map.max_gap_mm,
+                                    grid_note: map.grid_note(),
+                                    tolerance_below_floor: map.tolerance_below_floor(),
+                                    unresolved_pct: map.unresolved_pct(),
                                 }
                             } else {
                                 ReachPanelSummary::NotMeasured
@@ -3537,6 +3540,17 @@ pub(crate) enum ReachPanelSummary {
     Measured {
         unreachable_pct: f64,
         max_gap_mm: f64,
+        /// [`rs_cam_core::reach_map::ReachMap::grid_note`] — the cell, the
+        /// floor and the bar, plus the "the bar is under the floor" sentence
+        /// where that applies. Printed under the percentage, because a
+        /// percentage without its grid is not comparable with the next one
+        /// (F1 / F5, 2026-09-08).
+        grid_note: String,
+        /// True when the tolerance is under
+        /// [`rs_cam_core::reach_map::ReachMap::discretisation_floor_mm`], in
+        /// which case the percentage is a LOWER BOUND.
+        tolerance_below_floor: bool,
+        unresolved_pct: f64,
     },
     Failed(String),
 }
@@ -3690,15 +3704,39 @@ fn draw_toolpath_panel(
                 ReachPanelSummary::Measured {
                     unreachable_pct,
                     max_gap_mm,
+                    grid_note,
+                    tolerance_below_floor,
+                    unresolved_pct,
                 } => {
+                    // "of surface" was wrong: the denominator is the MEASURED
+                    // area, which on a terrain is well under the model's own
+                    // surface area (the rim band and every wall abstain).
                     ui.label(
                         egui::RichText::new(format!(
-                            "unreachable {unreachable_pct:.1} % of surface · max gap \
-                             {max_gap_mm:.2} mm"
+                            "unreachable {unreachable_pct:.1} % of MEASURED area · \
+                             max gap {max_gap_mm:.2} mm"
                         ))
                         .small()
                         .color(egui::Color32::from_rgb(180, 180, 190)),
                     );
+                    ui.label(egui::RichText::new(grid_note.clone()).small().color(
+                        if *tolerance_below_floor {
+                            egui::Color32::from_rgb(220, 180, 60)
+                        } else {
+                            egui::Color32::from_rgb(140, 140, 150)
+                        },
+                    ));
+                    if *tolerance_below_floor {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{unresolved_pct:.1} % unresolved \u{2014} raise the tolerance to \
+                                 this operation's own cusp before reading the \
+                                 residual as tool geometry"
+                            ))
+                            .small()
+                            .color(egui::Color32::from_rgb(220, 180, 60)),
+                        );
+                    }
                 }
                 ReachPanelSummary::Failed(message) => {
                     ui.label(

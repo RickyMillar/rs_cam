@@ -717,6 +717,47 @@ pub fn render_toolpath_composite(
     )
 }
 
+/// Which layer of a toolpath composite is the subject: the moves, or the
+/// shaded background under them.
+///
+/// # The measurement that made this a dial
+///
+/// F4, 2026-09-08. `screenshot_toolpath(reach_overlay: true)` composites the
+/// reach-shaded MODEL behind the moves, and on the operator's wanaka terrain
+/// the top panel came back **fully covered in green cutting moves** — 17 959
+/// moves at a 0.67 mm ribbon over a 200 mm board is an opaque mat seen from
+/// directly above. The red valley network showed only in the bottom panel,
+/// where the moves are edge-on. A background dimmed to 0.35 under an opaque
+/// layer of moves is a picture of the moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CompositeSubject {
+    /// The moves are the subject: full ribbon, full colour, background dimmed
+    /// to 0.35 as spatial context. The shipped behaviour, and the default.
+    #[default]
+    Moves,
+    /// The BACKGROUND is the subject — a reach map, a deviation shading. The
+    /// background keeps its own colours undimmed and the moves are drawn as a
+    /// thin dim thread over it, so the shading reads from straight above and
+    /// the path is still legible as a route.
+    Background,
+}
+
+impl CompositeSubject {
+    /// `(ribbon radius factor, move colour factor, background colour factor)`.
+    ///
+    /// The move ribbon is scaled rather than the moves being dropped: an
+    /// operator reading a reach map still wants to see WHERE the passes ran,
+    /// and 0.4 of the auto ribbon on a 200 mm board is a ~0.27 mm thread —
+    /// sub-pixel at composite panel scale, which the supersampled downsample
+    /// renders as a faint line rather than an opaque mat.
+    fn factors(self) -> (f32, f32, f32) {
+        match self {
+            Self::Moves => (1.0, 1.0, 0.35),
+            Self::Background => (0.4, 0.45, 1.0),
+        }
+    }
+}
+
 /// [`render_toolpath_composite`] with an explicit world camera frame.
 ///
 /// Pass the project stock bbox to keep a series of per-toolpath composites on
@@ -730,14 +771,45 @@ pub fn render_toolpath_composite_in_frame(
     height: u32,
     include_rapids: bool,
 ) -> Vec<u8> {
+    render_toolpath_composite_subject(
+        annotated,
+        background_mesh,
+        frame,
+        width,
+        height,
+        include_rapids,
+        CompositeSubject::Moves,
+    )
+}
+
+/// [`render_toolpath_composite_in_frame`] with the choice of which layer is
+/// the subject — see [`CompositeSubject`].
+pub fn render_toolpath_composite_subject(
+    annotated: &crate::toolpath_spans::AnnotatedToolpath,
+    background_mesh: Option<&crate::stock_mesh::StockMesh>,
+    frame: Option<&crate::geo::BoundingBox3>,
+    width: u32,
+    height: u32,
+    include_rapids: bool,
+    subject: CompositeSubject,
+) -> Vec<u8> {
     use crate::stock_mesh::{auto_ribbon_radius, toolpath_to_tube_mesh_with_spans};
 
-    let radius = auto_ribbon_radius(&annotated.toolpath);
+    let (ribbon, moves_dim, bg_dim) = subject.factors();
+    let radius = auto_ribbon_radius(&annotated.toolpath) * ribbon;
     let tp_mesh = toolpath_to_tube_mesh_with_spans(annotated, radius, include_rapids);
 
     let combined = if let Some(bg) = background_mesh {
-        let mut m = bg.with_dimmed_colors(0.35);
-        m.append(&tp_mesh);
+        let mut m = if (bg_dim - 1.0).abs() < f32::EPSILON {
+            bg.clone()
+        } else {
+            bg.with_dimmed_colors(bg_dim)
+        };
+        if (moves_dim - 1.0).abs() < f32::EPSILON {
+            m.append(&tp_mesh);
+        } else {
+            m.append(&tp_mesh.with_dimmed_colors(moves_dim));
+        }
         m
     } else {
         tp_mesh
