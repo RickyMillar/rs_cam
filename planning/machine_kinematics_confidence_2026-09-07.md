@@ -604,3 +604,29 @@ Ledger:
   honour a ramp entry.
 - The gate's DOC derate is applied but unlabelled — name it in the band
   explanation so a reader can see why the same row reads two bands.
+
+### Correction — the ladder is not a raster ladder (rs-cam-38, 2026-09-08)
+
+The operator asked for the winning formula in the sim. The multitool
+planner's ladder (`plan_multitool_finishing`, tools [R2.0, R1.0], cusp
+0.14) totals **10 710 s — 5.1× Q2 alone, 3.3× the single B15 raster** —
+because the planner emits `unified_finish` (tier 0 spends 40 876 of
+56 329 moves in its mid-steep scallop band) and the R1.0 island tier with
+its 2 mm overlap cuts 66 km in 79 218 scallop moves and 1 104 retract trips
+— more than the whole-surface R1.0 raster. All gates modeled Within, 0/0.
+So the "R2.0 whole-surface + R1.0 on its 17 islands" recipe is a RANKING
+inference, not a runnable job: **the raster pairing it implies
+(drop_cutter R2.0 everywhere + drop_cutter R1.0 confined to the island
+boundary) is not expressible through any MCP/GUI path today.** Honest
+recommendation as of now: the single R2.0 raster (Q2, 2089 s) accepting
+its unreached valley floors, or B15 (R1.5, 3274 s, cusp 0.20).
+
+Ledger:
+- **G-RASTERLADDER (product gap, the real follow-on):** let a drop_cutter
+  raster take a region boundary from the tier map / reach map (P5) — the
+  planner's island set — so a raster-per-tier ladder exists; and measure
+  why the island tier's overlap and retract count balloon (2 mm overlap,
+  1 104 trips). This is where P5's reach map feeds planning, not just
+  display.
+- **G-MODSUMMARY:** tier 0's `modulation_summary` read `moves_touched 0`
+  with `median_feed_delta_pct −5.3 %` — inconsistent fields in one summary.
