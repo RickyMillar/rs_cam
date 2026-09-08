@@ -661,6 +661,44 @@ Ledger:
   why the island tier's overlap and retract count balloon (2 mm overlap,
   1 104 trips). This is where P5's reach map feeds planning, not just
   display.
+- **G-ISOCLIPENTRY (2026-09-09, FIXED df1232fd):** a rest-driven entry on a
+  surface-riding pass took its whole bite in one move. On a
+  `FromRemainingStock` pass the fed part of an entry descent is exactly the
+  material the upstream tool could not reach, and two emitters took it
+  unbudgeted: the boundary clip's island re-entry (rapid at safe Z, vertical
+  fed descent to cut Z — `optimize_entry_descents` lowers only the rapid),
+  and `emit_ramp`'s two-leg zigzag, whose legs clip to the MODEL surface
+  under G-RAMPTERRAIN — below the material on a rest pass, so the closing
+  leg returns to the start column at full depth. Live (rs-cam-38, 0.2 mm):
+  entry_load CRITICAL on the island-clipped iso-scallop (T2, peak 1.44 mm)
+  and contour scallop (T3, 1.79 mm); the whole-board R1.0 rest raster on
+  the same stock fires nothing. Fix: both doors plan
+  `pencil::plan_entry_ramp` (the G-ENTRYLOAD lap ladder) — `RestEntryRamp`
+  on `dressup::optimize_entry_descents*`, `rest_stock` on
+  `EntrySurfaceProbe`, set by the session and the GUI worker only for a
+  rest-driven op whose `entry_probe_leave` rides the surface; fresh-stock
+  passes are byte-identical. Headless T3 at 0.5 mm: CRITICAL → Caution,
+  peak 1.67 → 0.50 mm (2× the per-lap budget), project time −20.6 % (the
+  ~1.2 mm ladder replaces a 38 mm zigzag). The clip door alone moved the
+  peak by nothing — both doors were needed. Sentry:
+  `tests/isoclip_entry_ramp_g_isoclipentry.rs` (two arms assert the full
+  bite with each door off).
+- **G-ISOCLIPRAPID (2026-09-09, OPEN):** one lateral rapid 4.7 mm long with
+  both endpoints at Z 3.31 (sub-stock) on the island-clipped iso-scallop
+  (T2 move 68538). Source review falsified every candidate: the boundary
+  clip, the scallop spiral chain and intra-pass relink, `surface_link`,
+  `apply_link_moves` and `filter_air_cuts` all plant rapids at `safe_z`
+  (12.0 here); the two emitters that plant below it (`emit_ramp`'s
+  clearance rapid, `optimize_entry_descents`' inserted rapid) are vertical
+  by construction. T3 (contour scallop, same islands) reports zero. Next
+  step: the headless T2 `.nc` (pre-fix CLI run in progress) names the move.
+  The count is resolution-scaled (~2.2 × cell); a coarser re-run is not
+  evidence of absence.
+- **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
+  `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
+  feeds it into lead-in/out, so an op with `entry_style = None` and
+  `lead_in_out = true` gets stock-blind lead arcs in the GUI; the session
+  door has no such gate.
 - **G-MODSUMMARY:** tier 0's `modulation_summary` read `moves_touched 0`
   with `median_feed_delta_pct −5.3 %` — inconsistent fields in one summary.
   Reproduced twice (rs-cam-38, 2026-09-08): the FIRST `run_simulation`

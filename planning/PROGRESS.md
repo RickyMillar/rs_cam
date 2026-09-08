@@ -146,6 +146,17 @@ kinks in `tip_z`.
 
 The second look read the map 12 pp above the rasteriser at every bar. Measured on one mask: 3.5 pp is the AREA BASE (3D surface area over the rim-eroded population vs planar whole-board; same-base truth 58.6 / 42.1 / 26.8 at 0.05 / 0.146 / 0.30), the taper +0.01 pp, ~9 pp the documented grid gap inflation reading as a constant PERCENTAGE offset on a flat gap density. Not a probe bias. The map's figure is an UPPER estimate; "lower bound" is gone from every surface, `area_basis` prints in words, one `over_statement_note` feeds all four surfaces and a sentry forbids the old wording. Depth-ramp colouring (green ≤ bar, grey unresolved, log yellow→red→dark red to max_gap) so the R1.0 islands read as their own colour. P6: the viewport keeps a 320 px minimum width; side panels capped at 420 px; a docked Overlays panel that would breach the floor floats.
 
+### G-ISOCLIPENTRY — island-clipped rest passes buried their re-entries (`df1232fd`)
+
+The two-tool trials (§2.7 of the deep-DOC doc) found entry_load CRITICAL on
+every island-clipped scallop from remaining stock, iso and contour alike,
+while the whole-board rest raster fired nothing. Two emitters took the
+rest bite unbudgeted (the boundary clip's vertical re-entry and
+`emit_ramp`'s model-clipped zigzag). Both now plan the pencil lap ladder;
+fresh-stock passes are byte-identical. T3 headless: CRITICAL → Caution,
+peak 1.67 → 0.50 mm, −20.6 % time. Open: G-ISOCLIPRAPID (one sub-stock
+lateral rapid on the iso arm, emitter not found), G-LEADGATE.
+
 ### Roughing and finishing strategy on terrain (evidence, rs-cam-38)
 
 - Roughing A/B (`planning/roughing_strategy_ab_results_2026-09-07.md`):
