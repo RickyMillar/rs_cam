@@ -123,6 +123,25 @@ box, the split Fixtures flag and the `analytics_tab` deletion. Not drawn
 yet and listed as such: derived rest regions, boundary outline. **Not
 seen on screen** — live GUI check pending with P5's.
 
+### P5.1 — the reach map after its first live look (`be96933c`)
+
+The live look (rs-cam-38) showed 68.2 % of the wanaka terrain unreachable
+by the R2.0 ball at the 0.05 default against ~24 % from the tier map. An
+independent 0.15 mm rasterisation of the mesh
+(`planning/deep_doc_modulation_2026-09-08/reach_truth_rasteriser.py`) put
+the truth at 55.0 % — the red was mostly real; this mesh's median gap sits
+on the 0.05 bar. The +13 pp remainder was interpolation over-read the
+published floor could not see (a plane measurement). The map now
+measures its floor from the surface it built, abstains below it
+(`unresolved`, neither reached nor missed; `tolerance_below_floor` marks
+the percentage as a lower bound), reads 59.05 % on the same grid, and
+takes the raster's own cusp (0.146 mm on R2.0 at s1.5 → 39.5 % true) as
+the default bar. The tier map's 24 % answers a different question
+(tool-vs-tool residual). Also: select-and-enable in one `set_ui_view`
+call, dimmed moves under the reach screenshot, cell fixed by tool + model
+and printed first. Ledgered: the floor is a C² bound and misses slope
+kinks in `tip_z`.
+
 ### Roughing and finishing strategy on terrain (evidence, rs-cam-38)
 
 - Roughing A/B (`planning/roughing_strategy_ab_results_2026-09-07.md`):
