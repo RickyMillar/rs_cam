@@ -9,12 +9,6 @@ pub struct FixtureGpuData {
 }
 
 impl FixtureGpuData {
-    /// Create wireframe boxes from a list of (bounding_box, color) pairs.
-    /// Each box generates 24 vertices (12 edges as line list).
-    pub fn from_boxes(device: &wgpu::Device, boxes: &[(BoundingBox3, [f32; 3])]) -> Self {
-        Self::from_boxes_and_lines(device, boxes, &[])
-    }
-
     /// Create wireframe boxes plus additional line vertices (for pin markers).
     pub fn from_boxes_and_lines(
         device: &wgpu::Device,

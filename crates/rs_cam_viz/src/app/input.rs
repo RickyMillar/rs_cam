@@ -70,30 +70,10 @@ impl RsCamApp {
 
                 // Workspace transitions (need camera/viewport changes in app)
                 AppEvent::SwitchWorkspace(target) => {
-                    let state = self.controller.state_mut();
-                    let old = state.workspace;
-                    if old != target {
-                        // Entering Simulation: save viewport, set sim-friendly defaults
-                        if old != Workspace::Simulation && target == Workspace::Simulation {
-                            state.simulation.saved_viewport.show_cutting =
-                                state.viewport.show_cutting;
-                            state.simulation.saved_viewport.show_rapids =
-                                state.viewport.show_rapids;
-                            state.simulation.saved_viewport.show_stock = state.viewport.show_stock;
-                            state.viewport.show_cutting = false;
-                            state.viewport.show_rapids = false;
-                            state.viewport.show_stock = true;
-                        }
-                        // Leaving Simulation: restore viewport
-                        if old == Workspace::Simulation && target != Workspace::Simulation {
-                            state.viewport.show_cutting =
-                                state.simulation.saved_viewport.show_cutting;
-                            state.viewport.show_rapids =
-                                state.simulation.saved_viewport.show_rapids;
-                            state.viewport.show_stock = state.simulation.saved_viewport.show_stock;
-                        }
-                        state.workspace = target;
-                    }
+                    crate::ui::overlays::registry::switch_workspace(
+                        self.controller.state_mut(),
+                        target,
+                    );
                 }
                 AppEvent::SimStepBackward => {
                     if self.controller.state().simulation.has_results() {
@@ -146,11 +126,6 @@ impl RsCamApp {
                         self.pending_checkpoint_load =
                             !pb.scrub_drag_active && pb.current_move < previous;
                     }
-                }
-
-                AppEvent::SimVizModeChanged => {
-                    // Re-upload sim mesh on next frame with new viz colors
-                    self.controller.set_pending_upload();
                 }
 
                 // Export events (need file dialogs)
@@ -509,7 +484,84 @@ impl RsCamApp {
                     crate::render::camera::ViewPreset::Isometric,
                 ));
             }
+            self.handle_overlay_shortcuts(i);
         });
+    }
+
+    /// The overlay shortcuts (UX §6.8). Bound in every workspace that renders
+    /// a viewport, because the overlays they reach are wanted in all of them.
+    ///
+    /// Before P6 no overlay had a shortcut at all. `I`, `H`, `G` and `1`-`4`
+    /// keep their meanings; none of `O`, `S`, `P`, `R`, `X`, `,` or `.` was
+    /// bound in either handler.
+    ///
+    /// Each toggle goes through the registry, so a key cannot switch on
+    /// something that cannot draw, and cannot break per-surface exclusivity.
+    ///
+    /// Every binding refuses a command / control / alt modifier. `Ctrl+O`
+    /// opens a project and `Ctrl+S` saves one (`ui/menu_bar.rs`), so a bare
+    /// `key_pressed` here would fire the overlay action alongside the file
+    /// action.
+    fn handle_overlay_shortcuts(&mut self, i: &egui::InputState) {
+        use crate::ui::overlays::registry;
+
+        // Readiness renders no viewport, so a key there would flip a flag
+        // the operator cannot see.
+        if self.controller.state().workspace == Workspace::Readiness {
+            return;
+        }
+        let modifiers = i.modifiers;
+        if modifiers.command || modifiers.ctrl || modifiers.alt {
+            return;
+        }
+
+        // O: open or close the panel. Shift+O: pin or unpin it.
+        if i.key_pressed(egui::Key::O) {
+            let overlays = &mut self.controller.state_mut().overlays;
+            if modifiers.shift {
+                overlays.pinned = !overlays.pinned;
+                overlays.open = true;
+            } else {
+                overlays.open = !overlays.open;
+            }
+        }
+
+        for (key, id) in [
+            (egui::Key::S, "stock_box"),
+            (egui::Key::P, "cutting_moves"),
+            (egui::Key::R, "rapids"),
+            (egui::Key::X, "collisions"),
+        ] {
+            if !i.key_pressed(key) || modifiers.any() {
+                continue;
+            }
+            let Some(row) = registry::row(id) else {
+                continue;
+            };
+            let state = self.controller.state_mut();
+            let on = (row.get)(state);
+            // Switching OFF needs no precondition; switching ON does.
+            if on || (row.precondition)(state).is_ready() {
+                registry::set_overlay(state, row, !on);
+            }
+        }
+
+        // `,` / `.`: step the active model / stock colour source.
+        if modifiers.any() {
+            return;
+        }
+        if i.key_pressed(egui::Key::Comma) {
+            registry::cycle_surface(
+                self.controller.state_mut(),
+                crate::ui::overlays::panel::COMMA_SURFACE,
+            );
+        }
+        if i.key_pressed(egui::Key::Period) {
+            registry::cycle_surface(
+                self.controller.state_mut(),
+                crate::ui::overlays::panel::PERIOD_SURFACE,
+            );
+        }
     }
 
     /// Handle keyboard shortcuts for the simulation workspace.
@@ -554,6 +606,8 @@ impl RsCamApp {
                     .events_mut()
                     .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
             }
+
+            self.handle_overlay_shortcuts(i);
 
             // [ / ]: speed down/up
             if i.key_pressed(egui::Key::OpenBracket) {

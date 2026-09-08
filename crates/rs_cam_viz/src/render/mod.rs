@@ -64,48 +64,6 @@ pub struct LineUniforms {
     pub view_proj: [[f32; 4]; 4],
 }
 
-/// Configuration for line rendering width.
-///
-/// Stored in `RenderResources` so the UI can set a desired width that will be
-/// consumed once thick-line rendering is implemented.
-///
-/// **Current limitation**: wgpu / WebGPU only supports 1-pixel lines via
-/// `PrimitiveTopology::LineList`.  To render wider lines, each line segment
-/// must be expanded to a screen-aligned quad (2 triangles / 4 vertices) on the
-/// CPU or in a vertex shader with instance data.  The expansion requires:
-///
-/// 1. A separate "thick line" pipeline using `TriangleList` topology.
-/// 2. For each line segment (A, B), emit 4 vertices offset by +/- half_width
-///    perpendicular to the screen-space direction of (B - A).
-/// 3. Pass `viewport_size` and `line_width` as uniforms so the vertex shader
-///    can compute the perpendicular offset in clip space.
-/// 4. Round joins at segment endpoints (optional, adds geometry).
-///
-/// Until that pipeline exists, the `line_width` value is stored but not
-/// consumed by the GPU.
-#[derive(Debug, Clone, Copy)]
-pub struct LineWidthConfig {
-    /// Desired line width in logical pixels for toolpath cut lines.
-    /// Default: 1.0 (native `LineList` rendering).
-    pub toolpath_line_width: f32,
-    /// Desired line width for rapid/link moves.
-    /// Default: 1.0.
-    pub rapid_line_width: f32,
-    /// Desired line width for grid, stock wireframe, fixtures, etc.
-    /// Default: 1.0.
-    pub auxiliary_line_width: f32,
-}
-
-impl Default for LineWidthConfig {
-    fn default() -> Self {
-        Self {
-            toolpath_line_width: 1.0,
-            rapid_line_width: 1.0,
-            auxiliary_line_width: 1.0,
-        }
-    }
-}
-
 /// Line vertex for grid, stock wireframe, and toolpath rendering.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -212,9 +170,6 @@ pub struct RenderResources {
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
     pub collision_vertex_count: u32,
     pub origin_axes_data: Option<grid_render::OriginAxesGpuData>,
-    /// Line width configuration for future thick-line rendering.
-    /// Currently stored but not consumed by the 1-pixel `LineList` pipeline.
-    pub line_width_config: LineWidthConfig,
     /// Cached GPU device limits for buffer size validation.
     pub gpu_limits: gpu_safety::GpuLimits,
 
@@ -703,7 +658,6 @@ impl RenderResources {
             collision_vertex_buffer: None,
             collision_vertex_count: 0,
             origin_axes_data: None,
-            line_width_config: LineWidthConfig::default(),
             gpu_limits,
             mesh_upload_key: None,
             enriched_upload_key: None,
@@ -788,13 +742,29 @@ impl RenderResources {
 pub struct ViewportCallback {
     pub mesh_uniforms: MeshUniforms,
     pub line_uniforms: LineUniforms,
+    /// The plain (STL) model list draws under this. Derived as
+    /// `<any model carries a mesh> && show_model && workspace != Simulation`.
     pub has_mesh: bool,
+    /// The enriched (STEP) model list draws under this. Before P6 that loop
+    /// sat OUTSIDE `has_mesh`, so "Wireframe" hid an STL model and did
+    /// nothing at all to a STEP one — one control, two behaviours, neither of
+    /// them a wireframe (audit §3.1, fix §6.2).
+    pub show_model: bool,
     pub show_grid: bool,
     pub show_stock: bool,
+    /// The one line buffer that carries fixtures, keep-outs, alignment pins,
+    /// the flip axis and the datum crosshair. Each kind is filtered INTO the
+    /// buffer at upload time by its own registry flag, so this gate is "did
+    /// any kind contribute".
     pub show_fixtures: bool,
     pub show_polygons: bool,
     pub show_solid_stock: bool,
     pub show_height_planes: bool,
+    /// The cyan entry / ramp / helix markers on the selected toolpath.
+    /// Before P6 they drew whenever a toolpath was selected, ignoring
+    /// `show_cutting`, the per-toolpath entry and the scrub move limit
+    /// (audit §6.10).
+    pub show_entry_markers: bool,
     /// Rest-depth heatmap overlay (pencil detector #4). Derived as
     /// `viewport.show_rest_heatmap && workspace == Toolpaths && <selected
     /// toolpath has a rest_grid>` — see `app/viewport.rs`.
@@ -805,9 +775,9 @@ pub struct ViewportCallback {
     /// `show_rest_heatmap`: both may be true in one frame.
     pub show_tier_preview: bool,
     /// Per-tool reach-map overlay (P5). Derived as
-    /// `viewport.show_reach_map && workspace == Toolpaths && render_mode ==
-    /// Shaded && <a Ready map is held for the selected toolpath>` — see
-    /// `app/viewport.rs`.
+    /// `viewport.show_reach_map && workspace == Toolpaths &&
+    /// viewport.show_model && <a Ready map is held for the selected
+    /// toolpath>` — see `app/viewport.rs`.
     ///
     /// Unlike the two overlays above this one is EXCLUSIVE with the plain and
     /// enriched model draws: it is the model, re-coloured. Drawing both would
@@ -826,11 +796,11 @@ pub struct ViewportCallback {
     /// If Some, only draw toolpath moves up to this index (sim scrubbing).
     pub toolpath_move_limit: Option<usize>,
     /// Show XYZ axes at the stock origin.
+    ///
+    /// The origin and the length that used to ride here were never read: the
+    /// axes geometry is baked at upload from the stock config, and the draw
+    /// uses `resources.origin_axes_data` alone (audit §4.1, fix §6.14).
     pub show_origin_axes: bool,
-    /// Stock origin position [x, y, z].
-    pub origin_axes_origin: [f32; 3],
-    /// Length of origin axes lines.
-    pub origin_axes_length: f32,
     pub viewport_width: u32,
     pub viewport_height: u32,
 }
@@ -1042,7 +1012,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_vertex_buffer(0, reach.vertex_buffer.slice(..));
                 pass.set_index_buffer(reach.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..reach.index_count, 0, 0..1);
-            } else {
+            } else if self.show_model {
                 // Draw all enriched (STEP) models
                 for enriched in &resources.enriched_mesh_data_list {
                     pass.set_pipeline(&resources.colored_opaque_pipeline);
@@ -1177,8 +1147,23 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.draw(0..max_rapid, 0..1);
                 }
 
+                // P6 (audit §6.10) — the entry markers and the cutter ghost
+                // now respect the move gates. Before this they drew whenever
+                // the buffer existed: switching cutting moves off left the
+                // cyan markers floating on their own, and a sim scrub
+                // revealed the whole entry at move zero.
+                //
+                // Neither buffer carries a per-move index, so
+                // `vertices_for_moves` cannot trim them. The honest gate is
+                // therefore "not scrubbing": under a move limit they are
+                // hidden outright rather than shown untrimmed.
+                let overlays_allowed =
+                    self.show_cutting && tp_show_cut && self.toolpath_move_limit.is_none();
+
                 // Draw entry path preview overlay (ramp/helix/lead-in indicator)
-                if let Some(ref buf) = tp_gpu.entry_preview_buffer
+                if overlays_allowed
+                    && self.show_entry_markers
+                    && let Some(ref buf) = tp_gpu.entry_preview_buffer
                     && tp_gpu.entry_preview_count > 1
                 {
                     pass.set_vertex_buffer(0, buf.slice(..));
@@ -1186,7 +1171,8 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 }
 
                 // Draw tool-profile preview overlay (cutter silhouette ghost)
-                if let Some(ref buf) = tp_gpu.tool_profile_preview_buffer
+                if overlays_allowed
+                    && let Some(ref buf) = tp_gpu.tool_profile_preview_buffer
                     && tp_gpu.tool_profile_preview_count > 1
                 {
                     pass.set_vertex_buffer(0, buf.slice(..));

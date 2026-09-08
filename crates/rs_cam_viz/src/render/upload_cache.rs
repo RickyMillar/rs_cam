@@ -300,16 +300,6 @@ impl UploadStats {
                 .saturating_sub(earlier.rest_heatmap_builds),
         }
     }
-
-    /// True when the pass rebuilt nothing — the case a selection click on a
-    /// project with no BREP faces should reach.
-    pub fn is_idle(&self) -> bool {
-        self.mesh_builds == 0
-            && self.enriched_builds == 0
-            && self.toolpath_builds == 0
-            && self.collision_builds == 0
-            && self.rest_heatmap_builds == 0
-    }
 }
 
 #[cfg(test)]
@@ -524,8 +514,12 @@ mod tests {
         assert_eq!(mesh, mesh.clone());
     }
 
+    /// `UploadStats::since` is the live delta the perf instruments read
+    /// (`app/gpu_upload.rs`). Its sibling `is_idle` was deleted in P6: its
+    /// only callers were the two assertions this test used to carry, so the
+    /// helper existed to be tested and nothing else (audit §4.2).
     #[test]
-    fn stats_deltas_and_idle() {
+    fn stats_deltas_are_per_field_saturating_differences() {
         let before = UploadStats {
             passes: 3,
             toolpath_builds: 8,
@@ -541,13 +535,18 @@ mod tests {
         assert_eq!(delta.passes, 1);
         assert_eq!(delta.toolpath_builds, 1);
         assert_eq!(delta.toolpath_reuses, 7);
-        assert!(!delta.is_idle());
+        assert_eq!(delta.mesh_builds, 0);
 
-        let idle = UploadStats {
+        // A pass that rebuilt nothing: every build counter differences to
+        // zero while the reuse counter still moves.
+        let reuse_only = UploadStats {
             passes: 1,
             toolpath_reuses: 8,
             ..UploadStats::default()
         };
-        assert!(idle.is_idle());
+        let delta = reuse_only.since(&UploadStats::default());
+        assert_eq!(delta.toolpath_builds, 0);
+        assert_eq!(delta.enriched_builds, 0);
+        assert_eq!(delta.toolpath_reuses, 8);
     }
 }

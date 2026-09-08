@@ -24,15 +24,6 @@ use rs_cam_core::tool_load::ToolLoadReport;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::SpanId;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum SimulationAnalyticsTab {
-    #[default]
-    RunStatus,
-    Safety,
-    CutQuality,
-    DebugTrace,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolpathTraceAvailability {
     None,
@@ -730,13 +721,6 @@ pub struct SimulationRunMeta {
     pub last_sim_edit_counter: u64,
 }
 
-/// Saved viewport state for workspace transitions.
-pub struct SavedViewportState {
-    pub show_cutting: bool,
-    pub show_rapids: bool,
-    pub show_stock: bool,
-}
-
 // ---------------------------------------------------------------------------
 // Top-level simulation state
 // ---------------------------------------------------------------------------
@@ -757,14 +741,10 @@ pub struct SimulationState {
     pub auto_resolution: bool,
     /// Runtime-only capture options for simulation cutting metrics.
     pub metric_options: SimulationMetricOptions,
-    /// Active right-panel simulation analytics section.
-    pub analytics_tab: SimulationAnalyticsTab,
     /// Stock visualization mode.
     pub stock_viz_mode: StockVizMode,
     /// Stock opacity (0.0 = transparent, 1.0 = solid).
     pub stock_opacity: f32,
-    /// Saved viewport state from editor mode (restored on exit).
-    pub saved_viewport: SavedViewportState,
     /// Runtime-only debugger state and semantic lookup cache.
     pub debug: SimulationDebugState,
     /// Global move index (as f64 for sub-move pointer precision) under the
@@ -812,14 +792,8 @@ impl SimulationState {
             resolution: 0.25,
             auto_resolution: true,
             metric_options: SimulationMetricOptions::default(),
-            analytics_tab: SimulationAnalyticsTab::default(),
             stock_viz_mode: StockVizMode::Solid,
             stock_opacity: 1.0,
-            saved_viewport: SavedViewportState {
-                show_cutting: true,
-                show_rapids: true,
-                show_stock: true,
-            },
             debug: SimulationDebugState {
                 enabled: false,
                 expanded_toolpaths: HashSet::new(),
@@ -2546,16 +2520,6 @@ impl Default for SimulationPlayback {
             display_mesh_preview: false,
             scrub_drag_active: false,
             display_deviations: None,
-        }
-    }
-}
-
-impl Default for SavedViewportState {
-    fn default() -> Self {
-        Self {
-            show_cutting: true,
-            show_rapids: true,
-            show_stock: true,
         }
     }
 }

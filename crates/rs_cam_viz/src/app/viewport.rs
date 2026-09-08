@@ -223,74 +223,35 @@ impl RsCamApp {
     pub(super) fn draw_viewport(&mut self, ui: &mut egui::Ui) {
         let lane_snapshots = self.controller.lane_snapshots();
         let workspace = self.controller.state().workspace;
-        let sim_active = self.controller.state().simulation.has_results();
         let projection = self.camera.projection;
-        let isolated_name = {
-            let state = self.controller.state();
-            state.viewport.isolate_toolpath.and_then(|tp_id| {
-                state
-                    .session
-                    .toolpath_configs()
-                    .iter()
-                    .find(|tc| tc.id == tp_id)
-                    .map(|tc| tc.name.clone())
-            })
-        };
         // Rest-depth heatmap legend info (threshold, peak rest mm) for the
-        // currently selected toolpath, if it carries a `rest_grid` — read
-        // once here (outside the mutable-borrow block below) so both the
-        // Show ▼ checkbox gating and the legend can use it without
-        // re-fetching. `None` when nothing's selected or the selection has
-        // no rest data (most toolpaths — only the pencil rest-depth
-        // detector populates this).
-        let selected_rest_grid_info: Option<(f64, f32)> = {
-            let state = self.controller.state();
-            match state.selection {
-                Selection::Toolpath(tp_id) => state
-                    .gui
-                    .toolpath_rt
-                    .get(&tp_id)
-                    .and_then(|rt| rt.result.as_ref())
-                    .and_then(|r| r.annotated.rest_grid.as_ref())
-                    .map(|grid| {
-                        let peak = grid
-                            .rest
-                            .iter()
-                            .copied()
-                            .filter(|v| v.is_finite())
-                            .fold(0.0_f32, f32::max);
-                        (grid.threshold, peak)
-                    }),
-                _ => None,
-            }
-        };
-        let has_tier_preview = self
-            .controller
-            .state()
-            .multitool_planner
-            .as_ref()
-            .is_some_and(|p| p.ready_preview().is_some());
+        // currently selected toolpath, if it carries a `rest_grid`. **Any**
+        // operation attaches one when its `rest_analysis.enabled` is set and
+        // a mesh plus spatial index are present; the pencil `RestDepth` arm
+        // and the UnifiedFinish claims pipeline attach their own. The
+        // "only the pencil detector" claim this comment used to carry was
+        // stale (audit §2c, fix §6.5).
+        let selected_rest_grid_info: Option<(f64, f32)> =
+            crate::ui::overlays::registry::rest_grid_info(self.controller.state());
         {
             let (state, events) = self.controller.state_and_events_mut();
-            crate::ui::viewport_overlay::draw(
-                ui,
-                workspace,
-                sim_active,
-                projection,
-                isolated_name.as_deref(),
-                &mut state.viewport,
-                &lane_snapshots,
-                events,
-                selected_rest_grid_info,
-                has_tier_preview,
-            );
+            crate::ui::viewport_overlay::draw(ui, state, projection, &lane_snapshots, events);
+            // Docked BEFORE the 3D view claims the rest of the space, so the
+            // pinned column takes width from it instead of covering it.
+            crate::ui::overlays::panel::draw_docked(ui, state, events);
         }
 
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
 
         self.viewport_rect = rect;
-        self.draw_sim_deflection_overlay(ui, rect);
+        {
+            let (state, events) = self.controller.state_and_events_mut();
+            crate::ui::overlays::panel::draw_floating(ui, state, events, rect);
+        }
+        if self.controller.state().viewport.show_tool_deflection {
+            self.draw_sim_deflection_overlay(ui, rect);
+        }
 
         // Click-to-select toolpath in viewport
         if response.clicked()
@@ -459,28 +420,43 @@ impl RsCamApp {
                 _pad1: 0.0,
             },
             line_uniforms: LineUniforms { view_proj },
+            // P6 — `show_model` replaces `RenderMode::Wireframe`, which drew
+            // NOTHING: the crate has no wireframe pipeline, so the mode hid
+            // an STL model and left a STEP one untouched (audit §3.1). The
+            // flag now reaches both draw loops.
             has_mesh: state
                 .session
                 .models()
                 .iter()
                 .any(|model| model.mesh.is_some())
-                && state.viewport.render_mode == crate::state::viewport::RenderMode::Shaded
+                && state.viewport.show_model
                 && state.workspace != Workspace::Simulation,
+            show_model: state.viewport.show_model && state.workspace != Workspace::Simulation,
             show_grid: state.viewport.show_grid,
-            show_stock: state.viewport.show_stock
-                && state
-                    .session
-                    .models()
-                    .iter()
-                    .any(|model| model.mesh.is_some()),
+            // P6 — the model clause is GONE from all three stock
+            // consumers (audit §3.2, fix §6.3, first option). It used to
+            // read `mesh.is_some()` on the box and the axes but not on the
+            // solid block: one flag, three consumers, two preconditions. A
+            // 2D model carries `mesh: None`, so on an SVG / DXF job — the
+            // whole pocket, profile, v-carve and trace family — the box and
+            // the axes never drew and the Stock checkbox did nothing. All
+            // three buffers are built from `stock_config` alone, which
+            // always exists, so the honest gate is the flag.
+            show_stock: state.viewport.show_stock,
+            // One buffer carries five overlays, each filtered into it at
+            // upload time by its own flag, so the draw gate is "did any kind
+            // contribute" (audit §3.3).
             show_fixtures: state.viewport.show_fixtures
-                && (state.workspace != Workspace::Simulation
-                    || !state.session.stock_config().alignment_pins.is_empty()),
+                || state.viewport.show_keep_outs
+                || state.viewport.show_alignment_pins
+                || state.viewport.show_flip_axis
+                || state.viewport.show_datum,
             show_polygons: state.viewport.show_polygons
                 && state.session.models().iter().any(|m| m.polygons.is_some()),
-            show_solid_stock: state.viewport.show_stock && state.workspace == Workspace::Setup,
-            show_height_planes: state.workspace == Workspace::Toolpaths
+            show_solid_stock: state.viewport.show_stock_solid,
+            show_height_planes: state.viewport.show_height_planes
                 && matches!(state.selection, Selection::Toolpath(_)),
+            show_entry_markers: state.viewport.show_entry_markers,
             show_rest_heatmap: state.viewport.show_rest_heatmap
                 && state.workspace == Workspace::Toolpaths
                 && selected_rest_grid_info.is_some(),
@@ -498,17 +474,23 @@ impl RsCamApp {
                     p.ready_preview().is_some() && state.active_setup_index() == Some(p.setup_index)
                 }),
             // P5 — the reach overlay REPLACES the model draw, so its gate
-            // also carries `render_mode == Shaded`: in wireframe there is no
-            // model surface to re-colour, and drawing a shaded copy would
-            // contradict the mode the operator chose.
+            // also carries `show_model`: with the model hidden there is no
+            // surface to re-colour, and drawing a coloured copy would
+            // contradict the row the operator switched off. (Before P6 the
+            // clause read `render_mode == Shaded`, the same intent expressed
+            // through a mode whose other arm drew nothing at all.)
             //
             // `reach_map_ready` above already requires the selection to be a
             // toolpath and the held map to be that toolpath's.
             show_reach_overlay: state.viewport.show_reach_map
                 && state.workspace == Workspace::Toolpaths
-                && state.viewport.render_mode == crate::state::viewport::RenderMode::Shaded
+                && state.viewport.show_model
                 && reach_map_ready,
-            show_sim_mesh: state.workspace == Workspace::Simulation
+            // P6 — the simulated stock gets a switch. Before this its gate
+            // read the workspace and `has_results()` only, while a comment
+            // claimed `show_stock` covered it (audit §2b, fix §6.8).
+            show_sim_mesh: state.viewport.show_sim_stock
+                && state.workspace == Workspace::Simulation
                 && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,
             show_cutting: state.viewport.show_cutting,
@@ -531,22 +513,7 @@ impl RsCamApp {
             } else {
                 None
             },
-            show_origin_axes: state.viewport.show_stock
-                && state
-                    .session
-                    .models()
-                    .iter()
-                    .any(|model| model.mesh.is_some()),
-            origin_axes_origin: [
-                state.session.stock_config().origin_x as f32,
-                state.session.stock_config().origin_y as f32,
-                state.session.stock_config().origin_z as f32,
-            ],
-            origin_axes_length: {
-                let s = state.session.stock_config();
-                let min_dim = s.x.min(s.y).min(s.z) as f32;
-                (min_dim * 0.3).clamp(5.0, 50.0)
-            },
+            show_origin_axes: state.viewport.show_origin_axes,
             viewport_width: (rect.width() * ppp) as u32,
             viewport_height: (rect.height() * ppp) as u32,
         };
@@ -555,7 +522,9 @@ impl RsCamApp {
         ui.painter().add(cb);
 
         // Draw orientation gizmo overlay (2D, on top of the 3D viewport)
-        self.draw_orientation_gizmo(ui, rect);
+        if self.controller.state().viewport.show_orientation_gizmo {
+            self.draw_orientation_gizmo(ui, rect);
+        }
 
         if workspace == Workspace::Simulation {
             // Pending-checkpoint indicator: when a backward jump is in

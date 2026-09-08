@@ -225,9 +225,12 @@ pub struct ScreenshotToolpathParam {
     /// toolpath (default false, PNG only). Green = this tool forms the
     /// surface inside the operation's tolerance, red = it cannot reach,
     /// neutral = not measured (an underside, a wall, or the eroded rim
-    /// band). This is the explicit form of the overlay on purpose: the
-    /// live GUI's own toggle is a viewport state an agent cannot see, so
-    /// the screenshot asks for the overlay rather than inheriting it. The
+    /// band). This is the explicit form of the overlay on purpose: this
+    /// call renders offscreen and inherits no viewport state, so the
+    /// screenshot asks for the overlay rather than inheriting it. (The
+    /// live GUI's own toggle is reachable since P6 —
+    /// `set_ui_view(overlays: {"reach_map": true})` — but that switches
+    /// the WINDOW's overlay, which only `screenshot_gui` captures.) The
     /// call refuses when the toolpath is not a finishing operation a reach
     /// map speaks about, and it takes a second or two on a cold map — the
     /// same memo `reach_map` fills.
@@ -266,6 +269,34 @@ pub struct SetUiViewParam {
     /// Modal to open: "feeds_modal", "optimize_modal", "export_wizard",
     /// "tool_library", or "none" to close all modals.
     pub modal: Option<String>,
+    /// Viewport overlays to switch on or off, as `{"<id>": true|false}`.
+    ///
+    /// The ids are the rows of the GUI's Overlays panel — the same list the
+    /// panel renders, so anything the operator can switch, an agent can:
+    /// `grid`, `model`, `stock_box`, `stock_solid`, `origin_axes`, `datum`,
+    /// `fixtures`, `keep_outs`, `alignment_pins`, `flip_axis`, `curves`,
+    /// `orientation_gizmo`, `cutting_moves`, `rapids`, `entry_markers`,
+    /// `height_planes`, `tool_profile_ghost`, `span_entry`,
+    /// `span_lead_out`, `span_link_bridge`, `span_dressup`,
+    /// `rest_heatmap`, `tier_map`, `reach_map`, `simulated_stock`,
+    /// `collisions`, `tool_deflection`, `generator_steps`,
+    /// `active_step_highlight`, and the colour choices
+    /// `stock_colour_solid` / `stock_colour_deviation` /
+    /// `stock_colour_by_height` and `move_colour_palette` /
+    /// `move_colour_engagement` / `move_colour_advance_per_tooth`.
+    ///
+    /// Nothing is silently dropped. The reply reports every key under
+    /// `overlays.applied` or `overlays.refused`, and a refusal carries the
+    /// same reason string the panel prints beside the greyed row — for
+    /// example `{"tier_map": "previewed on setup 2 — switch setup to see
+    /// it"}`. Switching a colour choice OFF is refused (switch a sibling on
+    /// instead), an unknown id is refused, and every id is refused in the
+    /// Readiness workspace, which renders no viewport.
+    ///
+    /// One colour source per surface: enabling one clears the others on the
+    /// model, the simulated stock or the move lines. Pair with
+    /// `screenshot_gui` to photograph what was enabled.
+    pub overlays: Option<std::collections::BTreeMap<String, bool>>,
 }
 
 /// GRBL `$$` settings dump to import onto the live machine profile.
@@ -1679,6 +1710,24 @@ mod tests {
         assert_eq!(p.toolpath_index, Some(2));
         assert_eq!(p.properties_tab.as_deref(), Some("heights"));
         assert_eq!(p.modal.as_deref(), Some("feeds_modal"));
+    }
+
+    /// The `overlays` map deserializes as `{id: bool}`, and its absence is
+    /// still a valid request — an agent that never touches an overlay must
+    /// not have to send an empty object.
+    #[test]
+    fn set_ui_view_param_carries_an_overlays_map() {
+        let p: SetUiViewParam = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(p.overlays.is_none());
+
+        let p: SetUiViewParam = serde_json::from_value(serde_json::json!({
+            "workspace": "toolpaths",
+            "overlays": { "rest_heatmap": true, "tier_map": false },
+        }))
+        .unwrap();
+        let overlays = p.overlays.expect("the map deserializes");
+        assert_eq!(overlays.get("rest_heatmap"), Some(&true));
+        assert_eq!(overlays.get("tier_map"), Some(&false));
     }
 
     // ── Gap 6 (2026-08-19 run log): typed `value` ─────────────────────

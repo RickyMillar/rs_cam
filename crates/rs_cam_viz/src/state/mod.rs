@@ -1,6 +1,7 @@
 pub mod history;
 pub mod job;
 pub mod multitool_planner;
+pub mod overlays;
 pub mod runtime;
 pub mod selection;
 pub mod simulation;
@@ -8,6 +9,7 @@ pub mod toolpath;
 pub mod viewport;
 
 use history::UndoHistory;
+use overlays::OverlayPanelState;
 use runtime::GuiState;
 use selection::Selection;
 use simulation::SimulationState;
@@ -35,6 +37,10 @@ pub struct AppState {
     pub gui: GuiState,
     pub selection: Selection,
     pub viewport: ViewportState,
+    /// The viewport Overlays panel's own state (P6). The overlay FLAGS live
+    /// on [`ViewportState`]; this is only the panel's shape plus the
+    /// per-workspace default bookkeeping.
+    pub overlays: OverlayPanelState,
     pub simulation: SimulationState,
     pub history: UndoHistory,
     /// Show pre-flight checklist modal before export.
@@ -222,6 +228,7 @@ impl AppState {
             gui: GuiState::new(),
             selection: Selection::None,
             viewport: ViewportState::new(),
+            overlays: OverlayPanelState::new(),
             simulation: SimulationState::new(),
             history: UndoHistory::new(),
             show_preflight: false,

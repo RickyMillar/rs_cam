@@ -584,15 +584,27 @@ impl RsCamApp {
                     .find(|sd| sd.id == s.id.0)
             });
 
-            // Fixture/keep-out boxes are only shown outside Simulation.
+            // P6 — five overlays share this one line buffer, and each is now
+            // filtered into it by its OWN registry flag: fixtures,
+            // keep-outs, alignment pins, the flip axis and the datum
+            // crosshair (audit §3.3, §5 Geometry). The old workspace clauses
+            // are gone: `show_fixtures` and friends carry per-workspace
+            // DEFAULTS instead, so the Simulation view still hides fixtures
+            // while the operator can switch them back on.
+            //
+            // Every one of these five is therefore an UPLOAD-time flag, and
+            // upload-time flags need a trigger. `overlay_upload_key` in
+            // `app.rs` is that trigger, and it carries the workspace too —
+            // `AppEvent::SwitchWorkspace` never set `pending_upload` itself
+            // (audit §3.3, "a future edit that removes the incidental
+            // trigger would expose the gap silently").
             let mut boxes = Vec::new();
-            let in_sim = state.workspace == Workspace::Simulation;
-            if !in_sim && let Some(sd) = active_session_setup {
+            if let Some(sd) = active_session_setup {
                 // SAFETY: active_setup_ref.is_some() when active_session_setup.is_some()
                 #[allow(clippy::unwrap_used)]
                 let setup = active_setup_ref.as_ref().unwrap();
                 for fixture in &sd.fixtures {
-                    if fixture.enabled {
+                    if fixture.enabled && state.viewport.show_fixtures {
                         let selected = *selection == Selection::Fixture(SetupId(sd.id), fixture.id);
                         let color = if selected {
                             [1.0_f32, 0.9, 0.4] // bright highlight
@@ -610,7 +622,7 @@ impl RsCamApp {
                     }
                 }
                 for keep_out in &sd.keep_out_zones {
-                    if keep_out.enabled {
+                    if keep_out.enabled && state.viewport.show_keep_outs {
                         let selected =
                             *selection == Selection::KeepOut(SetupId(sd.id), keep_out.id);
                         let color = if selected {
@@ -632,7 +644,11 @@ impl RsCamApp {
             let oy = stock.origin_y;
             let oz = stock.origin_z;
             if let Some(setup) = active_setup_ref.as_ref() {
-                for pin in &stock.alignment_pins {
+                for pin in stock
+                    .alignment_pins
+                    .iter()
+                    .filter(|_| state.viewport.show_alignment_pins)
+                {
                     let radius = (pin.diameter / 2.0) as f32;
                     // Slight Z offset above stock top to avoid Z-fighting with stock surface.
                     let global_pt = P3::new(pin.x + ox, pin.y + oy, oz + stock.z + 0.1);
@@ -643,7 +659,7 @@ impl RsCamApp {
                 }
 
                 // Flip axis dashed centerline
-                if let Some(axis) = stock.flip_axis {
+                if let Some(axis) = stock.flip_axis.filter(|_| state.viewport.show_flip_axis) {
                     let stock_top = oz + stock.z;
                     let (start_g, end_g) = match axis {
                         job::FlipAxis::Horizontal => {
@@ -670,9 +686,11 @@ impl RsCamApp {
                 }
             }
 
-            // Add datum crosshair markers in Setup workspace.
-            // Datum is always in local frame coords.
-            if state.workspace == Workspace::Setup
+            // Add datum crosshair markers. Datum is always in local frame
+            // coords. The Setup-only clause this gate used to carry is a
+            // per-workspace DEFAULT now (UX §6.4 lists the datum on in Setup
+            // AND in Toolpaths), so the flag decides.
+            if state.viewport.show_datum
                 && let Some(setup) = active_setup_ref.as_ref()
                 && let Some(sd) = active_session_setup
             {
@@ -754,8 +772,9 @@ impl RsCamApp {
         }
 
         // Re-upload sim mesh with current viz mode colors, or clear if no results.
-        // If the geometry is already uploaded (typical SimVizModeChanged path),
-        // update the single vertex buffer in-place instead of recreating GPU buffers.
+        // If the geometry is already uploaded (the typical stock-colour-mode
+        // change), update the single vertex buffer in-place instead of
+        // recreating GPU buffers.
         if self.controller.state().simulation.has_results() {
             if let Some(mesh) = &self.controller.state().simulation.playback.display_mesh {
                 let colors = self.compute_sim_colors(mesh);

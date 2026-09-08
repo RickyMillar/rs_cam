@@ -431,28 +431,6 @@ impl ToolpathGpuData {
 
         let nominal = nominal_feed.max(1.0);
 
-        // Engagement color: feed_rate/nominal → color
-        // ratio = 1.0 (nominal) → green, 0.5 → yellow, 0.0 → red
-        let engagement_color = |feed: f64| -> [f32; 3] {
-            let ratio = (feed / nominal).clamp(0.0, 1.5) as f32;
-            if ratio >= 1.0 {
-                // At or above nominal: green (light engagement / air cut)
-                [0.2, 0.8, 0.3]
-            } else if ratio >= 0.5 {
-                // 50-100% of nominal: green → yellow
-                let t = (ratio - 0.5) * 2.0; // 0..1
-                [
-                    0.2 + (1.0 - t) * 0.7,
-                    0.8 - (1.0 - t) * 0.1,
-                    0.3 - (1.0 - t) * 0.2,
-                ]
-            } else {
-                // Below 50%: yellow → red (heavy engagement)
-                let t = ratio * 2.0; // 0..1
-                [0.9 - (1.0 - t) * 0.1, 0.7 * t, 0.1 * t]
-            }
-        };
-
         let rapid_color: [f32; 3] = [0.15, 0.15, 0.2];
         let mut cut_verts = Vec::new();
         let mut rapid_verts = Vec::new();
@@ -485,7 +463,7 @@ impl ToolpathGpuData {
                     }
                     _ => {
                         let feed = tp.moves[i].move_type.feed_rate().unwrap_or(nominal);
-                        let c = engagement_color(feed);
+                        let c = engagement_color(feed, nominal);
                         cut_verts.push(LineVertex {
                             position: p0,
                             color: c,
@@ -737,7 +715,7 @@ impl ToolpathGpuData {
 /// asserts on is the one that paints the viewport. This function is now
 /// only the class → RGB map, which is the part that is genuinely a viz
 /// concern. The RGB triples are unchanged.
-fn advance_per_tooth_segment_color(
+pub(crate) fn advance_per_tooth_segment_color(
     band: Option<&VendorChiploadBand>,
     observed: Option<AdvancePerToothMm>,
 ) -> [f32; 3] {
@@ -789,6 +767,35 @@ pub enum EntryStyle {
     None,
     Ramp,
     Helix,
+}
+
+/// Engagement colour for one cutting move: `feed / nominal` → RGB.
+///
+/// `ratio` 1.0 (at or above nominal, so light engagement or air) is green,
+/// 0.5 is yellow, 0.0 is red.
+///
+/// Extracted from `from_toolpath_engagement`'s body in P6 so the Overlays
+/// panel's Engagement legend is built from the exact function that colours
+/// the lines. A legend with a hand-rolled copy of a ramp is free to drift,
+/// and the shipped rest legend already made the opposite choice.
+pub(crate) fn engagement_color(feed: f64, nominal: f64) -> [f32; 3] {
+    let ratio = (feed / nominal).clamp(0.0, 1.5) as f32;
+    if ratio >= 1.0 {
+        // At or above nominal: green (light engagement / air cut)
+        [0.2, 0.8, 0.3]
+    } else if ratio >= 0.5 {
+        // 50-100% of nominal: green → yellow
+        let t = (ratio - 0.5) * 2.0; // 0..1
+        [
+            0.2 + (1.0 - t) * 0.7,
+            0.8 - (1.0 - t) * 0.1,
+            0.3 - (1.0 - t) * 0.2,
+        ]
+    } else {
+        // Below 50%: yellow → red (heavy engagement)
+        let t = ratio * 2.0; // 0..1
+        [0.9 - (1.0 - t) * 0.1, 0.7 * t, 0.1 * t]
+    }
 }
 
 /// Bright cyan color for entry preview lines.
@@ -960,102 +967,6 @@ pub fn entry_preview_vertices(tp: &Toolpath, config: &EntryPreviewConfig) -> Vec
 /// pointing in the direction of the first cut.
 /// `palette_color`: the toolpath's palette color.
 #[allow(clippy::indexing_slicing)] // first_cut_idx validated by position() and bounds > 0
-pub fn entry_marker_vertices(tp: &Toolpath, palette_color: [f32; 3]) -> Vec<LineVertex> {
-    // Find the first non-Rapid move at index > 0
-    let Some(first_cut_idx) = tp
-        .moves
-        .iter()
-        .enumerate()
-        .position(|(i, m)| i > 0 && !matches!(m.move_type, MoveType::Rapid))
-    else {
-        return Vec::new();
-    };
-
-    let approach = tp.moves[first_cut_idx - 1].target;
-    let entry = tp.moves[first_cut_idx].target;
-
-    // Direction from approach point to first cut position
-    let dx = entry.x - approach.x;
-    let dy = entry.y - approach.y;
-    let len = (dx * dx + dy * dy).sqrt();
-
-    // If approach and entry are coincident in XY, try to use (1, 0) as default direction
-    let (dir_x, dir_y) = if len < 1e-9 {
-        (1.0, 0.0)
-    } else {
-        (dx / len, dy / len)
-    };
-
-    // Arrowhead size in mm
-    let size: f64 = 2.0;
-    let wing_len = size * 0.6;
-
-    // Tip of the arrow is at the entry point; tail is behind it
-    let tip = [entry.x as f32, entry.y as f32, entry.z as f32];
-    let tail = [
-        (entry.x - dir_x * size) as f32,
-        (entry.y - dir_y * size) as f32,
-        entry.z as f32,
-    ];
-
-    // Wing vectors: rotate direction by ±30 degrees, pointing backward from tip
-    let angle = std::f64::consts::FRAC_PI_6; // 30 degrees
-    let cos_a = angle.cos();
-    let sin_a = angle.sin();
-
-    // Backward direction (from tip toward tail)
-    let back_x = -dir_x;
-    let back_y = -dir_y;
-
-    // Left wing: rotate backward direction by +30 degrees
-    let lw_x = back_x * cos_a - back_y * sin_a;
-    let lw_y = back_x * sin_a + back_y * cos_a;
-    let left_wing = [
-        (entry.x + lw_x * wing_len) as f32,
-        (entry.y + lw_y * wing_len) as f32,
-        entry.z as f32,
-    ];
-
-    // Right wing: rotate backward direction by -30 degrees
-    let rw_x = back_x * cos_a + back_y * sin_a;
-    let rw_y = -back_x * sin_a + back_y * cos_a;
-    let right_wing = [
-        (entry.x + rw_x * wing_len) as f32,
-        (entry.y + rw_y * wing_len) as f32,
-        entry.z as f32,
-    ];
-
-    vec![
-        // Center line: tail to tip
-        LineVertex {
-            position: tail,
-            color: palette_color,
-        },
-        LineVertex {
-            position: tip,
-            color: palette_color,
-        },
-        // Left wing: tip to left wing end
-        LineVertex {
-            position: tip,
-            color: palette_color,
-        },
-        LineVertex {
-            position: left_wing,
-            color: palette_color,
-        },
-        // Right wing: tip to right wing end
-        LineVertex {
-            position: tip,
-            color: palette_color,
-        },
-        LineVertex {
-            position: right_wing,
-            color: palette_color,
-        },
-    ]
-}
-
 /// Pale white-ish color for the tool-profile ghost overlay.
 const TOOL_PROFILE_COLOR: [f32; 3] = [0.85, 0.85, 1.0];
 

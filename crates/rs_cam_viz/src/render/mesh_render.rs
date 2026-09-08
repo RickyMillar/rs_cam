@@ -43,7 +43,10 @@ impl MeshVertex {
 ///
 /// **Shading note**: the WGSL shader already interpolates normals smoothly
 /// across each triangle, so smooth vertex normals produce correct Phong shading.
-/// If flat shading is ever needed, see `from_mesh_flat` which duplicates
+/// If flat shading is ever needed, it means three dedicated vertices per
+/// triangle carrying the face normal — roughly 3x the VRAM of this indexed
+/// smooth-normal path. A `from_mesh_flat` that did exactly that shipped with
+/// zero callers and an `#[allow(dead_code)]`, and P6 deleted it
 /// vertices to assign per-face normals.
 pub struct MeshGpuData {
     pub vertex_buffer: wgpu::Buffer,
@@ -116,69 +119,6 @@ impl MeshGpuData {
             device,
             limits,
             "mesh_indices",
-            bytemuck::cast_slice(&indices),
-            wgpu::BufferUsages::INDEX,
-        )?;
-
-        Some(Self {
-            vertex_buffer,
-            index_buffer,
-            index_count: indices.len() as u32,
-        })
-    }
-
-    /// Upload a TriangleMesh with flat shading (per-face normals).
-    ///
-    /// Each triangle gets 3 dedicated vertices with the face normal, resulting
-    /// in `3 * num_triangles` GPU vertices. Use `from_mesh` for the indexed
-    /// smooth-normal path which uses ~3x less VRAM.
-    ///
-    /// Returns `None` if the buffer exceeds GPU device limits.
-    #[allow(dead_code, clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
-    pub fn from_mesh_flat(
-        device: &wgpu::Device,
-        limits: &GpuLimits,
-        mesh: &TriangleMesh,
-    ) -> Option<Self> {
-        let mut vertices = Vec::with_capacity(mesh.triangles.len() * 3);
-        let mut indices = Vec::with_capacity(mesh.triangles.len() * 3);
-
-        for (i, tri) in mesh.triangles.iter().enumerate() {
-            let v0 = mesh.vertices[tri[0] as usize];
-            let v1 = mesh.vertices[tri[1] as usize];
-            let v2 = mesh.vertices[tri[2] as usize];
-            let n = mesh.faces[i].normal;
-
-            let base = (i * 3) as u32;
-            vertices.push(MeshVertex {
-                position: [v0.x as f32, v0.y as f32, v0.z as f32],
-                normal: [n.x as f32, n.y as f32, n.z as f32],
-            });
-            vertices.push(MeshVertex {
-                position: [v1.x as f32, v1.y as f32, v1.z as f32],
-                normal: [n.x as f32, n.y as f32, n.z as f32],
-            });
-            vertices.push(MeshVertex {
-                position: [v2.x as f32, v2.y as f32, v2.z as f32],
-                normal: [n.x as f32, n.y as f32, n.z as f32],
-            });
-            indices.push(base);
-            indices.push(base + 1);
-            indices.push(base + 2);
-        }
-
-        let vertex_buffer = gpu_safety::try_create_buffer(
-            device,
-            limits,
-            "mesh_vertices_flat",
-            bytemuck::cast_slice(&vertices),
-            wgpu::BufferUsages::VERTEX,
-        )?;
-
-        let index_buffer = gpu_safety::try_create_buffer(
-            device,
-            limits,
-            "mesh_indices_flat",
             bytemuck::cast_slice(&indices),
             wgpu::BufferUsages::INDEX,
         )?;

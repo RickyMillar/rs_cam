@@ -1,0 +1,674 @@
+//! P6 — sentries for the Overlays registry.
+//!
+//! The registry's whole claim is that ONE list feeds the panel, the MCP
+//! `set_ui_view` `overlays` map and the per-workspace defaults, so those
+//! three cannot disagree about what exists, what it is called, or why it
+//! cannot draw. These tests pin the parts of that claim a reader cannot
+//! check by eye:
+//!
+//! - **completeness** — every render-consumed `show_*` flag declared on
+//!   `ViewportState` has exactly one row. A flag with no row is a control
+//!   nothing lists; the 2026-09-08 audit found nineteen of them.
+//! - **upload triggers** — every row that names `OverlayMechanism::UploadTime`
+//!   is carried in the composite `overlay_upload_key`. This is the
+//!   tool-profile ghost's defect class: an upload-time flag whose upload
+//!   nothing fires is a checkbox that does nothing until an unrelated event
+//!   happens to fire one (audit §3.6).
+//! - **honest refusals** — a disabled row's reason is never empty, and the
+//!   MCP reply quotes the panel's own string.
+//! - **exclusivity** — at most one scalar-field row is on per surface.
+//! - **workspace defaults** — a switch applies them and a switch back
+//!   restores what they displaced.
+//!
+//! Two of these read SOURCE rather than behaviour, on purpose. A field
+//! census cannot find a missing upload trigger — only the trigger trace can
+//! (audit §4.5) — and the trigger lives in a `pub(crate)` struct an
+//! integration test cannot name.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
+use std::collections::BTreeMap;
+
+use rs_cam_viz::state::{AppState, Workspace};
+use rs_cam_viz::ui::overlays::registry::{
+    self, OverlayMechanism, OverlaySurface, Precondition, ROWS,
+};
+
+fn source(relative: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+/// Every `pub <name>: bool` declared inside `struct <struct_name> {` in
+/// `state/viewport.rs`.
+fn declared_bool_fields(struct_name: &str) -> Vec<String> {
+    let text = source("src/state/viewport.rs");
+    let head = format!("pub struct {struct_name} {{");
+    let start = text
+        .find(&head)
+        .unwrap_or_else(|| panic!("`{head}` no longer exists in state/viewport.rs"))
+        + head.len();
+    let body = &text[start..];
+    let end = body
+        .find("\n}")
+        .unwrap_or_else(|| panic!("`{struct_name}`'s body is unterminated"));
+    body[..end]
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let rest = line.strip_prefix("pub ")?;
+            let (name, ty) = rest.split_once(':')?;
+            (ty.trim().trim_end_matches(',') == "bool").then(|| name.trim().to_owned())
+        })
+        .collect()
+}
+
+// ── completeness ───────────────────────────────────────────────────────────
+
+/// The load-bearing sentry. A `show_*` flag with no registry row is an
+/// overlay the panel does not list and `set_ui_view` cannot reach.
+#[test]
+fn every_viewport_flag_has_exactly_one_registry_row() {
+    let mut expected: Vec<String> = declared_bool_fields("ViewportState")
+        .into_iter()
+        .map(|name| format!("viewport.{name}"))
+        .collect();
+    expected.extend(
+        declared_bool_fields("SpanKindFilter")
+            .into_iter()
+            .map(|name| format!("viewport.span_kind_filter.{name}")),
+    );
+    assert!(
+        expected.len() > 20,
+        "the field scan found only {} flags — the parser has drifted from \
+         state/viewport.rs, so this whole test is vacuous",
+        expected.len()
+    );
+
+    for flag in &expected {
+        let rows: Vec<&str> = ROWS
+            .iter()
+            .filter(|row| row.flag == Some(flag.as_str()))
+            .map(|row| row.id)
+            .collect();
+        assert_eq!(
+            rows.len(),
+            1,
+            "`{flag}` is driven by {} registry rows ({rows:?}); it must be \
+             exactly one — zero means no control lists it, two means two \
+             homes for one state",
+            rows.len()
+        );
+    }
+
+    // And nothing in the other direction: a row naming a `show_*` field that
+    // no longer exists would keep printing a checkbox over a field the panel
+    // cannot write. Only the boolean rows are checked here — a colour choice
+    // names an enum VALUE (`viewport.toolpath_color_mode.normal`), not a
+    // field, and `a_radio_surface_always_holds_exactly_one_choice` is what
+    // pins those.
+    for row in ROWS {
+        let Some(flag) = row.flag else { continue };
+        let last = flag.rsplit('.').next().unwrap_or(flag);
+        if !flag.starts_with("viewport.") || !last.starts_with("show_") {
+            continue;
+        }
+        assert!(
+            expected.iter().any(|f| f == flag),
+            "row `{}` names `{flag}`, which state/viewport.rs no longer declares",
+            row.id
+        );
+    }
+}
+
+#[test]
+fn every_registry_id_is_unique_and_wire_safe() {
+    let mut seen = BTreeMap::new();
+    for row in ROWS {
+        assert!(
+            seen.insert(row.id, row.label).is_none(),
+            "duplicate registry id `{}` — the id is the MCP wire name",
+            row.id
+        );
+        assert!(
+            !row.id.is_empty()
+                && row
+                    .id
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+            "id `{}` is not a stable snake_case wire name",
+            row.id
+        );
+        assert!(!row.label.is_empty(), "row `{}` has no label", row.id);
+        assert!(!row.hover.is_empty(), "row `{}` has no hover text", row.id);
+    }
+}
+
+/// A row with no flag is a row with NO RENDERER, and it must be disabled in
+/// every state — otherwise the panel offers a checkbox that draws nothing.
+#[test]
+fn a_flagless_row_can_never_be_switched_on() {
+    let mut state = AppState::new();
+    let flagless: Vec<&str> = ROWS
+        .iter()
+        .filter(|row| row.flag.is_none())
+        .map(|row| row.id)
+        .collect();
+    assert_eq!(
+        flagless,
+        vec![
+            "planner_islands",
+            "derived_rest_regions",
+            "boundary_outline"
+        ],
+        "the flagless set changed — a new one needs a renderer or a reason"
+    );
+    for id in flagless {
+        let row = registry::row(id).unwrap();
+        for workspace in [
+            Workspace::Setup,
+            Workspace::Toolpaths,
+            Workspace::Simulation,
+        ] {
+            state.workspace = workspace;
+            let precondition = (row.precondition)(&state);
+            assert!(
+                !precondition.is_ready(),
+                "`{id}` reported Ready in {workspace:?} while it has no renderer"
+            );
+            assert!(!(row.get)(&state), "`{id}` reads ON while it cannot draw");
+        }
+    }
+}
+
+// ── upload triggers ────────────────────────────────────────────────────────
+
+/// Every upload-time row names a trigger, and the trigger really exists.
+///
+/// `overlay_upload_key` is `pub(crate)`, so this reads `app.rs` as source.
+/// That is the point: a field census cannot find a missing trigger, because
+/// the flag has a writer AND a reader and still does nothing (audit §4.5).
+#[test]
+fn every_upload_time_row_is_carried_in_the_upload_key() {
+    let app_rs = source("src/app.rs");
+    let key_start = app_rs
+        .find("pub(crate) fn overlay_upload_key")
+        .expect("app.rs no longer builds an `overlay_upload_key`");
+    let key_body = &app_rs[key_start..];
+    let key_end = key_body.find("\n}").expect("unterminated function");
+    let key_body = &key_body[..key_end];
+
+    let mut upload_rows = 0;
+    for row in ROWS {
+        let OverlayMechanism::UploadTime(trigger) = row.mechanism else {
+            continue;
+        };
+        upload_rows += 1;
+        assert!(
+            !trigger.trim().is_empty(),
+            "upload-time row `{}` names no trigger",
+            row.id
+        );
+        let Some(flag) = row.flag else {
+            panic!("upload-time row `{}` has no flag", row.id);
+        };
+        // The key reads a field, and a row can name something INSIDE that
+        // field: `viewport.span_kind_filter.show_entry` is carried by
+        // `state.viewport.span_kind_filter`, and the three
+        // `simulation.stock_viz_mode.*` choices by
+        // `state.simulation.stock_viz_mode`. So accept the whole path, or —
+        // for a path of three or more segments — its parent. Never a
+        // shallower prefix than that: `state.viewport` alone would match
+        // anything.
+        let mut candidates = vec![format!("state.{flag}")];
+        if flag.split('.').count() >= 3
+            && let Some((parent, _)) = flag.rsplit_once('.')
+        {
+            candidates.push(format!("state.{parent}"));
+        }
+        assert!(
+            candidates.iter().any(|needle| key_body.contains(needle)),
+            "row `{}` is upload-time but none of {candidates:?} appears in \
+             `overlay_upload_key` — that is the tool-profile ghost defect: \
+             the flag has a writer and a reader and still never reaches the \
+             screen until some unrelated event fires an upload",
+            row.id
+        );
+    }
+    assert!(
+        upload_rows >= 12,
+        "only {upload_rows} upload-time rows found — the mechanism labels \
+         have drifted and this test is vacuous"
+    );
+}
+
+// ── honest refusals ────────────────────────────────────────────────────────
+
+#[test]
+fn every_disabled_reason_is_a_non_empty_sentence() {
+    let mut state = AppState::new();
+    let mut disabled_seen = 0;
+    for workspace in [
+        Workspace::Setup,
+        Workspace::Toolpaths,
+        Workspace::Simulation,
+        Workspace::Readiness,
+    ] {
+        state.workspace = workspace;
+        for row in ROWS {
+            if let Precondition::Disabled { reason, .. } = (row.precondition)(&state) {
+                disabled_seen += 1;
+                assert!(
+                    reason.trim().len() > 4,
+                    "row `{}` in {workspace:?} is disabled with the unhelpful \
+                     reason {reason:?}",
+                    row.id
+                );
+            }
+        }
+    }
+    assert!(
+        disabled_seen > 20,
+        "only {disabled_seen} disabled rows across four workspaces on an \
+         empty project — the preconditions are not being exercised"
+    );
+}
+
+/// The two gates the design keeps HARD render as disabled rows with a
+/// reason, rather than as a checkbox that does nothing.
+#[test]
+fn the_two_hard_gates_are_disabled_rows_with_reasons() {
+    let mut state = AppState::new();
+    state.workspace = Workspace::Simulation;
+    let model = registry::row("model").unwrap();
+    let reason = (model.precondition)(&state)
+        .reason()
+        .expect("the model row must be disabled in Simulation")
+        .to_owned();
+    assert!(
+        reason.contains("simulated stock"),
+        "the model row's Simulation reason should say what replaced it, got {reason:?}"
+    );
+
+    // The tier map's setup clause is the other one. With no planner preview
+    // the row is disabled for the earlier reason, which is what an empty
+    // project can observe; the setup-mismatch arm is exercised by the
+    // planner fixtures.
+    state.workspace = Workspace::Toolpaths;
+    let tier = registry::row("tier_map").unwrap();
+    let reason = (tier.precondition)(&state)
+        .reason()
+        .expect("no preview means no tier map")
+        .to_owned();
+    assert!(
+        reason.contains("preview"),
+        "the tier map's reason should name the preview, got {reason:?}"
+    );
+}
+
+// ── the MCP surface ────────────────────────────────────────────────────────
+
+#[test]
+fn set_ui_view_refuses_an_unknown_overlay_id() {
+    let mut state = AppState::new();
+    let requested = BTreeMap::from([("no_such_overlay".to_owned(), true)]);
+    let report = registry::apply_overlays(&mut state, &requested);
+    assert!(report.applied.is_empty());
+    let reason = report
+        .refused
+        .get("no_such_overlay")
+        .expect("an unknown id is refused, not dropped");
+    assert!(
+        reason.contains("no_such_overlay"),
+        "the refusal should name the id, got {reason:?}"
+    );
+}
+
+#[test]
+fn set_ui_view_refuses_a_not_ready_id_with_the_panels_own_reason() {
+    let mut state = AppState::new();
+    state.workspace = Workspace::Toolpaths;
+    let panel_reason = (registry::row("tier_map").unwrap().precondition)(&state)
+        .reason()
+        .expect("no planner preview on an empty project")
+        .to_owned();
+
+    let requested = BTreeMap::from([("tier_map".to_owned(), true)]);
+    let report = registry::apply_overlays(&mut state, &requested);
+    assert_eq!(
+        report.refused.get("tier_map"),
+        Some(&panel_reason),
+        "the MCP refusal must quote the string the panel prints, or the two \
+         surfaces disagree about why"
+    );
+    assert!(
+        !state.viewport.show_tier_preview,
+        "a refused overlay must not be switched on anyway"
+    );
+}
+
+/// Switching a row OFF needs no precondition: hiding something that cannot
+/// draw is harmless, and refusing it would make an agent's "clean slate"
+/// call fail on an empty project.
+#[test]
+fn switching_an_overlay_off_is_applied_even_when_it_cannot_draw() {
+    let mut state = AppState::new();
+    state.workspace = Workspace::Toolpaths;
+    // Reach is ON by default and cannot DRAW on an empty project (no
+    // selection, so no map), which is exactly the case that must still
+    // accept an "off".
+    assert!(state.viewport.show_reach_map, "fixture precondition");
+    assert!(!(registry::row("reach_map").unwrap().precondition)(&state).is_ready());
+    let requested = BTreeMap::from([("reach_map".to_owned(), false)]);
+    let report = registry::apply_overlays(&mut state, &requested);
+    assert_eq!(report.applied.get("reach_map"), Some(&false));
+    assert!(report.refused.is_empty());
+    assert!(!state.viewport.show_reach_map);
+}
+
+/// "Off" has no meaning for a member of a radio group, so it is refused
+/// rather than silently ignored — the agent asked for something the surface
+/// cannot express.
+#[test]
+fn switching_a_colour_choice_off_is_refused() {
+    let mut state = AppState::new();
+    let requested = BTreeMap::from([("move_colour_palette".to_owned(), false)]);
+    let report = registry::apply_overlays(&mut state, &requested);
+    assert!(report.applied.is_empty());
+    let reason = report.refused.get("move_colour_palette").unwrap();
+    assert!(
+        reason.contains("moves"),
+        "the refusal should name the surface, got {reason:?}"
+    );
+}
+
+#[test]
+fn every_overlay_is_refused_in_the_readiness_workspace() {
+    let mut state = AppState::new();
+    state.workspace = Workspace::Readiness;
+    let requested = BTreeMap::from([("grid".to_owned(), true), ("rapids".to_owned(), false)]);
+    let report = registry::apply_overlays(&mut state, &requested);
+    assert!(report.applied.is_empty());
+    assert_eq!(report.refused.len(), 2);
+    for reason in report.refused.values() {
+        assert!(
+            reason.contains("no viewport"),
+            "Readiness refusals should say the workspace renders no viewport, \
+             got {reason:?}"
+        );
+    }
+}
+
+// ── exclusivity ────────────────────────────────────────────────────────────
+
+fn surface_on_count(state: &AppState, surface: OverlaySurface) -> usize {
+    ROWS.iter()
+        .filter(|row| row.surface == surface && (row.get)(state))
+        .count()
+}
+
+#[test]
+fn the_constructed_state_already_satisfies_per_surface_exclusivity() {
+    let state = AppState::new();
+    for surface in OverlaySurface::EXCLUSIVE {
+        assert!(
+            surface_on_count(&state, surface) <= 1,
+            "{surface:?} starts with {} colour sources on",
+            surface_on_count(&state, surface)
+        );
+    }
+}
+
+/// The operator's ruling on the model surface (2026-09-08): the reach map is
+/// the always-on answer — "show the reach map when ANY finishing op is
+/// selected" — and the rest heatmap is the diagnostic switched on to inspect
+/// rest regions. So Reach owns the Toolpaths default and the rest heatmap is
+/// off in every workspace. Reversing this pair silently would take a shipped
+/// answer off the screen.
+#[test]
+fn reach_owns_the_model_surface_default_and_the_rest_heatmap_is_off() {
+    let reach = registry::row("reach_map").unwrap();
+    let rest = registry::row("rest_heatmap").unwrap();
+    assert_eq!(reach.surface, OverlaySurface::Model);
+    assert_eq!(rest.surface, OverlaySurface::Model);
+
+    assert_eq!((reach.default_for)(Workspace::Toolpaths), Some(true));
+    assert_eq!((rest.default_for)(Workspace::Toolpaths), Some(false));
+
+    let state = AppState::new();
+    assert!(
+        state.viewport.show_reach_map,
+        "the constructed state agrees"
+    );
+    assert!(!state.viewport.show_rest_heatmap);
+
+    // And the pair still cannot both be on, in any workspace.
+    let mut state = state;
+    for workspace in [
+        Workspace::Setup,
+        Workspace::Toolpaths,
+        Workspace::Simulation,
+    ] {
+        registry::switch_workspace(&mut state, workspace);
+        assert!(surface_on_count(&state, OverlaySurface::Model) <= 1);
+    }
+}
+
+/// The one cross-group exclusion: Reach and the rest heatmap both colour the
+/// model surface, so switching one on clears the other.
+#[test]
+fn enabling_reach_clears_the_rest_heatmap_and_the_reverse() {
+    let mut state = AppState::new();
+    let reach = registry::row("reach_map").unwrap();
+    let rest = registry::row("rest_heatmap").unwrap();
+
+    registry::set_overlay(&mut state, rest, true);
+    registry::set_overlay(&mut state, reach, true);
+    assert!(state.viewport.show_reach_map);
+    assert!(
+        !state.viewport.show_rest_heatmap,
+        "Reach must clear the rest heatmap — both shade the model surface"
+    );
+
+    registry::set_overlay(&mut state, rest, true);
+    assert!(state.viewport.show_rest_heatmap);
+    assert!(!state.viewport.show_reach_map, "and the reverse");
+    assert_eq!(surface_on_count(&state, OverlaySurface::Model), 1);
+}
+
+#[test]
+fn a_radio_surface_always_holds_exactly_one_choice() {
+    let mut state = AppState::new();
+    for surface in [OverlaySurface::Stock, OverlaySurface::Moves] {
+        let members: Vec<_> = ROWS.iter().filter(|row| row.surface == surface).collect();
+        assert!(members.len() >= 3, "{surface:?} lost its members");
+        for row in &members {
+            registry::set_overlay(&mut state, row, true);
+            assert_eq!(
+                surface_on_count(&state, surface),
+                1,
+                "{surface:?} holds {} choices after switching `{}` on",
+                surface_on_count(&state, surface),
+                row.id
+            );
+        }
+    }
+}
+
+/// A territory row stacks: the tier map is not on the model surface, so it
+/// survives a Reach or rest-heatmap change. The shipped rest-plus-tier pair
+/// must keep working.
+#[test]
+fn a_territory_overlay_stacks_with_a_scalar_field() {
+    let mut state = AppState::new();
+    let tier = registry::row("tier_map").unwrap();
+    let rest = registry::row("rest_heatmap").unwrap();
+    registry::set_overlay(&mut state, tier, true);
+    registry::set_overlay(&mut state, rest, true);
+    assert!(state.viewport.show_tier_preview);
+    assert!(state.viewport.show_rest_heatmap);
+}
+
+// ── per-workspace defaults ─────────────────────────────────────────────────
+
+/// The app opens in Toolpaths, so the constructed state must equal that
+/// column of the default table — otherwise the first frame contradicts the
+/// table and every default test below starts from a state the design does
+/// not describe.
+#[test]
+fn the_constructed_state_equals_the_toolpaths_default_column() {
+    let state = AppState::new();
+    assert_eq!(state.workspace, Workspace::Toolpaths);
+    for row in ROWS {
+        let Some(default) = (row.default_for)(Workspace::Toolpaths) else {
+            continue;
+        };
+        assert_eq!(
+            (row.get)(&state),
+            default,
+            "`{}` starts at {} but the Toolpaths column says {default}",
+            row.id,
+            (row.get)(&state)
+        );
+    }
+    assert_eq!(registry::non_default_count(&state), 0);
+}
+
+#[test]
+fn a_workspace_switch_applies_that_workspaces_defaults() {
+    let mut state = AppState::new();
+    registry::switch_workspace(&mut state, Workspace::Simulation);
+    assert_eq!(state.workspace, Workspace::Simulation);
+    for row in ROWS {
+        let Some(default) = (row.default_for)(Workspace::Simulation) else {
+            continue;
+        };
+        assert_eq!(
+            (row.get)(&state),
+            default,
+            "`{}` did not take its Simulation default",
+            row.id
+        );
+    }
+    // The concrete promises of the table, spelled out so a silent table edit
+    // has to justify itself here.
+    assert!(state.viewport.show_sim_stock, "the simulated stock shows");
+    assert!(state.viewport.show_collisions, "collisions show");
+    assert!(!state.viewport.show_grid, "the grid hides");
+    assert!(!state.viewport.show_stock_solid, "the solid block hides");
+    assert!(
+        state.viewport.show_alignment_pins,
+        "pins stay on, so pin-drill review keeps working"
+    );
+    assert!(
+        !state.viewport.show_reach_map,
+        "the reach map draws in Toolpaths only"
+    );
+}
+
+#[test]
+fn switching_back_restores_what_the_defaults_displaced() {
+    let mut state = AppState::new();
+    // An operator override the Simulation column does NOT name: it must
+    // survive the round trip untouched.
+    state.viewport.show_tool_profile_preview = true;
+    // And one it does name: displaced on the way in, restored on the way
+    // out.
+    assert!(state.viewport.show_grid);
+
+    registry::switch_workspace(&mut state, Workspace::Simulation);
+    assert!(!state.viewport.show_grid);
+    assert!(
+        state.viewport.show_tool_profile_preview,
+        "the Simulation column names no default for the ghost, so it must be \
+         left alone"
+    );
+
+    registry::switch_workspace(&mut state, Workspace::Toolpaths);
+    assert!(
+        state.viewport.show_grid,
+        "the grid must come back when the workspace that hid it is left"
+    );
+    assert!(state.viewport.show_tool_profile_preview);
+    assert!(state.overlays.displaced.is_empty() || state.workspace == Workspace::Toolpaths);
+}
+
+/// The Readiness workspace renders no viewport, so it names no defaults and
+/// must not disturb the overlays on the way through.
+#[test]
+fn the_readiness_workspace_disturbs_no_overlay() {
+    let mut state = AppState::new();
+    let before: Vec<bool> = ROWS.iter().map(|row| (row.get)(&state)).collect();
+    registry::switch_workspace(&mut state, Workspace::Readiness);
+    let after: Vec<bool> = ROWS.iter().map(|row| (row.get)(&state)).collect();
+    assert_eq!(before, after);
+}
+
+/// A default write goes through `set_overlay`, so it can never leave a
+/// surface with two colour sources on.
+#[test]
+fn workspace_defaults_cannot_break_exclusivity() {
+    let mut state = AppState::new();
+    for workspace in [
+        Workspace::Setup,
+        Workspace::Simulation,
+        Workspace::Toolpaths,
+        Workspace::Readiness,
+    ] {
+        registry::switch_workspace(&mut state, workspace);
+        for surface in OverlaySurface::EXCLUSIVE {
+            assert!(
+                surface_on_count(&state, surface) <= 1,
+                "{surface:?} holds two colour sources in {workspace:?}"
+            );
+        }
+    }
+}
+
+// ── the retired homes ──────────────────────────────────────────────────────
+
+/// `Show ▼` and the `Shaded ▼` render-mode menu are gone, and their function
+/// is in the registry. A source sentry, because their absence is the
+/// migration's whole point: a second home would reintroduce the two-writers
+/// defect the audit found for the per-toolpath cut / rapid state.
+#[test]
+fn the_retired_controls_have_no_second_home() {
+    let toolbar = source("src/ui/viewport_overlay.rs");
+    assert!(
+        !toolbar.contains("\"Show ▼\""),
+        "the `Show ▼` popover is back beside the Overlays panel"
+    );
+    assert!(
+        !toolbar.contains("RenderMode"),
+        "the render-mode menu is back — its Wireframe arm drew nothing"
+    );
+    assert!(
+        toolbar.contains("panel::toolbar_button"),
+        "the toolbar no longer opens the Overlays panel"
+    );
+    assert!(
+        toolbar.contains("overlay_collision_check"),
+        "the automation label that located the collision toggle is gone"
+    );
+
+    let viewport_state = source("src/state/viewport.rs");
+    assert!(
+        !viewport_state.contains("enum RenderMode"),
+        "`RenderMode` is back; the model is a plain visibility row now"
+    );
+
+    let properties = source("src/ui/properties/mod.rs");
+    assert!(
+        !properties.contains("\"Cut\")"),
+        "the duplicate per-toolpath Cut checkbox is back in the properties panel"
+    );
+    assert!(
+        properties.contains("toolpath_row_controls::draw"),
+        "the properties panel no longer delegates to the one row-control home"
+    );
+}

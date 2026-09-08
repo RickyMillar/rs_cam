@@ -5,7 +5,7 @@ use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
 use crate::state::runtime::GuiState;
-use crate::state::simulation::{SimulationIssueKind, SimulationState, StockVizMode};
+use crate::state::simulation::{SimulationIssueKind, SimulationState};
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use rs_cam_core::session::ProjectSession;
@@ -76,137 +76,35 @@ pub fn draw(
     ui.separator();
 
     // --- View ---
-    // Display-only settings: how things look in the workspace. Capture
-    // toggles live in the left-panel "Setup & run" section instead, next
-    // to the simulation Run button.
-    let any_traces_recorded = gui
-        .toolpath_rt
-        .values()
-        .any(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some());
-
-    egui::CollapsingHeader::new("View")
-        .default_open(false)
-        .show(ui, |ui| {
-            // Stock appearance — opacity only. The show/hide *toggle* lives in
-            // the viewport "Show ▼" menu (W4.3: one home for visibility); this
-            // panel keeps stock *appearance* (opacity + the colour modes under
-            // "Analysis" below). Same backing field, two labels, was P4-005.
-            ui.label(
-                egui::RichText::new("Stock")
-                    .small()
-                    .strong()
-                    .color(theme::TEXT_HEADING),
-            );
-            ui.horizontal(|ui| {
-                ui.label("Opacity:");
-                ui.add(egui::Slider::new(&mut sim.stock_opacity, 0.0..=1.0).show_value(true));
-            });
-
-            ui.add_space(8.0);
-
-            // Toolpath visibility moved entirely to the viewport "Show ▼" menu
-            // (global) and each row's C / R buttons (per-toolpath). Duplicating
-            // the global checkboxes here under a second set of labels was the
-            // P4-005 confusable; the pointer keeps them discoverable.
-            ui.label(
-                egui::RichText::new("Toolpaths")
-                    .small()
-                    .strong()
-                    .color(theme::TEXT_HEADING),
-            );
-            ui.label(
-                egui::RichText::new(
-                    "Cutting / rapid visibility: viewport \u{201C}Show \u{25BE}\u{201D} menu. \
-                     Per-toolpath: each row\u{2019}s C / R.",
-                )
-                .small()
-                .color(theme::TEXT_FAINT),
-            );
-
-            ui.add_space(8.0);
-
-            // Analysis — coloring and overlays that surface analysis data
-            // on top of the basic visibility above. Stock color modes
-            // (Deviation, By Height) live here, plus the generator-step
-            // overlay when traces are recorded.
-            ui.label(
-                egui::RichText::new("Analysis")
-                    .small()
-                    .strong()
-                    .color(theme::TEXT_HEADING),
-            );
-            let prev_mode = sim.stock_viz_mode;
-            ui.horizontal(|ui| {
-                ui.label("Stock color:");
-                egui::ComboBox::from_id_salt("stock_viz_mode")
-                    .selected_text(match sim.stock_viz_mode {
-                        StockVizMode::Solid => "Solid",
-                        StockVizMode::Deviation => "Deviation",
-                        StockVizMode::ByHeight => "By Height",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut sim.stock_viz_mode, StockVizMode::Solid, "Solid")
-                            .on_hover_text("Default wood-tone gradient. No analysis coloring.");
-                        ui.selectable_value(
-                            &mut sim.stock_viz_mode,
-                            StockVizMode::Deviation,
-                            "Deviation",
-                        )
-                        .on_hover_text(
-                            "Color by surface deviation: blue = material remaining, green = on target, red = over-cut.",
-                        );
-                        ui.selectable_value(
-                            &mut sim.stock_viz_mode,
-                            StockVizMode::ByHeight,
-                            "By Height",
-                        )
-                        .on_hover_text("Color by Z height: low = blue, high = red.");
-                    });
-            });
-            if sim.stock_viz_mode != prev_mode {
-                events.push(AppEvent::SimVizModeChanged);
-            }
-            if matches!(sim.stock_viz_mode, StockVizMode::Deviation)
-                && sim.playback.display_deviations.is_none()
-            {
-                // P5-004: the mode selector that needs deviation data is right
-                // here, so the re-run affordance is too — no off-surface hunt
-                // for the Run button.
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("No deviation data \u{2014}")
-                            .small()
-                            .color(theme::WARNING),
-                    );
-                    if ui
-                        .small_button("Re-run simulation")
-                        .on_hover_text("Re-run the simulation to compute surface deviation.")
-                        .clicked()
-                    {
-                        events.push(AppEvent::RunSimulation);
-                    }
-                });
-            }
-
-            // Generator overlay — only meaningful when traces are recorded.
-            // Capture from the left-panel "Setup & run" section and re-
-            // generate to populate.
-            if any_traces_recorded {
-                ui.checkbox(&mut sim.debug.enabled, "Show generator steps")
-                    .on_hover_text(
-                        "Add a semantic timeline band on the boundary timeline and a per-toolpath outline of generator steps.",
-                    );
-                if sim.debug.enabled {
-                    ui.checkbox(
-                        &mut sim.debug.highlight_active_item,
-                        "Highlight active step",
-                    )
-                    .on_hover_text(
-                        "When playback is inside a generator step, highlight that step's geometry in the 3D viewport.",
-                    );
-                }
-            }
-        });
+    //
+    // P6 moved every display control that used to live here into the
+    // viewport Overlays panel: the stock opacity slider, the Solid /
+    // Deviation / By Height colour modes and the generator-step toggles are
+    // registry rows now, listed beside every other overlay instead of behind
+    // a header that was closed by default.
+    //
+    // The pointer stays, mirroring the one this section already carried for
+    // toolpath visibility. What is gone with the section is the W4.3 comment
+    // that claimed the stock show/hide toggle "lives in the viewport Show ▼
+    // menu (one home for visibility)". It did not: `show_stock` never
+    // reached `show_sim_mesh`, so the simulated stock could not be hidden by
+    // any control at all (audit §2b, fix §6.8). It has its own row now.
+    ui.label(
+        egui::RichText::new("View")
+            .small()
+            .strong()
+            .color(theme::TEXT_HEADING),
+    );
+    ui.label(
+        egui::RichText::new(
+            "Stock opacity, stock and move colour modes, collisions, the \
+             deflection panel and the generator-step overlay are in the \
+             viewport \u{201C}Overlays\u{201D} panel (shortcut: O). \
+             Per-toolpath cutting / rapid visibility: each row\u{2019}s C / R.",
+        )
+        .small()
+        .color(theme::TEXT_FAINT),
+    );
 }
 
 /// Fixed status header (pass2 inspector §2.1) — the always-visible glance: a

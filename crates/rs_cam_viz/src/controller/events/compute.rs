@@ -673,17 +673,18 @@ impl<B: ComputeBackend> AppController<B> {
                     self.fail_toolpath_submit(
                         tp_id,
                         format!(
-                            "'{source_name}' produced no rest regions — it must be a pencil \
-                             operation with the rest-depth detector enabled, and its rest \
-                             analysis must have found material above the threshold. Check \
-                             the pencil rest-depth settings on '{source_name}' and \
-                             regenerate it.",
+                            "'{source_name}' produced no rest regions — it needs its Rest \
+                             Analysis switched on (any operation with a mesh attaches \
+                             regions; a pencil rest-depth detector and the Unified Finish \
+                             claims pipeline attach their own), and the analysis must have \
+                             found material above the threshold. Check the rest-analysis \
+                             settings on '{source_name}' and regenerate it.",
                         ),
                     );
                     self.push_notification(
                         format!(
                             "'{toolpath_name}': rest-regions source '{source_name}' produced \
-                             no rest regions — check its pencil rest-depth settings and \
+                             no rest regions — check its rest-analysis settings and \
                              regenerate it."
                         ),
                         super::super::Severity::Error,

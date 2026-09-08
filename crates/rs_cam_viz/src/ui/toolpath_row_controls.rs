@@ -67,8 +67,8 @@ pub fn draw(
         })
     } else {
         cut_resp.on_disabled_hover_text(
-            "Cutting moves are hidden globally (viewport Show \u{25BE} \u{2192} Paths). \
-             Enable there to use this per-toolpath toggle.",
+            "Cutting moves are hidden globally (Overlays \u{25B8} Toolpath \u{25B8} \
+             Cutting moves). Enable there to use this per-toolpath toggle.",
         )
     };
     if cut_resp.clicked() {
@@ -93,8 +93,8 @@ pub fn draw(
         })
     } else {
         rapid_resp.on_disabled_hover_text(
-            "Rapid moves are hidden globally (viewport Show \u{25BE} \u{2192} Rapids). \
-             Enable there to use this per-toolpath toggle.",
+            "Rapid moves are hidden globally (Overlays \u{25B8} Toolpath \u{25B8} \
+             Rapids). Enable there to use this per-toolpath toggle.",
         )
     };
     if rapid_resp.clicked() {

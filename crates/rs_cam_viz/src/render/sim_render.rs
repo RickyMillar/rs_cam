@@ -55,14 +55,13 @@ pub struct SimMeshChunk {
 /// Simulation result mesh uploaded to GPU, possibly split across multiple
 /// buffer chunks when the mesh exceeds the device's max buffer size.
 ///
-/// Includes a generation counter so callers can avoid redundant re-uploads.
-/// Bump `generation` whenever the mesh geometry or colors change; callers
-/// compare against their last-seen generation to skip work.
+/// It used to carry a `generation` counter, documented as a
+/// "callers compare against their last-seen generation" protocol. No caller
+/// ever implemented it: the live paths branch on `chunks.len() == 1` and on
+/// the colour fingerprint instead. Write-only state describing a protocol
+/// that does not exist, deleted in P6 (audit §4.1, fix §6.16).
 pub struct SimMeshGpuData {
     pub chunks: Vec<SimMeshChunk>,
-    /// Monotonically increasing counter bumped on every geometry or color update.
-    /// Callers cache the last-seen value and skip re-upload when it matches.
-    pub generation: u64,
     /// Cached color fingerprint: (num_vertices, viz_mode_tag, first+last color).
     /// Used by `update_colors_if_changed` to skip redundant color re-uploads.
     cached_color_fingerprint: ColorFingerprint,
@@ -139,9 +138,6 @@ pub fn deviation_colors(deviations: &[f32]) -> Vec<[f32; 3]> {
         .collect()
 }
 
-/// Counter for unique generation IDs across all `SimMeshGpuData` instances.
-static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-
 impl SimMeshGpuData {
     /// Upload a StockMesh to the GPU using its embedded wood-tone colors.
     /// Returns `None` if the buffer exceeds GPU device limits.
@@ -212,7 +208,6 @@ impl SimMeshGpuData {
                     vertex_capacity_bytes: vertex_bytes.len(),
                     index_capacity_bytes: index_bytes.len(),
                 }],
-                generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
                 cached_color_fingerprint: fingerprint,
             });
         }
@@ -233,7 +228,6 @@ impl SimMeshGpuData {
 
         Some(Self {
             chunks,
-            generation: NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             cached_color_fingerprint: fingerprint,
         })
     }
@@ -350,7 +344,6 @@ impl SimMeshGpuData {
         queue.write_buffer(&chunk.index_buffer, 0, index_bytes);
         chunk.index_count = hm.indices.len() as u32;
         self.cached_color_fingerprint = ColorFingerprint::from_colors(colors);
-        self.generation = NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         true
     }
 
@@ -384,12 +377,11 @@ impl SimMeshGpuData {
                 bytemuck::cast_slice(&mesh_verts),
             );
             self.cached_color_fingerprint = new_fingerprint;
-            self.generation = NEXT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return true;
         }
 
-        // Multi-chunk: can't do incremental update, signal that a full rebuild is needed.
-        // Callers should detect the generation change and call from_heightmap_mesh_colored.
+        // Multi-chunk: can't do incremental update, so report `false` and let
+        // the caller rebuild through `from_heightmap_mesh_colored`.
         false
     }
 
@@ -535,36 +527,6 @@ impl ToolAssemblyInfo {
 }
 
 impl ToolModelGpuData {
-    /// Generate tool wireframe lines at the given position (cutter only, no shank/holder).
-    pub fn from_tool_geometry(
-        device: &wgpu::Device,
-        geom: &ToolGeometry,
-        position: [f32; 3],
-    ) -> Self {
-        Self::from_tool_assembly(
-            device,
-            geom,
-            &ToolAssemblyInfo {
-                shank_radius: 0.0,
-                shank_length: 0.0,
-                holder_radius: 0.0,
-                stickout: 0.0,
-            },
-            position,
-        )
-    }
-
-    /// Generate wireframe for the complete tool assembly: cutter + shank + holder.
-    /// `position`: [x, y, z] of the tool tip (lowest point of the cutter).
-    pub fn from_tool_assembly(
-        device: &wgpu::Device,
-        geom: &ToolGeometry,
-        info: &ToolAssemblyInfo,
-        position: [f32; 3],
-    ) -> Self {
-        Self::from_tool_assembly_colored(device, geom, info, position, super::colors::TOOL_CUTTER)
-    }
-
     /// Generate wireframe for the complete tool assembly with a custom cutter color.
     /// Used by simulation playback to tint the cutter by live deflection while
     /// leaving shank/holder colors stable.
