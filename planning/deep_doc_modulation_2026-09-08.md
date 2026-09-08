@@ -701,6 +701,46 @@ Artifacts: `Q1a_r10_s10_plunge.toml` + `_sim.png`, `Q2_r20_s15.toml` +
 `_sim.png`, `Q3_scallop_r15_h020.toml` + `_sim.png` + `_path.png`,
 `tier_map_r10_r15_r20.svg`, the close-up crops.
 
+### 2.7 Removing the rest — trials after the R2.0 pass (2026-09-09)
+
+The operator judged the R2.0 single pass unfinished (§2.6: ~42 % of the
+surface beyond its cusp) and asked for trial and error toward removing
+the rest, with the planned regions cut by a raster or a scallop rather
+than the unified finish. Three pairs, each Q2 (R2.0 raster s1.5, fresh)
+followed by a second R1.0 pass on the remaining stock, plywood copy,
+0.2 mm (`cell_mm` 0.2 verified), all three load gates MODELED on every
+pass:
+
+| trial | second pass | pair total s | 2nd pass fed s | 2nd pass retracts / rapids km | achieved feed (cmd 782 / 625) | air % 2nd | safety / entry |
+|---|---|---:|---:|---|---:|---:|---|
+| T1 | R1.0 raster s1.0, whole board, plunge 300, entry `none` | **6 478** | 4 317 | 76 / 1.0 | 623 / 625 | 56.3 (degraded) | 0/0, entry_load not fired |
+| T2 | planner tier 1 ISO-scallop R1.0 on its islands (cusp 0.14, overlap 1.25) | 25 580 | 18 519 | 2 343 / 164.9 | 298 / 782 | 71.6 (degraded) | **1 rapid collision** at move 68538 (109.1, 13.1, 3.31); **entry_load CRITICAL** 17 538 samples > 0.22 mm, peak 1.44 |
+| T3 | planner tier 1 contour SCALLOP R1.0 on its islands | 11 105 | 7 013 | 989 / 61.6 | 374 / 782 | 65.3 (degraded) | 0/0; **entry_load CRITICAL** 7 756 samples > 0.23 mm, peak 1.79 |
+
+Readings. T1 is the only runnable two-tool result that passes every
+gate with no safety or entry finding: 1 h 48 min, 3.1× Q2 alone, 2.0×
+B15, and 29 % under the trimmed unified ladder (§2.6), with a 0.134 mm
+cusp everywhere the 2 mm ball fits. On cut stock the R1.0 raster runs
+at its commanded feed (the modulator's median move is −0.3 %, against
+−15 % on fresh stock), which is why its 4 317 s is under the 5 052 s of
+the same pass on fresh stock. T2 answers the operator's iso-scallop
+question in the negative: the iso field spans the whole surface and the
+island clip shreds it into 1 624 ring fragments with 2 343 retracts and
+165 km of rapids, and the clipped links produced a rapid through stock
+and buried re-entries. T3 shows the entry finding is the island clip's,
+not the iso field's: the contour scallop on the same islands halves the
+fragmentation and drops the rapid collision but buries its re-entries
+the same way (peak 1.79 mm). Both T2 and T3 are with a fix agent
+(`isoclip-entry-safety`); their TOMLs are the reproductions. The
+raster-on-islands pairing that the ranking implies still cannot be
+built (G-RASTERLADDER). Recommendation as of this section: Q2 then the
+R1.0 raster over the whole board on remaining stock (T1), and accept
+that the second pass air-cuts the ground the R2.0 already finished.
+
+Artifacts: `T1_r20_then_r10_rest.toml` + `_sim.png`,
+`T2_r20_raster_then_r10_iso_islands.toml` + `_sim.png`,
+`T3_r20_raster_then_r10_scallop_islands.toml` + `_sim.png`.
+
 ## 3. Verdict on the hypothesis, and a ranked recommendation
 
 The hypothesis passes, on the ball tools, on every bar the orchestrator set:
@@ -784,7 +824,9 @@ re-read on post-fix runs):
    B15's cusp, and the widest reach of the balls tried. The R2.0 + R1.0
    ladder the tier map suggests was run and costs 10 710 s as the planner
    emits it (§2.6), and the raster form of that pair cannot be built
-   today — so Q2 stands alone, valley floors accepted, or B15.
+   today — so Q2 stands alone, valley floors accepted, or B15. When the
+   floors must go: Q2 then the R1.0 raster on remaining stock (T1, §2.7,
+   6 478 s) is the measured two-tool answer.
 1. B15 — 3 274 s, cusp 0.20, passes every bar as written.
 2. S20 — 2 389 s, cusp 0.27, passes every bar once the plunge fix is on the
    binary (rerun pending).
