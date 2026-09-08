@@ -663,3 +663,8 @@ Ledger:
   display.
 - **G-MODSUMMARY:** tier 0's `modulation_summary` read `moves_touched 0`
   with `median_feed_delta_pct −5.3 %` — inconsistent fields in one summary.
+  Reproduced twice (rs-cam-38, 2026-09-08): the FIRST `run_simulation`
+  after a `generate_all` fixpoint loop reports 0 touched on tier 0; a
+  second simulation of the same unchanged toolpath reports 53 877. The
+  summary is stale or unpopulated on the sim that follows the fixpoint,
+  not on the modulator.

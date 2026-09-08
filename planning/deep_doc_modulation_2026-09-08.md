@@ -611,10 +611,33 @@ doc is the single R2.0 raster (Q2), accepting the valley floors it does
 not reach, or B15. Artifacts: `LADDER_r20_r10islands.toml`, `_sim.png`,
 `_gui.png` (the live simulation view at the end of the ladder).
 
+Two trims the operator asked for were then measured on the same ladder
+(all gates Within on both tiers, 0/0 collisions, emitted, `cell_mm` 0.2):
+
+| ladder variant | tier 0 fed s | tier 1 fed s | total s | tier 1 retracts | tier 1 bands (moves) |
+|---|---:|---:|---:|---:|---|
+| base: threshold 75°, overlap 2.0 both dials | 3 239 | 6 204 | 10 710 | 1 104 | scallop 79 218 / raster 24 608 / waterline 5 149 |
+| v1: tier 1 waterline threshold → 90° (stored as 89°) | 3 239 | 5 690 | 9 861 | 717 | scallop 84 855 / raster 24 543 / waterline none |
+| v2: v1 + island overlap 1.25, op overlap 1.5 (tier 0) / 1.25 (tier 1), both above their stepovers | 3 080 | 4 706 | 9 158 | 1 194 | scallop 59 785 / raster 17 859 / waterline none |
+
+Raising the tier-1 threshold removes the waterline band and its 1.02 mm
+terraces on the steepest walls, hands that strip to the scallop band, and
+saves 514 s of tier-1 time plus 7.4 km of rapids. Trimming both overlaps
+to just above the stepover saves a further 703 s (159 on tier 0, 544 on
+tier 1). The two trims together take 14.5 % off the ladder; it is still
+4.4× Q2 alone and 2.8× B15, because the mid-steep scallop band is
+untouched by either dial. Tier 1's retract count went UP with the
+narrower overlap (717 → 1 194, 21 regions against 16): smaller islands
+fragment more. Artifacts: `LADDER_v1_wl90.toml`,
+`LADDER_v2_wl90_ov125.toml` + `_sim.png`.
+
 Instrument note: tier 0's `modulation_summary` reads `moves_touched: 0`
 alongside `median_feed_delta_pct −5.3 %` and an achieved feed of 852
 against 925 commanded; the two fields cannot both be right and the
-achieved feed says the modulator ran. Ledger item for the orchestrator.
+achieved feed says the modulator ran. Reproduced twice: the FIRST
+`run_simulation` after a `generate_all` fixpoint loop reports 0 touched
+on tier 0; a second simulation of the same unchanged toolpath reports
+53 877. Ledger item for the orchestrator.
 
 Close-ups (TOP panel of the 4800-px render, autocontrast; height map,
 not lit): `Q1a_closeup_*`, `Q2_closeup_*`, `Q3_closeup_*` and
