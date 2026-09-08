@@ -1248,6 +1248,8 @@ fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
                     .color(theme::WARNING_MILD),
                 );
                 ui.label(
+                    // ui-string-columns: a monospace formula block; the runs
+                    // align the two continuation lines' `=` under the first.
                     egui::RichText::new(format!(
                         "  fz = K₀ · D^p · (1/H)^q\n     = {:.4} · {:.2}^{:.2} · (1/{:.1})^{:.2}\n     = {:.4} mm/tooth",
                         f.k0, f.diameter_mm, f.p, f.feed_scale_factor, f.q, f.result_mm_tooth
@@ -1904,6 +1906,8 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         LegendSwatch::FilledSquare,
         egui::Color32::from_rgba_unmultiplied(200, 90, 90, 150),
         "Machine forbidden",
+        // ui-string-columns: air either side of "or" separates two limits
+        // in a legend swatch; a single space runs them together.
         format!(
             "> {} RPM   or   > {} mm/min",
             env.spindle_max_rpm as i64, env.max_feed_mm_min as i64

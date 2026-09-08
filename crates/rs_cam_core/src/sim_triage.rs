@@ -553,7 +553,7 @@ fn standing_material_finding(
             state: DiagnosticState::Current,
             source: Source::Simulation,
             message: format!(
-                "crosses material an upstream op left standing: {:.1}% of cutting                  samples remove more than {:.2} mm (3x this pass's own {:.2} mm                  median bite), peaking at {:.2} mm",
+                "crosses material an upstream op left standing: {:.1}% of cutting samples remove more than {:.2} mm (3x this pass's own {:.2} mm median bite), peaking at {:.2} mm",
                 fraction * 100.0,
                 bar,
                 median,

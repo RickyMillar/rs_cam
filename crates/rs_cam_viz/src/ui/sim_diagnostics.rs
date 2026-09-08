@@ -859,7 +859,7 @@ fn hotspot_summary_line(move_start: usize, wasted_runtime_s: f64, peak_advance: 
     // thickness, which is what "peak chip … mm" read as (A-1 census row
     // V5). Name and unit corrected 2026-08-08; the number is unchanged.
     format!(
-        "m{move_start} · waste {wasted_runtime_s:.2}s ·          peak commanded a/t {peak_advance:.4} mm/tooth"
+        "m{move_start} · waste {wasted_runtime_s:.2}s · peak commanded a/t {peak_advance:.4} mm/tooth"
     )
 }
 

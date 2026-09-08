@@ -90,6 +90,8 @@ fn draw_body(
     lane_busy: bool,
     events: &mut Vec<AppEvent>,
 ) {
+    // ui-string-columns: air either side of the separator in a panel
+    // header, where the model name may itself contain spaces.
     let header = format!(
         "Model: {}   ·   setup #{}",
         planner.model_name, planner.setup_index
