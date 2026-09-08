@@ -30,6 +30,79 @@
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration; the GUI embeds it (`--mcp`) and registers roughly 68 tools against the live session
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
+- machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
+
+## Recent work (2026-09-07 → 08)
+
+### Datum belongs to the setup — export now consumes it
+
+The setup already carried the work datum (`XYDatum`, `ZDatum`, panel, IO).
+Export ignored it and emitted Z in the world frame, so a 3D job whose
+stock top sits above world Z0 zeroed 7 mm below the top. `e17b2ff0`:
+`ZDatum::StockTop` puts the emitted stock top at Z0; a flipped setup
+zeroes to its presented face; 2D stock already at Z0 is byte-identical.
+
+### Machine kinematics confidence programme (branch merged this entry)
+
+Operator ruling: not a safety gate — a confidence instrument, "how fast
+can we push it", with the plunge hazard as one corner of the same gauge.
+
+- **Phase 1** (`65a04a2e`): `MachineKinematics::max_rate_xyz_mm_min` from
+  `$110/$111/$112`; `effective_max_rate_mm_min`; one physics site
+  `move_kinematics()` shared by the runtime integrator, the modulator's
+  reach cap and the instrument. Calibration moved 1030 → 1053 s against the
+  827 s wall clock and was accepted: a ten-times-too-fast Z rapid left the
+  model.
+- **Phases 2 + 4** (`17c7f964`): `kinematic_utilization` — every fed move
+  classified by GEOMETRY (Plunge ≤ 15° from vertical / Ramp / Lateral /
+  Retract), commanded vs achieved feed, binding fractions, `headroom_at_1_30`,
+  plunge-class peak against the op's own plunge rate; surfaced in the CLI
+  report, GUI op list, `narrate_toolpath`, the tool-load verdict slot and
+  a non-blocking `project.plunge_class_load` finding beside `entry_load`.
+  Readings are PLANNED before a simulation and EMITTED after
+  (`FeedsProvenance`).
+- **Phase 3** (`1af25c87`): the root cause. The modulator skipped plunges by
+  INTENT tag; adaptive3d emits step-down descents untagged, so they were
+  lifted to the lateral band max (1807 vs a 512 plunge rate). A geometric
+  guard caps any Plunge-class move at the op's plunge rate. Paired A/B:
+  118 of 125 over-limit plunges removed, lateral feeds byte-identical,
+  +0.43 % fed time.
+- **G-BOUNDARYPLUNGE** (`301f2cbc`): the residual seven — a boundary
+  re-entry re-tagged a cutting move `EntryPlunge` while keeping its cut
+  feed. The clipper now emits it at the op's plunge rate; the merge-gate
+  instrument run reads the whole-population peak at exactly 1.00×.
+- **G-DCFLAT** (`7c5a4c61`): a flat end mill on drop_cutter resolves the
+  roughing row instead of `no_vendor_data` (one routing arm; same
+  observation the adaptive3d rough uses). Written by the rs-cam-38 session.
+- **G-AIRDENOM** (`d5a0a521`): the two air-cut percentages shared one
+  numerator but different time bases (naive commanded-feed seconds vs the
+  modulated wall clock) and inverted under modulation; now one base,
+  rebased per sample. The documented order holds again.
+
+### Roughing and finishing strategy on terrain (evidence, rs-cam-38)
+
+- Roughing A/B (`planning/roughing_strategy_ab_results_2026-09-07.md`):
+  every arm ≥ 97 % feed-bound — the belt router's acceleration is not the
+  limit, the chipload floor is; residual air is in-cut drape, not island
+  rapids; on absolute air seconds C2E (`by_area` + DPP 5.46) wins.
+- **The finish is ~90 % of every rough + finish pair**, so the win is
+  deleting the finish. Plywood single-pass matrix
+  (`planning/deep_doc_modulation_2026-09-08.md`): a drop_cutter raster
+  with the R1.5 tapered ball at 1.5 mm stepover, modulation on, does the
+  whole terrain in 3274 s with every gate modeled Within, 0 collisions,
+  zero triage actions (cusp 0.20 mm) — **4.36× the 14 264 s same-material
+  pair**; iso-scallop R2.0 at h 0.27 is 5.97×. Caveat carried in the
+  recommendation: the R1.5 band rides the MDF parallel row by category.
+
+### Open ledger (not fixed)
+
+G-SUGGESTGATE (Suggest's band 1.45× the gate's on drop_cutter — DOC
+derating disagreement, unverified), G-WATERLINEAUTO (Auto heights → zero
+moves), G-WATERLINELINK (helix links at ~130 mm/min, unmodulated; waterline
+family chipload hole), G-LOADAUTOGEN (`load_project` generates disabled
+toolpaths), G-CLIAIR (CLI air line prints project total minus one
+toolpath), narration source (pre-modulation IR), `cached_load_report`
+clone cost, flat-tool chipload hole on the other Parallel-family ops.
 
 ## Recent work (2026-09-03)
 
