@@ -62,7 +62,36 @@ const TIER_PREVIEW_OPACITY: f32 = 0.7;
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LineUniforms {
     pub view_proj: [[f32; 4]; 4],
+    /// Multiplier applied to every line's colour in the fragment stage.
+    ///
+    /// `1.0` for the ordinary pass. The second, DIMMED bind group carries
+    /// [`MOVE_DIM_UNDER_REACH`] and the toolpath move draws switch to it
+    /// while the reach overlay is on — see the constant.
+    pub dim: f32,
+    /// `dim` is one f32 in a uniform block, which WGSL rounds up to a
+    /// 16-byte stride; the padding is explicit so the Rust and WGSL layouts
+    /// cannot silently disagree.
+    pub _pad: [f32; 3],
 }
+
+/// Colour multiplier for toolpath moves while the reach overlay is drawing
+/// on the model (P5.3, 2026-09-09).
+///
+/// The offscreen composite already does this — `CompositeSubject::Background`
+/// drops the moves to 0.45 colour and 0.4 ribbon radius, because 17 959 green
+/// moves seen from above are an opaque mat over the shading. The live
+/// viewport had the same problem and no such treatment.
+///
+/// **Only the colour factor transfers.** The offscreen renderer draws moves
+/// as TUBES and can thin them; the viewport draws
+/// `PrimitiveTopology::LineList`, which is one pixel wide and has no width
+/// control in wgpu at all. So the live rule is the 0.45 colour factor alone,
+/// and the ribbon half of F4 has no lever here.
+///
+/// This is a DRAW-TIME treatment, not a visibility toggle: no registry flag
+/// moves, so the Overlays panel still shows Cutting moves ON and the operator
+/// still owns that switch.
+pub const MOVE_DIM_UNDER_REACH: f32 = 0.45;
 
 /// Line vertex for grid, stock wireframe, and toolpath rendering.
 #[repr(C)]
@@ -103,6 +132,13 @@ pub struct RenderResources {
     mesh_bind_group: wgpu::BindGroup,
     sim_mesh_bind_group: wgpu::BindGroup,
     line_bind_group: wgpu::BindGroup,
+    /// Second uniform + bind group holding the same `view_proj` with `dim`
+    /// set to [`MOVE_DIM_UNDER_REACH`]. A second bind group rather than one
+    /// buffer rewritten mid-pass, because a buffer write cannot happen inside
+    /// a render pass, and rather than a dynamic offset because two 80-byte
+    /// buffers need no alignment arithmetic to get wrong.
+    line_dim_uniform_buffer: wgpu::Buffer,
+    line_dim_bind_group: wgpu::BindGroup,
     /// Dedicated uniform buffer + bind group for the rest-depth heatmap
     /// overlay, carrying its own fixed opacity independent of
     /// `sim_mesh_uniform_buffer`. That buffer is shared by sim mesh, solid
@@ -494,6 +530,22 @@ impl RenderResources {
             }],
         });
 
+        let line_dim_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("line_uniforms_dim"),
+            size: std::mem::size_of::<LineUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let line_dim_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("line_bg_dim"),
+            layout: &line_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: line_dim_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("line_pl"),
             bind_group_layouts: &[Some(&line_bind_group_layout)],
@@ -632,6 +684,8 @@ impl RenderResources {
             mesh_bind_group,
             sim_mesh_bind_group,
             line_bind_group,
+            line_dim_uniform_buffer,
+            line_dim_bind_group,
             rest_heatmap_uniform_buffer,
             rest_heatmap_bind_group,
             tier_preview_uniform_buffer,
@@ -896,6 +950,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             0,
             bytemuck::bytes_of(&self.line_uniforms),
         );
+        // Same camera, dimmed colours. Written every frame beside the plain
+        // one so the two can never hold different view matrices.
+        queue.write_buffer(
+            &resources.line_dim_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&LineUniforms {
+                dim: MOVE_DIM_UNDER_REACH,
+                ..self.line_uniforms
+            }),
+        );
 
         // Render 3D scene to offscreen texture with depth buffer.
         // After ensure_offscreen and write_buffer, we only need immutable access.
@@ -1132,7 +1196,21 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 };
 
                 pass.set_pipeline(&resources.line_pipeline);
-                pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                // P5.3 — while the reach overlay is painting the model, the
+                // moves are drawn DIMMED so the shading reads under them.
+                // The condition is the reach draw's own, not a second
+                // opinion about it: same flag, same buffer presence, so the
+                // dim cannot be on while the shading is absent. Cutting moves
+                // and rapids alike; no registry flag moves, so the Overlays
+                // panel still shows the row ON and the operator still owns
+                // the switch.
+                let moves_bind_group =
+                    if self.show_reach_overlay && resources.reach_overlay_data.is_some() {
+                        &resources.line_dim_bind_group
+                    } else {
+                        &resources.line_bind_group
+                    };
+                pass.set_bind_group(0, moves_bind_group, &[]);
 
                 let (tp_show_cut, tp_show_rapid) = tp_gpu
                     .toolpath_id
@@ -1356,6 +1434,7 @@ fn fs_opaque(in: VertexOutput) -> @location(0) vec4<f32> {
 const LINE_SHADER_SRC: &str = r#"
 struct Uniforms {
     view_proj: mat4x4<f32>,
+    dim: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -1380,7 +1459,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color, 1.0);
+    return vec4<f32>(in.color * uniforms.dim, 1.0);
 }
 "#;
 

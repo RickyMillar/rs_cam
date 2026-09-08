@@ -369,13 +369,24 @@ fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend) {
             );
             ui.label(
                 egui::RichText::new(format!(
-                    "green \u{2264} {:.3} mm \u{00B7} grey = unresolved \u{00B7}                      mid {:.2} mm \u{00B7} log scale",
+                    "green \u{2264} {:.3} mm \u{00B7} grey = unresolved \u{00B7} mid {:.2} mm \u{00B7} log scale",
                     ramp.tolerance_mm,
                     ramp.mid_stop_mm(),
                 ))
                 .small()
                 .color(theme::TEXT_FAINT),
             );
+            // P5.3 - the moves are dimmed at DRAW TIME while the shading is
+            // on, so the row still reads ON in the panel above. Said here,
+            // because an operator seeing Cutting moves ticked and faint lines
+            // on screen would otherwise be looking at a contradiction.
+            if state.viewport.show_cutting || state.viewport.show_rapids {
+                ui.label(
+                    egui::RichText::new("moves dimmed while reach map is on")
+                        .small()
+                        .color(theme::TEXT_FAINT),
+                );
+            }
             if let Some(map) = state.gui.reach_overlay.ready_map() {
                 let measured = map.is_measured();
                 ui.label(

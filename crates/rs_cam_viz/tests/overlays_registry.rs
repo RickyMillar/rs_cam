@@ -842,3 +842,107 @@ fn the_viewport_keeps_a_minimum_width() {
         "the floating fallback no longer knows whether the dock refused"
     );
 }
+
+/// P5.3 — the FOURTH surface quotes the shared notes too, and no surface
+/// writes its own description of the area base.
+///
+/// The panel legend took `area_basis_note()`; the inspector's "Show reach
+/// map" line did not, and went on printing "unreachable 51.7 % of MEASURED
+/// area" beside a legend saying "of 3D surface area, rim-eroded 3.0 mm". Two
+/// surfaces, one quantity, two descriptions — the exact drift the shared
+/// notes exist to stop, surviving in the one place nobody re-read.
+#[test]
+fn every_reach_surface_quotes_the_shared_area_and_bias_notes() {
+    let inspector = source("src/ui/properties/mod.rs");
+    let legend = source("src/ui/overlays/panel.rs");
+
+    for (name, text) in [("inspector", &inspector), ("panel legend", &legend)] {
+        assert!(
+            text.contains("area_basis_note"),
+            "the {name} no longer quotes `ReachMap::area_basis_note` — it is \
+             describing the area base in its own words again"
+        );
+        assert!(
+            text.contains("over_statement_note"),
+            "the {name} no longer quotes `ReachMap::over_statement_note` — the \
+             direction of the bias is being paraphrased again, and it was \
+             paraphrased BACKWARDS once already"
+        );
+    }
+
+    // And no surface in the crate rolls its own denominator sentence.
+    for (file, text) in [
+        ("properties/mod.rs", &inspector),
+        ("overlays/panel.rs", &legend),
+        ("app/mcp.rs", &source("src/app/mcp.rs")),
+    ] {
+        for line in text.lines() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") || trimmed.starts_with("///") {
+                continue;
+            }
+            assert!(
+                !trimmed.contains("of MEASURED area"),
+                "{file} writes its own area base again: {trimmed}"
+            );
+        }
+    }
+}
+
+/// P5.3 — the live viewport dims the toolpath moves while the reach overlay
+/// is drawing, and does it at DRAW TIME.
+///
+/// With cutting moves on — the Toolpaths default — the palette-coloured lines
+/// dominated the shading in the live view, exactly as they did in the
+/// offscreen composite before F4. The rule is now the same in both. What is
+/// NOT the same is the ribbon half: the offscreen renderer draws tubes and
+/// can thin them, the viewport draws `PrimitiveTopology::LineList` at one
+/// pixel with no width control in wgpu, so only the colour factor transfers.
+///
+/// It must stay a draw-time treatment. Dimming by moving a registry flag
+/// would leave the Overlays panel showing Cutting moves OFF and take the
+/// switch out of the operator's hands.
+#[test]
+fn the_live_viewport_dims_moves_under_the_reach_overlay() {
+    let render = source("src/render/mod.rs");
+    assert!(
+        render.contains("pub const MOVE_DIM_UNDER_REACH"),
+        "the live dim factor is gone"
+    );
+    assert!(
+        render.contains("line_dim_bind_group"),
+        "the second, dimmed line bind group is gone — a uniform cannot be \
+         rewritten inside a render pass, so the dim needs its own"
+    );
+    assert!(
+        render.contains("in.color * uniforms.dim"),
+        "the line shader no longer applies the dim factor"
+    );
+    // The dim's condition must be the reach draw's own, so the two cannot
+    // disagree about whether shading is on screen.
+    assert!(
+        render.contains(
+            "self.show_reach_overlay\n                    && resources.reach_overlay_data.is_some()"
+        ) || render.contains("self.show_reach_overlay && resources.reach_overlay_data.is_some()"),
+        "the move dim is no longer gated on the same condition as the reach \
+         draw itself"
+    );
+    // Draw-time, not a visibility toggle.
+    let registry_src = source("src/ui/overlays/registry.rs");
+    assert!(
+        !registry_src.contains("show_reach_map")
+            || registry_src.contains("s.viewport.show_cutting = on"),
+        "sanity: the registry still owns the move flags"
+    );
+    assert!(
+        !render.contains("show_cutting = false"),
+        "the renderer is writing a visibility flag to dim the moves; that \
+         would flip the Overlays panel row and steal the operator's switch"
+    );
+    let legend = source("src/ui/overlays/panel.rs");
+    assert!(
+        legend.contains("moves dimmed while reach map is on"),
+        "the legend no longer says the moves are being dimmed, so a ticked \
+         Cutting moves row beside faint lines reads as a contradiction"
+    );
+}

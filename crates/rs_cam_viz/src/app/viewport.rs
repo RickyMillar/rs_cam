@@ -430,7 +430,11 @@ impl RsCamApp {
                 camera_pos: [eye.x, eye.y, eye.z],
                 _pad1: 0.0,
             },
-            line_uniforms: LineUniforms { view_proj },
+            line_uniforms: LineUniforms {
+                view_proj,
+                dim: 1.0,
+                _pad: [0.0; 3],
+            },
             // P6 — `show_model` replaces `RenderMode::Wireframe`, which drew
             // NOTHING: the crate has no wireframe pipeline, so the mode hid
             // an STL model and left a STEP one untouched (audit §3.1). The

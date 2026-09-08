@@ -638,8 +638,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                                     unreachable_pct: map.unreachable_pct(),
                                     max_gap_mm: map.max_gap_mm,
                                     grid_note: map.grid_note(),
+                                    area_basis_note: map.area_basis_note(),
+                                    over_statement_note: map.over_statement_note(),
                                     tolerance_below_floor: map.tolerance_below_floor(),
-                                    unresolved_pct: map.unresolved_pct(),
                                 }
                             } else {
                                 ReachPanelSummary::NotMeasured
@@ -3546,6 +3547,15 @@ pub(crate) enum ReachPanelSummary {
         /// percentage without its grid is not comparable with the next one
         /// (F1 / F5, 2026-09-08).
         grid_note: String,
+        /// [`rs_cam_core::reach_map::ReachMap::area_basis_note`] - the base
+        /// every percentage on every surface owes beside it. Carried rather
+        /// than rebuilt: this line printed "of MEASURED area" of its own
+        /// while the panel legend printed the shared note, which is the
+        /// fourth-surface drift the shared notes exist to stop.
+        area_basis_note: String,
+        /// [`rs_cam_core::reach_map::ReachMap::over_statement_note`], shown
+        /// when the bar is under the floor.
+        over_statement_note: String,
         /// True when the tolerance is under
         /// [`rs_cam_core::reach_map::ReachMap::discretisation_floor_mm`]. The
         /// grid's gap bias is NON-NEGATIVE (a minimum over a sampled set sits
@@ -3553,7 +3563,6 @@ pub(crate) enum ReachPanelSummary {
         /// and the truth is at or below it — see
         /// [`rs_cam_core::reach_map::ReachMap::tolerance_below_floor`].
         tolerance_below_floor: bool,
-        unresolved_pct: f64,
     },
     Failed(String),
 }
@@ -3708,15 +3717,19 @@ fn draw_toolpath_panel(
                     unreachable_pct,
                     max_gap_mm,
                     grid_note,
+                    area_basis_note,
+                    over_statement_note,
                     tolerance_below_floor,
-                    unresolved_pct,
                 } => {
-                    // "of surface" was wrong: the denominator is the MEASURED
-                    // area, which on a terrain is well under the model's own
-                    // surface area (the rim band and every wall abstain).
+                    // The base comes from `ReachMap::area_basis_note`, not
+                    // from a sentence written here. This line said "of
+                    // MEASURED area" while the panel legend said "of 3D
+                    // surface area, rim-eroded 3.0 mm" - two surfaces, one
+                    // quantity, two descriptions, and that is the drift the
+                    // shared notes exist to prevent.
                     ui.label(
                         egui::RichText::new(format!(
-                            "unreachable {unreachable_pct:.1} % of MEASURED area · \
+                            "unreachable {unreachable_pct:.1} % {area_basis_note} · \
                              max gap {max_gap_mm:.2} mm"
                         ))
                         .small()
@@ -3730,16 +3743,12 @@ fn draw_toolpath_panel(
                         },
                     ));
                     if *tolerance_below_floor {
+                        // The shared sentence, quoted - not a fourth
+                        // hand-written paraphrase of the same bias.
                         ui.label(
-                            egui::RichText::new(format!(
-                                "{unresolved_pct:.1} % unresolved \u{2014} the grid \
-                                 OVER-states gaps, so the true share is at or \
-                                 below the figure above; raise the tolerance to \
-                                 this operation's own cusp before reading the \
-                                 residual as tool geometry"
-                            ))
-                            .small()
-                            .color(egui::Color32::from_rgb(220, 180, 60)),
+                            egui::RichText::new(over_statement_note.clone())
+                                .small()
+                                .color(egui::Color32::from_rgb(220, 180, 60)),
                         );
                     }
                 }
