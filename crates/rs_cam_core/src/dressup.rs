@@ -70,6 +70,17 @@ pub struct EntrySurfaceProbe<'a> {
     pub stock_to_leave: f64,
     /// What a sample beyond the mesh footprint means for this caller.
     pub off_mesh: OffMeshEntry,
+    /// The stock the operation STARTS from, on a rest-driven pass only
+    /// (G-ISOCLIPENTRY, 2026-09-09).
+    ///
+    /// The mesh floor above says how deep an entry may go. This says how
+    /// much material it has to get through to arrive there, which the model
+    /// surface cannot: on a `FromRemainingStock` pass the ground the upstream
+    /// tool could not reach stands ABOVE the mesh. `Some` only where the
+    /// caller's operation is rest driven — `session/compute.rs` passes
+    /// `gen_initial_stock`, which is `None` on `StockSource::Fresh` — so a
+    /// fresh-stock entry keeps the legacy two-leg ramp exactly.
+    pub rest_stock: Option<&'a TriDexelStock>,
 }
 
 /// Policy for an entry sample beyond the mesh footprint
@@ -242,6 +253,40 @@ pub fn apply_entry_with_provenance(
 // Entry-descent optimization (P1 W2, reworked)
 // ---------------------------------------------------------------------------
 
+/// The stock-aware re-entry approach for a REST-DRIVEN surface-riding pass
+/// (G-ISOCLIPENTRY, 2026-09-09).
+///
+/// `Some` on a `FromRemainingStock` operation whose
+/// [`crate::compute::catalog::OperationConfig::entry_probe_leave`] says it
+/// rides the model surface; `None` everywhere else, which reproduces the
+/// pre-fix emission move for move.
+///
+/// # What it repairs
+///
+/// A boundary clip re-enters its region by rapiding to the target's own XY at
+/// `safe_z` and feeding straight down
+/// (`crate::boundary::clip_toolpath_to_boundary_set_with_provenance`), and the
+/// scallop family opens every non-helical run the same way. On a fresh-stock
+/// pass that descent is air until it reaches the model. On a rest-driven pass
+/// the material an upstream tool could not reach stands over exactly those
+/// points, so the descent is a full-diameter vertical bite into it — measured
+/// on the wanaka200 tier-1 islands as a 1.44 mm ball plunge repeated once per
+/// clipped ring re-entry.
+///
+/// The entry moves the dressups build ARE stock aware (G-RAMPTERRAIN), but
+/// they are built before the boundary clip and the clip rapids them away, so
+/// the door never sees the descent it invents. This is the post-clip door.
+pub struct RestEntryRamp {
+    /// The radius that actually nestles into the surface — the tip, never the
+    /// envelope. Use [`crate::pencil::tip_contact_radius`].
+    pub contact_radius_mm: f64,
+    /// Feed for the lap moves. The laps are a peripheral cut, so this is the
+    /// operation's cutting feed, not its plunge rate.
+    pub feed_rate: f64,
+    /// Rate for the vertical air descent down to the lap ladder's ceiling.
+    pub plunge_rate: f64,
+}
+
 /// P1 W2 (reworked): split long plunge-from-safe_z entries by rapiding
 /// down to just above the INPUT STOCK's material ceiling first.
 ///
@@ -294,6 +339,31 @@ pub fn apply_entry_with_provenance(
 /// the non-relaxation where the flank would strike, and a live
 /// `RapidClearanceCheck` replay asserting zero strikes).
 ///
+/// # Ramp instead of plunge on a rest-driven pass (G-ISOCLIPENTRY, 2026-09-09)
+///
+/// With `ramp` set the pass does not stop at lowering the rapid. Below the
+/// stock ceiling the descent still had to feed, and on a `FromRemainingStock`
+/// surface-riding pass everything below that ceiling is material an upstream
+/// tool could not reach — so the fed part was a full-diameter vertical bite,
+/// once per entry. It is now bite-budgeted zig-zag laps along the run's own
+/// first millimetre or so ([`crate::pencil::plan_entry_ramp`] with
+/// `end_at_start`), which is the same manoeuvre and the same construction site
+/// the pencil family already used against G-ENTRYLOAD.
+///
+/// `ramp` is `None` for every caller that is not a rest-driven surface-riding
+/// operation, and the plan itself abstains when the run is too short to ramp
+/// along or the stock over the window already sits within one bite budget of
+/// the finished surface. Both make the emission byte-identical to the pre-fix
+/// one, so `tests/entry_descent_profile_b2.rs` and
+/// `tests/descent_resolution_stability_am10.rs` hold unchanged.
+///
+/// One hole is left open deliberately: the ramp is reached only where the
+/// split gate fires or a plan exists, and a plunge whose preceding rapid is
+/// ALREADY within [`MIN_SPLIT_MM`] of the stock ceiling keeps its descent when
+/// no plan is produced. Nothing shipped emits that shape — every generator
+/// rapids to `safe_z` first — and the post-simulation `project.entry_load`
+/// finding reports it if one ever does.
+///
 /// This is a thin wrapper over
 /// [`optimize_entry_descents_with_provenance`] that discards the
 /// provenance mapping — use that function directly when the caller needs
@@ -308,8 +378,10 @@ pub fn optimize_entry_descents(
     fresh_stock_top_z: f64,
     tool_radius: f64,
     cutter: &dyn crate::tool::MillingCutter,
+    ramp: Option<&RestEntryRamp>,
 ) -> usize {
-    optimize_entry_descents_with_provenance(tp, stock, fresh_stock_top_z, tool_radius, cutter).0
+    optimize_entry_descents_with_provenance(tp, stock, fresh_stock_top_z, tool_radius, cutter, ramp)
+        .0
 }
 
 /// [`optimize_entry_descents`] at the [`AnnotatedToolpath`] level, under the
@@ -331,6 +403,7 @@ pub fn optimize_entry_descents_annotated(
     fresh_stock_top_z: f64,
     tool_radius: f64,
     cutter: &dyn crate::tool::MillingCutter,
+    ramp: Option<&RestEntryRamp>,
 ) -> (Transformed, usize) {
     let AnnotatedToolpath {
         mut toolpath,
@@ -347,6 +420,7 @@ pub fn optimize_entry_descents_annotated(
         fresh_stock_top_z,
         tool_radius,
         cutter,
+        ramp,
     );
 
     let spans = if split_count > 0 {
@@ -385,6 +459,7 @@ pub fn optimize_entry_descents_with_provenance(
     fresh_stock_top_z: f64,
     tool_radius: f64,
     cutter: &dyn crate::tool::MillingCutter,
+    ramp: Option<&RestEntryRamp>,
 ) -> (usize, Vec<usize>) {
     use crate::toolpath::MoveIntent;
 
@@ -392,13 +467,24 @@ pub fn optimize_entry_descents_with_provenance(
     const XY_EPS_MM: f64 = 1e-6;
 
     let moves = std::mem::take(&mut tp.moves);
+    // G-ISOCLIPENTRY: the lap window is read off the moves that FOLLOW the
+    // plunge, so the run has to be visible before the list is consumed. Two
+    // parallel reads, not a clone of the moves.
+    let followers: Vec<(P3, bool, MoveIntent)> = moves
+        .iter()
+        .map(|m| (m.target, m.move_type.is_cutting(), m.intent))
+        .collect();
     let mut new_moves = Vec::with_capacity(moves.len());
     let mut mapping = Vec::with_capacity(moves.len() + 1);
     let mut splits = 0usize;
+    let mut ramped = 0usize;
 
+    let mut input_index = 0usize;
     let mut iter = moves.into_iter().peekable();
     while let Some(rapid) = iter.next() {
         mapping.push(new_moves.len());
+        let rapid_index = input_index;
+        input_index += 1;
 
         let rapid_xy = (rapid.target.x, rapid.target.y);
         let rapid_z = rapid.target.z;
@@ -488,26 +574,130 @@ pub fn optimize_entry_descents_with_provenance(
                 })
             });
 
+        // G-ISOCLIPENTRY: the same peek, asked a second question. `ramp` is
+        // `Some` only on a rest-driven surface-riding pass, so every other
+        // caller emits move for move what it always did.
+        let ramp_plan = ramp.zip(stock).and_then(|(cfg, snapshot)| {
+            let plunge = is_rapid.then(|| iter.peek()).flatten()?;
+            if plunge.intent != MoveIntent::EntryPlunge
+                || !matches!(plunge.move_type, MoveType::Linear { .. })
+                || (plunge.target.x - rapid_xy.0).abs() >= XY_EPS_MM
+                || (plunge.target.y - rapid_xy.1).abs() >= XY_EPS_MM
+                || plunge.target.z >= rapid_z - 1e-6
+            {
+                return None;
+            }
+            // A generator that already ramps its own entry (pencil) is left
+            // alone. Its laps follow the descent, so planning over them would
+            // stack a second ladder on the first and read the first ladder's
+            // own Z range as standing material.
+            if followers
+                .get(rapid_index + 2)
+                .is_some_and(|&(_, _, intent)| intent == MoveIntent::EntryRamp)
+            {
+                return None;
+            }
+            let run = upcoming_run(&followers, rapid_index + 1);
+            crate::pencil::plan_entry_ramp(&run, snapshot, cfg.contact_radius_mm, rapid_z, true)
+        });
+
         new_moves.push(rapid);
 
-        if let Some(z) = split_z {
-            new_moves.push(Move {
-                target: P3::new(rapid_xy.0, rapid_xy.1, z),
-                move_type: MoveType::Rapid,
-                intent: MoveIntent::Linking,
-            });
-            mapping.push(new_moves.len());
-            // `split_z` is only `Some` when `iter.peek()` above was `Some`,
-            // so the plunge move is guaranteed to exist here.
-            if let Some(plunge) = iter.next() {
-                new_moves.push(plunge);
+        if split_z.is_some() || ramp_plan.is_some() {
+            if let Some(z) = split_z {
+                new_moves.push(Move {
+                    target: P3::new(rapid_xy.0, rapid_xy.1, z),
+                    move_type: MoveType::Rapid,
+                    intent: MoveIntent::Linking,
+                });
+                splits += 1;
             }
-            splits += 1;
+            mapping.push(new_moves.len());
+            // Both arms only fire when `iter.peek()` above was `Some`, so the
+            // plunge move is guaranteed to exist here.
+            if let Some(plunge) = iter.next() {
+                input_index += 1;
+                match (&ramp_plan, ramp) {
+                    (Some(plan), Some(cfg)) => {
+                        // The vertical part is AIR by construction: the ladder
+                        // starts at the conservative stock ceiling read over
+                        // the whole lap window, and `max_conservative_top_z_in_disc`
+                        // may only ever err high.
+                        let from_z = split_z.unwrap_or(rapid_z);
+                        if plan.air_descent_z < from_z - 1e-9 {
+                            new_moves.push(Move {
+                                target: P3::new(rapid_xy.0, rapid_xy.1, plan.air_descent_z),
+                                move_type: MoveType::Linear {
+                                    feed_rate: cfg.plunge_rate,
+                                },
+                                intent: MoveIntent::EntryPlunge,
+                            });
+                        }
+                        for point in &plan.points {
+                            new_moves.push(Move {
+                                target: *point,
+                                move_type: MoveType::Linear {
+                                    feed_rate: cfg.feed_rate,
+                                },
+                                intent: MoveIntent::EntryRamp,
+                            });
+                        }
+                        // `end_at_start` puts the last lap point on the run's
+                        // first point at its own finished Z — the plunge's
+                        // target. The plunge is therefore consumed, not
+                        // emitted; `mapping` already points this input move at
+                        // the first lap move, so the no-drop contract holds.
+                        ramped += 1;
+                    }
+                    _ => new_moves.push(plunge),
+                }
+            }
         }
     }
     mapping.push(new_moves.len());
+    if ramped > 0 {
+        tracing::debug!(
+            ramped,
+            splits,
+            "rest-driven entry descents ramped instead of plunged"
+        );
+    }
     tp.moves = new_moves;
     (splits, mapping)
+}
+
+/// The polyline one entry-lap window is planned along: the plunge's own
+/// target, then the cutting moves that continue from it.
+///
+/// Bounded in points and in arclength. The planner truncates at its own window
+/// target (about 1.2 mm at the shipped dials), so reading further is waste,
+/// and an unbounded read would walk a whole 90 000-move ring set once per
+/// entry.
+fn upcoming_run(
+    followers: &[(P3, bool, crate::toolpath::MoveIntent)],
+    plunge_index: usize,
+) -> Vec<P3> {
+    const MAX_POINTS: usize = 256;
+    const MAX_ARC_MM: f64 = 5.0;
+
+    let Some(&(first, _, _)) = followers.get(plunge_index) else {
+        return Vec::new();
+    };
+    let mut run = vec![first];
+    let mut arc = 0.0_f64;
+    let mut prev = first;
+    for &(point, cutting, _) in followers.iter().skip(plunge_index + 1) {
+        if !cutting {
+            break;
+        }
+        arc += ((point.x - prev.x).powi(2) + (point.y - prev.y).powi(2)).sqrt();
+        run.push(point);
+        prev = point;
+        if run.len() >= MAX_POINTS || arc >= MAX_ARC_MM {
+            break;
+        }
+    }
+    run
 }
 
 fn is_plunge(prev: &Move, current: &Move) -> bool {
@@ -555,6 +745,50 @@ pub(crate) fn emit_ramp(
         // Invalid angle — fall back to straight plunge
         tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
         return;
+    }
+
+    // G-ISOCLIPENTRY: on a REST-DRIVEN pass the two-leg zigzag below is not
+    // bite budgeted. Its closing leg returns to the start column and takes the
+    // whole remaining depth off it in one pass, and the vertical pre-plunge
+    // above it takes whatever stands between the clearance height and
+    // `end.z + ENTRY_CLEARANCE`. Against the MODEL that depth is nothing —
+    // the ramp starts 2 mm over the finished surface. Against the stock an
+    // upstream tool left standing it is the rest depth, measured on the
+    // wanaka200 tier-1 islands as a 1.67 mm bite at the entry column.
+    //
+    // Where a rest stock is in scope, plan the bite-budgeted lap ladder
+    // instead — `pencil::plan_entry_ramp`, the same construction site and the
+    // same physical model the pencil family uses against G-ENTRYLOAD. The run
+    // is SYNTHESISED from `dir`, because this emitter holds a direction rather
+    // than the polyline it is entering: two points one window apart, the far
+    // one lifted to the probe floor so no lap chord can sag under the surface.
+    if let Some(probe) = &safety.surface
+        && let Some(stock) = probe.rest_stock
+    {
+        let contact = crate::pencil::tip_contact_radius(probe.cutter);
+        let window = crate::pencil::entry_ramp_window_mm(contact);
+        let far_xy = (end.x + dir.0 * window, end.y + dir.1 * window);
+        // Lost surface contact at the far point means the window leaves the
+        // model: fall through to the legacy legs rather than ramp blind.
+        if let Some(far_floor) = probe.floor_z(far_xy.0, far_xy.1) {
+            let run = [*end, P3::new(far_xy.0, far_xy.1, far_floor.max(end.z))];
+            if let Some(plan) = crate::pencil::plan_entry_ramp(&run, stock, contact, start.z, true)
+            {
+                // Air only: the ladder starts at the conservative stock
+                // ceiling read over the whole window.
+                if plan.air_descent_z < start.z - 1e-9 {
+                    tp.feed_to_with_intent(
+                        P3::new(start.x, start.y, plan.air_descent_z),
+                        feed_rate,
+                        MoveIntent::EntryPlunge,
+                    );
+                }
+                for p in &plan.points {
+                    tp.feed_to_with_intent(*p, feed_rate, MoveIntent::EntryRamp);
+                }
+                return;
+            }
+        }
     }
 
     // Only ramp the last portion of the descent (max 5mm above target).
@@ -2725,7 +2959,7 @@ mod tests {
     #[test]
     fn optimize_entry_descents_splits_on_fresh_stock_top() {
         let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
-        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0, &probe_cutter());
+        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0, &probe_cutter(), None);
 
         assert_eq!(split_count, 1, "expected exactly one split");
         assert_eq!(tp.moves.len(), 3, "moves: {:?}", tp.moves);
@@ -2764,7 +2998,8 @@ mod tests {
         let stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 5.0, 1.0);
 
         let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
-        let split_count = optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0, &probe_cutter());
+        let split_count =
+            optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0, &probe_cutter(), None);
 
         assert_eq!(split_count, 1, "expected exactly one split");
         let inserted = &tp.moves[1];
@@ -2783,7 +3018,8 @@ mod tests {
         // stock top at 9.0 + 2.0 clearance = 11.0 > safe_z=10.0 — no room.
         let stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 9.0, 1.0);
         let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
-        let split_count = optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0, &probe_cutter());
+        let split_count =
+            optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0, &probe_cutter(), None);
 
         assert_eq!(split_count, 0, "no split expected when there's no headroom");
         assert_eq!(tp.moves.len(), 2, "moves unchanged: {:?}", tp.moves);
@@ -2802,7 +3038,7 @@ mod tests {
             500.0,
             crate::toolpath::MoveIntent::EntryPlunge,
         );
-        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0, &probe_cutter());
+        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0, &probe_cutter(), None);
 
         assert_eq!(split_count, 0, "no split expected on XY mismatch");
         assert_eq!(tp.moves.len(), 2, "moves unchanged: {:?}", tp.moves);
@@ -2821,7 +3057,7 @@ mod tests {
             500.0,
             crate::toolpath::MoveIntent::FinishingCut,
         );
-        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0, &probe_cutter());
+        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0, &probe_cutter(), None);
 
         assert_eq!(
             split_count, 0,

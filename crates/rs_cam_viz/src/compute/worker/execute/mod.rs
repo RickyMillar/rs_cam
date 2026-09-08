@@ -930,6 +930,24 @@ pub(super) fn run_compute_with_phase_tracker(
         // filter.
         {
             let entry_descent_tool = build_cutter(&req.tool);
+            // G-ISOCLIPENTRY — the session's twin (`session/compute.rs`). A
+            // rest-driven surface-riding pass ramps its descent instead of
+            // plunging it. `prior_stock` rides this request for the air-cut
+            // filter too, so the rest predicate is read from `stock_source`,
+            // not from the snapshot's presence.
+            let rest_entry_ramp = match req.stock_source {
+                crate::state::toolpath::StockSource::FromRemainingStock => req
+                    .operation
+                    .entry_probe_leave()
+                    .map(|_| rs_cam_core::dressup::RestEntryRamp {
+                        contact_radius_mm: rs_cam_core::pencil::tip_contact_radius(
+                            &entry_descent_tool,
+                        ),
+                        feed_rate: req.operation.feed_rate(),
+                        plunge_rate: req.operation.plunge_rate(),
+                    }),
+                crate::state::toolpath::StockSource::Fresh => None,
+            };
             let (transformed, _split_count) =
                 rs_cam_core::dressup::optimize_entry_descents_annotated(
                     current,
@@ -937,6 +955,7 @@ pub(super) fn run_compute_with_phase_tracker(
                     req.heights.top_z,
                     req.tool.envelope_diameter() / 2.0,
                     &entry_descent_tool,
+                    rest_entry_ramp.as_ref(),
                 );
             current = transformed.reconcile(&mut channels).into_inner();
         }

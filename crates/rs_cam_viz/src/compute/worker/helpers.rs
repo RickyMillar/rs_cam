@@ -76,6 +76,13 @@ pub(super) fn apply_dressups(
             cutter: &cutter as &dyn rs_cam_core::tool::MillingCutter,
             stock_to_leave,
             off_mesh: rs_cam_core::dressup::OffMeshEntry::PlungeFallback,
+            // G-ISOCLIPENTRY — the session's twin. `prior_stock` rides this
+            // request for the air-cut filter too, so the rest predicate is
+            // read from `stock_source`, never from the snapshot's presence.
+            rest_stock: match req.stock_source {
+                crate::state::toolpath::StockSource::FromRemainingStock => req.prior_stock.as_ref(),
+                crate::state::toolpath::StockSource::Fresh => None,
+            },
         },
     );
 

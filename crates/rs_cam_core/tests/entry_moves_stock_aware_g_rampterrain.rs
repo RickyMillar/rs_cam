@@ -107,6 +107,9 @@ fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle) -> Dressed {
         cutter: &cutter,
         stock_to_leave: 0.0,
         off_mesh: OffMeshEntry::PlungeFallback,
+        // No rest stock in this fixture: the model surface IS the material,
+        // which is what the G-RAMPTERRAIN legs are measured against.
+        rest_stock: None,
     };
     let dressed = apply_dressups(
         AnnotatedToolpath::new(tp),
@@ -139,6 +142,9 @@ fn assert_no_buried_entries(d: &Dressed, label: &str) {
         cutter: &d.cutter,
         stock_to_leave: 0.0,
         off_mesh: OffMeshEntry::PlungeFallback,
+        // No rest stock in this fixture: the model surface IS the material,
+        // which is what the G-RAMPTERRAIN legs are measured against.
+        rest_stock: None,
     };
     let reports = buried_fed_chords(&d.toolpath, &probe, 0.5, TOL_MM, is_entry_intent);
     assert!(
@@ -218,6 +224,9 @@ fn unclipped_ramp_keeps_two_legs() {
         cutter: &cutter,
         stock_to_leave: 0.0,
         off_mesh: OffMeshEntry::PlungeFallback,
+        // No rest stock in this fixture: the model surface IS the material,
+        // which is what the G-RAMPTERRAIN legs are measured against.
+        rest_stock: None,
     };
     let dressed = apply_dressups(
         AnnotatedToolpath::new(tp),
@@ -287,6 +296,9 @@ fn lead_in_arcs_never_cut_below_surface() {
         cutter: &cutter,
         stock_to_leave: 0.0,
         off_mesh: OffMeshEntry::PlungeFallback,
+        // No rest stock in this fixture: the model surface IS the material,
+        // which is what the G-RAMPTERRAIN legs are measured against.
+        rest_stock: None,
     };
 
     // S2-red: the probe-less path buries a lead sample.

@@ -1076,7 +1076,7 @@ pub const ENTRY_RAMP_MAX_LAPS: usize = 64;
 /// The tool radius that actually nestles into a crease: the corner radius for
 /// flat/bullnose cutters, the tip sphere (`cusp_radius_mm`) otherwise. For a
 /// tapered ball `radius()` is the SHANK, which is why this is not it.
-fn tip_contact_radius(cutter: &dyn MillingCutter) -> f64 {
+pub fn tip_contact_radius(cutter: &dyn MillingCutter) -> f64 {
     let cr = cutter.corner_radius_mm();
     if cr > 1e-6 {
         cr
@@ -1092,24 +1092,43 @@ pub fn entry_bite_budget_mm(tip_radius_mm: f64) -> f64 {
         .clamp(ENTRY_RAMP_MIN_BITE_MM, ENTRY_RAMP_MAX_BITE_MM)
 }
 
+/// Path length (mm) one entry lap runs over, for a cutter with this tip
+/// radius.
+///
+/// Two consecutive laps run in opposite directions, so their vertical gap is
+/// widest at the turn — `2 x step`. The window is therefore sized so that
+/// `window_len x tan(angle) <= budget / 2`.
+///
+/// One construction site: [`plan_entry_ramp`] truncates a caller's run to this
+/// length, and a caller that has to SYNTHESISE its run (the dressup ramp, which
+/// holds a direction rather than a polyline) reads the same number here.
+pub fn entry_ramp_window_mm(tip_radius_mm: f64) -> f64 {
+    let tan_ramp = ENTRY_RAMP_MAX_ANGLE_DEG.to_radians().tan();
+    (entry_bite_budget_mm(tip_radius_mm) / (2.0 * tan_ramp)).max(ENTRY_RAMP_MIN_WINDOW_MM)
+}
+
 /// A planned entry manoeuvre for one run: an air-only vertical descent to the
 /// input stock's ceiling, then bite-budgeted zig-zag laps along the run's own
 /// first few millimetres.
-struct EntryRampPlan {
+pub(crate) struct EntryRampPlan {
     /// Z the vertical fed descent stops at — the conservative stock ceiling
     /// over the ramp window, so everything below it is cut by the laps and
     /// everything above it is air.
-    air_descent_z: f64,
+    pub(crate) air_descent_z: f64,
     /// Lap points in emission order. Every one is clamped to its own point's
     /// finished Z, so no lap can ever cut below the surface.
-    points: Vec<P3>,
+    pub(crate) points: Vec<P3>,
     /// Index into the run of the window's LAST point. The body pass resumes
     /// at `window_end + 1`; the final lap leaves every window point cut at
     /// its finished Z, so coverage is unchanged.
-    window_end: usize,
+    ///
+    /// Meaningless under `end_at_start` (see [`plan_entry_ramp`]): there the
+    /// laps end back on the run's FIRST point, the body pass is not shortened,
+    /// and the caller resumes where it already was.
+    pub(crate) window_end: usize,
     /// The per-lap Z step actually used (>= the budget only in the
     /// [`ENTRY_RAMP_MAX_LAPS`] clamp case).
-    step_mm: f64,
+    pub(crate) step_mm: f64,
 }
 
 /// Plan a bite-budgeted entry ramp along the first few millimetres of `run`.
@@ -1136,11 +1155,30 @@ struct EntryRampPlan {
 /// Two consecutive laps run in opposite directions, so their vertical gap is
 /// widest at the turn: `2 x step` at one end, zero at the other. The window
 /// is therefore sized so that `window_len x tan(angle) <= budget / 2`.
-fn plan_entry_ramp(
+///
+/// # `end_at_start` — the shared-caller dial (G-ISOCLIPENTRY, 2026-09-09)
+///
+/// `false` is pencil's own shape: the laps end at the window's FAR end and
+/// the caller resumes the body pass at `window_end + 1`, so the window is
+/// machined once. `true` ends the laps back on `run[0]` at its finished Z,
+/// which is exactly where the plunge this manoeuvre replaces would have left
+/// the tool — the shape a caller needs when it only INSERTS the manoeuvre and
+/// cannot shorten the body pass that follows.
+/// [`crate::dressup::optimize_entry_descents`] is that caller: it rewrites a
+/// move list under a provenance contract in which every input move produces at
+/// least one output move, so it may not drop the window from the body pass.
+/// The window is then cut twice, the second time at zero engagement.
+///
+/// Both shapes share this one construction site deliberately: the bite budget,
+/// the angle cap, the lap ladder and the surface clamp are the physical model
+/// of "enter standing material without a full-diameter bite", and one defect
+/// class (G-ENTRYLOAD / G-ISOCLIPENTRY) grades both.
+pub(crate) fn plan_entry_ramp(
     run: &[P3],
     stock: &crate::dexel_stock::TriDexelStock,
     contact_radius: f64,
-    params: &PencilParams,
+    safe_z: f64,
+    end_at_start: bool,
 ) -> Option<EntryRampPlan> {
     if run.len() < 2 {
         return None;
@@ -1148,7 +1186,7 @@ fn plan_entry_ramp(
     let tip = contact_radius.max(1e-6);
     let budget = entry_bite_budget_mm(tip);
     let tan_ramp = ENTRY_RAMP_MAX_ANGLE_DEG.to_radians().tan();
-    let window_target = (budget / (2.0 * tan_ramp)).max(ENTRY_RAMP_MIN_WINDOW_MM);
+    let window_target = entry_ramp_window_mm(tip);
 
     // The window: the prefix of the run out to `window_target` of XY travel,
     // with its cumulative arclength (both truncated at the same point, so
@@ -1191,7 +1229,7 @@ fn plan_entry_ramp(
     if !ceiling.is_finite() {
         return None;
     }
-    let ceiling = ceiling.min(params.safe_z);
+    let ceiling = ceiling.min(safe_z);
     let floor = window.iter().map(|p| p.z).fold(f64::INFINITY, f64::min);
     if !floor.is_finite() {
         return None;
@@ -1214,7 +1252,15 @@ fn plan_entry_ramp(
         .map(|i| (ceiling - step * i as f64, ceiling - step * (i + 1) as f64))
         .collect();
     levels.push((floor, floor));
-    if levels.len().is_multiple_of(2) {
+    // Parity. Each level is one traversal of the window, alternating
+    // direction, so an ODD count ends at the window's FAR end and an EVEN
+    // count ends back on the run's FIRST point. Pencil owns the window and
+    // resumes the body pass past it, so it wants odd. A caller that only
+    // INSERTS the manoeuvre in front of an untouched body pass (G-ISOCLIPENTRY,
+    // `dressup::optimize_entry_descents`) must hand the tool back where the
+    // plunge would have left it, so it wants even.
+    let want_even = end_at_start;
+    if levels.len().is_multiple_of(2) != want_even {
         levels.push((floor, floor));
     }
 
@@ -1273,7 +1319,9 @@ fn emit_entry_descent(
 ) -> usize {
     use crate::toolpath::MoveIntent;
 
-    match entry_stock.and_then(|stock| plan_entry_ramp(run, stock, contact_radius, params)) {
+    match entry_stock
+        .and_then(|stock| plan_entry_ramp(run, stock, contact_radius, params.safe_z, false))
+    {
         Some(plan) => {
             // Air only — the descent stops at the conservative stock ceiling,
             // so the plunge-rate cap is paid on nothing but clearance (and

@@ -452,6 +452,7 @@ fn face_full_chain_fingerprint() {
         0.0,
         3.0,
         &rs_cam_core::tool::FlatEndmill::new(6.0, 25.0),
+        None,
     );
     current = transformed
         .reconcile(&mut ReconcileSet::new(Some(&recorder), None))

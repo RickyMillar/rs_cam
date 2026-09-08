@@ -192,6 +192,7 @@ fn descent_planned_coarse_does_not_collide_at_any_verification_resolution() {
         STOCK_TOP_Z,
         DESCENT_TOOL_RADIUS,
         &descent_tool(DESCENT_TOOL_RADIUS),
+        None,
     );
     assert_eq!(
         splits, 1,
@@ -248,6 +249,7 @@ fn a_descent_over_swept_ground_still_descends() {
         STOCK_TOP_Z,
         0.5,
         &descent_tool(0.5),
+        None,
     );
     assert_eq!(splits, 1, "a descent over swept ground must still be split");
 

@@ -221,6 +221,7 @@ fn optimize_one(
         FRESH_TOP_Z,
         cutter.envelope_radius_mm(),
         cutter,
+        None,
     );
     (splits, tp)
 }

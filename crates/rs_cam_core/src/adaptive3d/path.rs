@@ -1303,6 +1303,9 @@ pub(super) fn segments_to_toolpath(
             // rough may cut; the planned leg z stands there
             // (FINDINGS.md amendment 2).
             off_mesh: crate::dressup::OffMeshEntry::Unconstrained,
+            // Adaptive3d clears PRISM stock and plans its own peck ladder;
+            // the bite-budgeted rest ramp is the surface family's door.
+            rest_stock: None,
         }),
     };
 

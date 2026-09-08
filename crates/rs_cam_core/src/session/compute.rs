@@ -1625,6 +1625,9 @@ impl ProjectSession {
                         cutter: &tool_def,
                         stock_to_leave: leave,
                         off_mesh: crate::dressup::OffMeshEntry::PlungeFallback,
+                        // G-ISOCLIPENTRY: `Some` only on a rest-driven pass —
+                        // `gen_initial_stock` is `None` for `StockSource::Fresh`.
+                        rest_stock: gen_initial_stock,
                     }),
                     _ => None,
                 };
@@ -1770,7 +1773,24 @@ impl ProjectSession {
                 // remapped through the same provenance-map contract the
                 // boundary clip uses (`Span::remap`), rather than
                 // invalidating them.
+                //
+                // G-ISOCLIPENTRY: on a REST-DRIVEN surface-riding pass the
+                // same pass also ramps the descent instead of plunging it.
+                // The dressup entry door ran before the boundary clip and
+                // the clip rapids its geometry away, inventing a fresh
+                // vertical descent per region re-entry that no door ever
+                // sees; this is the post-clip door. `gen_initial_stock` is
+                // `Some` exactly on `FromRemainingStock`, so a fresh-stock
+                // pass is unchanged.
                 {
+                    let rest_entry_ramp =
+                        tc.operation
+                            .entry_probe_leave()
+                            .map(|_| crate::dressup::RestEntryRamp {
+                                contact_radius_mm: crate::pencil::tip_contact_radius(&tool_def),
+                                feed_rate: tc.operation.feed_rate(),
+                                plunge_rate: tc.operation.plunge_rate(),
+                            });
                     let (transformed, _split_count) =
                         crate::dressup::optimize_entry_descents_annotated(
                             annotated,
@@ -1778,6 +1798,7 @@ impl ProjectSession {
                             heights.top_z,
                             tool_def.radius(),
                             &tool_def,
+                            rest_entry_ramp.as_ref(),
                         );
                     annotated = transformed.reconcile(&mut channels).into_inner();
                 }
