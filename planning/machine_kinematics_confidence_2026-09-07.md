@@ -523,3 +523,34 @@ s1.5 = 0.15 mm ≈ R1.0 at s1.0 = 0.13 mm, far stronger tip). Existing
 pieces to build on: `preview_tier_map` (multitool planner tiers by
 radius), `untouched_material_mm2` / `reached_uncut_estimate_mm2`
 generation findings, the remaining-stock render. Not started.
+
+## Before/after on the rebuilt binary (rs-cam-38, 2026-09-08) — closing proof
+
+iso-scallop R2.0 (S20) and spiral R1.5 (SP15) rerun with identical params
+at 0.2 mm on the binary carrying the guard + G-BOUNDARYPLUNGE:
+`plunge_class_load` GONE on both — S20 1/109 at 2.71× → 0/109 at 1.00×;
+SP15 108/197 at 3.61× → 0/197 at 1.00×. Runtime −0.16 s / −6.3 s; every
+gate, `crosses_standing`, the modulator's median delta and the achieved
+feed reproduce. Doc §2.5 carries the table.
+
+Two faces of the fix, measured: on SP15 the PLANNED (pre-modulation) IR
+went 108 → 0 — all 108 were boundary re-entry re-tags, removed by the
+generator fix; on S20 the planned IR still carries 65 UNTAGGED descents
+that the geometric guard caps, and the generator fix removed exactly the
+one tagged re-entry. Both mechanisms are needed.
+
+Air comparability across the G-AIRDENOM boundary: S20's air moved 36.8 %
+→ 31.1 % of total with the cut byte-identical, and the "absolute air"
+figures (pct × total) computed on the pre-fix binary were themselves
+mixed-base and OVER-state air on every modulator-slowed arm. Pre-fix and
+post-fix air figures are NOT comparable; §2.5 is the bridge. Rankings that
+lean on air must be re-read on post-fix runs.
+
+**G-SIMRESKEY (ledger, MCP usability defect):** `run_simulation`'s
+parameter is `resolution`; a call passing `resolution_mm` is accepted and
+the key silently ignored, so the sim runs at the GUI's held value (0.4 mm
+after a fresh load). One S20 sim went out that way and was discarded. The
+response does echo `cell_mm`, which is how it was caught. Fix: reject
+unknown parameter keys on MCP params (`deny_unknown_fields`), and put the
+resolution actually used in the first line of the reply. Same class as
+the "sim resolution is never a neutral default" rule in `generate_all`.

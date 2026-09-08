@@ -368,6 +368,66 @@ consistent with the DOC-derate mechanism and still not verified in code.
 
 Artifacts: `PLY_pair_A_finish.toml`, `PLY_pair_A_finish_sim.png`.
 
+### 2.5 Instrument before/after across the rebuild — MEASURED
+
+The GUI was reset onto the binary that carries G-DCFLAT, G-AIRDENOM (one
+time base for the air percentages) and the G-BOUNDARYPLUNGE generator fix.
+S20 and SP15 were reloaded from their saved TOMLs with no parameter
+change and run again at 0.2 mm. Everything that is a property of the CUT
+reproduces; the two things the fixes touch move, and only those.
+
+| | S20 pre (1af25c87) | S20 post | SP15 pre | SP15 post |
+|---|---:|---:|---:|---:|
+| total runtime (s) | 2 389.18 | 2 389.02 | 3 806.3 | 3 799.96 |
+| fed time (s) | 2 256.5 | 2 256.40 | 3 330.0 | 3 326.97 |
+| moves / cutting mm / rapid mm | 44 190 / 30 024 / 1 542 | same | 24 593 / 31 309 / 18 738 | same |
+| plunge over 1× (emitted) / peak | 1 / 109, 2.71× | **0 / 109, 1.00×** | 108 / 197, 3.61× | **0 / 197, 1.00×** |
+| plunge over 1× in the PLANNED IR | 66 / 109 | 65 / 109 | 108 / 197 | **0 / 197** |
+| `plunge_class_load` triage action | CRITICAL | absent | CRITICAL | absent |
+| air % of total / % of cutting | 36.76 / 35.28 | **31.13 / 31.81** | 25.21 / 30.88 | **25.61 / 29.18** |
+| air, absolute (s) | 878 (mixed-base, see below) | 744 | 960 (mixed-base) | 973 |
+| crosses_standing | 24.0 % > 2.52, peak 8.54 | identical | — | — |
+| chipload gate | Within, band 0.0135–0.0239, median at max | identical | Within (extrapolated), 0.0091–0.0181, median at max | identical |
+| deflection / power peak | 0.007 mm / 0.015 kW | 0.007 / 0.015 | 0.020 mm / 0.008 kW | 0.020 / 0.008 |
+| modulator touched / median Δ | 42 727 / −4.3 % | 41 389 / −4.3 % | 17 994 / −27.5 % | 17 994 / −27.5 % |
+| achieved feed, time-weighted | 798.3 | 798.4 | 564.1 | 564.6 |
+| collisions / provenance | 0 / emitted | 0 / emitted | 0 / emitted | 0 / emitted |
+
+Three readings, in order of weight:
+
+1. **The plunge fix is a generator fix and the two arms show its two
+   faces.** On SP15 the planned (pre-modulation) IR went from 108 over-1×
+   descents to zero: every one of the spiral's fast descents was a
+   boundary re-entry that had kept its cut feed, and the generator now
+   emits them at the plunge rate. On S20 the planned IR still carries 65
+   untagged descents above the plunge rate and the modulator's geometric
+   guard caps all of them; the fix removed exactly the one tagged re-entry
+   the guard could not reach. Runtime moved by −0.16 s and −6.3 s.
+2. **G-AIRDENOM moved the percentage, not the air.** S20's air reading
+   fell from 36.8 % to 31.1 % of total with the cut byte-identical in
+   every other column. The pre-fix "absolute air" figures in §2.1 were
+   derived as percentage × total runtime, and that product was itself
+   mixed-base (the percentage's denominator was the naive commanded-feed
+   clock, the total was the modulated wall clock), so they OVER-state the
+   air on every arm the modulator slowed. Post-fix, the air seconds are on
+   one clock. **Air percentages and air seconds from the pre-fix arms in
+   §2.1 are not comparable to the post-fix arms in §2.5 onward**; where
+   the same arm exists on both sides, this table is the bridge.
+3. The G-AIRDENOM effect is small where the modulator barely moved the
+   feed (SP15: 25.2 % → 25.6 % of total) and large where it slowed the
+   cut most (S20 −5.6 points). The 40 %/45 % bars were tuned against the
+   mixed-base quantity and were not moved; on the post-fix binary a ball
+   finish reads a few points lower against the same bar.
+
+Instrument note for the record: the MCP `run_simulation` parameter is
+`resolution`; a call with the key `resolution_mm` is accepted and IGNORED,
+and the sim runs at whatever the GUI held (0.4 mm after a fresh load,
+the previous value otherwise). One S20 rerun went out at 0.4 mm that way
+(2 397.7 s, air 30.2 %) and was discarded; every figure in this document
+was checked to be at `cell_mm = 0.2`.
+
+Artifacts: `S20_postfix_sim.png`, `SP15_postfix_sim.png`.
+
 ## 3. Verdict on the hypothesis, and a ranked recommendation
 
 The hypothesis passes, on the ball tools, on every bar the orchestrator set:
@@ -460,8 +520,10 @@ answered by removing the finish, not by deepening the rough.
   4 as roughs; the modulated Arm G rerun): NOT RUN on this binary — the
   chipload gate is unmodeled and the modulator has no target until the
   G-DCFLAT build lands (§1.1). Scheduled after the rebuild and MCP reset.
-- **Before/after plunge reruns** (S20, SP15, S15, RA06, WL15, A-ply, E-ply):
-  NOT RUN; the fix is `301f2cbc`, the binary is `1af25c87`.
+- **Before/after plunge reruns**: S20 and SP15 MEASURED on the rebuilt
+  binary (§2.5). S15, RA06, WL15, A-ply and E-ply were not rerun; their
+  plunge findings are the same two classes and the §2.5 pair is the
+  instrument's before/after.
 - **Rough + finish pair on plywood**: MEASURED for A + R1.5 finish (§2.4,
   14 264 s, finish 11 630 s fed). The C2 and E pairs were not run; their
   finish would be the same op on a slightly different remaining stock, and
