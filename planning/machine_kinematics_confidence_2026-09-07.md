@@ -699,7 +699,7 @@ Ledger:
   bind-group-layout entry stayed VERTEX-only, and wgpu refused the
   pipeline. Found by rs-cam-38 on the live launch; the fix is the
   visibility flag. No gate creates a device, so no gate could see it.
-- **G-PIPESMOKE (2026-09-09, OPEN → in progress):** a headless wgpu
+- **G-PIPESMOKE (2026-09-09, DONE `render_pipelines_headless_g_pipesmoke.rs`; proved red on the G-LINEVIS flag, green on the fix, lavapipe 0.22 s):** a headless wgpu
   software-adapter test that constructs every render pipeline in
   `render/mod.rs`, so a layout/shader mismatch fails in `cargo test`
   instead of at the operator's launch.
