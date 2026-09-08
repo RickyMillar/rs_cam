@@ -79,6 +79,35 @@ can we push it", with the plunge hazard as one corner of the same gauge.
   modulated wall clock) and inverted under modulation; now one base,
   rebased per sample. The documented order holds again.
 
+### P5 — the reach map (`5f665edf`, merged `6c532e4d`)
+
+Operator ask: "if it is cheap to calculate the reach map, show it when any
+finishing op is selected in the viewport." `reach_map::compute_reach_map`
+takes the gap between the surface the selected cutter would leave (a
+min-filter of the drop-cutter CL plane with the tool's own profile) and the
+true mesh; the tolerance is the op's own cusp height, never
+`stock_to_leave`. Not a one-rung tier map: with one tool the tier residual
+is identically zero. Surfaces: a per-vertex green/red overlay on the model
+whenever a finishing op is selected, the unreachable % and worst gap beside
+its toggle, MCP `reach_map`, `screenshot_toolpath(reach_overlay)`. A fourth
+worker lane (`ComputeLane::Reach`) so a selection cannot cancel a running
+simulation. Ledgered, not fixed: the overlay blinks on any project edit
+(coarse `edit_counter` key — fix = export `ToolShapeKey` from core); a
+second 3D mesh model does not draw while the overlay is on; a 3 s
+`REACH_STALL_GRACE` recovers a stuck `Computing`. Gates green; **not yet
+seen on screen** — the live GUI check waits on the next MCP restart.
+
+### Viewport overlays — design + audit (`4a7a84f3`, this entry)
+
+`planning/ui_overlays_ux_2026-09-08.md`: 42 overlays across four groups,
+an Overlays panel that lists every overlay and disables with a reason.
+`planning/ui_overlays_dead_duplicate_2026-09-08.md`: 24 WORK, 3 dead
+controls (Wireframe draws nothing and hides the STL; tool-profile ghost has
+no upload writer; span filter inert in two colour modes), 2 dead render
+consumers (rest regions, machining boundary), 7 silent couplings under one
+"Fixtures" flag, `analytics_tab` has six writers and no reader. P6 builds
+the panel from the audit's KEEP set.
+
 ### Roughing and finishing strategy on terrain (evidence, rs-cam-38)
 
 - Roughing A/B (`planning/roughing_strategy_ab_results_2026-09-07.md`):

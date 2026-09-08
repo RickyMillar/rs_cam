@@ -522,7 +522,40 @@ curve — the tool-choice decision in one picture, and the honest basis for
 s1.5 = 0.15 mm ≈ R1.0 at s1.0 = 0.13 mm, far stronger tip). Existing
 pieces to build on: `preview_tier_map` (multitool planner tiers by
 radius), `untouched_material_mm2` / `reached_uncut_estimate_mm2`
-generation findings, the remaining-stock render. Not started.
+generation findings, the remaining-stock render.
+
+**Landed 2026-09-08** (`5f665edf`, merged to master `6c532e4d`). The
+primitive is NEITHER of the two named above: a one-rung tier map is
+identically zero (its residual is tool-vs-finest, and with one tool those
+are the same drop) and `TierMap` discards the residual anyway; the rest
+centreline needs a prior op. It is built on the drop-cutter contact heights
+underneath the tier map — `machined_z = min over CL p of [tip_z(p) +
+height_at_radius(|p − (x,y)|)]`, `gap = machined_z − mesh_z` — exact on a
+plane of any slope for a ball, a flat and a tapered ball, so no slope
+estimate and no abstain-above-75° arm (`cl_offset_bias_mm` is the
+spherical-tip law and would read 1.76 mm of phantom gap on a Ø6 flat at
+45°). Tolerance = the op's `scallop_height()`, else 0.05 mm
+(repo-authored); `stock_to_leave` excluded as an intended offset. Cache
+key = mesh `Arc` identity + `ToolShapeKey` + params, capacity 4, no
+invalidation code (a tool edit changes the key; a re-import is a new
+`Arc`). Fourth lane `ComputeLane::Reach` — the Analysis lane's latest-wins
+rule would let a selection cancel a simulation. The overlay REPLACES the
+plain model draw for the frame (no z-fight); DXF/SVG curve models draw
+through the line pipeline and are unaffected.
+
+Ledger from P5:
+- **P5-BLINK**: the overlay hides behind `computing…` on any project edit
+  (key is `(ToolpathId, edit_counter)`); the honest fix exports
+  `ToolShapeKey` from core so the viz can compare resolved requests.
+- **P5-MULTIMESH**: a second 3D mesh model does not draw while the overlay
+  is on (no wanaka project has one).
+- **P5-STALL**: `REACH_STALL_GRACE` 3 s recovers a stuck `Computing` —
+  needed because a scripted backend reports idle the instant after submit.
+- **P5-FRAMELOOP**: MCP `reach_map` / `reach_overlay` run on the frame loop
+  like `preview_tier_map` and inherit its cancel limitation.
+- Cost measured in debug only: 2.28 s cold on 320 k triangles / 119 k
+  cells. **Not seen on screen** — live GUI check pending the next MCP
+  restart on the rebuilt release binary.
 
 ## Before/after on the rebuilt binary (rs-cam-38, 2026-09-08) — closing proof
 
