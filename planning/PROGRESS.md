@@ -108,6 +108,21 @@ consumers (rest regions, machining boundary), 7 silent couplings under one
 "Fixtures" flag, `analytics_tab` has six writers and no reader. P6 builds
 the panel from the audit's KEEP set.
 
+### P6 — the Overlays panel (`f6478689`, merged `92a62851`)
+
+One registry (`ui/overlays/registry.rs`, 38 rows in Geometry / Toolpath /
+Regions / Analysis) feeds the panel, MCP `set_ui_view` `overlays` (with
+`applied` / `refused: {id: reason}`) and the completeness sentries. Every
+overlay is always listed; one that cannot draw is disabled with the reason
+and a compute button where one exists. One colour source per surface;
+reach map ON by default in Toolpaths (operator ruling), rest heatmap OFF.
+`Show ▼`, `Shaded ▼` (Wireframe drew nothing), the Inspector view items
+and the duplicate Cut/Rapid checkboxes are retired into it. All 17 audit
+§6 fixes applied, including the inert tool-profile ghost, the 2D stock
+box, the split Fixtures flag and the `analytics_tab` deletion. Not drawn
+yet and listed as such: derived rest regions, boundary outline. **Not
+seen on screen** — live GUI check pending with P5's.
+
 ### Roughing and finishing strategy on terrain (evidence, rs-cam-38)
 
 - Roughing A/B (`planning/roughing_strategy_ab_results_2026-09-07.md`):
