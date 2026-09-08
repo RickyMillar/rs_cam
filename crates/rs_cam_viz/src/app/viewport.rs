@@ -233,21 +233,32 @@ impl RsCamApp {
         // stale (audit §2c, fix §6.5).
         let selected_rest_grid_info: Option<(f64, f32)> =
             crate::ui::overlays::registry::rest_grid_info(self.controller.state());
+        let docked;
         {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::viewport_overlay::draw(ui, state, projection, &lane_snapshots, events);
             // Docked BEFORE the 3D view claims the rest of the space, so the
             // pinned column takes width from it instead of covering it.
-            crate::ui::overlays::panel::draw_docked(ui, state, events);
+            docked = crate::ui::overlays::panel::draw_docked(ui, state, events);
         }
 
-        let (rect, response) =
-            ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
+        // P6: never hand a degenerate size to the 3D view. `available_size`
+        // can arrive at zero once the resizable side panels have taken the
+        // window, and a zero-width viewport renders — and screenshots — as
+        // nothing at all.
+        let free = ui.available_size();
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(
+                free.x.max(crate::ui::overlays::panel::MIN_VIEWPORT_WIDTH),
+                free.y.max(1.0),
+            ),
+            egui::Sense::click_and_drag(),
+        );
 
         self.viewport_rect = rect;
         {
             let (state, events) = self.controller.state_and_events_mut();
-            crate::ui::overlays::panel::draw_floating(ui, state, events, rect);
+            crate::ui::overlays::panel::draw_floating(ui, state, events, rect, docked);
         }
         if self.controller.state().viewport.show_tool_deflection {
             self.draw_sim_deflection_overlay(ui, rect);

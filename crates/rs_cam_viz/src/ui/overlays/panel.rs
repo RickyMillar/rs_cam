@@ -18,12 +18,36 @@ use super::registry::{self, Legend, OverlayAction, OverlayGroup, OverlayRow, Ove
 /// Width of the docked column, and the floating window's default width.
 const PANEL_WIDTH: f32 = 232.0;
 
+/// The 3D view's floor, in points. The docked Overlays column refuses to dock
+/// rather than take the viewport below this.
+///
+/// P6, 2026-09-08: `screenshot_gui` at the window's own 1400 x 900 came back
+/// with **no 3D viewport at all** — the operation list and the inspector
+/// filled the frame. `draw_docked` took `exact_size(PANEL_WIDTH)` out of
+/// whatever the two side panels had left, and `app.rs` then handed
+/// `ui.available_size()` straight to `allocate_exact_size`, so once the side
+/// panels had been dragged wide (egui remembers a resizable panel's width
+/// across frames and windows, and does not shrink it when the window does)
+/// the remainder went to zero and the viewport vanished silently. A viewport
+/// that can reach zero width is a screenshot surface that can return a
+/// picture of nothing.
+pub const MIN_VIEWPORT_WIDTH: f32 = 320.0;
+
 /// The docked form: a column inside the viewport. Called BEFORE the 3D view
 /// claims the remaining space, so the column takes width from it rather than
-/// covering it. A no-op unless the panel is open and pinned.
-pub fn draw_docked(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+/// covering it.
+///
+/// Returns **true when it actually docked**. It refuses in two cases: the
+/// panel is closed or unpinned, and — P6 — the space left over would put the
+/// 3D view under [`MIN_VIEWPORT_WIDTH`]. The caller turns a refusal into the
+/// floating form, so a pinned panel on a narrow window becomes a window over
+/// the viewport instead of erasing it.
+pub fn draw_docked(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) -> bool {
     if !state.overlays.open || !state.overlays.pinned {
-        return;
+        return false;
+    }
+    if ui.available_width() - PANEL_WIDTH < MIN_VIEWPORT_WIDTH {
+        return false;
     }
     egui::Panel::left("overlays_panel")
         .resizable(false)
@@ -36,6 +60,7 @@ pub fn draw_docked(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<App
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| body(ui, state, events));
         });
+    true
 }
 
 /// The floating form: a window over the 3D view, anchored to the viewport's
@@ -46,8 +71,9 @@ pub fn draw_floating(
     state: &mut AppState,
     events: &mut Vec<AppEvent>,
     viewport_rect: egui::Rect,
+    docked: bool,
 ) {
-    if !state.overlays.open || state.overlays.pinned {
+    if !state.overlays.open || docked {
         return;
     }
     let anchor = viewport_rect.min + egui::vec2(8.0, 8.0);
@@ -321,25 +347,43 @@ fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend) {
                 |t| rest_ramp_color(threshold + t * (peak - threshold), threshold, peak),
             );
         }
-        Legend::Reach(tolerance) => {
+        Legend::Reach(ramp) => {
             use rs_cam_core::reach_map::reach_color;
-            // 0 → 5× tolerance covers `reach_color`'s whole range: it
-            // saturates at 4× tolerance past the tolerance itself.
-            let span = (tolerance * 5.0) as f32;
+            // The strip draws the DEPTH band only — the bar to the deepest
+            // gap, on the ramp's own log scale — because that is the part
+            // with structure in it. Green and grey are single colours and
+            // are named on the line under it rather than given ramp width.
+            let bar = ramp.bar_mm();
+            let top = ramp.max_gap_mm.max(bar);
+            let ratio = (top / bar).max(1.0);
             gradient_strip(
                 ui,
-                &format!("Reach 0 \u{2014} tol {tolerance:.3} mm"),
-                &format!("{span:.2} mm gap"),
-                move |t| reach_color(t * span, tolerance),
+                &format!("miss {bar:.3} mm"),
+                &format!("{top:.2} mm"),
+                move |t| {
+                    // Inverse of `ReachRamp::depth_t`, nudged past the bar so
+                    // t = 0 samples the first MISS colour and not the green.
+                    let gap = bar * ratio.powf(f64::from(t)) * 1.001;
+                    reach_color(gap as f32, f32::NAN, ramp)
+                },
+            );
+            ui.label(
+                egui::RichText::new(format!(
+                    "green \u{2264} {:.3} mm \u{00B7} grey = unresolved \u{00B7}                      mid {:.2} mm \u{00B7} log scale",
+                    ramp.tolerance_mm,
+                    ramp.mid_stop_mm(),
+                ))
+                .small()
+                .color(theme::TEXT_FAINT),
             );
             if let Some(map) = state.gui.reach_overlay.ready_map() {
                 let measured = map.is_measured();
                 ui.label(
                     egui::RichText::new(if measured {
                         format!(
-                            "unreachable {:.1}% of MEASURED area \u{00B7} \
-                             worst gap {:.3} mm",
+                            "unreachable {:.1}% {} \u{00B7} worst gap {:.3} mm",
                             map.unreachable_pct(),
+                            map.area_basis_note(),
                             map.max_gap_mm
                         )
                     } else {
@@ -365,13 +409,9 @@ fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend) {
                     );
                     if below {
                         ui.label(
-                            egui::RichText::new(format!(
-                                "{:.1}% unresolved \u{2014} this cell cannot answer at \
-                                 this bar",
-                                map.unresolved_pct()
-                            ))
-                            .small()
-                            .color(theme::WARNING),
+                            egui::RichText::new(map.over_statement_note())
+                                .small()
+                                .color(theme::WARNING),
                         );
                     }
                 }

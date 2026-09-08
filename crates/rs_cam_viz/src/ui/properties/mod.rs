@@ -3547,8 +3547,11 @@ pub(crate) enum ReachPanelSummary {
         /// (F1 / F5, 2026-09-08).
         grid_note: String,
         /// True when the tolerance is under
-        /// [`rs_cam_core::reach_map::ReachMap::discretisation_floor_mm`], in
-        /// which case the percentage is a LOWER BOUND.
+        /// [`rs_cam_core::reach_map::ReachMap::discretisation_floor_mm`]. The
+        /// grid's gap bias is NON-NEGATIVE (a minimum over a sampled set sits
+        /// at or above the continuum minimum), so the percentage OVER-states
+        /// and the truth is at or below it — see
+        /// [`rs_cam_core::reach_map::ReachMap::tolerance_below_floor`].
         tolerance_below_floor: bool,
         unresolved_pct: f64,
     },
@@ -3729,7 +3732,9 @@ fn draw_toolpath_panel(
                     if *tolerance_below_floor {
                         ui.label(
                             egui::RichText::new(format!(
-                                "{unresolved_pct:.1} % unresolved \u{2014} raise the tolerance to \
+                                "{unresolved_pct:.1} % unresolved \u{2014} the grid \
+                                 OVER-states gaps, so the true share is at or \
+                                 below the figure above; raise the tolerance to \
                                  this operation's own cusp before reading the \
                                  residual as tool geometry"
                             ))

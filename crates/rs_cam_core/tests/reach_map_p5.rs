@@ -341,15 +341,50 @@ fn a_colour_vector_has_one_entry_per_model_vertex() {
     let ball = BallEndmill::new(3.0, 25.0);
     let map = reach_map_for_mesh(&mesh, &ball, 0.05, 0.5);
     let gaps = map.vertex_gaps(&mesh, &index);
-    let colors = reach_colors(&gaps, map.tolerance_mm);
+    let floors = map.vertex_floors(&mesh);
+    let ramp = map.ramp();
+    let colors = reach_colors(&gaps, &floors, ramp);
     assert_eq!(colors.len(), mesh.vertices.len());
-    // Reached is green-dominant, unreachable is red-dominant, not measured is
-    // the model mesh's own neutral — three readings the overlay must not mix.
-    let reached = reach_color(0.0, 0.05);
-    let missed = reach_color(1.0, 0.05);
-    let absent = reach_color(f32::NAN, 0.05);
+    assert_eq!(
+        colors,
+        map.vertex_colors(&mesh, &index),
+        "`vertex_colors` must be the same one pass the vector form gives, or \
+         the worker and a caller that assembles it by hand would drift"
+    );
+    // FOUR readings the overlay must not mix (P5.2): reached is
+    // green-dominant, unresolved is neutral grey, a miss is red-dominant and
+    // DEEPENS with the gap, and not measured is the model mesh's own colour.
+    let probe = rs_cam_core::reach_map::ReachRamp {
+        tolerance_mm: 0.05,
+        floor_mm: 0.05,
+        max_gap_mm: 4.0,
+    };
+    let reached = reach_color(0.0, f32::NAN, probe);
+    let missed = reach_color(1.0, f32::NAN, probe);
+    let absent = reach_color(f32::NAN, f32::NAN, probe);
+    let unresolved = reach_color(0.09, 0.10, probe);
+    let shallow = reach_color(0.06, f32::NAN, probe);
+    let deep = reach_color(4.0, f32::NAN, probe);
     assert!(reached[1] > reached[0], "reached must read green");
     assert!(missed[0] > missed[1], "unreachable must read red");
+    assert!(
+        (unresolved[0] - unresolved[1]).abs() < 0.05
+            && (unresolved[1] - unresolved[2]).abs() < 0.05,
+        "an unresolved vertex must read as neutral grey, not as either \
+         verdict; got {unresolved:?}"
+    );
+    // The whole point of the depth ramp: a near-miss and a gorge floor are
+    // not the same colour, and the deep end is DARKER.
+    let lum = |c: [f32; 3]| c[0] + c[1] + c[2];
+    assert!(
+        lum(shallow) > lum(deep) + 0.5,
+        "the depth ramp must darken with the gap: a 0.06 mm miss {shallow:?} \
+         against a 4.0 mm gorge {deep:?}"
+    );
+    assert!(
+        (shallow[1] - deep[1]).abs() > 0.3,
+        "a near-miss and a gorge floor must not be the same red"
+    );
     assert_eq!(
         absent,
         [0.6, 0.55, 0.5],
@@ -638,5 +673,67 @@ fn a_big_tool_on_a_fine_cell_keeps_its_envelope_tap() {
          floor {:.5} mm",
         map.max_gap_mm,
         map.discretisation_floor_mm
+    );
+}
+
+/// The map says which WAY its own error runs, and never the wrong way.
+///
+/// `machined_z` is a minimum over a sampled CL set, so it sits at or above
+/// the continuum minimum and the reported gap is at or above the true gap.
+/// The bias is non-negative, so the unreachable percentage OVER-states and
+/// the truth is at or BELOW it. Four operator surfaces said "lower bound"
+/// instead — exactly inverted — at the one moment a reader is being told to
+/// distrust the number. Measured on the wanaka board against an independent
+/// closing on the same area base: 59.05 % reported against 58.6 % true at the
+/// 0.05 mm bar, 51.11 against 42.1 at 0.146, 36.36 against 26.8 at 0.30.
+///
+/// The strings are built in `ReachMap` and quoted by the panel, the MCP reply
+/// and the inspector, so this one assertion covers all three.
+#[test]
+fn the_grid_note_says_the_bias_over_states_and_names_its_area_base() {
+    // A V-groove with a bar far under the floor, so the below-floor arm runs.
+    let mesh = v_trench(8.0, 30.0, 30.0, 80, 30).into_mesh();
+    let ball = BallEndmill::new(3.0, 25.0);
+    let map = reach_map_for_mesh(&mesh, &ball, 0.001, 0.4);
+    assert!(map.is_measured(), "the fixture must produce a population");
+    assert!(
+        map.tolerance_below_floor(),
+        "the fixture must put the bar under the floor, or the arm under test \
+         never runs: tol {:.4} against floor {:.4}",
+        map.tolerance_mm,
+        map.discretisation_floor_mm
+    );
+
+    let note = map.grid_note();
+    let lower = note.to_lowercase();
+    assert!(
+        !lower.contains("lower bound"),
+        "the grid note claims a LOWER bound; the sampled minimum can only \
+         over-state, so the truth is at or BELOW the figure. Got: {note}"
+    );
+    assert!(
+        note.contains("AT OR BELOW"),
+        "the grid note must say which way the error runs. Got: {note}"
+    );
+    assert!(
+        note.contains("over-states"),
+        "the grid note must name the direction of the bias. Got: {note}"
+    );
+    // P5.2: the base, in words, beside every percentage — an unstated base is
+    // what turned a 3.5-point weighting difference into a hunt for a phantom
+    // instrument defect.
+    assert!(
+        note.contains("3D surface area") && note.contains("rim-eroded"),
+        "the grid note must state the area base. Got: {note}"
+    );
+    assert!(
+        map.area_basis_note().contains("rim-eroded"),
+        "the shared area-basis string is the one the panel prints"
+    );
+    // And the over-statement sentence is one construction site, so the three
+    // surfaces cannot describe the bias three ways.
+    assert!(
+        note.contains(&map.over_statement_note()),
+        "the grid note must quote the shared over-statement sentence"
     );
 }
