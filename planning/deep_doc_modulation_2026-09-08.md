@@ -577,18 +577,40 @@ percentage. An independent rasterisation of the terrain closed with the
 R2.0 ball (`reach_truth_rasteriser.py`, in this directory) gives the
 truth to quote:
 
-| tolerance (mm) | R2.0 unreachable, truth | reach_map on the 0.645 grid |
-|---:|---:|---|
-| 0.05 | 55.0 % | 59.05 % + 9.14 % unresolved (was 68.2 % pre-fix) |
-| 0.146 (Q2's cusp, now the default bar) | 39.5 % | — |
-| 0.30 | 25.2 % | — |
+| tolerance (mm) | truth, planar whole-board (rasteriser) | truth on the map's own base (3D surface area, rim-eroded) | reach_map, 0.75 grid, P5.1 |
+|---:|---:|---:|---|
+| 0.05 | 55.0 % | 58.6 % | 59.05 % (+ 11.0 % unresolved) |
+| 0.146 (Q2's cusp, the default bar) | 39.5 % | 42.1 % | 51.1 % (+ 2.8 % unresolved) |
+| 0.30 | 25.2 % | 26.8 % | 36.4 % |
 
-So the R2.0 raster leaves about 40 % of this terrain more than its own
-cusp away from the surface — the valley floors and steep flanks the 4 mm
-ball cannot enter — and about a quarter of it more than 0.3 mm away.
+The second look on the P5.1 build read the map 12 points above the
+planar truth at every bar, which is not what a grid floor does. It was
+measured down on one mask: 3.5 points are the AREA BASE (the map weights
+by true 3D surface area over the rim-eroded population, mean sec θ 1.34,
+and the steep cells are the unreachable ones — the middle column is the
+truth on that base), the tapered shank is +0.01 points (refuted: a 3°
+cone needs a neighbour 3.9 mm higher at 2.1 mm away), and the remaining
+~9 points are the documented discretisation — an additive gap inflation
+of about +0.054 mm at the 0.75 mm cell, which on a terrain whose gap
+density is nearly flat over 0.05–0.30 mm shows up as a near-constant
+PERCENTAGE offset. Consequence, applied in the follow-up commit: the
+map's unreachable figure is an UPPER estimate (truth at or below it),
+the "lower bound" wording is gone, and the area basis is printed in the
+legend; at the tight bar the map is within 0.5 points of the same-base
+truth. The reach reply's first line is the grid note (cell, floor,
+bar) — read it before the percentage.
+
+So the R2.0 raster leaves about 42 % of this terrain's surface (39.5 %
+of its plan area) more than its own cusp away from the true surface —
+the valley floors and steep flanks the 4 mm ball cannot enter — and
+about a quarter of it more than 0.3 mm away. The gap histogram says how
+deep: 83 % of the measured cells sit under 0.56 mm, 13 % between 0.56
+and 1.1 mm, 3 % between 1.1 and 1.7 mm, under 1 % deeper, worst 4.46 mm.
 That is the price of the 35-minute single pass, stated as a measured
 area rather than a picture. Screens: `Q2_reach_overlay_gui.png`,
-`Q2_reach_overlay_path.png` (pre-fix build).
+`Q2_reach_overlay_path.png` (P5 build), `Q2_reach_overlay_gui_p51.png`,
+`Q2_reach_overlay_gui_p51_wide.png`, `Q2_reach_overlay_path_p51.png`
+(P5.1 build, moves dimmed under the shading).
 
 Ranked on reach, time and cusp together:
 
