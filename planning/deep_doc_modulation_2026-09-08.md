@@ -576,9 +576,45 @@ Ranked on reach, time and cusp together:
    bigger ball enters. It is the reach tool, not the finish tool: 2.4×
    Q2's time for about 16 % more area.
 
-The pairing the tier map points at is Q2 as the whole-surface pass plus
-the R1.0 confined to its 17 islands (`plan_multitool_finishing` emits
-exactly that ladder); that pair was not run here.
+**The pairing the tier map points at was RUN, and it is not a win.** The
+operator asked to see it, so the ladder was built with
+`plan_multitool_finishing` (tools [4, 2], cusp 0.14 → stepovers 1.470 /
+1.021, cell 0.4, tolerance 0.05, `apply_feeds` speeds, tier 0 switched to
+fresh stock because the planner emits it as `from_remaining_stock`),
+`generate_all` fixpoint 0.2 (2 rounds, 1 simulation) and a final 0.2 mm
+simulation (`cell_mm` 0.2 verified):
+
+| | tier 0, R2.0 unified_finish | tier 1, R1.0 unified_finish | ladder |
+|---|---:|---:|---:|
+| fed time (s) | 3 239 | 6 204 | |
+| total runtime (s) | | | **10 710** |
+| moves / cutting mm / rapid mm | 56 329 / 46 015 / 4 203 | 108 983 / 66 129 / 24 141 | |
+| band mix (moves) | scallop 40 876, raster 14 415, waterline 1 030 | scallop 79 218, raster 24 608, waterline 5 149 | |
+| retract trips | 123 | 1 104 | |
+| chipload | Within validated, hardwood scallop 6000 row, at max | Within validated, hardwood scallop 3175 row, at max | |
+| deflection / power | 0.007 mm / 0.012 kW | 0.006 mm / 0.004 kW | |
+| plunge over 1× | 0 / 147 | 0 / 1 316 (planned 1 266 over, guard-capped) | |
+| air % of total | 31.0 (degraded 0.16) | NOT MEASURABLE (blind 0.50) | 56.1 |
+| collisions / provenance | 0 / emitted | 0 / emitted | 0 |
+
+10 710 s is 5.1× Q2 alone and 3.3× B15. The cause is the operation, not
+the tools: the planner emits `unified_finish`, whose mid-steep band is a
+scallop at the ladder's cusp, and on this terrain that band dominates
+both tiers (tier 0 spends 40 876 of 56 329 moves in it). The R1.0 tier,
+with its islands grown by the 2 mm overlap band, cuts 66 km — more than
+the whole-surface Q1a raster's 45 km — with 1 104 retract trips. The
+RASTER pairing the ranking implies (drop_cutter R2.0 whole-surface plus
+drop_cutter R1.0 confined to the planner's island boundary) is NOT
+expressible through any MCP or GUI path today: `drop_cutter` takes no
+`planned_tier_regions` boundary. So the honest recommendation as of this
+doc is the single R2.0 raster (Q2), accepting the valley floors it does
+not reach, or B15. Artifacts: `LADDER_r20_r10islands.toml`, `_sim.png`,
+`_gui.png` (the live simulation view at the end of the ladder).
+
+Instrument note: tier 0's `modulation_summary` reads `moves_touched: 0`
+alongside `median_feed_delta_pct −5.3 %` and an achieved feed of 852
+against 925 commanded; the two fields cannot both be right and the
+achieved feed says the modulator ran. Ledger item for the orchestrator.
 
 Close-ups (TOP panel of the 4800-px render, autocontrast; height map,
 not lit): `Q1a_closeup_*`, `Q2_closeup_*`, `Q3_closeup_*` and
@@ -671,7 +707,10 @@ re-read on post-fix runs):
 
 0. Q2 — R2.0 raster s1.5 (§2.6, post-fix binary) — 2 089 s, cusp 0.146,
    every gate modeled Within, air 17.5 %; the fastest arm at or under
-   B15's cusp, and the widest reach of the balls tried.
+   B15's cusp, and the widest reach of the balls tried. The R2.0 + R1.0
+   ladder the tier map suggests was run and costs 10 710 s as the planner
+   emits it (§2.6), and the raster form of that pair cannot be built
+   today — so Q2 stands alone, valley floors accepted, or B15.
 1. B15 — 3 274 s, cusp 0.20, passes every bar as written.
 2. S20 — 2 389 s, cusp 0.27, passes every bar once the plunge fix is on the
    binary (rerun pending).
@@ -734,7 +773,8 @@ crops, `armG_finish_pair.toml` + `armG_finish_pair_sim.png`,
 + `_sim.png`, `GF10/GF15/GF20_flat_s*.toml` + `_sim.png`,
 `Q1a_r10_s10_plunge.toml` + `_sim.png`, `Q2_r20_s15.toml` + `_sim.png`,
 `Q3_scallop_r15_h020.toml` + `_sim.png` + `_path.png`,
-`tier_map_r10_r15_r20.svg`, `Q1a/Q2/Q3/B15v2_closeup_*.png`. Uncommitted
+`tier_map_r10_r15_r20.svg`, `Q1a/Q2/Q3/B15v2_closeup_*.png`,
+`LADDER_r20_r10islands.toml` + `_sim.png` + `_gui.png`. Uncommitted
 code: `crates/rs_cam_core/src/feeds/vendor_normalize.rs`,
 `crates/rs_cam_core/src/feeds/INTEGRATION.md`,
 `crates/rs_cam_core/src/tool_load/optimize/outcome.rs`,
