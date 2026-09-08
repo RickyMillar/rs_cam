@@ -694,6 +694,15 @@ Ledger:
   step: the headless T2 `.nc` (pre-fix CLI run in progress) names the move.
   The count is resolution-scaled (~2.2 × cell); a coarser re-run is not
   evidence of absence.
+- **G-LINEVIS (2026-09-09, FIXED 241efd45):** the P5.3 release crashed on
+  launch — the line shader's fragment stage read `uniforms.dim` while the
+  bind-group-layout entry stayed VERTEX-only, and wgpu refused the
+  pipeline. Found by rs-cam-38 on the live launch; the fix is the
+  visibility flag. No gate creates a device, so no gate could see it.
+- **G-PIPESMOKE (2026-09-09, OPEN → in progress):** a headless wgpu
+  software-adapter test that constructs every render pipeline in
+  `render/mod.rs`, so a layout/shader mismatch fails in `cargo test`
+  instead of at the operator's launch.
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and
