@@ -776,18 +776,30 @@ on 70.7 % of the board and the raster on 19.2 %. Two readings:
    the same for both patterns, which is why the reach map, not the cusp,
    governs them.
 2. **The §2.1 time ranking compared unequal surfaces.** "Q3 is 34 %
-   slower than B15" holds at equal NOMINAL cusp; at equal DELIVERED
-   surface the raster needs roughly half the stepover. B10 (s 1.0,
-   4 788 s) is the raster arm nearest that, and it is already slower than
-   Q3's 4 372 s before its surface has been measured. So on this terrain
-   the iso-scallop is the better single pass at matched finish, and the
-   raster's win is a win at a coarser finish. This does not change the
+   slower than B15" holds at equal NOMINAL cusp only. Put on ONE delivered
+   bar — the share of the board left more than 0.3 mm above the model,
+   with the whole-board median beside it — the three R1.5 single passes
+   read:
+
+   | R1.5 single pass | runtime s | board > 0.3 mm | p50 residual mm | p90 mm |
+   |---|---:|---:|---:|---:|
+   | B15 raster s1.5 | 3 274 | 46.4 % | 0.269 | 0.870 |
+   | B10 raster s1.0 | 4 788 | 31.5 % | 0.163 | 0.687 |
+   | Q3 iso-scallop h0.20 | 4 372 | 25.5 % | 0.141 | 0.573 |
+
+   The iso-scallop is both faster and better than the raster at half its
+   stepover, on every statistic and in every slope band (B10 by band:
+   p50 0.058 / 0.171 / 0.228 / 0.416 mm against Q3's 0.093 / 0.143 /
+   0.178 / 0.303 — the raster wins only on the flats). On the R1.5 tool
+   the iso-scallop DOMINATES the raster on this terrain: the raster's
+   win in §2.1 was a win at a coarser finish. The R2.0 pair (Q2 raster
+   s1.5 vs S20 iso-scallop h0.27) has not had its surfaces measured. This does not change the
    two-tool result (§2.7): the second pass there is a raster only because
    the island clip cannot yet carry a raster, and the whole-board R1.0
    raster on rest stock was the only pairing that passed.
 
 Caveats: the residual is quantised to the 0.2 mm dexel cell, so the
-0.09–0.13 flat-band medians are at the instrument's floor; the scallop
+0.06–0.13 flat-band medians are at the instrument's floor; the scallop
 arm shows a deeper overcut minimum (−0.71 mm against the raster's
 −0.37 mm) that has not been traced to a move; and both arms are measured
 against the model, not against each other's stock.
