@@ -504,7 +504,11 @@ impl RenderResources {
                 label: Some("line_bgl"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    // P5.3 made the fragment stage read the line uniforms
+                    // (the reach-overlay dim factor); wgpu validates the
+                    // layout against BOTH stages, so VERTEX-only here is a
+                    // startup crash (`create_render_pipeline` 'line_pipeline').
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
