@@ -554,3 +554,53 @@ response does echo `cell_mm`, which is how it was caught. Fix: reject
 unknown parameter keys on MCP params (`deny_unknown_fields`), and put the
 resolution actually used in the first line of the reply. Same class as
 the "sim resolution is never a neutral default" rule in `generate_all`.
+
+## Study closed — the plywood terrain recipe (rs-cam-38, 2026-09-08)
+
+All arms at cell 0.2, 0 collisions, provenance emitted, all three gates
+MODELED (doc §1.2a, §2.6, §3–§5).
+- **Arm G modulated** (6 mm flat raster rough, oak): 615.6 s vs 1117.8
+  unmodulated vs 2578 adaptive — chipload Within validated on
+  `amana-flat-hardwood-pocket-6000-2f` (modulator +96 %, achieved 1377);
+  **deflection 0.0425 = 85 % of the 0.05 bar, the closest gate** — the load
+  ceiling of that recipe is deflection, not chipload.
+- **Flat raster as the only pass is a ROUGH, not a finish:** terrace proxy
+  stepover × tan(slope) at the terrain's p50 45° slope = 1.0 / 1.5 / 2.0 mm
+  for s1.0 / 1.5 / 2.0 (p90 63°: 2–4 mm). Times 1808 / 1178 / 869 s. Air not
+  measurable (blind 0.51) at 0.2 mm on s1.0.
+- **Q2 — R2.0 ball raster s1.5 is the time-at-quality winner:** 2089 s,
+  cusp 0.146, deflection 0.007, air 17.5 %, and it owns 76 % of the model
+  cells in `preview_tier_map`.
+- **Q1a — R1.0 (2 mm tip) raster s1.0, plunge entry at the 300 mm/min ball
+  cap:** 5078 s, cusp 0.134, all Within; the gate queried the band at the
+  3.53 mm TAPER (not the tip) and deflection read 7 µm on the engaged-
+  diameter denominator; peak bite 8.6 mm = 4.3× tip D; plunge 0/1. It is
+  **the reach tool** — 17 islands / 7027 mm² that only it enters.
+- **Q3 — R1.5 iso-scallop h0.20** (cusp-matched to B15): 4372 s, 121 rings
+  (436 at h0.38), untouched 0.0 mm² (the only arm with a measured reach),
+  34 % slower than the B15 raster on the same tool.
+- **Ranking on reach + time + cusp: Q2 > B15 > Q3 > Q1a.** The tier map's
+  recipe — **R2.0 raster whole-surface + R1.0 confined to its 17 islands**
+  (the multitool ladder, `plan_multitool_finishing`) — is the recommendation;
+  the pair itself was not run.
+
+Corrections the peer made to its own doc: the gate DOES apply a DOC derate
+(same row reads 0.0320–0.0548 at a 4.2 mm bite and 0.0275–0.0471 at 9.3 mm
+— ×0.86, unlabelled, milder than expected); the tier map's 20 440
+"unassigned" cells are the grid margin, not unreachable valleys.
+
+Ledger:
+- **G-SUGGESTGATE is bidirectional** (strong, still not code-verified): on
+  the R1.5 ball Suggest's ceiling was 1.45× ABOVE the gate's; on the 6 mm
+  flat Suggest's post-derate chipload read 0.0244 (floor-clamp message) vs
+  the gate's 0.0471 ceiling — 1.93× BELOW. The recipe resolver and the
+  envelope resolver disagree in both directions depending on tool.
+- **G-DCENTRY** — DropCutter's `dressup_policy` `strip_all_reason` forces
+  `entry_style = None` in `normalize_for_op`, and `set_dressup_field`
+  ACCEPTS "ramp" then reads back "none": a silently ignored setting. A
+  ramp entry for a single-pass ball raster on fresh stock (the tip-load
+  mitigation for small balls) is therefore not expressible today. Fix:
+  refuse or warn at the setter, and decide whether drop_cutter should
+  honour a ramp entry.
+- The gate's DOC derate is applied but unlabelled — name it in the band
+  explanation so a reader can see why the same row reads two bands.

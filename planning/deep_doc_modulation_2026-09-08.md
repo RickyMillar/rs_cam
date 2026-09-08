@@ -86,14 +86,82 @@ band sits under the 0.025 mm/tooth rubbing floor (the GUI already prints
 plywood). A MODELED `Exceeds` or a modulator pinned at the floor is the
 expected reading, and it is the answer, not something to tune around.
 
-### 1.2 Caveat 2 — modulated rerun `[after rebuild]`
+### 1.2 Caveat 2 — modulated rerun — MEASURED on the rebuilt binary
 
-Caveats 1 and 2 are one defect: with no chipload band the modulator has no
-target, so a rerun on this binary reads the same 750 mm/min. The rerun
-(fresh stock, plywood and oak, `ConstrainedMax` 1.0) is scheduled for the
-rebuilt binary, together with the flat-tool arms of §2 (G-fine, stepover
-1.0 / 1.5 / 2.0) and the before/after reruns of every arm that showed
-`plunge_class_load` here (S20, SP15, S15, RA06, WL15, A-ply, E-ply).
+Caveats 1 and 2 were one defect: with no chipload band the modulator had
+no target. On the rebuilt binary (G-DCFLAT in, `armG_dc6mm_s3.toml`
+reloaded with no parameter change, oak, fresh stock, 0.2 mm, `cell_mm`
+0.2 verified) the gate reads and the modulator runs:
+
+| | Arm G pre-fix (1af25c87) | Arm G post-fix |
+|---|---:|---:|
+| total runtime (s) | 1 117.8 | **615.6** (−44.9 %) |
+| commanded feed / plunge / rpm | 750 / 541 / 15 000 | same |
+| chipload gate | UNMODELED `no_vendor_data` | **MODELED Within, validated**, row `amana-flat-hardwood-pocket-6000-2f` (hardness ×1.033, diameter ×1.0, not extrapolated), band 0.0285–0.0491, median 0.0491 at max, population 99 261 / 99 261 |
+| modulator | did not run | touched 4 158 / 4 488, median **+96.2 %**, binding chipload_max 92.6 % / machine_max 7.4 % |
+| achieved feed, time-weighted | 750 | **1 377** |
+| deflection (validated bar 0.05) | 0.036 | **0.0425** |
+| power peak / avail kW | 0.043 / 0.703 | 0.085 / 0.703 |
+| peak bite / median (mm) | 9.27 / 2.72 | 9.27 / 2.72 |
+| plunge over 1× / peak | 0 / 1, 1.0 | 0 / 1, 1.0 |
+| air % of total (blind 0.23, degraded) | 30.9 (mixed-base) | 35.4 (single base) — 218 s |
+| collisions / provenance / utilization | 0 / emitted / 1.000 | 0 / emitted / 1.000 |
+
+Reading: Arm G is now a full verdict — all three gates MODELED, all
+Within, 0 collisions, emitted — and it is a 616 s rough, 3.1× faster than
+the best adaptive3d arm (BE, 1 916 s) and 4.2× faster than the oak A
+rough (2 578 s) on that binary. Two honest notes. First, the §1.1
+expectation ("Exceeds or floor-pinned at a 9 mm bite") did NOT come true,
+and the reason is measurable on the plywood row where the raw bounds are
+known: the same `amana-flat-plywood-hardwood-pocket-6000-2f` row with the
+same hardness scale (0.9129) and diameter scale (1.0) reads 0.0320–0.0548
+on the A-ply rough at its 4.2 mm DOC (§2.4, = 0.035/0.06 × 0.9129, no
+derate at `ap_max`) and 0.0275–0.0471 on the G-fine arms at a 9.3 mm
+bite (§1.2a) — both bounds × 0.86. So the DOC derate IS applied; the
+stamp does not label it, and it is far milder than §1.1's reading of the
+derate law (0.86×, not "under the floor"). The modulator's +88 % (plywood)
+and +96 % (oak) is the gate running that derated ceiling against a
+Suggest recipe that was clamped to the 0.025 rubbing floor. Second,
+deflection is now the closest gate on this arm at 85 % of its validated
+bar, up from 72 % un-modulated. The `feed_explanation` prints
+`queried_pass_role: finish` next to `row_pass_role: roughing`; the stamp
+names the routed row, so the display shows the declared role, not the
+routed one.
+
+#### 1.2a G-fine — the flat raster as the ONLY pass on plywood
+
+Same op, plywood copy, fresh stock, `apply_feeds` speeds (F825 / P512 /
+16 500 rpm, Suggest clamped 0.0244 → 0.025 floor), `min_z −18`, slope
+0–90, modulation ON, 0.2 mm (`cell_mm` 0.2 verified on each). The
+terrace proxy is stepover × tan(slope) at the terrain's area-weighted
+median (45.3°) and p90 (63.6°).
+
+| Arm | stepover | total s | fed s | air % total / cutting | air s | air measurability | chipload (plywood pocket row, validated) | modulator median Δ / achieved | deflection (validated) | power kW | peak / median bite | plunge | terrace p50 / p90 (mm) |
+|---|---:|---:|---:|---|---:|---|---|---|---:|---:|---|---|---|
+| GF10 | 1.0 | **1 807.9** | 1 734.7 | 64.3 / 65.0 | 1 163 | NOT MEASURABLE (blind 0.51) | Within, 0.0275–0.0471, median at max | +88.4 % / 1 460 | 0.0147 | 0.032 | 9.36 / 0.39 | 0/1 | 1.01 / 2.02 |
+| GF15 | 1.5 | **1 177.7** | 1 148.4 | 56.7 / 56.7 | 667 | degraded (0.42) | Within, same row | +88.3 % / 1 470 | 0.0148 | 0.033 | 9.38 / 1.66 | 0/1 | 1.52 / 3.02 |
+| GF20 | 2.0 | **868.7** | 850.3 | 48.2 / 48.2 | 419 | degraded (0.37) | Within, same row | +88.8 % / 1 471 | 0.0147 | 0.031 | 9.32 / 2.16 | 0/1 | 2.02 / 4.03 |
+| Arm G (oak) | 3.0 | 615.6 | 607.5 | 35.4 | 218 | degraded (0.23) | Within, hardwood pocket row | +96.2 % / 1 377 | 0.0425 | 0.085 | 9.27 / 2.72 | 0/1 | 3.03 / 6.05 |
+
+All four: 0 collisions, provenance emitted, utilization 1.000, 100 %
+feed-bound, 2 retract trips, one continuous serpentine.
+
+Reading: on plywood the flat raster with the modulator is a 15–30 min
+job at any stepover, every gate modeled and Within, deflection at 30 % of
+its bar. It is NOT a finish: the terrace it leaves on the median slope is
+1–2 mm at these stepovers and 2–4 mm at p90, against 0.09–0.38 mm cusps
+for the ball arms, and every valley narrower than 6 mm is untouched
+(reach not measured on drop_cutter — `untouched_material_mm2` reads
+null). As a ROUGH it beats every adaptive3d arm on this fixture (A-ply
+2 475 s, E-ply 1 632 s) at stepover ≥ 1.5, with a 9.3 mm full-slot first
+row that the deflection model calls 0.015 mm on plywood. Air is over the
+45 % bar on GF10/GF15/GF20 and the metric is degraded-to-unmeasurable at
+0.2 mm on a flat tool at these stepovers, so the air column is not a
+pass/fail input here.
+
+Artifacts: `armG_modulated_oak.toml` + `_sim.png`, `GF10_flat_s10.toml`
++ `_sim.png`, `GF15_flat_s15.toml` + `_sim.png`, `GF20_flat_s20.toml` +
+`_sim.png`.
 
 ### 1.3 Finish pair on Arm G stock — MEASURED
 
@@ -428,6 +496,101 @@ was checked to be at `cell_mm = 0.2`.
 
 Artifacts: `S20_postfix_sim.png`, `SP15_postfix_sim.png`.
 
+### 2.6 Quality arms for the real-wood matrix — MEASURED (rebuilt binary)
+
+Three more single-pass arms on the plywood copy, fresh stock each, one
+enabled toolpath, `apply_feeds` speeds, modulation ON, 0.2 mm (`cell_mm`
+0.2 verified on each). The operator's question is whether a smaller ball
+buys reach into the valleys and what it costs in load and time.
+
+| Arm | tool / op | cmd F / P / rpm | total s | fed s | air % total / cutting | air s | air measurability | chipload (row, band, median) | modulator median Δ / achieved | deflection (approx) | power kW | peak / median bite (×tip D) | plunge | entry_load | cusp (mm) | REACH untouched / reached_uncut (mm²) |
+|---|---|---|---:|---:|---|---:|---|---|---|---:|---:|---|---|---|---:|---|
+| Q1a | R1.0 taper (2 mm tip), raster s1.0, entry `none` (straight plunge) | 625 / **300** / 18 500 | **5 077.7** | 5 052.0 | 9.9 / 9.9 | 502 | measurable (cell < tip r) | Within validated, MDF parallel 3175 row, 0.0078–0.0144, at max | −14.8 % / 533 | 0.0075 | 0.005 | 8.60 / 1.24 (4.3×) | 0/1 at 300 | not fired | 0.134 | null / null (not measured on drop_cutter) |
+| Q1b | same, entry `ramp` | — | CANNOT RUN | | | | | | | | | | | | | |
+| Q2 | R2.0 taper (4 mm tip), raster s1.5 | 925 / 341 / 18 500 | **2 088.9** | 2 078.6 | 17.5 / 17.5 | 365 | degraded (0.17) | Within validated, MDF parallel 6000 row, 0.0126–0.0226, at max | −9.4 % / 839 | 0.0073 | 0.012 | 9.35 / 1.67 (2.3×) | 0/1 | not fired | 0.146 | null / null |
+| Q3 | R1.5 taper (3 mm tip), iso-scallop h0.20 | 925 / 256 / 18 500 | **4 372.3** | 4 173.0 | 32.5 / 33.2 | 1 422 | degraded (0.10) | Within validated, hardwood scallop 3175 row, 0.0099–0.0198, at max | −20.7 % / 628 | 0.0178 | 0.010 | 8.22 / 1.27 (2.7×) | 0/298 (planned 210 over, guard-capped) | not fired | 0.20 | **0.0 / 0.0 measured** (scallop ring cascade) |
+| B15 (§2.1, pre-fix) | R1.5 taper, raster s1.5 | 776 / 256 / 18 500 | 3 274.4 | 3 262 | 9.8 (mixed-base) | — | degraded (0.14) | Within validated, MDF parallel 3175 row | −30.9 % / 538 | 0.019 | 0.006 | 8.5 / — | 0/1 | not fired | 0.20 | null / null |
+
+All four: 0 collisions, `feeds_provenance = emitted`, ≥ 99.6 % feed-bound,
+every gate MODELED. Q3 has 121 rings and 88 retract trips (S15 at h0.38
+had 436 and 359) and 2.4 km of rapids.
+
+**Q1b cannot run.** `DropCutter`'s registry `dressup_policy` carries a
+`strip_all_reason`, and `DressupConfig::normalize_for_op` forces
+`entry_style = None` (plus no lead-in/out and no link moves) on every
+drop_cutter — the phantom-diagonal rule. `set_dressup_field` and
+`set_dressup_config` accept `"ramp"` and read back `"none"`. The only
+entry on this op class is the straight plunge at the op's plunge rate,
+which is what Q1a measured (one plunge, 1.0× of 300 mm/min).
+
+**The 2 mm bit at full depth (the operator's question).** Q1a's peak
+bite is 8.60 mm, 4.3× the tip diameter, and every gate says Within: the
+chipload band was queried at 3.53 mm (`queried_diameter_mm`, the
+taper's width about 7.7 mm up the 5.7° flank, near the peak bite), not
+the 2 mm tip, and the deflection model
+(approximate, slot engagement) divides by the engaged diameter at each
+sample's DOC (the 2026-08-28 M3 denominator), so its 7 µm is a taper
+figure, not a 2 mm-tip figure. Read that as: the sim trusts the shank,
+and the 5.7° taper puts the shank in the cut from about 1.5 mm below
+the tip. Nothing here models the tip's own bending or the band's
+transfer to a 2 mm tip beyond the `D^0.61` law. Un-modulated, Suggest's
+recipe (625 mm/min) was already at the gate's ceiling (0.0169 clamped to
+the band, then −15 % by the modulator).
+
+**Reach (the tier map).** `preview_tier_map` on the plywood project,
+ladder R2.0 / R1.5 / R1.0, cell 0.4, tolerance 0.05, margin 0.5:
+
+| tier | tool | map cells | owned islands | owned area mm² |
+|---|---|---:|---:|---:|
+| 0 | R2.0 | 190 139 | (sweeps the rest) | ≈ 30 400 |
+| 1 | R1.5 | 20 801 | 3 (of 7 890 raw) | 190 |
+| 2 | R1.0 | 40 061 | 17 (of 4 479 raw) | 7 027 |
+| unassigned | grid margin outside the 200 × 200 model (521² − 500² = 21 441 cells) | 20 440 | | — |
+
+Reading: the grid is 521 × 521 cells over a 208.4 mm span (viewBox
+−4.2 … 204.2) and the model is 200 × 200 (`inspect_model`), so the model
+footprint is 250 000 cells and the margin ring is 21 441; the 20 440
+"unassigned" cells are that margin, not unreachable valleys — no
+"no-tool-reaches" area exists in this ladder at 0.05 mm tolerance. On the
+model the R2.0 ball owns 190 139 / 250 000 = **76 %** of the cells; the
+R1.5 adds only 190 mm² that survives island filtering (its 7 890 raw
+islands are slivers); the R1.0 owns 7 027 mm² in 17 islands, and that
+owned area includes the 2 mm overlap band grown into R2.0 territory (raw
+40 061 cells = 6 410 mm²). The measured REACH column agrees where it
+exists: Q3's ring cascade reports 0.0 mm² untouched at its own tolerance
+because a scallop's rings are the reach test, while the raster arms
+report `null` (not measured). SVG: `tier_map_r10_r15_r20.svg`.
+
+Ranked on reach, time and cusp together:
+
+1. **Q2 — R2.0 raster s1.5: 2 089 s, cusp 0.146, reaches ~76 %.** The
+   time-at-quality winner as expected: 36 % faster than B15 at a smaller
+   cusp, every gate at or under B15's, air 17.5 %.
+2. **B15 — R1.5 raster s1.5: 3 274 s, cusp 0.20**; the R1.5 buys almost
+   no reach over the R2.0 (190 mm²) on this terrain.
+3. **Q3 — R1.5 iso-scallop h0.20: 4 372 s, cusp 0.20**, contour-following
+   texture (close-up), the only arm with a measured reach figure. 34 %
+   slower than the same tool on a raster.
+4. **Q1a — R1.0 raster s1.0: 5 078 s, cusp 0.134, reaches the 17 R1.0
+   islands (7 027 mm² with the overlap band, 6 410 mm² raw)** that no
+   bigger ball enters. It is the reach tool, not the finish tool: 2.4×
+   Q2's time for about 16 % more area.
+
+The pairing the tier map points at is Q2 as the whole-surface pass plus
+the R1.0 confined to its 17 islands (`plan_multitool_finishing` emits
+exactly that ladder); that pair was not run here.
+
+Close-ups (TOP panel of the 4800-px render, autocontrast; height map,
+not lit): `Q1a_closeup_*`, `Q2_closeup_*`, `Q3_closeup_*` and
+`B15v2_closeup_*` (`_surface_top_ac`, `_valley_top_ac`,
+`_surface_frontleft_ac`). The `_valley_top_ac` pair Q3 vs B15v2 shows
+the scallop's contour-following rings against the raster's 1.5 mm
+blocks in the same valley window.
+
+Artifacts: `Q1a_r10_s10_plunge.toml` + `_sim.png`, `Q2_r20_s15.toml` +
+`_sim.png`, `Q3_scallop_r15_h020.toml` + `_sim.png` + `_path.png`,
+`tier_map_r10_r15_r20.svg`, the close-up crops.
+
 ## 3. Verdict on the hypothesis, and a ranked recommendation
 
 The hypothesis passes, on the ball tools, on every bar the orchestrator set:
@@ -488,7 +651,13 @@ tool, row and recipe on a 0.19 mm median bite gave a gate band max of
 the gate's ceiling on Suggest's numbers alone, so on this fixture the
 modulator is not a safety net for engagement variation only, it is the
 correction for Suggest's blind DOC. Handed to the ledger as a resolver-pair
-observation (the F-LUT2 class).
+observation (the F-LUT2 class). The flat drop_cutter shows the SECOND
+face of the same pair, in the opposite direction: Suggest's post-derate
+chipload on the plywood pocket row read 0.0244 (the "clamped to rubbing
+floor" message on every G-fine add), while the gate's ceiling on the same
+row at the same 9.3 mm bite read 0.0471 — 1.93× the other way. Two
+resolvers, two derate magnitudes, one row; that is the class the
+"Suggest must mirror the gate's piecewise DOC derate" rule describes.
 
 Where the modulator could not rescue a cut: nowhere on the ball arms. Where
 the pattern, not the modulator, decided the result: S15 (fragmented
@@ -496,8 +665,13 @@ iso-field on the R1.5, 81 % air), RA06 (radial on a square part, 69 % air),
 WL15 (contour fragments with slow fed links, 18 368 s), SP15 (square clip
 of a spiral, 18.7 km of rapids).
 
-Ranked, whole job on plywood, this fixture:
+Ranked, whole job on plywood, this fixture (the air columns of the
+pre-fix arms are mixed-base, §2.5; any ranking that turns on air is to be
+re-read on post-fix runs):
 
+0. Q2 — R2.0 raster s1.5 (§2.6, post-fix binary) — 2 089 s, cusp 0.146,
+   every gate modeled Within, air 17.5 %; the fastest arm at or under
+   B15's cusp, and the widest reach of the balls tried.
 1. B15 — 3 274 s, cusp 0.20, passes every bar as written.
 2. S20 — 2 389 s, cusp 0.27, passes every bar once the plunge fix is on the
    binary (rerun pending).
@@ -516,10 +690,10 @@ answered by removing the finish, not by deepening the rough.
 
 ## 4. Not run / cannot run without code
 
-- **Flat-tool arms** (G-fine s 1.0 / 1.5 / 2.0 as the only pass; DC s 2 / 3 /
-  4 as roughs; the modulated Arm G rerun): NOT RUN on this binary — the
-  chipload gate is unmodeled and the modulator has no target until the
-  G-DCFLAT build lands (§1.1). Scheduled after the rebuild and MCP reset.
+- **Flat-tool arms**: the modulated Arm G rerun and G-fine s 1.0 / 1.5 /
+  2.0 are MEASURED on the rebuilt binary (§1.2, §1.2a). The DC s 2 / 4
+  roughs from the original brief were not run; GF20 (s 2.0) and Arm G
+  (s 3.0) bracket them.
 - **Before/after plunge reruns**: S20 and SP15 MEASURED on the rebuilt
   binary (§2.5). S15, RA06, WL15, A-ply and E-ply were not rerun; their
   plunge findings are the same two classes and the §2.5 pair is the
@@ -530,6 +704,8 @@ answered by removing the finish, not by deepening the rough.
   the oak §1.3 pair totals differ by under 5 % across the A, BE and C2E
   roughs.
 - **A DOC cap on drop_cutter**: CANNOT RUN WITHOUT CODE (§1.4).
+- **Ramp entry on drop_cutter (Q1b)**: CANNOT RUN — the op's dressup
+  policy strips every entry style to a straight plunge (§2.6).
 - **Flat tool on waterline / radial / horizontal / steep_shallow /
   ramp_finish**: CANNOT be gated without the same routing fix widened
   (§1.1 follow-up).
@@ -553,7 +729,12 @@ answered by removing the finish, not by deepening the rough.
 arm (S15, S20, B10, B15, B20, SP15, RA06, WL15, A_ply_adaptive3d,
 C2_ply_adaptive3d_by_area, E_ply_adaptive3d_dpp546), the six close-up
 crops, `armG_finish_pair.toml` + `armG_finish_pair_sim.png`,
-`PLY_pair_A_finish.toml` + `PLY_pair_A_finish_sim.png`. Uncommitted
+`PLY_pair_A_finish.toml` + `PLY_pair_A_finish_sim.png`; post-rebuild:
+`S20_postfix_sim.png`, `SP15_postfix_sim.png`, `armG_modulated_oak.toml`
++ `_sim.png`, `GF10/GF15/GF20_flat_s*.toml` + `_sim.png`,
+`Q1a_r10_s10_plunge.toml` + `_sim.png`, `Q2_r20_s15.toml` + `_sim.png`,
+`Q3_scallop_r15_h020.toml` + `_sim.png` + `_path.png`,
+`tier_map_r10_r15_r20.svg`, `Q1a/Q2/Q3/B15v2_closeup_*.png`. Uncommitted
 code: `crates/rs_cam_core/src/feeds/vendor_normalize.rs`,
 `crates/rs_cam_core/src/feeds/INTEGRATION.md`,
 `crates/rs_cam_core/src/tool_load/optimize/outcome.rs`,
