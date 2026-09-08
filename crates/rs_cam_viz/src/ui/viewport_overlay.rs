@@ -18,7 +18,7 @@ pub fn draw(
     projection: ProjectionMode,
     isolated_name: Option<&str>,
     viewport: &mut ViewportState,
-    lanes: &[LaneSnapshot; 3],
+    lanes: &[LaneSnapshot; 4],
     events: &mut Vec<AppEvent>,
     // Rest-depth heatmap legend info for the selected toolpath:
     // `(threshold_mm, peak_rest_mm)`. `None` when nothing's selected or the

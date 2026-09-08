@@ -617,6 +617,40 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 _ => None,
             };
 
+            // P5 — the reach map for THIS toolpath, if the overlay is holding
+            // one. An overlay pointed at another toolpath reads `Idle`: the
+            // sweep has not caught up yet, and showing the other toolpath's
+            // percentage here would be worse than showing none.
+            let reach_summary = {
+                let overlay = &state.gui.reach_overlay;
+                if overlay.toolpath == Some(id) {
+                    match &overlay.status {
+                        crate::state::runtime::ReachStatus::Idle => ReachPanelSummary::Idle,
+                        crate::state::runtime::ReachStatus::Computing => {
+                            ReachPanelSummary::Computing
+                        }
+                        crate::state::runtime::ReachStatus::Failed(message) => {
+                            ReachPanelSummary::Failed(message.clone())
+                        }
+                        crate::state::runtime::ReachStatus::Ready(map) => {
+                            if map.is_measured() {
+                                ReachPanelSummary::Measured {
+                                    unreachable_pct: map.unreachable_pct(),
+                                    max_gap_mm: map.max_gap_mm,
+                                }
+                            } else {
+                                ReachPanelSummary::NotMeasured
+                            }
+                        }
+                    }
+                } else {
+                    ReachPanelSummary::Idle
+                }
+            };
+            // Copied out and written back so the panel's `&mut bool` cannot
+            // collide with the session borrows in the same argument list.
+            let mut show_reach_map = state.viewport.show_reach_map;
+
             // Build a temporary ToolpathEntry from session config + gui runtime
             // so the existing draw_toolpath_panel can work unchanged.
             if let Some(mut entry) =
@@ -644,8 +678,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     tab_override,
                     &drill_layers,
                     &drill_targets,
+                    &mut show_reach_map,
+                    &reach_summary,
                     events,
                 );
+
+                state.viewport.show_reach_map = show_reach_map;
 
                 // Write config changes back to session
                 write_entry_config_to_session(&entry, &mut state.session);
@@ -3469,6 +3507,30 @@ fn rest_region_pathology_caption(
     }
 }
 
+/// What the toolpath panel prints beside the reach-map checkbox (P5).
+///
+/// Built by the caller from `GuiState::reach_overlay`, and owned rather than
+/// borrowed so the panel can hold a `&mut` on the viewport flag at the same
+/// time.
+///
+/// [`Self::NotMeasured`] is a separate arm from [`Self::Measured`] on
+/// purpose. A reach map over a mesh with no upward-facing topmost triangle
+/// reports `unreachable_fraction 0.0` — indistinguishable from a fully
+/// reachable part unless the population is read first
+/// (`ReachMap::is_measured`).
+pub(crate) enum ReachPanelSummary {
+    /// No answer is held and none is in flight.
+    Idle,
+    Computing,
+    /// The walk found no surface to judge.
+    NotMeasured,
+    Measured {
+        unreachable_pct: f64,
+        max_gap_mm: f64,
+    },
+    Failed(String),
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_toolpath_panel(
     ui: &mut egui::Ui,
@@ -3495,6 +3557,14 @@ fn draw_toolpath_panel(
     tab_override: Option<ToolpathTab>,
     drill_layers: &[String],
     drill_targets: &[rs_cam_core::dxf_input::DrillTarget],
+    // P5 — `show_reach_map` is the viewport's reach-map checkbox, threaded in
+    // as a `&mut bool` rather than reached through `AppState`, because this
+    // panel takes no state reference; the caller copies the flag out and
+    // writes it back. `reach` is what to print beside that checkbox, borrowed
+    // from a value the caller built before the panel runs, so holding it
+    // costs no borrow of `AppState`.
+    show_reach_map: &mut bool,
+    reach: &ReachPanelSummary,
     events: &mut Vec<AppEvent>,
 ) {
     // ── Shared header (always visible above tabs) ───────────────────
@@ -3576,6 +3646,60 @@ fn draw_toolpath_panel(
                     .small(),
             );
         }
+    }
+
+    // Per-tool reach map (P5). Reach-capable operations only — every other
+    // operation gets no checkbox at all rather than a disabled one, because
+    // the question does not apply to it (`OperationType::supports_reach_map`).
+    if entry.operation.op_type().supports_reach_map() {
+        ui.horizontal(|ui| {
+            ui.checkbox(show_reach_map, "Show reach map").on_hover_text(
+                "Colour the model by what THIS toolpath's cutter can form: green where \
+                     the cutter reaches the surface within the operation's tolerance, red \
+                     where a gap is left. The measure is top-down, so undersides, overhangs \
+                     and vertical walls are NOT MEASURED and keep the plain model colour.",
+            );
+            match reach {
+                ReachPanelSummary::Computing => {
+                    ui.label(
+                        egui::RichText::new("reach: computing…")
+                            .small()
+                            .color(egui::Color32::from_rgb(150, 150, 160)),
+                    );
+                }
+                // A zero percentage over an empty population is
+                // indistinguishable from a clean part, so it is never shown
+                // as one.
+                ReachPanelSummary::NotMeasured => {
+                    ui.label(
+                        egui::RichText::new("reach: not measured")
+                            .small()
+                            .color(egui::Color32::from_rgb(180, 170, 120)),
+                    );
+                }
+                ReachPanelSummary::Measured {
+                    unreachable_pct,
+                    max_gap_mm,
+                } => {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "unreachable {unreachable_pct:.1} % of surface · max gap \
+                             {max_gap_mm:.2} mm"
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(180, 180, 190)),
+                    );
+                }
+                ReachPanelSummary::Failed(message) => {
+                    ui.label(
+                        egui::RichText::new(format!("reach: {message}"))
+                            .small()
+                            .color(egui::Color32::from_rgb(220, 150, 60)),
+                    );
+                }
+                ReachPanelSummary::Idle => {}
+            }
+        });
     }
 
     // Contextual diagnostics (non-blocking). Native `Diagnostic`

@@ -16,6 +16,7 @@ mod eval_context;
 pub mod multitool;
 mod mutation;
 pub mod project_file;
+mod reach;
 mod save;
 pub mod wizard;
 

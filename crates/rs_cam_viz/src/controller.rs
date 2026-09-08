@@ -41,6 +41,15 @@ use crate::state::AppState;
 use crate::state::simulation::SimulationState;
 use crate::ui::AppEvent;
 
+/// How long a reach-map request may sit in `Computing` over an idle, empty
+/// Reach lane before the scheduler treats it as lost and asks again (P5).
+///
+/// Repo-authored, and chosen only to be far longer than the pump interval and
+/// far shorter than an operator's patience. A cold reach walk is one to two
+/// seconds on a board-sized terrain, but a walk that is still running holds
+/// the lane in `Running`, so this timer never races it.
+const REACH_STALL_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Severity level for user-facing notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -99,6 +108,13 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// fixpoint ladder the MCP tool does, and `pending_mcp` is `None` outside
     /// `--mcp`. Only [`generate_all::GenerateAllSink`] differs.
     generate_all: Option<generate_all::PendingGenerateAll>,
+    /// P5 — the reach-map checkbox as this controller last saw it.
+    ///
+    /// V13: `upload_gpu_data` runs only when `pending_upload` is set, so a
+    /// dial that changes what the viewport draws must mark one. Nothing else
+    /// watches this checkbox, and the operator can flip it on a frame where
+    /// no other input lands.
+    reach_overlay_shown: bool,
     /// Pending MCP compute operations awaiting async results.
     /// `Some` when MCP mode is enabled, `None` otherwise.
     #[cfg(feature = "mcp")]
@@ -131,6 +147,7 @@ impl<B: ComputeBackend> AppController<B> {
             notifications: Vec::new(),
             superseded_toolpaths: std::collections::HashSet::new(),
             generate_all: None,
+            reach_overlay_shown: true,
             #[cfg(feature = "mcp")]
             pending_mcp: None,
         }
@@ -215,7 +232,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.compute.lane_snapshot(lane)
     }
 
-    pub fn lane_snapshots(&self) -> [LaneSnapshot; 3] {
+    pub fn lane_snapshots(&self) -> [LaneSnapshot; 4] {
         self.compute.lane_snapshots()
     }
 
@@ -313,5 +330,106 @@ impl<B: ComputeBackend> AppController<B> {
                 Severity::Info,
             );
         }
+    }
+
+    /// Keep the reach-map overlay pointed at the current selection (P5).
+    ///
+    /// Runs on every pump beside [`Self::process_auto_regen`], and submits
+    /// only when the scheduling key moves. The key is the selected toolpath
+    /// plus the session edit counter, so a tool or parameter edit resolves a
+    /// fresh request while a plain repaint resolves nothing.
+    ///
+    /// `ProjectSession::reach_map_spec` does no drop-cutter work — it reads
+    /// two memoised geometry caches — so resolving one here is safe on the UI
+    /// thread. It answers `None` when the operation is not one a reach map
+    /// speaks about, or has no mesh, or has no tool; that clears the overlay
+    /// rather than leaving the previous toolpath's answer on screen.
+    ///
+    /// No debounce: the memo makes a repeat key free, and the key cannot move
+    /// on its own.
+    pub fn process_reach_overlay(&mut self) {
+        use crate::compute::LaneState;
+        use crate::state::runtime::ReachStatus;
+        use crate::state::selection::Selection;
+
+        // The checkbox changes what the viewport draws, so a flip owes the
+        // next pass an upload even though no buffer moved.
+        if self.reach_overlay_shown != self.state.viewport.show_reach_map {
+            self.reach_overlay_shown = self.state.viewport.show_reach_map;
+            self.pending_upload = true;
+        }
+
+        let edit_counter = self.state.gui.edit_counter;
+        let Selection::Toolpath(id) = self.state.selection else {
+            if self.state.gui.reach_overlay.toolpath.is_some() {
+                self.state.gui.reach_overlay.clear();
+                self.pending_upload = true;
+            }
+            return;
+        };
+
+        // Recover a walk that was cancelled with nothing queued behind it —
+        // `cancel_all`, or a shutdown that did not happen. The drain drops
+        // every `Cancelled` (see `handle_reach_map_result` for why it must),
+        // so `Computing` over an idle, empty lane is the one state that would
+        // otherwise never resolve. Clearing the key makes the check below
+        // submit again.
+        //
+        // The grace period is load-bearing, not politeness: a backend with no
+        // Reach lane — every scripted test double — reports an idle lane the
+        // instant after a submit, and an unbounded recovery would then
+        // resubmit on every pump for ever.
+        //
+        // The reverse race is harmless: a result already sent but not yet
+        // drained arrives after the resubmit, is accepted because the toolpath
+        // still matches, and the resubmitted walk then hits the reach memo and
+        // returns the same `Arc`, so no buffer is rebuilt.
+        let stalled = matches!(self.state.gui.reach_overlay.status, ReachStatus::Computing)
+            && self
+                .state
+                .gui
+                .reach_overlay
+                .requested_at
+                .is_some_and(|at| at.elapsed() >= REACH_STALL_GRACE);
+        if stalled {
+            let lane = self.compute.lane_snapshot(ComputeLane::Reach);
+            if matches!(lane.state, LaneState::Idle) && lane.queue_depth == 0 {
+                self.state.gui.reach_overlay.clear();
+            }
+        }
+
+        // The key already holds the answer, or the request for it. A resubmit
+        // would cancel the walk that is about to answer, because the lane's
+        // rule is latest-wins.
+        let overlay = &self.state.gui.reach_overlay;
+        if overlay.toolpath == Some(id) && overlay.edit_counter == edit_counter {
+            return;
+        }
+
+        let spec = self
+            .state
+            .session
+            .find_toolpath_config_by_id(id)
+            .and_then(|(index, _)| self.state.session.reach_map_spec(index, None));
+
+        let overlay = &mut self.state.gui.reach_overlay;
+        overlay.toolpath = Some(id);
+        overlay.edit_counter = edit_counter;
+        overlay.colors = None;
+        match spec {
+            Some(spec) => {
+                overlay.status = ReachStatus::Computing;
+                overlay.requested_at = Some(Instant::now());
+                self.compute.submit_reach_map(crate::compute::ReachRequest {
+                    toolpath_id: id,
+                    spec,
+                });
+            }
+            None => {
+                overlay.status = ReachStatus::Idle;
+                overlay.requested_at = None;
+            }
+        }
+        self.pending_upload = true;
     }
 }

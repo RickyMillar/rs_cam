@@ -185,6 +185,27 @@ pub struct TierPreviewUploadKey {
     pub shift: [f64; 3],
 }
 
+/// Key for the per-tool reach-map overlay (P5).
+///
+/// Three inputs, each against its consumer in `RsCamApp::upload_gpu_data`:
+///
+/// - `generation` — the overlay state's counter, bumped only when a map
+///   arrives that is not the one already held. A memo hit hands back the same
+///   `Arc`, so re-selecting a toolpath rebuilds nothing.
+/// - `mesh` — the `Arc` identity of the MODEL mesh the overlay is drawn over,
+///   the same identity `MeshUploadKey` pins. A re-imported model is a new
+///   `Arc` and misses.
+/// - `frame` — the display frame, not just the shift. The overlay bakes the
+///   setup transform into its vertices exactly as `MeshUploadKey` does
+///   (`transform_mesh`), so a face flip or a stock resize must rebuild the
+///   buffer, and a shift alone cannot say that.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReachOverlayUploadKey {
+    pub generation: u64,
+    pub mesh: ArcId<rs_cam_core::mesh::TriangleMesh>,
+    pub frame: FrameKey,
+}
+
 /// Key for one toolpath's line buffers (`ToolpathGpuData`).
 ///
 /// This is the key the review's "per-toolpath GPU data keyed by result

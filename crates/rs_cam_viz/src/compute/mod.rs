@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 pub use worker::{
     CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, OptimizeRequest,
-    OptimizeResult, OptimizeResultKind, SetupSimGroup, SetupSimToolpath, SetupTransformInfo,
-    SimulationRequest, SimulationResult, ThreadedComputeBackend,
+    OptimizeResult, OptimizeResultKind, ReachRequest, ReachResult, SetupSimGroup, SetupSimToolpath,
+    SetupTransformInfo, SimulationRequest, SimulationResult, ThreadedComputeBackend,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -20,6 +20,18 @@ pub enum ComputeLane {
     /// session is returned attached to the result so the main thread
     /// can swap it back.
     Optimize,
+    /// Worker for the per-tool reach-map overlay (P5).
+    ///
+    /// **Its own lane, not a fourth `AnalysisRequest` variant.** The Analysis
+    /// lane's submit rule is "latest job wins": it clears the queue and
+    /// cancels whatever is running, through one shared cancel flag. That is
+    /// right for a simulation superseding a simulation, and wrong in both
+    /// directions here — selecting a toolpath would kill a running
+    /// simulation, and starting a simulation would drop a queued reach map
+    /// and leave the overlay reading `computing…` for ever. A reach walk is
+    /// also seconds, so queueing it behind a minutes-long simulation would
+    /// make an overlay wait on a verification run it has nothing to do with.
+    Reach,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -232,6 +244,9 @@ pub enum ComputeMessage {
     /// inside `OptimizeResultKind` rather than an `Err`, so we never
     /// drop the session on the floor.
     Optimize(Box<OptimizeResult>),
+    /// Reach lane completion (P5). Boxed for the same reason the toolpath
+    /// variant is: the payload carries a whole per-vertex colour vector.
+    Reach(Box<ReachResult>),
 }
 
 pub trait ComputeBackend: Send {
@@ -246,6 +261,15 @@ pub trait ComputeBackend: Send {
     /// `ProjectSession`; the worker returns it on the [`ComputeMessage::Optimize`]
     /// reply so the main thread can put it back on `AppState::session`.
     fn submit_optimize(&mut self, request: OptimizeRequest);
+
+    /// Submit a reach-map walk for the viewport overlay (P5).
+    ///
+    /// Defaulted to a no-op for the same reason `clear_sim_prefix_cache` is:
+    /// a scripted test backend runs no lane, and an overlay that never
+    /// arrives leaves the plain model on screen. A backend that grows a real
+    /// Reach lane overrides it.
+    fn submit_reach_map(&mut self, _request: ReachRequest) {}
+
     fn cancel_lane(&mut self, lane: ComputeLane);
     fn drain_results(&mut self) -> Vec<ComputeMessage>;
     fn lane_snapshot(&self, lane: ComputeLane) -> LaneSnapshot;
@@ -268,13 +292,21 @@ pub trait ComputeBackend: Send {
         self.cancel_lane(ComputeLane::Toolpath);
         self.cancel_lane(ComputeLane::Analysis);
         self.cancel_lane(ComputeLane::Optimize);
+        self.cancel_lane(ComputeLane::Reach);
     }
 
-    fn lane_snapshots(&self) -> [LaneSnapshot; 3] {
+    /// Every lane, in declaration order.
+    ///
+    /// The Reach lane is in here, not left out as a private overlay detail:
+    /// `RsCamApp::needs_pump_tick` and the repaint arm both fold over this
+    /// array, so a lane missing from it can run to completion while the
+    /// event loop is parked and its result waits for an unrelated wake-up.
+    fn lane_snapshots(&self) -> [LaneSnapshot; 4] {
         [
             self.lane_snapshot(ComputeLane::Toolpath),
             self.lane_snapshot(ComputeLane::Analysis),
             self.lane_snapshot(ComputeLane::Optimize),
+            self.lane_snapshot(ComputeLane::Reach),
         ]
     }
 }

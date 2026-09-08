@@ -536,6 +536,10 @@ impl RsCamApp {
     pub(crate) fn off_frame_pump(&mut self) {
         self.pump_dispatch();
         self.controller.process_auto_regen();
+        // P5 — keep the reach-map overlay pointed at the current selection.
+        // Beside `process_auto_regen` on both pump paths, because a selection
+        // made while the surface is parked must still resolve a request.
+        self.controller.process_reach_overlay();
         #[cfg(feature = "mcp")]
         self.mcp_pump_beat();
     }
@@ -914,6 +918,7 @@ impl RsCamApp {
         }
 
         self.controller.process_auto_regen();
+        self.controller.process_reach_overlay();
 
         // G-LV.1: anything an MCP caller is still awaiting needs a FUTURE
         // frame to reach it — the compute drain, `generate_all`'s fixpoint
