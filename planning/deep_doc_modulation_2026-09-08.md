@@ -561,6 +561,35 @@ exists: Q3's ring cascade reports 0.0 mm² untouched at its own tolerance
 because a scallop's rings are the reach test, while the raster arms
 report `null` (not measured). SVG: `tier_map_r10_r15_r20.svg`.
 
+**Reach map (P5), live on Q2, and what it says now.** The per-tool reach
+map landed the same day (`reach_map(index)`, GUI overlay, and
+`screenshot_toolpath(reach_overlay)`); its first live reading on Q2 was
+68.2 % unreachable at a 0.05 mm bar, which disagreed 3× with the tier
+map's 24 %. That was two things, neither of them slope compensation: the
+grid (cell = tip radius / 2, 0.645 mm, against a 0.05 mm bar) over-read
+by about 13 points, and the two instruments answer different questions
+(the tier map is a tool-vs-tool residual — what R2.0 misses that a finer
+tool would catch; the reach map is absolute). Fixed as P5.1
+(`be96933c`): unresolved cells are reported separately from unreachable,
+the default bar is the operation's own cusp (0.146 for Q2), and the
+reply leads with a `grid_note` (cell, floor, bar) to read before the
+percentage. An independent rasterisation of the terrain closed with the
+R2.0 ball (`reach_truth_rasteriser.py`, in this directory) gives the
+truth to quote:
+
+| tolerance (mm) | R2.0 unreachable, truth | reach_map on the 0.645 grid |
+|---:|---:|---|
+| 0.05 | 55.0 % | 59.05 % + 9.14 % unresolved (was 68.2 % pre-fix) |
+| 0.146 (Q2's cusp, now the default bar) | 39.5 % | — |
+| 0.30 | 25.2 % | — |
+
+So the R2.0 raster leaves about 40 % of this terrain more than its own
+cusp away from the surface — the valley floors and steep flanks the 4 mm
+ball cannot enter — and about a quarter of it more than 0.3 mm away.
+That is the price of the 35-minute single pass, stated as a measured
+area rather than a picture. Screens: `Q2_reach_overlay_gui.png`,
+`Q2_reach_overlay_path.png` (pre-fix build).
+
 Ranked on reach, time and cusp together:
 
 1. **Q2 — R2.0 raster s1.5: 2 089 s, cusp 0.146, reaches ~76 %.** The
