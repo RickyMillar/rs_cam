@@ -502,3 +502,24 @@ give drop_cutter an axial hint or make Suggest derate on the planned DOC.
 — the PROJECT total minus one toolpath's slices. That was never the air
 time; after G-AIRDENOM it prints 0.0 on a single-toolpath project. The
 correct value is `ts.air_cut_time_s`. One-line fix, outside this wave.
+
+## P5 — reach map in the viewport (operator ask, 2026-09-08)
+
+"If it is cheap to calculate the reach map, show it when any finishing op
+is selected in the viewport." Spec sketch: for the selected finishing
+toolpath's tool, drop the cutter over the model mesh (the drop-cutter
+kernel already computes contact heights) and take the gap between the
+contact surface and the true mesh; where the gap exceeds the op's cusp
+tolerance the spot is UNREACHABLE by that tool. Render as a colour overlay
+on the model in the Toolpaths workspace whenever a finishing op is
+selected (green reached / red unreachable, shaded by gap depth), with two
+numbers in the properties panel: % of surface area unreachable and max
+gap. Cache per (mesh, tool, tolerance). Also surface via MCP
+(`screenshot_toolpath` / a `reach_map` tool) so an agent can read it.
+Stacking radii gives the "minimum ball that reaches X % of the surface"
+curve — the tool-choice decision in one picture, and the honest basis for
+"a bigger ball at a finer stepover beats a small tip" (cusp table: R2.0 at
+s1.5 = 0.15 mm ≈ R1.0 at s1.0 = 0.13 mm, far stronger tip). Existing
+pieces to build on: `preview_tier_map` (multitool planner tiers by
+radius), `untouched_material_mm2` / `reached_uncut_estimate_mm2`
+generation findings, the remaining-stock render. Not started.
