@@ -377,6 +377,28 @@ pub struct ReachMap {
     /// area — not vertex-counted and not cell-counted. `0.0` with a zero
     /// [`Self::measured_area_mm2`] is an empty population, not a clean part;
     /// use [`Self::is_measured`].
+    ///
+    /// # The area base, stated because it moves the number by 3.5 points
+    ///
+    /// Both halves of this ratio are **true 3D surface area** (each triangle
+    /// weighted by its own area, not by its XY footprint), over the
+    /// **rim-eroded** population only. Neither is arbitrary and neither is
+    /// free:
+    ///
+    /// * 3D area rather than planar. The unreachable places on a terrain are
+    ///   the steep ones, and a steep triangle carries `sec θ` times the area
+    ///   of its footprint. On the wanaka board the mean `sec θ` is 1.34, and
+    ///   weighting by 3D area rather than by planar cell area moves the
+    ///   answer from 53.4 % to 58.6 % at the same bar.
+    /// * eroded rather than whole-board. The band one envelope radius inside
+    ///   the outline is NOT MEASURED ([`rim_keep_mask`]), so it is out of the
+    ///   denominator as well as the numerator — 52 835 mm² of 56 295 on that
+    ///   board.
+    ///
+    /// A comparison against any other instrument must be put on this base
+    /// first. P5.2 found a 12-point "unexplained offset" against an
+    /// independent rasteriser that turned out to be, in the largest part,
+    /// the rasteriser answering on a planar whole-board base.
     pub unreachable_fraction: f64,
     /// Worst gap (mm) over the measured cells.
     pub max_gap_mm: f64,
@@ -441,6 +463,18 @@ pub struct ReachMap {
     /// the min-filter cannot know there and the 0.20 mm artefact that
     /// measured it.
     pub rim_erosion_mm: f64,
+    /// The per-cell resolution floor (mm) the verdict used, read at each
+    /// cell's BINDING tap — row-major beside [`Self::cells`], `NaN` where the
+    /// map reports nothing.
+    ///
+    /// Stored so the OVERLAY can paint the same three-way answer the
+    /// percentages count. Colouring an unresolved cell green would say
+    /// "reached" where the map abstained, and colouring it red would say
+    /// "missed" where it did not; grey is the third thing, and it needs this
+    /// vector to know which cells get it. ~4 bytes a cell, 0.5 MB on a
+    /// budget-sized grid.
+    #[serde(default)]
+    pub cell_floor_mm: Vec<f32>,
     /// The library tool the map was built for. `None` when the map was built
     /// outside a session (a fixture, a probe) and no id exists.
     pub tool_id: Option<usize>,
@@ -476,13 +510,63 @@ impl ReachMap {
         }
     }
 
-    /// Is the bar under the grid's own arithmetic? When this is true the
-    /// unreachable percentage is a **lower bound** and the unresolved share
-    /// is the part of the answer this cell size cannot give. Every surface
-    /// that prints the percentage must print this too.
+    /// Is the bar under the grid's own arithmetic? Every surface that prints
+    /// the percentage must print this too.
+    ///
+    /// # Which way the error runs, because this doc had it BACKWARDS
+    ///
+    /// `machined_z` is a minimum taken over a SAMPLED set of CL positions.
+    /// A minimum over a subset is at or above the minimum over the continuum,
+    /// so the reported gap is at or above the true gap — **the bias is
+    /// non-negative, always**. The map therefore counts too MANY cells past
+    /// the bar, never too few:
+    ///
+    /// * `reached` is SOUND. A cell the map calls reached has
+    ///   `true gap <= reported gap <= tolerance`, so it really is formed.
+    /// * `unreachable` OVER-states. Measured on the wanaka board against an
+    ///   independent closing on the same area base: 59.05 % against a true
+    ///   58.6 % at the 0.05 mm bar, 51.11 against 42.1 at 0.146, and 36.36
+    ///   against 26.8 at 0.30.
+    /// * a truly unreachable cell can never be classified `reached`, so what
+    ///   the grid loses lands in `unresolved`, not in a false clean bill.
+    ///
+    /// This method's doc, [`Self::grid_note`] and four operator surfaces all
+    /// said "lower bound" until 2026-09-08. That was exactly inverted, and it
+    /// pointed a reader the wrong way at the one moment they were being told
+    /// to distrust the number.
     #[must_use]
     pub fn tolerance_below_floor(&self) -> bool {
         self.discretisation_floor_mm > self.tolerance_mm
+    }
+
+    /// The area base, in words — the sentence every surface that prints a
+    /// percentage owes beside it.
+    ///
+    /// P5.2: an unstated base is what turned a 3.5-point weighting
+    /// difference into a hunt for a phantom instrument defect. Both halves of
+    /// every percentage here are true 3D surface area over the rim-eroded
+    /// population.
+    #[must_use]
+    pub fn area_basis_note(&self) -> String {
+        format!(
+            "of 3D surface area, rim-eroded {:.1} mm",
+            self.rim_erosion_mm
+        )
+    }
+
+    /// The single sentence that says which way this grid's error runs.
+    ///
+    /// One construction site, quoted by the panel, the MCP reply and the
+    /// inspector, so the three cannot describe the bias three ways — which is
+    /// how "lower bound" survived on four surfaces at once.
+    #[must_use]
+    pub fn over_statement_note(&self) -> String {
+        format!(
+            "the grid over-states gaps by up to its floor ({:.3} mm), so the true unreachable share is AT OR BELOW {:.1} %, and the {:.1} % unresolved is the band the grid cannot classify either way",
+            self.discretisation_floor_mm,
+            self.unreachable_pct(),
+            self.unresolved_pct()
+        )
     }
 
     /// One line naming the grid and what it can resolve, for the panel
@@ -494,12 +578,11 @@ impl ReachMap {
             "cell {:.3} mm \u{00B7} floor {:.3} mm \u{00B7} tol {:.3} mm",
             self.cell_mm, self.discretisation_floor_mm, self.tolerance_mm
         );
+        note.push_str(&format!(" \u{00B7} {}", self.area_basis_note()));
         if self.tolerance_below_floor() {
             note.push_str(&format!(
-                " \u{2014} the bar is UNDER the floor, so {:.1} % of the measured \
-                 area is unresolved and {:.1} % unreachable is a lower bound",
-                self.unresolved_pct(),
-                self.unreachable_pct()
+                " \u{2014} the bar is UNDER the floor: {}",
+                self.over_statement_note()
             ));
         }
         note
@@ -556,6 +639,38 @@ impl ReachMap {
             .collect()
     }
 
+    /// The per-vertex resolution floor, positionally beside
+    /// [`Self::vertex_gaps`] — what [`reach_color`] needs to paint an
+    /// UNRESOLVED vertex grey rather than calling it reached or missed.
+    ///
+    /// `NaN` means the same thing it means in the gap vector: not measured
+    /// here, or no floor for this cell, in which case the colour falls back
+    /// to the tolerance alone.
+    #[must_use]
+    pub fn vertex_floors(&self, mesh: &TriangleMesh) -> Vec<f32> {
+        mesh.vertices
+            .iter()
+            .map(|v| {
+                self.nearest_cell(v.x, v.y)
+                    .and_then(|(row, col)| self.cell_floor_mm.get(row * self.nx + col))
+                    .copied()
+                    .unwrap_or(f32::NAN)
+            })
+            .collect()
+    }
+
+    /// One colour per model vertex — the whole overlay in one pass, so the
+    /// gap, the floor and the ramp cannot be resolved from three different
+    /// maps.
+    #[must_use]
+    pub fn vertex_colors(&self, mesh: &TriangleMesh, index: &SpatialIndex) -> Vec<[f32; 3]> {
+        reach_colors(
+            &self.vertex_gaps(mesh, index),
+            &self.vertex_floors(mesh),
+            self.ramp(),
+        )
+    }
+
     /// A coarse histogram of the measured gaps, for a wire surface that must
     /// not carry the whole grid: `bins` equal-width buckets over
     /// `0..=max_gap_mm`, plus the not-measured count.
@@ -596,35 +711,131 @@ impl ReachMap {
     }
 }
 
+/// The stops a reach overlay's colour ramp runs between — one struct so the
+/// mesh, the legend and any screenshot cannot describe three different ramps.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReachRamp {
+    /// The bar. At or under it the surface is formed: green.
+    pub tolerance_mm: f64,
+    /// The published resolution floor. Between the bar and a cell's own floor
+    /// the answer is UNRESOLVED and paints grey.
+    pub floor_mm: f64,
+    /// The deepest measured gap — the far end of the depth ramp.
+    pub max_gap_mm: f64,
+}
+
+impl ReachRamp {
+    /// Where the depth ramp starts: the bar, or the floor where that is
+    /// coarser, so the ramp begins exactly where the verdict starts calling
+    /// cells missed.
+    #[must_use]
+    pub fn bar_mm(&self) -> f64 {
+        self.tolerance_mm.max(self.floor_mm).max(1e-6)
+    }
+
+    /// The ramp's midpoint in millimetres. The ramp is LOG-scaled, so this is
+    /// the geometric mean of the bar and the deepest gap — the number the
+    /// legend prints between its two ends.
+    #[must_use]
+    pub fn mid_stop_mm(&self) -> f64 {
+        let bar = self.bar_mm();
+        (bar * self.max_gap_mm.max(bar)).sqrt()
+    }
+
+    /// Position on the depth ramp, `0..=1`, for a gap past the bar.
+    ///
+    /// **Log, not linear, and the terrain is why.** On the wanaka board 83 %
+    /// of the measured cells sit under 0.56 mm and under 1 % over 1.7 mm,
+    /// against a 4.46 mm deepest gorge. A linear ramp puts that whole 83 %
+    /// into the first eighth of its range, so a 0.3 mm near-miss and a 4.5 mm
+    /// gorge floor arrive at the eye as the same red. A log ramp spends half
+    /// its range under the geometric mean, which is where the population is.
+    #[must_use]
+    pub fn depth_t(&self, gap_mm: f64) -> f64 {
+        let bar = self.bar_mm();
+        let top = self.max_gap_mm.max(bar * 1.000_001);
+        let span = (top / bar).ln();
+        if !span.is_finite() || span <= 0.0 {
+            return 0.0;
+        }
+        ((gap_mm.max(bar) / bar).ln() / span).clamp(0.0, 1.0)
+    }
+}
+
+impl ReachMap {
+    /// The ramp this map's colours and legend share.
+    #[must_use]
+    pub fn ramp(&self) -> ReachRamp {
+        ReachRamp {
+            tolerance_mm: self.tolerance_mm,
+            floor_mm: self.discretisation_floor_mm,
+            max_gap_mm: self.max_gap_mm,
+        }
+    }
+}
+
 /// Colour for one vertex gap, shared by the 3D overlay and its legend so the
 /// two cannot drift — the same discipline
 /// [`crate::rest_heatmap_mesh::rest_ramp_color`] keeps.
 ///
-/// * not measured (`NaN`) → the model mesh's own neutral diffuse colour
-/// * reached (`gap <= tolerance`) → green, lightening with the gap
-/// * unreachable → red, deepening with the gap, saturating at `4 ×
-///   tolerance` past the bar
+/// Four states, not two:
+///
+/// * **not measured** (`NaN` gap) → the model mesh's own neutral diffuse
+///   colour, so an underside looks like plain model rather than like a
+///   reachable surface;
+/// * **reached** (`gap <= tolerance`) → green;
+/// * **unresolved** (past the bar but at or under this CELL's own floor) →
+///   **grey**. Not green: the map did not say the tool forms this. Not red:
+///   it did not say the tool misses it either. It is the third answer, and
+///   before this it was painted as a miss;
+/// * **missed** → a LOG-scaled depth ramp from the bar to the deepest gap,
+///   pale yellow → red → dark red.
+///
+/// The depth ramp is the P5.2 operator finding. The old ramp ran green→red
+/// over `tol..5·tol` and saturated, so on the wanaka terrain a 0.3 mm miss
+/// and the 4.46 mm gorge floor were the same red and the shape of the
+/// distribution was invisible — which is exactly the shape that says which
+/// valleys need the finer tool.
 #[must_use]
-pub fn reach_color(gap_mm: f32, tolerance_mm: f64) -> [f32; 3] {
+pub fn reach_color(gap_mm: f32, cell_floor_mm: f32, ramp: ReachRamp) -> [f32; 3] {
     const NEUTRAL: [f32; 3] = [0.6, 0.55, 0.5];
+    const UNRESOLVED: [f32; 3] = [0.55, 0.55, 0.58];
     if !gap_mm.is_finite() {
         return NEUTRAL;
     }
-    let tolerance = tolerance_mm.max(1e-6) as f32;
-    if gap_mm <= tolerance {
-        let t = (gap_mm / tolerance).clamp(0.0, 1.0);
-        [0.10 + 0.35 * t, 0.70 - 0.10 * t, 0.20 + 0.10 * t]
+    let gap = f64::from(gap_mm);
+    if gap <= ramp.tolerance_mm {
+        let t = (gap / ramp.tolerance_mm.max(1e-6)).clamp(0.0, 1.0) as f32;
+        return [0.10 + 0.25 * t, 0.70 - 0.08 * t, 0.20 + 0.08 * t];
+    }
+    // The cell's OWN floor decides the abstention, exactly as the area
+    // verdict does — a cell with no floor (the grid rim) takes the tolerance
+    // alone, which is the conservative direction.
+    let floor = f64::from(cell_floor_mm);
+    if floor.is_finite() && gap <= floor {
+        return UNRESOLVED;
+    }
+    let t = ramp.depth_t(gap) as f32;
+    // Pale yellow -> red -> dark red: monotone in lightness, so depth reads
+    // as depth even in a greyscale screenshot.
+    if t < 0.5 {
+        let u = t * 2.0;
+        [1.00 - 0.10 * u, 0.90 - 0.65 * u, 0.30 - 0.20 * u]
     } else {
-        let t = ((gap_mm - tolerance) / (4.0 * tolerance)).clamp(0.0, 1.0);
-        [0.65 + 0.35 * t, 0.30 * (1.0 - t), 0.15 * (1.0 - t)]
+        let u = (t - 0.5) * 2.0;
+        [0.90 - 0.55 * u, 0.25 - 0.25 * u, 0.10 + 0.02 * u]
     }
 }
 
-/// [`reach_color`] over a whole `vertex_gaps` vector.
+/// [`reach_color`] over whole gap and floor vectors.
+///
+/// The two slices are read positionally beside each other; a missing floor
+/// entry is `NaN`, which takes the tolerance-only branch.
 #[must_use]
-pub fn reach_colors(gaps: &[f32], tolerance_mm: f64) -> Vec<[f32; 3]> {
+pub fn reach_colors(gaps: &[f32], floors: &[f32], ramp: ReachRamp) -> Vec<[f32; 3]> {
     gaps.iter()
-        .map(|&gap| reach_color(gap, tolerance_mm))
+        .enumerate()
+        .map(|(i, &gap)| reach_color(gap, floors.get(i).copied().unwrap_or(f32::NAN), ramp))
         .collect()
 }
 
@@ -641,7 +852,8 @@ pub fn reach_colors(gaps: &[f32], tolerance_mm: f64) -> Vec<[f32; 3]> {
 pub fn reach_overlay_stock_mesh(
     mesh: &TriangleMesh,
     gaps: &[f32],
-    tolerance_mm: f64,
+    floors: &[f32],
+    ramp: ReachRamp,
 ) -> crate::stock_mesh::StockMesh {
     let mut vertices = Vec::with_capacity(mesh.vertices.len() * 3);
     let mut colors = Vec::with_capacity(mesh.vertices.len() * 3);
@@ -649,7 +861,11 @@ pub fn reach_overlay_stock_mesh(
         vertices.push(v.x as f32);
         vertices.push(v.y as f32);
         vertices.push(v.z as f32);
-        let rgb = reach_color(gaps.get(i).copied().unwrap_or(f32::NAN), tolerance_mm);
+        let rgb = reach_color(
+            gaps.get(i).copied().unwrap_or(f32::NAN),
+            floors.get(i).copied().unwrap_or(f32::NAN),
+            ramp,
+        );
         colors.extend_from_slice(&rgb);
     }
     let indices = mesh
@@ -1652,6 +1868,7 @@ pub fn compute_reach_map(
         profile_floor_mm,
         curvature_floor_p95_mm,
         rim_erosion_mm,
+        cell_floor_mm: binding_floor.iter().map(|f| *f as f32).collect(),
         tool_id: None,
         model_id: None,
     })
@@ -1694,6 +1911,7 @@ pub fn reach_map_for_mesh(
         profile_floor_mm: 0.0,
         curvature_floor_p95_mm: 0.0,
         rim_erosion_mm: 0.0,
+        cell_floor_mm: Vec::new(),
         tool_id: None,
         model_id: None,
     })

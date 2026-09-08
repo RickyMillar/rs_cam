@@ -21,9 +21,31 @@
 //!
 //! | tolerance | by cell | by 3D area |
 //! |-----------|---------|-----------|
-//! | 0.05 mm   | 50.5 %  | **55.0 %** |
+//! | 0.05 mm   | 50.5 %  | 55.0 %  |
 //! | 0.146 mm  | 35.2 %  | 39.5 %  |
 //! | 0.30 mm   | 21.9 %  | 25.2 %  |
+//!
+//! **P5.2 correction: that table is on the WRONG BASE and must not be
+//! compared with the map's numbers.** It weights by a gradient-derived cell
+//! area over the WHOLE board. The map weights by true triangle 3D area over
+//! the RIM-ERODED population. Put on the map's own base the same closing
+//! reads:
+//!
+//! | tolerance | truth, map's base | map (cell 0.645) |
+//! |-----------|-------------------|------------------|
+//! | 0.05 mm   | **58.6 %**        | 59.05 %          |
+//! | 0.146 mm  | **42.1 %**        | 51.11 %          |
+//! | 0.30 mm   | **26.8 %**        | 36.36 %          |
+//!
+//! So 3.5 of the apparent 12-point offset was the rasteriser's own base. The
+//! rest is the discretisation this file already documents, and it survives
+//! the tolerance because it is additive in the GAP, not in the percentage:
+//! over the same mask the truth's gaps run median 0.064 / p90 0.591 and the
+//! map's scheme runs median 0.118 / p90 0.725, and shifting the truth's own
+//! CDF by that +0.054 mm predicts 48.5 % at the 0.146 bar against the
+//! replicated 48.85 %. The TAPER contributes +0.01 pp — the Ø4 tool's cone
+//! rises 19 mm per mm of radius, so it almost never rests on a neighbouring
+//! flank; only 0.13 % of cells see any change from it.
 //!
 //! Three conclusions, in the order they matter:
 //!
@@ -669,9 +691,19 @@ fn the_wanaka_terrain_reach_table() {
         taper.cusp_radius_mm(),
         taper.envelope_radius_mm(),
     );
+    // ON THE MAP'S OWN BASE — 3D triangle area over the rim-eroded
+    // population. The whole-board planar-ish figures (55.0 / 39.5 / 25.2)
+    // that this line used to print are a DIFFERENT question and reading them
+    // beside the rows below is what produced a phantom 12-point offset
+    // (P5.2).
     eprintln!(
-        "  independent ground truth (0.15 mm lattice, area-weighted): \
-         55.0 % at 0.050, 39.5 % at 0.146, 25.2 % at 0.300"
+        "  independent ground truth, 0.15 mm lattice, 3D-area weighted over \
+         the rim-eroded mask: 58.6 % at 0.050, 42.1 % at 0.146, 26.8 % at 0.300"
+    );
+    eprintln!(
+        "  (whole-board planar base, NOT comparable with the rows below: \
+         50.5 / 35.2 / 21.8; the Ø4 taper's cone adds +0.01 pp over a pure \
+         R2.0 ball, so the profile is not the difference)"
     );
     // TWO cells, and the reason is that the fix moved both dials. 0.645 mm is
     // the grid the reported 68.2 % sat on, so it is the only cell whose rows
@@ -684,6 +716,9 @@ fn the_wanaka_terrain_reach_table() {
         for tol in [0.05, 0.146, 0.3] {
             let map = reach_map_for_mesh(&mesh, &taper, tol, at);
             row(&format!("{label} tol {tol}"), &map);
+            // The operator-facing sentence itself, verbatim, so the surfaces
+            // can be read rather than reconstructed from the fields.
+            eprintln!("      grid_note: {}", map.grid_note());
         }
     }
 }

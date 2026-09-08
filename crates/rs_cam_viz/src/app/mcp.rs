@@ -1298,7 +1298,7 @@ impl super::RsCamApp {
         };
         let Some(tool_config) = Self::narration_tool_for(state.session.tools(), tc.tool_id) else {
             return format!(
-                "Error: toolpath {index} references tool id {} but no such tool is configured.                  Narration refuses rather than describing this toolpath with another tool's                  geometry.",
+                "Error: toolpath {index} references tool id {} but no such tool is configured. Narration refuses rather than describing this toolpath with another tool's geometry.",
                 tc.tool_id,
             );
         };
@@ -5186,10 +5186,12 @@ impl super::RsCamApp {
         let map = rs_cam_core::reach_map_cache::cached_reach_map(&spec, &cancel_fn)
             .map_err(|e| format!("Reach map for toolpath {index} could not be built — {e}"))?;
         let gaps = map.vertex_gaps(spec.mesh.as_ref(), spec.index.as_ref());
+        let floors = map.vertex_floors(spec.mesh.as_ref());
         Ok(rs_cam_core::reach_map::reach_overlay_stock_mesh(
             spec.mesh.as_ref(),
             &gaps,
-            map.tolerance_mm,
+            &floors,
+            map.ramp(),
         ))
     }
 
@@ -5236,6 +5238,12 @@ impl super::RsCamApp {
             // an agent that reads the number before the grid cannot know
             // (F5, 2026-09-08).
             "grid_note": map.grid_note(),
+            // P5.2: the base, on the wire, because a comparison against any
+            // other instrument is meaningless until both sides share it.
+            "area_basis": "true 3D surface area (each triangle by its own \
+                           area, never its XY footprint), over the rim-eroded \
+                           measured population only \u{2014} both numerator \
+                           and denominator",
             "toolpath_index": index,
             "tool_id": map.tool_id,
             "model_id": map.model_id,
@@ -5270,16 +5278,24 @@ impl super::RsCamApp {
             "profile_floor_mm": map.profile_floor_mm,
             "curvature_floor_p95_mm": map.curvature_floor_p95_mm,
             "rim_erosion_mm": map.rim_erosion_mm,
-            "note": "Top-down measure. Undersides, walls and a band one envelope radius wide \
+            "note": "Percentages are 3D-SURFACE-AREA weighted over the rim-eroded \
+                     measured population (see `area_basis`); putting a planar or \
+                     whole-board figure beside one of these compares two different \
+                     questions \u{2014} on a 1.34 mean-sec-theta terrain that alone is \
+                     5 points. Top-down measure. Undersides, walls and a band one envelope radius wide \
                      inside the part outline are NOT MEASURED \u{2014} read `is_measured` and \
                      the measured-against-surface areas before believing the percentage. \
                      `discretisation_floor_mm` is what this grid can resolve ON THIS SURFACE: \
                      the larger of the plane-only `profile_floor_mm` and the curvature term \
                      `curvature_floor_p95_mm`. When `tolerance_below_floor` is true the bar is \
-                     under the arithmetic, `unreachable_pct_of_measured_area` is a LOWER BOUND, \
-                     and `unresolved_pct_of_measured_area` is the share this cell size cannot \
-                     answer for \u{2014} raise the tolerance (the operation's own cusp is the \
-                     honest bar) rather than reading the residual as tool geometry.",
+                     under the arithmetic. The grid's gap bias is NON-NEGATIVE \u{2014} a \
+                     minimum over a sampled CL set sits at or above the continuum minimum \
+                     \u{2014} so `unreachable_pct_of_measured_area` OVER-states: the true \
+                     unreachable share is AT OR BELOW it, and \
+                     `unresolved_pct_of_measured_area` is the band the grid cannot classify \
+                     either way. `reached` is the sound side: a cell called reached really is \
+                     formed. Raise the tolerance (the operation's own cusp is the honest bar) \
+                     rather than reading the residual as tool geometry.",
         }))
     }
 

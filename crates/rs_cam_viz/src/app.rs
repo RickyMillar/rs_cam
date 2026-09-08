@@ -55,6 +55,17 @@ pub struct RsCamApp {
     mcp_reads_published_at: Option<std::time::Instant>,
 }
 
+/// Ceiling for a workspace's left / right panel, in points (P6, 2026-09-08).
+///
+/// egui remembers a resizable panel's width across frames and across window
+/// resizes, and does not shrink it when the window shrinks. A pair dragged
+/// wide on a big monitor therefore survives into a 1400 x 900 capture and can
+/// leave the 3D view nothing — `screenshot_gui` came back with no viewport at
+/// all. This is the ceiling on each side; `panel::MIN_VIEWPORT_WIDTH` is the
+/// floor under the view itself, and the two are deliberately separate: this
+/// one bounds a user drag, that one bounds the arithmetic.
+const SIDE_PANEL_MAX_WIDTH: f32 = 420.0;
+
 impl RsCamApp {
     /// `waker` is the event-loop wakeup that survives a parked frame loop
     /// (G-LV.1). `None` means "no host owns the loop" — the MCP server then
@@ -243,6 +254,7 @@ impl RsCamApp {
         // Left panel: setup list with summary cards
         egui::Panel::left("setup_tree")
             .default_size(240.0)
+            .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -254,6 +266,7 @@ impl RsCamApp {
         // Right panel: setup properties
         egui::Panel::right("setup_properties")
             .default_size(280.0)
+            .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -326,6 +339,7 @@ impl RsCamApp {
         // Left panel: operation queue
         egui::Panel::left("toolpath_tree")
             .default_size(240.0)
+            .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -337,6 +351,7 @@ impl RsCamApp {
         // Right panel: operation/tool parameters
         egui::Panel::right("toolpath_properties")
             .default_size(280.0)
+            .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -401,6 +416,7 @@ impl RsCamApp {
         // Left panel: operation list
         egui::Panel::left("sim_op_list")
             .default_size(240.0)
+            .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -419,6 +435,7 @@ impl RsCamApp {
         // Right panel: diagnostics
         egui::Panel::right("sim_diagnostics")
             .default_size(240.0)
+            .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {

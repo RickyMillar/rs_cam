@@ -784,3 +784,61 @@ fn a_selection_is_pumped_before_the_same_calls_overlays_map() {
          precondition is judged against stale derived state"
     );
 }
+
+/// P6 (2026-09-08) — the 3D viewport cannot be squeezed to nothing.
+///
+/// `screenshot_gui` at the window's own 1400 x 900 returned a frame with **no
+/// 3D viewport**: the operation list and the inspector filled it. Three
+/// things combined. The workspace side panels are `resizable` with no
+/// ceiling, and egui remembers a resizable panel's width across frames and
+/// does not shrink it when the window does. The docked Overlays column then
+/// took `exact_size(PANEL_WIDTH)` out of whatever was left. And the viewport
+/// handed `ui.available_size()` straight to `allocate_exact_size`, so the
+/// remainder could reach zero with nothing to stop it.
+///
+/// A source sentry, like the two above it: the layout is `&mut self` on the
+/// App behind an eframe run loop, and what broke is the ARITHMETIC, which is
+/// readable.
+#[test]
+fn the_viewport_keeps_a_minimum_width() {
+    let app = source("src/app.rs");
+    assert!(
+        app.contains("const SIDE_PANEL_MAX_WIDTH"),
+        "the workspace side panels have no ceiling again; a pair dragged wide \
+         on a big monitor survives into a 1400x900 capture"
+    );
+    let caps = app.matches(".max_size(SIDE_PANEL_MAX_WIDTH)").count();
+    assert_eq!(
+        caps, 6,
+        "every left/right workspace panel must carry the ceiling — setup, \
+         toolpaths and simulation, two each; found {caps}"
+    );
+
+    let panel = source("src/ui/overlays/panel.rs");
+    assert!(
+        panel.contains("pub const MIN_VIEWPORT_WIDTH"),
+        "the viewport floor is gone"
+    );
+    assert!(
+        panel.contains("if ui.available_width() - PANEL_WIDTH < MIN_VIEWPORT_WIDTH"),
+        "the docked Overlays column no longer refuses to dock when it would \
+         take the 3D view under its floor"
+    );
+
+    let viewport = source("src/app/viewport.rs");
+    assert!(
+        !viewport.contains("ui.allocate_exact_size(ui.available_size()"),
+        "the viewport is handing `available_size` straight to \
+         `allocate_exact_size` again — that is the call that returned zero"
+    );
+    assert!(
+        viewport.contains("MIN_VIEWPORT_WIDTH"),
+        "the viewport no longer floors its own allocation"
+    );
+    // A refusal to dock must become the floating form, or a pinned panel on a
+    // narrow window would simply vanish.
+    assert!(
+        viewport.contains("draw_floating(ui, state, events, rect, docked)"),
+        "the floating fallback no longer knows whether the dock refused"
+    );
+}

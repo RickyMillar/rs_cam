@@ -1458,8 +1458,11 @@ pub fn non_default_count(state: &AppState) -> usize {
 pub enum Legend {
     /// `(threshold_mm, peak_mm)`; colours from `rest_heatmap_mesh::rest_ramp_color`.
     RestHeatmap(f64, f32),
-    /// `tolerance_mm`; colours from `reach_map::reach_color`.
-    Reach(f64),
+    /// The reach ramp's stops; colours from `reach_map::reach_color`. The
+    /// whole ramp, not just the bar, because the ramp is LOG-scaled from the
+    /// bar to the deepest gap and a legend built from the bar alone could not
+    /// draw it (P5.2).
+    Reach(rs_cam_core::reach_map::ReachRamp),
     /// Colours from `render::sim_render::deviation_colors`.
     Deviation,
     /// Colours from `rs_cam_core::stock_mesh::height_gradient_colors`.
@@ -1487,7 +1490,7 @@ pub fn active_legends(state: &AppState) -> Vec<Legend> {
     if on("reach_map")
         && let Some(map) = state.gui.reach_overlay.ready_map()
     {
-        out.push(Legend::Reach(map.tolerance_mm));
+        out.push(Legend::Reach(map.ramp()));
     }
     if on("tier_map")
         && let Some(planner) = state.multitool_planner.as_ref()

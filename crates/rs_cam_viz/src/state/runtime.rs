@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use rs_cam_core::feeds::FeedsResult;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::reach_map::{ReachMap, reach_colors};
+use rs_cam_core::reach_map::ReachMap;
 use rs_cam_core::session::ToolpathConfig;
 
 use super::job::{PostConfig, PostFormat};
@@ -226,7 +226,7 @@ pub fn reach_overlay_colors(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
 ) -> Vec<[f32; 3]> {
-    reach_colors(&map.vertex_gaps(mesh, index), map.tolerance_mm)
+    map.vertex_colors(mesh, index)
 }
 
 // ── Project-level GUI state ───────────────────────────────────────────
