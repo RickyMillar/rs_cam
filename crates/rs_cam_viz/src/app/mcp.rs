@@ -861,6 +861,7 @@ impl super::RsCamApp {
                 properties_tab,
                 select,
                 modal,
+                overlays,
             } => {
                 let resp = self.mcp_set_ui_view(
                     workspace.as_deref(),
@@ -868,6 +869,7 @@ impl super::RsCamApp {
                     properties_tab.as_deref(),
                     select.as_deref(),
                     modal.as_deref(),
+                    overlays.as_ref(),
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -4079,8 +4081,10 @@ impl super::RsCamApp {
                 let Some(raw_id) = source_toolpath_id else {
                     return self.mcp_mutation_error(
                         "Error: 'derived_rest_regions' requires source_toolpath_id — the id \
-                         of the toolpath whose pencil rest-depth result supplies the \
-                         boundary (see get_toolpath_params's 'id' field)."
+                         of the toolpath whose REST ANALYSIS supplies the boundary \
+                         regions (see get_toolpath_params's 'id' field). Any \
+                         operation produces them when its rest analysis is enabled \
+                         and the project carries a mesh."
                             .to_owned(),
                         Some("source_toolpath_id".to_owned()),
                     );
@@ -5535,8 +5539,18 @@ impl super::RsCamApp {
         properties_tab: Option<&str>,
         select: Option<&str>,
         modal: Option<&str>,
+        overlays: Option<&std::collections::BTreeMap<String, bool>>,
     ) -> String {
         // 1. Workspace.
+        //
+        // Applied SYNCHRONOUSLY, not through the event queue. A workspace
+        // carries per-workspace overlay defaults (P6), and the event lands
+        // later in this frame — so an `overlays` request in the same call
+        // would be written first and then clobbered by the arriving
+        // defaults, and every precondition below would have answered about
+        // the OLD workspace. `AppEvent::SwitchWorkspace`'s handler calls the
+        // same function, so this is the identical mutation, in the right
+        // order.
         let mut workspace_applied: Option<&'static str> = None;
         if let Some(ws) = workspace {
             let Some(target) = parse_workspace(ws) else {
@@ -5546,9 +5560,7 @@ impl super::RsCamApp {
                     )
                 }));
             };
-            self.controller
-                .events_mut()
-                .push(AppEvent::SwitchWorkspace(target));
+            crate::ui::overlays::registry::switch_workspace(self.controller.state_mut(), target);
             workspace_applied = Some(workspace_key(target));
         }
 
@@ -5621,9 +5633,10 @@ impl super::RsCamApp {
                 }
             };
             if workspace.is_none() {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                crate::ui::overlays::registry::switch_workspace(
+                    self.controller.state_mut(),
+                    Workspace::Setup,
+                );
                 workspace_applied = Some(workspace_key(Workspace::Setup));
             }
             self.controller.state_mut().selection = target;
@@ -5679,9 +5692,18 @@ impl super::RsCamApp {
             }
         }
 
-        // Echo the resulting view. Workspace/modal mutations route
-        // through the event queue and land later this same frame, so
-        // echo the requested targets plus the already-applied selection.
+        // 5. Overlays (P6). Last, so the workspace switch above has already
+        //    applied its defaults and the preconditions read the workspace
+        //    the caller asked for. The registry is the single source of both
+        //    the ids and the refusal strings, so this reply and the panel
+        //    can never disagree.
+        let overlay_report = overlays.map(|requested| {
+            crate::ui::overlays::registry::apply_overlays(self.controller.state_mut(), requested)
+        });
+
+        // Echo the resulting view. Modal mutations route through the event
+        // queue and land later this same frame, so echo the requested
+        // targets plus the already-applied selection.
         let state = self.controller.state();
         let selected = match state.selection {
             Selection::Toolpath(id) => state
@@ -5714,6 +5736,10 @@ impl super::RsCamApp {
             "select": select_applied,
             "properties_tab": tab_applied,
             "modal": modal,
+            "overlays": overlay_report.map(|report| serde_json::json!({
+                "applied": report.applied,
+                "refused": report.refused,
+            })),
             "note": "view changes render on the next frame; call screenshot_gui to capture",
         }))
     }

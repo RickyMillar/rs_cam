@@ -37,6 +37,23 @@ pub fn draw(ctx: &egui::Context, show: &mut bool) {
             );
             ui.add_space(8.0);
 
+            // Overlays section (P6). Bound in every workspace that renders a
+            // viewport, so it is its own block rather than a Toolpaths row.
+            ui.heading("Overlays");
+            draw_shortcut_grid(
+                ui,
+                &[
+                    ("O", "Open / close the Overlays panel"),
+                    ("Shift+O", "Pin / unpin it"),
+                    ("S", "Stock box"),
+                    ("P", "Cutting paths"),
+                    ("R", "Rapids"),
+                    ("X", "Collisions"),
+                    (", / .", "Step the model / stock colour source"),
+                ],
+            );
+            ui.add_space(8.0);
+
             // Simulation section
             ui.heading("Simulation");
             draw_shortcut_grid(

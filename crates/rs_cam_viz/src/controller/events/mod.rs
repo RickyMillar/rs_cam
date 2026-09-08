@@ -411,7 +411,6 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::PreviewOrientation(_)
             | AppEvent::ResetView
             | AppEvent::SwitchWorkspace(_)
-            | AppEvent::SimVizModeChanged
             | AppEvent::ShowShortcuts
             | AppEvent::SetToolLoadOverride { .. }
             | AppEvent::OpenExportWizard

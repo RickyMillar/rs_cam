@@ -1,18 +1,12 @@
 surface: Inspector › View
 file: crates/rs_cam_viz/src/ui/sim_diagnostics.rs
 kind: panel
-job: Control how the simulation looks in the 3D viewport (stock/path visibility, stock color mode, generator-step overlay).
-opens-from: CollapsingHeader "View" inside the Inspector right panel (default open)
+job: Point at the viewport Overlays panel, which owns every display control this section used to hold.
+opens-from: The foot of the Inspector right panel, below the Project / Toolpath / Span sections
 controls:
-  - show-stock
-  - stock-opacity
-  - show-cutting-moves
-  - show-rapid-moves
-  - stock-color-mode
-  - show-generator-steps
-  - highlight-active-generator-step
-reads-state: viewport.show_stock, viewport.show_cutting, viewport.show_rapids, sim.stock_opacity, sim.stock_viz_mode, sim.playback.display_deviations, sim.debug.enabled, sim.debug.highlight_active_item, gui.toolpath_rt[].{debug_trace,semantic_trace}
-writes-state: viewport.show_stock, viewport.show_cutting, viewport.show_rapids, sim.stock_opacity, sim.stock_viz_mode, sim.debug.enabled, sim.debug.highlight_active_item; emits SimVizModeChanged
-confusable-with: viewport-overlay Show ▼ menu (also toggles show_stock/show_cutting/show_rapids — SAME fields, two homes), sim-setup-and-run (comment explicitly contrasts "display toggles here vs recording toggles there")
+  - display-overlays-pointer
+reads-state: none
+writes-state: none
+confusable-with: none
 recommendation-sources-touched: none
-health: red — show_stock, show_cutting, show_rapids are each written here AND in the viewport Show ▼ menu (P1 violation: one concern, two homes writing identical viewport fields); StockVizMode::ByOperation is silently rendered as "Solid" (dead enum branch).
+health: green — P6 (2026-09-08) moved the stock opacity slider, the Solid / Deviation / By Height stock colour modes and the two generator-step toggles into the Overlays panel as registry rows, so the P1 duplicate-write finding against the viewport `Show ▼` menu is closed on both sides. Two defects went with the section. The W4.3 comment claimed the stock show/hide toggle "lives in the viewport Show ▼ menu (one home for visibility)" — it did not, and `show_sim_mesh` read the workspace and `has_results()` only, so nothing could hide the simulated stock; it has its own row now. And `Show generator steps` was HIDDEN until a trace existed, which is the opposite of the Deviation precedent ten lines above it; it is now always listed, disabled, with "switch on Record generator trace and regenerate" plus the button.

@@ -1107,7 +1107,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_boundary_config",
-        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette', 'derived_rest_regions' (requires source_toolpath_id — the id of another toolpath whose pencil rest-depth result supplies the regions). Containment: 'center', 'inside', 'outside'. Invalidates cached result."
+        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette', 'derived_rest_regions' (requires source_toolpath_id — the id of another toolpath whose REST ANALYSIS supplies the regions; any operation attaches them when its rest analysis is enabled and the project carries a mesh). Containment: 'center', 'inside', 'outside'. Invalidates cached result."
     )]
     async fn set_boundary_config(
         &self,
@@ -1590,7 +1590,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_ui_view",
-        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `select` chooses a non-toolpath properties panel ('machine' for machine setup + kinematics + GRBL $$ import, or 'stock') and switches to the Setup workspace; `modal` opens a modal ('feeds_modal', 'optimize_modal', 'export_wizard', 'tool_library') or 'none' closes all modals. Preconditions: feeds_modal and optimize_modal need a toolpath — pass toolpath_index in the same call or have one selected; optimize_modal starts a REAL Optimize run (long, ~1-2 min — without a prior simulation it shows a 'simulation required' outcome instead). Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
+        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `select` chooses a non-toolpath properties panel ('machine' for machine setup + kinematics + GRBL $$ import, or 'stock') and switches to the Setup workspace; `modal` opens a modal ('feeds_modal', 'optimize_modal', 'export_wizard', 'tool_library') or 'none' closes all modals; `overlays` switches viewport overlays as {\"<id>\": true|false} using the ids of the GUI's Overlays panel (grid, model, stock_box, stock_solid, origin_axes, datum, fixtures, keep_outs, alignment_pins, flip_axis, curves, orientation_gizmo, cutting_moves, rapids, entry_markers, height_planes, tool_profile_ghost, span_entry/lead_out/link_bridge/dressup, rest_heatmap, tier_map, reach_map, simulated_stock, collisions, tool_deflection, generator_steps, active_step_highlight, stock_colour_solid/deviation/by_height, move_colour_palette/engagement/advance_per_tooth) — applied after the workspace, echoed under overlays.applied, and REFUSED with the panel's own reason string under overlays.refused when the overlay cannot draw (nothing is silently dropped). Preconditions: feeds_modal and optimize_modal need a toolpath — pass toolpath_index in the same call or have one selected; optimize_modal starts a REAL Optimize run (long, ~1-2 min — without a prior simulation it shows a 'simulation required' outcome instead). Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
     )]
     async fn set_ui_view(
         &self,
@@ -1600,6 +1600,7 @@ impl EmbeddedCamServer {
             properties_tab,
             select,
             modal,
+            overlays,
         }): Parameters<SetUiViewParam>,
     ) -> String {
         Self::format_result(
@@ -1609,6 +1610,7 @@ impl EmbeddedCamServer {
                 properties_tab,
                 select,
                 modal,
+                overlays,
             })
             .await,
         )

@@ -9,6 +9,7 @@ pub mod menu_bar;
 pub mod multitool_planner;
 pub mod optimize_modal;
 pub mod optimize_project;
+pub mod overlays;
 pub mod preflight;
 pub mod properties;
 pub mod readiness;
@@ -248,8 +249,6 @@ pub enum AppEvent {
         accept_unmodeled: bool,
         accept_exceeded: bool,
     },
-    /// Re-upload simulation mesh with new viz colors.
-    SimVizModeChanged,
 
     // Optimize (U2 of OPTIMIZER_UX_PLAN.md)
     /// Open the Optimize modal for a specific toolpath. Triggers

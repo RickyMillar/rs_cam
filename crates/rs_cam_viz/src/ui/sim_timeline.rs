@@ -4,7 +4,7 @@ use super::readiness;
 use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
 use crate::state::runtime::GuiState;
-use crate::state::simulation::{ActiveSemanticItem, SimulationAnalyticsTab, SimulationState};
+use crate::state::simulation::{ActiveSemanticItem, SimulationState};
 use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutSample;
@@ -117,9 +117,17 @@ fn draw_verdict_hud(
 
     // TIM-005 — the pills *are* the navigation, not a sign pointing at the
     // markers below. Pre-compute the first offending move for the exceeds and
-    // collisions pills so a click seeks the playhead there (and focuses the
-    // Safety tab for collisions). Prose "click the red lines…" instructions
-    // are retired; hover keeps only a short factual definition.
+    // collisions pills so a click seeks the playhead there. Prose
+    // "click the red lines…" instructions are retired; hover keeps only a
+    // short factual definition.
+    //
+    // These clicks used to ALSO write `SimulationState::analytics_tab`, as a
+    // "drill into the Safety tab" half. Nothing ever read that field: the
+    // diagnostics panel has no tabs — it is collapsing headers plus a
+    // focused-issue / focused-hotspot card — so there was no section chooser
+    // to point at, and six clicks carried a promise the app could not keep
+    // (audit §4.4, fix §6.12). The field is deleted; the seek is what these
+    // clicks always really did.
     let first_exceed_move = tool_load_marker_moves(sim, load_report).into_iter().min();
     let first_collision_move = std::iter::empty::<usize>()
         .chain(
@@ -175,7 +183,6 @@ fn draw_verdict_hud(
                     .hover("Toolpaths exceeding a modeled load limit.");
                 if let Some(move_idx) = first_exceed_move.filter(|_| bad > 0) {
                     if ui.add(exceeds_pill.actionable()).clicked() {
-                        sim.analytics_tab = SimulationAnalyticsTab::Safety;
                         events.push(AppEvent::SimJumpToMove(move_idx));
                     }
                 } else {
@@ -194,8 +201,8 @@ fn draw_verdict_hud(
                              etc.).",
                         ),
                 );
-                // Collisions is likewise a navigation control: click seeks to
-                // the first collision and focuses the Safety tab (TIM-005).
+                // Collisions is likewise a navigation control: click seeks
+                // to the first collision (TIM-005).
                 // Zero-count chips self-hide (density pass V4) — at zero the
                 // within-pill plus the readiness checks carry the all-clear.
                 let collisions_pill = CountPill::observation("collisions", collision_count)
@@ -204,7 +211,6 @@ fn draw_verdict_hud(
                     .hover("Rapid/holder collisions detected during simulation.");
                 if let Some(move_idx) = first_collision_move.filter(|_| collision_count > 0) {
                     if ui.add(collisions_pill.actionable()).clicked() {
-                        sim.analytics_tab = SimulationAnalyticsTab::Safety;
                         events.push(AppEvent::SimJumpToMove(move_idx));
                     }
                 } else {
@@ -606,10 +612,10 @@ fn draw_signal_spine(
     }
     sim.hovered_x = new_hovered;
     if let Some(global_move) = clicked_hotspot {
-        // Gate-trip dot drill (TIM-010): seek to the offending move AND focus
-        // the Safety tab, where the per-toolpath gate detail lives — the
-        // "drill into the gate" half, not just a bare seek.
-        sim.analytics_tab = SimulationAnalyticsTab::Safety;
+        // Gate-trip dot drill (TIM-010): seek to the offending move. The
+        // per-toolpath gate detail is in the diagnostics panel's own
+        // sections, which no click selects — see the `analytics_tab` note at
+        // the head of this file's HUD.
         events.push(AppEvent::SimJumpToMove(global_move));
     }
 }
@@ -1441,7 +1447,6 @@ fn draw_boundary_timeline(
         if let Some(target) =
             nearest_safety_marker_move(pos.x, op_rect, total_moves, total_width, sim, load_report)
         {
-            sim.analytics_tab = SimulationAnalyticsTab::Safety;
             sim.playback.current_move = target;
             sim.playback.playing = false;
             events.push(AppEvent::SimJumpToMove(target));
@@ -2178,7 +2183,6 @@ fn paint_semantic_subband(
             {
                 sim.debug.focused_issue_index = None;
                 sim.debug.focused_hotspot = None;
-                sim.analytics_tab = SimulationAnalyticsTab::DebugTrace;
                 sim.clear_pinned_semantic_item();
                 let _ = annotation_index;
                 events.push(AppEvent::SimJumpToMove(target.move_index));
@@ -2209,7 +2213,6 @@ fn paint_semantic_subband(
                 }
                 sim.debug.focused_issue_index = None;
                 sim.debug.focused_hotspot = None;
-                sim.analytics_tab = SimulationAnalyticsTab::CutQuality;
                 events.push(AppEvent::SimJumpToMove(target.move_index));
                 return;
             }

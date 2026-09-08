@@ -980,7 +980,7 @@ fn draw_model_properties(
     }
 }
 
-fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut Vec<AppEvent>) {
+fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Simulation");
     ui.separator();
 
@@ -1034,18 +1034,28 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
             );
         });
 
-        // Per-move-type visibility checkboxes for this toolpath.
-        let entry = state
-            .viewport
-            .toolpath_move_visibility
-            .entry(*id)
-            .or_default();
+        // Per-toolpath visibility controls: eye / cut / rapid / isolate.
+        //
+        // P6 (audit §2d, fix §6.7) — these two lines used to be plain "Cut" /
+        // "Rapid" checkboxes writing the SAME map entry as each operation
+        // row's C / R glyphs. Both writes took effect, so it was a UX defect
+        // rather than a correctness one, and the two homes were not
+        // equivalent: the row controls grey each button when its global flag
+        // is off and the disabled hover NAMES the control blocking it, while
+        // these checkboxes stayed clickable and appeared to work with
+        // `show_cutting` ANDing them away. One state, one affordance — the
+        // richer one, which is also the one the Inspector points at.
+        let overall_visible = state.gui.toolpath_rt.get(id).is_none_or(|rt| rt.visible);
         ui.horizontal(|ui| {
             ui.add_space(14.0);
-            ui.checkbox(&mut entry.show_cutting, "Cut")
-                .on_hover_text("Show cutting/feed moves for this toolpath");
-            ui.checkbox(&mut entry.show_rapids, "Rapid")
-                .on_hover_text("Show rapid moves for this toolpath");
+            crate::ui::toolpath_row_controls::draw(
+                ui,
+                *id,
+                overall_visible,
+                None,
+                &mut state.viewport,
+                events,
+            );
         });
 
         // Progress bar for this toolpath
@@ -4252,12 +4262,12 @@ fn draw_toolpath_panel(
                                     )
                                     .on_hover_text(if has_rest_candidates {
                                         "Boundary = rest regions computed by another \
-                                         toolpath's pencil rest-depth detector. Pick \
-                                         the source toolpath below."
+                                         toolpath's rest analysis. Pick the source \
+                                         toolpath below."
                                     } else {
                                         "No other toolpaths in this project yet — add \
-                                         one and generate it with a pencil rest-depth \
-                                         detector to use as the source."
+                                         one, switch on its Rest Analysis and \
+                                         generate it to use as the source."
                                     })
                                     .clicked()
                                 {
@@ -4317,8 +4327,11 @@ fn draw_toolpath_panel(
                                 })
                                 .response
                                 .on_hover_text(
-                                    "The toolpath whose pencil rest-depth detector \
-                                     supplies the rest regions.",
+                                    "The toolpath whose rest analysis supplies the \
+                                     rest regions. ANY operation produces them when \
+                                     its Rest Analysis is on and the project carries \
+                                     a mesh; the pencil rest-depth detector and the \
+                                     Unified Finish claims pipeline attach their own.",
                                 );
                         });
 

@@ -658,7 +658,11 @@ pub enum McpRequestKind {
         offset: Option<f64>,
         /// Required when `source` is `"derived_rest_regions"` — the stable
         /// id (`ToolpathConfig.id`, not an index) of the toolpath whose
-        /// cached pencil rest-depth result supplies the boundary polygons.
+        /// cached REST ANALYSIS supplies the boundary polygons. Any
+        /// operation produces them when its rest analysis is enabled and the
+        /// project carries a mesh and a spatial index; the pencil
+        /// `RestDepth` arm and the UnifiedFinish claims pipeline attach
+        /// their own.
         source_toolpath_id: Option<usize>,
     },
     SetRestAnalysisConfig {
@@ -817,6 +821,10 @@ pub enum McpRequestKind {
         properties_tab: Option<String>,
         select: Option<String>,
         modal: Option<String>,
+        /// Viewport overlays to switch, by registry id (P6). Applied AFTER
+        /// the workspace, because a workspace carries overlay defaults that
+        /// would otherwise land on top of these writes.
+        overlays: Option<std::collections::BTreeMap<String, bool>>,
     },
     /// Import a GRBL `$$` settings dump onto the live machine profile
     /// (headless equivalent of the GUI Machine panel's `$$` import).

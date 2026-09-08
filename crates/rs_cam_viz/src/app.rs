@@ -34,9 +34,9 @@ pub struct RsCamApp {
     last_hover_face: Option<rs_cam_core::enriched_mesh::FaceGroupId>,
     /// Flag: show the unsaved-changes confirmation dialog before quitting.
     show_quit_dialog: bool,
-    /// Track toolpath color mode changes to trigger re-upload.
-    last_tp_color_mode: crate::state::viewport::ToolpathColorMode,
-    last_span_kind_filter: crate::state::viewport::SpanKindFilter,
+    /// Every upload-time overlay dial, as one comparable key. See the
+    /// detector in [`RsCamApp::update`].
+    last_overlay_upload_key: OverlayUploadKey,
     /// Track the active drill op's target selection (toolpath id + picked
     /// holes) so the viewport markers re-upload when it changes from any
     /// source (viewport pick, panel buttons, selection change).
@@ -169,16 +169,24 @@ impl RsCamApp {
             controller.state_mut().selection = crate::state::selection::Selection::Setup(setup_id);
         }
 
-        // Switch workspace if requested via env var
+        // Switch workspace if requested via env var.
+        //
+        // Through `switch_workspace`, not by assigning the field: a workspace
+        // carries per-workspace overlay defaults (P6), and a bare assignment
+        // would land the auto-screenshot in Simulation with the Toolpaths
+        // overlay set — no simulated stock, no collisions.
         if let Ok(val) = std::env::var("RS_CAM_SCREENSHOT") {
-            match val.to_lowercase().as_str() {
-                "setup" => controller.state_mut().workspace = Workspace::Setup,
-                "simulation" | "sim" => {
-                    controller.state_mut().workspace = Workspace::Simulation;
-                }
-                _ => {}
+            let target = match val.to_lowercase().as_str() {
+                "setup" => Some(Workspace::Setup),
+                "simulation" | "sim" => Some(Workspace::Simulation),
+                _ => None,
+            };
+            if let Some(target) = target {
+                crate::ui::overlays::registry::switch_workspace(controller.state_mut(), target);
             }
         }
+
+        let last_overlay_upload_key = overlay_upload_key(controller.state());
 
         Self {
             controller,
@@ -190,8 +198,7 @@ impl RsCamApp {
             minimize_after_frames,
             last_hover_face: None,
             show_quit_dialog: false,
-            last_tp_color_mode: crate::state::viewport::ToolpathColorMode::Normal,
-            last_span_kind_filter: crate::state::viewport::SpanKindFilter::default(),
+            last_overlay_upload_key,
             last_drill_marker_key: None,
             #[cfg(feature = "mcp")]
             mcp_receiver,
@@ -644,18 +651,25 @@ impl RsCamApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
 
-        // Re-upload toolpath GPU data when color mode changes
-        let current_tp_mode = self.controller.state().viewport.toolpath_color_mode;
-        if current_tp_mode != self.last_tp_color_mode {
-            self.last_tp_color_mode = current_tp_mode;
-            self.controller.set_pending_upload();
-        }
-        // Re-upload when SpanKind filter checkboxes change — the filter is
-        // applied at GPU upload (renderer skips segments by SpanKind), so
-        // toggling a kind needs a fresh upload to take visible effect.
-        let current_filter = self.controller.state().viewport.span_kind_filter;
-        if current_filter != self.last_span_kind_filter {
-            self.last_span_kind_filter = current_filter;
+        // Re-upload when any UPLOAD-TIME overlay dial changes.
+        //
+        // P6 replaced two detectors with one. An upload-time flag is
+        // consumed in `app/gpu_upload.rs`, which runs only when
+        // `take_pending_upload()` fires, so such a flag with no trigger is a
+        // control that does nothing until an unrelated event happens to fire
+        // an upload. Two of the three dials had a detector each; the third —
+        // the tool-profile ghost — never got one, and was a dead control for
+        // its whole life (audit §3.6, fix §6.1). P6 also made five more
+        // dials upload-time when it split the fixture buffer, so one
+        // composite key is the shape that cannot leave a new dial behind.
+        //
+        // The key carries the WORKSPACE as well, because
+        // `AppEvent::SwitchWorkspace` sets no pending upload of its own and
+        // the fixture buffer's contents depend on the workspace's overlay
+        // defaults (audit §3.3).
+        let current_overlay_key = overlay_upload_key(self.controller.state());
+        if current_overlay_key != self.last_overlay_upload_key {
+            self.last_overlay_upload_key = current_overlay_key;
             self.controller.set_pending_upload();
         }
         // Re-upload drill target markers when the active drill op's selection
@@ -1116,5 +1130,44 @@ fn push_dashed_line_vertices(
             color,
         });
         t += cycle;
+    }
+}
+
+/// Every upload-time overlay dial, in one comparable value.
+///
+/// The `PartialEq` derive is the whole mechanism: the frame loop compares
+/// this frame's key with the last one and fires exactly one
+/// `set_pending_upload()` when anything in it moved. Adding a dial to
+/// `app/gpu_upload.rs` means adding a field here — a registry row that names
+/// `OverlayMechanism::UploadTime` and is missing from this key is the defect
+/// class the tool-profile ghost shipped with (audit §3.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OverlayUploadKey {
+    tool_profile: bool,
+    fixtures: bool,
+    keep_outs: bool,
+    alignment_pins: bool,
+    flip_axis: bool,
+    datum: bool,
+    span_filter: crate::state::viewport::SpanKindFilter,
+    toolpath_color_mode: crate::state::viewport::ToolpathColorMode,
+    stock_viz_mode: crate::state::simulation::StockVizMode,
+    /// The fixture buffer's contents depend on the active setup, which the
+    /// workspace can change, and `SwitchWorkspace` fires no upload itself.
+    workspace: Workspace,
+}
+
+pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploadKey {
+    OverlayUploadKey {
+        tool_profile: state.viewport.show_tool_profile_preview,
+        fixtures: state.viewport.show_fixtures,
+        keep_outs: state.viewport.show_keep_outs,
+        alignment_pins: state.viewport.show_alignment_pins,
+        flip_axis: state.viewport.show_flip_axis,
+        datum: state.viewport.show_datum,
+        span_filter: state.viewport.span_kind_filter,
+        toolpath_color_mode: state.viewport.toolpath_color_mode,
+        stock_viz_mode: state.simulation.stock_viz_mode,
+        workspace: state.workspace,
     }
 }

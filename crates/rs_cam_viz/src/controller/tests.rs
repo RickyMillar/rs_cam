@@ -370,19 +370,10 @@ fn render_snapshot(
             let events = &mut controller.events;
             crate::ui::viewport_overlay::draw(
                 ui,
-                controller.state.workspace,
-                controller.state.simulation.has_results(),
+                &mut controller.state,
                 crate::render::camera::ProjectionMode::Perspective,
-                None,
-                &mut controller.state.viewport,
                 &lanes,
                 events,
-                None,
-                controller
-                    .state
-                    .multitool_planner
-                    .as_ref()
-                    .is_some_and(|p| p.ready_preview().is_some()),
             );
         });
 
