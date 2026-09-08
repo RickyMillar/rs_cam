@@ -191,6 +191,93 @@ impl MeshGpuData {
     }
 }
 
+/// Upload a `TriangleMesh` with one caller-supplied colour per vertex (P5).
+///
+/// [`MeshGpuData::from_mesh`]'s construction exactly — the same area-weighted
+/// smooth normals and the same native index buffer — but emitting
+/// [`ColoredMeshVertex`], so the result draws with `colored_opaque_pipeline`
+/// instead of the plain mesh pipeline whose diffuse colour is a WGSL literal.
+///
+/// Indexed, unlike [`enriched_mesh_gpu_data`], which is deliberately
+/// unindexed: that path is flat-shaded and per-face coloured, so two
+/// triangles can share a vertex only when they agree on normal AND colour.
+/// Here the colour is per VERTEX by construction, so the smooth-normal
+/// indexed upload is exact and costs a third of the VRAM.
+///
+/// Returns `None` when `colors` does not carry exactly one entry per mesh
+/// vertex, and when a buffer exceeds the device limits. A length mismatch is
+/// a caller error — the colours are indexed by vertex — so it refuses rather
+/// than padding, which would mis-colour the part silently.
+#[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
+pub fn colored_mesh_gpu_data(
+    device: &wgpu::Device,
+    limits: &GpuLimits,
+    mesh: &TriangleMesh,
+    colors: &[[f32; 3]],
+) -> Option<EnrichedMeshGpuData> {
+    let num_verts = mesh.vertices.len();
+    if colors.len() != num_verts {
+        return None;
+    }
+
+    // Accumulate area-weighted face normals per vertex.
+    let mut normals = vec![[0.0f32; 3]; num_verts];
+    for (i, tri) in mesh.triangles.iter().enumerate() {
+        let n = mesh.faces[i].normal;
+        let nf = [n.x as f32, n.y as f32, n.z as f32];
+        for &vi in tri {
+            let slot = &mut normals[vi as usize];
+            slot[0] += nf[0];
+            slot[1] += nf[1];
+            slot[2] += nf[2];
+        }
+    }
+
+    let mut vertices = Vec::with_capacity(num_verts);
+    for (i, v) in mesh.vertices.iter().enumerate() {
+        let n = &normals[i];
+        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+        let normal = if len > 1e-8 {
+            [n[0] / len, n[1] / len, n[2] / len]
+        } else {
+            [0.0, 0.0, 1.0]
+        };
+        vertices.push(ColoredMeshVertex {
+            position: [v.x as f32, v.y as f32, v.z as f32],
+            normal,
+            color: colors[i],
+        });
+    }
+
+    let indices: Vec<u32> = mesh
+        .triangles
+        .iter()
+        .flat_map(|tri| tri.iter().copied())
+        .collect();
+
+    let vertex_buffer = gpu_safety::try_create_buffer(
+        device,
+        limits,
+        "reach_overlay_vertices",
+        bytemuck::cast_slice(&vertices),
+        wgpu::BufferUsages::VERTEX,
+    )?;
+
+    let index_buffer = gpu_safety::try_create_buffer(
+        device,
+        limits,
+        "reach_overlay_indices",
+        bytemuck::cast_slice(&indices),
+        wgpu::BufferUsages::INDEX,
+    )?;
+
+    Some(EnrichedMeshGpuData {
+        vertex_buffer,
+        index_buffer,
+        index_count: indices.len() as u32,
+    })
+}
+
 /// Deterministic pastel color for a face group ID.
 #[allow(clippy::indexing_slicing)] // modulo indexing into constant-length palette
 fn face_group_color(id: FaceGroupId) -> [f32; 3] {

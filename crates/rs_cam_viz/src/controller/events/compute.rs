@@ -1278,6 +1278,72 @@ impl<B: ComputeBackend> AppController<B> {
                 ComputeMessage::Optimize(result) => {
                     self.handle_optimize_result(*result);
                 }
+                ComputeMessage::Reach(result) => {
+                    self.handle_reach_map_result(*result);
+                }
+            }
+        }
+    }
+
+    /// Land a reach map on the viewport overlay (P5).
+    ///
+    /// Three outcomes, and they are deliberately not collapsed:
+    ///
+    /// * A result for a toolpath the overlay is no longer asking about is a
+    ///   stale supersede. It is DROPPED, never shown — the operator has
+    ///   already moved on, and the sweep has already asked for the new one.
+    /// * A cancelled walk is DROPPED too, and it must not clear the key.
+    ///   The Reach lane cancels only when a replacement has just been queued,
+    ///   so the `Cancelled` is bookkeeping, exactly as G-REGEN-RACE is on the
+    ///   toolpath lane. Clearing the key here instead makes the sweep submit a
+    ///   third walk that cancels the second, whose `Cancelled` clears the key
+    ///   again — a live-lock that never draws an overlay. The one case this
+    ///   leaves behind, a lane cancelled with nothing queued behind it, is
+    ///   recovered by `process_reach_overlay`'s idle-lane check.
+    /// * A real error is kept and shown. A failed measurement must not read
+    ///   as a clean part.
+    ///
+    /// `generation` is bumped only when the map is not the one this overlay
+    /// last accepted (`ReachOverlayState::last_map`, NOT the current status —
+    /// the scheduler sets `Computing` on submit, so the status never holds a
+    /// map to compare against by the time a result lands). The reach memo
+    /// returns the same `Arc` for a warm key, so re-selecting a toolpath
+    /// rebuilds no GPU buffer.
+    fn handle_reach_map_result(&mut self, result: crate::compute::ReachResult) {
+        use crate::state::runtime::ReachStatus;
+
+        if self.state.gui.reach_overlay.toolpath != Some(result.toolpath_id) {
+            tracing::debug!(
+                "Reach map for tp {} dropped — the overlay now follows a different selection",
+                result.toolpath_id
+            );
+            return;
+        }
+        let overlay = &mut self.state.gui.reach_overlay;
+        match result.result {
+            Ok(map) => {
+                let is_new_map = overlay
+                    .last_map
+                    .as_ref()
+                    .is_none_or(|held| !Arc::ptr_eq(held, &map));
+                if is_new_map {
+                    overlay.generation = overlay.generation.saturating_add(1);
+                }
+                overlay.last_map = Some(Arc::clone(&map));
+                overlay.colors = Some(result.colors);
+                overlay.status = ReachStatus::Ready(map);
+                self.pending_upload = true;
+            }
+            Err(ComputeError::Cancelled) => {
+                tracing::debug!(
+                    "Reach map for tp {} was superseded — a replacement walk is queued",
+                    result.toolpath_id
+                );
+            }
+            Err(ComputeError::Message(message)) => {
+                overlay.colors = None;
+                overlay.status = ReachStatus::Failed(message);
+                self.pending_upload = true;
             }
         }
     }

@@ -781,6 +781,19 @@ pub enum McpRequestKind {
         height: Option<u32>,
         show_stock: Option<bool>,
         include_rapids: Option<bool>,
+        /// P5 — shade the model surface by the per-tool reach map behind
+        /// the toolpath. Answered on the frame loop like the tier-map
+        /// preview, and like it this one can do real work: a cold map is a
+        /// full-grid drop-cutter walk, a second or two on a board-sized
+        /// terrain, free once the memo is warm.
+        reach_overlay: Option<bool>,
+    },
+    /// P5 — the per-tool reach map for one finishing toolpath, as
+    /// numbers: an area-weighted unreachable percentage, the worst gap, a
+    /// gap histogram and the grid the answer was taken on. Modifies
+    /// nothing. Same cost note as `ScreenshotToolpath`'s `reach_overlay`.
+    ReachMap {
+        spec: rs_cam_mcp::server::ReachMapParam,
     },
     /// Capture the full application window (all panels) to a PNG. The
     /// response is deferred: the GUI issues

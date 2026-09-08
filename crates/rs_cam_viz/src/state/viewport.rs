@@ -76,6 +76,21 @@ pub struct ViewportState {
     /// again when the operator vetoes it, so a default-on flag would just be
     /// a checkbox the planner keeps overwriting.
     pub show_tier_preview: bool,
+    /// Per-tool reach-map overlay (P5). The model is drawn in the reach
+    /// colours of the SELECTED toolpath's cutter: green where the cutter can
+    /// form the surface to the operation's tolerance, red where it cannot.
+    ///
+    /// Defaults **on**, like `show_rest_heatmap` and unlike
+    /// `show_tier_preview`, because it is self-gating in the same way. The
+    /// map exists only for a reach-capable operation
+    /// (`OperationType::supports_reach_map`) with a mesh and a tool, so on
+    /// every other selection the derived
+    /// `ViewportCallback::show_reach_overlay` gate is false and the plain
+    /// model draws.
+    ///
+    /// This flag replaces the plain model draw rather than draping over it —
+    /// see the draw pass in `render/mod.rs` — so the two cannot z-fight.
+    pub show_reach_map: bool,
     /// When set, only this toolpath is visible (isolation mode, toggle with I).
     pub isolate_toolpath: Option<ToolpathId>,
     /// Color mode for toolpath lines.
@@ -130,6 +145,7 @@ impl ViewportState {
             show_tool_profile_preview: false,
             show_rest_heatmap: true,
             show_tier_preview: false,
+            show_reach_map: true,
             isolate_toolpath: None,
             toolpath_color_mode: ToolpathColorMode::Normal,
             toolpath_move_visibility: HashMap::new(),

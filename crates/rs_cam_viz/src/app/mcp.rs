@@ -25,6 +25,22 @@ use rs_cam_mcp::server::{
     parse_workholding_rigidity, resolve_material, text,
 };
 
+/// The optional dials `screenshot_toolpath` accepts, grouped for the same
+/// reason [`RestAnalysisDials`] is: six positional arguments was already the
+/// readable limit, and P5's reach flag made seven `Option`s in a row. A
+/// caller that transposed two of them would compile and capture the wrong
+/// picture.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct ScreenshotToolpathOptions {
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub show_stock: Option<bool>,
+    pub include_rapids: Option<bool>,
+    /// P5 — shade the model surface by the per-tool reach map. Mutually
+    /// exclusive with `show_stock`; this one wins.
+    pub reach_overlay: Option<bool>,
+}
+
 /// The optional numeric dials `set_rest_analysis_config` accepts, grouped so
 /// the handler stays under the argument-count lint after PR-7 added the two
 /// routing-fan fields. Every one is `Option` with the SAME meaning: `None` =
@@ -809,15 +825,23 @@ impl super::RsCamApp {
                 height,
                 show_stock,
                 include_rapids,
+                reach_overlay,
             } => {
                 let resp = self.mcp_screenshot_toolpath(
                     index,
                     &path,
-                    width,
-                    height,
-                    show_stock,
-                    include_rapids,
+                    ScreenshotToolpathOptions {
+                        width,
+                        height,
+                        show_stock,
+                        include_rapids,
+                        reach_overlay,
+                    },
                 );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::ReachMap { spec } => {
+                let resp = self.mcp_reach_map(&spec);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::ScreenshotGui {
@@ -5132,15 +5156,127 @@ impl super::RsCamApp {
         }
     }
 
+    /// The model surface as a render background, shaded by the reach map
+    /// for `index`'s tool.
+    ///
+    /// The mesh is the one the map was built on — the SETUP-TRANSFORMED
+    /// mesh, which is also the frame the toolpath was emitted in, so the
+    /// two composite layers register.
+    fn reach_overlay_background(
+        &self,
+        index: usize,
+    ) -> Result<rs_cam_core::stock_mesh::StockMesh, String> {
+        let session = &self.controller.state().session;
+        let Some(spec) = session.reach_map_spec(index, None) else {
+            return Err(format!(
+                "Toolpath {index} has no reach map. A reach map answers for a FINISHING \
+                 operation on a 3D mesh (drop_cutter, waterline, pencil, scallop, \
+                 unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, \
+                 horizontal_finish) that has both a model mesh and a tool."
+            ));
+        };
+        // Fresh flag, never armed: this call is not on the generate lane,
+        // so `cancel_generation` is not its owner.
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let cancel_fn = || cancel.load(std::sync::atomic::Ordering::SeqCst);
+        let map = rs_cam_core::reach_map_cache::cached_reach_map(&spec, &cancel_fn)
+            .map_err(|e| format!("Reach map for toolpath {index} could not be built — {e}"))?;
+        let gaps = map.vertex_gaps(spec.mesh.as_ref(), spec.index.as_ref());
+        Ok(rs_cam_core::reach_map::reach_overlay_stock_mesh(
+            spec.mesh.as_ref(),
+            &gaps,
+            map.tolerance_mm,
+        ))
+    }
+
+    /// P5 — the reach map as numbers.
+    ///
+    /// A pure READ: it builds (or fetches) the map and reports it. Nothing
+    /// is emitted, no parameter moves, no result is invalidated — the reply
+    /// says `modified: false` and that is a statement about this function,
+    /// not a hope. It takes `&self` so that stays true by type.
+    fn mcp_reach_map(&self, spec: &rs_cam_mcp::server::ReachMapParam) -> String {
+        let index = spec.index;
+        let session = &self.controller.state().session;
+        let Some(request) = session.reach_map_spec(index, spec.tolerance_mm) else {
+            return json_str(serde_json::json!({
+                "ok": false,
+                "modified": false,
+                "error": format!(
+                    "reach_map: toolpath {index} has no reach map. A reach map answers for a \
+                     FINISHING operation on a 3D mesh that has both a model mesh and a tool; \
+                     a roughing pass, a 2D operation and a drill have no reach question."
+                ),
+            }));
+        };
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let cancel_fn = || cancel.load(std::sync::atomic::Ordering::SeqCst);
+        let map = match rs_cam_core::reach_map_cache::cached_reach_map(&request, &cancel_fn) {
+            Ok(map) => map,
+            Err(e) => {
+                return json_str(serde_json::json!({
+                    "ok": false,
+                    "modified": false,
+                    "error": format!("reach_map: the walk could not finish — {e}"),
+                }));
+            }
+        };
+        let bins = spec.histogram_bins.unwrap_or(8).clamp(1, 64);
+        let (edges, counts, not_measured) = map.gap_histogram(bins);
+        json_str(serde_json::json!({
+            "ok": true,
+            // Plan-time read: this handler takes `&self`.
+            "modified": false,
+            "toolpath_index": index,
+            "tool_id": map.tool_id,
+            "model_id": map.model_id,
+            "tolerance_mm": map.tolerance_mm,
+            "tolerance_source": if spec.tolerance_mm.is_some() {
+                "caller override"
+            } else {
+                "the operation's own cusp / scallop height, else the 0.05 mm default"
+            },
+            "is_measured": map.is_measured(),
+            "unreachable_pct_of_measured_area": map.unreachable_pct(),
+            "max_gap_mm": map.max_gap_mm,
+            "area_mm2": {
+                "surface": map.surface_area_mm2,
+                "measured": map.measured_area_mm2,
+                "unreachable": map.unreachable_area_mm2,
+            },
+            "grid": {
+                "cell_mm": map.cell_mm,
+                "nx": map.nx,
+                "ny": map.ny,
+                "cells": map.cells.len(),
+                "not_measured_cells": not_measured,
+            },
+            "gap_histogram": {
+                "upper_edges_mm": edges,
+                "counts": counts,
+            },
+            "discretisation_floor_mm": map.discretisation_floor_mm,
+            "rim_erosion_mm": map.rim_erosion_mm,
+            "note": "Top-down measure. Undersides, walls and a band one envelope radius wide \
+                     inside the part outline are NOT MEASURED — read `is_measured` and the \
+                     measured-against-surface areas before believing the percentage. A gap of \
+                     the order of `discretisation_floor_mm` is arithmetic, not geometry.",
+        }))
+    }
+
     fn mcp_screenshot_toolpath(
         &self,
         index: usize,
         path: &str,
-        width: Option<u32>,
-        height: Option<u32>,
-        show_stock: Option<bool>,
-        include_rapids: Option<bool>,
+        options: ScreenshotToolpathOptions,
     ) -> String {
+        let ScreenshotToolpathOptions {
+            width,
+            height,
+            show_stock,
+            include_rapids,
+            reach_overlay,
+        } = options;
         // Find the toolpath result from GUI runtime
         let session = &self.controller.state().session;
         let gui = &self.controller.state().gui;
@@ -5161,7 +5297,17 @@ impl super::RsCamApp {
         if path.ends_with(".png") {
             let w = width.unwrap_or(1200);
             let h = height.unwrap_or(800);
-            let bg = if show_stock.unwrap_or(false) {
+            // The two backgrounds are mutually exclusive and the reach map
+            // wins: they answer different questions (what the machine has
+            // removed against what this tool can form), and compositing one
+            // over the other would leave the reader unable to say which
+            // colour they were looking at.
+            let bg = if reach_overlay.unwrap_or(false) {
+                match self.reach_overlay_background(index) {
+                    Ok(mesh) => Some(mesh),
+                    Err(message) => return text(message),
+                }
+            } else if show_stock.unwrap_or(false) {
                 self.controller
                     .state()
                     .simulation

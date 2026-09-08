@@ -75,6 +75,24 @@ pub struct IndexParam {
     pub index: usize,
 }
 
+/// P5 — the per-tool reach map, as numbers rather than pixels.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ReachMapParam {
+    /// Toolpath index (0-based). The operation must be one a reach map
+    /// speaks about: a mesh operation that is not a roughing pass.
+    pub index: usize,
+    /// Gap (mm) above which a spot counts as unreachable. Unset = the
+    /// operation's own declared cusp / scallop height, else the core's
+    /// 0.05 mm default. Overriding it re-walks the grid under a new memo
+    /// key, so probe a few values freely but expect the first of each to
+    /// cost a build.
+    pub tolerance_mm: Option<f64>,
+    /// Number of gap-histogram buckets in the reply (default 8, max 64).
+    /// The reply never carries the raw cell grid — a board-sized map is
+    /// over a hundred thousand cells.
+    pub histogram_bins: Option<usize>,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct GenerateToolpathParam {
     /// Toolpath index (0-based)
@@ -203,6 +221,17 @@ pub struct ScreenshotToolpathParam {
     pub show_stock: Option<bool>,
     /// Include rapid moves in the rendering (default true, PNG only)
     pub include_rapids: Option<bool>,
+    /// Shade the MODEL surface by the per-tool reach map behind the
+    /// toolpath (default false, PNG only). Green = this tool forms the
+    /// surface inside the operation's tolerance, red = it cannot reach,
+    /// neutral = not measured (an underside, a wall, or the eroded rim
+    /// band). This is the explicit form of the overlay on purpose: the
+    /// live GUI's own toggle is a viewport state an agent cannot see, so
+    /// the screenshot asks for the overlay rather than inheriting it. The
+    /// call refuses when the toolpath is not a finishing operation a reach
+    /// map speaks about, and it takes a second or two on a cold map — the
+    /// same memo `reach_map` fills.
+    pub reach_overlay: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -1331,6 +1360,12 @@ pub fn build_info() -> serde_json::Value {
             // HTML dump (the interactive path measured 948 MB on the
             // reference board).
             "preview_tier_map",
+            // P5 (2026-09-08): `reach_map` answers "does this tool's tip
+            // fit into the valleys?" for one finishing toolpath — an
+            // area-weighted unreachable percentage, the worst gap, and a
+            // gap histogram. `screenshot_toolpath` takes the same map as a
+            // `reach_overlay` shading on the model surface.
+            "reach_map",
         ],
     })
 }
@@ -1401,6 +1436,7 @@ mod tests {
             "set_ui_view",
             "multitool_finishing_planner",
             "preview_tier_map",
+            "reach_map",
         ] {
             assert!(
                 features.contains(&flag),
@@ -1459,6 +1495,55 @@ mod tests {
         assert_eq!(full.coarseness, Some(1.5));
         assert_eq!(full.overlap_mm, Some(3.0));
         assert_eq!(full.max_regions_per_tier, Some(8));
+    }
+
+    /// P5 — an omitted dial must stay `None`, never default to a number.
+    /// `tolerance_mm` is the one that matters: `Some(0.0)` and `None` mean
+    /// different things (a zero bar against the operation's own bar), and a
+    /// `#[serde(default)]` on an `f64` would silently turn the second into
+    /// the first.
+    #[test]
+    fn reach_map_param_leaves_omitted_dials_unset() {
+        let minimal: ReachMapParam = serde_json::from_value(serde_json::json!({
+            "index": 3,
+        }))
+        .expect("an index alone must deserialise");
+        assert_eq!(minimal.index, 3);
+        assert!(
+            minimal.tolerance_mm.is_none(),
+            "an omitted tolerance means the operation's own, never 0.0"
+        );
+        assert!(minimal.histogram_bins.is_none());
+
+        let full: ReachMapParam = serde_json::from_value(serde_json::json!({
+            "index": 0,
+            "tolerance_mm": 0.02,
+            "histogram_bins": 16,
+        }))
+        .expect("every dial must be accepted");
+        assert_eq!(full.tolerance_mm, Some(0.02));
+        assert_eq!(full.histogram_bins, Some(16));
+    }
+
+    /// P5 — the screenshot's reach flag is opt-in and tri-state. An agent
+    /// cannot see the GUI's own viewport toggle, so the absence of the flag
+    /// must mean "no overlay", not "whatever the window happens to show".
+    #[test]
+    fn screenshot_toolpath_reach_overlay_is_opt_in() {
+        let plain: ScreenshotToolpathParam = serde_json::from_value(serde_json::json!({
+            "index": 0,
+            "path": "/tmp/tp.png",
+        }))
+        .expect("index + path alone must deserialise");
+        assert!(plain.reach_overlay.is_none());
+
+        let with_overlay: ScreenshotToolpathParam = serde_json::from_value(serde_json::json!({
+            "index": 0,
+            "path": "/tmp/tp.png",
+            "reach_overlay": true,
+        }))
+        .expect("the flag must be accepted");
+        assert_eq!(with_overlay.reach_overlay, Some(true));
     }
 
     /// Phase U — the preview's wire contract, and the reason it is a

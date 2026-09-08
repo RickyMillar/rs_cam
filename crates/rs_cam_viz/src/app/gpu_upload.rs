@@ -19,6 +19,11 @@ use crate::state::simulation::StockVizMode;
 
 use super::RsCamApp;
 
+/// The model mesh the reach overlay draws and the colours it draws it with,
+/// paired because the upload pass must check one against the other before it
+/// builds a buffer.
+type ReachOverlaySource = (Arc<rs_cam_core::mesh::TriangleMesh>, Arc<Vec<[f32; 3]>>);
+
 impl RsCamApp {
     /// Get selected BREP face IDs for rendering highlights.
     /// Reads from the active toolpath's face_selection when a toolpath is selected,
@@ -247,8 +252,10 @@ impl RsCamApp {
             frame: frame_key.clone(),
             meshes: plain_mesh_ids,
         };
+        // Cloned rather than moved: the reach overlay's key carries the same
+        // display frame, and it is resolved much further down this pass.
         let enriched_key = upload_cache::EnrichedUploadKey {
-            frame: frame_key,
+            frame: frame_key.clone(),
             meshes: enriched_ids,
             selected_faces: selected_faces.clone(),
             hovered_face,
@@ -1281,6 +1288,77 @@ impl RsCamApp {
                         &hm,
                     )
                 });
+        }
+
+        // Upload the per-tool reach-map overlay (P5). Keyed on the overlay's
+        // own generation, the model mesh identity and the display frame — so
+        // a re-selection that hits the reach memo rebuilds nothing, while a
+        // face flip or a stock resize rebuilds once.
+        //
+        // The colours are NOT computed here. `ReachMap::vertex_gaps` runs one
+        // spatial-index query per mesh vertex — hundreds of thousands on a
+        // board-sized terrain — so the Reach lane builds them beside the map
+        // and this pass only interleaves them into the vertex buffer.
+        //
+        // FRAMES. The map is measured on the setup-transformed mesh (or on
+        // the raw mesh for an identity setup), while the viewport draws that
+        // same mesh through `transform_mesh`. Both are
+        // `SetupTransformInfo::apply_to_mesh`, which maps vertices one to one
+        // and clones the triangle list, so vertex ORDER is preserved: colour
+        // `i` belongs to displayed vertex `i`. The two frames' COORDINATES
+        // differ on an identity setup with a non-zero stock origin; the
+        // ordering does not, and the ordering is all the colours need. The
+        // length check below is the tripwire if that ever stops holding.
+        let reach_source: Option<ReachOverlaySource> = {
+            let state = self.controller.state();
+            let overlay = &state.gui.reach_overlay;
+            overlay.ready_map().and_then(|map| {
+                let model_id = map.model_id?;
+                let mesh = state
+                    .session
+                    .models()
+                    .iter()
+                    .find(|model| model.id == model_id)
+                    .and_then(|model| model.mesh.clone())?;
+                let colors = overlay.colors.as_ref().map(Arc::clone)?;
+                Some((mesh, colors))
+            })
+        };
+        let reach_generation = self.controller.state().gui.reach_overlay.generation;
+        let reach_key =
+            reach_source
+                .as_ref()
+                .map(|(mesh, _)| upload_cache::ReachOverlayUploadKey {
+                    generation: reach_generation,
+                    mesh: upload_cache::ArcId::new(mesh),
+                    frame: frame_key,
+                });
+        if resources.reach_overlay_upload_key != reach_key {
+            resources.reach_overlay_upload_key = reach_key;
+            resources.reach_overlay_data = reach_source.and_then(|(mesh, colors)| {
+                let displayed = if use_local_frame {
+                    // SAFETY: use_local_frame is true iff active_setup_ref.is_some().
+                    #[allow(clippy::unwrap_used)]
+                    let setup = active_setup_ref.as_ref().unwrap();
+                    std::borrow::Cow::Owned(transform_mesh(&mesh, setup, &stock))
+                } else {
+                    std::borrow::Cow::Borrowed(mesh.as_ref())
+                };
+                if colors.len() != displayed.vertices.len() {
+                    tracing::warn!(
+                        colors = colors.len(),
+                        vertices = displayed.vertices.len(),
+                        "reach overlay colours do not match the drawn mesh — overlay skipped"
+                    );
+                    return None;
+                }
+                crate::render::mesh_render::colored_mesh_gpu_data(
+                    &render_state.device,
+                    &resources.gpu_limits,
+                    &displayed,
+                    &colors,
+                )
+            });
         }
 
         // V8 instrument. There is no criterion harness for the GUI loop, so

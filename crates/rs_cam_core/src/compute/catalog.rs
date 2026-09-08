@@ -329,6 +329,38 @@ impl OperationType {
         self.spec().label
     }
 
+    /// Does a per-tool reach map ([`crate::reach_map`]) say anything about
+    /// this operation? P5, 2026-09-08.
+    ///
+    /// **Derived from the registry, not a name list**: the operation must
+    /// read a 3D mesh ([`GeometryRequirement::Mesh`]) and must not be a
+    /// roughing pass ([`UiProcessRole::Roughing`]). A reach map answers
+    /// "which of this surface can this cutter form", which is a finishing
+    /// question — a rough leaves stock everywhere on purpose.
+    ///
+    /// On the registry as it stands that yields exactly ten operations:
+    /// `drop_cutter`, `waterline`, `pencil`, `scallop`, `unified_finish`,
+    /// `steep_shallow`, `ramp_finish`, `spiral_finish`, `radial_finish` and
+    /// `horizontal_finish`. `waterline` is in because it rides the same
+    /// surface, even though its registry role is
+    /// [`UiProcessRole::SemiFinish`]; `adaptive3d` is out because it is
+    /// roughing; `project_curve` is out because its geometry requirement is
+    /// [`GeometryRequirement::Both`] and its reach question is about a
+    /// curve, not a surface.
+    ///
+    /// There is deliberately **no tool precondition.** The reach walk is a
+    /// min-filter with the cutter's own
+    /// [`crate::tool::MillingCutter::height_at_radius`] profile, which is
+    /// exact for every shipped shape — ball, tapered ball, flat, bull nose
+    /// and V-bit alike — so a shape gate would only refuse answers it can
+    /// give.
+    #[must_use]
+    pub fn supports_reach_map(self) -> bool {
+        let spec = self.spec();
+        matches!(spec.geometry, GeometryRequirement::Mesh)
+            && !matches!(spec.ui_process_role, UiProcessRole::Roughing)
+    }
+
     /// Stable snake_case identifier for serialized / diagnostic use. Unlike
     /// [`Self::label`] (which is for human-facing UI text), this is suitable
     /// for JSON wire formats and for consumers that need to branch on op

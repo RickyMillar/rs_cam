@@ -197,6 +197,16 @@ pub struct RenderResources {
     /// be on screen together. Same `SimMeshGpuData` machinery and same
     /// depth-read-only pipeline.
     pub tier_preview_data: Option<SimMeshGpuData>,
+    /// Per-tool reach-map overlay (P5) — the MODEL mesh uploaded with one
+    /// reach colour per vertex.
+    ///
+    /// Not a drape like the two overlays above. It REPLACES the plain and
+    /// enriched model draws for the frame, so the two cannot z-fight, and it
+    /// therefore uses the opaque `colored_opaque_pipeline` rather than the
+    /// depth-read-only height-plane pipeline. `EnrichedMeshGpuData` is the
+    /// container because it is already exactly one indexed
+    /// `ColoredMeshVertex` buffer pair.
+    pub reach_overlay_data: Option<mesh_render::EnrichedMeshGpuData>,
     pub tool_model_data: Option<ToolModelGpuData>,
     pub polygon_data: Vec<PolygonGpuData>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
@@ -227,6 +237,10 @@ pub struct RenderResources {
     /// preview is held, which is also a cacheable state — so toggling the
     /// overlay's visibility checkbox rebuilds nothing.
     pub tier_preview_upload_key: Option<upload_cache::TierPreviewUploadKey>,
+    /// Inputs `reach_overlay_data` was last built from. `None` means no map
+    /// is held, which is also a cacheable state — so toggling the overlay's
+    /// visibility checkbox rebuilds nothing.
+    pub reach_overlay_upload_key: Option<upload_cache::ReachOverlayUploadKey>,
     /// Lifetime counts of upload passes and per-resource buffer builds.
     pub upload_stats: upload_cache::UploadStats,
 }
@@ -684,6 +698,7 @@ impl RenderResources {
             height_planes_data: None,
             rest_heatmap_data: None,
             tier_preview_data: None,
+            reach_overlay_data: None,
             tool_model_data: None,
             collision_vertex_buffer: None,
             collision_vertex_count: 0,
@@ -695,6 +710,7 @@ impl RenderResources {
             collision_upload_key: None,
             rest_heatmap_upload_key: None,
             tier_preview_upload_key: None,
+            reach_overlay_upload_key: None,
             upload_stats: upload_cache::UploadStats::default(),
         }
     }
@@ -788,6 +804,15 @@ pub struct ViewportCallback {
     /// holds a Ready preview>` — see `app/viewport.rs`. Independent of
     /// `show_rest_heatmap`: both may be true in one frame.
     pub show_tier_preview: bool,
+    /// Per-tool reach-map overlay (P5). Derived as
+    /// `viewport.show_reach_map && workspace == Toolpaths && render_mode ==
+    /// Shaded && <a Ready map is held for the selected toolpath>` — see
+    /// `app/viewport.rs`.
+    ///
+    /// Unlike the two overlays above this one is EXCLUSIVE with the plain and
+    /// enriched model draws: it is the model, re-coloured. Drawing both would
+    /// z-fight two copies of the same surface.
+    pub show_reach_overlay: bool,
     pub show_sim_mesh: bool,
     pub sim_mesh_opacity: f32,
     pub show_cutting: bool,
@@ -835,9 +860,14 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         // Always upload colored mesh uniforms when any colored pipeline will be used.
         // The colored_opaque_pipeline (STEP) uses REPLACE blend so opacity doesn't
         // affect it, but it still needs valid view_proj/light_dir uniforms.
+        // The reach overlay draws with `colored_opaque_pipeline` through
+        // `sim_mesh_bind_group`, so it needs these uniforms even on a project
+        // that holds no STEP part and runs no simulation. That pipeline uses
+        // REPLACE blend, so the opacity written below does not reach it.
         let needs_colored_uniforms = self.show_sim_mesh
             || self.show_solid_stock
             || self.show_height_planes
+            || self.show_reach_overlay
             || !resources.enriched_mesh_data_list.is_empty();
         if needs_colored_uniforms {
             let opacity = if self.show_sim_mesh {
@@ -997,6 +1027,21 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                         pass.draw_indexed(0..chunk.index_count, 0, 0..1);
                     }
                 }
+            } else if self.show_reach_overlay
+                && let Some(reach) = &resources.reach_overlay_data
+            {
+                // P5 — the reach overlay IS the model, re-coloured per
+                // vertex. It draws INSTEAD of the two model lists below, not
+                // over them: two copies of one surface at the same depth
+                // z-fight, and the reach answer is the one the operator asked
+                // for. Opaque pipeline, so it also writes depth exactly as
+                // the plain model does and the toolpath lines occlude the
+                // same way.
+                pass.set_pipeline(&resources.colored_opaque_pipeline);
+                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, reach.vertex_buffer.slice(..));
+                pass.set_index_buffer(reach.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..reach.index_count, 0, 0..1);
             } else {
                 // Draw all enriched (STEP) models
                 for enriched in &resources.enriched_mesh_data_list {

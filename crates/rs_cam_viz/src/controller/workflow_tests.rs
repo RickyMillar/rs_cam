@@ -28,6 +28,7 @@ struct ScriptedBackend {
     toolpath_lane: LaneSnapshot,
     analysis_lane: LaneSnapshot,
     optimize_lane: LaneSnapshot,
+    reach_lane: LaneSnapshot,
     drained: Vec<ComputeMessage>,
 }
 
@@ -37,6 +38,7 @@ impl ScriptedBackend {
             toolpath_lane: LaneSnapshot::idle(ComputeLane::Toolpath),
             analysis_lane: LaneSnapshot::idle(ComputeLane::Analysis),
             optimize_lane: LaneSnapshot::idle(ComputeLane::Optimize),
+            reach_lane: LaneSnapshot::idle(ComputeLane::Reach),
             drained: Vec::new(),
         }
     }
@@ -58,6 +60,7 @@ impl ComputeBackend for ScriptedBackend {
             ComputeLane::Toolpath => self.toolpath_lane.state = LaneState::Cancelling,
             ComputeLane::Analysis => self.analysis_lane.state = LaneState::Cancelling,
             ComputeLane::Optimize => self.optimize_lane.state = LaneState::Cancelling,
+            ComputeLane::Reach => self.reach_lane.state = LaneState::Cancelling,
         }
     }
 
@@ -70,6 +73,7 @@ impl ComputeBackend for ScriptedBackend {
             ComputeLane::Toolpath => self.toolpath_lane.clone(),
             ComputeLane::Analysis => self.analysis_lane.clone(),
             ComputeLane::Optimize => self.optimize_lane.clone(),
+            ComputeLane::Reach => self.reach_lane.clone(),
         }
     }
 

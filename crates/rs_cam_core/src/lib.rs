@@ -98,6 +98,8 @@ pub mod radial_finish;
 pub mod radial_profile;
 pub mod ramp_finish;
 pub mod reach;
+pub mod reach_map;
+pub mod reach_map_cache;
 pub mod region_mask;
 pub mod region_set;
 pub mod rest;

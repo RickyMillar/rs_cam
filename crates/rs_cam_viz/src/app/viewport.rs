@@ -439,6 +439,17 @@ impl RsCamApp {
         let ppp = ui.ctx().pixels_per_point();
         let state = self.controller.state();
 
+        // P5 — is a reach map held for the toolpath that is selected RIGHT
+        // NOW? A map held for a previous selection must never be drawn under
+        // the new one, so the identity is compared rather than assumed.
+        let reach_map_ready = match state.selection {
+            Selection::Toolpath(id) => {
+                state.gui.reach_overlay.toolpath == Some(id)
+                    && state.gui.reach_overlay.ready_map().is_some()
+            }
+            _ => false,
+        };
+
         let callback = ViewportCallback {
             mesh_uniforms: MeshUniforms {
                 view_proj,
@@ -486,6 +497,17 @@ impl RsCamApp {
                 && state.multitool_planner.as_ref().is_some_and(|p| {
                     p.ready_preview().is_some() && state.active_setup_index() == Some(p.setup_index)
                 }),
+            // P5 — the reach overlay REPLACES the model draw, so its gate
+            // also carries `render_mode == Shaded`: in wireframe there is no
+            // model surface to re-colour, and drawing a shaded copy would
+            // contradict the mode the operator chose.
+            //
+            // `reach_map_ready` above already requires the selection to be a
+            // toolpath and the held map to be that toolpath's.
+            show_reach_overlay: state.viewport.show_reach_map
+                && state.workspace == Workspace::Toolpaths
+                && state.viewport.render_mode == crate::state::viewport::RenderMode::Shaded
+                && reach_map_ready,
             show_sim_mesh: state.workspace == Workspace::Simulation
                 && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,

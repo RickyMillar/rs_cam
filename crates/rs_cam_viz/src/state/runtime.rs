@@ -9,9 +9,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use rs_cam_core::feeds::FeedsResult;
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::reach_map::{ReachMap, reach_colors};
 use rs_cam_core::session::ToolpathConfig;
 
 use super::job::{PostConfig, PostFormat};
+use super::toolpath::ToolpathId;
 
 // Re-export ComputeStatus from core (canonical definition).
 pub use rs_cam_core::compute::config::ComputeStatus;
@@ -86,6 +89,146 @@ pub struct ToolpathView<'a> {
     pub index: usize,
 }
 
+// ── Per-tool reach map overlay (P5) ───────────────────────────────────
+
+/// Where the selected toolpath's reach map is in its life cycle.
+///
+/// `Idle` means **no map is wanted** — the selection is not a reach-capable
+/// operation, or it carries no mesh or no tool. It never means "measured
+/// zero"; a measured map that found no surface says so through
+/// [`ReachMap::is_measured`], and the panel prints `reach: not measured`
+/// rather than a clean percentage.
+pub enum ReachStatus {
+    Idle,
+    Computing,
+    Ready(Arc<ReachMap>),
+    Failed(String),
+}
+
+/// The reach map the viewport is drawing, plus what it was resolved for.
+///
+/// The map is built on a worker (`ComputeLane::Reach`) because a cold walk is
+/// one full-grid drop-cutter pass — seconds, not milliseconds. Nothing here
+/// borrows the session: `rs_cam_core::reach_map::ReachMapRequest` carries its
+/// own mesh, index and cutter, which is what lets the walk leave the UI
+/// thread without lending the session out.
+pub struct ReachOverlayState {
+    /// The toolpath this answer belongs to. A result for any other toolpath
+    /// is a stale supersede and is dropped, never shown as a failure.
+    pub toolpath: Option<ToolpathId>,
+    pub status: ReachStatus,
+    /// Bumped on every map that is not the map already held, and read by
+    /// `ReachOverlayUploadKey` — so a result identical to the last one
+    /// rebuilds no GPU buffer.
+    ///
+    /// Compared against [`Self::last_map`], NOT against [`Self::status`]: the
+    /// scheduler sets `status = Computing` on submit, so by the time a result
+    /// lands `status` never holds a map to compare with, and every arrival
+    /// would look new.
+    pub generation: u64,
+    /// The last map this overlay accepted, kept only as the identity
+    /// [`Self::generation`] is compared against.
+    ///
+    /// It deliberately survives [`Self::clear`]: the reach memo hands back the
+    /// same `Arc` for a warm key, so a deselect-and-reselect must not bump the
+    /// generation and rebuild a 661 k-triangle buffer. The upload key's
+    /// `None` → `Some` transition already forces the rebuild that a genuine
+    /// deselect needs, so the generation only has to separate consecutive
+    /// live keys.
+    pub last_map: Option<Arc<ReachMap>>,
+    /// The session edit counter the request was resolved at. Part of the
+    /// scheduling key.
+    ///
+    /// **Known behaviour: the overlay blinks off on an unrelated edit.**
+    /// `GuiState::mark_edited` bumps this counter for any project edit —
+    /// renaming another toolpath, a post-config change, each keystroke in a
+    /// name field — so the sweep resubmits and the overlay hides behind
+    /// `reach: computing…` until the walk answers (a memo hit, plus one
+    /// `vertex_gaps` pass, off the frame loop). Comparing the resolved
+    /// requests instead would remove the blink, and it cannot be done
+    /// honestly from this crate: the memo's own tool-geometry key
+    /// (`rs_cam_core::tool_shape_key::ToolShapeKey`) is `pub(crate)` to core,
+    /// and the fields that ARE reachable miss the common case — editing the
+    /// selected tool's diameter leaves `tool_id` and, inside the cell clamp,
+    /// `ReachMapParams` unchanged. A blink is a cosmetic cost; showing the
+    /// previous tool's reach map is a wrong answer.
+    pub edit_counter: u64,
+    /// When the in-flight request was submitted, or `None` when none is.
+    ///
+    /// Read only by the scheduler's stuck-`Computing` recovery, which is why
+    /// it is a timestamp rather than a flag: a backend that runs no Reach lane
+    /// (every scripted test double) reports an idle lane the instant after a
+    /// submit, so an unbounded recovery would resubmit on every pump for ever.
+    pub requested_at: Option<std::time::Instant>,
+    /// One colour per mesh vertex, computed on the worker beside the map.
+    ///
+    /// **On the worker, not in the upload pass**: `vertex_gaps` runs one
+    /// spatial-index query per vertex, which on a board-sized terrain is a
+    /// visible hitch if it lands on the frame loop. The upload pass only
+    /// checks the length against the mesh it is about to draw.
+    pub colors: Option<Arc<Vec<[f32; 3]>>>,
+}
+
+impl ReachOverlayState {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            toolpath: None,
+            status: ReachStatus::Idle,
+            generation: 0,
+            last_map: None,
+            edit_counter: 0,
+            requested_at: None,
+            colors: None,
+        }
+    }
+
+    /// The map, when one is held for `toolpath`.
+    #[must_use]
+    pub fn ready_map(&self) -> Option<&Arc<ReachMap>> {
+        match &self.status {
+            ReachStatus::Ready(map) => Some(map),
+            _ => None,
+        }
+    }
+
+    /// Forget the answer and the key it was asked under. The next scheduler
+    /// sweep decides what to ask for.
+    ///
+    /// [`Self::generation`] and [`Self::last_map`] deliberately survive — see
+    /// their docs for why a deselect must not make the next identical map
+    /// look new.
+    pub fn clear(&mut self) {
+        self.toolpath = None;
+        self.status = ReachStatus::Idle;
+        self.edit_counter = 0;
+        self.requested_at = None;
+        self.colors = None;
+    }
+}
+
+impl Default for ReachOverlayState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// One colour per mesh vertex for the reach overlay.
+///
+/// The single construction site for the overlay's colours, so the worker, the
+/// upload pass and the sentry test cannot drift apart. `NaN` gaps — an
+/// underside, an overhang, anything off the measured population — come back
+/// as the model shader's own neutral diffuse colour, so a not-measured vertex
+/// looks exactly like the plain model rather than like a reachable one.
+#[must_use]
+pub fn reach_overlay_colors(
+    map: &ReachMap,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+) -> Vec<[f32; 3]> {
+    reach_colors(&map.vertex_gaps(mesh, index), map.tolerance_mm)
+}
+
 // ── Project-level GUI state ───────────────────────────────────────────
 
 /// User-controlled overrides for the tool-load export gate. Each flag bypasses
@@ -137,6 +280,10 @@ pub struct GuiState {
     /// Not cfg-gated on `mcp` so the properties panel can consume it
     /// unconditionally.
     pub pending_toolpath_tab: Option<(crate::state::toolpath::ToolpathId, String)>,
+    /// Per-tool reach map for the selected toolpath (P5). Scheduled by
+    /// `AppController::process_reach_overlay`, filled by the Reach compute
+    /// lane, drawn by `ViewportCallback::show_reach_overlay`.
+    pub reach_overlay: ReachOverlayState,
 }
 
 impl GuiState {
@@ -151,6 +298,7 @@ impl GuiState {
             #[cfg(feature = "mcp")]
             mcp_highlights: HashMap::new(),
             pending_toolpath_tab: None,
+            reach_overlay: ReachOverlayState::new(),
         }
     }
 

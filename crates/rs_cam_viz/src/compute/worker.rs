@@ -405,6 +405,38 @@ enum AnalysisRequest {
     Collision(CollisionRequest),
 }
 
+/// One reach-map walk for the viewport overlay (P5).
+///
+/// Carries no session. `rs_cam_core::reach_map::ReachMapRequest` owns its
+/// mesh, spatial index and cutter, so the UI thread resolves one through
+/// `ProjectSession::reach_map_spec` — which does no drop-cutter work — and
+/// hands it over without lending the session out.
+pub struct ReachRequest {
+    pub toolpath_id: ToolpathId,
+    pub spec: rs_cam_core::reach_map::ReachMapRequest,
+}
+
+/// A finished reach-map walk.
+///
+/// The colours ride back with the map. `ReachMap::vertex_gaps` runs one
+/// spatial-index query per mesh vertex, so computing them here rather than in
+/// the GPU upload pass keeps a board-sized terrain's per-vertex walk off the
+/// frame loop.
+pub struct ReachResult {
+    /// The toolpath the walk was resolved for. The controller drops a result
+    /// whose id no longer matches the selection rather than reporting it.
+    pub toolpath_id: ToolpathId,
+    pub result: Result<Arc<rs_cam_core::reach_map::ReachMap>, ComputeError>,
+    /// One colour per vertex of the mesh the map was measured over, in that
+    /// mesh's vertex order. Empty when the walk failed.
+    ///
+    /// The mesh itself does NOT ride back. The upload pass draws the model in
+    /// the DISPLAY frame, which it derives from the session, and checks this
+    /// vector's length against that mesh — carrying a second copy of the mesh
+    /// here would only invite the two to be confused.
+    pub colors: Arc<Vec<[f32; 3]>>,
+}
+
 struct LaneInner<Request> {
     queue: VecDeque<Request>,
     state: LaneState,
@@ -558,10 +590,14 @@ pub struct ThreadedComputeBackend {
     toolpath_lane: Arc<LaneQueue<ComputeRequest>>,
     analysis_lane: Arc<LaneQueue<AnalysisRequest>>,
     optimize_lane: Arc<LaneQueue<OptimizeRequest>>,
+    /// P5 — the reach-map overlay's own lane. See [`ComputeLane::Reach`] for
+    /// why it is not a third `AnalysisRequest` variant.
+    reach_lane: Arc<LaneQueue<ReachRequest>>,
     result_rx: mpsc::Receiver<ComputeMessage>,
     toolpath_handle: Option<std::thread::JoinHandle<()>>,
     analysis_handle: Option<std::thread::JoinHandle<()>>,
     optimize_handle: Option<std::thread::JoinHandle<()>>,
+    reach_handle: Option<std::thread::JoinHandle<()>>,
     /// S5 — the analysis lane's simulation prefix memo. Shared so the GUI
     /// thread can drop the snapshot at a known point (`clear_sim_prefix_cache`)
     /// without waiting behind whatever is queued on the lane. The lane
@@ -575,6 +611,7 @@ impl ThreadedComputeBackend {
         let toolpath_lane = LaneQueue::new(ComputeLane::Toolpath);
         let analysis_lane = LaneQueue::new(ComputeLane::Analysis);
         let optimize_lane = LaneQueue::new(ComputeLane::Optimize);
+        let reach_lane = LaneQueue::new(ComputeLane::Reach);
         let (result_tx, result_rx) = mpsc::sync_channel::<ComputeMessage>(64);
         let sim_prefix_cache = Arc::new(Mutex::new(
             rs_cam_core::compute::sim_prefix::SimPrefixCache::new(),
@@ -586,16 +623,19 @@ impl ThreadedComputeBackend {
             result_tx.clone(),
             Arc::clone(&sim_prefix_cache),
         );
-        let optimize_handle = spawn_optimize_lane(Arc::clone(&optimize_lane), result_tx);
+        let optimize_handle = spawn_optimize_lane(Arc::clone(&optimize_lane), result_tx.clone());
+        let reach_handle = spawn_reach_lane(Arc::clone(&reach_lane), result_tx);
 
         Self {
             toolpath_lane,
             analysis_lane,
             optimize_lane,
+            reach_lane,
             result_rx,
             toolpath_handle: Some(toolpath_handle),
             analysis_handle: Some(analysis_handle),
             optimize_handle: Some(optimize_handle),
+            reach_handle: Some(reach_handle),
             sim_prefix_cache,
         }
     }
@@ -606,9 +646,11 @@ impl Drop for ThreadedComputeBackend {
         self.toolpath_lane.shutdown.store(true, Ordering::SeqCst);
         self.analysis_lane.shutdown.store(true, Ordering::SeqCst);
         self.optimize_lane.shutdown.store(true, Ordering::SeqCst);
+        self.reach_lane.shutdown.store(true, Ordering::SeqCst);
         self.toolpath_lane.wake.notify_all();
         self.analysis_lane.wake.notify_all();
         self.optimize_lane.wake.notify_all();
+        self.reach_lane.wake.notify_all();
         if let Some(h) = self.toolpath_handle.take() {
             let _ = h.join();
         }
@@ -616,6 +658,9 @@ impl Drop for ThreadedComputeBackend {
             let _ = h.join();
         }
         if let Some(h) = self.optimize_handle.take() {
+            let _ = h.join();
+        }
+        if let Some(h) = self.reach_handle.take() {
             let _ = h.join();
         }
     }
@@ -697,6 +742,28 @@ impl ComputeBackend for ThreadedComputeBackend {
         self.optimize_lane.wake.notify_one();
     }
 
+    /// Latest selection wins — the same rule the Optimize lane keeps, and for
+    /// the same reason: only one answer is ever on screen, so an older walk
+    /// has nothing left to produce.
+    fn submit_reach_map(&mut self, request: ReachRequest) {
+        let mut inner = self
+            .reach_lane
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        inner.queue.clear();
+        inner.queue.push_back(request);
+        if inner.started_at.is_some() {
+            self.reach_lane.cancel.store(true, Ordering::SeqCst);
+            inner.state = LaneState::Cancelling;
+        } else {
+            inner.state = LaneState::Queued;
+            inner.current_job = inner.queue.front().map(reach_job_label);
+            inner.current_phase = None;
+        }
+        self.reach_lane.wake.notify_one();
+    }
+
     fn cancel_lane(&mut self, lane: ComputeLane) {
         match lane {
             ComputeLane::Toolpath => {
@@ -732,6 +799,17 @@ impl ComputeBackend for ThreadedComputeBackend {
                     inner.state = LaneState::Cancelling;
                 }
             }
+            ComputeLane::Reach => {
+                let mut inner = self
+                    .reach_lane
+                    .inner
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if inner.started_at.is_some() {
+                    self.reach_lane.cancel.store(true, Ordering::SeqCst);
+                    inner.state = LaneState::Cancelling;
+                }
+            }
         }
     }
 
@@ -748,6 +826,7 @@ impl ComputeBackend for ThreadedComputeBackend {
             ComputeLane::Toolpath => self.toolpath_lane.snapshot(),
             ComputeLane::Analysis => self.analysis_lane.snapshot(),
             ComputeLane::Optimize => self.optimize_lane.snapshot(),
+            ComputeLane::Reach => self.reach_lane.snapshot(),
         }
     }
 
@@ -801,6 +880,10 @@ fn optimize_job_label(request: &OptimizeRequest) -> String {
             format!("Tier map preview ({} tools)", spec.tool_ids.len())
         }
     }
+}
+
+fn reach_job_label(request: &ReachRequest) -> String {
+    format!("Reach map (toolpath #{})", request.toolpath_id.0)
 }
 
 /// Bridge that lets the optimizer's `ProgressReporter` updates land
@@ -1190,6 +1273,138 @@ fn spawn_optimize_lane(
             }
 
             let _ = result_tx.send(ComputeMessage::Optimize(Box::new(result)));
+        }
+    })
+}
+
+/// The reach-map overlay's worker (P5).
+///
+/// Mirrors [`spawn_analysis_lane`] in shape: pop under the lane lock, run
+/// outside it, reset the lane, send. Two things it does differently, and both
+/// are deliberate:
+///
+/// * It computes the per-vertex colours here, beside the map.
+///   [`rs_cam_core::reach_map::ReachMap::vertex_gaps`] runs one
+///   spatial-index query per mesh vertex — hundreds of thousands on a
+///   board-sized terrain — so building them in the GPU upload pass would put
+///   that walk on the frame loop.
+/// * A cancelled walk reports [`ComputeError::Cancelled`] rather than a
+///   message. The controller must tell a supersede from a failure: a
+///   supersede leaves the overlay idle for the sweep to retry, a failure is
+///   shown to the operator.
+fn spawn_reach_lane(
+    lane: Arc<LaneQueue<ReachRequest>>,
+    result_tx: mpsc::SyncSender<ComputeMessage>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        loop {
+            let request = {
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                while inner.queue.is_empty() {
+                    if lane.shutdown.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    inner.state = LaneState::Idle;
+                    inner.current_job = None;
+                    inner.current_phase = None;
+                    inner.started_at = None;
+                    inner.active_toolpath_id = None;
+                    inner.active_toolpath_index = None;
+                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
+                }
+                if lane.shutdown.load(Ordering::SeqCst) {
+                    return;
+                }
+                // SAFETY: loop condition guarantees queue is non-empty
+                #[allow(clippy::expect_used)]
+                let request = inner.queue.pop_front().expect("queue checked");
+                lane.cancel.store(false, Ordering::SeqCst);
+                inner.state = LaneState::Running;
+                inner.current_job = Some(reach_job_label(&request));
+                inner.current_phase = None;
+                inner.started_at = Some(Instant::now());
+                // `active_toolpath_id` is deliberately NOT set. Its doc on
+                // `LaneSnapshot` says it is `None` on every lane but the
+                // toolpath one, and MCP `generation_status` reads it as the
+                // op being GENERATED. The reach job's own label carries the
+                // id for anyone reading the status bar.
+                request
+            };
+
+            if lane.shutdown.load(Ordering::SeqCst) {
+                return;
+            }
+
+            // Same guard the toolpath and analysis lanes carry: a panic in
+            // the walk must not kill the worker or poison the lane mutex.
+            let toolpath_id = request.toolpath_id;
+            let mesh = Arc::clone(&request.spec.mesh);
+            let index = Arc::clone(&request.spec.index);
+            // `AtomicBool` does not implement `CancelCheck`; the trait has a
+            // blanket impl for `Fn() -> bool`, so the lane's flag is read
+            // through a closure — the same adapter `session::multitool`
+            // builds at its own `cached_tier_map` call.
+            let cancel_fn = || lane.cancel.load(Ordering::SeqCst);
+            let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                let built =
+                    match rs_cam_core::reach_map_cache::cached_reach_map(&request.spec, &cancel_fn)
+                    {
+                        Ok(map) => Ok(map),
+                        // `Cancelled` is a unit struct and carries nothing to
+                        // preserve; the lane's own error says the same thing.
+                        Err(rs_cam_core::interrupt::Cancelled) => Err(ComputeError::Cancelled),
+                    };
+                let built = if lane.cancel.load(Ordering::SeqCst) {
+                    Err(ComputeError::Cancelled)
+                } else {
+                    built
+                };
+                let colors = built.as_ref().map_or_else(
+                    |_| Vec::new(),
+                    |map| {
+                        crate::state::runtime::reach_overlay_colors(
+                            map.as_ref(),
+                            mesh.as_ref(),
+                            index.as_ref(),
+                        )
+                    },
+                );
+
+                {
+                    let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                    inner.started_at = None;
+                    inner.current_phase = None;
+                    if inner.queue.is_empty() {
+                        inner.state = LaneState::Idle;
+                        inner.current_job = None;
+                    } else {
+                        inner.state = LaneState::Queued;
+                        inner.current_job = inner.queue.front().map(reach_job_label);
+                    }
+                }
+
+                let _ = result_tx.send(ComputeMessage::Reach(Box::new(ReachResult {
+                    toolpath_id,
+                    result: built,
+                    colors: Arc::new(colors),
+                })));
+            }));
+
+            if let Err(panic_payload) = caught {
+                let msg = panic_message(&panic_payload);
+                tracing::error!("rs_cam crashed due to internal error (reach worker): {msg}");
+
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                inner.started_at = None;
+                inner.current_phase = None;
+                if inner.queue.is_empty() {
+                    inner.state = LaneState::Idle;
+                    inner.current_job = None;
+                } else {
+                    inner.state = LaneState::Queued;
+                    inner.current_job = inner.queue.front().map(reach_job_label);
+                }
+            }
         }
     })
 }

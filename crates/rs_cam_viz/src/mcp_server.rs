@@ -24,7 +24,7 @@ use rs_cam_mcp::server::{
     GenerateToolpathParam, ImportMachineSettingsParam, IndexParam, InspectSpansParam,
     ListToolCatalogParam, LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam,
     OperationSchemaParam, OptimizeToolpathInput, PlanMultitoolFinishingParam, PreviewTierMapParam,
-    RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
+    ReachMapParam, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
     ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
     SetDressupConfigParam, SetDressupFieldParam, SetMachineKinematicsParam,
     SetRestAnalysisConfigParam, SetSetupRotationParam, SetSpindleStrategyParam,
@@ -1525,6 +1525,7 @@ impl EmbeddedCamServer {
             height,
             show_stock,
             include_rapids,
+            reach_overlay,
         }): Parameters<ScreenshotToolpathParam>,
     ) -> String {
         Self::format_result(
@@ -1535,6 +1536,31 @@ impl EmbeddedCamServer {
                 height,
                 show_stock,
                 include_rapids,
+                reach_overlay,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "reach_map",
+        description = "Does this tool's tip fit into the valleys? For one FINISHING toolpath (a mesh operation that is not a roughing pass), drop its cutter over the model surface and report which of that surface the tool can form inside the operation's tolerance and which it cannot. Replies with the area-weighted unreachable percentage, the worst gap in mm, the measured area against the model's total area, a gap histogram, and the grid the answer was taken on. Reads only — nothing is generated and no parameter moves. Three readings an agent must not get wrong. (1) `measured_area_mm2` well below `surface_area_mm2` is EXPECTED, not a fault: this is a top-down measure, so undersides, walls and a band one envelope radius wide inside the part outline are NOT MEASURED, never `reachable`; check `is_measured` before believing a clean percentage. (2) `discretisation_floor_mm` is the gap this grid cannot resolve — a reported gap of that order is arithmetic, not geometry. (3) `tolerance_mm` defaults to the operation's own declared cusp / scallop height, NOT to `stock_to_leave`, which is an intended offset rather than a bar; pass `tolerance_mm` to probe another. Cost: a cold map is a full-grid drop-cutter walk, roughly a second or two on a 200 mm board, and it shares its memo with the viewport overlay and with screenshot_toolpath's `reach_overlay`, so the second call on the same key is free."
+    )]
+    async fn reach_map(
+        &self,
+        Parameters(ReachMapParam {
+            index,
+            tolerance_mm,
+            histogram_bins,
+        }): Parameters<ReachMapParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::ReachMap {
+                spec: ReachMapParam {
+                    index,
+                    tolerance_mm,
+                    histogram_bins,
+                },
             })
             .await,
         )
