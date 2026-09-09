@@ -941,8 +941,22 @@ Ledger:
   unowned):** `scallop_narration_reports_its_regions` fails at
   `narrate_regions_closed_c8.rs:99`. Verified pre-existing by stashing the
   whole G-LINKVISIBLE diff and reproducing on dc1ab3c7. Not in any gate
-  list used this week, which is how it went unnoticed. Nobody has
-  diagnosed it.
+  list used this week, which is how it went unnoticed. **Diagnosed
+  2026-09-09 (hypothesis by rs-cam-15, measured here):** the fixture is a
+  bare sawtooth plate with NO machining boundary, and on that path the
+  scallop's semantic trace is essentially EMPTY — `1 items (1
+  move-linked); depth levels 0, regions 0, rings 0, chains 0`, against
+  spiral_finish's `21 items … regions 1, rings 19` on the same fixture
+  shape. So it is narrower than "scallop narration is broken": with a
+  `planned_tier_regions` boundary the trace populates correctly (live
+  reads this week: T3 regions 10 / rings 484, T3b 10 / 600, T3d 21 /
+  1321). It emits no rings either, not just no region node. **Consequence
+  to carry:** the arm's SECOND assertion — every scallop ring hangs off
+  its own region node — is never reached, and it is the only place
+  ring-to-region parenting is asserted for any family. So the narration's
+  per-region move attribution (the "Region 1/10 (scallop) x1 (59 558
+  moves)" lines) is UNTESTED, not known-good and not known-bad; report
+  region-level splits as indicative and totals as measured until it is.
 - **G-PENCILPLUNGE (2026-09-09, OPEN):** the P1 pencil pass carries its
   own `plunge_class_load` CRITICAL — 10 of 322 vertical-dominant moves up
   to 6.6× the operation's plunge rate. Same class as P3 /
