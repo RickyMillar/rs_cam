@@ -937,26 +937,38 @@ Ledger:
   OPEN: `get_diagnostics` per-toolpath rows carry neither report (neither
   type derives `Serialize`; a structured row needs a `build_info` probe
   key).
-- **narrate_regions_closed_c8 is RED on master (2026-09-09, pre-existing,
-  unowned):** `scallop_narration_reports_its_regions` fails at
-  `narrate_regions_closed_c8.rs:99`. Verified pre-existing by stashing the
-  whole G-LINKVISIBLE diff and reproducing on dc1ab3c7. Not in any gate
-  list used this week, which is how it went unnoticed. **Diagnosed
-  2026-09-09 (hypothesis by rs-cam-15, measured here):** the fixture is a
-  bare sawtooth plate with NO machining boundary, and on that path the
-  scallop's semantic trace is essentially EMPTY — `1 items (1
+- **G-SCALLOPTRACE (2026-09-09, OPEN — the PLAINEST scallop narrates
+  nothing).** A scallop with `ScallopConfig::default()` and NO machining
+  boundary — what an operator gets by adding a scallop op and pressing
+  Generate — emits an essentially empty semantic trace: `1 items (1
   move-linked); depth levels 0, regions 0, rings 0, chains 0`, against
-  spiral_finish's `21 items … regions 1, rings 19` on the same fixture
-  shape. So it is narrower than "scallop narration is broken": with a
-  `planned_tier_regions` boundary the trace populates correctly (live
-  reads this week: T3 regions 10 / rings 484, T3b 10 / 600, T3d 21 /
-  1321). It emits no rings either, not just no region node. **Consequence
-  to carry:** the arm's SECOND assertion — every scallop ring hangs off
-  its own region node — is never reached, and it is the only place
-  ring-to-region parenting is asserted for any family. So the narration's
-  per-region move attribution (the "Region 1/10 (scallop) x1 (59 558
-  moves)" lines) is UNTESTED, not known-good and not known-bad; report
-  region-level splits as indicative and totals as measured until it is.
+  `spiral_finish`'s `21 items … regions 1, rings 19` on the same fixture.
+  So `narrate_toolpath` is BLIND on the simplest use of the operation: no
+  rings, no regions, no structure. It works on the boundary-driven
+  variants, which is all any of us measured this week, and that is why it
+  survived: **every fixture we exercised carries a `planned_tier_regions`
+  boundary, so the instrument was tested on the elaborate path and never
+  on the plain one** (severity reframed by rs-cam-15; the same shape as
+  several rows above). Caught only as a red test outside every gate list
+  we used — `narrate_regions_closed_c8::scallop_narration_reports_its_regions`,
+  failing at its FIRST assertion, verified pre-existing by stashing the
+  whole G-LINKVISIBLE diff and reproducing on dc1ab3c7. Not diagnosed
+  further; nobody owns it.
+- **G-REGIONPARENT (2026-09-09, OPEN — nothing anywhere checks that a ring
+  belongs to its region).** The parenting assertion "every scallop ring
+  must hang off its own region node" lives ONLY in the scallop arm of
+  `narrate_regions_closed_c8`, and that arm dies at its first assertion
+  (G-SCALLOPTRACE) before reaching it. The `spiral_finish` and `trace`
+  arms call the shared region-COUNT helper and never the parenting check.
+  So the narration may attribute moves to the wrong region on ANY
+  operation and no test in the suite would fail. Consequence, stated
+  plainly: **every per-region figure quoted this week — the "Region 1/10
+  (scallop) x1 (59 558 moves)" splits included — is INDICATIVE, not
+  measured**; the totals are unaffected. A separate row from
+  G-SCALLOPTRACE because the fix is different: that one is a generator
+  populating no trace, this one is a suite that never checked the link.
+  Small: assert `parent_id` resolves to a region node for every ring or
+  row item, one arm per family, on fixtures that already exist.
 - **G-PENCILPLUNGE (2026-09-09, OPEN):** the P1 pencil pass carries its
   own `plunge_class_load` CRITICAL — 10 of 322 vertical-dominant moves up
   to 6.6× the operation's plunge rate. Same class as P3 /
