@@ -2,6 +2,7 @@ pub mod history;
 pub mod job;
 pub mod multitool_planner;
 pub mod overlays;
+pub mod rest_dependency;
 pub mod runtime;
 pub mod selection;
 pub mod simulation;

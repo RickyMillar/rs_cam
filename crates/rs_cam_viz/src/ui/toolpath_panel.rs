@@ -708,6 +708,81 @@ fn add_op_menu_item(
     }
 }
 
+/// What the Rest dependency badge says about one Rest card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestBadge {
+    /// A predecessor exists and its runtime is generated and fresh: green `dep`.
+    Resolved,
+    /// A predecessor exists but needs generation or is stale: yellow `dep`.
+    Stale,
+    /// No predecessor, or no previous tool configured: red `no dep`.
+    Missing,
+}
+
+impl RestBadge {
+    /// The badge label the card draws.
+    pub fn text(self) -> &'static str {
+        match self {
+            Self::Resolved | Self::Stale => "dep",
+            Self::Missing => "no dep",
+        }
+    }
+}
+
+/// Decide the Rest dependency badge for the Rest card `tp_id`.
+///
+/// G-RESTBADGE (2026-09-10): the predecessor rule is
+/// [`crate::state::rest_dependency::rest_predecessors`], the same rule the
+/// static validator refuses on. Before this the badge accepted ANY other
+/// toolpath in the setup with the previous tool, whatever its order, enabled
+/// state or model, so a Rest card dragged above its roughing pass kept a
+/// green `dep` while Generate was refused (R05 §2, defect 2).
+///
+/// Pure with respect to egui so the sentry can read it. `draw_rest_badge`
+/// maps the result to a colour.
+pub fn rest_badge(
+    state: &AppState,
+    rest_cfg: &crate::state::toolpath::RestConfig,
+    tp_id: ToolpathId,
+) -> RestBadge {
+    let Some(prev_tool_id) = rest_cfg.prev_tool_id else {
+        return RestBadge::Missing;
+    };
+    let Some(model_id) = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.id == tp_id)
+        .map(|tc| crate::state::job::ModelId(tc.model_id))
+    else {
+        return RestBadge::Missing;
+    };
+    let predecessors = crate::state::rest_dependency::rest_predecessors_in_session(
+        &state.session,
+        tp_id,
+        model_id,
+        prev_tool_id,
+    );
+    if predecessors.is_empty() {
+        return RestBadge::Missing;
+    }
+    // A predecessor that needs generation or is stale is not ready. A/M11: a
+    // dep that is blocked on upstream stock is just as un-ready as a pending
+    // one.
+    let dep_stale = predecessors.iter().any(|dep_id| {
+        state
+            .gui
+            .toolpath_rt
+            .get(dep_id)
+            .is_none_or(|rt| rt.status.needs_generation() || rt.stale_since.is_some())
+    });
+    if dep_stale {
+        RestBadge::Stale
+    } else {
+        RestBadge::Resolved
+    }
+}
+
 /// Show a rest dependency badge for Rest operations.
 /// Green "dep" if the dependency is resolved, yellow if stale, red "no dep" if missing.
 fn draw_rest_badge(
@@ -716,51 +791,13 @@ fn draw_rest_badge(
     state: &AppState,
     tp_id: ToolpathId,
 ) {
-    let setup_idx = state.session.setup_of_toolpath_id(tp_id);
-    let prev_tool_id = rest_cfg.prev_tool_id;
-
-    let (badge_text, badge_color) = if let Some(prev_id) = prev_tool_id {
-        // Check if there's a toolpath in the same setup using this tool
-        let same_setup_has_dep = setup_idx.is_some_and(|si| {
-            state.session.list_setups().get(si).is_some_and(|setup| {
-                setup.toolpath_indices.iter().any(|&idx| {
-                    state
-                        .session
-                        .get_toolpath_config(idx)
-                        .is_some_and(|other| other.id != tp_id && other.tool_id == prev_id.0)
-                })
-            })
-        });
-
-        if same_setup_has_dep {
-            // Check if the dependency toolpath is stale or pending
-            let dep_stale = setup_idx.is_some_and(|si| {
-                state.session.list_setups().get(si).is_some_and(|setup| {
-                    setup.toolpath_indices.iter().any(|&idx| {
-                        state.session.get_toolpath_config(idx).is_some_and(|other| {
-                            other.id != tp_id
-                                && other.tool_id == prev_id.0
-                                && state.gui.toolpath_rt.get(&other.id).is_none_or(|rt| {
-                                    // A/M11: a dep that is blocked on upstream
-                                    // stock is just as un-ready as a pending one.
-                                    rt.status.needs_generation() || rt.stale_since.is_some()
-                                })
-                        })
-                    })
-                })
-            });
-
-            if dep_stale {
-                ("dep", theme::WARNING) // yellow: stale
-            } else {
-                ("dep", theme::SUCCESS_BRIGHT) // green: resolved
-            }
-        } else {
-            ("no dep", theme::ERROR_MILD) // red: missing
-        }
-    } else {
-        ("no dep", theme::ERROR_MILD) // red: not configured
+    let badge = rest_badge(state, rest_cfg, tp_id);
+    let badge_color = match badge {
+        RestBadge::Resolved => theme::SUCCESS_BRIGHT,
+        RestBadge::Stale => theme::WARNING,
+        RestBadge::Missing => theme::ERROR_MILD,
     };
+    let badge_text = badge.text();
 
     ui.label(
         egui::RichText::new(badge_text)

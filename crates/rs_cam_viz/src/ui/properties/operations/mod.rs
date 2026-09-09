@@ -23,6 +23,7 @@ pub(super) use surface_3d::{
 };
 
 use crate::state::job::ToolType;
+use crate::state::rest_dependency::{RestCandidate, rest_predecessors};
 use crate::state::toolpath::{
     HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig, PocketPattern,
     ReferenceOffset, ToolpathEntry, ToolpathId,
@@ -1667,14 +1668,9 @@ struct ValidationModel {
 }
 
 struct ValidationSetup {
-    toolpaths: Vec<ValidationToolpath>,
-}
-
-struct ValidationToolpath {
-    id: ToolpathId,
-    tool_id: crate::state::job::ToolId,
-    model_id: crate::state::job::ModelId,
-    enabled: bool,
+    /// The setup's toolpaths in plan order, as the Rest predecessor rule
+    /// reads them (`crate::state::rest_dependency`).
+    toolpaths: Vec<RestCandidate>,
 }
 
 impl ToolpathValidationContext {
@@ -1709,12 +1705,7 @@ impl ToolpathValidationContext {
                         .toolpath_indices
                         .iter()
                         .filter_map(|&tp_idx| session.toolpath_configs().get(tp_idx))
-                        .map(|tc| ValidationToolpath {
-                            id: tc.id,
-                            tool_id: crate::state::job::ToolId(tc.tool_id),
-                            model_id: crate::state::job::ModelId(tc.model_id),
-                            enabled: tc.enabled,
-                        })
+                        .map(RestCandidate::from_config)
                         .collect(),
                 })
                 .collect(),
@@ -1811,19 +1802,7 @@ pub fn validate_toolpath_config(
                 {
                     errs.push("Previous tool must be larger than current tool".into());
                 }
-                // Check prior source
-                let has_prior = ctx.setups.iter().any(|setup| {
-                    if let Some(pos) = setup.toolpaths.iter().position(|tp| tp.id == tp_id) {
-                        // SAFETY: pos from position() within toolpaths
-                        #[allow(clippy::indexing_slicing)]
-                        setup.toolpaths[..pos]
-                            .iter()
-                            .any(|tp| tp.enabled && tp.tool_id == prev && tp.model_id == model_id)
-                    } else {
-                        false
-                    }
-                });
-                if !has_prior {
+                if !has_prior_rest_source(ctx, tp_id, model_id, prev) {
                     errs.push(
                         "Rest machining requires an earlier enabled operation in the same setup using the previous tool on the same model"
                             .into(),
@@ -1888,7 +1867,7 @@ pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext)
                 {
                     errs.push("Previous tool must be larger than current tool".into());
                 }
-                if !has_prior_rest_source(ctx, entry, prev) {
+                if !has_prior_rest_source(ctx, entry.id, entry.model_id, prev) {
                     errs.push(
                         "Rest machining requires an earlier enabled operation in the same setup using the previous tool on the same model"
                             .into(),
@@ -1948,32 +1927,17 @@ fn validate_geometry_selection(
     }
 }
 
+/// Does the Rest op `rest_id` have a predecessor under the one rule in
+/// [`crate::state::rest_dependency`]? The Operations card badge
+/// (`ui::toolpath_panel::rest_badge`) reads the same rule (G-RESTBADGE).
 fn has_prior_rest_source(
     ctx: &ToolpathValidationContext,
-    entry: &ToolpathEntry,
+    rest_id: ToolpathId,
+    rest_model_id: crate::state::job::ModelId,
     prev_tool_id: crate::state::job::ToolId,
 ) -> bool {
-    let Some(setup) = ctx.setups.iter().find(|setup| {
-        setup
-            .toolpaths
-            .iter()
-            .any(|toolpath| toolpath.id == entry.id)
-    }) else {
-        return false;
-    };
-
-    let Some(current_idx) = setup
-        .toolpaths
-        .iter()
-        .position(|toolpath| toolpath.id == entry.id)
-    else {
-        return false;
-    };
-
-    // SAFETY: current_idx from position() within setup.toolpaths
-    #[allow(clippy::indexing_slicing)]
-    setup.toolpaths[..current_idx].iter().any(|toolpath| {
-        toolpath.enabled && toolpath.tool_id == prev_tool_id && toolpath.model_id == entry.model_id
+    ctx.setups.iter().any(|setup| {
+        !rest_predecessors(&setup.toolpaths, rest_id, rest_model_id, prev_tool_id).is_empty()
     })
 }
 
