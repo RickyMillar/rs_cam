@@ -754,6 +754,83 @@ Artifacts: `T1_r20_then_r10_rest.toml` + `_sim.png`,
 `T2_r20_raster_then_r10_iso_islands.toml` + `_sim.png`,
 `T3_r20_raster_then_r10_scallop_islands.toml` + `_sim.png`.
 
+### 2.7a The island tier, taken apart (2026-09-09, entry-fixed binary)
+
+The §2.7 trials were rerun on the binary that carries the G-ISOCLIPENTRY
+fix (09:10), and five more island runs were added from hand-edited
+copies of the T3 project file (only the second-pass block differs). All
+runs: Q2 (R2.0 raster s1.5, fresh, 2 079 s fed) then one R1.0 pass on
+the remaining stock, plywood copy, 0.2 mm, all gates MODELED.
+
+| run | second pass | islands (machining set mm²) | rings / rows | retracts | 2nd pass fed s | pair total s | rapid collisions | entry_load |
+|---|---|---|---:|---:|---:|---:|---:|---|
+| T1 | R1.0 raster s1.0, whole board | none | 200 rows | 76 | 4 317 | **6 478** | 0 | none |
+| T3 rerun | contour scallop, planner default (`continuous: true`) | 10 (29 954) | 484 | 929 | 5 918 | 9 535 | 0 | **critical** 1 879 of 109 102 > 0.24 mm, peak 1.39 |
+| T3b | T3 with `continuous: false`, hookup 3 mm | 10 (29 954) | 600 | 613 | 5 166 | 8 065 | 0 | caution 1 854 > 0.23, peak 0.81 |
+| T3c | T3b with hookup 6 mm | 10 (29 954) | 600 | 567 | 4 972 | 7 820 | 0 | caution 1 802 > 0.23, peak 0.65 |
+| T3d | T3b at tier tolerance 0.146 | 21 (17 169) | 1 321 | 1 266 | 6 509 | 10 146 | 0 | **critical** 5 035 > 0.26, peak 1.05 |
+| T2 rerun | iso-scallop, planner default | 10 (29 954) | 1 624 | 2 207 | 13 863 | 19 804 | **0** (was 1) | **critical** 5 335 of 255 890 > 0.23, peak 1.39 |
+| T5 | R1.0 raster s1.0 confined to the islands, tolerance 0.05 | 10 (29 954) | 953 row fragments | 954 | 4 910 | 7 985 | 0 | caution 1 416 > 0.31, peak 0.50 |
+| T5b | T5 at tier tolerance 0.146 | 21 (17 169) | 2 171 | 2 172 | 6 231 | 10 497 | 0 | caution 3 656 > 0.36, peak 0.50 |
+
+Before-and-after on the entry fix (peer's ask). T3: pair 11 105 → 9 535 s,
+retracts 989 → 929, rapids 61.6 → 49.9 km, entry_load 7 756 → 1 879
+samples over the bar, peak 1.79 → 1.39 mm, still critical. T2: pair
+25 580 → 19 804 s, fed 18 519 → 13 863, retracts 2 343 → 2 207, the rapid
+collision at move 68 538 is gone, entry_load 17 538 → 5 335, peak 1.44 →
+1.39, still critical. Both worst points now sit at (115.8, 182.4, −1.59),
+one ring start in the same region.
+
+Four readings.
+
+1. **The `continuous` default is real but small.** `continuous: false`
+   (T3b) takes the retracts per ring from 2.04 to 1.02 and the pair from
+   9 535 to 8 065 s (−15 %). The relink at 6 mm (T3c) joins only 46 more
+   ring pairs. The rings on these islands are mostly too far apart or
+   too far around the island for a surface link; one retract per ring
+   remains. G-TIERCONTINUOUS verdict: fix the default, expect −15 %, not
+   the collapse to the region count that the spec hoped for.
+2. **The fine tier's territory is not the islands. It is the islands
+   plus the overlap band, and the band fills the holes.** `preview_tier_map`
+   with the planner's dials reports tier 1 OWNS 12 224 mm² in 10 islands
+   at tolerance 0.05. Measured from the preview SVG
+   (`tier_map_r20_r10_tol005.svg`, `svg_island_area.py`): the largest
+   owned island is an outline of 31 255 mm² with 1 315 holes summing
+   19 316 mm² (net 11 939); the MACHINING copy of the same island, grown
+   by the 1.25 mm overlap, keeps 402 of those holes and nets 28 617 mm².
+   The R2.0's territory inside the valley network is 1 329 slivers with a
+   median area of 3.6 mm², and a 1.25 mm dilation on each side closes any
+   gap under 2.5 mm. The fine tier therefore machines 29 954 mm² of a
+   40 000 mm² board (75 %), which is why every island pass cuts near
+   whole-board distances (T3 rings 43.7 km ≈ 45 000 mm² of surface at
+   the 1.03 mm scallop pitch). At tolerance 0.146 the owned area is
+   4 482 mm² and the machining set 17 169 mm² (×3.8); at 0.30, 641 →
+   3 005 mm² (×4.7). Proposed ledger row G-OVERLAPFILL.
+3. **Confinement is retract-count-bound on this terrain.** T5 proves the
+   core raster honours the island set (the path is the valley network
+   with holes, `T5_..._path.png`), and it still loses to the whole-board
+   T1: 954 row fragments, each ending in a retract to safe Z and a fed
+   plunge at 300 mm/min, against 76. Halving the territory (T5b, 21 thin
+   islands) doubles the fragments and the time. The same law holds for
+   the scallop (T3d). Across all eight runs the second pass's total time
+   follows its retract count, not its area. The lever is a surface link
+   between fragments inside a region (the intra-region link of
+   `planning/link_and_reorder`), not a tighter boundary.
+4. **Entry load on the island scallops survives the fix.** The rerun
+   halves the sample count and trims the peak, and T3b/T3c bring it to
+   caution, but the planner-default T2/T3 and the thin-island T3d are
+   still critical at 1.05–1.39 mm. The worst point is the same ring start
+   on both fields. Open; to the fix agent with the coordinates.
+
+Recommendation stands: Q2 then the whole-board R1.0 raster on remaining
+stock (T1, 6 478 s). The island tier as the planner builds it today
+cannot beat it: the overlap band hands it most of the board, and what
+the band does not hand over costs a retract per fragment. Artifacts:
+`T3b_…_sim.png`, `T3c_…_sim.png`, `T3d_…_sim.png`, `T5_…_sim.png` +
+`_path.png`, `T5b_…_sim.png` + `_path.png`, `T3_rerun_entryfix_sim.png`,
+`T2_rerun_entryfix_sim.png`, `tier_map_r20_r10_tol{005,0146,030}.svg`,
+`svg_island_area.py`.
+
 ### 2.8 The cusp the passes actually leave — raster vs iso-scallop (2026-09-09)
 
 Every raster cusp quoted above is the flat-ground law

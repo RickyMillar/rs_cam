@@ -122,3 +122,43 @@ Verdicts:
   MCP boundary source), core raster already region-aware";
 - new ledger row G-TIERCONTINUOUS (planner sets `continuous: true` on a
   per-island tier; relink disabled) — OPEN until T3b reads.
+
+## 5. Results (2026-09-09, entry-fixed binary 09:10, all at 0.2 mm)
+
+Full table and readings: study doc §2.7a. Short form:
+
+| run | change | retracts | pair s | verdict |
+|---|---|---:|---:|---|
+| T3 rerun | planner default | 929 | 9 535 | baseline on the fixed binary |
+| T3b | `continuous: false`, hookup 3 | 613 | 8 065 | H1 PARTIAL: 2.04 → 1.02 retracts per ring, −15 % pair; not the collapse to the region count |
+| T3c | hookup 6 | 567 | 7 820 | +46 links only; ring hops exceed the relink reach |
+| T3d | T3b at tolerance 0.146 | 1 266 | 10 146 | thinner islands, 2.2× the rings, worse |
+| T5 | raster on islands, tolerance 0.05 | 954 | 7 985 | confinement CONFIRMED on the live path; loses to T1 (6 478) on retracts |
+| T5b | raster on islands, tolerance 0.146 | 2 172 | 10 497 | halving the area doubles the fragments |
+
+Findings that change the spec:
+
+1. **G-TIERCONTINUOUS**: real, worth −15 %. Fix `plan_tier_operation`
+   to `continuous: false` when the tier carries a `PlannedTierRegions`
+   boundary. Do not expect more from it.
+2. **G-OVERLAPFILL (new)**: the overlap dilation in `tier_islands.rs`
+   (`region_polygons_from_mask_reported(..., overlap_mm, ...)`) closes
+   every hole narrower than 2 × overlap. On the wanaka map at tolerance
+   0.05 the owned set is 12 224 mm² with 1 329 holes; the machining set
+   is 29 954 mm² with 404 holes. The fine tier cuts 75 % of the board.
+   A band must not fill holes: grow the outline and shrink each hole by
+   the band, and drop a hole only when it collapses. Areas at three
+   tolerances: 0.05 → 12 224 / 29 954, 0.146 → 4 482 / 17 169, 0.30 →
+   641 / 3 005 (owned / machining, mm²).
+3. **Retract-count law**: with the holes kept, every island pass
+   fragments further (T3d, T5b). The pair time follows the retract
+   count. The product lever is a surface link between fragments inside
+   one region (raster row ends, ring ends), not a tighter boundary. The
+   island clip itself is not defective. T4 (unified tier forced to its
+   raster band) is redundant after T5 and was not rerun.
+4. **Entry load** on the planner-default island scallops stays critical
+   on the fixed binary (T2/T3 peak 1.39 mm at (115.8, 182.4, −1.59);
+   T3d peak 1.05). Open, to the fix agent.
+
+Measurement script: `planning/deep_doc_modulation_2026-09-08/svg_island_area.py`
+(exterior, holes and net area per island from a `preview_tier_map` SVG).

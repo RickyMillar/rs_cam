@@ -736,8 +736,39 @@ Ledger:
   `continuous: true` on every per-island scallop tier; under continuous
   the connector retracts/rapids/replunges on any hop over the ring-spacing
   bound and the intra-pass relink is skipped (scallop.rs). Retracts per
-  ring measured: T3 2.04, T2 1.44. Verdict waits on T3b/T3c (continuous
-  false, hookup 3.0 / 6.0; fixtures in the deep-DOC artifacts dir).
+  ring measured: T3 2.04, T2 1.44. VERDICT (T3b/T3c, 0.2 mm): real but
+  small — continuous:false + hookup 3.0: retracts 929 → 613 (1.02/ring),
+  pair 9 535 → 8 065 s (−15 %), entry_load falls to Caution (peak 0.81);
+  hookup 6.0 buys 46 more links (567 / 7 820). Fix the default in
+  `plan_tier_operation`; do not expect a collapse to the region count.
+- **G-OVERLAPFILL (2026-09-09, OPEN — product defect in the tier overlap):**
+  `preview_tier_map` at the planner's dials says tier 1 OWNS 12 224 mm²
+  (10 islands), but its MACHINING copy (grown by the 1.25 mm overlap in
+  `tier_islands.rs::region_polygons_from_mask_reported`) nets 28 617 mm²:
+  the big owned island is a 31 255 mm² outline with 1 315 holes
+  (19 316 mm²), and the dilation keeps only 402 of them — the median hole
+  is 3.6 mm², so a 1.25 mm dilation each side closes any gap under 2.5 mm.
+  The fine tier therefore machines 29 954 of 40 000 mm² (75 %), which is
+  why T2/T3/T5 all cut near whole-board distances. At tol 0.146: owned
+  4 482 vs machining 17 169 mm² (×3.8); at 0.30: 641 vs 3 005. A band must
+  grow the outline and shrink the holes, not fill them
+  (`svg_island_area.py`, `tier_map_r20_r10_tol*.svg` in the artifacts dir).
+- **Confinement is retract-count-bound (2026-09-09, eight runs):** T5
+  (drop_cutter on the planner islands, tol 0.05) confirms the core raster
+  honours the region set (path = valley network) yet loses to whole-board
+  T1: 953 row fragments / 954 retracts / 7 985 s vs 76 / 6 478. T5b (tol
+  0.146, 21 thin islands) 2 172 retracts / 10 497 s; T3d (scallop, 0.146)
+  1 266 / 10 146, entry CRITICAL again (peak 1.05). Pair time follows
+  retract count, not area: the lever is a surface link between fragments
+  INSIDE a region (the intra-region link item), not a tighter boundary.
+- **G-ISOCLIPENTRY residual (2026-09-09, live 0.2 reruns on the fix):**
+  T3 pair 11 105 → 9 535 s, over-bar 7 756 → 1 879, peak 1.79 → 1.39 mm;
+  T2 25 580 → 19 804 s, 17 538 → 5 335, peak 1.44 → 1.39 — STILL CRITICAL
+  on both, and the peak sits at the same point (115.8, 182.4, −1.59) on
+  both fields: one ring start shared by both. For the entry agent. T2's
+  rapid collision at move 68538 is GONE on the rerun (0) before the rapid
+  fix landed — so that collision was an entry-path rapid; G-ISOCLIPRAPID's
+  fix is still being confirmed headlessly.
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and
