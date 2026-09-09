@@ -808,14 +808,28 @@ Ledger:
   residual is beyond every ball in the ladder and belongs to the
   river/pencil work, not to a finer tier. Recommendation on record: Q3 one
   pass; T1 if the flats must carry the R1.0 median.
-- **G-ISOCLIPENTRY residual (2026-09-09, live 0.2 reruns on the fix):**
-  T3 pair 11 105 → 9 535 s, over-bar 7 756 → 1 879, peak 1.79 → 1.39 mm;
-  T2 25 580 → 19 804 s, 17 538 → 5 335, peak 1.44 → 1.39 — STILL CRITICAL
-  on both, and the peak sits at the same point (115.8, 182.4, −1.59) on
-  both fields: one ring start shared by both. For the entry agent. T2's
-  rapid collision at move 68538 is GONE on the rerun (0) before the rapid
-  fix landed — so that collision was an entry-path rapid; G-ISOCLIPRAPID's
-  fix is still being confirmed headlessly.
+- **G-ISOCLIPENTRY family — CLOSED on the operator surface (2026-09-09).**
+  Final after-table (rs-cam-15, live 0.2 mm on master 5a30124a, saved
+  reproductions so both still carry `continuous: true` — emitter changes
+  only). T3: pair 11 105 → 9 535 → **9 078 s**, tier fed 7 013 → 5 918 →
+  5 516, retracts 989 → 929 → 923, rapids 61.6 → 49.9 → 47.8 km,
+  entry_load CRITICAL/1 879/peak 1.39 → **CAUTION/1 429 of 101 474/peak
+  0.50** at (68.3, 135.6, 0.44). T2: pair 25 580 → 19 804 → **18 618 s**,
+  fed 18 519 → 13 863 → 12 786, retracts 2 343 → 2 207 → 2 198, rapids
+  164.9 → 137.4 → 133.1 km, entry_load CRITICAL/5 335/peak 1.39 →
+  **CAUTION/4 422 of 231 269/peak 0.50** at (21.8, 95.1, −0.01); rapid
+  collisions 1 → 0. Both fields cap at exactly the per-lap budget, rings
+  and retract counts move under 1 %, so the −18 % / −27 % is entirely
+  emitter-side. Live verification of the two landings: a fresh
+  `plan_multitool_finishing` ([4,2], cusp 0.14, overlap 1.25,
+  `tier_strategies [iso_scallop, scallop]`) emits tier 1 with
+  `continuous: false` and `intra_pass_hookup_mm 3.0` — the T3b config that
+  measured 8 065 s against T3's 9 078 — and the plan reply carries the
+  band advisory quoting 12 224 → 29 954 mm² at 2.45×, holes 1 329 → 404,
+  median 3.6 mm², naming overlap ≈0.95 mm or a tolerance at the coarse
+  cusp. The residual 0.50 mm Caution is the ladder's own budget
+  reporting; quieting it is a dial decision (`ENTRY_RAMP_MAX_BITE_MM` or a
+  pass-scaled budget), not a defect.
 - **G-RETRACTDIAL (2026-09-09, OPEN — dead dial):** `retract_strategy`
   (`RetractStrategy`, compute/config.rs) is defined, defaulted, shown in
   the GUI properties panel and named in the MCP `set_dressup_config`

@@ -842,6 +842,46 @@ Artifacts:
 `T2_rerun_entryfix_sim.png`, `tier_map_r20_r10_tol{005,0146,030}.svg`,
 `svg_island_area.py`.
 
+### 2.7c The island tier after the entry, rapid and planner fixes (2026-09-09, evening)
+
+Both island scallops were rerun once more on the binary that carries
+G-ISOCLIPRAPID, G-ISOCLIPRAMPFALL and the G-TIERCONTINUOUS planner
+default (master 5a30124a). The project files are the same saved
+reproductions, so they still carry `continuous: true`; only the emitters
+changed.
+
+| run | pair total s | 2nd pass fed s | retracts | rapids km | rapid collisions | entry_load |
+|---|---:|---:|---:|---:|---:|---|
+| T3 as first measured | 11 105 | 7 013 | 989 | 61.6 | 0 | critical, 7 756 samples, peak 1.79 mm |
+| T3 after the entry fix | 9 535 | 5 918 | 929 | 49.9 | 0 | critical, 1 879, peak 1.39 |
+| **T3 now** | **9 078** | **5 516** | **923** | **47.8** | **0** | **caution, 1 429, peak 0.50** |
+| T2 as first measured | 25 580 | 18 519 | 2 343 | 164.9 | **1** | critical, 17 538, peak 1.44 |
+| T2 after the entry fix | 19 804 | 13 863 | 2 207 | 137.4 | 0 | critical, 5 335, peak 1.39 |
+| **T2 now** | **18 618** | **12 786** | **2 198** | **133.1** | **0** | **caution, 4 422, peak 0.50** |
+
+Both fields now cap at exactly 0.50 mm, which is the per-lap entry
+budget, and both severities fall from critical to caution. The peak was
+1.79 mm when this section opened. The rapid through stock is gone. T3 is
+18 % faster than its first measurement and T2 is 27 % faster, entirely
+from emitter changes: the same rings, the same islands, the same
+retract counts within 1 %.
+
+The planner default was verified separately. A fresh
+`plan_multitool_finishing` on the same ladder now emits its per-island
+scallop tier with `continuous: false` and `intra_pass_hookup_mm` 3.0 —
+the T3b configuration, which measured 8 065 s against T3's 9 078 s. The
+saved trial files predate the default and still carry the old value, so
+only a new plan shows it.
+
+The same plan call now returns a band advisory that reproduces §2.7a's
+measurement in the product: *"the 1.25 mm overlap band grows 12 224 mm²
+of owned territory into 29 954 mm² of machining territory (2.45× the
+bound of 1.50×), taking the tier's holes from 1 329 to 404 (median hole
+3.6 mm²)"*, and it names the two dials with a target: an overlap near
+0.95 mm, half a median sliver width, or a tolerance at the coarse pass's
+own cusp. Artifacts: `T3_final_fixedbinary_sim.png`,
+`T2_final_fixedbinary_sim.png`.
+
 ### 2.7b The two-tool pairs at delivered finish (2026-09-09)
 
 The same instrument as §2.8 (`cusp_measure.py`: simulated stock top at
