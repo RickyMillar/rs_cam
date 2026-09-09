@@ -3927,6 +3927,7 @@ pub fn apply_dressups(
                         },
                         plunge_rate,
                         entry_safety,
+                        tool_radius,
                     )
                 },
             );
@@ -3959,6 +3960,7 @@ pub fn apply_dressups(
                         },
                         plunge_rate,
                         entry_safety,
+                        tool_radius,
                     )
                 },
             );

@@ -18,6 +18,37 @@
 //! UPDATE_PERF_GOLDENS=1 cargo test -p rs_cam_core --test perf_golden_sim_metrics
 //! ```
 //!
+//! # Re-baselines of the 2D golden
+//!
+//! **2026-09-10, G-RAMPCONTAIN** (`planning/ui_fix_2026-09-09/reports/J2.md`
+//! §4b). A prism ramp entry now folds along the operation's own following cut
+//! instead of drawing two blind straight legs, and this golden had pinned
+//! what those legs were cutting.
+//!
+//! The 2D fixture runs Pocket to depth 6, then Zigzag to depth 3, then
+//! Profile outside, all on ONE rectangle. The zigzag's passes sit 3 mm above
+//! a floor the pocket already cut, so the zigzag machines AIR — and yet it
+//! reported 541.63 mm³ of removal. That removal was entirely its ramp legs
+//! reaching outside the pocket wall:
+//!
+//! | field | was | now |
+//! |---|---:|---:|
+//! | `[Zigzag].total_removed_volume_est_mm3` | 541.6327791214 | 0.0000000000 |
+//! | `[Profile].total_removed_volume_est_mm3` | 8647.0986818420 | 9070.4652232276 |
+//! | `project_total_removed_volume_est_mm3` | 30380.6961213737 | 30262.4298836380 |
+//!
+//! `541.63 − 423.37 = 118.26`, and that partitions the gouge: 423.37 mm³ lay
+//! inside the Profile's own ring, so the Profile removes it now instead;
+//! **118.27 mm³ lay outside even the Profile's ring and was stock the program
+//! destroyed for nothing.** `[Zigzag].air_cut_pct_of_cutting_time` goes
+//! 94.54 % → 100.00 %, which is the honest reading for an operation cutting
+//! air, and `[Zigzag].per_kinematics[Helix].peak_chip_thickness_mm` goes
+//! `Some(0.0055)` → `None` — NOT MEASURED rather than zero, because there is
+//! no material left there to measure a chip in.
+//!
+//! The zigzag "stopping cutting" is therefore the fix working, not a
+//! regression: it was never supposed to be cutting.
+//!
 //! # Why the aggregates and not a trace hash
 //!
 //! A hash over the whole trace would fail on any change at all, including

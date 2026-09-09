@@ -273,6 +273,10 @@ fn the_ramp_transform_itself_is_alive() {
             stock_top: 0.0,
             surface: None,
         },
+        // G-RAMPCONTAIN: the tool radius, which sets the floor under which a
+        // fold degrades to a plunge. This fixture's following cut is 40 mm,
+        // so the ramp folds along it and the arm still measures a live ramp.
+        3.0,
     );
     assert!(
         out.toolpath
