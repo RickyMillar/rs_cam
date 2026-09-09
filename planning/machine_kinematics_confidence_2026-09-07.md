@@ -1102,6 +1102,47 @@ Ledger:
   because a peer read a live narration. Everything the trace feeds —
   region attribution, ring counts, advisory bucketing — was wrong for one
   binary and nothing failed.
+  **MECHANISM FOUND (2026-09-09, headless repro at 0.5 mm; fix designed,
+  NOT written — work paused).** It is the many-to-one junction landing
+  meeting the permutation drop rule, NOT rotation invalidating
+  `move_index`. (1) `scallop.rs` ~2601 sets each ring annotation's
+  `move_index = tp.moves.len()` immediately BEFORE the junction
+  `rapid_to_with_intent(Linking)`, so every annotation anchors on the
+  junction rapid. (2) In `relink_fragments_with_kinds` (`surface_link.rs`
+  ~1095-1112) a deleted junction rapid gets slot
+  `Some(junction_start..junction_end)` and the following fragment's first
+  move gets `Some(last..junction_end)` with `last = junction_end - 1` —
+  **two old moves landing on OVERLAPPING new ranges.** (3) With
+  `reorder: true` under a `FinishingLinkStage` the relinker returns
+  `MoveProvenance::Permutation` (~1189). (4)
+  `ScallopAnnotationChannel::consume_provenance` calls `remap_range(i, i+1)`,
+  whose `Permutation` arm runs `foreign_intrusion`, and the neighbour's
+  overlapping slot IS a foreign intrusion, so it returns `None`. (5) Every
+  ring has a junction, so EVERY annotation is dropped and `annotate_scallop`
+  early-returns on empty. Pre-stage the relinker returned
+  `MoveProvenance::Remap`, which runs no intrusion check — that is the whole
+  delta. Two comments are false and must be fixed with it:
+  `surface_link.rs` ~1186 ("nothing needs re-anchoring" — true about
+  rotation, wrong about the intrusion rule, which fires at zero rotations as
+  soon as `reorder` is true) and `transform_provenance.rs` ~443 ("nothing is
+  dropped there" — it maps every move onto something, but onto OVERLAPPING
+  somethings). **Trap for the sentry:** `ScallopReport::ring_count` is
+  `annotations.len()` computed AFTER the reconcile, so it reads 0 on the
+  broken binary and an assertion `rings == ring_count` is `0 == 0` and
+  passes. Assert population from upstream of the reconcile
+  (`relink.fragments`, `relink.rotated_loops >= 1`). Designed fix: a
+  `remap_point(i, n)` with NO intrusion check (a single-move ANCHOR asks
+  only where a move went and cannot widen; the intrusion rule guards a
+  multi-move CLAIM), used only in the scallop channel, plus a stable sort by
+  `move_index` after the remap (both `annotate_scallop` variants derive an
+  item's end from the NEXT annotation's index, a monotonicity assumption a
+  reorder breaks; under `Remap` the sort is a no-op). Expect `regions` to
+  come back GREATER than 10 — consecutive-region grouping splits wherever
+  the picker interleaves islands — so assert `regions > 0`, not equality.
+  **Before any edit, capture the pre-fix G-code baseline on the current
+  broken binary** (`--emit-gcode`, `--no-adaptive-feed-modulation`); once
+  the source moves that baseline is unobtainable and "no byte moved" is
+  by-construction only.
 - **G-SCALLOPTRACE (2026-09-09, OPEN — the PLAINEST scallop narrates
   nothing).** A scallop with `ScallopConfig::default()` and NO machining
   boundary — what an operator gets by adding a scallop op and pressing
