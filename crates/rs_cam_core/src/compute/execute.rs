@@ -2226,12 +2226,13 @@ pub(crate) fn generate_pencil(
         // P1 W4a: cost the surface-link-vs-retract emit decision against
         // the real machine envelope when one is in scope.
         link_kinematics: ctx.link_kinematics.clone(),
-        // G-LINKSTAGE: `None` = the clearance-hop tier keeps the same cap as
-        // the at-depth tier, which is the shipped emission byte for byte. The
-        // pencil has NO op-config dial for this yet, deliberately: the split
-        // is only worth exposing once a measured pair says which two numbers
-        // to expose (`planning/pencil_linking_2026-09-04.md`).
-        link_hop_distance_mm: None,
+        // G-LINKSTAGE: the clearance-hop tier's own cap. `None` — the
+        // default — keeps the at-depth tier's cap, which is the shipped
+        // emission byte for byte. `Some(0.0)` refuses every hop and leaves
+        // the at-depth tier alone, which is the control arm the measured
+        // pair needs (`planning/pencil_linking_2026-09-04.md`,
+        // `planning/linking_2026-09-09/SPEC.md` §8).
+        link_hop_distance_mm: cfg.link_hop_distance_mm,
     };
     // PR-5: `route_width_factor` is still deserialized so every saved
     // project loads unchanged, but the pencil/clearing decision is now the

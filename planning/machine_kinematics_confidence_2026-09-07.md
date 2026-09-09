@@ -973,6 +973,33 @@ Ledger:
   `DropCutterConfig::hookup_mm` and `WaterlineConfig::hookup_mm`, and BOTH
   have `ParamDef::optional("hookup_mm","f64")`. Unchecked corner: the +14
   lines the commit added to `unified_finish.rs`.
+  **The gap is CLOSED (2026-09-10).** `PencilConfig::link_hop_distance_mm`
+  is a serde-defaulted `Option<f64>` with
+  `ParamDef::optional_desc("link_hop_distance_mm","option<f64>", ...)`, and
+  `compute/execute.rs` copies it instead of hardcoding `None`. The default
+  did not move: `None` still means one cap for both tiers, so every saved
+  project emits what it emitted before. Two corrections to the fix shape
+  written above. (a) The OFF mechanism is NOT the `gap <= 1e-6` early
+  return — that gate only rejects a zero-length gap. `Some(0.0)` works
+  because a LIFTED candidate then fails `if gap > hop_cap`, so the hop is
+  refused and attributed to `hop_too_far`; a candidate that needs no lift
+  never reaches that test, which is exactly why the at-depth tier survives
+  and the pair is a control. (b) The field-add audit found NOTHING to
+  update: every `PencilConfig` literal in the workspace spreads
+  `..PencilConfig::default()`, and the two files the row names carry
+  `PencilParams` literals, which already had the field. The GUI properties
+  panel gets NO widget in this change — the dial is reachable from a
+  project file and from MCP `set_toolpath_param`, which is what the
+  measurement needs; a widget waits on the ruling. Sentries:
+  `tests/pencil_hop_dial_g_pencilhop.rs` (the wiring — default unset, MCP
+  accepts the name and `null` resets it, and `None` emits the same
+  toolpath as `Some(hookup_distance)` move for move, which pins the
+  retraction as MOTION) and, in the crate,
+  `pencil::tests::a_zero_hop_cap_refuses_a_lifted_link_and_keeps_the_at_depth_tier`
+  (the refusal itself, over a ribbed stock — a hop needs standing material,
+  so a fresh-stock session hands the emitter `entry_stock: None` and joins
+  every junction at depth, which is why the refusal cannot live in the
+  integration file). Control pair still to run.
 - **G-STALESTOCK (2026-09-09, method defect, not a code defect):**
   `generate_all` reporting **"0 simulations"** on a project containing a
   rest-machining op means it did NOT refresh the machined stock, so a rest

@@ -1704,6 +1704,14 @@ const PENCIL_PARAMS: &[ParamDef] = &[
         "option<usize>",
         "Library tool id whose real geometry defines the pencil rest reference (else nominal diameter)",
     ),
+    ParamDef::optional_desc(
+        "link_hop_distance_mm",
+        "option<f64>",
+        "Reach (mm) of the CLEARANCE-HOP link tier only; hookup_distance caps the at-depth \
+         tier. Absent = one cap for both tiers (the shipped emission, byte for byte) — absent \
+         does NOT mean the hop tier is off. 0 refuses every hop and keeps the at-depth tier, \
+         which is the control arm that separates the two tiers.",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 

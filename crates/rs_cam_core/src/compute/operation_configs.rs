@@ -883,6 +883,34 @@ pub struct PencilConfig {
     /// and files that never set it stay byte-identical on save.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_tool_id: Option<ToolId>,
+    /// G-LINKSTAGE: the reach (mm) of the CLEARANCE-HOP link tier, which is
+    /// separate from [`Self::hookup_distance`]. That dial caps the at-depth
+    /// tier.
+    ///
+    /// The two tiers do not give the same result. A link that arrives at
+    /// cutting depth removes the next fragment's entry outright. A link that
+    /// LIFTS clear of standing material lands from above, so the fragment
+    /// keeps its descent, and the lift itself costs travel time.
+    ///
+    /// * `None` — one cap for both tiers, `hookup_distance`. This is the
+    ///   shipped emission, byte for byte. Do NOT read `None` as "the hop
+    ///   tier is off": the `gap > hookup_distance` test returns first, so
+    ///   the hop test cannot run at `None` (G-PENCILHOP, retracted in
+    ///   `0b5f1cd2`).
+    /// * `Some(0.0)` — the OFF switch for the hop tier alone. The pass
+    ///   refuses every lifted candidate and counts it in
+    ///   [`crate::pencil::PencilLinkReport::hop_too_far`]. The at-depth tier
+    ///   does not change, so this is the control arm that separates the two
+    ///   tiers on one fixture.
+    /// * `Some(d)` — hops reach `d` mm; at-depth links keep
+    ///   `hookup_distance`.
+    ///
+    /// `#[serde(default, skip_serializing_if)]` so older project files load,
+    /// and a file that never sets it stays byte-identical on save. The GUI
+    /// panel has no widget for it yet — the dial is reachable from a project
+    /// file and from MCP `set_toolpath_param`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_hop_distance_mm: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
 }
@@ -908,6 +936,8 @@ impl Default for PencilConfig {
             rest_cell_mm: crate::pencil::rest_cell_default(),
             route_width_factor: crate::pencil::route_width_factor_default(),
             reference_tool_id: None,
+            // One cap for both tiers — the shipped emission. See the field.
+            link_hop_distance_mm: None,
             spindle_rpm: None,
         }
     }
