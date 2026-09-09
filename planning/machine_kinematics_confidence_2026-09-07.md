@@ -998,6 +998,35 @@ Ledger:
   cheap and a hop costs about the same. This is the practical form of
   G-LINKTIERS: the tier tells you what kind of link was made, the retract
   it replaced tells you what it was worth.
+- **G-LINKACCEPT (2026-09-09, OPEN — the link accept rule is OPTIMISTIC;
+  found by rs-cam-15 within-binary, cause verified in code here).** T3b and
+  T3c on the SAME binary: hookup 3 → 309 hops, 8 034.5 s; hookup 6 → 408
+  hops, 8 092.5 s. So **99 extra accepted links cost 58.0 s, ≈ 0.59 s each,
+  a NET LOSS** — and every one was accepted by the kernel's own rule, which
+  takes a link only when `surface_link_time <= retract_link_time`. The rule
+  predicted each was cheaper than the retract it replaced and measured
+  dearer.
+  Of the two candidate causes rs-cam-15 named, the FIRST IS FALSIFIED: both
+  estimators run `compute_cycle_time`, the kinematics integrator, so
+  acceleration on the extra segments IS in the comparison.
+  **The SECOND IS CONFIRMED, and it is self-inflicted.** The call site
+  passes `descend_rapid_to: None` to `retract_link_time`
+  (`surface_link.rs` ~1035), and with `None` that estimator models a FULL
+  climb to `safe_z`, a traverse at `safe_z`, and a plunge all the way down
+  (`machine_kinematics.rs:672-682`). But the entry optimiser lowers that
+  rapid to the stock ceiling — that is what `optimize_entry_descents` does,
+  and what G-ISOCLIPRAPID's `retract_z` work extended. So the baseline the
+  link is compared against is a retract nobody would emit: **the link is
+  credited with saving a descent the optimiser had already removed.** The
+  estimator itself takes the right argument and the call site declines to
+  supply it.
+  Consequence for defaults: raising a hookup can silently make a pass
+  SLOWER, which is exactly what T3c did, and a default is precisely where
+  an optimistic accept rule stops being visible to the operator. **Check
+  this before any linking default moves.** Fix shape: pass the real
+  clearance the entry optimiser would use instead of `None`. Small error
+  per link (0.59 s against a raster that wins 13.5 %), but it is a bias in
+  the one rule that decides what ships.
 - **G-LINKTIERS (2026-09-09, the two-tier counter UNDER-claims — measured,
   wording being corrected):** I wrote that only an at-depth link removes an
   entry, and the narration said a clearance hop "removed only a retract".
