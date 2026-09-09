@@ -1728,8 +1728,7 @@ mode = "auto"
 mode = "auto"
 
 [setups.toolpaths.heights.bottom_z]
-mode = "manual"
-value = -3.013947677612305
+mode = "auto"
 
 [setups.toolpaths.boundary]
 enabled = true
