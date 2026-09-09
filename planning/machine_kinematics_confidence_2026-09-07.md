@@ -722,8 +722,22 @@ Ledger:
   ring unchained. Hypothesis under test: the island fragmentation is a
   PLANNER DEFAULT, not a clip defect (one dial: T3 with continuous:false,
   hookup 3.0 / 6.0). Also to check: whether the DropCutter arm receives
-  `ctx.boundary_regions` — if yes, G-RASTERLADDER is only a missing
-  `tier_strategies` value.
+  `ctx.boundary_regions` — ANSWERED (rs-cam-15, `planning/island_clip_2026-09-09/SPEC.md`):
+  it does (execute.rs DropCutter arm → `raster_toolpath_from_grid`, each
+  row cut into engaging runs per island crossing) and compute.rs applies
+  no op-family gate to `PlannedTierRegions`, so the core raster is already
+  region-aware. G-RASTERLADDER is therefore a two-surface gap, not a
+  generator gap: (a) `tier_strategies` (multitool.rs) has no raster value
+  — the missing arm emits `OperationConfig::DropCutter` with the
+  equal-cusp stepover; (b) MCP `set_boundary_config` accepts stock /
+  model_silhouette / derived_rest_regions only, no planned_tier_regions.
+  A hand-edited project file carries the boundary as data (T5 fixture).
+- **G-TIERCONTINUOUS (2026-09-09, OPEN):** `plan_tier_operation` sets
+  `continuous: true` on every per-island scallop tier; under continuous
+  the connector retracts/rapids/replunges on any hop over the ring-spacing
+  bound and the intra-pass relink is skipped (scallop.rs). Retracts per
+  ring measured: T3 2.04, T2 1.44. Verdict waits on T3b/T3c (continuous
+  false, hookup 3.0 / 6.0; fixtures in the deep-DOC artifacts dir).
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and

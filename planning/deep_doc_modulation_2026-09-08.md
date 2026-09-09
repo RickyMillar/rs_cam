@@ -656,10 +656,13 @@ with its islands grown by the 2 mm overlap band, cuts 66 km — more than
 the whole-surface Q1a raster's 45 km — with 1 104 retract trips. The
 RASTER pairing the ranking implies (drop_cutter R2.0 whole-surface plus
 drop_cutter R1.0 confined to the planner's island boundary) is NOT
-expressible through any MCP or GUI path today: `drop_cutter` takes no
-`planned_tier_regions` boundary. So the honest recommendation as of this
-doc is the single R2.0 raster (Q2), accepting the valley floors it does
-not reach, or B15. Artifacts: `LADDER_r20_r10islands.toml`, `_sim.png`,
+expressible through the planner or the MCP today: `tier_strategies`
+has no raster value and `set_boundary_config` does not accept
+`planned_tier_regions`. The core raster does honour the island set
+(`toolpath.rs:607`, corrected 2026-09-09; a hand-edited project file
+carries it — see `planning/island_clip_2026-09-09/SPEC.md`, T5). So
+the honest recommendation as of this section is the single R2.0 raster
+(Q2), accepting the valley floors it does not reach, or B15. Artifacts: `LADDER_r20_r10islands.toml`, `_sim.png`,
 `_gui.png` (the live simulation view at the end of the ladder).
 
 Two trims the operator asked for were then measured on the same ladder
@@ -724,18 +727,28 @@ cusp everywhere the 2 mm ball fits. On cut stock the R1.0 raster runs
 at its commanded feed (the modulator's median move is −0.3 %, against
 −15 % on fresh stock), which is why its 4 317 s is under the 5 052 s of
 the same pass on fresh stock. T2 answers the operator's iso-scallop
-question in the negative: the iso field spans the whole surface and the
-island clip shreds it into 1 624 ring fragments with 2 343 retracts and
-165 km of rapids, and the clipped links produced a rapid through stock
-and buried re-entries. T3 shows the entry finding is the island clip's,
-not the iso field's: the contour scallop on the same islands halves the
-fragmentation and drops the rapid collision but buries its re-entries
-the same way (peak 1.79 mm). Both T2 and T3 are with a fix agent
-(`isoclip-entry-safety`); their TOMLs are the reproductions. The
-raster-on-islands pairing that the ranking implies still cannot be
-built (G-RASTERLADDER). Recommendation as of this section: Q2 then the
-R1.0 raster over the whole board on remaining stock (T1), and accept
-that the second pass air-cuts the ground the R2.0 already finished.
+question in the negative as run: 1 624 ring fragments with 2 343
+retracts and 165 km of rapids, a rapid through stock, and buried
+re-entries. T3 shows the entry finding is not the iso field's: the
+contour scallop on the same islands halves the fragmentation and drops
+the rapid collision but buries its re-entries the same way (peak
+1.79 mm). Both T2 and T3 are with a fix agent (`isoclip-entry-safety`);
+their TOMLs are the reproductions. The first reading of this table
+blamed the post-generation island clip for the fragmentation. That was
+wrong (corrected 2026-09-09): the scallop generates one ring set per
+island (`scallop.rs:2238`), so the rings never leave their islands. The
+fragmentation comes from the planner's own `continuous: true` on every
+scallop tier: under that flag the spiral connector falls back to
+retract / rapid / replunge on any hop longer than the ring spacing
+(`scallop.rs:2331`), and the intra-pass relink that would join the
+rings on the surface is skipped (`scallop.rs:2543`). T3 reads 2.04
+retracts per ring, T2 1.44. The one-dial test (`continuous = false`,
+hookup 3.0 then 6.0) and a raster-per-island run on the same islands
+(T5) are specified in `planning/island_clip_2026-09-09/SPEC.md` and
+wait for the GUI. Recommendation as of this section, until those read:
+Q2 then the R1.0 raster over the whole board on remaining stock (T1),
+and accept that the second pass air-cuts the ground the R2.0 already
+finished.
 
 Artifacts: `T1_r20_then_r10_rest.toml` + `_sim.png`,
 `T2_r20_raster_then_r10_iso_islands.toml` + `_sim.png`,
@@ -794,9 +807,10 @@ on 70.7 % of the board and the raster on 19.2 %. Two readings:
    the iso-scallop DOMINATES the raster on this terrain: the raster's
    win in §2.1 was a win at a coarser finish. The R2.0 pair (Q2 raster
    s1.5 vs S20 iso-scallop h0.27) has not had its surfaces measured. This does not change the
-   two-tool result (§2.7): the second pass there is a raster only because
-   the island clip cannot yet carry a raster, and the whole-board R1.0
-   raster on rest stock was the only pairing that passed.
+   two-tool result (§2.7): the second pass there is a whole-board raster
+   because the island-bounded scallops as planned fragment (planner
+   `continuous` default, §2.7) and the planner has no raster tier; the
+   whole-board R1.0 raster on rest stock was the only pairing that passed.
 
 Caveats: the residual is quantised to the 0.2 mm dexel cell, so the
 0.06–0.13 flat-band medians are at the instrument's floor; the scallop
