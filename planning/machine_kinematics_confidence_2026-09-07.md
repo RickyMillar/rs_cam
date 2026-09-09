@@ -969,6 +969,35 @@ Ledger:
   a `generate_all` reply before trusting any rest-driven measurement** —
   `rounds: 1, simulations: 0` is not success on such a project. The SPEC §8
   P1 row is marked contaminated; the P0 row stands.
+- **The at-depth tier is a FLAT-GROUND optimisation by construction
+  (2026-09-09, hypothesis by rs-cam-15, MECHANISM VERIFIED IN CODE here).**
+  The full run set: T3b contour scallop hookup 3 −0.4 % (2 at depth, 309
+  hops, 340 rotated); T3c hookup 6 **+3.5 %, worse** (2 at depth, 408
+  hops); T5 island raster **−13.5 %** (0 at depth, 789 hops); pencil 714 of
+  1 969 at depth, control pending. `at_depth` is EXACTLY 2 on the contour
+  scallop at BOTH hookups — doubling the hookup converted 99 declines into
+  hops and zero into at-depth links. The mechanism is `surface_link.rs`'s
+  flush test: a link is `LinkTier::AtDepth` only if EVERY sample satisfies
+  `ceiling.material_top(x, y) <= surface_z + FLUSH_EPS_MM` (0.15 mm), and
+  `material_top` is a conservative MAX OVER THE TOOL DISC, so **on sloped
+  ground it reads above the centre surface even with zero standing stock**
+  and the test fails. The code says so and says it is deliberate: "the
+  flush ride is a flat-ground optimisation, never a slope gamble". So on
+  terrain the at-depth tier is structurally unavailable to any
+  surface-following family — which is why the RASTER also scored 0 — and
+  it fires on the pencil because valley floors are locally flat where the
+  surface turns over. **No hookup value will ever help the contour
+  scallop.** The real lever, if one is wanted, is `FLUSH_EPS_MM` or a
+  slope-aware ceiling, and the same comment warns that relaxing the lift
+  HEIGHT is provably safe while relaxing the decision to lift AT ALL is
+  not the same question.
+- **What separates the two winning and losing island cases is retract
+  LENGTH, not tier mix (rs-cam-15, 2026-09-09):** the raster won 13.5 %
+  with zero at-depth links because its hop replaces a LONG retract; the
+  contour scallop's rings sit close together, so its retracts were already
+  cheap and a hop costs about the same. This is the practical form of
+  G-LINKTIERS: the tier tells you what kind of link was made, the retract
+  it replaced tells you what it was worth.
 - **G-LINKTIERS (2026-09-09, the two-tier counter UNDER-claims — measured,
   wording being corrected):** I wrote that only an at-depth link removes an
   entry, and the narration said a clearance hop "removed only a retract".
