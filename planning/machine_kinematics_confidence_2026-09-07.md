@@ -913,6 +913,36 @@ Ledger:
   (`at_depth_links` vs `clearance_hops`) sits on a channel that misfiles
   the descent. Read the two counters, not the two times, until this is
   fixed. Reported by the implementer, not introduced by it.
+- **G-LINKVISIBLE (2026-09-09, FIXED f8622ac7) — a stage judged on
+  counters nobody could see.** `ToolpathStats::relink` had ONE writer, the
+  unified-finish arm. Every other family G-LINKSTAGE put on the shared
+  stage built a report and only LOGGED it (scallop, `relink_in_adapter`
+  for drop_cutter and waterline, pencil), so `at_depth_links` — the
+  acceptance measure, and the only counter that removes an entry — reached
+  no operator surface on four of five families: not the stats, not
+  `narrate_toolpath`, not MCP. The single reader was a headless CLI's
+  stdout, which is why the L1 evidence had to be scraped. Found by a
+  wiring sentry written to a peer's spec, which failed for a reason
+  neither of us predicted; the four planned live measurements would have
+  read nothing. Fix: scallop / drop_cutter / waterline publish on the
+  shared slot (one kernel, one meaning); the PENCIL gets its own
+  `pencil_link` slot because `hop_too_far` and `ceiling_refused` have no
+  counterpart in `RelinkTotals` and are the pair that names its binding
+  constraint — mapping it in would have dropped exactly the counters worth
+  reading. Narration now prints whenever the stage RAN, not only when it
+  declined (a stage that linked everything printed nothing), and names the
+  family's own dial. No toolpath byte moved. Sentries:
+  `link_counters_visible_g_linkvisible.rs` + the scallop wiring arm, each
+  asserting population before verdict through a real `ProjectSession`.
+  OPEN: `get_diagnostics` per-toolpath rows carry neither report (neither
+  type derives `Serialize`; a structured row needs a `build_info` probe
+  key).
+- **narrate_regions_closed_c8 is RED on master (2026-09-09, pre-existing,
+  unowned):** `scallop_narration_reports_its_regions` fails at
+  `narrate_regions_closed_c8.rs:99`. Verified pre-existing by stashing the
+  whole G-LINKVISIBLE diff and reproducing on dc1ab3c7. Not in any gate
+  list used this week, which is how it went unnoticed. Nobody has
+  diagnosed it.
 - **G-PENCILPLUNGE (2026-09-09, OPEN):** the P1 pencil pass carries its
   own `plunge_class_load` CRITICAL — 10 of 322 vertical-dominant moves up
   to 6.6× the operation's plunge rate. Same class as P3 /
