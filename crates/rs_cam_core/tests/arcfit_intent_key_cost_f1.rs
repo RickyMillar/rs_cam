@@ -332,6 +332,12 @@ fn run(
 /// `246b7ae` with the arcfit change stashed out. That equality IS the
 /// measurement: the intent term, strict `Unknown` included, and the `Region`
 /// barrier together cost zero arcs and zero moves on all five fixtures.
+///
+/// One MOVE count has moved since, for a reason outside this file's subject:
+/// `face_full` reads 80 rather than 74 after `38f8d151` (G-ISOCLIPRAPID)
+/// added a vertical retract lift to the lead-in dressup. See the comment at
+/// that fixture. **No ARC count has moved on any fixture**, so the equality
+/// the paragraph above asserts still holds for the quantity it measures.
 #[test]
 fn pr6_measure_arcfit_intent_key_cost() {
     run(
@@ -356,6 +362,19 @@ fn pr6_measure_arcfit_intent_key_cost() {
             census: (216, 4, 4, 0),
         },
     );
+    // MOVES RE-PINNED 74 -> 80 on 2026-09-10 (J1). `38f8d151` (G-ISOCLIPRAPID)
+    // gave the lead-in dressup a pure-vertical `MoveIntent::Retract` lift
+    // before its pre-position rapid, because a rising DIAGONAL out of the cut
+    // is a strike to every reader of the IR. Six of this fixture's seven
+    // lead-ins stood below the retract plane and gained one lift each.
+    //
+    // Measured either side of that commit, same test binary:
+    //   01ec1e41  moves=74 arcs=13 Retract=7  pre_arcfit_moves=159
+    //   38f8d151  moves=80 arcs=13 Retract=13 pre_arcfit_moves=165
+    //
+    // The F1 Q3 quantity this file exists to protect did NOT move: arcs stay
+    // 13 and the seam census stays (118, 20, 0, 0), because a Rapid is not a
+    // same-feed Linear join and forms no arc. Six added rapids, zero arc cost.
     run(
         "face_full",
         face_fixture(),
@@ -363,7 +382,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         1500.0,
         OperationType::Face,
         &Expect {
-            out: (74, 13),
+            out: (80, 13),
             census: (118, 20, 0, 0),
         },
     );
