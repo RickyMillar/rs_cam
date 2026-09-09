@@ -937,6 +937,27 @@ Ledger:
   OPEN: `get_diagnostics` per-toolpath rows carry neither report (neither
   type derives `Serialize`; a structured row needs a `build_info` probe
   key).
+- **G-LINKTRACE (2026-09-09, REGRESSION from G-LINKSTAGE `0c36a2f0`, fix
+  in progress):** the contour scallop's SEMANTIC TRACE collapses when the
+  link stage runs. Live on the T3b island fixture at 0.2 mm: `617 items;
+  regions 10, rings 600` (binary dc1ab3c7) → `7 items (4 move-linked);
+  depth levels 0, regions 0, rings 0` (44978c21), `semantic_summary_count`
+  603 → 4. Visible consequence: the air-cut advisory buckets 826 939
+  samples into ONE item reading "4393.6 s wasted around (185.8, 184.6,
+  1.1)" — the whole pass in one bag, not a hotspot. The TOOLPATH is
+  unaffected (the pass cuts correctly; T3b total 8 034 s, 0 collisions):
+  this is a provenance defect, not a path one. Distinct from
+  G-SCALLOPTRACE, which is the no-boundary path and pre-existing.
+  Suspect: reorder and rotation re-stamp move indices and force a
+  `Permutation`, and the ring annotations — this site's index-carrying
+  channel, reconciled through `ReconcileSet` at `scallop.rs` ~2767 — do
+  not survive it. **Coverage lesson:** three sentries ran on this path and
+  none asserted the trace. `scallop_intra_pass_relink_am7` asserts cut
+  positions and collisions, `link_counters_visible_g_linkvisible` asserts
+  the counters, `link_stage_g_linkstage` asserts the kernel. Found only
+  because a peer read a live narration. Everything the trace feeds —
+  region attribution, ring counts, advisory bucketing — was wrong for one
+  binary and nothing failed.
 - **G-SCALLOPTRACE (2026-09-09, OPEN — the PLAINEST scallop narrates
   nothing).** A scallop with `ScallopConfig::default()` and NO machining
   boundary — what an operator gets by adding a scallop op and pressing
