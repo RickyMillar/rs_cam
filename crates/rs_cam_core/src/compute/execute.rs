@@ -1938,6 +1938,113 @@ pub(crate) fn generate_project_curve(
 ///
 /// A no-op — the input returned untouched, the relinker never entered — at
 /// the shipped `chain_distance_mm` of `0.0`.
+/// THE one place a finishing adapter builds the shared surface-link stage
+/// (G-LINKSTAGE, `planning/linking_2026-09-09/SPEC.md` §3.1).
+///
+/// Every finishing family that opts in reads its ceiling, its boundary and
+/// its kinematics from here, so the three cannot drift apart family by family
+/// again. Before this existed the unified finish took its ceiling from
+/// `ctx.initial_stock` and the scallop passed `link_ceiling: None`, which on a
+/// `FromRemainingStock` island pass made every finger-to-finger hop a full
+/// safe-Z retract AND left the scallop's surface-riding links unchecked
+/// against the standing material they crossed.
+///
+/// `None` — the stage is OFF — at `hookup_mm <= 0.0`, which is the
+/// byte-identity dial every family that has not opted in keeps at `0.0`
+/// (`chain_distance_mm`'s pattern).
+///
+/// # The ceiling, and why it is the SAFETY half
+///
+/// A link that arrives laterally at cutting depth is exactly the shape
+/// G-ISOCLIPRAPID names: both endpoints under the stock surface, the span
+/// between them through whatever is standing. A surface-riding link rides the
+/// MESH, and on a rest-driven pass the mesh sits BELOW the material. The
+/// ceiling is what makes the kernel sample the whole chord against the input
+/// stock and take the lifted shape where it must — a target-only check reads
+/// 0.000 on a leg that buries itself between its endpoints.
+///
+/// `ctx.initial_stock` is `Some` exactly when the op cuts what a prior op
+/// left. `None` is the fresh-stock arm, where the mesh IS the material; the
+/// stage is then byte-identical to the legacy surface-riding link, which is
+/// what `tests/island_stay_down_links_o3.rs` pins.
+///
+/// The ENVELOPE radius is the SEARCH BOUND, not the shape — inside it
+/// `LinkCeiling::required_tip_z` lets the cutter's own profile decide. Same
+/// reading, and the same evidence, as `generate_unified_finish`'s ceiling.
+///
+/// TWO lifetimes on purpose. `ctx.link_kinematics` is OWNED by the context, so
+/// a reference to it can only live as long as the borrow of `*ctx` — while
+/// the stock and the regions live as long as the context's own parameter. The
+/// stage is therefore built in the SHORTER of the two, and each field narrows
+/// to it by ordinary covariance at its own assignment. A single-lifetime
+/// signature would instead ask the caller to coerce the whole
+/// `ExecutionContext`, which is a stronger requirement for no gain.
+fn finishing_link_stage<'c, 'a: 'c>(
+    ctx: &'c ExecutionContext<'a>,
+    hookup_mm: f64,
+) -> Option<crate::surface_link::FinishingLinkStage<'c>> {
+    if hookup_mm <= 0.0 {
+        return None;
+    }
+    Some(crate::surface_link::FinishingLinkStage {
+        hookup_distance: hookup_mm,
+        link_ceiling: ctx
+            .initial_stock
+            .map(|stock| crate::surface_link::LinkCeiling {
+                stock: Some(stock),
+                tool_radius: ctx.tool_def.envelope_radius_mm(),
+                // The analytic stock top in the emission frame — the same
+                // fallback `optimize_entry_descents` takes where the dexel
+                // query has no answer.
+                fallback_top_z: ctx.stock_bbox.max.z,
+            }),
+        boundary: ctx.boundary_regions,
+        link_kinematics: ctx.link_kinematics.as_ref(),
+    })
+}
+
+/// Run the shared stage over a finishing family's emitted path, in the
+/// adapter, and report what it did.
+///
+/// For a family whose generator holds no index-carrying channel — the raster
+/// and the waterline both build their spans from the RESULT — so the
+/// reconcile set is empty and saying so is the whole contract. The scallop
+/// does hold one (its ring annotations), which is why its stage runs inside
+/// the generator instead.
+fn relink_in_adapter(
+    stage: &crate::surface_link::FinishingLinkStage<'_>,
+    geom: &crate::surface_link::LinkGeometry,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &ToolDefinition,
+    tp: Toolpath,
+    family: &'static str,
+) -> Toolpath {
+    let rp = stage.params(geom);
+    let (linked, rep) =
+        crate::surface_link::relink_fragments(AnnotatedToolpath::new(tp), mesh, index, cutter, &rp);
+    tracing::info!(
+        family,
+        hookup_mm = stage.hookup_distance,
+        fragments = rep.fragments,
+        surface_links = rep.surface_links,
+        // The acceptance measure — only an at-depth link removes an entry.
+        at_depth_links = rep.at_depth_links,
+        clearance_hops = rep.clearance_hops,
+        retract_links = rep.retract_links,
+        too_far = rep.too_far,
+        off_surface = rep.off_surface,
+        slower_than_retract = rep.slower_than_retract,
+        outside_boundary = rep.outside_boundary,
+        ceiling_above_safe_z = rep.ceiling_above_safe_z,
+        "Finishing link stage"
+    );
+    linked
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+        .toolpath
+}
+
 fn chain_project_curve(
     ctx: &ExecutionContext<'_>,
     cfg: &crate::compute::operation_configs::ProjectCurveConfig,
@@ -2073,6 +2180,12 @@ pub(crate) fn generate_pencil(
         // P1 W4a: cost the surface-link-vs-retract emit decision against
         // the real machine envelope when one is in scope.
         link_kinematics: ctx.link_kinematics.clone(),
+        // G-LINKSTAGE: `None` = the clearance-hop tier keeps the same cap as
+        // the at-depth tier, which is the shipped emission byte for byte. The
+        // pencil has NO op-config dial for this yet, deliberately: the split
+        // is only worth exposing once a measured pair says which two numbers
+        // to expose (`planning/pencil_linking_2026-09-04.md`).
+        link_hop_distance_mm: None,
     };
     // PR-5: `route_width_factor` is still deserialized so every saved
     // project loads unchanged, but the pencil/clearing decision is now the
@@ -2173,6 +2286,12 @@ pub(crate) fn generate_scallop(
     let (tp, annotations, scallop_report) = if cfg.iso_field {
         // M8 iso-field rings — per-point spacing, cosine slope law,
         // completion by construction. See the wrapper's doc for evidence.
+        //
+        // NOT on the shared stage (SPEC §3.7). The field's ring list is level
+        // sets, its ring-to-ring geometry is a different population from the
+        // offset cascade's, and its fingerprint is pinned by
+        // `scallop_isofield_gouge_m4` and the multitool tiers. It keeps the
+        // legacy relink at the same `intra_pass_hookup_mm`, byte for byte.
         crate::scallop::scallop_toolpath_iso_field_with_cancel(
             m,
             idx,
@@ -2184,13 +2303,18 @@ pub(crate) fn generate_scallop(
         )
         .map_err(|_e| OperationError::Cancelled)?
     } else {
-        crate::scallop::scallop_toolpath_structured_annotated_with_cancel(
+        // The offset-cascade contour scallop IS the op §2 of the linking spec
+        // measured: breadth-first ring order, no reorder, no loop rotation
+        // and no stock ceiling. It opts in.
+        let stage = finishing_link_stage(ctx, cfg.intra_pass_hookup_mm);
+        crate::scallop::scallop_toolpath_structured_annotated_with_cancel_and_stage(
             m,
             idx,
             ctx.tool_def,
             &params,
             ctx.debug_ctx,
             ctx.boundary_regions,
+            stage.as_ref(),
             &(|| ctx.cancel.load(Ordering::SeqCst)),
         )
         .map_err(|_e| OperationError::Cancelled)?
@@ -2851,6 +2975,37 @@ pub(crate) fn generate_drop_cutter(
             ctx.boundary_regions,
         )
     };
+    // G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
+    // family's fingerprint does not move until an operator asks for it.
+    //
+    // Why it is wired at all: the raster's only linker today is the
+    // serpentine hookup in `toolpath.rs`, whose cap is one grid diagonal, so
+    // two runs of the same row split by an excluded cell — two steps apart —
+    // cannot join. On the wanaka island raster that is 953 row fragments and
+    // 954 retracts (`planning/linking_2026-09-09/SPEC.md` §1). Raster rows
+    // are OPEN runs, so no fragment kind is declared: reversing a row would
+    // flip its cut direction and rotation does not apply.
+    let tp = match finishing_link_stage(ctx, cfg.hookup_mm) {
+        None => tp,
+        Some(stage) => relink_in_adapter(
+            &stage,
+            &crate::surface_link::LinkGeometry {
+                // The raster rides the drop-cutter grid itself, so there is
+                // no crest to stand off from and no separate leave dial on
+                // this op (`WaterlineConfig`'s absent-capability note).
+                stock_to_leave: 0.0,
+                sampling: grid.x_step.max(0.01),
+                feed_rate,
+                plunge_rate,
+                safe_z,
+            },
+            m,
+            idx,
+            ctx.tool_def,
+            tp,
+            "drop_cutter",
+        ),
+    };
     Ok(with_depth_run_annotation(
         generated_with_cut_run_spans(tp, "Raster row"),
         ctx.semantic_ctx,
@@ -2891,6 +3046,33 @@ pub(crate) fn generate_waterline(
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
+    // G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
+    // family's fingerprint does not move.
+    //
+    // No fragment kind is declared yet. A waterline level IS a closed loop
+    // and would benefit from rotation, but this adapter cannot see which of
+    // the emitted fragments are whole levels and which are arcs the boundary
+    // split, and a mis-declared kind rotates the wrong fragment. Declaring
+    // them inside `waterline_toolpath_with_cancel`, the way the scallop does,
+    // is the follow-up.
+    let tp = match finishing_link_stage(ctx, cfg.hookup_mm) {
+        None => tp,
+        Some(stage) => relink_in_adapter(
+            &stage,
+            &crate::surface_link::LinkGeometry {
+                stock_to_leave: params.stock_to_leave,
+                sampling: cfg.sampling.max(0.01),
+                feed_rate: params.feed_rate,
+                plunge_rate: params.plunge_rate,
+                safe_z: params.safe_z,
+            },
+            m,
+            idx,
+            ctx.tool_def,
+            tp,
+            "waterline",
+        ),
+    };
     // R2.8: waterline has a real Z-level ladder (unlike the single-level
     // Face op) — pass it to the span builder instead of `&[]` so
     // `spans_from_depth_runs`'s `nearest_level` snapping has real levels

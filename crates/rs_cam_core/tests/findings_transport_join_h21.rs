@@ -188,6 +188,9 @@ fn every_finding_recorded() -> GenerationFindings {
         relink: Some(RelinkTotals {
             fragments: 9,
             surface_links: 3,
+            at_depth_links: 2,
+            clearance_hops: 1,
+            rotated_loops: 1,
             retract_links: 5,
             too_far: 2,
             off_surface: 1,

@@ -708,6 +708,9 @@ fn pencil_link_moves_preserves_material_state() {
             route_width_factor: 2.0,
             reference_cutter: None,
             link_kinematics: None,
+            // G-LINKSTAGE: `None` = the hop cap IS `hookup_distance`, i.e.
+            // the pre-stage emitter, which is what this suite measures.
+            link_hop_distance_mm: None,
         },
     );
     if raw.moves.is_empty() {

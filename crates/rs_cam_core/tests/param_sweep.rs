@@ -1689,6 +1689,7 @@ fn default_pencil_params() -> PencilParams {
         route_width_factor: 2.0,
         reference_cutter: None,
         link_kinematics: None,
+        link_hop_distance_mm: None,
     }
 }
 

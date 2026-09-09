@@ -447,6 +447,7 @@ fn fixture_session_3d() -> ProjectSession {
         slope_to: 90.0,
         spindle_rpm: Some(18_000),
         scallop_height: None,
+        hookup_mm: 0.0,
     });
     let waterline = OperationConfig::Waterline(WaterlineConfig {
         z_step: 1.5,
@@ -455,6 +456,7 @@ fn fixture_session_3d() -> ProjectSession {
         plunge_rate: 400.0,
         continuous: false,
         spindle_rpm: Some(18_000),
+        hookup_mm: 0.0,
     });
 
     let mut dc = toolpath_config("DropCutter", drop_cutter, tool_id, model_id);

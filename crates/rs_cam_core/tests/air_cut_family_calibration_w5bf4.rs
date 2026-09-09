@@ -660,6 +660,7 @@ fn hemi_cases() -> Vec<HemiCase> {
                     slope_to: 90.0,
                     spindle_rpm: Some(18_000),
                     scallop_height: None,
+                    hookup_mm: 0.0,
                 })
             },
             ToolType::BallNose,
@@ -675,6 +676,7 @@ fn hemi_cases() -> Vec<HemiCase> {
                     plunge_rate: 400.0,
                     continuous: false,
                     spindle_rpm: Some(18_000),
+                    hookup_mm: 0.0,
                 })
             },
             ToolType::BallNose,

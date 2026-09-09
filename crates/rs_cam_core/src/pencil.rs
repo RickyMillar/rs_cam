@@ -184,6 +184,29 @@ pub struct PencilParams {
     /// link whenever `build_surface_link` succeeds within
     /// `hookup_distance`.
     pub link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    /// G-LINKSTAGE: a SEPARATE, usually shorter, cap on the gap a CLEARANCE
+    /// HOP may span — the link that lifts clear of standing material and
+    /// descends again ([`plan_link_lift`]). `None` (the shipped value) means
+    /// "the same cap as [`Self::hookup_distance`]", which is byte-identical
+    /// to the pre-stage emitter.
+    ///
+    /// # Why the two caps must differ
+    ///
+    /// The two link tiers do NOT buy the same thing, and the measurement
+    /// says so (`planning/pencil_linking_2026-09-04.md`, "REACH LEVER
+    /// FALSIFIED"). A link that arrives AT CUTTING DEPTH removes the next
+    /// fragment's entry outright — and on this pass an entry is 7.2 s
+    /// against 0.16 s of cutting, so that is the whole prize. A link that
+    /// LIFTS still lands from above, so the fragment still pays
+    /// [`emit_entry_descent`], and the lift itself has to be travelled.
+    ///
+    /// With one cap governing both, widening it to reach more at-depth
+    /// candidates drags in long candidates that cross finished terrain,
+    /// which G-LINKLOAD then lifts: on realistic after-scallop stock, 5 mm →
+    /// 30 mm made the pass **4.2× worse** (4 985 s → 20 997 s), with
+    /// `tip_float` 528 → 4 917. Splitting the caps is what lets the at-depth
+    /// reach grow without buying that.
+    pub link_hop_distance_mm: Option<f64>,
 }
 
 /// Sensible test/prototyping defaults, sourced from the field-level
@@ -218,6 +241,8 @@ impl Default for PencilParams {
             route_width_factor: route_width_factor_default(),
             reference_cutter: None,
             link_kinematics: None,
+            // "Same cap as `hookup_distance`" — byte-identical.
+            link_hop_distance_mm: None,
         }
     }
 }
@@ -1591,7 +1616,71 @@ pub(crate) fn emit_paths_with_entry_stock(
     params: &PencilParams,
     entry_stock: Option<&crate::dexel_stock::TriDexelStock>,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
+    let (tp, anns, _report) =
+        emit_paths_with_entry_stock_reported(all_paths, mesh, index, cutter, params, entry_stock);
+    (tp, anns)
+}
+
+/// Why each pencil junction did or did not link (G-LINKSTAGE instrument).
+///
+/// The pencil emitter is the last surface op on its own hand-rolled linker,
+/// and it published NOTHING about its refusals — so a pass that spends 84 %
+/// of its wall clock on entry motion (2 307 s of entry against 50 s of
+/// cutting, `planning/linking_2026-09-09/SPEC.md` §8) could not say which of
+/// the four gates produced it. One regen now names the binding constraint,
+/// the way the scallop's `"Scallop intra-pass relink"` line already does.
+///
+/// [`Self::linked_at_depth`] is the ACCEPTANCE measure, apart from
+/// [`Self::linked_via_hop`] and not summed with it: only an at-depth link
+/// removes [`emit_entry_descent`], and on this pass an entry costs 7.2 s
+/// against 0.16 s of cutting per fragment. A hop that removes a retract and
+/// leaves the ramp standing scores zero here, correctly.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PencilLinkReport {
+    /// Transitions between two emitted runs — every junction that had a link
+    /// decision to make. The first run of the pass is not one.
+    pub junctions: usize,
+    /// TIER (a): joined at cutting depth. The tool never left the material,
+    /// so the next run needs no entry at all.
+    pub linked_at_depth: usize,
+    /// TIER (b): joined by a lift clear of standing material and a descent.
+    /// Removes the retract; the entry survives as a (shallower) descent.
+    pub linked_via_hop: usize,
+    /// Gap beyond [`PencilParams::hookup_distance`].
+    pub too_far: usize,
+    /// Gap inside the at-depth cap but beyond
+    /// [`PencilParams::link_hop_distance_mm`], after the candidate turned out
+    /// to need a lift. Structurally `0` while that dial is `None`.
+    pub hop_too_far: usize,
+    /// The surface-following candidate lost contact with the mesh.
+    pub off_surface: usize,
+    /// Clearing the standing material reached `safe_z`, so the retract was
+    /// kept ([`LinkLift::Refused`]).
+    pub ceiling_refused: usize,
+    /// The candidate was safe but the F-034 integrator priced it above the
+    /// retract it would replace.
+    pub slower_than_retract: usize,
+}
+
+/// [`emit_paths_with_entry_stock`] with the link report a sentry can read.
+pub(crate) fn emit_paths_with_entry_stock_reported(
+    all_paths: &[PencilPath],
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+    entry_stock: Option<&crate::dexel_stock::TriDexelStock>,
+) -> (Toolpath, Vec<PencilRuntimeAnnotation>, PencilLinkReport) {
     use crate::toolpath::MoveIntent;
+
+    // The HOP cap. `None` means "the same cap as `hookup_distance`", which is
+    // the byte-identical shipped value — see
+    // `PencilParams::link_hop_distance_mm` for why the two tiers want
+    // different numbers.
+    let hop_cap = params
+        .link_hop_distance_mm
+        .unwrap_or(params.hookup_distance);
+    let mut report = PencilLinkReport::default();
 
     let contact_radius = tip_contact_radius(cutter);
     // How high the tool's own envelope stands at the edge of that disc, above
@@ -1627,11 +1716,16 @@ pub(crate) fn emit_paths_with_entry_stock(
             // F-034 integrator, and only kept when it's actually cheaper —
             // see the doc comment above.
             let link = prev_end.and_then(|end| {
+                report.junctions += 1;
                 let gap = ((first.x - end.x).powi(2) + (first.y - end.y).powi(2)).sqrt();
-                if gap <= 1e-6 || gap > params.hookup_distance {
+                if gap <= 1e-6 {
                     return None;
                 }
-                let link_pts = build_surface_link(
+                if gap > params.hookup_distance {
+                    report.too_far += 1;
+                    return None;
+                }
+                let Some(link_pts) = build_surface_link(
                     end,
                     first,
                     mesh,
@@ -1639,7 +1733,10 @@ pub(crate) fn emit_paths_with_entry_stock(
                     cutter,
                     params.stock_to_leave,
                     params.sampling,
-                )?;
+                ) else {
+                    report.off_surface += 1;
+                    return None;
+                };
                 // G-LINKLOAD: the candidate rides the MESH, which is only the
                 // material when nothing stands above it. Lift it clear where
                 // something does, and keep the retract when clearing costs the
@@ -1663,8 +1760,22 @@ pub(crate) fn emit_paths_with_entry_stock(
                         );
                         match lift {
                             LinkLift::NotNeeded => PencilJunction::Surface(link_pts),
-                            LinkLift::Lifted(pts) => PencilJunction::Lifted(pts),
-                            LinkLift::Refused => return None,
+                            LinkLift::Lifted(pts) => {
+                                // TIER (b) has its own, shorter, reach. A hop
+                                // does not remove the entry, and a long one
+                                // crosses more finished terrain to buy less —
+                                // the measured 4.2× regression the split cap
+                                // exists to prevent.
+                                if gap > hop_cap {
+                                    report.hop_too_far += 1;
+                                    return None;
+                                }
+                                PencilJunction::Lifted(pts)
+                            }
+                            LinkLift::Refused => {
+                                report.ceiling_refused += 1;
+                                return None;
+                            }
                         }
                     }
                 };
@@ -1703,7 +1814,12 @@ pub(crate) fn emit_paths_with_entry_stock(
                             lk.max_feed_mm_min,
                             lk.rapid_feed_mm_min,
                         );
-                        (surface_t <= retract_t).then_some(candidate)
+                        if surface_t <= retract_t {
+                            Some(candidate)
+                        } else {
+                            report.slower_than_retract += 1;
+                            None
+                        }
                     }
                     None => Some(candidate),
                 }
@@ -1711,6 +1827,7 @@ pub(crate) fn emit_paths_with_entry_stock(
 
             match link {
                 Some(PencilJunction::Surface(link_pts)) => {
+                    report.linked_at_depth += 1;
                     // Surface-following link (no retract / no re-plunge), then the body.
                     for lp in &link_pts {
                         tp.feed_to_with_intent(*lp, params.feed_rate, MoveIntent::Linking);
@@ -1718,6 +1835,7 @@ pub(crate) fn emit_paths_with_entry_stock(
                     tp.feed_to_with_intent(first, params.feed_rate, MoveIntent::Linking);
                 }
                 Some(PencilJunction::Lifted(link_pts)) => {
+                    report.linked_via_hop += 1;
                     // Stock-aware link: the transit is entirely above the
                     // standing material, so it ends ABOVE `first` rather than
                     // on it. The way down is an entry, not a link — see
@@ -1787,7 +1905,26 @@ pub(crate) fn emit_paths_with_entry_stock(
         tp.rapid_to_with_intent(P3::new(end.x, end.y, params.safe_z), MoveIntent::Retract);
     }
 
-    (tp, annotations)
+    // G-LINKSTAGE instrument. Same shape as the scallop's
+    // `"Scallop intra-pass relink"` line, so one regen names the binding
+    // constraint on either op with the same reading.
+    tracing::info!(
+        junctions = report.junctions,
+        // The acceptance measure. `linked_at_depth` is the only counter that
+        // removes an entry, and entry is ~84 % of this pass.
+        linked_at_depth = report.linked_at_depth,
+        linked_via_hop = report.linked_via_hop,
+        too_far = report.too_far,
+        hop_too_far = report.hop_too_far,
+        off_surface = report.off_surface,
+        ceiling_refused = report.ceiling_refused,
+        slower_than_retract = report.slower_than_retract,
+        hookup_mm = params.hookup_distance,
+        hop_cap_mm = hop_cap,
+        "Pencil link stage"
+    );
+
+    (tp, annotations, report)
 }
 
 // infallible: cancel closure always returns false, so Cancelled is unreachable
@@ -3252,6 +3389,85 @@ mod tests {
             sampling: 0.5,
             ..PencilParams::default()
         }
+    }
+
+    // ── G-LINKSTAGE: the pencil's own link counters ─────────────────────
+
+    /// Two runs on a flat surface, a stated XY gap apart, emitted through the
+    /// real emitter so the report reads the shipped decision path.
+    fn two_run_link_report(gap_mm: f64, hop_cap: Option<f64>) -> PencilLinkReport {
+        let mesh = make_convex_box(40.0);
+        let index = SpatialIndex::build(&mesh, 10.0);
+        let tool = BallEndmill::new(2.0, 25.0);
+        let mk = |x0: f64, i: usize| PencilPath {
+            points: vec![P3::new(x0, 25.0, 0.0), P3::new(x0 + 2.0, 25.0, 0.0)],
+            chain_index: i,
+            chain_total: 2,
+            offset_index: 1,
+            offset_total: 1,
+            offset_mm: 0.0,
+            is_centerline: true,
+        };
+        let params = PencilParams {
+            hookup_distance: 10.0,
+            link_hop_distance_mm: hop_cap,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 15.0,
+            sampling: 1.0,
+            ..Default::default()
+        };
+        let (_, _, report) = emit_paths_with_entry_stock_reported(
+            &[mk(10.0, 1), mk(12.0 + gap_mm, 2)],
+            &mesh,
+            &index,
+            &tool,
+            &params,
+            None,
+        );
+        report
+    }
+
+    /// The instrument the SPEC's step 1 asks for: one regen names the binding
+    /// constraint. Before it, the pencil emitter published nothing about its
+    /// refusals, so a pass that is 84 % entry motion could not say which of
+    /// the four gates produced it.
+    #[test]
+    fn the_link_report_separates_a_reached_junction_from_a_too_far_one() {
+        let near = two_run_link_report(4.0, None);
+        assert_eq!(near.junctions, 1, "{near:?}");
+        assert_eq!(
+            near.linked_at_depth, 1,
+            "a 4 mm gap inside a 10 mm hookup on flat ground links AT DEPTH — \
+             the only tier that removes the next run's entry: {near:?}"
+        );
+        assert_eq!(near.linked_via_hop, 0, "{near:?}");
+        assert_eq!(near.too_far, 0, "{near:?}");
+
+        let far = two_run_link_report(20.0, None);
+        assert_eq!(far.junctions, 1, "{far:?}");
+        assert_eq!(
+            far.too_far, 1,
+            "a 20 mm gap is beyond the 10 mm hookup, and the report must SAY \
+             that rather than only showing a missing link: {far:?}"
+        );
+        assert_eq!(far.linked_at_depth, 0, "{far:?}");
+    }
+
+    /// The hop cap governs the LIFTED tier only, so on a junction that never
+    /// needed a lift it changes nothing. `entry_stock: None` cannot reach
+    /// `plan_link_lift` at all, which is what makes this a controlled A/B on
+    /// the dial itself.
+    #[test]
+    fn the_hop_cap_does_not_touch_an_at_depth_link() {
+        let default_cap = two_run_link_report(4.0, None);
+        let tiny_cap = two_run_link_report(4.0, Some(0.5));
+        assert_eq!(
+            default_cap, tiny_cap,
+            "an at-depth link is not a hop; shrinking the hop cap to 0.5 mm \
+             must not refuse a 4 mm at-depth link"
+        );
+        assert_eq!(tiny_cap.hop_too_far, 0, "{tiny_cap:?}");
     }
 
     /// A link riding the bottom of a valley is NOT ploughing a ridge, even

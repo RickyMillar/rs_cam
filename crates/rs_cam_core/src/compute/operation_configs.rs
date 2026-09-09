@@ -555,6 +555,24 @@ pub struct DropCutterConfig {
     /// baseline. Has no effect on flat/bull tools (no spherical tip).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scallop_height: Option<f64>,
+    /// G-LINKSTAGE: cap on the XY gap a raster-row-to-row **surface link**
+    /// may span, in mm. **Ships at `0.0`, which is OFF** — the input is
+    /// returned untouched before the relinker is entered, so this family's
+    /// emission is byte-identical to the pre-stage build until an operator
+    /// asks for a link (`chain_distance_mm`'s pattern).
+    ///
+    /// The raster's own linker is the serpentine hookup in
+    /// [`crate::toolpath`], whose cap is one grid diagonal
+    /// (`hypot(x_step, y_step) * 1.05`). Two runs of one row split by an
+    /// excluded cell are two steps apart, so nothing inside a row can link:
+    /// on the wanaka island raster that is 953 row fragments and 954 retracts
+    /// (`planning/linking_2026-09-09/SPEC.md` §1). With this above zero the
+    /// shared stage re-decides each junction on evidence — drop-cutter
+    /// sampled so it cannot gouge, lifted clear of anything standing in the
+    /// input stock, refused if it leaves the machining regions, and (with
+    /// kinematics) kept only when it beats the retract on time.
+    #[serde(default)]
+    pub hookup_mm: f64,
 }
 
 impl Default for DropCutterConfig {
@@ -568,6 +586,9 @@ impl Default for DropCutterConfig {
             slope_to: 90.0,
             spindle_rpm: None,
             scallop_height: None,
+            // OFF. See the field doc: byte-identity for a family that has
+            // not opted in is the gate this dial exists to hold.
+            hookup_mm: 0.0,
         }
     }
 }
@@ -760,6 +781,18 @@ pub struct WaterlineConfig {
     pub continuous: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// G-LINKSTAGE: cap on the XY gap a level-to-level **surface link** may
+    /// span, in mm. **Ships at `0.0`, which is OFF** — same contract and same
+    /// reason as [`DropCutterConfig::hookup_mm`].
+    ///
+    /// Waterline levels are closed loops, so this family has the most to gain
+    /// from the stage's loop rotation — but it does not declare a
+    /// [`crate::surface_link::FragmentKind`] yet (the adapter cannot tell a
+    /// whole level from a boundary-split arc), so today the stage links and
+    /// reorders it without rotating. Declaring the kinds in the generator is
+    /// the follow-up.
+    #[serde(default)]
+    pub hookup_mm: f64,
 }
 
 impl Default for WaterlineConfig {
@@ -771,6 +804,8 @@ impl Default for WaterlineConfig {
             plunge_rate: 500.0,
             continuous: false,
             spindle_rpm: None,
+            // OFF. See the field doc.
+            hookup_mm: 0.0,
         }
     }
 }

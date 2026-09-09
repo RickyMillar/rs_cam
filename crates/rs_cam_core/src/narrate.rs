@@ -1412,8 +1412,10 @@ fn append_relink_declines(
         "Relink declines: {declined} junction(s) kept their retract — too_far \
          (gap > hookup): {}, off_surface: {}, slower_than_retract: {}, \
          outside_boundary (surface-riding links only): {}, \
-         ceiling_above_safe_z: {}. {} fragment(s), {} linked. Tuning lever: \
-         `intra_region_hookup_mm`. Report-only — no gate consumes this.\n",
+         ceiling_above_safe_z: {}. {} fragment(s), {} linked ({} at cutting \
+         depth — these removed an entry — and {} clearance hops, which did \
+         not), {} loop(s) rotated. Tuning lever: `intra_region_hookup_mm`. \
+         Report-only — no gate consumes this.\n",
         r.too_far,
         r.off_surface,
         r.slower_than_retract,
@@ -1421,6 +1423,9 @@ fn append_relink_declines(
         r.ceiling_above_safe_z,
         r.fragments,
         r.surface_links,
+        r.at_depth_links,
+        r.clearance_hops,
+        r.rotated_loops,
     ));
 }
 

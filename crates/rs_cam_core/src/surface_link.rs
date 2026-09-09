@@ -76,7 +76,13 @@ pub fn build_surface_link(
 /// [`Self::fallback_top_z`]" — the analytic fresh-stock top, the same
 /// fallback [`crate::dressup::optimize_entry_descents`] takes. Only
 /// `link_ceiling: None` disables the lift, and it is the byte-identical
-/// legacy behaviour the finishing families (scallop, unified finish) keep.
+/// legacy behaviour.
+///
+/// Since G-LINKSTAGE (2026-09-09) every opted-in finishing family takes a
+/// ceiling through [`FinishingLinkStage`] whenever it holds an input stock
+/// snapshot, and `None` means only "fresh stock, the mesh IS the material".
+/// The scallop used to pass `None` unconditionally, which left its links
+/// riding the mesh under whatever a prior op had left standing.
 #[derive(Clone, Copy)]
 pub struct LinkCeiling<'a> {
     /// The op's INPUT stock, when a simulated snapshot is in scope.
@@ -186,6 +192,253 @@ impl LinkCeiling<'_> {
     }
 }
 
+/// What one fragment IS, so the stage knows whether it may change where the
+/// fragment starts.
+///
+/// A fragment is a maximal run of non-`Rapid` moves. That says nothing about
+/// its TOPOLOGY, and the difference decides whether the stage has one
+/// candidate entry point or a whole circumference of them:
+///
+/// * [`Self::OpenRun`] — the ends are fixed. A raster row, a pencil trace, a
+///   ring arc that the keep predicate split. The stage never reverses it
+///   (that would flip climb/conventional), so its entry is its first point
+///   and nothing else.
+/// * [`Self::ClosedLoop`] — the fragment ends where it starts. A scallop
+///   ring, a waterline loop, an iso-field level set. Every point on it is a
+///   legal entry, so the stage may ROTATE the loop to begin at the point
+///   nearest the previous fragment's exit, and close it there instead.
+///
+/// Rotation is what makes reordering pay on rings. Measured on the wanaka200
+/// island scallop (`planning/linking_2026-09-09/SPEC.md` §7): of 600 ring
+/// junctions the relink rejected 493 as `too_far` and ZERO on the kinematics
+/// or surface tests, because the offset cascade emits rings breadth-first and
+/// each run started at the offset library's own start vertex — two radially
+/// adjacent rings 1.03 mm apart met at unrelated points of their
+/// circumference. That is a candidate-set defect, not a distance-cap one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FragmentKind {
+    /// Fixed ends. The default, and the byte-identical legacy treatment.
+    #[default]
+    OpenRun,
+    /// Closed: the stage may rotate the loop to start near the previous exit.
+    ClosedLoop,
+}
+
+/// The rate and tolerance half of a relink, which every generator already
+/// holds in its own params.
+///
+/// Split from [`FinishingLinkStage`] so the shared finishing configuration
+/// can be built once from an [`crate::compute`] execution context and handed
+/// to a generator that supplies these from its own dials — the two halves
+/// come from different places and neither can be derived from the other.
+#[derive(Debug, Clone, Copy)]
+pub struct LinkGeometry {
+    pub stock_to_leave: f64,
+    /// Sample spacing along a candidate link (drop-cutter probe density).
+    pub sampling: f64,
+    pub feed_rate: f64,
+    pub plunge_rate: f64,
+    pub safe_z: f64,
+}
+
+/// The one FINISHING configuration of [`relink_fragments`], built once and
+/// shared by every finishing generator (G-LINKSTAGE).
+///
+/// Before this existed each call site spelled the same nine fields out by
+/// hand, and they disagreed: the unified finish took its ceiling from
+/// `ctx.initial_stock` while the scallop passed `link_ceiling: None`, so on a
+/// `FromRemainingStock` island pass the scallop could never take a lifted
+/// finger-to-finger hop and every one of those junctions paid a full safe-Z
+/// retract round trip. The ceiling is also the SAFETY half: without it a
+/// surface-riding link rides the MESH, which on a rest-driven pass sits below
+/// the standing material — a lateral feed at cut depth straight through stock,
+/// the G-ISOCLIPRAPID shape.
+///
+/// The fields here are the ones an execution context knows and a generator
+/// does not; [`LinkGeometry`] carries the ones the generator knows.
+#[derive(Debug, Clone, Copy)]
+pub struct FinishingLinkStage<'a> {
+    /// Candidate CAP on the XY gap a link may span. `0.0` disables the stage
+    /// — the byte-identity dial every family that has not opted in keeps.
+    pub hookup_distance: f64,
+    /// The op's INPUT stock, when a simulated snapshot is in scope. `None` on
+    /// a fresh-stock pass, where the mesh IS the material — that arm is
+    /// byte-identical to the legacy surface-riding link.
+    pub link_ceiling: Option<LinkCeiling<'a>>,
+    /// The op's machining regions. A surface-riding link is a cutting feed,
+    /// so it may not leave them; a LIFTED one may (see
+    /// [`RelinkParams::airborne_links_may_leave_territory`]).
+    pub boundary: Option<&'a crate::region_set::RegionSet<'a>>,
+    /// Machine envelope used to cost a candidate against the retract it would
+    /// replace (F-034 integrator).
+    pub link_kinematics: Option<&'a crate::machine_kinematics::LinkKinematics>,
+}
+
+impl<'a> FinishingLinkStage<'a> {
+    /// Build the relink parameters for one generator's pass.
+    ///
+    /// The three op PRIORS are fixed here, on purpose — they are what makes
+    /// this the finishing configuration rather than the engraving one:
+    ///
+    /// * `reorder: true` — a link is only possible when the next fragment is
+    ///   CLOSE, so ordering and linking are the same lever applied twice. It
+    ///   is forward-only: a fragment is never reversed, so cut direction, and
+    ///   with it climb/conventional, is preserved.
+    /// * `flush_ride: true` — flush ground under a finishing pass is the
+    ///   PRIOR pass's machined output, so riding it is a sub-cusp skim, not a
+    ///   slide across the raw workpiece face.
+    /// * `airborne_links_may_leave_territory: true` — a finishing boundary is
+    ///   a region polygon whose job is to confine CUTTING. On a dendritic
+    ///   island the straight line between two fragments of the same region
+    ///   leaves it constantly.
+    #[must_use]
+    pub fn params(&self, geom: &LinkGeometry) -> RelinkParams<'a> {
+        RelinkParams {
+            hookup_distance: self.hookup_distance,
+            stock_to_leave: geom.stock_to_leave,
+            sampling: geom.sampling,
+            feed_rate: geom.feed_rate,
+            plunge_rate: geom.plunge_rate,
+            safe_z: geom.safe_z,
+            link_kinematics: self.link_kinematics,
+            reorder: true,
+            boundary: self.boundary,
+            link_ceiling: self.link_ceiling,
+            flush_ride: true,
+            airborne_links_may_leave_territory: true,
+        }
+    }
+}
+
+/// How close two targets must be, in every axis, for a fragment to count as
+/// a CLOSED loop. The generators emit the closing move onto the stored start
+/// point itself, so this is an exact-equality test with room for one f64
+/// round trip, never a tolerance the caller can tune.
+const LOOP_CLOSE_EPS_MM: f64 = 1e-6;
+
+/// Upper bound on the extra candidate points a closed loop contributes to the
+/// reorder picker. Enough to measure a ring by its nearest arc rather than by
+/// its arbitrary start vertex; small enough that a 600-ring pass adds tens of
+/// thousands of points, not millions.
+const LOOP_SEED_POINTS: usize = 16;
+
+/// Evenly spaced XY samples of a closed loop, for the reorder picker.
+///
+/// Deterministic by construction (a fixed stride over the stored points), so
+/// two runs of the same generator seed the picker identically.
+fn loop_seed_points(moves: &[(usize, crate::toolpath::Move)]) -> Vec<(f64, f64)> {
+    let n = moves.len();
+    if n <= 2 {
+        return Vec::new();
+    }
+    let stride = n.div_ceil(LOOP_SEED_POINTS).max(1);
+    moves
+        .iter()
+        .step_by(stride)
+        .map(|(_, m)| (m.target.x, m.target.y))
+        .collect()
+}
+
+/// Rotate a CLOSED-LOOP fragment so it begins at the loop point nearest
+/// `from`, and closes back there.
+///
+/// Returns `None` — leave the fragment exactly as it is — whenever the
+/// rotation cannot be proved sound or would change nothing:
+///
+/// * fewer than four moves (nothing to rotate onto);
+/// * any move that is not `Linear`. An arc carries I/J offsets measured from
+///   its own start, which a rotation would have to recompute. The stage runs
+///   BEFORE the dressups, so no shipped caller can reach this — it is a guard
+///   on a generic kernel, not a case;
+/// * the last target is not the first one, i.e. the caller called this an
+///   open run's kind by mistake;
+/// * the nearest point is already the start.
+///
+/// # What the rotation preserves, and what it assumes
+///
+/// The SET of cut positions is preserved exactly: the loop's points are
+/// re-ordered, never resampled, and the closing move is re-pointed at the new
+/// start. Cut DIRECTION is preserved: the walk goes forward around the loop
+/// from the new start, so climb/conventional does not flip.
+///
+/// It ASSUMES the loop's body moves share one feed rate and one intent, and
+/// re-stamps every rotated move with the attributes of `moves[1]` — the input
+/// fragment's first body cut. It has to: `moves[0]` is the ENTRY (plunge rate,
+/// `EntryPlunge`), and after a rotation that move sits in the middle of the
+/// cut, where a plunge feed would be wrong. Every generator that declares
+/// [`FragmentKind::ClosedLoop`] emits one uniform ring, and the position-0
+/// attributes are unused anyway — [`relink_fragments`] re-emits that move
+/// itself, from its target alone, as either a link feed or a plunge.
+fn rotate_closed_loop(
+    moves: &[(usize, crate::toolpath::Move)],
+    from: P3,
+) -> Option<Vec<(usize, crate::toolpath::Move)>> {
+    use crate::toolpath::{Move, MoveType};
+    if moves.len() < 4 {
+        return None;
+    }
+    if !moves
+        .iter()
+        .all(|(_, m)| matches!(m.move_type, MoveType::Linear { .. }))
+    {
+        return None;
+    }
+    let start = moves.first()?.1.target;
+    let close = moves.last()?.1.target;
+    if (close.x - start.x).abs() > LOOP_CLOSE_EPS_MM
+        || (close.y - start.y).abs() > LOOP_CLOSE_EPS_MM
+        || (close.z - start.z).abs() > LOOP_CLOSE_EPS_MM
+    {
+        return None;
+    }
+    // The loop's distinct points; the final move closes back onto index 0.
+    let cycle = moves.get(..moves.len() - 1)?;
+    // Only the two Copy attributes are needed; the `Move` itself is not
+    // cloned.
+    let (body_type, body_intent) = {
+        let body = moves.get(1)?;
+        (body.1.move_type, body.1.intent)
+    };
+    let mut best = 0usize;
+    let mut best_d = f64::INFINITY;
+    for (k, (_, m)) in cycle.iter().enumerate() {
+        let d = (m.target.x - from.x).powi(2) + (m.target.y - from.y).powi(2);
+        if d < best_d {
+            best_d = d;
+            best = k;
+        }
+    }
+    if best == 0 {
+        return None;
+    }
+    let n = cycle.len();
+    let mut out: Vec<(usize, Move)> = Vec::with_capacity(moves.len());
+    for step in 0..n {
+        let (old, mv) = cycle.get((best + step) % n)?;
+        out.push((
+            *old,
+            Move {
+                target: mv.target,
+                move_type: body_type,
+                intent: body_intent,
+            },
+        ));
+    }
+    // Close onto the new start, carrying the input's own closing index so the
+    // provenance stays a bijection over this fragment's moves.
+    let (close_old, _) = moves.last()?;
+    let new_start = cycle.get(best)?.1.target;
+    out.push((
+        *close_old,
+        Move {
+            target: new_start,
+            move_type: body_type,
+            intent: body_intent,
+        },
+    ));
+    Some(out)
+}
+
 /// Inputs for [`relink_fragments`].
 #[derive(Debug, Clone, Copy)]
 pub struct RelinkParams<'a> {
@@ -289,10 +542,34 @@ pub struct RelinkParams<'a> {
 #[derive(Debug, Clone, Default)]
 pub struct RelinkReport {
     pub fragments: usize,
-    /// Junctions joined by a surface-following link (no retract).
+    /// Junctions joined by a link of either kind (no retract). Always
+    /// [`Self::at_depth_links`] + [`Self::clearance_hops`]; kept as the sum so
+    /// every existing reader keeps its meaning.
     pub surface_links: usize,
-    /// Junctions that fell back to retract → traverse → plunge.
+    /// TIER (a) — junctions joined by a link that arrives AT CUTTING DEPTH.
+    ///
+    /// The acceptance measure. Only this tier removes an ENTRY: the tool
+    /// never leaves the material, so the next fragment needs no plunge, no
+    /// ramp and no helix. On the wanaka pencil baseline an entry costs 7.2 s
+    /// against 0.16 s of cutting per fragment, so a link that removes a
+    /// retract but still lands from above scores zero there — which is why
+    /// this is counted apart from [`Self::clearance_hops`], not with it.
+    pub at_depth_links: usize,
+    /// TIER (b) — junctions joined by a link that LIFTED to the local stock
+    /// ceiling and descended again.
+    ///
+    /// Cheaper than a safe-Z retract (it clears only what stands between the
+    /// two fragments) but it still arrives from above, so the fragment still
+    /// pays a descent. Counted separately for exactly that reason: on a
+    /// retract-bound pass (the island scallop and raster) a hop is a real
+    /// win; on an entry-bound pass (pencil) it is not.
+    pub clearance_hops: usize,
+    /// TIER (c) — junctions that fell back to retract → traverse → plunge.
     pub retract_links: usize,
+    /// Closed-loop fragments the stage ROTATED to start near the previous
+    /// fragment's exit. `0` for every caller that declares no
+    /// [`FragmentKind`], which is the byte-identical legacy arm.
+    pub rotated_loops: usize,
     /// Junctions rejected because the gap exceeded `hookup_distance`.
     pub too_far: usize,
     /// Junctions where the tool would have lost surface contact.
@@ -349,14 +626,46 @@ pub struct RelinkReport {
 /// index-carrying channel the call site owns is brought along by the type
 /// system instead of by convention. `reorder` picks the provenance FLAVOUR:
 /// a permutation carries the foreign-intrusion drop rule a plain remap
-/// cannot express.
-#[allow(clippy::too_many_arguments)]
+/// cannot express — and so does a loop ROTATION, which is why
+/// [`relink_fragments_with_kinds`] reports `Permutation` whenever it rotates,
+/// even with `reorder: false`.
 pub fn relink_fragments(
     annotated: AnnotatedToolpath,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &RelinkParams<'_>,
+) -> (Transformed, RelinkReport) {
+    relink_fragments_with_kinds(annotated, mesh, index, cutter, params, None)
+}
+
+/// [`relink_fragments`] told what each fragment IS, so it may rotate a closed
+/// loop to start near the previous fragment's exit.
+///
+/// `fragment_kinds` is one [`FragmentKind`] per fragment, in EMITTED order —
+/// the order [`relink_fragments`] itself splits them out of the move list, so
+/// a caller builds it in the same loop that emits the runs. A slice whose
+/// length disagrees with the fragment count is REFUSED (logged, then treated
+/// as all-[`FragmentKind::OpenRun`]) rather than applied at an offset: a
+/// mis-aligned kind would rotate the wrong fragment, and a silent
+/// off-by-one in a cutting transform is not an acceptable failure mode.
+///
+/// `None` is byte-identical to [`relink_fragments`] — no rotation is
+/// attempted, and the visiting order is the one the plain entry point
+/// produces.
+///
+/// The kinds ride a PARAMETER rather than a [`RelinkParams`] field on
+/// purpose: `RelinkParams` is spelled out as an exhaustive struct literal at
+/// 27 sites across the crate and its tests, and a new field would rewrite
+/// every one of them for a value that only two callers can supply.
+#[allow(clippy::too_many_arguments)]
+pub fn relink_fragments_with_kinds(
+    annotated: AnnotatedToolpath,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RelinkParams<'_>,
+    fragment_kinds: Option<&[FragmentKind]>,
 ) -> (Transformed, RelinkReport) {
     use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
@@ -373,6 +682,16 @@ pub fn relink_fragments(
     // ── split into fragments, remembering each move's original index ────
     struct Fragment {
         moves: Vec<(usize, crate::toolpath::Move)>,
+    }
+    /// Which rung of the link ladder a kept candidate took. The distinction
+    /// the acceptance measure needs — see [`RelinkReport::at_depth_links`].
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum LinkTier {
+        /// (a) Arrives at cutting depth. Removes the next fragment's entry.
+        AtDepth,
+        /// (b) Lifts to the local stock ceiling and descends again. Cheaper
+        /// than a safe-Z retract; the entry survives.
+        ClearanceHop,
     }
     let mut frags: Vec<Fragment> = Vec::new();
     let mut cur: Vec<(usize, crate::toolpath::Move)> = Vec::new();
@@ -441,8 +760,36 @@ pub fn relink_fragments(
     }
 
     let entry_of = |f: &Fragment| -> P3 { f.moves.first().map_or(P3::origin(), |(_, m)| m.target) };
-    let exit_of = |f: &Fragment| -> P3 { f.moves.last().map_or(P3::origin(), |(_, m)| m.target) };
+    let first_of = |ms: &[(usize, crate::toolpath::Move)]| -> P3 {
+        ms.first().map_or(P3::origin(), |(_, m)| m.target)
+    };
+    let last_of = |ms: &[(usize, crate::toolpath::Move)]| -> P3 {
+        ms.last().map_or(P3::origin(), |(_, m)| m.target)
+    };
     let xy_gap = |a: P3, b: P3| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+
+    // ── fragment kinds ──────────────────────────────────────────────────
+    // One kind per fragment, in the order this pass split them out. A slice
+    // of the wrong length is refused rather than applied at an offset — see
+    // `relink_fragments_with_kinds`.
+    let kinds: Option<&[FragmentKind]> = match fragment_kinds {
+        Some(k) if k.len() == frags.len() => Some(k),
+        Some(k) => {
+            tracing::warn!(
+                declared = k.len(),
+                fragments = frags.len(),
+                "relink: fragment-kind slice does not match the fragment count; \
+                 treating every fragment as an open run"
+            );
+            None
+        }
+        None => None,
+    };
+    let kind_of = |fi: usize| -> FragmentKind {
+        kinds
+            .and_then(|k| k.get(fi).copied())
+            .unwrap_or(FragmentKind::OpenRun)
+    };
 
     // ── visiting order ──────────────────────────────────────────────────
     // Was a Θ(fragments²) scan: at the 12,780 fragments this op reaches on
@@ -453,40 +800,62 @@ pub fn relink_fragments(
     // order — and therefore the emitted toolpath — is unchanged. The
     // `usize::MAX` sentinel and its `break` are kept verbatim: they are what
     // a non-finite fragment entry used to do, and that must stay true.
-    let order: Vec<usize> = if params.reorder {
-        let n = frags.len();
-        let mut picker = crate::nn_order::NearestPicker::new(crate::nn_order::Metric::Euclid, n);
+    //
+    // Ordering and rotation are ONE interleaved walk, not two passes. The
+    // picker's next query is seeded from the previous fragment's EXIT, and a
+    // rotated loop exits somewhere else than the one it was emitted with — so
+    // computing the whole order first and rotating afterwards would steer
+    // every later pick from a position the tool never reaches. With
+    // `kinds: None` nothing rotates, so this walk produces exactly the order
+    // the two-pass form did.
+    let n_frags = frags.len();
+    let mut picker = if params.reorder {
+        let mut picker =
+            crate::nn_order::NearestPicker::new(crate::nn_order::Metric::Euclid, n_frags);
         for (j, f) in frags.iter().enumerate() {
             let e = entry_of(f);
             picker.push(j, e.x, e.y);
+            // A CLOSED LOOP may be entered anywhere on its circumference, so
+            // measuring it by its arbitrary start vertex alone under-rates a
+            // ring whose nearest point is half a diameter away from it. The
+            // picker takes several points per owner and reports the minimum
+            // over them (`nn_order`'s own contract), so seed the loop with a
+            // decimated, deterministic sample of itself.
+            if matches!(kind_of(j), FragmentKind::ClosedLoop) {
+                for (x, y) in loop_seed_points(&f.moves) {
+                    picker.push(j, x, y);
+                }
+            }
         }
         picker.build();
-        let mut order = Vec::with_capacity(n);
-        order.push(0);
         picker.remove(0);
-        let mut here = frags.first().map_or(P3::origin(), exit_of);
-        for _ in 1..n {
-            let best = match picker.nearest(here.x, here.y) {
-                Some((j, d)) if d < f64::INFINITY => j,
-                _ => usize::MAX,
-            };
-            let Some(next) = frags.get(best) else { break };
-            picker.remove(best);
-            here = exit_of(next);
-            order.push(best);
-        }
-        order
+        Some(picker)
     } else {
-        (0..frags.len()).collect()
+        None
     };
 
     // ── re-emit ─────────────────────────────────────────────────────────
     let mut out = Toolpath::new();
     let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = vec![None; n_in];
     let mut prev_exit: Option<P3> = None;
-    for &fi in &order {
-        let Some(frag) = frags.get(fi) else { continue };
-        let entry = entry_of(frag);
+    let mut visited = 0usize;
+    let mut next_fi: Option<usize> = (n_frags > 0).then_some(0);
+    while let Some(fi) = next_fi {
+        let Some(frag) = frags.get(fi) else { break };
+        // ROTATION (tier-independent): a closed loop starts wherever the
+        // generator's offset library happened to start it. Once the tool has
+        // a position, the loop may begin at its nearest point instead, which
+        // is what turns a `too_far` ring junction into a candidate at all.
+        let rotated = match (prev_exit, kind_of(fi)) {
+            (Some(from), FragmentKind::ClosedLoop) => rotate_closed_loop(&frag.moves, from),
+            _ => None,
+        };
+        if rotated.is_some() {
+            report.rotated_loops += 1;
+        }
+        let frag_moves: &[(usize, crate::toolpath::Move)] =
+            rotated.as_deref().unwrap_or(frag.moves.as_slice());
+        let entry = first_of(frag_moves);
         let junction_start = out.moves.len();
 
         let link = prev_exit.and_then(|from| {
@@ -501,7 +870,9 @@ pub fn relink_fragments(
             }
             let gap = xy_gap(from, entry);
             if gap <= 1e-6 {
-                return Some(Vec::new());
+                // The two fragments touch: the tool is already standing on
+                // the next entry, so nothing travels and nothing descends.
+                return Some((Vec::new(), LinkTier::AtDepth));
             }
             if gap > params.hookup_distance {
                 report.too_far += 1;
@@ -557,8 +928,11 @@ pub fn relink_fragments(
             // is an XY test, so lifting cannot change its answer) and
             // BEFORE the kinematics costing, so the cost model prices the
             // geometry that will actually be emitted.
-            let pts = match params.link_ceiling {
-                None => pts,
+            // TIER, decided here: without a ceiling the link rides the mesh
+            // at cut depth (a); with one it is (a) only when the whole hop
+            // reads flush, and otherwise the lifted clearance hop (b).
+            let (pts, tier) = match params.link_ceiling {
+                None => (pts, LinkTier::AtDepth),
                 Some(ceiling) => {
                     let surface_z_at = |x: f64, y: f64| {
                         let cl = point_drop_cutter(x, y, mesh, index, cutter);
@@ -618,7 +992,7 @@ pub fn relink_fragments(
                             report.outside_boundary += 1;
                             return None;
                         }
-                        pts
+                        (pts, LinkTier::AtDepth)
                     } else {
                         // Exit lift, then the interior samples, then the
                         // re-entry lift: the traverse is entirely at
@@ -642,7 +1016,7 @@ pub fn relink_fragments(
                             }
                             lifted.push(P3::new(x, y, z));
                         }
-                        lifted
+                        (lifted, LinkTier::ClearanceHop)
                     }
                 }
             };
@@ -669,19 +1043,23 @@ pub fn relink_fragments(
                         lk.rapid_feed_mm_min,
                     );
                     if surface_t <= retract_t {
-                        Some(pts)
+                        Some((pts, tier))
                     } else {
                         report.slower_than_retract += 1;
                         None
                     }
                 }
-                None => Some(pts),
+                None => Some((pts, tier)),
             }
         });
 
         match (link, prev_exit) {
-            (Some(pts), Some(_)) => {
+            (Some((pts, tier)), Some(_)) => {
                 report.surface_links += 1;
+                match tier {
+                    LinkTier::AtDepth => report.at_depth_links += 1,
+                    LinkTier::ClearanceHop => report.clearance_hops += 1,
+                }
                 for p in &pts {
                     out.feed_to_with_intent(*p, params.feed_rate, MoveIntent::Linking);
                 }
@@ -722,21 +1100,47 @@ pub fn relink_fragments(
         }
 
         // The last move re-emitted above lands on `entry`, so it stands in
-        // for `frag.moves[0]` — the plunge (or first cut) that used to do so.
-        if let Some((old, _)) = frag.moves.first()
+        // for `frag_moves[0]` — the plunge (or first cut) that used to do so.
+        // Under a rotation that is the move carrying the loop's NEW start
+        // point, not the input's own first move; both are moves of this
+        // fragment, and `rotate_closed_loop` keeps the input indices a
+        // bijection, so every input move is still accounted for exactly once.
+        if let Some((old, _)) = frag_moves.first()
             && let Some(slot) = old_to_new.get_mut(*old)
         {
             let last = junction_end.saturating_sub(1);
             *slot = Some(last..junction_end);
         }
-        for (old, mv) in frag.moves.iter().skip(1) {
+        for (old, mv) in frag_moves.iter().skip(1) {
             let new = out.moves.len();
             out.moves.push(mv.clone());
             if let Some(slot) = old_to_new.get_mut(*old) {
                 *slot = Some(new..new + 1);
             }
         }
-        prev_exit = Some(exit_of(frag));
+        let exit = last_of(frag_moves);
+        prev_exit = Some(exit);
+        visited += 1;
+
+        // Pick the next fragment from where the tool ACTUALLY stopped, which
+        // under a rotation is not where the input fragment ended.
+        next_fi = if visited >= n_frags {
+            None
+        } else {
+            match picker.as_mut() {
+                Some(picker) => match picker.nearest(exit.x, exit.y) {
+                    // The `usize::MAX` sentinel of the two-pass form: a
+                    // non-finite fragment entry ended the walk, and that must
+                    // stay true.
+                    Some((j, d)) if d < f64::INFINITY && j < n_frags => {
+                        picker.remove(j);
+                        Some(j)
+                    }
+                    _ => None,
+                },
+                None => Some(fi + 1),
+            }
+        };
     }
 
     if let Some(end) = prev_exit {
@@ -772,7 +1176,17 @@ pub fn relink_fragments(
     };
     // A reorder needs the drop rule a plain remap cannot state — see
     // `MoveProvenance::Permutation`.
-    let transformed = if params.reorder {
+    //
+    // A ROTATION needs it for the same reason, and it is not covered by
+    // `params.reorder`: rotating a closed loop scatters that fragment's own
+    // move indices, so a claim over part of it maps onto a bounding range
+    // holding moves from outside the claim. `Remap` would silently widen the
+    // claim to cover those strangers; `Permutation` DROPS it, which is the
+    // honest answer. G-LINKSTAGE deliberately reuses this flavour rather than
+    // adding a fourth: a rotation IS a permutation, it carries no distinct
+    // drop rule of its own, and the scallop's ring annotations anchor on the
+    // junction rapid (which no rotation moves), so nothing needs re-anchoring.
+    let transformed = if params.reorder || report.rotated_loops > 0 {
         Transformed::from_permutation(annotated, remap)
     } else {
         Transformed::from_remap(annotated, remap)

@@ -1627,6 +1627,9 @@ const DROP_CUTTER_PARAMS: &[ParamDef] = &[
     ParamDef::required("slope_from", "f64"),
     ParamDef::required("slope_to", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    // G-LINKSTAGE (2026-09-09) — the shared surface-link stage's cap.
+    // Absent, or 0.0, is OFF and byte-identical.
+    ParamDef::optional("hookup_mm", "f64"),
 ];
 
 const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
@@ -1674,6 +1677,8 @@ const WATERLINE_PARAMS: &[ParamDef] = &[
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("continuous", "bool"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    // G-LINKSTAGE (2026-09-09). Absent, or 0.0, is OFF and byte-identical.
+    ParamDef::optional("hookup_mm", "f64"),
 ];
 
 const PENCIL_PARAMS: &[ParamDef] = &[

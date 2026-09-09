@@ -1893,7 +1893,48 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
     boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
-    scallop_toolpath_structured_annotated_with_resolution(
+    scallop_toolpath_structured_annotated_with_cancel_and_stage(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        boundary_regions,
+        None,
+        cancel,
+    )
+}
+
+/// [`scallop_toolpath_structured_annotated_with_cancel`] with the shared
+/// finishing link stage (G-LINKSTAGE).
+///
+/// The shape this op takes for `planning/linking_2026-09-09/SPEC.md` §3.1,
+/// decided and recorded here: the stage RUNS INSIDE THE GENERATOR and its
+/// configuration is threaded in as a parameter, exactly as
+/// `unified_finish_toolpath_with_cancel_and_ceiling` threads its ceiling. The
+/// alternative — run the stage in the `execute.rs` adapter — would have to
+/// expose the per-ring annotations as a provenance channel, and the
+/// annotation reconcile already lives beside the relink call. The stage is
+/// NOT a `ScallopParams` field for a mechanical reason: that struct is built
+/// by literal in the op adapter, the unified-finish mid-steep band, the
+/// multitool planner and a dozen tests, and a borrowed field would put a
+/// lifetime on every one of them.
+///
+/// `None` is the legacy relink, byte for byte: `reorder: false`,
+/// `link_ceiling: None`, no loop rotation. That is what the ISO-FIELD entry
+/// point passes, so the field's fingerprint does not move.
+#[allow(clippy::too_many_arguments)]
+pub fn scallop_toolpath_structured_annotated_with_cancel_and_stage(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+    debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&RegionSet<'_>>,
+    link_stage: Option<&crate::surface_link::FinishingLinkStage<'_>>,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
+    let (tp, anns, report, _trace) = scallop_toolpath_research_with_stage(
         mesh,
         index,
         cutter,
@@ -1901,8 +1942,12 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
         debug,
         boundary_regions,
         scallop_generation_resolution(cutter, params.tolerance),
+        ScallopRingBudget::FlatGroundStepover,
+        ScallopStepoverPolicy::SHIPPED,
+        link_stage,
         cancel,
-    )
+    )?;
+    Ok((tp, anns, report))
 }
 
 /// [`scallop_toolpath_structured_annotated_with_cancel`] with the generation
@@ -2073,6 +2118,47 @@ pub fn scallop_toolpath_research(
     resolution: FinishResolutionPolicy,
     ring_budget: ScallopRingBudget,
     stepover_policy: ScallopStepoverPolicy,
+    cancel: &dyn CancelCheck,
+) -> Result<
+    (
+        Toolpath,
+        Vec<ScallopRuntimeAnnotation>,
+        ScallopReport,
+        ScallopStepoverTrace,
+    ),
+    Cancelled,
+> {
+    scallop_toolpath_research_with_stage(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        boundary_regions,
+        resolution,
+        ring_budget,
+        stepover_policy,
+        None,
+        cancel,
+    )
+}
+
+/// [`scallop_toolpath_research`] with the shared finishing link stage.
+///
+/// `link_stage: None` is the legacy intra-pass relink, byte for byte — which
+/// is what every research seam and the iso-field entry point pass.
+#[allow(clippy::too_many_arguments)]
+pub fn scallop_toolpath_research_with_stage(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+    debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&RegionSet<'_>>,
+    resolution: FinishResolutionPolicy,
+    ring_budget: ScallopRingBudget,
+    stepover_policy: ScallopStepoverPolicy,
+    link_stage: Option<&crate::surface_link::FinishingLinkStage<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<
     (
@@ -2327,6 +2413,13 @@ pub fn scallop_toolpath_research(
     // Convert rings to toolpath
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
+    // G-LINKSTAGE: what each emitted fragment IS, parallel to the fragments
+    // `surface_link::relink_fragments` will split back out of `tp`. Built in
+    // the SAME loop that emits the moves — a vector derived from
+    // `emitted_runs` afterwards would drift the moment a run is skipped, and
+    // a mis-aligned kind rotates the wrong fragment. Left empty in the
+    // `continuous` branch, which the relink skips.
+    let mut fragment_kinds: Vec<crate::surface_link::FragmentKind> = Vec::new();
 
     if params.continuous && rings.len() >= 2 {
         // Continuous spiral mode: connect adjacent rings at their nearest
@@ -2495,6 +2588,15 @@ pub fn scallop_toolpath_research(
                     region_total,
                 },
             });
+            // A whole surviving ring closes onto its own start, so the stage
+            // may rotate it to begin near the tool. A run the keep predicate
+            // split is an open arc: its ends are where the excluded ground
+            // begins, and moving them would cut it.
+            fragment_kinds.push(if *close_loop {
+                crate::surface_link::FragmentKind::ClosedLoop
+            } else {
+                crate::surface_link::FragmentKind::OpenRun
+            });
             tp.rapid_to_with_intent(
                 P3::new(first.x, first.y, params.safe_z),
                 MoveIntent::Linking,
@@ -2541,13 +2643,36 @@ pub fn scallop_toolpath_research(
     // Skipped under `continuous`: spiral mode already chains its contours,
     // so there are no ring-to-ring junctions left to convert.
     if params.intra_pass_hookup_mm > 0.0 && !params.continuous {
-        let rp = crate::surface_link::RelinkParams {
-            hookup_distance: params.intra_pass_hookup_mm,
+        // G-LINKSTAGE. Two configurations, and the caller picks by handing a
+        // stage or not.
+        //
+        // With a stage (the shipped contour scallop): the ONE finishing
+        // configuration, built in `FinishingLinkStage::params` — `reorder`
+        // and loop rotation, which is what turns a breadth-first ring list
+        // into a candidate set at all (of 600 wanaka ring junctions the
+        // legacy arm rejected 493 as `too_far` and ZERO on the surface or
+        // kinematics tests), plus the stock ceiling, whose absence here was
+        // the defect: on a `FromRemainingStock` island pass a surface-riding
+        // link rides the MESH, which sits BELOW the standing material, so the
+        // link is a lateral cutting feed through rest stock — the
+        // G-ISOCLIPRAPID shape — and no lifted hop was ever reachable.
+        //
+        // Without one (the iso field, every research seam, every existing
+        // test): the legacy literal below, byte for byte.
+        let geom = crate::surface_link::LinkGeometry {
             stock_to_leave: params.stock_to_leave,
             sampling: params.tolerance.max(0.01),
             feed_rate: params.feed_rate,
             plunge_rate: params.plunge_rate,
             safe_z: params.safe_z,
+        };
+        let legacy = crate::surface_link::RelinkParams {
+            hookup_distance: params.intra_pass_hookup_mm,
+            stock_to_leave: geom.stock_to_leave,
+            sampling: geom.sampling,
+            feed_rate: geom.feed_rate,
+            plunge_rate: geom.plunge_rate,
+            safe_z: geom.safe_z,
             link_kinematics: params.link_kinematics.as_ref(),
             // Rings are emitted outside-in (or inside-out) and are already
             // in a sane order; reordering them would trade a solved problem
@@ -2571,21 +2696,38 @@ pub fn scallop_toolpath_research(
             // feed, so the territory veto stands.
             airborne_links_may_leave_territory: false,
         };
-        let (linked, rep) = crate::surface_link::relink_fragments(
+        // The ON/OFF gate above is `intra_pass_hookup_mm`, and a stage carries
+        // its own copy of the same number (the adapter builds it from the same
+        // config field, and `finishing_link_stage` returns `None` at `0.0`),
+        // so the two cannot disagree about whether the pass runs.
+        let (rp, kinds) = match link_stage {
+            Some(stage) => (stage.params(&geom), Some(fragment_kinds.as_slice())),
+            None => (legacy, None),
+        };
+        let (linked, rep) = crate::surface_link::relink_fragments_with_kinds(
             crate::toolpath_spans::AnnotatedToolpath::new(tp),
             mesh,
             index,
             cutter,
             &rp,
+            kinds,
         );
         info!(
+            staged = link_stage.is_some(),
             fragments = rep.fragments,
             surface_links = rep.surface_links,
+            // The acceptance measure: only an AT-DEPTH link removes the next
+            // fragment's entry. A clearance hop removes the retract and
+            // leaves the entry standing.
+            at_depth_links = rep.at_depth_links,
+            clearance_hops = rep.clearance_hops,
+            rotated_loops = rep.rotated_loops,
             retract_links = rep.retract_links,
             too_far = rep.too_far,
             off_surface = rep.off_surface,
             slower_than_retract = rep.slower_than_retract,
             outside_boundary = rep.outside_boundary,
+            ceiling_above_safe_z = rep.ceiling_above_safe_z,
             "Scallop intra-pass relink"
         );
         // C1: the ring annotations are this site's index-carrying channel,

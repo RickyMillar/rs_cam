@@ -1260,6 +1260,17 @@ pub struct MonotoneCellTotals {
 pub struct RelinkTotals {
     pub fragments: usize,
     pub surface_links: usize,
+    /// TIER (a) — links that arrive at cutting depth, so the next fragment
+    /// needs no entry at all. The ACCEPTANCE measure for G-LINKSTAGE: on an
+    /// entry-bound pass this is the only counter that moves the wall clock.
+    /// See [`crate::surface_link::RelinkReport::at_depth_links`].
+    pub at_depth_links: usize,
+    /// TIER (b) — links that lifted to the local stock ceiling and descended
+    /// again. They remove a RETRACT, not an entry.
+    pub clearance_hops: usize,
+    /// Closed-loop fragments the stage rotated to start near the previous
+    /// exit. `0` for a family that declares no fragment kinds.
+    pub rotated_loops: usize,
     pub retract_links: usize,
     pub too_far: usize,
     pub off_surface: usize,
@@ -1299,6 +1310,9 @@ impl RelinkTotals {
     pub fn add(&mut self, rep: &crate::surface_link::RelinkReport) {
         self.fragments += rep.fragments;
         self.surface_links += rep.surface_links;
+        self.at_depth_links += rep.at_depth_links;
+        self.clearance_hops += rep.clearance_hops;
+        self.rotated_loops += rep.rotated_loops;
         self.retract_links += rep.retract_links;
         self.too_far += rep.too_far;
         self.off_surface += rep.off_surface;
