@@ -551,6 +551,7 @@ mod tests {
         for &i in owned_cells {
             owned_mask[i] = true;
         }
+        let machining_area: f64 = machining.iter().map(Polygon2::area).sum();
         TierIslandSet {
             tier,
             islands: 1,
@@ -558,6 +559,11 @@ mod tests {
             owned: RegionSet::new(Vec::new()),
             machining: RegionSet::new(machining),
             owned_area_mm2: owned_cells.len() as f64,
+            machining_area_mm2: machining_area,
+            owned_hole_count: 0,
+            machining_hole_count: 0,
+            median_owned_hole_area_mm2: None,
+            overlap_mm: 0.0,
             owned_cells: owned_cells.len(),
             owned_mask,
             cap: TierCapReport {

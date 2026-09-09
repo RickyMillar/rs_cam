@@ -142,6 +142,25 @@ pub const CLOSE_RADIUS_PER_CUSP_RADIUS: f64 = 0.5;
 /// [`crate::finish_planner::FinishPlannerParams::for_tool`] uses.
 pub const MIN_REGION_AREA_TOOL_DIAMETERS_SQ: f64 = 4.0;
 
+/// Bound on `machining_area ÷ owned_area` above which
+/// [`TierIslandSet::band_advisory`] speaks (G-OVERLAPFILL, 2026-09-09).
+///
+/// **The band is not defective and this is not a threshold on a defect.** The
+/// overlap band exists to reach into the coarser tier's territory (see the
+/// module doc, "Ownership is a partition; overlap bands are not"), and a hole
+/// narrower than `2 · overlap_mm` closes under any correct dilation — that is
+/// what a dilation is. What was missing is that nobody could SEE it: on the
+/// wanaka board at tolerance 0.05 the fine tier owns 12 224 mm² in 10 islands
+/// and machines 29 954 mm², 75 % of a 40 000 mm² board, because the coarse
+/// tool's territory inside the valley network arrives as 1 329 slivers with a
+/// median area of 3.6 mm² and a 1.25 mm band on each side closes any gap
+/// under 2.5 mm (`planning/island_clip_2026-09-09/SPEC.md` §5).
+///
+/// 1.5 is a REPORTING bound, not a machining limit: below it the band is a
+/// seam blend, above it the band is most of the territory and the operator
+/// should know which dial put it there. Nothing refuses at this value.
+pub const BAND_RATIO_ADVISORY_BOUND: f64 = 1.5;
+
 /// Clamp band for [`TierIslandParams::coarseness`]. A slider that could reach
 /// 0 would make the derived dials inert (no close, no floor — the 566-island
 /// storm), and one that could reach 1000 would weld the board into one island;
@@ -421,6 +440,100 @@ impl TierCapReport {
     }
 }
 
+/// What the overlap band cost this tier in territory — the typed answer to
+/// *"why is the fine tool cutting most of the board?"* (G-OVERLAPFILL).
+///
+/// Produced by [`TierIslandSet::band_advisory`] only when
+/// `machining_area_mm2 ÷ owned_area_mm2` exceeds
+/// [`BAND_RATIO_ADVISORY_BOUND`]. **An advisory is a reading, never a
+/// refusal**: the band is doing what it is for, and both levers named in
+/// [`Self::fmt`] are operator dials, not repairs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TierBandAdvisory {
+    /// Ladder index of the tier this reads.
+    pub tier: u8,
+    /// [`TierIslandSet::owned_area_mm2`].
+    pub owned_area_mm2: f64,
+    /// [`TierIslandSet::machining_area_mm2`].
+    pub machining_area_mm2: f64,
+    /// `machining ÷ owned`. Always > [`BAND_RATIO_ADVISORY_BOUND`] here.
+    pub ratio: f64,
+    /// The bound that was crossed, carried so a renderer never re-derives it.
+    pub bound: f64,
+    /// [`TierIslandParams::overlap_mm`] in force.
+    pub overlap_mm: f64,
+    /// Holes in the owned polygons — the coarse tool's slivers inside this
+    /// tier's outline.
+    pub owned_hole_count: usize,
+    /// [`TierIslandSet::net_holes_closed_by_band`] — NET, and `0` does not
+    /// mean the band left the holes alone. Read it against
+    /// [`Self::machining_hole_count`].
+    pub net_holes_closed_by_band: usize,
+    /// [`TierIslandSet::machining_hole_count`] — holes AFTER the band. It can
+    /// exceed [`Self::owned_hole_count`]; see
+    /// [`TierIslandSet::net_holes_closed_by_band`].
+    pub machining_hole_count: usize,
+    /// [`TierIslandSet::median_owned_hole_area_mm2`].
+    pub median_owned_hole_area_mm2: Option<f64>,
+}
+
+impl TierBandAdvisory {
+    /// The overlap (mm) at which a hole of the median owned area would
+    /// survive the band: half the square-root of that area, i.e. half a
+    /// nominal sliver width. `None` when the tier owns no hole.
+    ///
+    /// A square-root width is a PROXY — a sliver is long and thin, so its
+    /// true width is under `sqrt(area)` and this reads optimistic. It is
+    /// quoted as a starting dial, never as a guarantee.
+    #[must_use]
+    pub fn overlap_that_keeps_the_median_hole_mm(&self) -> Option<f64> {
+        self.median_owned_hole_area_mm2
+            .filter(|a| a.is_finite() && *a > 0.0)
+            .map(|a| a.sqrt() * 0.5)
+    }
+}
+
+impl fmt::Display for TierBandAdvisory {
+    /// Names the measurement, then the two dials. Deliberately does NOT name
+    /// a tolerance number: this layer is handed a label grid and cusp radii,
+    /// never the tolerance the map was walked at or the coarse pass's own
+    /// cusp height, and inventing either would be a number the operator
+    /// could not reproduce.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "tier {}: the {:.2} mm overlap band grows {:.0} mm² of owned territory into \
+             {:.0} mm² of machining territory ({:.2}× the bound of {:.2}×), taking the \
+             tier's holes from {} to {}",
+            self.tier,
+            self.overlap_mm,
+            self.owned_area_mm2,
+            self.machining_area_mm2,
+            self.ratio,
+            self.bound,
+            self.owned_hole_count,
+            self.machining_hole_count,
+        )?;
+        if let Some(median) = self.median_owned_hole_area_mm2 {
+            write!(f, " (median hole {median:.1} mm²)")?;
+        }
+        write!(
+            f,
+            ". A band closes every hole narrower than 2 × overlap, so the coarse tool's \
+             slivers inside this tier fall to the fine tool. Two dials move it: lower \
+             `overlap_mm`"
+        )?;
+        if let Some(keep) = self.overlap_that_keeps_the_median_hole_mm() {
+            write!(f, " toward {keep:.2} mm (half a median sliver width)")?;
+        }
+        write!(
+            f,
+            ", or raise the plan's `tolerance_mm` toward the coarse pass's own cusp height \
+             so fewer slivers are claimed at all."
+        )
+    }
+}
+
 // ── Output ──────────────────────────────────────────────────────────────
 
 /// One fine tier's islands.
@@ -446,11 +559,45 @@ pub struct TierIslandSet {
     /// **Not** disjoint from other tiers' overlap bands, by design.
     pub machining: RegionSet<'static>,
     /// Sum of [`Self::owned`] polygon areas (mm², XY-projected, holes
-    /// subtracted). Close to but not identical with `owned_cells · cell²`:
+    /// subtracted).
+    ///
+    /// **This is territory AFTER the morphological close, not the tier's raw
+    /// labels.** When the cap's bounded auto-raise fires, the close radius
+    /// reaches `first · 1.5^raises` and welds a dendritic network into slabs,
+    /// which this then measures. On the wanaka map at tolerance 0.146
+    /// (instrument `tests/tier_band_overlap_g_overlapfill.rs`) three raises
+    /// took the radius to 1.688 mm and the owned area from **2 261 mm² to
+    /// 17 812 mm²** — 7.9×, and enough to make owned area NON-MONOTONIC in
+    /// the plan tolerance. Read [`TierCapReport::close_raises`] alongside it.
+    ///
+    /// Close to but not identical with `owned_cells · cell²`:
     /// marching squares treats grid cells as CORNERS and cuts at edge
     /// midpoints, so a solid rectangle traces to exactly its `n · cell` extent
     /// while a ragged or diagonal boundary trades half-cells either way.
     pub owned_area_mm2: f64,
+    /// Sum of [`Self::machining`] polygon areas (mm², holes subtracted) —
+    /// what this tier's tool actually sweeps, band included.
+    ///
+    /// **An upper bound where two islands of the SAME tier are closer than
+    /// `2 · overlap_mm`**: their bands then overlap each other and the sum
+    /// counts the shared strip twice. Ownership partitions and can be summed
+    /// exactly; a band set cannot. See [`Self::machining_to_owned_ratio`].
+    pub machining_area_mm2: f64,
+    /// Holes in [`Self::owned`] — the coarser tool's slivers enclosed by this
+    /// tier's outlines, before the band.
+    pub owned_hole_count: usize,
+    /// Holes in [`Self::machining`] — the slivers that SURVIVED the band.
+    /// A hole narrower than `2 · overlap_mm` closes; see
+    /// [`BAND_RATIO_ADVISORY_BOUND`].
+    pub machining_hole_count: usize,
+    /// Median area (mm²) of the holes in [`Self::owned`], or `None` when this
+    /// tier owns no hole. The scale of the coarse tool's slivers, and the
+    /// number [`TierBandAdvisory::overlap_that_keeps_the_median_hole_mm`]
+    /// turns into a dial.
+    pub median_owned_hole_area_mm2: Option<f64>,
+    /// [`TierIslandParams::overlap_mm`] the band was grown at, carried so a
+    /// consumer that has the set but not the params can still name the dial.
+    pub overlap_mm: f64,
     /// Cells this tier owns.
     pub owned_cells: usize,
     /// Per-cell ownership over the tier map's grid, row-major `r·nx + c`.
@@ -463,6 +610,65 @@ pub struct TierIslandSet {
     pub close_radius_mm: f64,
     /// Min island area (mm²) actually in force, after coarseness.
     pub min_region_area_mm2: f64,
+}
+
+impl TierIslandSet {
+    /// NET holes the overlap band removed — `owned_hole_count` minus
+    /// `machining_hole_count`, floored at zero.
+    ///
+    /// **A band both closes AND creates holes, so read the two counts, not
+    /// only this difference.** It closes a hole narrower than
+    /// `2 · overlap_mm`, and merges two holes whose separating wall is
+    /// narrower than the band (one closure). It CREATES one whenever the
+    /// dilation seals the mouth of a concave bay, or wraps around ground the
+    /// coverage clamp keeps out — the bay then encloses as a hole it was not
+    /// before. Measured on the wanaka map at tolerance 0.146 (the instrument
+    /// `tests/tier_band_overlap_g_overlapfill.rs`): 155 owned holes became
+    /// **255** machining holes, and this reads `0`.
+    ///
+    /// So a `0` here means "creation matched or beat closure", never "the
+    /// band left the holes alone". For that, compare the two counts.
+    #[must_use]
+    pub const fn net_holes_closed_by_band(&self) -> usize {
+        self.owned_hole_count
+            .saturating_sub(self.machining_hole_count)
+    }
+
+    /// `machining_area_mm2 ÷ owned_area_mm2`, or `None` when the tier owns no
+    /// area — the ratio has no meaning against a zero denominator, and
+    /// coercing it to 1.0 would read as a healthy band.
+    ///
+    /// `1.0` is the ratio with the band off. Above
+    /// [`BAND_RATIO_ADVISORY_BOUND`] the band is most of the territory; see
+    /// [`Self::band_advisory`].
+    #[must_use]
+    pub fn machining_to_owned_ratio(&self) -> Option<f64> {
+        (self.owned_area_mm2 > 0.0 && self.owned_area_mm2.is_finite())
+            .then(|| self.machining_area_mm2 / self.owned_area_mm2)
+    }
+
+    /// The typed reading when the band grew this tier past
+    /// [`BAND_RATIO_ADVISORY_BOUND`], or `None` on a healthy tier.
+    ///
+    /// `None` is the clean answer here, not "not measured": every tier
+    /// computes the areas, so a consumer that wants the raw numbers reads the
+    /// fields.
+    #[must_use]
+    pub fn band_advisory(&self) -> Option<TierBandAdvisory> {
+        let ratio = self.machining_to_owned_ratio()?;
+        (ratio.is_finite() && ratio > BAND_RATIO_ADVISORY_BOUND).then_some(TierBandAdvisory {
+            tier: self.tier,
+            owned_area_mm2: self.owned_area_mm2,
+            machining_area_mm2: self.machining_area_mm2,
+            ratio,
+            bound: BAND_RATIO_ADVISORY_BOUND,
+            overlap_mm: self.overlap_mm,
+            owned_hole_count: self.owned_hole_count,
+            net_holes_closed_by_band: self.net_holes_closed_by_band(),
+            machining_hole_count: self.machining_hole_count,
+            median_owned_hole_area_mm2: self.median_owned_hole_area_mm2,
+        })
+    }
 }
 
 /// Per-tier island sets for one [`TierMap`].
@@ -505,10 +711,31 @@ impl TierIslands {
         self.per_tier.iter().map(|s| s.islands).sum()
     }
 
+    /// Total territory the fine tools actually SWEEP (mm²), summed over
+    /// `machining`.
+    ///
+    /// Read [`TierIslandSet::machining_area_mm2`]'s doc before comparing this
+    /// with [`Self::total_owned_area_mm2`]: ownership partitions and sums
+    /// exactly, band sets do not, so this is an upper bound wherever two
+    /// bands touch — within one tier and across tiers.
+    #[must_use]
+    pub fn total_machining_area_mm2(&self) -> f64 {
+        self.per_tier.iter().map(|s| s.machining_area_mm2).sum()
+    }
+
     /// Every tier whose [`TierCapReport::acted`] is true — what a preview
     /// panel must tell the operator was merged or dropped.
     pub fn tiers_where_the_cap_acted(&self) -> impl Iterator<Item = &TierIslandSet> {
         self.per_tier.iter().filter(|s| s.cap.acted())
+    }
+
+    /// Every tier whose overlap band grew it past
+    /// [`BAND_RATIO_ADVISORY_BOUND`] — what a preview panel must tell the
+    /// operator about G-OVERLAPFILL. Empty on a healthy plan.
+    pub fn band_advisories(&self) -> impl Iterator<Item = TierBandAdvisory> + '_ {
+        self.per_tier
+            .iter()
+            .filter_map(TierIslandSet::band_advisory)
     }
 }
 
@@ -751,7 +978,16 @@ pub fn extract_tier_islands(
             owned.extend(base_polys);
         }
 
+        // G-OVERLAPFILL instrumentation. `Polygon2::area` already subtracts
+        // holes and `detect_containment` has grouped every hole under its
+        // own exterior, so these three lines measure exactly what the peer's
+        // SVG script measured off the preview: outline, holes, net.
         let owned_area_mm2: f64 = owned.iter().map(Polygon2::area).sum();
+        let machining_area_mm2: f64 = machining.iter().map(Polygon2::area).sum();
+        let owned_hole_count: usize = owned.iter().map(|p| p.holes.len()).sum();
+        let machining_hole_count: usize = machining.iter().map(|p| p.holes.len()).sum();
+        let median_owned_hole_area_mm2 = median_hole_area_mm2(&owned);
+
         sets.push(TierIslandSet {
             tier,
             islands: kept.len(),
@@ -759,6 +995,11 @@ pub fn extract_tier_islands(
             owned: RegionSet::new(owned),
             machining: RegionSet::new(machining),
             owned_area_mm2,
+            machining_area_mm2,
+            owned_hole_count,
+            machining_hole_count,
+            median_owned_hole_area_mm2,
+            overlap_mm: params.overlap_mm.max(0.0),
             owned_cells,
             owned_mask,
             cap,
@@ -776,6 +1017,27 @@ pub fn extract_tier_islands(
         cell_mm: map.cell_mm,
         tier_count: map.tier_count,
     })
+}
+
+/// Median hole area (mm²) over a polygon list, or `None` when it holds no
+/// hole. The MEDIAN and not the mean: a valley network's slivers are a long
+/// tail, and one 500 mm² pocket among a thousand 3 mm² slivers would move a
+/// mean far enough to name the wrong dial.
+///
+/// Even counts take the LOWER of the two middles rather than their average,
+/// so the answer is always the area of a hole that actually exists.
+fn median_hole_area_mm2(polys: &[Polygon2]) -> Option<f64> {
+    let mut areas: Vec<f64> = polys
+        .iter()
+        .flat_map(|p| p.holes.iter())
+        .map(|h| crate::polygon::shoelace_area(h).abs())
+        .filter(|a| a.is_finite())
+        .collect();
+    if areas.is_empty() {
+        return None;
+    }
+    areas.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    areas.get((areas.len() - 1) / 2).copied()
 }
 
 // ── SVG preview ─────────────────────────────────────────────────────────

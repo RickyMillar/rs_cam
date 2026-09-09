@@ -35,7 +35,7 @@
 
 use rs_cam_core::rest_heatmap_mesh::{tier_fill_color, tier_overlap_color};
 use rs_cam_core::session::MultitoolPreview;
-use rs_cam_core::tier_islands::{COARSENESS_MAX, COARSENESS_MIN, TierIslandSet};
+use rs_cam_core::tier_islands::{COARSENESS_MAX, COARSENESS_MIN, TierIslandSet, TierIslands};
 
 use super::{AppEvent, theme};
 use crate::state::AppState;
@@ -575,7 +575,7 @@ fn draw_ready(ui: &mut egui::Ui, planner: &MultitoolPlannerState, preview: &Mult
     ui.add_space(4.0);
 
     egui::Grid::new("multitool_planner_tiers")
-        .num_columns(6)
+        .num_columns(7)
         .spacing([10.0, 4.0])
         .striped(true)
         .show(ui, |ui| {
@@ -585,6 +585,7 @@ fn draw_ready(ui: &mut egui::Ui, planner: &MultitoolPlannerState, preview: &Mult
             ui.label(egui::RichText::new("islands").small().strong());
             ui.label(egui::RichText::new("raw").small().strong());
             ui.label(egui::RichText::new("owned area").small().strong());
+            ui.label(egui::RichText::new("machines").small().strong());
             ui.end_row();
             for tier in 0..preview.map.tier_count {
                 draw_tier_row(ui, preview, tier);
@@ -600,6 +601,19 @@ fn draw_ready(ui: &mut egui::Ui, planner: &MultitoolPlannerState, preview: &Mult
             egui::RichText::new(cap_warning_text(set))
                 .small()
                 .strong()
+                .color(theme::WARNING),
+        );
+    }
+
+    // G-OVERLAPFILL. The band is doing what it is for, so this is an
+    // advisory and not a refusal — but a fine tier that machines most of the
+    // board is a time decision the operator has to make knowingly, and
+    // nothing else on this panel says it.
+    for advisory in preview.islands.band_advisories() {
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(advisory.to_string())
+                .small()
                 .color(theme::WARNING),
         );
     }
@@ -650,6 +664,28 @@ fn draw_tier_row(ui: &mut egui::Ui, preview: &MultitoolPreview, tier: usize) {
             );
             let area = format!("{:.0} mm2", set.owned_area_mm2);
             ui.label(egui::RichText::new(area).small());
+
+            // G-OVERLAPFILL: the tool sweeps the islands PLUS the overlap
+            // band, and on a dendritic map the band is most of it.
+            let machines = match set.machining_to_owned_ratio() {
+                Some(r) => format!("{:.0} mm2 ({r:.2}x)", set.machining_area_mm2),
+                None => format!("{:.0} mm2", set.machining_area_mm2),
+            };
+            let over = set.band_advisory().is_some();
+            let colour = if over {
+                theme::WARNING
+            } else {
+                theme::TEXT_MUTED
+            };
+            ui.label(egui::RichText::new(machines).small().color(colour))
+                .on_hover_text(format!(
+                    "What this tier's tool actually sweeps: its islands grown by the \
+                     {:.2} mm overlap band, which reaches into the coarser tool's \
+                     territory so the two cusp patterns blend. The band closes every \
+                     hole narrower than twice the overlap, and seals a concave bay \
+                     into a new one — holes here go from {} to {}.",
+                    set.overlap_mm, set.owned_hole_count, set.machining_hole_count,
+                ));
         }
         None => {
             ui.label(
@@ -669,6 +705,11 @@ fn draw_tier_row(ui: &mut egui::Ui, preview: &MultitoolPreview, tier: usize) {
                  actually sweeps: every fine-tier island the minimum-island filter absorbed \
                  falls back here and is not counted in this number.",
             );
+            ui.label(egui::RichText::new("sweeps").small().color(theme::TEXT_DIM))
+                .on_hover_text(
+                    "The coarse tool carries no overlap band — it holds the complement, \
+                     and the fine tiers' bands reach into it.",
+                );
         }
     }
 }
@@ -690,6 +731,32 @@ fn draw_swatch(ui: &mut egui::Ui, tier: u8) {
 fn to_color32(rgb: [f32; 3]) -> egui::Color32 {
     let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as u8;
     egui::Color32::from_rgb(channel(rgb[0]), channel(rgb[1]), channel(rgb[2]))
+}
+
+/// The one-line answer under the buttons: how many islands, how much
+/// territory the fine tiers OWN, and how much they actually MACHINE once the
+/// overlap band is grown (G-OVERLAPFILL).
+///
+/// Pure, for the same reason [`cap_warning_text`] is: the wording is what an
+/// operator reads, so a test has to be able to witness it.
+///
+/// The machining half is omitted when the band is off — then the two numbers
+/// are the same and a second figure would only read as noise.
+fn summary_line(islands: &TierIslands) -> String {
+    let owned = islands.total_owned_area_mm2();
+    let machining = islands.total_machining_area_mm2();
+    let head = format!(
+        "{} island(s) over {} fine tier(s), {owned:.0} mm2 of fine territory",
+        islands.total_islands(),
+        islands.per_tier.len(),
+    );
+    if owned <= 0.0 || (machining - owned).abs() < 0.5 {
+        return head;
+    }
+    format!(
+        "{head}, {machining:.0} mm2 machined with the overlap band ({:.2}x)",
+        machining / owned
+    )
 }
 
 /// What the per-tier cap did, in one operator-facing line.
@@ -768,12 +835,7 @@ fn draw_actions(
 
         if let Some(preview) = planner.ready_preview() {
             ui.add_space(12.0);
-            let summary = format!(
-                "{} island(s) over {} fine tier(s), {:.0} mm2 of fine territory",
-                preview.islands.total_islands(),
-                preview.islands.per_tier.len(),
-                preview.islands.total_owned_area_mm2()
-            );
+            let summary = summary_line(&preview.islands);
             ui.label(
                 egui::RichText::new(summary)
                     .small()
@@ -817,6 +879,11 @@ mod tests {
             owned: RegionSet::new(Vec::new()),
             machining: RegionSet::new(Vec::new()),
             owned_area_mm2: 8_815.0,
+            machining_area_mm2: 8_815.0,
+            owned_hole_count: 0,
+            machining_hole_count: 0,
+            median_owned_hole_area_mm2: None,
+            overlap_mm: 0.0,
             owned_cells: 0,
             owned_mask: Vec::new(),
             cap,
@@ -867,6 +934,49 @@ mod tests {
         ));
         assert!(!text.contains("DROPPED"), "nothing was dropped: {text}");
         assert!(text.contains("0.75 mm"), "got: {text}");
+    }
+
+    fn islands_with(owned_area_mm2: f64, machining_area_mm2: f64) -> TierIslands {
+        let mut set = set_with(
+            TierCapReport {
+                islands_after_close: 10,
+                islands_after_min_area: 10,
+                kept: 10,
+                cap: 24,
+                close_raises: 0,
+                first_close_radius_mm: 0.5,
+                final_close_radius_mm: 0.5,
+            },
+            16.0,
+        );
+        set.owned_area_mm2 = owned_area_mm2;
+        set.machining_area_mm2 = machining_area_mm2;
+        TierIslands {
+            per_tier: vec![set],
+            cell_mm: 0.4,
+            tier_count: 2,
+        }
+    }
+
+    /// G-OVERLAPFILL on the operator's one-line summary. The wanaka reading
+    /// (owned 12 224, machining 29 954) has to say BOTH numbers and the
+    /// ratio: an operator told only "12 224 mm2 of fine territory" has no way
+    /// to know the fine tool sweeps 75 % of the board.
+    #[test]
+    fn the_summary_names_owned_and_machined_territory() {
+        let text = summary_line(&islands_with(12_224.0, 29_954.0));
+        assert!(text.contains("12224 mm2 of fine territory"), "got: {text}");
+        assert!(text.contains("29954 mm2 machined"), "got: {text}");
+        assert!(text.contains("2.45x"), "got: {text}");
+    }
+
+    /// With the band off the two areas are one number, and printing it twice
+    /// would read as noise rather than as information.
+    #[test]
+    fn the_summary_drops_the_band_half_when_the_band_changes_nothing() {
+        let text = summary_line(&islands_with(8_815.0, 8_815.0));
+        assert!(text.contains("8815 mm2 of fine territory"), "got: {text}");
+        assert!(!text.contains("machined"), "got: {text}");
     }
 
     /// Every fine tier gets a colour, and it is the colour the 3D overlay

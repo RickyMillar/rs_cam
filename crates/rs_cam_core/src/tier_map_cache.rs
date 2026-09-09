@@ -231,6 +231,22 @@ pub fn cached_tier_map(
     Ok(built)
 }
 
+/// The cached map for this (mesh identity, ladder, params), or `None`.
+/// **Never builds one**, never inspects a cancel token, and never counts as a
+/// hit or a miss in [`stats`].
+///
+/// For a caller whose contract forbids the walk — `plan_multitool_finishing`
+/// is cheap by design — but that can say something useful when the operator
+/// has already previewed. `None` there means "not measured", never "clean".
+#[must_use]
+pub fn peek_tier_map(
+    mesh: &Arc<TriangleMesh>,
+    ladder: &TierLadder<'_>,
+    params: &TierMapParams,
+) -> Option<Arc<TierMap>> {
+    get(mesh, &TierMapKey::new(ladder, params))
+}
+
 fn get(mesh: &Arc<TriangleMesh>, key: &TierMapKey) -> Option<Arc<TierMap>> {
     let table = table().lock().ok()?;
     table

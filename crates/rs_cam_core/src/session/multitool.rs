@@ -83,7 +83,7 @@ use crate::compute::tool_config::ToolConfig;
 use crate::ids::ToolpathId;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
-use crate::tier_islands::{TierIslandParams, TierIslands, extract_tier_islands};
+use crate::tier_islands::{TierBandAdvisory, TierIslandParams, TierIslands, extract_tier_islands};
 use crate::tier_map::{ResidualTreatment, TierLadder, TierMap, TierMapParams};
 use crate::tool::{MillingCutter, ToolDefinition};
 
@@ -238,7 +238,7 @@ impl Default for MultitoolPlanSpec {
 }
 
 /// What one plan run did.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MultitoolPlanOutcome {
     /// The id this run stamped on every op it emitted.
     pub plan_id: u64,
@@ -246,6 +246,18 @@ pub struct MultitoolPlanOutcome {
     pub toolpath_ids: Vec<ToolpathId>,
     /// Prior planner-origin ops this run removed. Empty on a first plan.
     pub replaced: Vec<ToolpathId>,
+    /// G-OVERLAPFILL: what the overlap band cost each fine tier in
+    /// territory — see [`crate::tier_islands::TierBandAdvisory`].
+    ///
+    /// **Three-valued.** `None` means **not measured**: planning is cheap by
+    /// contract (no tier map is built here), and no map for this ladder and
+    /// these dials was already in
+    /// [`crate::tier_map_cache`]. Preview first — either
+    /// [`ProjectSession::preview_multitool_plan`] or a generate — and the
+    /// next plan reads it. `Some(vec![])` means measured and healthy: every
+    /// tier's band is under
+    /// [`crate::tier_islands::BAND_RATIO_ADVISORY_BOUND`].
+    pub band_advisories: Option<Vec<TierBandAdvisory>>,
 }
 
 /// What a [`MultitoolPlanSpec`] would plan, computed without emitting
@@ -323,13 +335,20 @@ impl ProjectSession {
         // the mesh floor; the planner does the same, from the same
         // setup-frame mesh the tier map walks. `validate_multitool_spec`
         // already guaranteed the mesh exists.
-        let heights = match self.plan_mesh(spec.model_id, spec.setup_index) {
+        let plan_mesh = self.plan_mesh(spec.model_id, spec.setup_index);
+        let heights = match plan_mesh.as_ref() {
             Some(mesh) => HeightsConfig {
                 bottom_z: crate::compute::config::HeightMode::Manual(mesh.bbox.min.z - 0.2),
                 ..HeightsConfig::default()
             },
             None => HeightsConfig::default(),
         };
+
+        // Read off a map somebody already paid for, or say nothing. Building
+        // one here would break this call's cheapness contract.
+        let band_advisories = plan_mesh
+            .as_ref()
+            .and_then(|mesh| Self::peek_band_advisories(mesh, &refs, &cusp_radii, spec));
 
         let plan_id = self.next_plan_id();
         let replaced = self.remove_planned_toolpaths(spec.setup_index);
@@ -348,7 +367,7 @@ impl ProjectSession {
                 .get(tier_usize)
                 .copied()
                 .unwrap_or_default();
-            let mut operation = plan_tier_operation(cusp, spec, strategy);
+            let mut operation = plan_tier_operation(tier, cusp, spec, strategy);
             let feeds_provenance = self.suggest_feeds_for(&mut operation, tool);
             let strategy_tag = match strategy {
                 TierStrategy::UnifiedFinish => "",
@@ -401,7 +420,32 @@ impl ProjectSession {
             plan_id,
             toolpath_ids,
             replaced,
+            band_advisories,
         })
+    }
+
+    /// G-OVERLAPFILL advisories off an ALREADY CACHED tier map, or `None`.
+    ///
+    /// Never walks a map: [`crate::tier_map_cache::peek_tier_map`] is a
+    /// lookup. On a hit it does re-run the island morphology (an O(cells)
+    /// pass, the same one a dial-only re-preview pays), which is what buys
+    /// the areas; on a miss it costs a hash and reports "not measured".
+    fn peek_band_advisories(
+        mesh: &Arc<TriangleMesh>,
+        refs: &[&dyn MillingCutter],
+        cusp_radii: &[f64],
+        spec: &MultitoolPlanSpec,
+    ) -> Option<Vec<TierBandAdvisory>> {
+        let ladder = TierLadder::new(refs).ok()?;
+        let params = TierMapParams {
+            cell_mm: spec.cell_mm,
+            tolerance_mm: spec.tolerance_mm,
+            margin_mm: spec.margin_mm,
+            treatment: spec.treatment,
+        };
+        let map = crate::tier_map_cache::peek_tier_map(mesh, &ladder, &params)?;
+        let islands = extract_tier_islands(&map, &spec.islands, cusp_radii).ok()?;
+        Some(islands.band_advisories().collect())
     }
 
     /// The setup / model / ladder-length preconditions both
@@ -750,9 +794,13 @@ impl ProjectSession {
 /// `monotone_cell_decomposition`).
 ///
 /// A free function rather than a method because it reads nothing from the
-/// session — the tier's cusp radius and the spec are the whole input, which
-/// is what lets a UI pre-fill show the same numbers the plan will emit.
+/// session — the tier's index, cusp radius and the spec are the whole input,
+/// which is what lets a UI pre-fill show the same numbers the plan will emit.
+///
+/// `tier` is the ladder index. It selects the spiral mode: see
+/// [`tier_is_per_island`] and the `continuous` comment below.
 fn plan_tier_operation(
+    tier: u8,
     cusp_radius_mm: f64,
     spec: &MultitoolPlanSpec,
     strategy: TierStrategy,
@@ -764,9 +812,25 @@ fn plan_tier_operation(
             return OperationConfig::Scallop(crate::compute::operation_configs::ScallopConfig {
                 // Equal cusp across tiers, same as the unified arm below.
                 scallop_height: spec.cusp_height_mm,
-                // One continuous spiral is the measured win (S1: one entry
-                // plunge, metres of rapids instead of kilometres).
-                continuous: true,
+                // G-TIERCONTINUOUS (2026-09-09). One continuous spiral is the
+                // measured win on ONE region (S1: one entry plunge, metres of
+                // rapids instead of kilometres). On a PER-ISLAND tier it is
+                // the opposite: `scallop.rs` makes a ring-to-ring connector a
+                // cutting feed only when the hop is inside the widest ring
+                // spacing, and a dendritic island breaks that bound on most
+                // junctions, so the connector falls back to
+                // retract/rapid/replunge; the intra-pass hookup relink that
+                // would convert those junctions back into surface links is
+                // SKIPPED under `continuous`. Measured live on the wanaka
+                // board (`planning/island_clip_2026-09-09/SPEC.md` §5, T3 vs
+                // T3b): 929 → 613 retracts over 484 rings (2.04 → 1.02 per
+                // ring), pair time −15 %, entry_load CRITICAL → caution.
+                //
+                // `intra_pass_hookup_mm` is deliberately NOT set here: the
+                // type default is already 3.0 mm, the value the T3b run
+                // measured, and `..defaults` carries it. Raising it to 6.0
+                // (T3c) joined only 46 more ring pairs.
+                continuous: !tier_is_per_island(tier, spec),
                 slope_from: 0.0,
                 slope_to: 90.0,
                 stock_to_leave: 0.0,
@@ -841,12 +905,33 @@ fn restore_planned_geometry(operation: &mut OperationConfig, planned: &Operation
             out.scallop_height = want.scallop_height;
             out.stock_to_leave = want.stock_to_leave;
             out.continuous = want.continuous;
+            // The spiral mode and the relink cap are ONE decision
+            // (G-TIERCONTINUOUS): `continuous: false` is only a win because
+            // the hookup relink then runs. Restoring one without the other
+            // is how the pair drifts.
+            out.intra_pass_hookup_mm = want.intra_pass_hookup_mm;
             out.iso_field = want.iso_field;
             out.slope_from = want.slope_from;
             out.slope_to = want.slope_to;
         }
         _ => {}
     }
+}
+
+/// Does this tier machine a set of ISLANDS rather than the whole board?
+///
+/// One predicate, two consumers: [`tier_boundary`] gives such a tier a
+/// [`BoundarySource::PlannedTierRegions`] boundary, and
+/// [`plan_tier_operation`] turns the continuous spiral OFF on it
+/// (G-TIERCONTINUOUS). The two must not drift — a per-island boundary with a
+/// whole-board spiral mode is exactly the defect the ledger row records.
+///
+/// Every fine tier (index ≥ 1) is per-island. Tier 0 is the coarse tool's
+/// complement and sweeps the whole board, unless
+/// [`MultitoolPlanSpec::coarse_skips_fine_islands`] hands it the complement
+/// of the fine islands, which is an island set like any other.
+const fn tier_is_per_island(tier: u8, spec: &MultitoolPlanSpec) -> bool {
+    tier != 0 || spec.coarse_skips_fine_islands
 }
 
 /// The boundary one tier carries.
@@ -859,7 +944,7 @@ fn restore_planned_geometry(operation: &mut OperationConfig, planned: &Operation
 /// of every fine tier's owned islands (see
 /// `resolve_planned_tier_region_polys`).
 fn tier_boundary(tier: u8, ordered_ids: &[usize], spec: &MultitoolPlanSpec) -> BoundaryConfig {
-    if tier == 0 && !spec.coarse_skips_fine_islands {
+    if !tier_is_per_island(tier, spec) {
         return BoundaryConfig::default();
     }
     BoundaryConfig {
@@ -1227,7 +1312,7 @@ mod tests {
     #[test]
     fn the_planner_sizes_z_step_by_the_equal_cusp_law() {
         let spec = MultitoolPlanSpec::default();
-        let op = plan_tier_operation(2.0, &spec, TierStrategy::UnifiedFinish);
+        let op = plan_tier_operation(1, 2.0, &spec, TierStrategy::UnifiedFinish);
         let OperationConfig::UnifiedFinish(cfg) = op else {
             panic!("planner emits unified_finish");
         };
@@ -1238,21 +1323,20 @@ mod tests {
 
     /// The operator's separation (2026-09-03): a tier strategy changes the
     /// OPERATION, never the territory. A scallop tier carries the planner's
-    /// cusp target, the continuous spiral, and the iso choice; a missing
-    /// strategy entry is the historical unified planner.
+    /// cusp target, the spiral mode for its territory, and the iso choice; a
+    /// missing strategy entry is the historical unified planner.
     #[test]
     fn tier_strategy_picks_the_operation_and_keeps_the_planner_dials() {
         let spec = MultitoolPlanSpec::default();
-        let op = plan_tier_operation(2.0, &spec, TierStrategy::IsoScallop);
+        let op = plan_tier_operation(1, 2.0, &spec, TierStrategy::IsoScallop);
         let OperationConfig::Scallop(cfg) = op else {
             panic!("iso strategy emits a scallop op");
         };
         assert!((cfg.scallop_height - spec.cusp_height_mm).abs() < 1e-12);
-        assert!(cfg.continuous, "planner scallop tiers are one spiral");
         assert!(cfg.iso_field, "iso strategy sets the iso_field dial");
         assert!((cfg.stock_to_leave).abs() < 1e-12);
 
-        let op = plan_tier_operation(2.0, &spec, TierStrategy::Scallop);
+        let op = plan_tier_operation(1, 2.0, &spec, TierStrategy::Scallop);
         let OperationConfig::Scallop(cfg) = op else {
             panic!("scallop strategy emits a scallop op");
         };
@@ -1263,5 +1347,96 @@ mod tests {
             spec.tier_strategies.first().copied().unwrap_or_default(),
             TierStrategy::UnifiedFinish
         );
+    }
+
+    /// G-TIERCONTINUOUS sentry. The spiral mode follows the TERRITORY, and
+    /// the predicate that decides the territory is the one that decides the
+    /// mode. A per-island tier gets `continuous: false` so the intra-pass
+    /// hookup relink runs; a whole-board tier keeps the S1 spiral.
+    ///
+    /// Measured on wanaka (`planning/island_clip_2026-09-09/SPEC.md` §5):
+    /// 929 → 613 retracts, pair time −15 %.
+    #[test]
+    fn a_per_island_scallop_tier_is_not_a_continuous_spiral() {
+        let spec = MultitoolPlanSpec::default();
+        assert!(
+            !spec.coarse_skips_fine_islands,
+            "this fixture reads the default dial"
+        );
+
+        for strategy in [TierStrategy::Scallop, TierStrategy::IsoScallop] {
+            // Tier 0 without the skip dial sweeps the whole board: the S1
+            // spiral is the measured win there and is unchanged.
+            let op = plan_tier_operation(0, 2.0, &spec, strategy);
+            let OperationConfig::Scallop(cfg) = op else {
+                panic!("a scallop strategy emits a scallop op");
+            };
+            assert!(
+                cfg.continuous,
+                "the whole-board tier keeps the S1 continuous spiral"
+            );
+            assert!(
+                !tier_boundary(0, &[0, 1], &spec).enabled,
+                "the same tier carries no island boundary"
+            );
+
+            // Every fine tier machines islands.
+            let op = plan_tier_operation(1, 2.0, &spec, strategy);
+            let OperationConfig::Scallop(cfg) = op else {
+                panic!("a scallop strategy emits a scallop op");
+            };
+            assert!(
+                !cfg.continuous,
+                "a per-island tier must leave the relink enabled"
+            );
+            assert!(
+                cfg.intra_pass_hookup_mm >= 3.0,
+                "the relink cap must be at least the measured 3.0 mm, got {}",
+                cfg.intra_pass_hookup_mm
+            );
+            assert!(
+                tier_boundary(1, &[0, 1], &spec).enabled,
+                "the same tier carries an island boundary"
+            );
+        }
+
+        // With the skip dial on, tier 0 machines the complement of the fine
+        // islands — an island set like any other, so the mode follows it.
+        let skipping = MultitoolPlanSpec {
+            coarse_skips_fine_islands: true,
+            ..MultitoolPlanSpec::default()
+        };
+        let op = plan_tier_operation(0, 2.0, &skipping, TierStrategy::Scallop);
+        let OperationConfig::Scallop(cfg) = op else {
+            panic!("a scallop strategy emits a scallop op");
+        };
+        assert!(
+            !cfg.continuous,
+            "coarse_skips_fine_islands makes tier 0 per-island too"
+        );
+        assert!(tier_boundary(0, &[0, 1], &skipping).enabled);
+    }
+
+    /// Suggest rebuilds the operation from the config type's defaults, so
+    /// every planner-owned dial has to be restored afterwards. `continuous`
+    /// and `intra_pass_hookup_mm` are ONE decision; restoring one without the
+    /// other is how the pair drifts.
+    #[test]
+    fn the_geometry_restore_carries_the_spiral_mode_and_its_relink_cap() {
+        let planned =
+            plan_tier_operation(1, 2.0, &MultitoolPlanSpec::default(), TierStrategy::Scallop);
+        // What the funnel would hand back: the type's own defaults.
+        let mut rebuilt =
+            OperationConfig::Scallop(crate::compute::operation_configs::ScallopConfig {
+                continuous: true,
+                intra_pass_hookup_mm: 0.0,
+                ..Default::default()
+            });
+        restore_planned_geometry(&mut rebuilt, &planned);
+        let OperationConfig::Scallop(cfg) = rebuilt else {
+            panic!("the restore does not change the variant");
+        };
+        assert!(!cfg.continuous);
+        assert!(cfg.intra_pass_hookup_mm >= 3.0);
     }
 }

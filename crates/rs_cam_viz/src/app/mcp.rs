@@ -4335,14 +4335,26 @@ impl super::RsCamApp {
             .collect();
         let replaced: Vec<usize> = outcome.replaced.iter().map(|id| id.0).collect();
 
+        // Three-valued, and the wire says which: `null` = not measured (no
+        // cached tier map for this ladder and these dials — planning builds
+        // none), `[]` = measured and every band is inside the bound.
+        let band_advisories: Option<Vec<String>> = outcome
+            .band_advisories
+            .as_ref()
+            .map(|list| list.iter().map(ToString::to_string).collect());
+
         json_str(serde_json::json!({
             "ok": true,
             "plan_id": outcome.plan_id,
             "emitted": emitted,
             "replaced": replaced,
+            "band_advisories": band_advisories,
             "note": "Nothing is generated yet — each tier resolves its islands lazily. Call \
                      generate_all with fixpoint on and a simulation_resolution_mm to run the \
-                     whole coarse-to-fine rest-stock chain in one call.",
+                     whole coarse-to-fine rest-stock chain in one call. `band_advisories` \
+                     is null when no tier map was cached for these dials — call \
+                     preview_tier_map first to measure the overlap band; an empty list \
+                     means measured and healthy.",
         }))
     }
 
@@ -4564,14 +4576,37 @@ impl super::RsCamApp {
                     "islands": set.islands,
                     "raw_island_count": set.raw_island_count,
                     "owned_area_mm2": set.owned_area_mm2,
+                    // G-OVERLAPFILL: what the tool SWEEPS, against what the
+                    // tier owns. The band reaches into the coarser tier by
+                    // design; the ratio is how far.
+                    "machining_area_mm2": set.machining_area_mm2,
+                    "machining_to_owned_ratio": set.machining_to_owned_ratio(),
+                    "overlap_mm": set.overlap_mm,
+                    "owned_hole_count": set.owned_hole_count,
+                    "machining_hole_count": set.machining_hole_count,
+                    "net_holes_closed_by_band": set.net_holes_closed_by_band(),
+                    "median_owned_hole_area_mm2": set.median_owned_hole_area_mm2,
                     "cap": {
                         "acted": set.cap.acted(),
                         "total_before_cap": set.cap.islands_after_min_area,
                         "kept": set.cap.kept,
                         "final_close_radius_mm": set.cap.final_close_radius_mm,
+                        // A raise WELDS a dendritic network into slabs, and
+                        // `owned_area_mm2` then measures the slabs: 2 261 ->
+                        // 17 812 mm2 on wanaka at tolerance 0.146.
+                        "close_raises": set.cap.close_raises,
+                        "first_close_radius_mm": set.cap.first_close_radius_mm,
                     },
                 })
             })
+            .collect();
+
+        // Only the tiers over the bound, rendered. An empty list is the
+        // healthy reading, not a missing measurement.
+        let band_advisories: Vec<String> = preview
+            .islands
+            .band_advisories()
+            .map(|a| a.to_string())
             .collect();
 
         let svg_written = match spec.svg_path.as_deref() {
@@ -4594,6 +4629,9 @@ impl super::RsCamApp {
             "model_id": plan_spec.model_id,
             "ladder": ladder,
             "per_tier": per_tier,
+            "band_advisories": band_advisories,
+            "total_owned_area_mm2": preview.islands.total_owned_area_mm2(),
+            "total_machining_area_mm2": preview.islands.total_machining_area_mm2(),
             "map": {
                 "cell_mm": preview.map.cell_mm,
                 "nx": preview.map.nx,
