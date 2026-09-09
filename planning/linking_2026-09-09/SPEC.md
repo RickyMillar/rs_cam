@@ -345,3 +345,34 @@ and 35 of them became links. The candidate set (breadth-first ring
 order, no reorder, no loop rotation) is the cause. The GUI's 613 and
 567 retract trips are these 510 / 475 ring junctions plus the region
 and clip transitions.
+
+## 8. Pencil baseline (2026-09-09 evening, binary 491c17ed, 0.3 mm)
+
+Fixture: `planning/deep_doc_modulation_2026-09-08/PENCIL_baseline_r10_rest.toml`
+(a durable copy of the 09-04 throwaway, which lived only in a working
+tree). Two arms, because the saved fixture is not a realistic pass.
+
+| arm | stock the pencil sees | total s | entry s | cutting s | linking s | rapid s | fragments | retracts | rapid collisions |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| P0 | FRESH block (the 09-04 setup as saved) | 32 426 | 29 114 (89.8 %) | 1 418 | 723 | 1 170 | 9 282 | 987 | **32** |
+| P1 | after an R1.5 iso-scallop on fresh stock | **2 736** | **2 307 (84.3 %)** | **50** | **120** | **259** | 319 | 313 | 0 |
+
+P0 reproduces the 09-04 reading (entry 29 114 against 28 986, cutting
+1 418 against 1 418) on today's binary, so the emitter work of
+2026-09-09 does not touch this cost. But P0 runs the pencil on a raw
+block: every ramp descends about 9.5 mm from the block top, every rapid
+crosses the block (32 collisions), and the tool floats over 96 % of its
+own centreline. It is not a pass anyone would run.
+
+P1 is the honest baseline. The absolute cost falls 11.9×, the float
+falls to 39 %, and the rapid collisions go to zero — but **the shape
+does not change: 84 % entry, 2 % cutting.** Per fragment: 7.2 s of
+entry against 0.16 s of cutting. That is the number the link stage has
+to move, and it is not an artifact of a bad fixture.
+
+Prize at P1: removing the entry on four fifths of the fragments takes
+the pass from 2 736 s to about 890 s, a little over 3×. The pass also
+carries a `plunge_class_load` **critical** of its own — 10 of 322
+vertical-dominant moves run up to 6.6× the op's plunge rate, the
+untagged-descent class — which is a separate defect from linking and
+should be ledgered on its own.

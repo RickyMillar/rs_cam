@@ -872,6 +872,34 @@ Ledger:
   junctions, the kinematics and surface tests refused nothing, and
   doubling the cap moved 42 out of too_far. Implementation can proceed
   from the spec's design.
+  **§8 PENCIL BASELINE (rs-cam-15, live 0.2 on 491c17ed) — the second
+  acceptance case, operator-added.** The 2026-09-04 fixture is
+  pathological: P0, pencil on a FRESH block as that fixture is saved,
+  reads 32 426 s total with 29 114 s (89.8 %) of ENTRY motion, 1 418 s of
+  cutting, 987 retracts, 96 % tip float and **32 rapid collisions** — it
+  reproduces the 09-04 figures almost exactly, so today's emitter work
+  does not touch this cost, but nobody would run it. P1, the honest case
+  (pencil on REMAINING STOCK after an R1.5 iso-scallop): 2 736 s total,
+  entry 2 307 (84.3 %), cutting 50 s, 319 fragments, 313 retracts, tip
+  float 39 %, 0 rapid collisions. The absolute falls 11.9× and THE SHAPE
+  SURVIVES — 7.2 s of entry per fragment against 0.16 s of cutting — so
+  the prize on a realistic pencil pass is about 3×. Fixture:
+  `planning/deep_doc_modulation_2026-09-08/PENCIL_baseline_r10_rest.toml`.
+  The hard requirement this case adds to the stage: the link must arrive
+  LATERALLY at cutting depth, not from above, or each fragment still pays
+  a fresh ramp — routing through `relink_fragments` alone does not fix it.
+- **G-PENCILPLUNGE (2026-09-09, OPEN):** the P1 pencil pass carries its
+  own `plunge_class_load` CRITICAL — 10 of 322 vertical-dominant moves up
+  to 6.6× the operation's plunge rate. Same class as P3 /
+  G-BOUNDARYPLUNGE (an untagged descent the geometric guard should have
+  capped, or a generator emitting a descent the modulator never sees);
+  measured on the pencil family, which neither of those closed.
+- **Pencil on FRESH stock is unsafe by construction (2026-09-09):** P0
+  reports 32 rapid collisions purely because a pencil pass on an unmachined
+  block rapids through material that no upstream op has removed. Any
+  fixture or test that ships a pencil with `stock_source` fresh will look
+  unsafe for that reason alone — read the stock source before reading the
+  count.
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and
