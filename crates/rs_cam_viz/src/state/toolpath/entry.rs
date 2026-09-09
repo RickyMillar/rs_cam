@@ -149,6 +149,13 @@ pub struct ToolpathEntry {
     /// `ToolpathConfig::feeds_provenance`; round-trips via
     /// `build_entry_from_session_and_gui` / `write_entry_config_to_session`.
     pub feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
+    /// Feeds fields whose value a per-field ⚡ pill wrote THIS FRAME, with the
+    /// recommendation's stamp already set on `feeds_provenance` (G-PILLCLAMP,
+    /// 2026-09-10). Read by `write_entry_config_to_session`, whose
+    /// `detect_manual_edits` pass would otherwise relabel the write `Manual`
+    /// whenever the new stamp equals the stored one (same vendor row, value
+    /// moved). Never persisted; the entry is rebuilt empty every frame.
+    pub pill_stamped_fields: Vec<rs_cam_core::feeds::FeedsField>,
     /// Multi-tool planner provenance (Phase O). Mirrors
     /// `ToolpathConfig::planner_origin` so the legacy fallback loader can
     /// carry it into the session; `write_entry_config_to_session`
@@ -219,6 +226,7 @@ impl ToolpathEntry {
             face_selection: init.face_selection,
             feeds_result: None,
             feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+            pill_stamped_fields: Vec::new(),
             planner_origin: None,
             debug_options: init.debug_options,
             debug_trace: None,

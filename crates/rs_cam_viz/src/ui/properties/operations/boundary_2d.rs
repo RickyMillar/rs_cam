@@ -1,4 +1,4 @@
-use rs_cam_core::feeds::FeedsResult;
+use super::super::pills::PillSuggestions;
 
 use crate::state::toolpath::{
     AdaptiveConfig, CompensationType, FaceConfig, FaceDirection, InlayConfig, PocketConfig,
@@ -11,11 +11,11 @@ use super::{DepthBeyondStock, ThroughCut, draw_tab_diagram};
 pub(in crate::ui::properties) fn draw_face_params(
     ui: &mut egui::Ui,
     cfg: &mut FaceConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
-    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
+    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("face_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -65,11 +65,11 @@ pub(in crate::ui::properties) fn draw_face_params(
 pub(in crate::ui::properties) fn draw_pocket_params(
     ui: &mut egui::Ui,
     cfg: &mut PocketConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
-    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
+    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("pocket_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -134,11 +134,11 @@ pub(in crate::ui::properties) fn draw_pocket_params(
 pub(in crate::ui::properties) fn draw_profile_params(
     ui: &mut egui::Ui,
     cfg: &mut ProfileConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
     through_cut: Option<&ThroughCut>,
 ) {
-    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
+    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("profile_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -248,11 +248,11 @@ pub(in crate::ui::properties) fn draw_profile_params(
 pub(in crate::ui::properties) fn draw_adaptive_params(
     ui: &mut egui::Ui,
     cfg: &mut AdaptiveConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
-    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
+    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("adapt_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -329,13 +329,13 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
 pub(in crate::ui::properties) fn draw_vcarve_params(
     ui: &mut egui::Ui,
     cfg: &mut VCarveConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
     // V-carve uses `max_depth` as the axial limit and `stepover` as the
     // lateral step. Map LUT axial → max_depth, radial → stepover.
-    let max_depth_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let max_depth_sugg = pills.map(PillSuggestions::depth_per_pass);
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("vcarve_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -374,11 +374,11 @@ pub(in crate::ui::properties) fn draw_rest_params(
     ui: &mut egui::Ui,
     cfg: &mut RestConfig,
     tools: &[(crate::state::job::ToolId, String, f64)],
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
-    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
+    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("rest_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -427,13 +427,13 @@ pub(in crate::ui::properties) fn draw_rest_params(
 pub(in crate::ui::properties) fn draw_inlay_params(
     ui: &mut egui::Ui,
     cfg: &mut InlayConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
     // Spec: only the stepover field maps to LUT radial_width. The other
     // inlay fields (pocket_depth, glue_gap, flat_depth, boundary_offset,
     // flat_tool_radius) are geometry-driven, not feeds-driven.
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("inlay_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -495,11 +495,11 @@ pub(in crate::ui::properties) fn draw_inlay_params(
 pub(in crate::ui::properties) fn draw_zigzag_params(
     ui: &mut egui::Ui,
     cfg: &mut ZigzagConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
-    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
+    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("zigzag_p")
         .num_columns(2)
         .spacing([8.0, 4.0])

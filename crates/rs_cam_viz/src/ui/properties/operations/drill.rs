@@ -1,5 +1,5 @@
+use super::super::pills::PillSuggestions;
 use rs_cam_core::dxf_input::{DrillTarget, DrillTargetKind};
-use rs_cam_core::feeds::FeedsResult;
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 
@@ -92,14 +92,14 @@ pub(in crate::ui::properties) fn draw_drill_params(
     cfg: &mut DrillConfig,
     drill_layers: &[String],
     drill_targets: &[DrillTarget],
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
     // Spec: drill ops get a feed pill (peck-cycle plunge feed) but no
     // stepover/DOC pills (Z-only kinematics — LUT radial/axial don't
     // apply). DrillConfig has no plunge_rate or spindle_rpm slot of its
     // own, so this is the only LUT-driven field on the panel.
-    let feed_sugg = feeds_result.map(|r| (r.feed_rate_mm_min, &r.chipload_source));
+    let feed_sugg = pills.map(PillSuggestions::feed_rate);
     egui::Grid::new("drill_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -187,9 +187,9 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
     cfg: &mut AlignmentPinDrillConfig,
     drill_layers: &[String],
     drill_targets: &[DrillTarget],
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
 ) {
-    let feed_sugg = feeds_result.map(|r| (r.feed_rate_mm_min, &r.chipload_source));
+    let feed_sugg = pills.map(PillSuggestions::feed_rate);
     let extra = cfg.selected_holes.as_ref().map_or(0, Vec::len);
     ui.label(format!(
         "{} pin(s) + {extra} picked hole(s)",

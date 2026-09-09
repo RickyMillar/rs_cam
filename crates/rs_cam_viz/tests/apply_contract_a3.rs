@@ -175,6 +175,35 @@ const UI_MOD_SRC: &str = include_str!("../src/ui/mod.rs");
 const COMPARE_SRC: &str = include_str!("../src/ui/components/compare.rs");
 const FEEDS_MODAL_SRC: &str = include_str!("../src/ui/feeds_modal.rs");
 const EVENTS_SRC: &str = include_str!("../src/controller/events/mod.rs");
+/// The per-field ⚡ pill and the sites that feed it (G-PILLCLAMP, 2026-09-10).
+const VALUE_ROW_SRC: &str = include_str!("../src/ui/components/value_row.rs");
+const PROPERTIES_SRC: &str = include_str!("../src/ui/properties/mod.rs");
+const PILL_SITE_SRCS: [(&str, &str); 6] = [
+    (
+        "operations/boundary_2d.rs",
+        include_str!("../src/ui/properties/operations/boundary_2d.rs"),
+    ),
+    (
+        "operations/surface_3d.rs",
+        include_str!("../src/ui/properties/operations/surface_3d.rs"),
+    ),
+    (
+        "operations/finishing.rs",
+        include_str!("../src/ui/properties/operations/finishing.rs"),
+    ),
+    (
+        "operations/drill.rs",
+        include_str!("../src/ui/properties/operations/drill.rs"),
+    ),
+    (
+        "operations/engrave.rs",
+        include_str!("../src/ui/properties/operations/engrave.rs"),
+    ),
+    (
+        "operations/project.rs",
+        include_str!("../src/ui/properties/operations/project.rs"),
+    ),
+];
 
 // ── the two surfaces now agree on a refused pairing ────────────────────────
 
@@ -888,5 +917,122 @@ fn agent_apply_returns_the_refusal_rather_than_a_silent_no_op() {
         op_of(&controller).feed_rate(),
         before.feed_rate(),
         "the agent path wrote despite refusing"
+    );
+}
+
+// ── the per-field ⚡ pill joins the funnel (G-PILLCLAMP, 2026-09-10) ────────
+
+/// UX-R03-014. The one per-field affordance Checkpoint I-1 left standing was
+/// the inline ⚡ pill (`ValueRow::suggest`, fed by `dv_pill` on the Geometry
+/// tab and directly on the Feeds tab). It wrote
+/// `round_suggestion_value(result.axial_depth_mm, 0.001)` — the raw calculator
+/// value the deleted modal buttons wrote, on a different widget. On this
+/// fixture (default Ø6.35 flat end mill, Pocket) that is **4.445 mm** where
+/// the panel's `⚡ Apply cut geometry` writes **1.27 mm**: the exact number
+/// the census measured for the deleted buttons, still reachable in one click.
+///
+/// Post-fix the pill reads `feeds::suggest::preview_field_applies`, a dry run
+/// of the funnel, and writes that value verbatim. Asserted here against the
+/// panel's own apply, bit for bit, on the census fixture. The demo-pocket
+/// (Ø6) numbers are pinned core-side in
+/// `pill_writes_clamped_value_g_pillclamp.rs`.
+#[test]
+fn per_field_pill_offers_the_funnelled_doc_exactly() {
+    let controller = controller_with(OperationType::Pocket);
+    let recipe = panel_recipe(&controller).expect("valid pairing");
+    let op = op_of(&controller);
+    let tool = tool_of(&controller);
+    let machine = controller.state.session.machine().clone();
+    let material = controller.state.session.stock_config().material.clone();
+    let pass_role = op.feeds_style().1;
+
+    let mut panel_op = op.clone();
+    let mut panel_prov = rs_cam_core::feeds::FeedsProvenance::default();
+    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
+        &mut panel_op,
+        &mut panel_prov,
+        &recipe,
+        &tool,
+        &machine,
+        &material,
+        pass_role,
+        rs_cam_core::feeds::suggest::SuggestContext::default(),
+    );
+    let panel_doc = panel_op.depth_per_pass().expect("pocket has DOC");
+
+    let pill = rs_cam_core::feeds::suggest::preview_field_apply(
+        &op,
+        &recipe,
+        &tool,
+        &machine,
+        &material,
+        pass_role,
+        rs_cam_core::feeds::suggest::SuggestContext::default(),
+        rs_cam_core::feeds::FeedsField::DepthPerPass,
+    )
+    .expect("the funnel writes DOC on a Pocket");
+
+    assert_eq!(
+        pill.value.to_bits(),
+        panel_doc.to_bits(),
+        "pill DOC {} mm vs panel DOC {panel_doc} mm — {:.3}×; the bar is 1.000×",
+        pill.value,
+        pill.value / panel_doc
+    );
+    let raw = rs_cam_core::feeds::suggest::round_suggestion_value(recipe.axial_depth_mm, 0.001);
+    assert_ne!(
+        pill.value.to_bits(),
+        raw.to_bits(),
+        "the pill still offers the raw calculator DOC ({raw} mm; pre-fix 4.445 vs 1.27)"
+    );
+    assert_eq!(
+        Some(&pill.provenance),
+        panel_prov.depth_per_pass.as_ref(),
+        "the pill's stamp is not the recommendation's"
+    );
+}
+
+/// Source-level: no pill site hands the raw `FeedsResult` numbers to the
+/// pill any more, and the pill itself no longer re-rounds what it is given
+/// (the funnel's clamp output is not on the rounding grid — 0.20 × 6.0 is
+/// 1.2000000000000002 — so a re-round would move the write off Apply's).
+#[test]
+fn no_pill_site_feeds_the_raw_recommendation_to_the_pill() {
+    for (name, src) in PILL_SITE_SRCS {
+        for raw in [
+            "r.axial_depth_mm, &r.chipload_source",
+            "r.radial_width_mm, &r.chipload_source",
+            "r.feed_rate_mm_min, &r.chipload_source",
+            "Option<&FeedsResult>",
+        ] {
+            assert!(
+                !src.contains(raw),
+                "{name} hands the raw recommendation to a pill again: `{raw}`"
+            );
+        }
+        // Every draw fn that takes suggestions takes the funnel-backed kind.
+        if src.contains("dv_pill(") {
+            assert!(
+                src.contains("PillSuggestions"),
+                "{name} draws a pill without the funnel-backed PillSuggestions"
+            );
+        }
+    }
+    assert!(
+        !PROPERTIES_SRC.contains("recommended: result.feed_rate_mm_min")
+            && !PROPERTIES_SRC.contains("recommended: result.plunge_rate_mm_min"),
+        "the Feeds tab pills offer the raw feed / plunge again"
+    );
+    assert!(
+        PROPERTIES_SRC.contains("preview_field_applies("),
+        "the Feeds tab no longer dry-runs the funnel for its pills"
+    );
+    assert!(
+        !VALUE_ROW_SRC.contains("round_suggestion_value("),
+        "ValueRow re-rounds the suggestion on click; it must write the funnel value verbatim"
+    );
+    assert!(
+        VALUE_ROW_SRC.contains("*self.value = s.recommended;"),
+        "ValueRow no longer writes the suggestion verbatim"
     );
 }

@@ -1,4 +1,4 @@
-use rs_cam_core::feeds::FeedsResult;
+use super::super::pills::PillSuggestions;
 
 use crate::state::toolpath::{
     CutDirection, HorizontalFinishConfig, RadialFinishConfig, RampFinishConfig, SpiralDirection,
@@ -10,7 +10,7 @@ use super::super::{dv, dv_pill};
 pub(in crate::ui::properties) fn draw_ramp_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut RampFinishConfig,
-    _feeds_result: Option<&FeedsResult>,
+    _pills: Option<&PillSuggestions>,
 ) {
     // Ramp finish: max_stepdown is a Z-step (geometry-driven, not LUT
     // axial DOC). No stepover field; feed/plunge live on the Feeds tab.
@@ -78,9 +78,9 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
 pub(in crate::ui::properties) fn draw_spiral_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut SpiralFinishConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
 ) {
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("spiral_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -127,7 +127,7 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
 pub(in crate::ui::properties) fn draw_radial_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut RadialFinishConfig,
-    _feeds_result: Option<&FeedsResult>,
+    _pills: Option<&PillSuggestions>,
 ) {
     // Radial finish uses angular_step + point_spacing — neither maps to a
     // clearing-style WOC/DOC. Feed/plunge live on the Feeds tab.
@@ -165,9 +165,9 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
 pub(in crate::ui::properties) fn draw_horizontal_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut HorizontalFinishConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
 ) {
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("horiz_p")
         .num_columns(2)
         .spacing([8.0, 4.0])

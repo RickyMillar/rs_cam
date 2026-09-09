@@ -831,6 +831,11 @@ pub fn feeds_explain_for_operation(
 /// scope vocabulary stays "how fast" / "changes the cut" — the two things a
 /// user can be told about — and every apply resolves the *whole* operating
 /// point before copying a subset back.
+///
+/// The surviving per-field affordance — the inline ⚡ pill — does not get a
+/// scope either. Since G-PILLCLAMP (2026-09-10) it reads its value from
+/// [`preview_field_applies`], a dry run of `Both` on a scratch clone, so it
+/// offers and writes the funnel's number for that one field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyScope {
     /// feed / plunge / RPM — "how fast". Never touches the cut geometry.
@@ -1034,6 +1039,152 @@ pub fn apply_cut_geometry_to_op(
         ApplyScope::CutGeometry,
         false,
     )
+}
+
+// ── Per-field preview of the funnel (G-PILLCLAMP, 2026-09-10) ──────────────
+//
+// The GUI's per-field ⚡ pill (Feeds tab feed / plunge, Geometry tab stepover /
+// depth-per-pass / drill feed) used to write the RAW calculator value —
+// `round_suggestion_value(result.axial_depth_mm, 0.001)` — while every Apply
+// button went through `apply_feeds_subset` and wrote the clamped one. On the
+// demo pocket (Ø6 flat, Generic Wood Router) the pill wrote 4.2 mm of DOC where
+// Apply wrote 1.2 mm (UX-R03-014). The pill now offers and writes the value
+// below, which is the funnel's own output read back per field, so the clamp
+// chain is never duplicated in the GUI.
+
+/// The value one per-field apply would write, and the stamp it would record.
+///
+/// Produced by [`preview_field_applies`]. `value` is bit-identical to what
+/// `apply_feeds_subset` leaves on the operation for that field (it is read
+/// off the funnel's scratch clone, not recomputed), and `provenance` is the
+/// stamp the funnel records for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldApplyPreview {
+    pub field: crate::feeds::FeedsField,
+    pub value: f64,
+    pub provenance: crate::feeds::ValueProvenance,
+}
+
+impl FieldApplyPreview {
+    /// Write this one field into `operation` and stamp its provenance. Nothing
+    /// else on the operation moves — that is the whole contract of a per-field
+    /// pill, and `pill_writes_clamped_value_g_pillclamp.rs` pins it.
+    pub fn write_to(
+        &self,
+        operation: &mut OperationConfig,
+        provenance: &mut crate::feeds::FeedsProvenance,
+    ) {
+        use crate::feeds::FeedsField;
+        match self.field {
+            FeedsField::FeedRate => operation.set_feed_rate(self.value),
+            FeedsField::PlungeRate => operation.set_plunge_rate(self.value),
+            // `value` came from `spindle_rpm()` on the scratch clone, a `u32`,
+            // so the round-trip is exact (same cast the funnel itself makes).
+            FeedsField::SpindleRpm => operation.set_spindle_rpm(Some(self.value.round() as u32)),
+            FeedsField::Stepover => operation.set_stepover(self.value),
+            FeedsField::DepthPerPass => operation.set_depth_per_pass(self.value),
+            FeedsField::ScallopHeight => operation.set_scallop_height(self.value),
+        }
+        provenance.set(self.field, self.provenance.clone());
+    }
+}
+
+/// Every field the funnel would write for this recommendation, as one
+/// preview per field. A field the funnel does **not** write — the operation
+/// carries no such dial, or no RPM was recommended — is `None`, and a GUI
+/// pill for it must say so rather than offer the raw calculator value as if
+/// it were clamped.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FieldApplyPreviews {
+    pub feed_rate: Option<FieldApplyPreview>,
+    pub plunge_rate: Option<FieldApplyPreview>,
+    pub spindle_rpm: Option<FieldApplyPreview>,
+    pub stepover: Option<FieldApplyPreview>,
+    pub depth_per_pass: Option<FieldApplyPreview>,
+}
+
+impl FieldApplyPreviews {
+    pub fn get(&self, field: crate::feeds::FeedsField) -> Option<&FieldApplyPreview> {
+        use crate::feeds::FeedsField;
+        match field {
+            FeedsField::FeedRate => self.feed_rate.as_ref(),
+            FeedsField::PlungeRate => self.plunge_rate.as_ref(),
+            FeedsField::SpindleRpm => self.spindle_rpm.as_ref(),
+            FeedsField::Stepover => self.stepover.as_ref(),
+            FeedsField::DepthPerPass => self.depth_per_pass.as_ref(),
+            // Never suggested, never written by the funnel.
+            FeedsField::ScallopHeight => None,
+        }
+    }
+}
+
+/// Dry-run the apply funnel and read back every field it would write.
+///
+/// Runs `apply_feeds_subset(ApplyScope::Both)` on a scratch clone of
+/// `operation` with a scratch provenance, then reads each field's value and
+/// stamp off the scratch. There is still no `ApplyScope::Field` arm (Checkpoint
+/// I-1): the whole operating point is resolved, and a single field is copied
+/// out of it — which is exactly what a per-field pill must offer.
+#[allow(clippy::too_many_arguments)]
+pub fn preview_field_applies(
+    operation: &OperationConfig,
+    result: &FeedsResult,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pass_role: PassRole,
+    context: SuggestContext<'_>,
+) -> FieldApplyPreviews {
+    use crate::feeds::FeedsField;
+    let mut scratch = operation.clone();
+    let mut prov = crate::feeds::FeedsProvenance::default();
+    apply_feeds_subset(
+        &mut scratch,
+        &mut prov,
+        result,
+        tool,
+        machine,
+        material,
+        pass_role,
+        context,
+        ApplyScope::Both,
+        false,
+    );
+    let slot = |field: FeedsField, value: Option<f64>| -> Option<FieldApplyPreview> {
+        let value = value?;
+        let provenance = prov.get(field)?.clone();
+        Some(FieldApplyPreview {
+            field,
+            value,
+            provenance,
+        })
+    };
+    FieldApplyPreviews {
+        feed_rate: slot(FeedsField::FeedRate, Some(scratch.feed_rate())),
+        plunge_rate: slot(FeedsField::PlungeRate, Some(scratch.plunge_rate())),
+        spindle_rpm: slot(FeedsField::SpindleRpm, scratch.spindle_rpm().map(f64::from)),
+        stepover: slot(FeedsField::Stepover, scratch.stepover()),
+        depth_per_pass: slot(FeedsField::DepthPerPass, scratch.depth_per_pass()),
+    }
+}
+
+/// One field of [`preview_field_applies`].
+#[allow(clippy::too_many_arguments)]
+pub fn preview_field_apply(
+    operation: &OperationConfig,
+    result: &FeedsResult,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pass_role: PassRole,
+    context: SuggestContext<'_>,
+    field: crate::feeds::FeedsField,
+) -> Option<FieldApplyPreview> {
+    preview_field_applies(
+        operation, result, tool, machine, material, pass_role, context,
+    )
+    .get(field)
+    .cloned()
 }
 
 // ── The one application funnel (Checkpoint I, 2026-08-12) ──────────────────

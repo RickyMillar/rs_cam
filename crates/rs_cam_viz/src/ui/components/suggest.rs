@@ -23,10 +23,24 @@ pub enum SuggestScope {
 }
 
 /// A single-field recommendation: the value to write and where it came from.
+///
+/// G-PILLCLAMP (2026-09-10): `recommended` is the value the pill WRITES, and
+/// it must be the apply funnel's as-applied value for that field
+/// (`rs_cam_core::feeds::suggest::preview_field_applies`), never the raw
+/// calculator output — on the demo pocket those were 1.2 mm and 4.2 mm.
+/// `clamped` says which one this is: `true` for a funnel value, `false` when
+/// the funnel does not write the field and the pill can only offer the raw
+/// calculator number. `calculator` carries the raw number for the hover so
+/// the operator can see a clamp happened.
+#[derive(Clone)]
 pub struct Suggestion<'a> {
     pub recommended: f64,
     pub source: ProvKind,
     pub reference: Option<&'a str>,
+    /// `recommended` came out of the apply funnel (clamped, rounded).
+    pub clamped: bool,
+    /// The raw calculator value behind `recommended`, when known.
+    pub calculator: Option<f64>,
 }
 
 /// The suggest action widget. `enabled = false` greys it (e.g. the current

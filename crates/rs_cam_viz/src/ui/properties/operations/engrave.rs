@@ -1,4 +1,4 @@
-use rs_cam_core::feeds::FeedsResult;
+use super::super::pills::PillSuggestions;
 
 use crate::state::toolpath::{ChamferConfig, TraceCompensation, TraceConfig};
 
@@ -8,7 +8,7 @@ use super::DepthBeyondStock;
 pub(in crate::ui::properties) fn draw_trace_params(
     ui: &mut egui::Ui,
     cfg: &mut TraceConfig,
-    _feeds_result: Option<&FeedsResult>,
+    _pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
     // Spec: trace doesn't get stepover/DOC pills (engraving op — LUT
@@ -47,7 +47,7 @@ pub(in crate::ui::properties) fn draw_trace_params(
 pub(in crate::ui::properties) fn draw_chamfer_params(
     ui: &mut egui::Ui,
     cfg: &mut ChamferConfig,
-    _feeds_result: Option<&FeedsResult>,
+    _pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
     // Chamfer width/tip offset are geometry-driven, not feeds-driven; feed/

@@ -1,5 +1,6 @@
 pub mod feeds_rows;
 mod operations;
+mod pills;
 pub mod post;
 pub mod setup;
 pub mod stock;
@@ -22,6 +23,7 @@ use operations::{
     draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params,
     draw_unified_finish_params, draw_vcarve_params, draw_waterline_params, draw_zigzag_params,
 };
+use pills::{PillSuggestions, stamp_pill_write, suggestion_for};
 
 use crate::state::AppState;
 use crate::state::selection::Selection;
@@ -32,9 +34,7 @@ use crate::state::toolpath::{
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
-use crate::ui::components::{
-    PrecedenceField, ProvKind, Suggestion, UiExt, ValueRow, mrr_row, power_bar,
-};
+use crate::ui::components::{PrecedenceField, ProvKind, UiExt, ValueRow, mrr_row, power_bar};
 use crate::ui::theme;
 
 /// Candidate source toolpath for a `BoundarySource::DerivedRestRegions`
@@ -2038,9 +2038,24 @@ fn draw_feeds_card(
             .as_ref()
             .map(|v| (ProvKind::from(v), v.reference.clone()));
 
+        // G-PILLCLAMP (UX-R03-014): the per-field ⚡ on Feed / Plunge offers
+        // and writes the apply funnel's value for that field — the same
+        // number `⚡⚡ Apply recommended speeds` writes — not the raw
+        // calculator output, and stamps the recommendation's provenance.
+        let field_previews = rs_cam_core::feeds::suggest::preview_field_applies(
+            &entry.operation,
+            &result,
+            tool,
+            machine,
+            material,
+            pass_role,
+            rs_cam_core::feeds::suggest::SuggestContext::default(),
+        );
+
         // ── SPEED — how fast (feed / plunge / RPM) ──
         ui.named_section("SPEED \u{2014} how fast", |ui| {
-            // The live LUT recommendation drives each field's ⚡ suggest.
+            // The live LUT recommendation colours a raw fallback pill; a
+            // funnel-backed pill carries its own stamp.
             let (speed_kind, speed_ref) = prov_from_chipload(&result.chipload_source);
             egui::Grid::new("feeds_card_speed")
                 .num_columns(2)
@@ -2054,35 +2069,46 @@ fn draw_feeds_card(
                         ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
                         ui.end_row();
                     } else {
+                        use rs_cam_core::feeds::FeedsField;
                         let mut feed = entry.operation.feed_rate();
                         let mut feed_row =
                             ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
-                                .suggest(Suggestion {
-                                    recommended: result.feed_rate_mm_min,
-                                    source: speed_kind,
-                                    reference: speed_ref,
-                                });
+                                .suggest(suggestion_for(
+                                    field_previews.get(FeedsField::FeedRate),
+                                    result.feed_rate_mm_min,
+                                    1.0,
+                                    (speed_kind, speed_ref),
+                                ));
                         if let Some((kind, reference)) = &feed_prov {
                             feed_row = feed_row.prov(*kind, reference.as_deref());
                         }
-                        if feed_row.show(ui).edited {
+                        let feed_out = feed_row.show(ui);
+                        if feed_out.edited {
                             entry.operation.set_feed_rate(feed);
                             entry.stale_since = Some(std::time::Instant::now());
+                            if feed_out.suggested {
+                                stamp_pill_write(entry, &field_previews, FeedsField::FeedRate);
+                            }
                         }
                         let mut plunge = entry.operation.plunge_rate();
                         let mut plunge_row =
                             ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
-                                .suggest(Suggestion {
-                                    recommended: result.plunge_rate_mm_min,
-                                    source: speed_kind,
-                                    reference: speed_ref,
-                                });
+                                .suggest(suggestion_for(
+                                    field_previews.get(FeedsField::PlungeRate),
+                                    result.plunge_rate_mm_min,
+                                    1.0,
+                                    (speed_kind, speed_ref),
+                                ));
                         if let Some((kind, reference)) = &plunge_prov {
                             plunge_row = plunge_row.prov(*kind, reference.as_deref());
                         }
-                        if plunge_row.show(ui).edited {
+                        let plunge_out = plunge_row.show(ui);
+                        if plunge_out.edited {
                             entry.operation.set_plunge_rate(plunge);
                             entry.stale_since = Some(std::time::Instant::now());
+                            if plunge_out.suggested {
+                                stamp_pill_write(entry, &field_previews, FeedsField::PlungeRate);
+                            }
                         }
                     }
                     if let Some(row) = card_row(feeds_rows::ADVANCE_ROW_LABEL) {
@@ -3439,6 +3465,7 @@ fn build_entry_from_session_and_gui(
     let rt = rt.unwrap_or(&default_rt);
     Some(ToolpathEntry {
         id: tc.id,
+        pill_stamped_fields: Vec::new(),
         name: tc.name.clone(),
         enabled: tc.enabled,
         visible: rt.visible,
@@ -3505,6 +3532,16 @@ fn write_entry_config_to_session(
         // before `tc.operation` / `tc.feeds_provenance` are overwritten below.
         let mut new_provenance = entry.feeds_provenance.clone();
         new_provenance.detect_manual_edits(&tc.operation, &entry.operation, &tc.feeds_provenance);
+        // G-PILLCLAMP: a per-field ⚡ pill wrote these fields this frame and
+        // stamped the recommendation's provenance on the entry. When that
+        // stamp equals the stored one (same row, value moved) the pass above
+        // cannot tell it from a hand edit and relabels it Manual — restore
+        // the pill's stamp, because the funnel produced the value.
+        for field in &entry.pill_stamped_fields {
+            if let Some(stamp) = entry.feeds_provenance.get(*field) {
+                new_provenance.set(*field, stamp.clone());
+            }
+        }
         tc.name = entry.name.clone();
         tc.enabled = entry.enabled;
         tc.tool_id = entry.tool_id.0;
@@ -4092,11 +4129,11 @@ fn draw_toolpath_panel(
             // plunge / RPM and DOC / WOC now apply from the SPEED and CUT
             // sections of the Feeds & Speeds tab (the split-aware applies),
             // and the engine-refusal message surfaces there too.
-            if let Some(tool_cfg) = tool_configs
+            let pill_tool_cfg = tool_configs
                 .iter()
                 .find(|(id, _)| *id == entry.tool_id)
-                .map(|(_, t)| t)
-            {
+                .map(|(_, t)| t);
+            if let Some(tool_cfg) = pill_tool_cfg {
                 entry.feeds_result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
                     &entry.operation,
                     tool_cfg,
@@ -4108,6 +4145,20 @@ fn draw_toolpath_panel(
                 )
                 .ok();
             }
+            // G-PILLCLAMP (UX-R03-014): one dry run of the apply funnel per
+            // frame, so every ⚡ pill below offers and writes the value
+            // `⚡ Apply cut geometry` would write for its field — not the raw
+            // calculator number (4.2 mm vs 1.2 mm of DOC on the demo pocket).
+            let pills = match (entry.feeds_result.as_ref(), pill_tool_cfg) {
+                (Some(result), Some(tool_cfg)) => Some(PillSuggestions::new(
+                    &entry.operation,
+                    result,
+                    tool_cfg,
+                    machine,
+                    material,
+                )),
+                _ => None,
+            };
 
             // Operation description from spec (consistent across all operations)
             let spec = entry.operation.op_type().spec();
@@ -4117,11 +4168,11 @@ fn draw_toolpath_panel(
                     .color(egui::Color32::from_rgb(150, 150, 130)),
             );
             ui.add_space(2.0);
-            // PR-2D Phase 2 — pass the cached FeedsResult to every per-op
-            // draw so each numeric field can render an inline ⚡ Suggest
-            // pill. The Phase 1 block above already computed and cached
-            // the result on entry.feeds_result, so this is just a borrow.
-            let feeds_for_pills = entry.feeds_result.as_ref();
+            // PR-2D Phase 2 — pass the per-field pill suggestions to every
+            // per-op draw so each numeric field can render an inline ⚡
+            // Suggest pill. Built above from the cached `entry.feeds_result`
+            // and the funnel dry run, so this is just a borrow.
+            let feeds_for_pills = pills.as_ref();
             // A/M6: read before the mutable borrow of `entry.operation`
             // below. Both are `Copy`, so nothing is held across it.
             let resolved_claims_reference =
@@ -4266,6 +4317,15 @@ fn draw_toolpath_panel(
                         feeds_for_pills,
                     );
                 }
+            }
+            // G-PILLCLAMP: a ⚡ pill wrote its field this frame — stamp the
+            // recommendation's provenance (the value is the funnel's, not a
+            // hand edit) and remember it for the flush.
+            if let Some((field, preview)) = pills.as_ref().and_then(|p| p.take_clicked()) {
+                entry
+                    .feeds_provenance
+                    .set(field, preview.provenance.clone());
+                entry.pill_stamped_fields.push(field);
             }
 
             // Pattern diagrams for all operation types
@@ -5017,9 +5077,14 @@ fn prov_from_chipload(source: &rs_cam_core::feeds::ChiploadSource) -> (ProvKind,
 }
 
 /// Same as [`dv`] but with an optional inline ⚡ Suggest pill that pushes
-/// the LUT-recommended value into the field on click. Delegates to
-/// [`ValueRow`] with a [`Suggestion`]; behaviour (near-match greying,
-/// suggestion rounding) is identical to the pre-component path.
+/// the recommended value into the field on click. Delegates to [`ValueRow`]
+/// with the [`Suggestion`] a [`PillSuggestions`] built for this field.
+///
+/// G-PILLCLAMP (2026-09-10): the suggestion is the apply funnel's as-applied
+/// value for the field (or a labelled raw fallback when the funnel does not
+/// write it), so the pill offers and writes the same number as `⚡ Apply cut
+/// geometry`. A click is recorded on the `PillSuggestions` so the caller can
+/// stamp the recommendation's provenance on the entry.
 fn dv_pill(
     ui: &mut egui::Ui,
     label: &str,
@@ -5027,19 +5092,22 @@ fn dv_pill(
     suffix: &str,
     speed: f64,
     range: std::ops::RangeInclusive<f64>,
-    suggestion: Option<(f64, &rs_cam_core::feeds::ChiploadSource)>,
+    suggestion: Option<pills::PillSuggestion<'_>>,
 ) -> bool {
     let mut row = ValueRow::new(label, val, suffix, speed, range).tooltip(tooltip_for(label));
-    if let Some((rec, source)) = suggestion {
-        let (kind, reference) = prov_from_chipload(source);
-        row = row.suggest(Suggestion {
-            recommended: rec,
-            source: kind,
-            reference,
-        });
+    let mut click = None;
+    if let Some(pill) = suggestion {
+        let (s, c) = pill.into_parts();
+        row = row.suggest(s);
+        click = Some(c);
     }
     let out = row.show(ui);
     record_stock_to_leave(ui, label, &out);
+    if out.suggested
+        && let Some(c) = &click
+    {
+        c.record();
+    }
     out.suggested
 }
 

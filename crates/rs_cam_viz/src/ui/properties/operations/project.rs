@@ -1,4 +1,4 @@
-use rs_cam_core::feeds::FeedsResult;
+use super::super::pills::PillSuggestions;
 
 use crate::state::job::ModelId;
 use crate::state::toolpath::{ProjectCurveConfig, ProjectCurveDirection, ProjectCurveSide};
@@ -9,7 +9,7 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
     ui: &mut egui::Ui,
     cfg: &mut ProjectCurveConfig,
     models: &[(ModelId, String)],
-    _feeds_result: Option<&FeedsResult>,
+    _pills: Option<&PillSuggestions>,
 ) {
     // Project-curve is an engraving op (single-line tracing onto a 3D
     // surface). No stepover/DOC pills; feed/plunge are edited on the

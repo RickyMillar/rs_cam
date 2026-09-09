@@ -177,6 +177,19 @@ impl FeedsProvenance {
         *self.slot_mut(field) = Some(prov);
     }
 
+    /// Read a single dimension's stamp. `None` means the operation's struct
+    /// default still stands for that field (see the type-level doc).
+    pub fn get(&self, field: FeedsField) -> Option<&ValueProvenance> {
+        match field {
+            FeedsField::FeedRate => self.feed_rate.as_ref(),
+            FeedsField::PlungeRate => self.plunge_rate.as_ref(),
+            FeedsField::SpindleRpm => self.spindle_rpm.as_ref(),
+            FeedsField::Stepover => self.stepover.as_ref(),
+            FeedsField::DepthPerPass => self.depth_per_pass.as_ref(),
+            FeedsField::ScallopHeight => self.scallop_height.as_ref(),
+        }
+    }
+
     /// Detect in-place manual edits at the GUI's entry→session flush and stamp
     /// them [`ProvenanceSource::Manual`] (W2.1).
     ///

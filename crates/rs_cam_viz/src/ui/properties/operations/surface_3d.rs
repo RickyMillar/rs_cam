@@ -1,7 +1,7 @@
+use super::super::pills::PillSuggestions;
 use rs_cam_core::adaptive_shared::{
     radial_woc_fraction_from_leading_arc, target_engagement_fraction,
 };
-use rs_cam_core::feeds::FeedsResult;
 
 use crate::state::toolpath::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClaimsReference, ClearingStrategy, DropCutterConfig,
@@ -18,9 +18,9 @@ const FALLBACK_TOOL_RADIUS: f64 = 3.175;
 pub(in crate::ui::properties) fn draw_dropcutter_params(
     ui: &mut egui::Ui,
     cfg: &mut DropCutterConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
 ) {
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("dc_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -51,12 +51,12 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     ui: &mut egui::Ui,
     cfg: &mut Adaptive3dConfig,
     tool_radius: f64,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
 ) {
     // Spec: pill stepover + depth_per_pass; leave fine_stepdown alone
     // (finishing-pass param the LUT doesn't speak to).
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
-    let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
+    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     // The ContourSpiral strategy holds engagement flat by construction, so
     // its primary knob is the friendly "Optimal load" slider (it derives
     // the stepover). The raw stepover pill is retired for that strategy and
@@ -323,7 +323,7 @@ fn draw_spiral_load_control(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool_
 pub(in crate::ui::properties) fn draw_waterline_params(
     ui: &mut egui::Ui,
     cfg: &mut WaterlineConfig,
-    _feeds_result: Option<&FeedsResult>,
+    _pills: Option<&PillSuggestions>,
 ) {
     // Waterline: z_step is the axial pass spacing, but Step 3 LUT mapping
     // (axial_depth_mm) is calibrated for clearing DOC, not contour Z-step.
@@ -345,7 +345,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
     ui: &mut egui::Ui,
     cfg: &mut PencilConfig,
     tools: &[(crate::state::job::ToolId, String, f64)],
-    _feeds_result: Option<&FeedsResult>,
+    _pills: Option<&PillSuggestions>,
     // P2 pencil-panel consolidation (2026-07): the "Rest reference" group
     // below owns `stock_source` directly (Fresh ⇔ reference tool, Remaining
     // Stock ⇔ machined stock) instead of leaving it to the separate generic
@@ -617,7 +617,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
 pub(in crate::ui::properties) fn draw_scallop_params(
     ui: &mut egui::Ui,
     cfg: &mut ScallopConfig,
-    _feeds_result: Option<&FeedsResult>,
+    _pills: Option<&PillSuggestions>,
 ) {
     // Scallop's stepover is computed from scallop_height + tool radius, not
     // an editable field, so no stepover pill. Feed/plunge live on the Feeds
@@ -870,7 +870,7 @@ fn draw_unified_finish_claims(
 pub(in crate::ui::properties) fn draw_unified_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut UnifiedFinishConfig,
-    _feeds_result: Option<&FeedsResult>,
+    _pills: Option<&PillSuggestions>,
     resolved_claims_reference: Option<rs_cam_core::compute::config::ClaimsReferenceFinding>,
     stock_source: StockSource,
 ) {
@@ -962,9 +962,9 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
 pub(in crate::ui::properties) fn draw_steep_shallow_params(
     ui: &mut egui::Ui,
     cfg: &mut SteepShallowConfig,
-    feeds_result: Option<&FeedsResult>,
+    pills: Option<&PillSuggestions>,
 ) {
-    let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("ss_p")
         .num_columns(2)
         .spacing([8.0, 4.0])

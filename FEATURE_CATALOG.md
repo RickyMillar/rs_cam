@@ -62,6 +62,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 - stock material library in `rs_cam_core::material`
 - machine profiles in `rs_cam_core::machine`
 - feeds/speeds calculator in `rs_cam_core::feeds`
+- one apply funnel for every recommendation write (`feeds::suggest::apply_feeds_subset` → `enforce_invariants`): the Feeds-tab Apply buttons, the modal, the batch and MCP `apply_feeds` write the clamped, rounded operating point. Since G-PILLCLAMP (2026-09-10) the 24 per-field ⚡ pills do too — they read `feeds::suggest::preview_field_applies`, a dry run of that funnel, so a pill offers and writes the same number as Apply and stamps the recommendation's provenance; the one dial the funnel does not write (VCarve Max Depth) offers the raw calculator value and its hover says "not clamped". Sentries: `pill_writes_clamped_value_g_pillclamp.rs`, `apply_contract_a3.rs`
 - vendor LUT seeding from embedded observations in `crates/rs_cam_core/data/vendor_lut`
 
 ## Toolpath modifiers and control layers
