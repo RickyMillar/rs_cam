@@ -711,9 +711,19 @@ Ledger:
   any simulation. The 0.2 mm simulation of that three-toolpath project
   was then OOM-killed (journal 09:36: `rs_cam_gui` SIGKILL, oom-kill; the
   box carried a 11 GB rust-analyzer and a full 8 GB swap at the time). No
-  toml was saved; recipe above for the rerun. Spec direction from the
-  peer: give the scallop tiers the unified finish's PRE-decompose door
-  instead of the post-generation clip walk.
+  toml was saved; recipe above for the rerun. RETRACTED the same day: the
+  scallop already generates one ring set per region (scallop.rs P2.3,
+  `pre_boundary_regions` threaded from the planner), so there is no
+  "post-generation clip walk" to replace. What the code shows instead:
+  `plan_tier_operation` sets `continuous: true` on every scallop tier;
+  under continuous the spiral connector falls back to
+  retract/rapid/replunge on any hop over the ring-spacing bound and the
+  intra-pass relink is skipped — T3's 484 rings / 989 retracts is every
+  ring unchained. Hypothesis under test: the island fragmentation is a
+  PLANNER DEFAULT, not a clip defect (one dial: T3 with continuous:false,
+  hookup 3.0 / 6.0). Also to check: whether the DropCutter arm receives
+  `ctx.boundary_regions` — if yes, G-RASTERLADDER is only a missing
+  `tier_strategies` value.
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and
