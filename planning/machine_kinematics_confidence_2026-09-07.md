@@ -801,6 +801,30 @@ Ledger:
   behaviour (the linking SPEC in `planning/linking_2026-09-09/` takes it
   as a fallback that must now be BUILT, not enabled) or remove the dial
   from every surface.
+- **G-LINKSTAGE (2026-09-09, SPEC `planning/linking_2026-09-09/SPEC.md`,
+  3 UNVERIFIED marks):** a shared surface-link stage for fragmented
+  finishing passes. Findings the spec spot-checked against code: the
+  scallop relink joins few rings because of the CANDIDATE SET, not the
+  distance/boundary/kinematics tests — rings come out breadth-first by
+  offset level (scallop.rs ~1500-1535) so adjacent entries are different
+  loops tens of mm apart, the relink is called with `reorder: false`
+  (~2557) and never rotates a closed ring to the point nearest the previous
+  exit (rotation exists only in the continuous branch ~2379);
+  `surface_link::relink_fragments` is already the shared kernel and the gap
+  is the 12 call sites plus two defects — scallop passes
+  `link_ceiling: None` (no lifted hop on a rest-driven island) and the TSP's
+  `internal_link_ceiling_z` (execute.rs ~3500) returns None for every
+  non-drill family (a Minimum-retract fallback would be re-planted at
+  safe_z by the reorder). Design: one execute.rs helper building
+  RelinkParams (reorder on, ceiling from initial stock, boundary,
+  kinematics), fragment kind OpenRun/ClosedLoop with loop rotation, the
+  Minimum-retract fallback selected by the now-inert `retract_strategy`
+  dial (G-RETRACTDIAL), byte-identity via hookup_mm == 0 defaults.
+  Experiments L1-L6 (§5) are one-dial GUI runs; L1 is a stderr counter
+  read of the RelinkReport at scallop.rs ~2580. Tier-islands cost rule
+  (§ cost): fill a hole when its area < h·v·t_j summed over the crossing
+  rows — break-even ~25 mm (~500 mm²) at t_j 1 s, i.e. every hole on this
+  map.
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and
