@@ -894,6 +894,19 @@ Ledger:
   G-BOUNDARYPLUNGE (an untagged descent the geometric guard should have
   capped, or a generator emitting a descent the modulator never sees);
   measured on the pencil family, which neither of those closed.
+- **G-PENCILFLOAT (2026-09-09, OPEN — a coverage question, deliberately
+  NOT part of G-LINKSTAGE):** 39 % of the realistic pencil pass (P1) is
+  tip float — the tool is following a centreline it never reaches. The
+  linking stage could chain past those fragments instead of re-entering
+  for them, but that changes WHICH GROUND THE PASS CUTS, so it is a
+  coverage and quality decision, not a linking one, and it must be
+  specified on its own rather than smuggled into the link change (ruled by
+  rs-cam-15 while briefing the implementer; the agent names it as a
+  follow-up). The question underneath: should a pass emit a centreline it
+  already knows the tool cannot reach at all? That is the same
+  "define, don't finish" question the pencil work raised in
+  `planning/pencil_linking_2026-09-04.md`, and the reach map (P5) is now
+  the instrument that can answer it per cell.
 - **Pencil on FRESH stock is unsafe by construction (2026-09-09):** P0
   reports 32 rapid collisions purely because a pencil pass on an unmachined
   block rapids through material that no upstream op has removed. Any
