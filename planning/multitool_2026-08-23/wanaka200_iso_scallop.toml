@@ -1116,3 +1116,93 @@ source = "manual"
 [setups.toolpaths.feeds_provenance.spindle_rpm]
 source = "vendor_lut"
 reference = "amana-tapered-hardwood-scallop-3175-2f"
+
+[[setups.toolpaths]]
+id = 19
+name = "Pencil measure (R1.0)"
+type = "pencil"
+enabled = true
+tool_id = 2
+model_id = 0
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pencil"
+
+[setups.toolpaths.operation.params]
+bitangency_angle = 160.0
+min_cut_length = 2.0
+hookup_distance = 5.0
+num_offset_passes = 1
+offset_stepover = 0.5
+sampling = 0.5
+feed_rate = 1200.0
+plunge_rate = 180.0
+stock_to_leave = 0.0
+min_valley_depth = 0.05
+bisector_strength = 1.0
+reference_tool_diameter = 3.0
+detector = "rest"
+valley_saliency = 0.15
+curvature_smoothing = 4
+rest_cell_mm = 0.5
+route_width_factor = 2.0
+spindle_rpm = 24000
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = true
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"

@@ -763,3 +763,37 @@ does not carry.
 - **Every simulation-gated overlay** (S1-S9). This session ran no simulation, by instruction. Their preconditions are read from code, not observed.
 - **The `Show ▼` popover.** `set_ui_view` cannot open it. Its contents are transcribed from `ui/viewport_overlay.rs:115-228`.
 - **The exact draw-order consequence** of stacking a territory over a scalar field on the same surface. The two existing overlays use separate draw calls in a fixed order (`render/mod.rs:1053-1080`), and this pass did not test a three-way stack.
+
+---
+
+## 11. Status addendum — 2026-09-10
+
+**This design is implemented. Read §2-§5 as a record of the state before the
+change, not as current behaviour.**
+
+Commit `f6478689`, "feat(ui): P6 — the Overlays panel: one registry for every
+viewport overlay, MCP set_ui_view overlays, 17 audit fixes", lands the
+proposal. What shipped matches §6 on every load-bearing point:
+
+- **The panel exists** — `crates/rs_cam_viz/src/ui/overlays/{mod,panel,registry}.rs`, 2057 lines. The registry (`registry.rs`, 1514 lines) is the single declarative source that §8 step 2 asked for.
+- **The four groups are the four proposed** — `Geometry`, `Toolpath`, `Regions`, `Analysis` (`ui/overlays/registry.rs:44-64`).
+- **`Show ▼` is deleted.** It survives only as two explanatory comments in `ui/viewport_overlay.rs:6,106`, and the first repeats Finding 1's wording — "a flat popover of twelve unrelated things".
+- **The automation label moved as §8 required.** `ui/viewport_overlay.rs:106` records that `overlay_collision_check` was registered on `Show ▼` and now lives on the Collisions row.
+- **The MCP surface landed as specified in §9.** `SetUiViewParam::overlays` is an `Option<BTreeMap<String, bool>>` (`crates/rs_cam_mcp/src/server.rs:280-307`), and the reply separates `overlays.applied` from `overlays.refused` with a reason on each refusal (`:297`). Test: `set_ui_view_param_carries_an_overlays_map` (`:1727-1733`).
+- **"17 audit fixes"** in that commit message covers the stale-string and duplicate-control findings of §4.
+
+The reach map (Finding 9, S11) also shipped, in `be96933c`, `504fb350` and
+`f6856344`. It now has a full viz surface across 15 files, a registry row, an
+`reach_map` MCP tool, and the properties-panel readout. Three P5 follow-ups
+went further than this document asked: the map states its own discretisation
+floor and abstains below it, it states its area base and the direction of its
+bias, and the viewport dims the toolpath moves under the overlay. The
+"unreachable %" number is **top-down only** — undersides, walls and a band one
+envelope radius inside the outline are NOT MEASURED — so read `is_measured`
+and `measured_area_mm2` against `surface_area_mm2` before believing a clean
+percentage.
+
+Two consequences for a reader of this document:
+
+- Every "no toggle" and "never drawn" row in §2 is superseded. The registry is now the authority on what is switchable.
+- §10's "not verified" list is closed by the implementation, not by this pass. It was never re-tested here.

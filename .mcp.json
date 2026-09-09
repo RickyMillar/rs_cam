@@ -1,15 +1,8 @@
 {
   "mcpServers": {
     "rs-cam": {
-      "command": "cargo",
+      "command": "target/release/rs_cam_gui",
       "args": [
-        "run",
-        "--release",
-        "-p",
-        "rs_cam_viz",
-        "--bin",
-        "rs_cam_gui",
-        "--",
         "--mcp"
       ],
       "directTools": true
