@@ -861,16 +861,22 @@ Readings. T1 and T3c deliver the same finish inside the instrument's
 0.1 mm higher (the ring starts and the island seams are in the tail),
 and the whole-board share over 0.3 mm differs by one point. So the
 §2.7a time ranking holds at delivered finish: T1 is 17 % faster for the
-same surface, and the §2.8 inversion (raster loses to scallop at
-matched finish) does NOT recur here, because the R1.0 raster at s1.0 is
-already at a 0.13 mm flat-law cusp and the residual is reach, not
-pattern. The larger reading is against Q3: the single R1.5 iso-scallop
-delivers the same bar (25.5 % against 26.7 %) in 67 % of T1's time, and
-its median is 8 µm worse. Every pair in this study is bought at the
-price of a second setup, a second tool and a cascade, and none of them
-beats the one-pass R1.5 iso-scallop on this board at the 0.3 mm bar.
-The pairs win only on the median at the flat band (0.052 against
-0.093), which the 0.3 mm bar does not see.
+same surface. This is not the §2.8 pairing, so the §2.8 inversion is
+not tested here: T3c is a contour scallop, not the iso-scallop that won
+§2.8, and it covers only the 75 % machining set with Q2's raster
+standing on the rest; the iso variant on islands (T2) was not measured
+at delivered finish because it costs 3× the time. The larger reading is
+against Q3: the single R1.5 iso-scallop reaches the same bar (25.5 %
+against 26.7 %, inside the instrument's quantisation) in 67 % of T1's
+time, with a median 8 µm worse. Every pair in this study is bought at
+the price of a second setup, a second tool and a cascade, and none of
+them improves on the one-pass R1.5 iso-scallop at the 0.3 mm bar. The
+pairs win only on the median at the flat band (0.052 against 0.093),
+which the 0.3 mm bar does not see. The tails are the same for all
+three: p99 1.20 (T1), 1.70 (T3c), 1.23 (Q3); max 4.46, 4.79, 4.27. The
+R1.0 buys no reach over the R1.5 at the tail on this terrain. The deep
+residual the operator sees is beyond every ball in the ladder and
+belongs to the river and pencil work, not to a finer finishing tier.
 
 Recommendation on delivered finish: Q3 (R1.5 iso-scallop h0.20, one
 pass) unless the flats must carry the R1.0's 0.05 mm median, in which
@@ -1030,7 +1036,10 @@ re-read on post-fix runs):
    emits it (§2.6), and the raster form of that pair cannot be built
    today — so Q2 stands alone, valley floors accepted, or B15. When the
    floors must go: Q2 then the R1.0 raster on remaining stock (T1, §2.7,
-   6 478 s) is the measured two-tool answer.
+   6 478 s) is the measured two-tool answer at nominal cusp; at DELIVERED
+   finish (§2.7b) the one-pass R1.5 iso-scallop (Q3, 4 372 s) reaches
+   the same 0.3 mm bar as T1 in 67 % of its time, and the deep residual
+   both leave is beyond every ball in the ladder.
 1. B15 — 3 274 s, cusp 0.20, passes every bar as written.
 2. S20 — 2 389 s, cusp 0.27, passes every bar once the plunge fix is on the
    binary (rerun pending).

@@ -175,4 +175,5 @@ Measurement script: `planning/deep_doc_modulation_2026-09-08/svg_island_area.py`
 Delivered finish (study doc §2.7b, `cusp_measure.py`): T1 26.7 % of
 columns > 0.3 mm (p50 0.133) at 6 478 s; T3c 27.7 % (p50 0.128) at
 7 820 s. Same surface, T1 17 % faster. The single-pass R1.5 iso-scallop
-(Q3, §2.8) delivers 25.5 % at 4 372 s and beats both pairs.
+(Q3, §2.8) reaches the same bar, 25.5 %, at 4 372 s: the pairs buy no
+finish over one pass at 0.3 mm, and their tails (p99, max) are the same.

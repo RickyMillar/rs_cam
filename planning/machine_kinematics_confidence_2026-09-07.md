@@ -773,10 +773,16 @@ Ledger:
   6 478 s and T3c 27.7 % at 7 820 s are the same surface within the
   0.2 mm quantisation, so the T1-over-T3c ranking HOLDS at delivered
   finish (the R1.0 raster at s1.0 is already at a 0.13 mm flat-law cusp;
-  the residual is reach). But the single-pass R1.5 iso-scallop Q3
-  (25.5 % at 4 372 s) beats BOTH pairs at the 0.3 mm bar; the pairs win
-  only the flat-band median (0.052 vs 0.093). Recommendation on record:
-  Q3 one pass; T1 if the flats must carry the R1.0 median.
+  the residual is reach). The single-pass R1.5 iso-scallop Q3 (25.5 % at
+  4 372 s) reaches the same bar in 67 % of T1's time (25.5 vs 26.7 % is
+  inside the same quantisation); the pairs win only the flat-band median
+  (0.052 vs 0.093). The §2.8 inversion is untested here: T3c is a contour
+  scallop over the 75 % machining set, not an iso pairing. The TAILS are
+  the same for T1 / T3c / Q3 (p99 1.20 / 1.70 / 1.23 mm, max 4.46 / 4.79 /
+  4.27): the R1.0 buys no reach over the R1.5 on this terrain — the deep
+  residual is beyond every ball in the ladder and belongs to the
+  river/pencil work, not to a finer tier. Recommendation on record: Q3 one
+  pass; T1 if the flats must carry the R1.0 median.
 - **G-ISOCLIPENTRY residual (2026-09-09, live 0.2 reruns on the fix):**
   T3 pair 11 105 → 9 535 s, over-bar 7 756 → 1 879, peak 1.79 → 1.39 mm;
   T2 25 580 → 19 804 s, 17 538 → 5 335, peak 1.44 → 1.39 — STILL CRITICAL
