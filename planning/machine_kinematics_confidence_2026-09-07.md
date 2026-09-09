@@ -703,6 +703,17 @@ Ledger:
   software-adapter test that constructs every render pipeline in
   `render/mod.rs`, so a layout/shader mismatch fails in `cargo test`
   instead of at the operator's launch.
+- **G-RASTERLADDER note (2026-09-09, rs-cam-28/38):** the no-code stand-in
+  for raster-per-island (planner tier 1 as `unified_finish` forced to its
+  raster band: steep_threshold 85 clamped, waterline 89, overlap 1.25, after
+  the Q2 raster) took ~15 min to GENERATE tier 1 alone on the wanaka board
+  — the decomposition + per-region raster path is itself the cost, before
+  any simulation. The 0.2 mm simulation of that three-toolpath project
+  was then OOM-killed (journal 09:36: `rs_cam_gui` SIGKILL, oom-kill; the
+  box carried a 11 GB rust-analyzer and a full 8 GB swap at the time). No
+  toml was saved; recipe above for the rerun. Spec direction from the
+  peer: give the scallop tiers the unified finish's PRE-decompose door
+  instead of the post-generation clip walk.
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and
