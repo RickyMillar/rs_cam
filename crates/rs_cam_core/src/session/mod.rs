@@ -1225,6 +1225,24 @@ pub struct ProjectSession {
 
     // Computed results (keyed by toolpath index)
     pub(crate) results: HashMap<usize, ToolpathComputeResult>,
+    /// Per-toolpath generation-input revision, keyed by toolpath index.
+    ///
+    /// Bumped by [`ProjectSession::drop_result`] — the single site that
+    /// removes a cached result because an input changed — and never by
+    /// [`ProjectSession::insert_result`], which records an answer rather
+    /// than a change. A reader that recorded the revision when it asked
+    /// for a generation can therefore tell "this answer is for the config
+    /// I asked about" from "the config moved while I waited"; an absent
+    /// `results` entry alone cannot say that, because the submit does not
+    /// drop it and the drain inserts it. See
+    /// `planning/ui_fix_2026-09-09/research/R0.1.md` §4.2.
+    ///
+    /// Values come from [`Self::next_revision`] and are unique across the
+    /// whole session, so an index shift (a removal, a bulk replace) can
+    /// invalidate every in-flight comparison by bumping each index.
+    pub(crate) toolpath_revision: HashMap<usize, u64>,
+    /// Monotonic source of [`Self::toolpath_revision`] values. Never reset.
+    pub(crate) next_revision: u64,
     pub(crate) simulation: Option<SimulationResult>,
 
     // Resumable export-wizard settings.
@@ -1264,6 +1282,8 @@ impl ProjectSession {
             }],
             toolpath_configs: Vec::new(),
             results: HashMap::new(),
+            toolpath_revision: HashMap::new(),
+            next_revision: 0,
             simulation: None,
             wizard: WizardState::default(),
             next_toolpath_id: 0,
@@ -1364,6 +1384,18 @@ impl ProjectSession {
     /// Get a computed toolpath result by index.
     pub fn get_result(&self, index: usize) -> Option<&ToolpathComputeResult> {
         self.results.get(&index)
+    }
+
+    /// The toolpath's generation-input revision. Changes whenever an edit
+    /// dropped its cached result; `0` for a toolpath no edit has touched.
+    ///
+    /// Read it beside a generation request and compare it when the answer
+    /// arrives: an unequal revision means the config moved while the
+    /// worker ran, so the answer describes inputs the project no longer
+    /// has. See [`Self::toolpath_revision`] for why an absent result
+    /// cannot answer that question.
+    pub fn toolpath_revision(&self, index: usize) -> u64 {
+        self.toolpath_revision.get(&index).copied().unwrap_or(0)
     }
 
     /// Get the simulation result, if one has been run.

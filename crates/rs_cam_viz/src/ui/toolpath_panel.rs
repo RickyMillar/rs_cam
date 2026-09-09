@@ -5,6 +5,7 @@ use super::readiness;
 use super::sim_debug::draw_trace_badge;
 use crate::render::toolpath_render::palette_color;
 use crate::state::AppState;
+use crate::state::freshness::{FreshnessState, freshness};
 use crate::state::job::{SetupId, ToolId};
 use crate::state::runtime::ComputeStatus;
 use crate::state::selection::Selection;
@@ -31,6 +32,15 @@ struct RuntimeSnapshot {
     status: ComputeStatus,
     has_result: bool,
     stats: Option<ToolpathStats>,
+    /// The one state every surface should read (R0.1 §4.4). Derived here,
+    /// beside the core result cache the derivation needs, because the card
+    /// body no longer holds the session borrow.
+    ///
+    /// F2.1 lands the state and its sentries; F2.2 is the task that draws
+    /// it (a `STALE` chip beside `OK`, a dimmed viewport path, the
+    /// workspace counts), which is why nothing reads it yet.
+    #[allow(dead_code)]
+    freshness: FreshnessState,
 }
 
 /// Left panel for the Toolpath workspace: operation queue with status chips.
@@ -129,6 +139,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                         status: r.status.clone(),
                         has_result: r.result.is_some(),
                         stats: r.result.as_ref().map(|res| res.stats.clone()),
+                        freshness: freshness(
+                            tc_src,
+                            Some(r),
+                            state.session.get_result(tp_idx).is_some(),
+                        ),
                     });
                 draw_toolpath_card(ui, state, events, &card, rt_snap.as_ref(), i, local_idx);
             }

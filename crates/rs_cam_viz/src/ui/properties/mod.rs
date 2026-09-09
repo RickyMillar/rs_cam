@@ -108,7 +108,7 @@ fn flush_tool_draft(state: &mut AppState) {
 /// Commit a tool draft to the session: no-op if it matches the committed
 /// tool, else push an undo step, write it, invalidate dependent toolpaths,
 /// and mark the project edited.
-fn commit_tool_draft(
+pub(crate) fn commit_tool_draft(
     state: &mut AppState,
     tool_id: crate::state::job::ToolId,
     draft: crate::state::job::ToolConfig,
@@ -140,7 +140,19 @@ fn commit_tool_draft(
     {
         *t = draft;
     }
-    state.session.invalidate_tool(tool_id.0);
+    // G-FRESHSTATE: `invalidate_tool` drops the core results of every op
+    // this tool machines (and of every planned-tier ladder that names it).
+    // Request their regeneration too — this route used to drop the results
+    // and mark nothing, so the cards stayed green and export fell back to
+    // the GUI's copy of the OLD geometry.
+    let affected = state.session.invalidate_tool(tool_id.0);
+    let now = std::time::Instant::now();
+    for index in affected {
+        if let Some(tc) = state.session.get_toolpath_config(index) {
+            let id = tc.id;
+            state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
+        }
+    }
     state.gui.mark_edited();
 }
 
@@ -342,7 +354,16 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter()
                 .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
                 .collect();
-            if let Some((_, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0) {
+            // G-FRESHSTATE: the panel writes `face_up` / `z_rotation`
+            // straight into `SetupData`, so no core setter ran and every
+            // toolpath in the setup kept a result generated in the OLD
+            // frame. Snapshot the orientation, let the panel write, then
+            // route the change through the core setter — which is
+            // idempotent in the value and drops the setup's results.
+            let mut orientation_before = None;
+            if let Some((setup_index, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0)
+            {
+                orientation_before = Some((setup_index, setup_data.face_up, setup_data.z_rotation));
                 setup::draw(
                     ui,
                     setup_id,
@@ -352,6 +373,25 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &all_models,
                     events,
                 );
+            }
+            if let Some((setup_index, face_before, rotation_before)) = orientation_before {
+                let after = state
+                    .session
+                    .list_setups()
+                    .get(setup_index)
+                    .map(|s| (s.face_up, s.z_rotation));
+                if let Some((face_after, rotation_after)) = after {
+                    if face_after != face_before {
+                        let _ = state.session.set_setup_face(setup_index, face_after);
+                        state.gui.mark_edited();
+                    }
+                    if rotation_after != rotation_before {
+                        let _ = state
+                            .session
+                            .set_setup_rotation(setup_index, rotation_after);
+                        state.gui.mark_edited();
+                    }
+                }
             }
         }
         Selection::Fixture(setup_id, fixture_id) => {
@@ -660,6 +700,14 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // collide with the session borrows in the same argument list.
             let mut show_reach_map = state.viewport.show_reach_map;
 
+            // G-FRESHSTATE: set by the write-back below when a field that
+            // decides the generated geometry actually moved. It is the
+            // WIDER condition — the op/heights/boundary comparison under
+            // it misses dressups, the tool and model combos, the
+            // stock-source flip and the face-selection Clear, all of which
+            // used to leave the card green and request no regeneration.
+            let mut inputs_changed = false;
+
             // Build a temporary ToolpathEntry from session config + gui runtime
             // so the existing draw_toolpath_panel can work unchanged.
             if let Some(mut entry) =
@@ -695,7 +743,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 state.viewport.show_reach_map = show_reach_map;
 
                 // Write config changes back to session
-                write_entry_config_to_session(&entry, &mut state.session);
+                inputs_changed = write_entry_config_to_session(&entry, &mut state.session);
                 // Write runtime changes back to gui
                 write_entry_runtime_to_gui(&entry, &mut state.gui);
             }
@@ -716,7 +764,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 let boundary_changed = boundary_before
                     .as_ref()
                     .is_some_and(|b| *b != format!("{:?}", tc.boundary));
-                if op_changed || heights_changed || boundary_changed {
+                if inputs_changed || op_changed || heights_changed || boundary_changed {
                     if let Some(rt) = state.gui.toolpath_rt.get_mut(&id) {
                         rt.stale_since = Some(std::time::Instant::now());
                     }
@@ -724,7 +772,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 }
                 if heights_changed {
                     // Trigger GPU re-upload so height plane positions update
-                    events.push(AppEvent::StockChanged);
+                    events.push(AppEvent::HeightPlanesChanged);
                 }
                 if boundary_changed
                     && tc.boundary.enabled
@@ -3454,7 +3502,7 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabB
 ///
 /// This allows the existing `draw_toolpath_panel` to work unchanged while the
 /// underlying data migrates from `JobState` to `ProjectSession`.
-fn build_entry_from_session_and_gui(
+pub(crate) fn build_entry_from_session_and_gui(
     id: crate::state::toolpath::ToolpathId,
     session: &rs_cam_core::session::ProjectSession,
     gui: &crate::state::runtime::GuiState,
@@ -3521,12 +3569,50 @@ pub fn boundary_summary_line(
     format!("Boundary: {source}{suffix}")
 }
 
+/// A signature of the fields that decide a toolpath's generated geometry.
+///
+/// Two configs with the same signature generate the same path, so a
+/// difference across the panel's write-back is exactly the condition that
+/// must drop the cached result. Name, coolant, pre/post G-code and the
+/// debug options are deliberately absent — editing them dirties the
+/// project but changes no motion (R0.1 §4.3).
+///
+/// Serialized rather than compared field-by-field because
+/// `OperationConfig`, `HeightsConfig` and `DressupConfig` are not
+/// `PartialEq`. This is the same technique, and the same per-frame cost,
+/// as the `op_before` / `heights_before` snapshots the caller already
+/// takes.
+fn generation_inputs_signature(tc: &rs_cam_core::session::ToolpathConfig) -> String {
+    format!(
+        "{}|{}|{}|{:?}|{:?}|{}|{}|{:?}|{:?}",
+        serde_json::to_string(&tc.operation).unwrap_or_default(),
+        serde_json::to_string(&tc.dressups).unwrap_or_default(),
+        serde_json::to_string(&tc.heights).unwrap_or_default(),
+        tc.boundary,
+        tc.rest_analysis,
+        tc.tool_id,
+        tc.model_id,
+        tc.stock_source,
+        tc.face_selection,
+    )
+}
+
 /// Write config changes from a `ToolpathEntry` back to the session's `ToolpathConfig`.
-fn write_entry_config_to_session(
+///
+/// G-FRESHSTATE: when a generation input actually moved, this also drops
+/// the core's cached result for the toolpath and everything downstream of
+/// it. Before that the panel wrote every field through
+/// `find_toolpath_config_by_id_mut` and no core setter ran, so the core
+/// went on holding — and export went on emitting — geometry from the
+/// previous parameter set, and the downstream `FromRemainingStock` chain
+/// was never invalidated (R0.1 §2.2 item 1).
+pub(crate) fn write_entry_config_to_session(
     entry: &ToolpathEntry,
     session: &mut rs_cam_core::session::ProjectSession,
-) {
-    if let Some((_, tc)) = session.find_toolpath_config_by_id_mut(entry.id) {
+) -> bool {
+    let mut invalidate: Option<usize> = None;
+    if let Some((index, tc)) = session.find_toolpath_config_by_id_mut(entry.id) {
+        let signature_before = generation_inputs_signature(tc);
         // W2.1: stamp Manual on any feeds dimension the user hand-edited in the
         // param widgets this frame (value moved but provenance didn't). Must run
         // before `tc.operation` / `tc.feeds_provenance` are overwritten below.
@@ -3566,7 +3652,18 @@ fn write_entry_config_to_session(
         tc.face_selection = entry.face_selection.clone();
         tc.debug_options = entry.debug_options;
         tc.feeds_provenance = new_provenance;
+        if generation_inputs_signature(tc) != signature_before {
+            invalidate = Some(index);
+        }
     }
+    // Runs once the `&mut ToolpathConfig` borrow above is released.
+    // `enabled` is not in the signature: the panel does not edit it (the
+    // card's row control does, through `set_toolpath_enabled`), and its
+    // own transition keeps the toggled op's result for a re-enable.
+    if let Some(index) = invalidate {
+        session.invalidate_toolpath_inputs(index);
+    }
+    invalidate.is_some()
 }
 
 /// Write runtime changes from a `ToolpathEntry` back to the GUI's `ToolpathRuntime`.

@@ -1104,6 +1104,8 @@ pub(super) fn build_session_from_project(
         setups,
         toolpath_configs,
         results: std::collections::HashMap::new(),
+        toolpath_revision: std::collections::HashMap::new(),
+        next_revision: 0,
         simulation: None,
         wizard: super::WizardState::default(),
         next_toolpath_id,

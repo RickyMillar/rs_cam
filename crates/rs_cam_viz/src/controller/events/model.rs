@@ -636,6 +636,15 @@ impl<B: ComputeBackend> AppController<B> {
             // upstream — clear stale simulation just in case.
             self.state.session.invalidate_stock();
         }
+        // G-FRESHSTATE / R0.1 §7 Q1 (operator ruling, 2026-09-10): a stock
+        // edit stales EVERYTHING. Both core calls above dropped every
+        // toolpath result; request their regeneration so this route and
+        // the MCP one (`mcp_apply_stale(StockChanged)`) agree.
+        let now = std::time::Instant::now();
+        let ids = self.state.session.all_toolpath_ids();
+        for id in ids {
+            self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
+        }
         self.pending_upload = true;
         self.state.gui.mark_edited();
         self.sync_alignment_pin_drill();

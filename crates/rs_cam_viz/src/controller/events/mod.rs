@@ -113,7 +113,13 @@ impl<B: ComputeBackend> AppController<B> {
             }
             AppEvent::ToggleToolpathEnabled(tp_id) => {
                 if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) {
-                    let _ = self.state.session.set_toolpath_enabled(idx, !tc.enabled);
+                    let enabled = !tc.enabled;
+                    let _ = self.state.session.set_toolpath_enabled(idx, enabled);
+                    // G-FRESHSTATE: the flip changes what the job cuts and
+                    // what every downstream rest op starts from, so the
+                    // project is dirty and the simulation is stale. It
+                    // used to record neither.
+                    self.state.gui.mark_edited();
                 }
             }
             AppEvent::RemoveToolpath(tp_id) => self.handle_remove_toolpath(tp_id),
@@ -230,6 +236,11 @@ impl<B: ComputeBackend> AppController<B> {
 
             // --- Stock / machine events ---
             AppEvent::StockChanged => self.handle_stock_changed(),
+            AppEvent::HeightPlanesChanged => {
+                // Re-upload only. The heights edit itself already dirtied
+                // the project and dropped that toolpath's result.
+                self.pending_upload = true;
+            }
             AppEvent::StockMaterialChanged => {
                 self.state.gui.mark_edited();
             }

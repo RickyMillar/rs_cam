@@ -3592,3 +3592,440 @@ fn active_setup_index_follows_the_selection() {
         controller.state.session.setup_of_toolpath_id(tp_id)
     );
 }
+
+// ── G-FRESHSTATE — one freshness model (F2.1) ────────────────────────
+//
+// R0.1 (`planning/ui_fix_2026-09-09/research/R0.1.md`) §2.3 is a matrix of
+// every mutation and what each of the three staleness stores did with it.
+// The tests below walk that matrix against the ONE state the surfaces now
+// read: `state::freshness::freshness_at`, derived from the core result
+// cache. Each row asserts the state, and — where the row is one of the
+// eight the core used to keep a result through — that the core result is
+// actually gone, which is what stopped export emitting geometry for a
+// configuration the project no longer had.
+
+use crate::state::freshness::{FreshnessState, freshness_at};
+use rs_cam_core::session::ToolpathComputeResult;
+
+/// A cached core result, standing for "this toolpath has been generated".
+fn core_result() -> ToolpathComputeResult {
+    ToolpathComputeResult {
+        op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(
+            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(Toolpath::new()),
+        )),
+        stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+    }
+}
+
+/// Put every toolpath in the project into the `Current` state: a core
+/// result, a `Done` status, and a drawable GUI result (the fixture already
+/// gives toolpath 0 one).
+fn generate_all_for_test<B: ComputeBackend>(controller: &mut AppController<B>) {
+    let ids: Vec<(usize, ToolpathId)> = controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .enumerate()
+        .map(|(idx, tc)| (idx, tc.id))
+        .collect();
+    for (index, id) in ids {
+        controller
+            .state
+            .session
+            .insert_result(index, core_result())
+            .expect("index is in range");
+        let rt = controller.state.gui.toolpath_rt_or_default(id);
+        rt.status = crate::state::runtime::ComputeStatus::Done;
+        rt.stale_since = None;
+        if rt.result.is_none() {
+            rt.result = Some(ToolpathResult {
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                    Toolpath::new(),
+                )),
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+                drill_op: None,
+            });
+        }
+    }
+    controller.state.gui.dirty = false;
+}
+
+fn state_of<B: ComputeBackend>(controller: &AppController<B>, index: usize) -> FreshnessState {
+    freshness_at(&controller.state.session, &controller.state.gui, index)
+        .expect("toolpath index exists")
+}
+
+/// Drive the inspector's write-back exactly as the panel does: build the
+/// entry from the session, mutate it the way the widget would, write it
+/// back. `edit` receives the entry.
+fn panel_edit<B: ComputeBackend>(
+    controller: &mut AppController<B>,
+    id: ToolpathId,
+    edit: impl FnOnce(&mut crate::state::toolpath::ToolpathEntry),
+) {
+    let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
+        id,
+        &controller.state.session,
+        &controller.state.gui,
+    )
+    .expect("toolpath exists");
+    edit(&mut entry);
+    let changed =
+        crate::ui::properties::write_entry_config_to_session(&entry, &mut controller.state.session);
+    if changed {
+        if let Some(rt) = controller.state.gui.toolpath_rt.get_mut(&id) {
+            rt.stale_since = Some(std::time::Instant::now());
+        }
+        controller.state.gui.mark_edited();
+    }
+}
+
+/// The whole point of the model: an edit through the panel leaves the card
+/// no longer able to say "OK". Pre-fix this read `Current`, because the
+/// panel wrote `tc.operation` through `find_toolpath_config_by_id_mut` and
+/// no core setter ran — the core kept the previous parameter set's result
+/// and `emitted_toolpaths` exported it.
+#[test]
+fn freshness_state_g_freshness_op_field_edit_is_edited_since() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+    assert_eq!(state_of(&controller, 0), FreshnessState::Current);
+
+    panel_edit(&mut controller, id, |entry| {
+        entry.operation.set_feed_rate(1234.0);
+    });
+
+    assert_eq!(state_of(&controller, 0), FreshnessState::EditedSince);
+    assert!(
+        controller.state.session.get_result(0).is_none(),
+        "the core must not keep a result for inputs that moved"
+    );
+    assert!(
+        controller.state.gui.toolpath_rt[&id].result.is_some(),
+        "the GUI keeps the old geometry so the viewport can draw it"
+    );
+    assert!(controller.state.gui.dirty);
+    assert!(controller.state.gui.toolpath_rt[&id].stale_since.is_some());
+}
+
+/// The five inspector rows R0.1 §2.3 marked "S1 none, S2 none, S3 none" —
+/// each one a green card over a result generated from other inputs.
+#[test]
+fn freshness_state_g_freshness_every_inspector_input_stales() {
+    /// One inspector row: a label and the widget edit it stands for.
+    type EntryEdit = Box<dyn Fn(&mut crate::state::toolpath::ToolpathEntry)>;
+    let rows: Vec<(&str, EntryEdit)> = vec![
+        (
+            "heights",
+            Box::new(|e: &mut crate::state::toolpath::ToolpathEntry| {
+                e.heights.clearance_z = rs_cam_core::compute::config::HeightMode::Manual(55.0);
+            }),
+        ),
+        (
+            "boundary",
+            Box::new(|e: &mut crate::state::toolpath::ToolpathEntry| {
+                e.boundary.enabled = !e.boundary.enabled;
+            }),
+        ),
+        (
+            "dressup",
+            Box::new(|e: &mut crate::state::toolpath::ToolpathEntry| {
+                e.dressups.arc_fitting = !e.dressups.arc_fitting;
+            }),
+        ),
+        (
+            "stock source",
+            Box::new(|e: &mut crate::state::toolpath::ToolpathEntry| {
+                e.stock_source = rs_cam_core::compute::config::StockSource::FromRemainingStock;
+            }),
+        ),
+        (
+            "rest analysis",
+            Box::new(|e: &mut crate::state::toolpath::ToolpathEntry| {
+                e.rest_analysis.enabled = !e.rest_analysis.enabled;
+            }),
+        ),
+        (
+            "face selection clear",
+            Box::new(|e: &mut crate::state::toolpath::ToolpathEntry| {
+                e.face_selection = Some(Vec::new());
+            }),
+        ),
+    ];
+
+    for (label, edit) in rows {
+        let mut controller = sample_controller();
+        generate_all_for_test(&mut controller);
+        let id = controller.state.session.toolpath_configs()[0].id;
+        panel_edit(&mut controller, id, edit);
+        assert_eq!(
+            state_of(&controller, 0),
+            FreshnessState::EditedSince,
+            "{label}: an edited input must not read Current"
+        );
+        assert!(
+            controller.state.session.get_result(0).is_none(),
+            "{label}: the core result must be gone"
+        );
+        assert!(controller.state.gui.dirty, "{label}: the project is dirty");
+    }
+}
+
+/// Rebinding the tool or the model changes what is cut, and both used to
+/// leave the core result, the regeneration request and the dirty flag
+/// untouched (R0.1 §2.3, "Tool / model reassignment").
+#[test]
+fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
+    for row in ["tool", "model"] {
+        let mut controller = sample_controller();
+        controller
+            .state
+            .session
+            .tools_mut()
+            .push(ToolConfig::new_default(ToolId(2), ToolType::EndMill));
+        generate_all_for_test(&mut controller);
+        let id = controller.state.session.toolpath_configs()[0].id;
+        panel_edit(&mut controller, id, |entry| {
+            if row == "tool" {
+                entry.tool_id = crate::state::job::ToolId(2);
+            } else {
+                entry.model_id = crate::state::job::ModelId(7);
+            }
+        });
+        assert_eq!(
+            state_of(&controller, 0),
+            FreshnessState::EditedSince,
+            "{row} reassignment"
+        );
+        assert!(controller.state.session.get_result(0).is_none());
+    }
+}
+
+/// The other half of the contract: an edit that changes no motion leaves
+/// the toolpath current. Without this the model would be a rename away
+/// from staling the whole project.
+#[test]
+fn name_and_gcode_edits_do_not_stale() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+
+    panel_edit(&mut controller, id, |entry| {
+        entry.name = "Renamed".to_owned();
+        entry.pre_gcode = "M8".to_owned();
+        entry.post_gcode = "M9".to_owned();
+    });
+
+    assert_eq!(state_of(&controller, 0), FreshnessState::Current);
+    assert!(controller.state.session.get_result(0).is_some());
+    assert_eq!(
+        controller.state.session.toolpath_configs()[0].name,
+        "Renamed",
+        "the edit still reached the session"
+    );
+}
+
+/// A never-generated toolpath is `NoResult`, not `EditedSince`: the two
+/// are the same absent core entry, and only the GUI's retained result
+/// separates them.
+#[test]
+fn freshness_never_generated_is_no_result() {
+    let mut controller = sample_controller();
+    let second = push_toolpath(&mut controller, "Second");
+    controller.state.gui.toolpath_rt.remove(&second);
+    assert_eq!(state_of(&controller, 1), FreshnessState::NoResult);
+}
+
+/// `enabled: false` wins over everything, exactly as `ComputeStatus`
+/// already ruled for the status chip.
+#[test]
+fn freshness_disabled_wins() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+    controller.handle_internal_event(crate::ui::AppEvent::ToggleToolpathEnabled(id));
+    assert_eq!(state_of(&controller, 0), FreshnessState::Disabled);
+    assert!(
+        controller.state.gui.dirty,
+        "toggling an operation off changes what the job cuts"
+    );
+}
+
+/// R0.1 §7 Q4, operator-confirmed: swapping two `Fresh` operations does
+/// not change either one's geometry, so both stay `Current`; only a
+/// downstream `FromRemainingStock` op goes `EditedSince`.
+#[test]
+fn freshness_reorder_keeps_fresh_ops_current() {
+    let mut controller = sample_controller();
+    let second = push_toolpath(&mut controller, "Second");
+    let third = push_toolpath(&mut controller, "Rest");
+    if let Some((idx, _)) = controller.state.session.find_toolpath_config_by_id(third) {
+        controller
+            .state
+            .session
+            .set_stock_source(
+                idx,
+                rs_cam_core::compute::config::StockSource::FromRemainingStock,
+            )
+            .expect("index is in range");
+    }
+    generate_all_for_test(&mut controller);
+
+    controller.handle_internal_event(crate::ui::AppEvent::ReorderToolpath(second, 0));
+
+    assert_eq!(state_of(&controller, 0), FreshnessState::Current);
+    assert_eq!(state_of(&controller, 1), FreshnessState::Current);
+    assert_eq!(state_of(&controller, 2), FreshnessState::EditedSince);
+}
+
+/// R0.1 §7 Q1, operator ruling 2026-09-10: ANY stock edit — dimensions,
+/// pins, or the material alone — stales every toolpath, on both routes.
+/// The GUI route used to stale none of them.
+#[test]
+fn freshness_stock_edit_stales_every_toolpath() {
+    let mut controller = sample_controller();
+    push_toolpath(&mut controller, "Second");
+    generate_all_for_test(&mut controller);
+
+    controller.state.session.stock_mut().x = 321.0;
+    controller.handle_internal_event(crate::ui::AppEvent::StockChanged);
+
+    for index in 0..2 {
+        assert_eq!(
+            state_of(&controller, index),
+            FreshnessState::EditedSince,
+            "toolpath {index} after a stock edit"
+        );
+        assert!(controller.state.session.get_result(index).is_none());
+    }
+    assert!(controller.state.gui.dirty);
+}
+
+/// R0.1 §7 Q3, operator ruling: a machine kinematics edit stales the
+/// SIMULATION only. Timing and feed modulation move; geometry does not.
+#[test]
+fn freshness_machine_kinematics_leaves_toolpaths_current() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    controller.handle_internal_event(crate::ui::AppEvent::MachineChanged);
+    assert_eq!(state_of(&controller, 0), FreshnessState::Current);
+    assert!(controller.state.session.get_result(0).is_some());
+    assert!(controller.state.session.simulation_result().is_none());
+}
+
+/// A setup orientation flip regenerates every toolpath in that setup in a
+/// new frame. The panel wrote `face_up` / `z_rotation` straight into
+/// `SetupData`, so no core setter ran and every result survived.
+#[test]
+fn freshness_setup_orientation_stales_the_setup() {
+    for row in ["face", "rotation"] {
+        let mut controller = sample_controller();
+        push_toolpath(&mut controller, "Second");
+        generate_all_for_test(&mut controller);
+
+        if row == "face" {
+            controller
+                .state
+                .session
+                .set_setup_face(0, rs_cam_core::compute::transform::FaceUp::Bottom)
+                .expect("setup 0 exists");
+        } else {
+            controller
+                .state
+                .session
+                .set_setup_rotation(0, rs_cam_core::compute::transform::ZRotation::Deg90)
+                .expect("setup 0 exists");
+        }
+
+        for index in 0..2 {
+            assert_eq!(
+                state_of(&controller, index),
+                FreshnessState::EditedSince,
+                "{row}: toolpath {index}"
+            );
+        }
+    }
+}
+
+/// A tool edit drops the results of every op that tool machines. It used
+/// to drop them in the core and mark nothing in the GUI, which is the one
+/// case the export fallback to the GUI's own copy was written for.
+#[test]
+fn freshness_tool_edit_stales_its_users_and_requests_regeneration() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+
+    let mut draft = controller.state.session.tools()[0].clone();
+    draft.diameter += 1.0;
+    crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId(1), draft);
+
+    assert_eq!(state_of(&controller, 0), FreshnessState::EditedSince);
+    assert!(
+        controller.state.gui.toolpath_rt[&id].stale_since.is_some(),
+        "the operator gets a regeneration request, not a silently stale card"
+    );
+    assert!(controller.state.gui.dirty);
+}
+
+/// The revision counter R0.1 §4.2 asks for: bumped at the one drop site,
+/// never by recording an answer. F2.4's late-result guard reads it.
+#[test]
+fn toolpath_revision_bumps_on_every_input_drop() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let before = controller.state.session.toolpath_revision(0);
+
+    controller
+        .state
+        .session
+        .insert_result(0, core_result())
+        .expect("index is in range");
+    assert_eq!(
+        controller.state.session.toolpath_revision(0),
+        before,
+        "recording an answer is not a change of inputs"
+    );
+
+    let id = controller.state.session.toolpath_configs()[0].id;
+    panel_edit(&mut controller, id, |entry| {
+        entry.operation.set_feed_rate(999.0);
+    });
+    assert!(
+        controller.state.session.toolpath_revision(0) > before,
+        "an input edit must move the revision"
+    );
+}
+
+/// The pre-fix reproduction, in the same run (the `air_cut_one_time_base`
+/// pattern). This is what `write_entry_config_to_session` used to do: the
+/// field reaches the session through a plain `iter_mut().find`, no core
+/// setter runs, and the core goes on holding the previous result. Kept as
+/// executable evidence that the assertions above discriminate.
+#[test]
+fn freshness_pre_fix_reproduction_a_direct_field_write_keeps_the_core_result() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+
+    if let Some((_, tc)) = controller.state.session.find_toolpath_config_by_id_mut(id) {
+        tc.operation.set_feed_rate(1234.0);
+    }
+
+    assert!(
+        controller.state.session.get_result(0).is_some(),
+        "the defect: a direct write leaves the core result in place"
+    );
+    assert_eq!(
+        state_of(&controller, 0),
+        FreshnessState::Current,
+        "which is why the card read OK over geometry from other inputs"
+    );
+}

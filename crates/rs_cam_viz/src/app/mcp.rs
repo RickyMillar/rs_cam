@@ -2793,13 +2793,18 @@ impl super::RsCamApp {
             }
         };
 
-        if let Some((_, sd)) = self
+        // G-FRESHSTATE: this used to write `sd.face_up` straight through
+        // `find_setup_by_id_mut`, so the setup's toolpath results stayed
+        // cached in the OLD frame. The core setter writes the field AND
+        // drops them. `setup_index` is the same index `setup_id` was read
+        // from, checked above.
+        if self
             .controller
             .state_mut()
             .session
-            .find_setup_by_id_mut(setup_id)
+            .set_setup_face(setup_index, face)
+            .is_ok()
         {
-            sd.face_up = face;
             self.controller.state_mut().gui.mark_edited();
             self.controller.set_pending_upload();
             let stale = self.mcp_apply_stale(MutationKind::SetupChanged { setup_id });
@@ -2849,13 +2854,14 @@ impl super::RsCamApp {
             }
         };
 
-        if let Some((_, sd)) = self
+        // G-FRESHSTATE: see `mcp_set_setup_face`.
+        if self
             .controller
             .state_mut()
             .session
-            .find_setup_by_id_mut(setup_id)
+            .set_setup_rotation(setup_index, rotation)
+            .is_ok()
         {
-            sd.z_rotation = rotation;
             self.controller.state_mut().gui.mark_edited();
             self.controller.set_pending_upload();
             let stale = self.mcp_apply_stale(MutationKind::SetupChanged { setup_id });
@@ -4049,6 +4055,13 @@ impl super::RsCamApp {
             session.machine_mut().kinematics = Some(kin);
             // Inline values now — drop any machine-library link.
             session.set_machine_ref(None);
+            // R0.1 §7 Q3 (operator ruling, 2026-09-10): a kinematics edit
+            // stales the SIMULATION only — timing and modulation move,
+            // geometry does not — and the toolpaths stay current. The
+            // `MachineChanged` event pushed below reaches the same call one
+            // frame later; doing it here makes the MCP route synchronous
+            // with the GUI one instead of depending on the frame loop.
+            session.invalidate_machine();
         }
         self.controller.state_mut().gui.mark_edited();
         self.controller.events_mut().push(AppEvent::MachineChanged);

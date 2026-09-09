@@ -144,6 +144,19 @@ impl<B: ComputeBackend> AppController<B> {
             model.load_error = reloaded.load_error;
         }
 
+        // G-FRESHSTATE: the geometry every dependent result was generated
+        // against has just been replaced. Drop those results and request
+        // their regeneration; before this the cards stayed green and
+        // export emitted paths for the previous file contents.
+        let affected = self.state.session.invalidate_model(model_id.0);
+        let now = std::time::Instant::now();
+        for index in affected {
+            if let Some(tc) = self.state.session.get_toolpath_config(index) {
+                let id = tc.id;
+                self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
+            }
+        }
+
         self.pending_upload = true;
         self.state.gui.mark_edited();
         Ok(())

@@ -409,6 +409,14 @@ pub enum AppEvent {
     // Edit
     StockChanged,
     StockMaterialChanged,
+    /// The selected operation's heights moved, so the viewport's height
+    /// planes need re-uploading — and nothing else.
+    ///
+    /// G-FRESHSTATE: the heights write-back used to borrow `StockChanged`
+    /// for this. Once a stock edit drops every toolpath result (R0.1 §7 Q1,
+    /// operator ruling 2026-09-10), borrowing it would have staled the
+    /// whole project on any heights nudge.
+    HeightPlanesChanged,
     MachineChanged,
     Undo,
     Redo,
