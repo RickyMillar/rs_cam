@@ -6,8 +6,9 @@ pub mod stock;
 pub mod tool;
 
 pub use operations::{
-    DEPTH_BEYOND_STOCK_ID, DepthBeyondStock, ToolpathValidationContext, collect_diagnostics,
-    depth_beyond_stock, validate_toolpath, validate_toolpath_config,
+    DEPTH_BEYOND_STOCK_ID, DepthBeyondStock, ThroughCut, ToolpathValidationContext,
+    collect_diagnostics, depth_beyond_stock, profile_through_cut, profile_through_cut_line,
+    validate_toolpath, validate_toolpath_config,
 };
 use operations::{
     StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
@@ -4110,6 +4111,15 @@ fn draw_toolpath_panel(
                 operations::depth_beyond_stock(&entry.operation, &entry.heights, hctx)
             });
             let depth_caution = depth_caution.as_ref();
+            // G-THROUGHCUT (UX-R03-006): Profile only. Read here, before the
+            // mutable borrow, for the same reason as the caution above.
+            let through_cut = match (&entry.operation, height_ctx) {
+                (OperationConfig::Profile(cfg), Some(hctx)) => {
+                    operations::profile_through_cut(cfg, &entry.heights, hctx)
+                }
+                _ => None,
+            };
+            let through_cut = through_cut.as_ref();
             match &mut entry.operation {
                 OperationConfig::Face(cfg) => {
                     draw_face_params(ui, cfg, feeds_for_pills, depth_caution);
@@ -4118,7 +4128,7 @@ fn draw_toolpath_panel(
                     draw_pocket_params(ui, cfg, feeds_for_pills, depth_caution);
                 }
                 OperationConfig::Profile(cfg) => {
-                    draw_profile_params(ui, cfg, feeds_for_pills, depth_caution);
+                    draw_profile_params(ui, cfg, feeds_for_pills, depth_caution, through_cut);
                 }
                 OperationConfig::Adaptive(cfg) => {
                     draw_adaptive_params(ui, cfg, feeds_for_pills, depth_caution);
@@ -4913,6 +4923,30 @@ fn depth_caution_row(ui: &mut egui::Ui, caution: Option<&operations::DepthBeyond
          thickness on the Stock panel, or the Bottom Z on the Heights tab.",
         caution.excess_mm, caution.stock_thickness_mm
     ));
+    ui.end_row();
+}
+
+/// G-THROUGHCUT (UX-R03-006): the through-cut line under the Profile depth
+/// field.
+///
+/// Informational, in the panel's own text colour: a through cut is the
+/// normal way to cut a part out, and zero tabs is a valid holding choice.
+/// The hover names the consequence (the last pass frees the part) and the
+/// holding options. Drawn before [`depth_caution_row`], so a depth beyond
+/// the board shows this line first and the amber caution under it. Nothing
+/// is drawn for a partial-depth profile, so the grid keeps its shape.
+fn through_cut_row(ui: &mut egui::Ui, through_cut: Option<&operations::ThroughCut>) {
+    let Some(through_cut) = through_cut else {
+        return;
+    };
+    ui.label("");
+    ui.label(egui::RichText::new(through_cut.message()).small())
+        .on_hover_text(format!(
+            "The cut bottom reaches the bottom of the {:.2} mm board, so the last pass \
+             frees the part. Tabs hold it in the sheet until you cut them; zero tabs \
+             is valid when a vacuum table or double-sided tape holds the part.",
+            through_cut.stock_thickness_mm
+        ));
     ui.end_row();
 }
 

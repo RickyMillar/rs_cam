@@ -5,8 +5,8 @@ use crate::state::toolpath::{
     PocketPattern, ProfileConfig, ProfileSide, RestConfig, VCarveConfig, ZigzagConfig,
 };
 
-use super::super::{depth_caution_row, dv, dv_pill};
-use super::{DepthBeyondStock, draw_tab_diagram};
+use super::super::{depth_caution_row, dv, dv_pill, through_cut_row};
+use super::{DepthBeyondStock, ThroughCut, draw_tab_diagram};
 
 pub(in crate::ui::properties) fn draw_face_params(
     ui: &mut egui::Ui,
@@ -124,11 +124,19 @@ pub(in crate::ui::properties) fn draw_pocket_params(
         });
 }
 
+/// `through_cut` is the G-THROUGHCUT (UX-R03-006) reading for this Profile:
+/// `Some` when the cut bottom reaches the stock bottom. It draws the
+/// informational line under Depth (before the G-DEPTHSTOCK caution, which
+/// may show as well when the depth is beyond the board) and, when no tabs
+/// are configured, opens the Tabs disclosure. The open is a DEFAULT: it is
+/// forced only on the frame the condition first appears, so the operator can
+/// still collapse the section afterwards.
 pub(in crate::ui::properties) fn draw_profile_params(
     ui: &mut egui::Ui,
     cfg: &mut ProfileConfig,
     feeds_result: Option<&FeedsResult>,
     depth_caution: Option<&DepthBeyondStock>,
+    through_cut: Option<&ThroughCut>,
 ) {
     let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
     egui::Grid::new("profile_p")
@@ -147,6 +155,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
                 });
             ui.end_row();
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=100.0);
+            through_cut_row(ui, through_cut);
             depth_caution_row(ui, depth_caution);
             dv_pill(
                 ui,
@@ -181,30 +190,44 @@ pub(in crate::ui::properties) fn draw_profile_params(
             ui.end_row();
         });
     ui.add_space(8.0);
-    ui.collapsing("Tabs", |ui| {
-        egui::Grid::new("tab_p")
-            .num_columns(2)
-            .spacing([8.0, 4.0])
-            .show(ui, |ui| {
-                ui.label("Count:");
-                let mut count = cfg.tab_count as i32;
-                if ui
-                    .add(egui::DragValue::new(&mut count).range(0..=20))
-                    .changed()
-                {
-                    cfg.tab_count = count.max(0) as usize;
-                }
-                ui.end_row();
-                if cfg.tab_count > 0 {
-                    dv(ui, "Width:", &mut cfg.tab_width, " mm", 0.5, 1.0..=50.0);
-                    dv(ui, "Height:", &mut cfg.tab_height, " mm", 0.5, 0.5..=20.0);
-                }
-            });
-        if cfg.tab_count > 0 {
-            ui.add_space(4.0);
-            draw_tab_diagram(ui, cfg.tab_count, cfg.tab_width, cfg.tab_height);
-        }
-    });
+    // G-THROUGHCUT: a through cut with no tabs opens the Tabs disclosure by
+    // default. `default_open` only reads on the header's first frame, so the
+    // open is also forced on the frame the condition BECOMES true (depth
+    // dragged up to the board, tabs set back to zero). Every other frame
+    // passes `None`, which leaves the stored state — and the operator's
+    // collapse — alone. Same id as the old `ui.collapsing("Tabs", ..)`.
+    let tabs_default_open = through_cut.is_some() && cfg.tab_count == 0;
+    let tabs_seen_id = ui.id().with("prof_tabs_through_cut_seen");
+    let tabs_seen_open: Option<bool> = ui.data(|d| d.get_temp(tabs_seen_id));
+    ui.data_mut(|d| d.insert_temp(tabs_seen_id, tabs_default_open));
+    let tabs_force_open = (tabs_default_open && tabs_seen_open != Some(true)).then_some(true);
+    egui::CollapsingHeader::new("Tabs")
+        .default_open(tabs_default_open)
+        .open(tabs_force_open)
+        .show(ui, |ui| {
+            egui::Grid::new("tab_p")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    ui.label("Count:");
+                    let mut count = cfg.tab_count as i32;
+                    if ui
+                        .add(egui::DragValue::new(&mut count).range(0..=20))
+                        .changed()
+                    {
+                        cfg.tab_count = count.max(0) as usize;
+                    }
+                    ui.end_row();
+                    if cfg.tab_count > 0 {
+                        dv(ui, "Width:", &mut cfg.tab_width, " mm", 0.5, 1.0..=50.0);
+                        dv(ui, "Height:", &mut cfg.tab_height, " mm", 0.5, 0.5..=20.0);
+                    }
+                });
+            if cfg.tab_count > 0 {
+                ui.add_space(4.0);
+                draw_tab_diagram(ui, cfg.tab_count, cfg.tab_width, cfg.tab_height);
+            }
+        });
     egui::Grid::new("prof_finish")
         .num_columns(2)
         .spacing([8.0, 4.0])

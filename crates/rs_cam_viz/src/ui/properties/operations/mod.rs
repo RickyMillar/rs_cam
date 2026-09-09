@@ -28,7 +28,7 @@ use crate::state::job::ToolType;
 use crate::state::rest_dependency::{RestCandidate, rest_predecessors};
 use crate::state::toolpath::{
     HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig, PocketPattern,
-    ReferenceOffset, ToolpathEntry, ToolpathId,
+    ProfileConfig, ReferenceOffset, ToolpathEntry, ToolpathId,
 };
 
 // Feed / plunge editing moved off the per-op Geometry panel into the
@@ -2032,6 +2032,102 @@ pub fn depth_beyond_stock(
         stock_thickness_mm: ctx.stock_top_z - ctx.stock_bottom_z,
         bottom_z,
         stock_bottom_z: ctx.stock_bottom_z,
+    })
+}
+
+// ── Profile through cut (G-THROUGHCUT, UX-R03-006) ──────────────────────
+
+/// A Profile whose cut bottom reaches the bottom of the board.
+///
+/// Informational, never a caution: the last pass frees the part, and the
+/// operator decides how it is held. Zero tabs is a valid answer (vacuum,
+/// double-sided tape), so the line names the holding and does not judge it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThroughCut {
+    /// The depth the rule compared, measured from the STOCK top, in mm. Equal
+    /// to the Depth field when Top Z is `Auto`; deeper when Top Z is pinned
+    /// below the stock top.
+    pub depth_mm: f64,
+    /// The stock thickness of the setup, in mm.
+    pub stock_thickness_mm: f64,
+    /// The Profile's tab count at the time the rule was read.
+    pub tab_count: usize,
+}
+
+impl ThroughCut {
+    /// The one line the Profile form prints beside Depth.
+    pub fn message(&self) -> String {
+        through_cut_message(self.stock_thickness_mm, self.tab_count)
+    }
+}
+
+/// The board thickness as an operator writes it: `12 mm`, `18.5 mm`. One
+/// decimal only when the thickness has one.
+fn board_thickness_text(stock_thickness_mm: f64) -> String {
+    if (stock_thickness_mm - stock_thickness_mm.round()).abs() < 0.05 {
+        format!("{stock_thickness_mm:.0}")
+    } else {
+        format!("{stock_thickness_mm:.1}")
+    }
+}
+
+fn through_cut_message(stock_thickness_mm: f64, tab_count: usize) -> String {
+    let board = board_thickness_text(stock_thickness_mm);
+    let holding = match tab_count {
+        0 => "no tabs configured".to_owned(),
+        1 => "1 tab".to_owned(),
+        k => format!("{k} tabs"),
+    };
+    format!("Through cut of a {board} mm board · Holding: {holding}")
+}
+
+/// UX-R03-006 / G-THROUGHCUT: the through-cut line for a Profile.
+///
+/// `None` when `depth_mm` is under `stock_thickness_mm` (a partial-depth
+/// profile). Otherwise the line names the board and the holding:
+///
+/// - `Through cut of a 12 mm board · Holding: no tabs configured`
+/// - `Through cut of a 12 mm board · Holding: 4 tabs`
+///
+/// The comparison is `depth >= thickness` within
+/// [`DEPTH_BEYOND_STOCK_EPSILON_MM`], so a depth EXACTLY at the thickness is
+/// a through cut (the case G-DEPTHSTOCK deliberately leaves alone), and a
+/// depth beyond it shows this line AND the depth caution. A non-finite or
+/// non-positive thickness gives `None`: there is no board to cut through.
+pub fn profile_through_cut_line(
+    depth_mm: f64,
+    stock_thickness_mm: f64,
+    tab_count: usize,
+) -> Option<String> {
+    if !depth_mm.is_finite()
+        || !stock_thickness_mm.is_finite()
+        || stock_thickness_mm <= 0.0
+        || depth_mm + DEPTH_BEYOND_STOCK_EPSILON_MM < stock_thickness_mm
+    {
+        return None;
+    }
+    Some(through_cut_message(stock_thickness_mm, tab_count))
+}
+
+/// The form of [`profile_through_cut_line`] the inspector reads: the depth is
+/// the Profile's cut bottom measured from the stock top, so a Top Z pinned
+/// below the stock top counts towards the through cut the same way it does
+/// in [`depth_beyond_stock`]. The generator cuts `top_z - cfg.depth`
+/// (`OperationConfig::cutting_levels`), so that is the bottom read here; a
+/// pinned Bottom Z does not reach the profile generator and is not read.
+pub fn profile_through_cut(
+    cfg: &ProfileConfig,
+    heights: &HeightsConfig,
+    ctx: &HeightContext,
+) -> Option<ThroughCut> {
+    let resolved = heights.resolve(ctx);
+    let bottom_z = resolved.top_z - cfg.depth;
+    let depth_mm = ctx.stock_top_z - bottom_z;
+    let stock_thickness_mm = ctx.stock_top_z - ctx.stock_bottom_z;
+    profile_through_cut_line(depth_mm, stock_thickness_mm, cfg.tab_count).map(|_| ThroughCut {
+        depth_mm,
+        stock_thickness_mm,
+        tab_count: cfg.tab_count,
     })
 }
 

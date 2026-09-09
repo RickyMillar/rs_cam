@@ -18,7 +18,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 |----------|-----------|-------------|-----|------------|--------|
 | 2.5D | Face | `face.rs` | Yes | No | Shipped |
 | 2.5D | Pocket | `pocket.rs` | Yes | Yes | Shipped |
-| 2.5D | Profile | `profile.rs` | Yes | Yes | Shipped |
+| 2.5D | Profile | `profile.rs` | Yes | Yes | Shipped — when the cut bottom reaches the stock bottom the inspector prints an informational "Through cut of a N mm board · Holding: …" line under Depth and opens the Tabs disclosure by default when no tabs are set (G-THROUGHCUT, 2026-09-10); zero tabs stays valid. Side is Outside / Inside; the schema's `on` value has no generator arm and is not offered |
 | 2.5D | Adaptive | `adaptive.rs` | Yes | Yes | Shipped |
 | 2.5D | VCarve | `vcarve.rs` | Yes | Yes | Shipped |
 | 2.5D | Rest Machining | `rest.rs` | Yes | Yes | Shipped |
