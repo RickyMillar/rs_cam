@@ -105,6 +105,7 @@ pub struct CompareRow<'a> {
     recommended: Option<f64>,
     unit: &'a str,
     precision: f64,
+    recommended_note: Option<&'a str>,
 }
 
 impl<'a> CompareRow<'a> {
@@ -121,7 +122,18 @@ impl<'a> CompareRow<'a> {
             recommended,
             unit,
             precision,
+            recommended_note: None,
         }
+    }
+
+    /// Append a note to the recommended cell, e.g. `4.20 mm (calculator)`.
+    /// G-FEEDSLABEL: a raw calculator value the apply funnel may lower
+    /// says so where it is printed. The note is not printed when the value
+    /// is absent.
+    #[must_use]
+    pub fn recommended_note(mut self, note: &'a str) -> Self {
+        self.recommended_note = Some(note);
+        self
     }
 
     pub fn show(self, ui: &mut egui::Ui) {
@@ -131,7 +143,11 @@ impl<'a> CompareRow<'a> {
                 .color(theme::TEXT_DIM),
         );
         ui.label(format_optional(self.current, self.unit, self.precision));
-        ui.label(format_optional(self.recommended, self.unit, self.precision));
+        let recommended = format_optional(self.recommended, self.unit, self.precision);
+        ui.label(match self.recommended_note {
+            Some(note) if recommended != "\u{2014}" => format!("{recommended} {note}"),
+            _ => recommended,
+        });
         ui.label(delta_tag(self.current, self.recommended));
         ui.label("");
         ui.end_row();

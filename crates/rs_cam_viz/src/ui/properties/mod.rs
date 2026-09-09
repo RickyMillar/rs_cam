@@ -1,3 +1,4 @@
+pub mod feeds_rows;
 mod operations;
 pub mod post;
 pub mod setup;
@@ -1978,6 +1979,42 @@ fn draw_feeds_card(
             entry.operation,
             OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
         );
+        // G-FEEDSLABEL (UX-R03-005): the read-only rows name their role.
+        // `recommended` is the calculator's value, `configured` is the
+        // stored operation's. Built once, up front, as plain strings, so
+        // no borrow of `entry.operation` outlives the section closures
+        // and a test can read the same rows without an egui context.
+        let card_rows = feeds_rows::feeds_card_rows(&feeds_rows::FeedsCardInputs {
+            recommended_feed_mm_min: result.feed_rate_mm_min,
+            recommended_rpm: result.rpm,
+            target_chip_load_mm: result.chip_load_mm,
+            recommended_axial_depth_mm: has_dpp.then_some(result.axial_depth_mm),
+            recommended_radial_width_mm: has_stepover.then_some(result.radial_width_mm),
+            configured_feed_mm_min: entry.operation.feed_rate(),
+            configured_rpm: entry
+                .operation
+                .spindle_rpm()
+                .unwrap_or(project_default_rpm),
+            flute_count: tool.flute_count,
+            configured_depth_per_pass_mm: entry.operation.as_params().depth_per_pass(),
+            configured_stepover_mm: entry.operation.as_params().stepover(),
+        });
+        let card_row = |label: &str| card_rows.iter().find(|r| r.label == label);
+        let draw_card_row = |ui: &mut egui::Ui, row: &feeds_rows::FeedsCardRow| {
+            ui.label(row.label);
+            ui.horizontal(|ui| {
+                ui.label(&row.recommended).on_hover_text(&row.hover);
+                if let Some(configured) = &row.configured {
+                    ui.label(
+                        egui::RichText::new(configured)
+                            .small()
+                            .color(theme::TEXT_DIM),
+                    )
+                    .on_hover_text(&row.hover);
+                }
+            });
+            ui.end_row();
+        };
 
         // W4.1 — render the *stored* per-field provenance (what actually
         // produced the value on this operation), not a recomputed lookup. This
@@ -2044,15 +2081,9 @@ fn draw_feeds_card(
                             entry.stale_since = Some(std::time::Instant::now());
                         }
                     }
-                    ui.label("Commanded advance/tooth:");
-                    ui.label(format!("{:.4} mm/tooth", result.chip_load_mm))
-                        .on_hover_text(
-                            "feed \u{00f7} (RPM \u{00d7} flutes) at the recommended feed \u{2014} \
-                             what the operator is asking for, before the machine's kinematics. \
-                             The measured counterpart is on the OPERATING POINT card below, \
-                             after a simulation.",
-                        );
-                    ui.end_row();
+                    if let Some(row) = card_row(feeds_rows::ADVANCE_ROW_LABEL) {
+                        draw_card_row(ui, row);
+                    }
                     // Spindle override vs project default. W3.1 relocated this
                     // from the per-op Params tab so the precedence renders
                     // honestly.
@@ -2101,15 +2132,11 @@ fn draw_feeds_card(
                     .num_columns(2)
                     .spacing([8.0, 3.0])
                     .show(ui, |ui| {
-                        if has_dpp {
-                            ui.label("DOC:");
-                            ui.label(format!("{:.2} mm", result.axial_depth_mm));
-                            ui.end_row();
+                        if let Some(row) = card_row(feeds_rows::DOC_ROW_LABEL) {
+                            draw_card_row(ui, row);
                         }
-                        if has_stepover {
-                            ui.label("WOC:");
-                            ui.label(format!("{:.2} mm", result.radial_width_mm));
-                            ui.end_row();
+                        if let Some(row) = card_row(feeds_rows::WOC_ROW_LABEL) {
+                            draw_card_row(ui, row);
                         }
                     });
                 // W3.1: cut-geometry apply is separate + attributed — it

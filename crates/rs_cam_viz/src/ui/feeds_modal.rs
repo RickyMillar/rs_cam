@@ -43,6 +43,7 @@ use rs_cam_core::feeds::{
 
 use super::components::compare::{self, CompareRow};
 use super::components::{ProvKind, ProvenanceBadge};
+use super::properties::feeds_rows;
 use super::{AppEvent, theme};
 use crate::state::AppState;
 use crate::state::{FeedsModalMode, ProjectFeedsSort};
@@ -562,6 +563,14 @@ fn draw_comparison_card(
                     1.0,
                 )
                 .show(ui);
+                // G-FEEDSLABEL (UX-R03-005): the recommended DOC / WOC are
+                // the RAW calculator values — `⚡ Apply all` passes them
+                // through `enforce_invariants`, which can lower them (the
+                // rigidity cap put 1.2 where this cell reads 4.2 on the R03
+                // pocket) — so the cell says so. The advance row prints
+                // feed ÷ (RPM × flutes) in BOTH columns; it used to print
+                // the pre-derate target chipload beside the current
+                // advance under a "Commanded" label.
                 CompareRow::new(
                     "DOC",
                     current.depth_per_pass,
@@ -569,12 +578,17 @@ fn draw_comparison_card(
                     " mm",
                     0.01,
                 )
+                .recommended_note(feeds_rows::CALCULATOR_NOTE)
                 .show(ui);
                 woc_row(ui, current, explain);
                 CompareRow::new(
-                    "Commanded advance/tooth",
+                    feeds_rows::MODAL_ADVANCE_ROW_LABEL,
                     Some(current.chipload_mm()),
-                    Some(explain.recommended.chip_load_mm),
+                    feeds_rows::advance_per_tooth_mm(
+                        explain.recommended.feed_rate_mm_min,
+                        explain.recommended.rpm,
+                        current.flute_count,
+                    ),
                     " mm/tooth",
                     0.0001,
                 )
@@ -685,6 +699,7 @@ fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
             " mm",
             0.01,
         )
+        .recommended_note(feeds_rows::CALCULATOR_NOTE)
         .show(ui);
         return;
     }
@@ -1398,7 +1413,7 @@ fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
         let derate_pct = ((1.0 - combined) * 100.0).max(0.0);
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("Commanded advance/tooth at recommendation:")
+                egui::RichText::new("Advance/tooth at recommendation:")
                     .small()
                     .strong()
                     .color(theme::TEXT_STRONG),
