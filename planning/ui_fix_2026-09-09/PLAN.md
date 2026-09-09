@@ -183,6 +183,15 @@ relink. Small; may be folded into P1 if the recommendation is obvious.
 
 Each item: what, where, acceptance, sentry. All independent; run in parallel.
 
+> **STATUS after night 1 (2026-09-10).** MERGED with sentries on
+> `ui-fix-2026-09-09`: **F1.1, F1.2, F1.3, F1.4, F1.5, F1.6, F1.7, F1.8,
+> F1.9** — commits and caveats per row in `STATUS.md`, per-task detail in
+> `reports/F1.x.md`. STILL TO DO: **F1.10, F1.12, F1.13, F1.15**.
+> **F1.11 is CANCELLED as written** — R0.1 replaces the whole GUI
+> `stale_since` scheme, so adding more flag sites is rework; its mutation
+> matrix becomes P2's F2.1 test list. **F1.14 is FOLDED INTO F4.2** —
+> R0.3's binding rule covers it. Do not re-run a merged row.
+
 | ID | Finding | Change | Acceptance / sentry |
 |---|---|---|---|
 | F1.1 | UX-R03-003, R08 §8 | In `app/mcp.rs::drain_mcp_requests`, push every notification AFTER the handler and from its result; failures push the refusal text at Warning. Nine past-tense toasts affected (Loaded, Saved, Set…, Added toolpath, Removed toolpath, Added tool, Imported tool). | `mcp_toasts_report_outcome_g_mcptoast.rs`: a refused `add_toolpath` yields no "Added" notification and one containing the refusal. |
@@ -227,6 +236,8 @@ schema tests, document in the CLAUDE.md MCP section.
 | F3.4 | `set_toolpath_row_control(index, control, value)` | visible / locked / auto_regen / enabled via the row-control events. |
 | F3.5 | `get_notifications` | Current toast stack with severity and age, so tests can assert what the operator saw (pairs with F1.1). |
 | F3.6 | `select(kind, id)` for tool / model / setup / stock / machine | Completes `set_ui_view`; lets `screenshot_gui` reach every inspector. |
+| F3.7 | `set_toolpath_tool(index, tool_id)` | **Added by R0.3 §4.** Today `set_toolpath_param` routes an unknown key into op params, so MCP cannot rebind a toolpath's tool. Without this a blocked op is a dead end over MCP and the F4.2 refusal contract cannot be driven from a test. |
+| F3.8 | `set_toolpath_model(index, model_id)` | Same, for the model / geometry input. |
 
 Sentries: `mcp_authoring_surface.rs`-style schema pins for each; one live
 parity test that `add_toolpath_via_gui` on the flat-first terrain seed
@@ -278,3 +289,18 @@ Then a design review of the R0.x documents before any P5 agent starts.
 Threshold or gate recalibration; new operations; the multitool planner
 algorithm; the wanaka production jobs; anything in `planning/linking_2026-09-09`
 or `planning/island_clip_2026-09-09` (other developers' active work).
+
+## 11. Follow-on tasks opened by night 1 (not yet scheduled)
+
+These came out of doing the work, not out of the review. Each is small and
+carries its evidence.
+
+| ID | Source | What |
+|---|---|---|
+| F1.16 | F1.7 report | `ProfileSide` has only `Outside` / `Inside` and the generator has no on-the-line arm, yet the operation schema advertises `on`, so `set_toolpath_param side=on` fails at serde. Either implement the arm or drop the schema value. A combo entry that generates the same as Outside would be a NEW untruth — do not add one. |
+| F1.17 | F1.9 report | `readiness::operations_check` counts GUI-store results only, so Readiness can read "2/2 computed" beside a blocking export row. Fold into P2's F2.2, which re-renders Readiness from the freshness state anyway. |
+| F1.18 | F1.6 report | The depth-beyond-stock caution is GUI-side, so it reaches neither the Operations card row nor MCP `get_toolpath_diagnostics`. Moving the rule into core `heights_checks` would cover both surfaces with one predicate. |
+| F1.19 | F1.6 report | 2.5D generators IGNORE a pinned Bottom Z, so a Heights-tab pin below the stock cautions on a number that is not emitted motion. Pre-existing; decide whether the pin should drive the cut or the field should be disabled for 2.5D. |
+| F1.20 | R0.5 §2 | The feeds modal's "Apply explored values" also rewrites plunge, while its hover says plunge is "pulled down". Code reading only — verify live before fixing. |
+| F1.21 | F1.5 report | No provenance records that the controller assigned a model-silhouette boundary automatically, so the Geometry tab cannot say "(auto)". Needs a flag on the boundary config. |
+| — | F1.4 gate | `arcfit_intent_key_cost_f1` and `narrate_regions_closed_c8` fail at master 3d88406b and are NOT this programme's. They need an owner; do not let a worker "fix" them inside a UI task. |

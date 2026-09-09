@@ -1,0 +1,58 @@
+[
+  {
+    "track": "T1",
+    "pid": 816905,
+    "provider": "deepinfra",
+    "model": "zai-org/GLM-5.2",
+    "started": "2026-09-09T18:56:30.922701+12:00",
+    "budget_s": 480,
+    "tools": [
+      "read",
+      "grep",
+      "find",
+      "ls"
+    ]
+  },
+  {
+    "track": "T2",
+    "pid": 816908,
+    "provider": "deepinfra",
+    "model": "zai-org/GLM-5.2",
+    "started": "2026-09-09T18:56:30.923236+12:00",
+    "budget_s": 480,
+    "tools": [
+      "read",
+      "grep",
+      "find",
+      "ls"
+    ]
+  },
+  {
+    "track": "T3",
+    "pid": 816909,
+    "provider": "deepinfra",
+    "model": "zai-org/GLM-5.2",
+    "started": "2026-09-09T18:56:30.923777+12:00",
+    "budget_s": 480,
+    "tools": [
+      "read",
+      "grep",
+      "find",
+      "ls"
+    ]
+  },
+  {
+    "track": "T4",
+    "pid": 816910,
+    "provider": "deepinfra",
+    "model": "zai-org/GLM-5.2",
+    "started": "2026-09-09T18:56:30.924215+12:00",
+    "budget_s": 480,
+    "tools": [
+      "read",
+      "grep",
+      "find",
+      "ls"
+    ]
+  }
+]

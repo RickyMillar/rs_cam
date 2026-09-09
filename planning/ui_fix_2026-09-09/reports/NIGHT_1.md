@@ -57,6 +57,8 @@ outages. Everything below happened in the remaining ~3 hours.
    worktree existed (clean). F1.3's gates ran before the runner existed; its
    sentry compiled against its own module at the time (so the lib was its
    own), and it is covered by the phase gate on the merged tree.
+   The runner is committed at `planning/ui_fix_2026-09-09/gate_runner.sh`
+   (the `/tmp` copy does not survive a reboot).
    **Recommendation for night 2:** keep the runner, or give each worktree
    its own `CARGO_TARGET_DIR` once disk allows (~10–15 GiB each).
 3. **Merges were fast-forwards by `git update-ref`** on the integration

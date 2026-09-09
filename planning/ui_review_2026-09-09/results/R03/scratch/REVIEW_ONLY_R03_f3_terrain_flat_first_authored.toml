@@ -1,0 +1,312 @@
+format_version = 3
+toolpaths = []
+
+[job]
+name = "REVIEW ONLY R03 - 20mm terrain flat-first, not for machining"
+
+[job.stock]
+x = 22.0
+y = 16.665277099609376
+z = 11.513043212890626
+origin_x = -1.0
+origin_y = -1.0
+origin_z = 0.0
+padding = 1.0
+workholding_rigidity = "Medium"
+auto_from_model = true
+alignment_pins = []
+
+[job.stock.material.SolidWood]
+species = "GenericHardwood"
+
+[job.post]
+format = "grbl"
+spindle_speed = 18000
+safe_z = 10.0
+high_feedrate_mode = false
+high_feedrate = 5000.0
+spindle_strategy = "match_chart"
+
+[job.machine]
+name = "Generic Wood Router"
+max_feed_mm_min = 4000.0
+max_shank_mm = 6.35
+safety_factor = 0.75
+
+[job.machine.spindle.Variable]
+min_rpm = 8000.0
+max_rpm = 24000.0
+
+[job.machine.power.ConstantPower]
+power_kw = 0.8
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+doc_roughing_factor = 0.2
+doc_finishing_factor = 0.08
+woc_roughing_factor = 0.7
+woc_roughing_max_mm = 5.0
+woc_finishing_mm = 0.5
+adaptive_doc_factor = 1.5
+adaptive_woc_factor = 0.2
+
+[[tools]]
+id = 1
+name = "End Mill 6mm"
+type = "end_mill"
+diameter = 6.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 6.35
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 45.0
+flute_count = 2
+tool_number = 1
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 2
+name = "Ball Nose 3mm"
+type = "ball_nose"
+diameter = 3.0
+cutting_length = 15.0
+helix_deg = 30.0
+corner_radius_mm = 1.5
+corner_radius = 1.5
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 3.175
+holder_diameter = 25.0
+shank_diameter = 3.175
+shank_length = 20.0
+stickout = 25.0
+flute_count = 2
+tool_number = 2
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[models]]
+id = 1
+path = "/home/ricky/personal_repos/rs_cam/fixtures/terrain_small.stl"
+name = "terrain_small.stl"
+kind = "stl"
+
+[models.units]
+kind = "custom"
+scale = 0.2
+
+[[setups]]
+id = 0
+name = "Setup 1"
+face_up = "top"
+z_rotation = "0"
+fixtures = []
+keep_out_zones = []
+
+[[setups.toolpaths]]
+id = 0
+name = "Remove excess"
+type = "adaptive3d"
+enabled = true
+tool_id = 1
+model_id = 1
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 1.2
+depth_per_pass = 4.199999999999999
+stock_to_leave_radial = 0.5
+stock_to_leave_axial = 0.5
+feed_rate = 1000.0
+plunge_rate = 527.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "plunge"
+ramp_angle_deg = 10.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+fine_stepdown = 0.0
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "contour_parallel"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+z_blend = false
+spindle_rpm = 15000
+mill_shallow_areas = false
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[[setups.toolpaths]]
+id = 1
+name = "Detail finish"
+type = "scallop"
+enabled = true
+tool_id = 2
+model_id = 1
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "scallop"
+
+[setups.toolpaths.operation.params]
+scallop_height = 0.1
+tolerance = 0.05
+direction = "outside_in"
+continuous = false
+slope_from = 0.0
+slope_to = 90.0
+feed_rate = 875.0
+plunge_rate = 263.0
+stock_to_leave = 0.0
+spindle_rpm = 17500
+intra_pass_hookup_mm = 3.0
+iso_field = false
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = true
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-ball-hardwood-scallop-6000-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-ball-hardwood-scallop-6000-2f"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-ball-hardwood-scallop-6000-2f"
