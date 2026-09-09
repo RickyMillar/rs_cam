@@ -3,7 +3,8 @@ use rs_cam_core::feeds::FeedsResult;
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 
-use super::super::{dv, dv_pill};
+use super::super::{depth_caution_row, dv, dv_pill};
+use super::DepthBeyondStock;
 
 /// Match tolerance for comparing a picked hole to a target position (mm).
 const TARGET_EPS: f64 = 1e-6;
@@ -92,6 +93,7 @@ pub(in crate::ui::properties) fn draw_drill_params(
     drill_layers: &[String],
     drill_targets: &[DrillTarget],
     feeds_result: Option<&FeedsResult>,
+    depth_caution: Option<&DepthBeyondStock>,
 ) {
     // Spec: drill ops get a feed pill (peck-cycle plunge feed) but no
     // stepover/DOC pills (Z-only kinematics — LUT radial/axial don't
@@ -122,6 +124,7 @@ pub(in crate::ui::properties) fn draw_drill_params(
                 });
             ui.end_row();
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.5, 0.5..=100.0);
+            depth_caution_row(ui, depth_caution);
             dv_pill(
                 ui,
                 "Feed Rate:",

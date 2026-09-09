@@ -2,12 +2,14 @@ use rs_cam_core::feeds::FeedsResult;
 
 use crate::state::toolpath::{ChamferConfig, TraceCompensation, TraceConfig};
 
-use super::super::dv;
+use super::super::{depth_caution_row, dv};
+use super::DepthBeyondStock;
 
 pub(in crate::ui::properties) fn draw_trace_params(
     ui: &mut egui::Ui,
     cfg: &mut TraceConfig,
     _feeds_result: Option<&FeedsResult>,
+    depth_caution: Option<&DepthBeyondStock>,
 ) {
     // Spec: trace doesn't get stepover/DOC pills (engraving op — LUT
     // axial/radial recommendations don't speak to single-line tracing).
@@ -30,6 +32,7 @@ pub(in crate::ui::properties) fn draw_trace_params(
                 });
             ui.end_row();
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=50.0);
+            depth_caution_row(ui, depth_caution);
             dv(
                 ui,
                 "Depth/Pass:",
@@ -45,6 +48,7 @@ pub(in crate::ui::properties) fn draw_chamfer_params(
     ui: &mut egui::Ui,
     cfg: &mut ChamferConfig,
     _feeds_result: Option<&FeedsResult>,
+    depth_caution: Option<&DepthBeyondStock>,
 ) {
     // Chamfer width/tip offset are geometry-driven, not feeds-driven; feed/
     // plunge are edited on the Feeds & Speeds tab (W3.2).
@@ -60,6 +64,7 @@ pub(in crate::ui::properties) fn draw_chamfer_params(
                 0.1,
                 0.1..=10.0,
             );
+            depth_caution_row(ui, depth_caution);
             dv(
                 ui,
                 "Tip Offset:",

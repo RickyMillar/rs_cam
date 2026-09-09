@@ -22,6 +22,8 @@ pub(super) use surface_3d::{
     draw_steep_shallow_params, draw_unified_finish_params, draw_waterline_params,
 };
 
+use rs_cam_core::compute::catalog::DepthSemantics;
+
 use crate::state::job::ToolType;
 use crate::state::rest_dependency::{RestCandidate, rest_predecessors};
 use crate::state::toolpath::{
@@ -1941,6 +1943,131 @@ fn has_prior_rest_source(
     })
 }
 
+// ── Depth vs stock thickness (G-DEPTHSTOCK) ─────────────────────────────
+
+/// Diagnostic id of the depth-beyond-stock caution. GUI-only: the rule reads
+/// the entry's `HeightsConfig`, which the core static-check adapter does not
+/// receive (it gets `ResolvedHeights::from_context`, whose bottom IS the stock
+/// bottom), so MCP `get_toolpath_diagnostics` does not carry it yet.
+pub const DEPTH_BEYOND_STOCK_ID: &str = "geom.depth_beyond_stock";
+
+/// Excesses at or under this are arithmetic, not a cut into the bed. A through
+/// cut EXACTLY at the stock thickness must not trigger the caution (UX-R03-006
+/// owns that case).
+const DEPTH_BEYOND_STOCK_EPSILON_MM: f64 = 1e-6;
+
+/// A 2.5D cut whose bottom sits below the stock bottom of its setup.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DepthBeyondStock {
+    /// How far the cut bottom sits below the stock bottom, in mm. Always > 0.
+    pub excess_mm: f64,
+    /// The stock thickness the rule compared against, in mm.
+    pub stock_thickness_mm: f64,
+    /// The cut bottom the rule read, in the setup's own frame.
+    pub bottom_z: f64,
+    /// The stock bottom in the same frame.
+    pub stock_bottom_z: f64,
+}
+
+impl DepthBeyondStock {
+    /// The one sentence every surface prints (UX-R03-007 proposal wording).
+    pub fn message(&self) -> String {
+        format!("Depth exceeds stock thickness by {:.2} mm", self.excess_mm)
+    }
+}
+
+/// Does the depth-beyond-stock rule read this operation?
+///
+/// Every 2.5D operation with an explicit depth field: Face, Pocket, Profile,
+/// Adaptive, VCarve (max depth), Rest, Inlay (pocket depth), Zigzag, Trace,
+/// Drill and Chamfer (chamfer width, the same proxy the Heights tab uses for
+/// its Bottom Z). Not read: the 3D family (its floor is the mesh),
+/// ProjectCurve (its depth is below the mesh surface, not the stock top) and
+/// AlignmentPinDrill (spoilboard penetration is the point of the operation).
+fn depth_beyond_stock_applies(operation: &OperationConfig) -> bool {
+    if operation.is_3d() || operation.needs_both() {
+        return false;
+    }
+    if matches!(operation, OperationConfig::AlignmentPinDrill(_)) {
+        return false;
+    }
+    matches!(operation.depth_semantics(), DepthSemantics::Explicit(_))
+}
+
+/// UX-R03-007 / G-DEPTHSTOCK: does this 2.5D cut go below the stock bottom?
+///
+/// The cut bottom is the deeper of two readings:
+///
+/// - the operation's own depth field, measured from the resolved Top Z. This
+///   is what the generators cut: `OperationConfig::cutting_levels(top_z)`
+///   steps from `top_z` to `top_z - depth`, VCarve / Inlay / Chamfer / Drill
+///   anchor their depth at `top_z` the same way, and none of them read a
+///   pinned Bottom Z;
+/// - the resolved Bottom Z from the Heights tab. In `Auto` it equals the
+///   first reading; a `Manual` / `FromReference` pin below the stock bottom
+///   is what the Heights tab shows the operator, so it cautions too.
+///
+/// `ctx.stock_bottom_z` / `stock_top_z` are in the setup's own frame (world
+/// for an identity setup, zero-rooted local for a flip), so a flipped setup
+/// has the same thickness and the same excess. `None` when the rule does not
+/// read the operation, or when the excess is zero or negative. A caution,
+/// never a block: Generate stays enabled.
+pub fn depth_beyond_stock(
+    operation: &OperationConfig,
+    heights: &HeightsConfig,
+    ctx: &HeightContext,
+) -> Option<DepthBeyondStock> {
+    if !depth_beyond_stock_applies(operation) {
+        return None;
+    }
+    let resolved = heights.resolve(ctx);
+    let field_bottom_z = resolved.top_z - operation.default_depth_for_heights();
+    let bottom_z = field_bottom_z.min(resolved.bottom_z);
+    let excess_mm = ctx.stock_bottom_z - bottom_z;
+    if !excess_mm.is_finite() || excess_mm <= DEPTH_BEYOND_STOCK_EPSILON_MM {
+        return None;
+    }
+    Some(DepthBeyondStock {
+        excess_mm,
+        stock_thickness_mm: ctx.stock_top_z - ctx.stock_bottom_z,
+        bottom_z,
+        stock_bottom_z: ctx.stock_bottom_z,
+    })
+}
+
+/// The header form of [`depth_beyond_stock`]: a `Caution` in the Safety
+/// category, `Current`, `Static`, so the inspector ribbon prints it in the
+/// actionable tier and the Mods tab badge turns yellow.
+fn depth_beyond_stock_diagnostic(
+    toolpath_id: ToolpathId,
+    finding: &DepthBeyondStock,
+) -> rs_cam_core::diagnostics::Diagnostic {
+    use rs_cam_core::diagnostics::{
+        Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
+        Severity, Source,
+    };
+    Diagnostic {
+        id: DiagnosticId::new(DEPTH_BEYOND_STOCK_ID),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Safety,
+        severity: Severity::Caution,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: finding.message(),
+        evidence: Some(DiagnosticEvidence::GeometryCompare {
+            lhs_label: "bottom_z".to_owned(),
+            lhs_value: finding.bottom_z,
+            rhs_label: "stock_bottom_z".to_owned(),
+            rhs_value: finding.stock_bottom_z,
+            unit: "mm".to_owned(),
+        }),
+        fix: None,
+        supersedes: Vec::new(),
+        suppressed_diagnostics: Vec::new(),
+    }
+}
+
 // ── Contextual diagnostics ──────────────────────────────────────────────
 
 /// Collect the unified [`rs_cam_core::diagnostics::Diagnostic`]
@@ -1949,7 +2076,8 @@ fn has_prior_rest_source(
 /// function — it delegates to
 /// [`rs_cam_core::diagnostics::diagnose_toolpath_inputs`] so the
 /// params panel and MCP `get_toolpath_diagnostics` produce identical
-/// findings for the same project state.
+/// findings for the same project state, plus the one GUI-only finding
+/// [`DEPTH_BEYOND_STOCK_ID`] (see [`depth_beyond_stock`]).
 ///
 /// Load-gate (chipload / power / deflection / drill) diagnostics are
 /// included when a `load_verdict` is supplied — they render in the
@@ -1990,7 +2118,15 @@ pub fn collect_diagnostics(
         // nothing has been measured yet.
         stats: entry.result.as_ref().map(|result| &result.stats),
     };
-    rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs)
+    let mut diagnostics = rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs);
+    // G-DEPTHSTOCK (UX-R03-007): the one GUI-only finding. It reads the
+    // entry's `HeightsConfig`, which the core adapter does not receive.
+    if let Some(ctx) = height_ctx
+        && let Some(finding) = depth_beyond_stock(&entry.operation, &entry.heights, ctx)
+    {
+        diagnostics.push(depth_beyond_stock_diagnostic(entry.id, &finding));
+    }
+    diagnostics
 }
 
 #[cfg(test)]

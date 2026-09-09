@@ -5,6 +5,10 @@ pub mod setup;
 pub mod stock;
 pub mod tool;
 
+pub use operations::{
+    DEPTH_BEYOND_STOCK_ID, DepthBeyondStock, ToolpathValidationContext, collect_diagnostics,
+    depth_beyond_stock, validate_toolpath, validate_toolpath_config,
+};
 use operations::{
     StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
     draw_chamfer_params, draw_dogbone_diagram, draw_drill_params, draw_dropcutter_params,
@@ -17,7 +21,6 @@ use operations::{
     draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params,
     draw_unified_finish_params, draw_vcarve_params, draw_waterline_params, draw_zigzag_params,
 };
-pub use operations::{ToolpathValidationContext, validate_toolpath, validate_toolpath_config};
 
 use crate::state::AppState;
 use crate::state::selection::Selection;
@@ -4100,20 +4103,54 @@ fn draw_toolpath_panel(
             let resolved_claims_reference =
                 entry.result.as_ref().and_then(|r| r.stats.claims_reference);
             let stock_source_for_claims = entry.stock_source;
+            // G-DEPTHSTOCK (UX-R03-007): the same rule the header ribbon
+            // prints, read once here and handed to the depth field's row.
+            // `Copy`, so nothing is held across the mutable borrow below.
+            let depth_caution = height_ctx.and_then(|hctx| {
+                operations::depth_beyond_stock(&entry.operation, &entry.heights, hctx)
+            });
+            let depth_caution = depth_caution.as_ref();
             match &mut entry.operation {
-                OperationConfig::Face(cfg) => draw_face_params(ui, cfg, feeds_for_pills),
-                OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg, feeds_for_pills),
-                OperationConfig::Profile(cfg) => draw_profile_params(ui, cfg, feeds_for_pills),
-                OperationConfig::Adaptive(cfg) => draw_adaptive_params(ui, cfg, feeds_for_pills),
-                OperationConfig::VCarve(cfg) => draw_vcarve_params(ui, cfg, feeds_for_pills),
-                OperationConfig::Rest(cfg) => draw_rest_params(ui, cfg, tools, feeds_for_pills),
-                OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg, feeds_for_pills),
-                OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg, feeds_for_pills),
-                OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg, feeds_for_pills),
-                OperationConfig::Drill(cfg) => {
-                    draw_drill_params(ui, cfg, drill_layers, drill_targets, feeds_for_pills);
+                OperationConfig::Face(cfg) => {
+                    draw_face_params(ui, cfg, feeds_for_pills, depth_caution);
                 }
-                OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Pocket(cfg) => {
+                    draw_pocket_params(ui, cfg, feeds_for_pills, depth_caution);
+                }
+                OperationConfig::Profile(cfg) => {
+                    draw_profile_params(ui, cfg, feeds_for_pills, depth_caution);
+                }
+                OperationConfig::Adaptive(cfg) => {
+                    draw_adaptive_params(ui, cfg, feeds_for_pills, depth_caution);
+                }
+                OperationConfig::VCarve(cfg) => {
+                    draw_vcarve_params(ui, cfg, feeds_for_pills, depth_caution);
+                }
+                OperationConfig::Rest(cfg) => {
+                    draw_rest_params(ui, cfg, tools, feeds_for_pills, depth_caution);
+                }
+                OperationConfig::Inlay(cfg) => {
+                    draw_inlay_params(ui, cfg, feeds_for_pills, depth_caution);
+                }
+                OperationConfig::Zigzag(cfg) => {
+                    draw_zigzag_params(ui, cfg, feeds_for_pills, depth_caution);
+                }
+                OperationConfig::Trace(cfg) => {
+                    draw_trace_params(ui, cfg, feeds_for_pills, depth_caution);
+                }
+                OperationConfig::Drill(cfg) => {
+                    draw_drill_params(
+                        ui,
+                        cfg,
+                        drill_layers,
+                        drill_targets,
+                        feeds_for_pills,
+                        depth_caution,
+                    );
+                }
+                OperationConfig::Chamfer(cfg) => {
+                    draw_chamfer_params(ui, cfg, feeds_for_pills, depth_caution);
+                }
                 OperationConfig::DropCutter(cfg) => {
                     draw_dropcutter_params(ui, cfg, feeds_for_pills);
                 }
@@ -4851,6 +4888,32 @@ fn dv(
         .tooltip(tooltip_for(label))
         .show(ui);
     record_stock_to_leave(ui, label, &out);
+}
+
+/// G-DEPTHSTOCK (UX-R03-007): the caution row under a 2.5D depth field.
+///
+/// Rendered inside the operation's parameter grid, directly below the depth
+/// row, in the same amber the diagnostics ribbon uses for a `Caution`. It is
+/// the row form of the finding the header ribbon prints; both read
+/// [`operations::depth_beyond_stock`]. Nothing is drawn when there is no
+/// finding, so the grid keeps its shape.
+fn depth_caution_row(ui: &mut egui::Ui, caution: Option<&operations::DepthBeyondStock>) {
+    let Some(caution) = caution else {
+        return;
+    };
+    ui.label("");
+    ui.label(
+        egui::RichText::new(caution.message())
+            .small()
+            .color(egui::Color32::from_rgb(220, 180, 60)),
+    )
+    .on_hover_text(format!(
+        "The cut bottom sits {:.2} mm below the bottom of a {:.2} mm board, so the \
+         tool cuts into the bed. Generate stays enabled. Check the depth, the stock \
+         thickness on the Stock panel, or the Bottom Z on the Heights tab.",
+        caution.excess_mm, caution.stock_thickness_mm
+    ));
+    ui.end_row();
 }
 
 /// The "Stock to Leave" UI-automation hook, shared by `dv`/`dv_pill`.
