@@ -1102,8 +1102,18 @@ Ledger:
   because a peer read a live narration. Everything the trace feeds —
   region attribution, ring counts, advisory bucketing — was wrong for one
   binary and nothing failed.
-  **MECHANISM FOUND (2026-09-09, headless repro at 0.5 mm; fix designed,
-  NOT written — work paused).** It is the many-to-one junction landing
+  **MECHANISM FOUND (2026-09-09; fix designed, NOT written — work paused).**
+  Headless reproduction at 0.5 mm, **stage-ON arm only**: `moves 62 645`,
+  `cutting 37 338.19 mm`, `semantic_trace.summary {item_count: 2,
+  move_linked_item_count: 2}`, kinds `{operation: 1, boundary_clip: 1}` —
+  **regions 0, rings 0** against generation-time `fragments 600`,
+  `rotated_loops 340`. The stage-OFF control was NOT measured: the
+  orchestrator killed the run when the operator asked for the repo, so the
+  scratch fixture (`intra_pass_hookup_mm = 0.0` on op 20 only) is ready but
+  unrun. The ON arm alone establishes the DEFECT — `regions 0, rings 0` on a
+  fixture with 600 emitted fragments is wrong on its face — and the code
+  reading below establishes the ATTRIBUTION more directly than a control
+  would; the control is still owed for completeness. It is the many-to-one junction landing
   meeting the permutation drop rule, NOT rotation invalidating
   `move_index`. (1) `scallop.rs` ~2601 sets each ring annotation's
   `move_index = tp.moves.len()` immediately BEFORE the junction
