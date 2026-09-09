@@ -99,8 +99,9 @@ publishes staleness. Name the sentries P2 will write.
 **Question.** How should a ramp entry behave when its straight leg does not
 fit inside the operation's region?
 **Today (verified live).** `emit_ramp` (`dressup.rs`) draws a straight leg of
-length depth-per-step ÷ tan(angle) — 19–23 mm at 3° — from the entry point,
-unconstrained in XY. On `fixtures/demo_pocket.svg` the leg runs ~11 mm past
+length `ENTRY_CLEARANCE` (2.0 mm) ÷ tan(angle) ÷ 2 — 19.08 mm at 3°, independent
+of depth per pass (corrected by R0.2, 2026-09-10; the review's "DPP ÷ tan" was
+wrong) — from the entry point, unconstrained in XY. On `fixtures/demo_pocket.svg` the leg runs ~11 mm past
 the pocket wall and cuts the surrounding stock (`R03/REPORT.md` UX-R03-001,
 evidence 10/12, NC in `R03/scratch`). Ledgered as a not-measured follow-on in
 `planning/entry_moves_2026-09-03/FINDINGS.md`. G-RAMPTERRAIN clips legs in Z
@@ -149,7 +150,7 @@ for the freshness wording.
 `result.axial_depth_mm` (raw calculator) under "Commanded advance/tooth" and
 "DOC"; per-field ⚡ pills write raw values; `apply_feeds_subset` clamps; core
 `feeds/provenance.rs` already records per-field origin; pills stamp "manual";
-MCP `set_toolpath_param` never restamps. `W03/support/r04_source_track.md`
+MCP `set_toolpath_param` stamps Manual on feed_rate/plunge_rate/stepover/depth_per_pass/spindle_rpm but not on op-specific aliases (z_step, max_depth, scallop_height) — corrected by R0.5, 2026-09-09. `W03/support/r04_source_track.md`
 §1–4, `R03/REPORT.md` UX-R03-005, -014.
 **Deliver.** The four roles (configured, proposed, inherited default, emitted)
 and how each renders; the affected-fields list per Apply route (R1–R16 table);
