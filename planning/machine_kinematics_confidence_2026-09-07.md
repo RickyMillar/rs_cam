@@ -791,6 +791,16 @@ Ledger:
   rapid collision at move 68538 is GONE on the rerun (0) before the rapid
   fix landed — so that collision was an entry-path rapid; G-ISOCLIPRAPID's
   fix is still being confirmed headlessly.
+- **G-RETRACTDIAL (2026-09-09, OPEN — dead dial):** `retract_strategy`
+  (`RetractStrategy`, compute/config.rs) is defined, defaulted, shown in
+  the GUI properties panel and named in the MCP `set_dressup_config`
+  description, and consumed by NO generator or dressup in core. T5 with
+  `retract_strategy = "minimum"` is byte-identical to T5 (46 720 moves,
+  954 retracts, 7 985.08 s; fixture `T5m_r10_raster_islands_retract_min.toml`).
+  An operator-facing dial with no effect. Either build the Minimum
+  behaviour (the linking SPEC in `planning/linking_2026-09-09/` takes it
+  as a fallback that must now be BUILT, not enabled) or remove the dial
+  from every surface.
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and

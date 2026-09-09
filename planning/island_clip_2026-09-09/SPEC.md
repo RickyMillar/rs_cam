@@ -177,3 +177,16 @@ columns > 0.3 mm (p50 0.133) at 6 478 s; T3c 27.7 % (p50 0.128) at
 7 820 s. Same surface, T1 17 % faster. The single-pass R1.5 iso-scallop
 (Q3, §2.8) reaches the same bar, 25.5 %, at 4 372 s: the pairs buy no
 finish over one pass at 0.3 mm, and their tails (p99, max) are the same.
+
+## 6. Retract-strategy rerun (2026-09-09, later)
+
+T5m = T5 with `retract_strategy = "minimum"` in the dressup block:
+BYTE-IDENTICAL to T5 (46 720 moves, 49 433 mm cutting, 20 431 mm rapid,
+954 retracts, 7 985.08 s). The dial is inert. `rg` over `crates/`: the
+field is defined and defaulted in `compute/config.rs` (1929, 1971),
+read by the GUI properties panel (`ui/properties/mod.rs` 5025, 5260) and
+by the MCP `set_dressup_config` description, and consumed by NO
+generator or dressup in core. Proposed ledger row G-RETRACTDIAL: an
+operator-facing dial with no effect. T3cm (the scallop twin) was not
+run for that reason. The Minimum-retract fallback in §3 of the
+linking spec must therefore be built, not enabled.
