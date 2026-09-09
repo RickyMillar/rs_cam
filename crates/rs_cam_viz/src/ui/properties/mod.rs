@@ -3449,7 +3449,6 @@ fn build_entry_from_session_and_gui(
         dressups: tc.dressups.clone(),
         heights: tc.heights.clone(),
         boundary: tc.boundary.clone(),
-        boundary_inherit: tc.boundary_inherit,
         rest_analysis: tc.rest_analysis.clone(),
         coolant: tc.coolant,
         pre_gcode: tc.pre_gcode.clone().unwrap_or_default(),
@@ -3468,6 +3467,31 @@ fn build_entry_from_session_and_gui(
         semantic_trace: rt.semantic_trace.clone(),
         debug_trace_path: rt.debug_trace_path.clone(),
     })
+}
+
+/// The one line the Geometry tab prints above the boundary controls
+/// (UX-R03-009, G-BOUNDARYINHERIT). It names the STORED `boundary.source`,
+/// which is the boundary generation clips to. `auto` appends "(auto)" when
+/// the caller can prove the controller assigned the source on add; the
+/// panel cannot today (no provenance is stored), so it passes `false`.
+pub fn boundary_summary_line(
+    boundary: &crate::state::toolpath::BoundaryConfig,
+    auto: bool,
+) -> String {
+    let source = match &boundary.source {
+        BoundarySource::Stock => "stock rectangle".to_owned(),
+        BoundarySource::ModelSilhouette => "model silhouette".to_owned(),
+        BoundarySource::Geometry { polygon_indices } => {
+            format!("imported geometry ({} polygons)", polygon_indices.len())
+        }
+        BoundarySource::FaceSelection => "face selection".to_owned(),
+        BoundarySource::DerivedRestRegions { source_toolpath_id } => {
+            format!("rest regions of toolpath {}", source_toolpath_id.0)
+        }
+        BoundarySource::PlannedTierRegions { .. } => "planned tier regions".to_owned(),
+    };
+    let suffix = if auto { " (auto)" } else { "" };
+    format!("Boundary: {source}{suffix}")
 }
 
 /// Write config changes from a `ToolpathEntry` back to the session's `ToolpathConfig`.
@@ -3489,7 +3513,6 @@ fn write_entry_config_to_session(
         tc.dressups = entry.dressups.clone();
         tc.heights = entry.heights.clone();
         tc.boundary = entry.boundary.clone();
-        tc.boundary_inherit = entry.boundary_inherit;
         tc.rest_analysis = entry.rest_analysis.clone();
         tc.coolant = entry.coolant;
         tc.pre_gcode = if entry.pre_gcode.is_empty() {
@@ -4323,226 +4346,225 @@ fn draw_toolpath_panel(
                      Moves outside the boundary are converted to rapids at safe Z.",
                 );
             if entry.boundary.enabled {
-                ui.checkbox(&mut entry.boundary_inherit, "Inherit from stock")
-                    .on_hover_text(
-                        "Use the stock-level default boundary. Uncheck to \
-                         configure a custom boundary for this toolpath.",
-                    );
-                if !entry.boundary_inherit {
-                    // Source selector
-                    ui.horizontal(|ui| {
-                        ui.label("Source:");
-                        egui::ComboBox::from_id_salt("boundary_source")
-                            .selected_text(entry.boundary.source.label())
-                            .show_ui(ui, |ui| {
-                                if ui
-                                    .selectable_label(
-                                        matches!(entry.boundary.source, BoundarySource::Stock),
-                                        "Stock",
-                                    )
-                                    .on_hover_text("Use the stock bounding rectangle")
-                                    .clicked()
-                                {
-                                    entry.boundary.source = BoundarySource::Stock;
-                                }
-                                if ui
-                                    .selectable_label(
+                // UX-R03-009 (G-BOUNDARYINHERIT): the stored source is the
+                // one generation uses (`session/compute.rs` clones
+                // `tc.boundary` unconditionally). Name it, then show the
+                // controls that drive it. The controller assigns the model
+                // silhouette on add for 3D ops on a mesh; that provenance is
+                // not stored, so the line never claims "(auto)".
+                ui.label(
+                    egui::RichText::new(boundary_summary_line(&entry.boundary, false))
+                        .small()
+                        .color(egui::Color32::from_rgb(150, 150, 130)),
+                );
+                // Source selector
+                ui.horizontal(|ui| {
+                    ui.label("Source:");
+                    egui::ComboBox::from_id_salt("boundary_source")
+                        .selected_text(entry.boundary.source.label())
+                        .show_ui(ui, |ui| {
+                            if ui
+                                .selectable_label(
+                                    matches!(entry.boundary.source, BoundarySource::Stock),
+                                    "Stock",
+                                )
+                                .on_hover_text("Use the stock bounding rectangle")
+                                .clicked()
+                            {
+                                entry.boundary.source = BoundarySource::Stock;
+                            }
+                            if ui
+                                .selectable_label(
+                                    matches!(
+                                        entry.boundary.source,
+                                        BoundarySource::ModelSilhouette
+                                    ),
+                                    "Model Silhouette",
+                                )
+                                .on_hover_text(
+                                    "XY projection of the 3D model. Only machines \
+                                     where the model actually is.",
+                                )
+                                .clicked()
+                            {
+                                entry.boundary.source = BoundarySource::ModelSilhouette;
+                            }
+                            if ui
+                                .selectable_label(
+                                    matches!(entry.boundary.source, BoundarySource::FaceSelection),
+                                    "Face Selection",
+                                )
+                                .on_hover_text("Boundary derived from selected STEP faces")
+                                .clicked()
+                            {
+                                entry.boundary.source = BoundarySource::FaceSelection;
+                            }
+                            let has_rest_candidates = !boundary_source_candidates.is_empty();
+                            if ui
+                                .add_enabled(
+                                    has_rest_candidates,
+                                    egui::Button::selectable(
                                         matches!(
                                             entry.boundary.source,
-                                            BoundarySource::ModelSilhouette
+                                            BoundarySource::DerivedRestRegions { .. }
                                         ),
-                                        "Model Silhouette",
-                                    )
-                                    .on_hover_text(
-                                        "XY projection of the 3D model. Only machines \
-                                         where the model actually is.",
-                                    )
-                                    .clicked()
-                                {
-                                    entry.boundary.source = BoundarySource::ModelSilhouette;
-                                }
-                                if ui
-                                    .selectable_label(
-                                        matches!(
-                                            entry.boundary.source,
-                                            BoundarySource::FaceSelection
-                                        ),
-                                        "Face Selection",
-                                    )
-                                    .on_hover_text("Boundary derived from selected STEP faces")
-                                    .clicked()
-                                {
-                                    entry.boundary.source = BoundarySource::FaceSelection;
-                                }
-                                let has_rest_candidates = !boundary_source_candidates.is_empty();
-                                if ui
-                                    .add_enabled(
-                                        has_rest_candidates,
-                                        egui::Button::selectable(
-                                            matches!(
-                                                entry.boundary.source,
-                                                BoundarySource::DerivedRestRegions { .. }
-                                            ),
-                                            "Rest Regions",
-                                        ),
-                                    )
-                                    .on_hover_text(if has_rest_candidates {
-                                        "Boundary = rest regions computed by another \
-                                         toolpath's rest analysis. Pick the source \
-                                         toolpath below."
-                                    } else {
-                                        "No other toolpaths in this project yet — add \
-                                         one, switch on its Rest Analysis and \
-                                         generate it to use as the source."
-                                    })
-                                    .clicked()
-                                {
-                                    let default_source = boundary_source_candidates
-                                        .first()
-                                        .map(|(candidate_id, _, _, _, _)| *candidate_id)
-                                        .unwrap_or(entry.id);
-                                    entry.boundary.source = BoundarySource::DerivedRestRegions {
-                                        source_toolpath_id: default_source,
-                                    };
-                                }
-                            });
-                    });
-
-                    // Rest-regions source-toolpath picker (P2.2) — only shown
-                    // when `Source` above is set to `DerivedRestRegions`.
-                    // Candidates are every other toolpath in the session;
-                    // ones with a cached result whose rest regions are
-                    // already non-empty are labelled "(regions ready)" and
-                    // sorted first, but a not-yet-generated toolpath is
-                    // still selectable — generation fails hard with a clear
-                    // message if the source turns out unusable.
-                    if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
-                        &mut entry.boundary.source
-                    {
-                        ui.horizontal(|ui| {
-                            ui.label("Rest source:");
-                            let current_label = boundary_source_candidates
-                                .iter()
-                                .find(|(candidate_id, _, _, _, _)| {
-                                    candidate_id == source_toolpath_id
+                                        "Rest Regions",
+                                    ),
+                                )
+                                .on_hover_text(if has_rest_candidates {
+                                    "Boundary = rest regions computed by another \
+                                     toolpath's rest analysis. Pick the source \
+                                     toolpath below."
+                                } else {
+                                    "No other toolpaths in this project yet — add \
+                                     one, switch on its Rest Analysis and \
+                                     generate it to use as the source."
                                 })
-                                .map(|(_, name, ready, _, _)| {
-                                    if *ready {
+                                .clicked()
+                            {
+                                let default_source = boundary_source_candidates
+                                    .first()
+                                    .map(|(candidate_id, _, _, _, _)| *candidate_id)
+                                    .unwrap_or(entry.id);
+                                entry.boundary.source = BoundarySource::DerivedRestRegions {
+                                    source_toolpath_id: default_source,
+                                };
+                            }
+                        });
+                });
+
+                // Rest-regions source-toolpath picker (P2.2) — only shown
+                // when `Source` above is set to `DerivedRestRegions`.
+                // Candidates are every other toolpath in the session;
+                // ones with a cached result whose rest regions are
+                // already non-empty are labelled "(regions ready)" and
+                // sorted first, but a not-yet-generated toolpath is
+                // still selectable — generation fails hard with a clear
+                // message if the source turns out unusable.
+                if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                    &mut entry.boundary.source
+                {
+                    ui.horizontal(|ui| {
+                        ui.label("Rest source:");
+                        let current_label = boundary_source_candidates
+                            .iter()
+                            .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id)
+                            .map(|(_, name, ready, _, _)| {
+                                if *ready {
+                                    format!("{name} (regions ready)")
+                                } else {
+                                    name.clone()
+                                }
+                            })
+                            .unwrap_or_else(|| "(toolpath not found)".to_owned());
+                        let mut sorted = boundary_source_candidates.to_vec();
+                        sorted.sort_by_key(|(_, _, ready, _, _)| !*ready);
+                        egui::ComboBox::from_id_salt("boundary_rest_source")
+                            .selected_text(current_label)
+                            .show_ui(ui, |ui| {
+                                for (candidate_id, name, ready, _, _) in &sorted {
+                                    let label = if *ready {
                                         format!("{name} (regions ready)")
                                     } else {
                                         name.clone()
+                                    };
+                                    let selected = *source_toolpath_id == *candidate_id;
+                                    if ui.selectable_label(selected, label).clicked() {
+                                        *source_toolpath_id = *candidate_id;
                                     }
-                                })
-                                .unwrap_or_else(|| "(toolpath not found)".to_owned());
-                            let mut sorted = boundary_source_candidates.to_vec();
-                            sorted.sort_by_key(|(_, _, ready, _, _)| !*ready);
-                            egui::ComboBox::from_id_salt("boundary_rest_source")
-                                .selected_text(current_label)
-                                .show_ui(ui, |ui| {
-                                    for (candidate_id, name, ready, _, _) in &sorted {
-                                        let label = if *ready {
-                                            format!("{name} (regions ready)")
-                                        } else {
-                                            name.clone()
-                                        };
-                                        let selected = *source_toolpath_id == *candidate_id;
-                                        if ui.selectable_label(selected, label).clicked() {
-                                            *source_toolpath_id = *candidate_id;
-                                        }
-                                    }
-                                })
-                                .response
-                                .on_hover_text(
-                                    "The toolpath whose rest analysis supplies the \
-                                     rest regions. ANY operation produces them when \
-                                     its Rest Analysis is on and the project carries \
-                                     a mesh; the pencil rest-depth detector and the \
-                                     Unified Finish claims pipeline attach their own.",
-                                );
-                        });
-
-                        // Sliver-storm / giant-region caption (2026-07-06
-                        // incident): the SOURCE toolpath is who suffers the
-                        // per-island generation explosion or the "barely
-                        // restricts anything" giant-region case, so classify
-                        // ITS cached regions (captured in
-                        // `boundary_source_candidates` alongside `ready`),
-                        // not this consumer's own (this toolpath has none —
-                        // it's the one consuming the boundary).
-                        //
-                        // LH-2: the denominator is the SOURCE toolpath's own
-                        // rest-grid footprint (captured alongside its
-                        // regions), not this model's bounding rectangle.
-                        let selected = boundary_source_candidates
-                            .iter()
-                            .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id);
-                        let selected_regions =
-                            selected.and_then(|(_, _, _, regions, _)| regions.as_ref());
-                        // `None` twice over: no candidate selected, or the
-                        // selected one has no rest grid. Both are "not
-                        // measured", and `classify_rest_regions` stays silent.
-                        let source_footprint_area = selected.and_then(|(_, _, _, _, area)| *area);
-                        if let Some(regions) = selected_regions
-                            && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
-                                regions,
-                                source_footprint_area,
-                            )
-                        {
-                            ui.label(
-                                egui::RichText::new(rest_region_pathology_caption(pathology))
-                                    .small()
-                                    .color(egui::Color32::from_rgb(220, 160, 60)),
-                            );
-                        }
-                    }
-
-                    // Containment mode
-                    ui.horizontal(|ui| {
-                        ui.label("Containment:");
-                        egui::ComboBox::from_id_salt("boundary_contain")
-                            .selected_text(match entry.boundary.containment {
-                                BoundaryContainment::Center => "Center",
-                                BoundaryContainment::Inside => "Inside",
-                                BoundaryContainment::Outside => "Outside",
+                                }
                             })
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut entry.boundary.containment,
-                                    BoundaryContainment::Center,
-                                    "Center",
-                                )
-                                .on_hover_text("Tool center stays inside boundary");
-                                ui.selectable_value(
-                                    &mut entry.boundary.containment,
-                                    BoundaryContainment::Inside,
-                                    "Inside",
-                                )
-                                .on_hover_text(
-                                    "Entire tool stays inside boundary (shrinks by tool radius)",
-                                );
-                                ui.selectable_value(
-                                    &mut entry.boundary.containment,
-                                    BoundaryContainment::Outside,
-                                    "Outside",
-                                )
-                                .on_hover_text("Tool edge can extend outside boundary");
-                            });
+                            .response
+                            .on_hover_text(
+                                "The toolpath whose rest analysis supplies the \
+                                 rest regions. ANY operation produces them when \
+                                 its Rest Analysis is on and the project carries \
+                                 a mesh; the pencil rest-depth detector and the \
+                                 Unified Finish claims pipeline attach their own.",
+                            );
                     });
 
-                    // Offset
-                    ui.horizontal(|ui| {
-                        ui.label("Offset:");
-                        ui.add(
-                            egui::DragValue::new(&mut entry.boundary.offset)
-                                .speed(0.1)
-                                .suffix(" mm"),
+                    // Sliver-storm / giant-region caption (2026-07-06
+                    // incident): the SOURCE toolpath is who suffers the
+                    // per-island generation explosion or the "barely
+                    // restricts anything" giant-region case, so classify
+                    // ITS cached regions (captured in
+                    // `boundary_source_candidates` alongside `ready`),
+                    // not this consumer's own (this toolpath has none —
+                    // it's the one consuming the boundary).
+                    //
+                    // LH-2: the denominator is the SOURCE toolpath's own
+                    // rest-grid footprint (captured alongside its
+                    // regions), not this model's bounding rectangle.
+                    let selected = boundary_source_candidates
+                        .iter()
+                        .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id);
+                    let selected_regions =
+                        selected.and_then(|(_, _, _, regions, _)| regions.as_ref());
+                    // `None` twice over: no candidate selected, or the
+                    // selected one has no rest grid. Both are "not
+                    // measured", and `classify_rest_regions` stays silent.
+                    let source_footprint_area = selected.and_then(|(_, _, _, _, area)| *area);
+                    if let Some(regions) = selected_regions
+                        && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
+                            regions,
+                            source_footprint_area,
                         )
-                        .on_hover_text(
-                            "Expand (positive) or shrink (negative) the boundary. \
-                             Applied before tool-radius containment.",
+                    {
+                        ui.label(
+                            egui::RichText::new(rest_region_pathology_caption(pathology))
+                                .small()
+                                .color(egui::Color32::from_rgb(220, 160, 60)),
                         );
-                    });
+                    }
                 }
+
+                // Containment mode
+                ui.horizontal(|ui| {
+                    ui.label("Containment:");
+                    egui::ComboBox::from_id_salt("boundary_contain")
+                        .selected_text(match entry.boundary.containment {
+                            BoundaryContainment::Center => "Center",
+                            BoundaryContainment::Inside => "Inside",
+                            BoundaryContainment::Outside => "Outside",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut entry.boundary.containment,
+                                BoundaryContainment::Center,
+                                "Center",
+                            )
+                            .on_hover_text("Tool center stays inside boundary");
+                            ui.selectable_value(
+                                &mut entry.boundary.containment,
+                                BoundaryContainment::Inside,
+                                "Inside",
+                            )
+                            .on_hover_text(
+                                "Entire tool stays inside boundary (shrinks by tool radius)",
+                            );
+                            ui.selectable_value(
+                                &mut entry.boundary.containment,
+                                BoundaryContainment::Outside,
+                                "Outside",
+                            )
+                            .on_hover_text("Tool edge can extend outside boundary");
+                        });
+                });
+
+                // Offset
+                ui.horizontal(|ui| {
+                    ui.label("Offset:");
+                    ui.add(
+                        egui::DragValue::new(&mut entry.boundary.offset)
+                            .speed(0.1)
+                            .suffix(" mm"),
+                    )
+                    .on_hover_text(
+                        "Expand (positive) or shrink (negative) the boundary. \
+                         Applied before tool-radius containment.",
+                    );
+                });
             }
 
             // ── Rest Analysis (P2.5 → P2 pencil-panel consolidation) ────

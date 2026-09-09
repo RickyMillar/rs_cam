@@ -381,7 +381,9 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
                     Some(tp.post_gcode.clone())
                 },
                 boundary: tp.boundary.clone(),
-                boundary_inherit: tp.boundary_inherit,
+                // Dead dial (UX-R03-009): the GUI no longer carries it;
+                // the core field is written `false` for file compatibility.
+                boundary_inherit: false,
                 rest_analysis: tp.rest_analysis.clone(),
                 stock_source: tp.stock_source,
                 coolant: tp.coolant,

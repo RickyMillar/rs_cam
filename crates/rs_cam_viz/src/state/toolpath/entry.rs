@@ -27,8 +27,6 @@ pub struct ToolpathEntryInit {
     pub dressups: DressupConfig,
     pub heights: HeightsConfig,
     pub boundary: BoundaryConfig,
-    /// When true, this toolpath inherits its boundary from the stock default.
-    pub boundary_inherit: bool,
     /// Op-agnostic rest analysis (P2.5). Mirrors `ToolpathConfig::rest_analysis`.
     pub rest_analysis: RestAnalysisConfig,
     pub coolant: CoolantMode,
@@ -61,7 +59,6 @@ impl ToolpathEntryInit {
             dressups: DressupConfig::for_op(op_type),
             heights: HeightsConfig::default(),
             boundary: BoundaryConfig::default(),
-            boundary_inherit: true,
             rest_analysis: RestAnalysisConfig::default(),
             coolant: CoolantMode::Off,
             pre_gcode: String::new(),
@@ -112,7 +109,6 @@ impl ToolpathEntryInit {
             dressups: source.dressups.clone(),
             heights: source.heights.clone(),
             boundary: source.boundary.clone(),
-            boundary_inherit: source.boundary_inherit,
             rest_analysis: source.rest_analysis.clone(),
             coolant: source.coolant,
             pre_gcode: source.pre_gcode.clone(),
@@ -137,7 +133,6 @@ pub struct ToolpathEntry {
     pub dressups: DressupConfig,
     pub heights: HeightsConfig,
     pub boundary: BoundaryConfig,
-    pub boundary_inherit: bool,
     /// Op-agnostic rest analysis (P2.5). Mirrors `ToolpathConfig::rest_analysis`.
     pub rest_analysis: RestAnalysisConfig,
     pub coolant: CoolantMode,
@@ -212,7 +207,6 @@ impl ToolpathEntry {
             dressups: init.dressups,
             heights: init.heights,
             boundary: init.boundary,
-            boundary_inherit: init.boundary_inherit,
             rest_analysis: init.rest_analysis,
             coolant: init.coolant,
             pre_gcode: init.pre_gcode,

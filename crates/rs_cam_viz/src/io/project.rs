@@ -241,9 +241,13 @@ pub struct ProjectToolpathSection {
     /// New-format boundary config (preferred).
     #[serde(default)]
     pub boundary: BoundaryConfig,
-    /// When true, inherit boundary from stock default.
-    #[serde(default = "default_true")]
-    pub boundary_inherit: bool,
+    /// Deprecated (UX-R03-009, G-BOUNDARYINHERIT). Nothing ever read this
+    /// dial: generation clips to `boundary` unconditionally and no
+    /// stock-level default boundary exists. Read for compatibility with
+    /// files that carry it, ignored, never written.
+    #[serde(default, skip_serializing)]
+    #[allow(dead_code)] // SAFETY: read by serde only; nothing consumes it.
+    boundary_inherit: bool,
     /// Op-agnostic rest analysis (P2.5). Absent in projects saved before this
     /// config existed — defaults to disabled.
     #[serde(default, skip_serializing_if = "rest_analysis_is_default")]
@@ -587,7 +591,7 @@ impl ProjectToolpathSection {
             dressups: toolpath.dressups.clone(),
             heights: toolpath.heights.clone(),
             boundary: toolpath.boundary.clone(),
-            boundary_inherit: toolpath.boundary_inherit,
+            boundary_inherit: false,
             rest_analysis: toolpath.rest_analysis.clone(),
             boundary_enabled: false,
             boundary_containment: BoundaryContainment::Center,
@@ -1200,10 +1204,8 @@ fn restore_project_toolpath(
             containment: section.boundary_containment,
             offset: 0.0,
         };
-        init.boundary_inherit = false;
     } else {
         init.boundary = section.boundary;
-        init.boundary_inherit = section.boundary_inherit;
     }
     init.coolant = section.coolant;
     init.pre_gcode = section.pre_gcode;
@@ -1660,7 +1662,6 @@ mod tests {
             containment: BoundaryContainment::Inside,
             offset: 0.0,
         };
-        toolpath.boundary_inherit = false;
         toolpath.coolant = CoolantMode::Mist;
         toolpath.pre_gcode = "M7".to_owned();
         toolpath.post_gcode = "M9".to_owned();
@@ -1704,7 +1705,6 @@ mod tests {
                 offset: 0.0,
             }
         );
-        assert!(!toolpath.boundary_inherit);
 
         fs::remove_dir_all(temp_dir).unwrap();
     }
