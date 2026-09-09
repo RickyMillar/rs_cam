@@ -165,10 +165,15 @@ pub enum AppEvent {
     RemoveToolpath(ToolpathId),
     MoveToolpathUp(ToolpathId),
     MoveToolpathDown(ToolpathId),
-    /// Reorder a toolpath within its current setup to a target index.
+    /// Reorder a toolpath within its current setup. The `usize` is the
+    /// INSERTION GAP the operator dropped on, counted in the setup's own
+    /// plan order: `0` is above the first card, `n` below the last.
     ReorderToolpath(ToolpathId, usize),
-    /// Move a toolpath from its current setup to a different setup at a target index.
-    MoveToolpathToSetup(ToolpathId, SetupId, usize),
+    /// Move a toolpath from its current setup to a different setup. The
+    /// `Option<usize>` is the insertion gap in the TARGET setup, or `None`
+    /// to append — MCP `move_toolpath_to_setup` takes no position argument
+    /// and passes `None` (G-DROPINDEX).
+    MoveToolpathToSetup(ToolpathId, SetupId, Option<usize>),
     ToggleToolpathEnabled(ToolpathId),
     GenerateToolpath(ToolpathId),
     GenerateAll,

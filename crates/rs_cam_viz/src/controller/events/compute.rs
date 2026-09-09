@@ -1691,6 +1691,16 @@ impl<B: ComputeBackend> AppController<B> {
         match next {
             Next::Wait => {}
             Next::Simulate(resolution) => {
+                // G-RESNOTICE: say so before doing it. The write below is
+                // unchanged and unconditional — only the operator's
+                // knowledge of it is new.
+                if let Some(notice) = crate::controller::generate_all::resolution_override_notice(
+                    self.state.simulation.resolution,
+                    self.state.simulation.auto_resolution,
+                    resolution,
+                ) {
+                    self.push_notification(notice, super::super::Severity::Warning);
+                }
                 self.state.simulation.resolution = resolution;
                 self.state.simulation.auto_resolution = false;
                 if self.run_simulation_with_all_memoized(true) {

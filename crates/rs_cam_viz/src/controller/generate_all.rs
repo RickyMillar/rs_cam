@@ -265,6 +265,47 @@ pub struct GenerateAllSummary {
     pub loop_error: Option<String>,
 }
 
+/// What the operator is owed when the ladder takes over their simulation
+/// resolution, or `None` when it changes nothing.
+///
+/// G-RESNOTICE (2026-09-10). Between rounds the ladder writes
+/// `SimulationState::resolution` and clears `auto_resolution`, and the new
+/// values STAY after the run — every later simulation, collision count and
+/// engagement figure is measured at whatever cell the ladder chose. The GUI
+/// arm can only ever write back the value the operator pinned themselves
+/// (`pinned_simulation_resolution` refuses `auto`), so it says nothing; an
+/// MCP `generate_all` carries its own `simulation_resolution_mm` and can
+/// differ from, or overrule, both dials, and that is the case this names.
+///
+/// This is a truthfulness fix and nothing else: it does not change when or
+/// whether the ladder rewrites the setting, only whether the rewrite is
+/// visible. The text names the old value and the new one, because the
+/// operator has to be able to put the old one back.
+#[must_use]
+pub fn resolution_override_notice(
+    current_mm: f64,
+    current_auto: bool,
+    ladder_mm: f64,
+) -> Option<String> {
+    // `auto` is a different setting even at the same number: it re-derives
+    // the cell per simulation, so clearing it is a change the operator can
+    // see in later runs.
+    if !current_auto && (current_mm - ladder_mm).abs() < f64::EPSILON {
+        return None;
+    }
+    let was = if current_auto {
+        format!("{current_mm:.3} mm, auto from tool size")
+    } else {
+        format!("{current_mm:.3} mm, pinned")
+    };
+    Some(format!(
+        "Generate All set the simulation resolution to {ladder_mm:.3} mm for the \
+         rest-stock ladder (was {was}) and unticked \"Auto from tool size\". The new \
+         value stays after this run — collision counts and engagement both move with \
+         cell size, so set it back if you wanted the old one."
+    ))
+}
+
 /// The one-line account both surfaces give of a finished run.
 #[must_use]
 pub fn generate_all_headline(summary: &GenerateAllSummary) -> String {

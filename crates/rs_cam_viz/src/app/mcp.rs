@@ -2901,10 +2901,14 @@ impl super::RsCamApp {
 
         self.controller
             .events_mut()
+            // No position argument on this tool, so it appends — the
+            // behaviour it has always had. The literal `0` that used to sit
+            // here was inert (core ignored the index); passing it now would
+            // silently move the op to the FRONT of the target setup.
             .push(crate::ui::AppEvent::MoveToolpathToSetup(
                 tp_id,
                 target_setup_id,
-                0,
+                None,
             ));
         self.controller.state_mut().gui.mark_edited();
 

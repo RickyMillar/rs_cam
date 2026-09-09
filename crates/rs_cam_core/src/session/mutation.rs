@@ -133,6 +133,21 @@ impl ProjectSession {
     /// Both indices refer to positions in the session-level `toolpath_configs`
     /// vec. The toolpath must belong to the same setup as determined by the
     /// current `toolpath_indices`.
+    ///
+    /// This is an INSERT, not a swap (G-DROPINDEX, 2026-09-10): the moved op
+    /// takes the target op's place in plan order and everything between the
+    /// two shifts by one. It used to swap the two positions, which the
+    /// operator sees only when the two are not adjacent — dragging the last
+    /// op to the top also sent the top op to the bottom.
+    ///
+    /// The two affordances that reach this method stay consistent under the
+    /// change. Move Up / Move Down pass the ADJACENT op's index, and for
+    /// adjacent positions an insert and a swap are the same permutation, so
+    /// those two menu items are byte-identical before and after. Drag-and-drop
+    /// carries the position the operator pointed at, which is an insertion
+    /// gap, and only an insert can honour it. They are two gestures with one
+    /// meaning — "put this op here" — not two policies that had to be
+    /// reconciled.
     #[instrument(skip(self))]
     pub fn reorder_toolpath(
         &mut self,
@@ -149,14 +164,20 @@ impl ProjectSession {
             return Ok(());
         }
 
-        // Swap only the display order within the setup that owns both
+        // Re-order only the display order within the setup that owns both
         // toolpaths. `toolpath_configs` and the results cache are keyed by
         // stable global indices and must not move.
+        //
+        // Remove at `pf`, insert at `pt`, both read off the ORIGINAL list.
+        // Downward (pf < pt) that lands the op just after the target,
+        // upward (pf > pt) just before it; either way the target keeps its
+        // neighbours and only the moved op changes rank.
         for setup in &mut self.setups {
             let pos_from = setup.toolpath_indices.iter().position(|&i| i == from_index);
             let pos_to = setup.toolpath_indices.iter().position(|&i| i == to_index);
             if let (Some(pf), Some(pt)) = (pos_from, pos_to) {
-                setup.toolpath_indices.swap(pf, pt);
+                let moved = setup.toolpath_indices.remove(pf);
+                setup.toolpath_indices.insert(pt, moved);
                 break;
             }
         }
@@ -697,6 +718,17 @@ impl ProjectSession {
 
     /// Move a toolpath from its current setup to a different setup.
     ///
+    /// `target_position` is the gap the toolpath lands in, counted in the
+    /// TARGET setup's own plan order: `Some(0)` puts it first, `Some(len)`
+    /// or anything larger puts it last, and `None` appends. It is an
+    /// `Option` rather than a plain index because the two callers ask
+    /// different questions — a drag carries the drop position the operator
+    /// pointed at, while MCP `move_toolpath_to_setup` has no position
+    /// argument at all and must keep appending (G-DROPINDEX, 2026-09-10:
+    /// the drop index used to be computed by the panel, passed through the
+    /// event and then dropped on the floor here, so every cross-setup drag
+    /// landed at the bottom of the target setup whatever the operator did).
+    ///
     /// The cached toolpath result is invalidated because the setup transform
     /// may have changed (e.g. top → bottom orientation).
     #[instrument(skip(self))]
@@ -704,6 +736,7 @@ impl ProjectSession {
         &mut self,
         tp_index: usize,
         target_setup_index: usize,
+        target_position: Option<usize>,
     ) -> Result<(), SessionError> {
         if tp_index >= self.toolpath_configs.len() {
             return Err(SessionError::ToolpathNotFound(tp_index));
@@ -724,9 +757,9 @@ impl ProjectSession {
 
         // SAFETY: target_setup_index bounds-checked above
         #[allow(clippy::indexing_slicing)]
-        self.setups[target_setup_index]
-            .toolpath_indices
-            .push(tp_index);
+        let target = &mut self.setups[target_setup_index].toolpath_indices;
+        let at = target_position.unwrap_or(target.len()).min(target.len());
+        target.insert(at, tp_index);
 
         self.results.remove(&tp_index);
         self.simulation = None;
@@ -1642,7 +1675,7 @@ mod tests {
         assert_eq!(s.list_setups()[0].toolpath_indices, vec![0]);
         assert!(s.list_setups()[1].toolpath_indices.is_empty());
 
-        s.move_toolpath_to_setup(0, 1).unwrap();
+        s.move_toolpath_to_setup(0, 1, None).unwrap();
 
         assert!(s.list_setups()[0].toolpath_indices.is_empty());
         assert_eq!(s.list_setups()[1].toolpath_indices, vec![0]);
@@ -1657,7 +1690,7 @@ mod tests {
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
 
         assert!(matches!(
-            s.move_toolpath_to_setup(0, 99),
+            s.move_toolpath_to_setup(0, 99, None),
             Err(SessionError::SetupNotFound(99))
         ));
     }

@@ -270,6 +270,19 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    /// Drop a dragged card into a gap in its own setup's plan order.
+    ///
+    /// `target_idx` is an insertion GAP (`0..=len`), not a card position, so
+    /// it has to be turned into the card the moved op should land against
+    /// before core's insert can use it (G-DROPINDEX):
+    ///
+    /// - a gap ABOVE the dragged card (`gap <= local_pos`) means "before the
+    ///   card currently at `gap`", so the target card is `gap` itself;
+    /// - a gap BELOW it (`gap > local_pos`) means "after the card currently
+    ///   at `gap - 1`", so the target card is `gap - 1`.
+    ///
+    /// Both land the op exactly in the gap, because `reorder_toolpath`
+    /// inserts before an upward target and after a downward one.
     pub(crate) fn handle_reorder_toolpath(&mut self, tp_id: ToolpathId, target_idx: usize) {
         if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id)
             && let Some(setup) = self
@@ -278,8 +291,10 @@ impl<B: ComputeBackend> AppController<B> {
                 .list_setups()
                 .iter()
                 .find(|s| s.toolpath_indices.contains(&tp_idx))
+            && let Some(local_pos) = setup.toolpath_indices.iter().position(|&i| i == tp_idx)
         {
-            let clamped = target_idx.min(setup.toolpath_indices.len().saturating_sub(1));
+            let gap = target_idx.min(setup.toolpath_indices.len());
+            let clamped = if gap > local_pos { gap - 1 } else { gap };
             if let Some(&target_global_idx) = setup.toolpath_indices.get(clamped)
                 && tp_idx != target_global_idx
             {
@@ -292,11 +307,16 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    /// Drop a dragged card into another setup.
+    ///
+    /// `position` is the insertion gap in the TARGET setup's plan order, or
+    /// `None` to append. Core clamps it, so a gap read off a shorter list
+    /// than the target's is a landing at the end, never a refusal.
     pub(crate) fn handle_move_toolpath_to_setup(
         &mut self,
         tp_id: ToolpathId,
         setup_id: crate::state::job::SetupId,
-        _idx: usize,
+        position: Option<usize>,
     ) {
         if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
             // Resolve the target setup's index from its ID
@@ -307,10 +327,10 @@ impl<B: ComputeBackend> AppController<B> {
                 .iter()
                 .position(|s| s.id == setup_id.0);
             if let Some(target_setup_idx) = target_idx {
-                let _ = self
-                    .state
-                    .session
-                    .move_toolpath_to_setup(tp_idx, target_setup_idx);
+                let _ =
+                    self.state
+                        .session
+                        .move_toolpath_to_setup(tp_idx, target_setup_idx, position);
             }
             self.pending_upload = true;
             self.state.gui.mark_edited();
@@ -342,31 +362,34 @@ impl<B: ComputeBackend> AppController<B> {
     /// the project needs one (Phase O, plan §2 item 4).
     ///
     /// A project with no enabled `FromRemainingStock` op takes the pre-Phase-O
-    /// path unchanged — every config submitted once, enabled or not, no ladder
-    /// state, no notification.
+    /// path unchanged apart from its scope — every ENABLED config submitted
+    /// once, no ladder state, no notification.
+    ///
+    /// G-GENALLDISABLED (2026-09-10): this branch used to submit every
+    /// config, enabled or not, while the ladder branch beside it submitted
+    /// `scope.enabled`. So one Generate All obeyed the enable toggle and the
+    /// other did not, purely on whether the project happened to hold a rest
+    /// chain. Disabling an op promises exclusion "from generation, simulation
+    /// and output" (the row-control hover), core's own `generate_all` skips
+    /// disabled ops, and export filters them out — this was the one surface
+    /// that generated them anyway, burning the compute lane on work no
+    /// surface would consume and leaving a disabled card reading `OK`.
     pub(crate) fn handle_generate_all(&mut self) {
         use crate::controller::generate_all::{GenerateAllSink, generate_all_scope, plan_fixpoint};
 
         let scope = generate_all_scope(self.state.session.toolpath_configs());
-        if scope.rest_op_indices.is_empty() {
-            let ids: Vec<_> = self
-                .state
-                .session
-                .toolpath_configs()
-                .iter()
-                .map(|tc| tc.id)
-                .collect();
-            for id in ids {
-                self.submit_toolpath_compute(id);
-            }
-            return;
-        }
-
         if scope.enabled.is_empty() {
             self.push_notification(
                 "No enabled toolpaths to generate".into(),
                 super::super::Severity::Warning,
             );
+            return;
+        }
+
+        if scope.rest_op_indices.is_empty() {
+            for id in scope.enabled {
+                self.submit_toolpath_compute(id);
+            }
             return;
         }
 

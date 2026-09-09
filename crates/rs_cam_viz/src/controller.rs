@@ -1,6 +1,14 @@
 #![deny(clippy::indexing_slicing)]
 
 mod events;
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod fixpoint_resolution_notice_g_resnotice;
 pub mod generate_all;
 mod io;
 #[cfg(test)]

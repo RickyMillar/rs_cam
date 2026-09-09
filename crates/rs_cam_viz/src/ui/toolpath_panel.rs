@@ -157,7 +157,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 events.push(AppEvent::MoveToolpathToSetup(
                     dragged_tp_id,
                     setup_id,
-                    drop_idx,
+                    Some(drop_idx),
                 ));
             }
         }
