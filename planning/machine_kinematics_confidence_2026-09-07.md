@@ -1310,3 +1310,51 @@ Ledger:
   The same reading applies to `ceiling_refused`. Cheap, and it makes the
   fixture defect self-announcing. See also "Pencil on FRESH stock is unsafe
   by construction" above — same root, different symptom.
+- **G-LINKTRACE (2026-09-10) — FIXED. The link stage deleted the scallop's
+  semantic trace; the toolpath was never wrong.** Reproduced on the
+  corrugated scallop fixture: switching the stage on took the trace from 25
+  items to **1**, regions 1 → **0**, rings 23 → **0**, with the emitted
+  motion unchanged. Narration, the GUI span list and the MCP trace all went
+  blank for the op.
+  **Mechanism.** `ScallopAnnotationChannel` asked
+  `MoveProvenance::remap_range(i, i + 1)`. Under `Permutation` that applies
+  the foreign-intrusion rule, and `relink_fragments_with_kinds` produces
+  intrusion at EVERY junction by construction: the DELETED junction rapid is
+  remapped onto the whole replacement junction, and the next fragment's
+  first move onto that junction's last output, so the two ranges overlap.
+  Every ring annotation was dropped. **`reorder` alone does it** — the
+  repro fixture rotates nothing (`rotated_loops == 0`), which corrects the
+  first guess that rotation was needed.
+  **Fix.** `MoveProvenance::remap_point` — a single-move ANCHOR asks only
+  where one move went. It has no width, so it cannot widen, so the rule that
+  guards a multi-move CLAIM does not apply to it; applying it there deletes
+  a correct answer rather than making it safer. Used ONLY by the scallop
+  channel; `SemanticLinkChannel` carries real ranges and rightly keeps the
+  drop. Plus a STABLE sort into emitted order, because
+  `compute::annotate::annotate_scallop` derives each ring's end from the
+  NEXT annotation's index and groups regions by CONSECUTIVE runs, and a
+  reorder scatters that vector.
+  **After: 25 items, 25 move-linked, regions 1, rings 23**, and the emitted
+  move digest is `4512f8ccb89d9097` **before and after** — measured, not
+  claimed by construction. Two false comments corrected
+  (`surface_link.rs` ~1187, which said ring annotations anchor on the
+  junction rapid and need no re-anchoring — both halves wrong; and
+  `transform_provenance.rs`, which now says why the range channel keeps the
+  rule the anchor channel drops).
+  Sentry `tests/scallop_trace_survives_relink_g_linktrace.rs`, shaped around
+  the two traps: it reads its POPULATION from `relink.fragments` because
+  `ScallopReport::ring_count` is computed AFTER the reconcile and makes
+  `rings == ring_count` pass vacuously as `0 == 0` on the broken binary; and
+  it pins the pre-fix digest as a literal so "no motion moved" is measured.
+  **Not settled, and deliberately not forced:** whether a reorder can
+  interleave two regions and so make `annotate_scallop`'s
+  consecutive-run grouping report MORE region items than there are regions.
+  This fixture has one region and rotates nothing, so it cannot answer.
+  The grouping is unchanged by this fix.
+  **Gate run: targeted only.** `scallop_trace_survives_relink_g_linktrace`,
+  `transform_provenance_fingerprints`, `scallop_intra_pass_relink_am7`,
+  `link_stage_g_linkstage`, `link_counters_visible_g_linkvisible`,
+  `pencil_hop_dial_g_pencilhop`, the `transform_provenance` lib tests, fmt,
+  and clippy on `rs_cam_core --all-targets`. **The FULL heavy-tests gate is
+  NOT run and is owed** — the operator asked for it to be skipped on this
+  machine.
