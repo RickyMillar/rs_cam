@@ -378,6 +378,14 @@ impl RsCamApp {
                     {
                         match self.controller.open_job_from_path(&path) {
                             Ok(()) => {
+                                // G-WSMENU (2026-09-10): a load replaces every
+                                // model in the project, so the camera has to
+                                // move with it — the import dispatch above has
+                                // always fitted and this route never did,
+                                // leaving a loaded job off screen at whatever
+                                // the previous project's scale was. Same
+                                // routine as Reset View, not a second fit.
+                                self.fit_camera_to_first_model();
                                 tracing::info!("Loaded job from {}", path.display());
                             }
                             Err(error) => self.controller.push_error(&error),

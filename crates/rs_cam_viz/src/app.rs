@@ -163,10 +163,14 @@ impl RsCamApp {
         let _ = (mcp_mode, waker);
 
         // Load job file if RS_CAM_JOB is set
+        let mut loaded_a_job = false;
         if let Ok(job_path) = std::env::var("RS_CAM_JOB") {
             let path = std::path::Path::new(&job_path);
             match controller.open_job_from_path(path) {
-                Ok(()) => tracing::info!("Loaded job from {}", path.display()),
+                Ok(()) => {
+                    loaded_a_job = true;
+                    tracing::info!("Loaded job from {}", path.display());
+                }
                 Err(e) => tracing::error!("Failed to load job: {e}"),
             }
         }
@@ -199,7 +203,7 @@ impl RsCamApp {
 
         let last_overlay_upload_key = overlay_upload_key(controller.state());
 
-        Self {
+        let mut app = Self {
             controller,
             egui_ctx: cc.egui_ctx.clone(),
             camera: OrbitCamera::new(),
@@ -217,7 +221,17 @@ impl RsCamApp {
             mcp_reads,
             #[cfg(feature = "mcp")]
             mcp_reads_published_at: None,
+        };
+
+        // G-WSMENU (2026-09-10): the third `open_job_from_path` route. The
+        // camera does not exist while the job is loading above, so the fit
+        // happens here instead — the alternative is an auto-screenshot run
+        // framed on an empty default scene. Same routine as the other two
+        // routes and as Reset View.
+        if loaded_a_job {
+            app.fit_camera_to_first_model();
         }
+        app
     }
 
     fn fit_camera_to_bbox(&mut self, bbox: &rs_cam_core::geo::BoundingBox3) {

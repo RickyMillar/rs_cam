@@ -30,6 +30,61 @@ pub enum Workspace {
     Readiness,
 }
 
+impl Workspace {
+    /// Every workspace, in the order the operator meets them.
+    ///
+    /// ONE list, on the `ui/overlays/registry.rs` pattern: the switcher bar,
+    /// the Workspace menu, the MCP key round-trip and the completeness sentry
+    /// all read this, so a workspace cannot exist on one surface and be
+    /// missing from another. It was Readiness that went missing — present on
+    /// the tab bar since W3.8 and never added to the menu, which listed three
+    /// of four by hand (G-WSMENU, 2026-09-10).
+    pub const ALL: [Workspace; 4] = [
+        Workspace::Setup,
+        Workspace::Toolpaths,
+        Workspace::Simulation,
+        Workspace::Readiness,
+    ];
+
+    /// This workspace's position in [`Workspace::ALL`].
+    ///
+    /// The match is exhaustive, so a new variant does not COMPILE until it
+    /// is given a position, and the sentry then fails unless that position
+    /// is a real, unique slot in `ALL`. That pair is what makes `ALL`
+    /// complete rather than merely long enough.
+    #[must_use]
+    pub fn order(self) -> usize {
+        match self {
+            Workspace::Setup => 0,
+            Workspace::Toolpaths => 1,
+            Workspace::Simulation => 2,
+            Workspace::Readiness => 3,
+        }
+    }
+
+    /// The tab and menu label.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Workspace::Setup => "Setup",
+            Workspace::Toolpaths => "Toolpaths",
+            Workspace::Simulation => "Simulation",
+            Workspace::Readiness => "Readiness",
+        }
+    }
+
+    /// The one-line hint the switcher bar prints for the active workspace.
+    #[must_use]
+    pub fn hint(self) -> &'static str {
+        match self {
+            Workspace::Setup => "Stock, orientation, workholding",
+            Workspace::Toolpaths => "Operations, tools, generation",
+            Workspace::Simulation => "Verify, animate, export",
+            Workspace::Readiness => "Is this safe to cut?",
+        }
+    }
+}
+
 /// Top-level application state. Single source of truth.
 pub struct AppState {
     pub workspace: Workspace,

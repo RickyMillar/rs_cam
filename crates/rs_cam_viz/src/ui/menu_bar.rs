@@ -209,22 +209,17 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 }
             });
 
+            // Built from `Workspace::ALL`, the same list the switcher bar
+            // reads, so a workspace cannot reach one surface and miss the
+            // other. Readiness had been on the tab bar since W3.8 and
+            // absent here because this menu listed three of four by hand
+            // (G-WSMENU, 2026-09-10).
             ui.menu_button("Workspace", |ui| {
-                if ui.button("Setup").clicked() {
-                    ui.close();
-                    events.push(AppEvent::SwitchWorkspace(crate::state::Workspace::Setup));
-                }
-                if ui.button("Toolpaths").clicked() {
-                    ui.close();
-                    events.push(AppEvent::SwitchWorkspace(
-                        crate::state::Workspace::Toolpaths,
-                    ));
-                }
-                if ui.button("Simulation").clicked() {
-                    ui.close();
-                    events.push(AppEvent::SwitchWorkspace(
-                        crate::state::Workspace::Simulation,
-                    ));
+                for target in crate::state::Workspace::ALL {
+                    if ui.button(target.label()).clicked() {
+                        ui.close();
+                        events.push(AppEvent::SwitchWorkspace(target));
+                    }
                 }
             });
 

@@ -2996,6 +2996,11 @@ impl super::RsCamApp {
         let outcome = McpOutcome::from_result(&loaded);
         let resp = match loaded {
             Ok(()) => {
+                // G-WSMENU (2026-09-10): the same fit the File > Open route
+                // does. An agent's very next call is usually
+                // `screenshot_gui`, and before this the viewport still held
+                // the previous project's framing.
+                self.fit_camera_to_first_model();
                 let name = self.controller.state().session.name().to_owned();
                 let tp_count = self.controller.state().session.toolpath_count();
                 let setup_count = self.controller.state().session.setup_count();
@@ -7651,12 +7656,11 @@ mod tests {
     /// `workspace_key` → `parse_workspace`, and unknown keys stay `None`.
     #[test]
     fn workspace_keys_round_trip() {
-        for ws in [
-            Workspace::Setup,
-            Workspace::Toolpaths,
-            Workspace::Simulation,
-            Workspace::Readiness,
-        ] {
+        // `Workspace::ALL`, not a hand-written list beside it: the list this
+        // used to carry was a fourth copy of the same enumeration, and it is
+        // exactly that kind of copy that left Readiness out of the Workspace
+        // menu (G-WSMENU).
+        for ws in Workspace::ALL {
             assert_eq!(parse_workspace(workspace_key(ws)), Some(ws));
         }
         // "sim" alias accepted on input (matches the RS_CAM_SCREENSHOT

@@ -250,10 +250,20 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 ui.label("2. Configure stock dimensions");
                 ui.label("3. Add a cutting tool");
                 ui.label("4. Create a toolpath");
-                ui.label("5. Generate and export G-code");
+                ui.label("5. Generate toolpaths");
+                // G-WSMENU (2026-09-10): step 5 used to read "Generate and
+                // export G-code", which walks a first-time operator from a
+                // generated path straight to the machine. Simulation is
+                // where collisions, air cutting and the tool-load gates are
+                // measured, so it is a step of its own and it comes first.
+                ui.label("6. Simulate and review");
+                ui.label("7. Export G-code");
             } else {
                 ui.label(
-                    egui::RichText::new("Select an item in the project tree")
+                    // Not "the project tree": no panel of that name exists
+                    // (IA/CURRENT_MAP.md §1). Name the four things that can
+                    // actually be selected (G-WSMENU, 2026-09-10).
+                    egui::RichText::new("Select an operation, tool, setup or model")
                         .italics()
                         .color(egui::Color32::from_rgb(120, 120, 130)),
                 );

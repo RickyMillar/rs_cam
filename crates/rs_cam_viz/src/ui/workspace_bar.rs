@@ -10,45 +10,30 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
         let current = state.workspace;
 
-        workspace_tab(ui, "Setup", Workspace::Setup, current, None, events);
-        workspace_tab(
-            ui,
-            "Toolpaths",
-            Workspace::Toolpaths,
-            current,
-            toolpath_badge(state),
-            events,
-        );
-        workspace_tab(
-            ui,
-            "Simulation",
-            Workspace::Simulation,
-            current,
-            simulation_badge(state),
-            events,
-        );
-        // The aggregate export-readiness chip now lives on its named tab (W3.8),
-        // not interleaved onto Setup.
-        workspace_tab(
-            ui,
-            "Readiness",
-            Workspace::Readiness,
-            current,
-            readiness_badge(state),
-            events,
-        );
+        // One list for the bar, the Workspace menu and the sentry
+        // (G-WSMENU) — see `Workspace::ALL`. The badge stays a per-tab
+        // decision because each reads different state; the aggregate
+        // export-readiness chip lives on its named tab (W3.8), not
+        // interleaved onto Setup.
+        for target in Workspace::ALL {
+            let badge = match target {
+                Workspace::Setup => None,
+                Workspace::Toolpaths => toolpath_badge(state),
+                Workspace::Simulation => simulation_badge(state),
+                Workspace::Readiness => readiness_badge(state),
+            };
+            workspace_tab(ui, target.label(), target, current, badge, events);
+        }
 
         // Right-aligned workspace context info
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             // Show current workspace hint
-            let hint = match current {
-                Workspace::Setup => "Stock, orientation, workholding",
-                Workspace::Toolpaths => "Operations, tools, generation",
-                Workspace::Simulation => "Verify, animate, export",
-                Workspace::Readiness => "Is this safe to cut?",
-            };
-            ui.label(egui::RichText::new(hint).small().color(theme::TEXT_FAINT));
+            ui.label(
+                egui::RichText::new(current.hint())
+                    .small()
+                    .color(theme::TEXT_FAINT),
+            );
         });
     });
 }
