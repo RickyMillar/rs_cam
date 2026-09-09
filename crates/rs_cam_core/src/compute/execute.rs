@@ -3761,6 +3761,11 @@ pub fn apply_dressups(
                     li_feed,
                     lo_feed,
                     entry_safety.surface.as_ref(),
+                    // G-ISOCLIPRAPID: the lead-in's pre-position rapid
+                    // travels in XY, so it goes to the operation's retract
+                    // plane, never to whatever height the move before the
+                    // plunge stopped at.
+                    Some(safe_z),
                 )
             },
         );

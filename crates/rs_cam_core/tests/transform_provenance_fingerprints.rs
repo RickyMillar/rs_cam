@@ -44,11 +44,20 @@
 //! intake row **G-XFP** on 2026-08-14 with the archaeology recorded in
 //! `planning/review_2026-08-08/ORCHESTRATION_LOG.md` §3.1.
 //!
-//! **The link sites did not move under either re-pin.** That is the load-bearing
-//! half: `268e427` is a geometry fix, and the semantic-channel landing sites this
-//! file exists to guard are byte-identical across it. Only the geometry hashes
-//! moved, and every move COUNT (23 / 40 / 74 / 97 / 103) and the stage-3
-//! `split_count` (6) held.
+//! **The link sites did not move under the first two re-pins.** That was the
+//! load-bearing half: `268e427` is a geometry fix, and the semantic-channel
+//! landing sites this file exists to guard were byte-identical across it. Only
+//! the geometry hashes moved, and every move COUNT (23 / 40 / 74 / 97 / 103) and
+//! the stage-3 `split_count` (6) held.
+//!
+//! **The third re-pin (2026-09-09, G-ISOCLIPRAPID) DOES move the face counts and
+//! its link sites**, and that is the correct outcome, not a regression: the fix
+//! INSERTS a move — a pure vertical lift before each lead-in's pre-position
+//! traverse — so the face chain goes 74 / 97 / 103 to 80 / 103 / 109 and every
+//! landing site slides by the number of lifts ahead of it. What the assertion
+//! still guards is what it always guarded: the four sites tile the whole path
+//! contiguously, and `split_count` is unchanged at 6. The arc-raster and
+//! three-pass fixtures carry no lead-in and did not move at all.
 
 #![allow(
     clippy::unwrap_used,
@@ -407,6 +416,18 @@ fn face_full_chain_fingerprint() {
         None,
         &mut ReconcileSet::new(Some(&recorder), None),
     );
+    // RE-PINNED 2026-09-09 (G-ISOCLIPRAPID), mechanism: the lead-in's
+    // pre-position rapid now goes to the operation's retract plane instead of
+    // the height the move before the plunge stopped at, and it LIFTS before it
+    // traverses. Was `(74, 8_357_027_825_945_903_145)`.
+    //
+    // Mechanism, verified move by move on this fixture: SIX `Retract` rapids
+    // are inserted — indices 2, 14, 26, 38, 50, 62, one per faced row that has
+    // a lead-in — each a pure vertical lift `[3.0, y, 2.0]` -> `[3.0, y, 30.0]`
+    // from where the generator's descent left the tool; and the six `LeadIn`
+    // pre-position rapids that follow them move from Z 2.0 to Z 30.0, XY
+    // unchanged. Nothing else differs, and the move count goes 74 -> 80.
+    //
     // RE-PINNED 2026-08-14 (TD3 / G-XFP), mechanism `268e427` (W8 / F23-impl,
     // Checkpoints F2+F3, the lead-out retract lift). Was
     // `(74, 9_692_869_450_022_244_402)`.
@@ -417,7 +438,7 @@ fn face_full_chain_fingerprint() {
     // `Retract` intent and the 30.0 safe-Z are untouched.
     assert_eq!(
         fingerprint(&current.toolpath),
-        (74, 8_357_027_825_945_903_145),
+        (80, 6_526_175_378_945_769_562),
         "face stage-1 (dressups) geometry moved; re-pinned 2026-08-14 for the \
          lead-out retract lift (268e427), originally captured at HEAD 5d32150 \
          before C1"
@@ -431,12 +452,14 @@ fn face_full_chain_fingerprint() {
     current = clip_annotated_to_boundary_set(current, &[boundary], 30.0, None)
         .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
         .into_inner();
+    // RE-PINNED 2026-09-09 (G-ISOCLIPRAPID): stage 1's six inserted lifts carry
+    // forward, 97 -> 103. Was `(97, 7_877_196_034_056_840_142)`.
     assert_eq!(
         fingerprint(&current.toolpath),
-        (97, 7_877_196_034_056_840_142),
-        "face stage-2 (boundary clip) geometry moved; re-pinned 2026-08-14 for the \
-         lead-out retract lift (268e427) carried forward from stage 1, originally \
-         captured at HEAD 5d32150 before C1"
+        (103, 10_899_331_192_678_125_387),
+        "face stage-2 (boundary clip) geometry moved; re-pinned 2026-09-09 for the \
+         lead-in retract-plane lift (G-ISOCLIPRAPID) carried forward from stage 1, \
+         originally captured at HEAD 5d32150 before C1"
     );
 
     // Stage 3 — entry-descent split (no dexel stock: the fresh-stock top is
@@ -457,22 +480,34 @@ fn face_full_chain_fingerprint() {
     current = transformed
         .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
         .into_inner();
+    // RE-PINNED 2026-09-09 (G-ISOCLIPRAPID): stage 1's six inserted lifts carry
+    // forward, 103 -> 109. The split COUNT is unchanged at 6 — the lift is a
+    // rapid and never creates or removes an entry descent. Was
+    // `(6, (103, 3_086_279_569_100_738_182))`.
     assert_eq!(
         (split_count, fingerprint(&current.toolpath)),
-        (6, (103, 3_086_279_569_100_738_182)),
-        "face stage-3 (entry-descent split) geometry moved; re-pinned 2026-08-14 for \
-         the lead-out retract lift (268e427) carried forward from stage 1, originally \
-         captured at HEAD 5d32150 before C1"
+        (6, (109, 2_717_567_159_789_683_815)),
+        "face stage-3 (entry-descent split) geometry moved; re-pinned 2026-09-09 for \
+         the lead-in retract-plane lift (G-ISOCLIPRAPID) carried forward from stage 1, \
+         originally captured at HEAD 5d32150 before C1"
     );
 
     assert_eq!(
         link_sites(&recorder.finish()),
+        // RE-PINNED 2026-09-09 (G-ISOCLIPRAPID): the six inserted lifts push
+        // every landing site out by the number of them that precede it — two
+        // in the head, four more by the tail — and the four sites still tile
+        // 0..=108 contiguously with no gap and no overlap, which is the
+        // property this assertion is really about. Was `head (0, 32)`,
+        // `body (33, 74)`, `tail (75, 102)`, `whole (0, 102)`.
         expect_sites(&[
-            ("head", Some((0, 32))),
-            ("body", Some((33, 74))),
-            ("tail", Some((75, 102))),
-            ("whole", Some((0, 102))),
+            ("head", Some((0, 34))),
+            ("body", Some((35, 79))),
+            ("tail", Some((80, 108))),
+            ("whole", Some((0, 108))),
         ]),
-        "face full-chain semantic link landing sites moved; captured at HEAD 5d32150 before C1"
+        "face full-chain semantic link landing sites moved; re-pinned 2026-09-09 for \
+         the lead-in retract-plane lift (G-ISOCLIPRAPID), originally captured at HEAD \
+         5d32150 before C1"
     );
 }

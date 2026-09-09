@@ -768,12 +768,26 @@ pub(crate) fn emit_ramp(
         let contact = crate::pencil::tip_contact_radius(probe.cutter);
         let window = crate::pencil::entry_ramp_window_mm(contact);
         let far_xy = (end.x + dir.0 * window, end.y + dir.1 * window);
-        // Lost surface contact at the far point means the window leaves the
-        // model: fall through to the legacy legs rather than ramp blind.
-        if let Some(far_floor) = probe.floor_z(far_xy.0, far_xy.1) {
-            let run = [*end, P3::new(far_xy.0, far_xy.1, far_floor.max(end.z))];
-            if let Some(plan) = crate::pencil::plan_entry_ramp(&run, stock, contact, start.z, true)
-            {
+        // G-ISOCLIPRAMPFALL: where a rest stock is in scope this emitter is
+        // LADDER OR PLUNGE, and never the legacy legs below. Both of the
+        // planner's abstentions used to fall through to them, and the legs
+        // are `ENTRY_CLEARANCE / tan(angle)` mm long — 38 mm at the shipped
+        // 3 degrees — clipped only to the MODEL floor. On a rest-driven pass
+        // that floor lies BELOW the material, so the return leg walks back
+        // across standing rest stock at full depth. Measured on the
+        // wanaka200 tier-1 islands at 0.2 mm: 1.394 mm off one column, 2.8x
+        // the per-lap budget, on a move the post-clip door then declined to
+        // re-plan because it already carried an `EntryRamp` tag.
+        //
+        // The far point's floor stops the lap chords sagging under the
+        // model. When the probe has no answer there — the window leaves the
+        // mesh footprint — the entry depth itself is the conservative floor:
+        // the ladder never descends below `max(level, run z)`, so a flat far
+        // point can only make the laps shallower.
+        let far_floor = probe.floor_z(far_xy.0, far_xy.1).unwrap_or(end.z);
+        let run = [*end, P3::new(far_xy.0, far_xy.1, far_floor.max(end.z))];
+        match crate::pencil::plan_entry_ramp(&run, stock, contact, start.z, true) {
+            Some(plan) => {
                 // Air only: the ladder starts at the conservative stock
                 // ceiling read over the whole window.
                 if plan.air_descent_z < start.z - 1e-9 {
@@ -786,9 +800,31 @@ pub(crate) fn emit_ramp(
                 for p in &plan.points {
                     tp.feed_to_with_intent(*p, feed_rate, MoveIntent::EntryRamp);
                 }
-                return;
+            }
+            None => {
+                // Nothing stands over the window that the budget does not
+                // already cover, so descend at the entry column. The
+                // generator put that target on the intended surface, which
+                // is what `OffMeshEntry::PlungeFallback` states as the
+                // policy for an entry the shaped manoeuvre cannot serve.
+                // The rapid keeps the air part at rapid speed, as the legacy
+                // pre-descent did.
+                // The conservative ceiling can read BELOW the target where the
+                // upstream tool already cut this column past it, so the rapid
+                // floor is held one plunge clearance over the target: a rapid
+                // to the target itself leaves a zero-length feed, and no rapid
+                // at all feeds the whole descent from safe Z through air.
+                let air_z = stock
+                    .max_conservative_top_z_in_disc(end.x, end.y, contact)
+                    .map_or(start.z, |top| top + crate::toolpath::PLUNGE_CLEARANCE_MM)
+                    .max(end.z + crate::toolpath::PLUNGE_CLEARANCE_MM);
+                if air_z < start.z - 1e-9 {
+                    tp.rapid_to_with_intent(P3::new(start.x, start.y, air_z), MoveIntent::Linking);
+                }
+                tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
             }
         }
+        return;
     }
 
     // Only ramp the last portion of the descent (max 5mm above target).
@@ -1282,6 +1318,7 @@ pub fn apply_lead_in_out_with_feeds(
         lead_in_feed_rate,
         lead_out_feed_rate,
         None,
+        None,
     )
     .reconcile(&mut ReconcileSet::empty())
     .into_inner()
@@ -1298,6 +1335,35 @@ pub fn apply_lead_in_out_with_feeds(
 /// SKIPPED and the generator's original plunge / retract stays. When
 /// no sample lifts, the emitted moves are byte-identical to the
 /// probe-less output.
+///
+/// # `retract_z` (G-ISOCLIPRAPID, 2026-09-09)
+///
+/// The height of the lead-in's PRE-POSITION rapid — the one move of the
+/// manoeuvre that travels in XY, and therefore the only one that has to
+/// clear the stock.
+///
+/// It used to be read from the move before the plunge
+/// (`moves[i - 1].target.z`, documented as "the preceding rapid's Z").
+/// That move is not always a rapid and not always safe: a stepped pass
+/// and a lead-out / lead-in chain both put a CUTTING move there, and an
+/// earlier dressup can lower or consume the generator's retract. The
+/// lead-in then traversed the work at cutting depth. Measured on the
+/// wanaka200 tier-1 islands (`T2_r20_raster_then_r10_iso_islands.toml`,
+/// 0.2 mm): one rapid through stock at move 68538, 4.7 mm of lateral
+/// travel with both ends at the same sub-stock height.
+///
+/// `Some(z)` uses the operation's retract plane, which is clear of the
+/// stock by construction ([`crate::compute::config::effective_safe_z`]
+/// floors it at `stock_top + SAFE_Z_CLEARANCE_MM`). It is the only
+/// height available at this layer that is: the surface probe answers
+/// about the MODEL, which on a rest-driven pass sits BELOW the material
+/// — the same lesson G-ISOCLIPENTRY records.
+///
+/// `None` means the caller holds no retract plane (the two convenience
+/// wrappers, and tests that build a synthetic toolpath): the inherited
+/// height stands, which is what this dressup always did. The one
+/// production caller, `compute::execute::apply_dressups`, passes its own
+/// `safe_z`.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn apply_lead_in_out_with_provenance(
     annotated: AnnotatedToolpath,
@@ -1305,6 +1371,7 @@ pub fn apply_lead_in_out_with_provenance(
     lead_in_feed_rate: Option<f64>,
     lead_out_feed_rate: Option<f64>,
     surface: Option<&EntrySurfaceProbe<'_>>,
+    retract_z: Option<f64>,
 ) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
@@ -1424,7 +1491,15 @@ pub fn apply_lead_in_out_with_provenance(
                     // not a tangent entry. The classic shape matches
                     // production CAM (Fusion HSM / Mastercam) and is what
                     // operators expect when they enable lead_in_out.
-                    let safe_z = moves[i - 1].target.z;
+                    // G-ISOCLIPRAPID: the pre-position rapid travels in XY,
+                    // so it belongs at the operation's retract plane. The
+                    // inherited height is kept only where the caller holds no
+                    // plane to offer, and it is never LOWERED below one the
+                    // caller does offer.
+                    let safe_z = match retract_z {
+                        Some(plane) => plane.max(moves[i - 1].target.z),
+                        None => moves[i - 1].target.z,
+                    };
 
                     // Plan the whole lead before emitting anything, so
                     // the surface probe can lift or veto it
@@ -1450,6 +1525,25 @@ pub fn apply_lead_in_out_with_provenance(
 
                     if lead_ok {
                         let entry_start = result.moves.len();
+                        // Move 0 (G-ISOCLIPRAPID): LIFT before traversing.
+                        // Where the tool is still down in the cut, going
+                        // straight to `(lead_start.xy, safe_z)` is a rising
+                        // DIAGONAL out of the material — safe once the post
+                        // splits it (`gcode::program_builder::push_rapid`
+                        // retracts first on a rising rapid) but a strike to
+                        // every reader of the IR, including
+                        // `collision::RapidClearanceCheck`, whose pure-vertical
+                        // exemption a diagonal does not get. Emitting the lift
+                        // here makes the stored motion say what the machine
+                        // does. Skipped when the tool already stands at or
+                        // above `safe_z`, so nothing moves where nothing has to.
+                        let here = moves[i - 1].target;
+                        if safe_z > here.z + 1e-9 {
+                            result.rapid_to_with_intent(
+                                P3::new(here.x, here.y, safe_z),
+                                crate::toolpath::MoveIntent::Retract,
+                            );
+                        }
                         // Move 1: pre-position rapid at safe_z above lead_start.
                         result.rapid_to_with_intent(
                             P3::new(lead_start.x, lead_start.y, safe_z),

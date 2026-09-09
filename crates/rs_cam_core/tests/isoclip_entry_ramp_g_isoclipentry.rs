@@ -278,6 +278,62 @@ fn worst_entry_step_mm(tp: &Toolpath, stock: &TriDexelStock, contact_radius: f64
     worst
 }
 
+/// Sample spacing (mm) along an entry chord, and the width of the column
+/// bucket the samples are grouped into.
+const CHORD_SAMPLE_MM: f64 = 0.25;
+
+/// The deepest bite any ENTRY move takes ANYWHERE along its own chord.
+///
+/// [`worst_entry_step_mm`] reads move TARGETS, which is the right measure for a
+/// lap ladder — every lap point IS an endpoint. It says nothing about a long
+/// straight leg that dives under standing material in the middle and comes back
+/// out, which is exactly what the legacy zigzag does; on a flat model nothing
+/// lifts the leg, so the emitter writes two endpoints and the target-only
+/// measure reads zero.
+///
+/// Each entry chord is sampled every [`CHORD_SAMPLE_MM`] and the samples are
+/// bucketed by column in EMISSION order. A column's surface starts at the
+/// stock's own conservative ceiling and drops to each sample that lands under
+/// it, so a lap ladder reads its per-lap step and a single unbudgeted leg reads
+/// the whole depth. This is the quantity the simulator reports as
+/// `axial_engagement_mm`.
+fn worst_entry_chord_bite_mm(tp: &Toolpath, stock: &TriDexelStock, contact_radius: f64) -> f64 {
+    let mut surface: std::collections::BTreeMap<(i64, i64), f64> = Default::default();
+    let mut worst = 0.0_f64;
+    for pair in tp.moves.windows(2) {
+        let (prev, cur) = (&pair[0], &pair[1]);
+        if !matches!(
+            cur.intent,
+            MoveIntent::EntryRamp | MoveIntent::EntryPlunge | MoveIntent::EntryHelix
+        ) {
+            continue;
+        }
+        if !matches!(cur.move_type, MoveType::Linear { .. }) {
+            continue;
+        }
+        let (a, b) = (prev.target, cur.target);
+        let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+        let steps = ((len / CHORD_SAMPLE_MM).ceil() as usize).max(1);
+        for k in 0..=steps {
+            let t = k as f64 / steps as f64;
+            let x = a.x + (b.x - a.x) * t;
+            let y = a.y + (b.y - a.y) * t;
+            let z = a.z + (b.z - a.z) * t;
+            let Some(ceiling) = stock.max_conservative_top_z_in_disc(x, y, contact_radius) else {
+                continue;
+            };
+            let key = (
+                (x / CHORD_SAMPLE_MM).round() as i64,
+                (y / CHORD_SAMPLE_MM).round() as i64,
+            );
+            let top = surface.entry(key).or_insert(ceiling);
+            worst = worst.max(*top - z);
+            *top = top.min(z);
+        }
+    }
+    worst
+}
+
 // ── Arms ────────────────────────────────────────────────────────────────
 
 #[test]
@@ -503,5 +559,141 @@ fn f_without_the_rest_stock_the_dressup_ramp_takes_the_lot() {
         step >= REST_DEPTH_MM - TOL_MM,
         "pre-fix reproduction lost: the dressup ramp took only {step:.3} mm \
          off one column, of the {REST_DEPTH_MM:.3} mm standing there"
+    );
+}
+
+// ── The abstention fall-through (G-ISOCLIPRAMPFALL) ─────────────────────
+
+/// Where the rest stock starts standing, measured along the cut direction.
+///
+/// Far enough past the entry column that the ladder planner's own window —
+/// [`rs_cam_core::pencil::entry_ramp_window_mm`], 1.18 mm on this tip, plus
+/// the conservative disc — reads clear ground and abstains. Close enough that
+/// the legacy legs walk right over it.
+const STEP_X: f64 = 11.5;
+
+/// A model wide enough to hold the legacy legs. They run
+/// `ENTRY_CLEARANCE / tan(angle)` mm, which is 38 mm at the shipped 3 degrees,
+/// so the 24 mm board of [`flat_mesh`] would lose surface contact and take the
+/// clip's own plunge fallback instead of the legs this arm is about.
+fn wide_flat_mesh() -> rs_cam_core::mesh::TriangleMesh {
+    common::meshes::height_field_grid(0.0, 2.0, 21, 0.0, 2.0, 21, |_, _| FLOOR_Z)
+}
+
+/// Ground cut to [`FLOOR_Z`] around the entry column, with the island still
+/// standing from [`STEP_X`] on.
+fn rest_stock_step() -> TriDexelStock {
+    let mut stock =
+        TriDexelStock::from_stock(0.0, 0.0, 24.0, 24.0, STOCK_BOTTOM_Z, STOCK_TOP_Z, CELL_MM);
+    let (rows, cols) = (stock.z_grid.rows, stock.z_grid.cols);
+    let (cs, ou, ov) = (
+        stock.z_grid.cell_size,
+        stock.z_grid.origin_u,
+        stock.z_grid.origin_v,
+    );
+    for row in 0..rows {
+        let y = ov + row as f64 * cs;
+        for col in 0..cols {
+            let x = ou + col as f64 * cs;
+            let inside =
+                (STEP_X..=ISLAND_MAX).contains(&x) && (ISLAND_MIN..=ISLAND_MAX).contains(&y);
+            let top = if inside { STOCK_TOP_Z } else { FLOOR_Z };
+            stock.clear_above_at(row, col, top as f32);
+        }
+    }
+    stock
+}
+
+/// [`dressed_entry`] over [`wide_flat_mesh`], so the legacy legs stay on the
+/// model instead of taking the clip's plunge fallback.
+fn dressed_entry_wide(stock: &TriDexelStock) -> Toolpath {
+    let mesh = wide_flat_mesh();
+    let index = SpatialIndex::build_auto(&mesh);
+    let cutter = tapered_ball();
+    let cfg = DressupConfig {
+        entry_style: DressupEntryStyle::Ramp,
+        ramp_angle: 3.0,
+        arc_fitting: false,
+        segment_merge: false,
+        link_moves: false,
+        lead_in_out: false,
+        optimize_rapid_order: false,
+        feed_optimization: false,
+        ..DressupConfig::default()
+    };
+    let probe = EntrySurfaceProbe {
+        mesh: &mesh,
+        index: &index,
+        cutter: &cutter,
+        stock_to_leave: 0.0,
+        off_mesh: OffMeshEntry::PlungeFallback,
+        rest_stock: Some(stock),
+    };
+    apply_dressups(
+        AnnotatedToolpath::new(plunge_then_cut()),
+        &cfg,
+        CUT_FEED,
+        cutter.diameter(),
+        SAFE_Z,
+        STOCK_TOP_Z,
+        None,
+        None,
+        Some(&cutter),
+        Some(probe),
+        OperationType::Scallop.transform_capabilities(),
+        None,
+        None,
+        &mut ReconcileSet::empty(),
+    )
+    .toolpath
+}
+
+#[test]
+fn g_an_abstaining_planner_plunges_instead_of_walking_the_legacy_legs() {
+    // The wanaka200 residual, at fixture scale. The ladder planner reads its
+    // own 1.18 mm window, finds nothing over it that the budget does not
+    // already cover, and abstains. `emit_ramp` used to fall through to the
+    // legacy two-leg zigzag, which is clipped to the MODEL floor only — and
+    // on a rest-driven pass that floor lies BELOW the material. Measured
+    // pre-fix here at 1.309 mm off one column, against a 1.000 mm bound; on the
+    // board at 0.2 mm it was 1.394 mm.
+    let stock = rest_stock_step();
+    let cutter = tapered_ball();
+    let contact = tip_contact_radius(&cutter);
+
+    // Preconditions, so the arm cannot pass on a fixture that says nothing.
+    let over_window = stock
+        .max_conservative_top_z_in_disc(ENTRY_X, ENTRY_Y, contact)
+        .unwrap_or(FLOOR_Z);
+    assert!(
+        over_window <= FLOOR_Z + TOL_MM,
+        "the fixture stands {over_window:.3} mm over the entry column, so the \
+         planner would ramp rather than abstain"
+    );
+    let along_the_leg = stock
+        .max_conservative_top_z_in_disc(14.0, ENTRY_Y, contact)
+        .unwrap_or(FLOOR_Z);
+    assert!(
+        along_the_leg >= STOCK_TOP_Z - TOL_MM,
+        "the fixture leaves only {along_the_leg:.3} mm standing where the \
+         legacy legs walk, so there is nothing for them to gouge"
+    );
+
+    let tp = dressed_entry_wide(&stock);
+    let entries =
+        count_intent(&tp, MoveIntent::EntryRamp) + count_intent(&tp, MoveIntent::EntryPlunge);
+    assert!(
+        entries > 0,
+        "the entry dressup emitted no entry move at all: {:?}",
+        tp.moves
+    );
+
+    let budget = entry_bite_budget_mm(contact);
+    let bite = worst_entry_chord_bite_mm(&tp, &stock, contact);
+    assert!(
+        bite <= 2.0 * budget + TOL_MM,
+        "the abstaining entry took {bite:.3} mm off one column, past the \
+         {:.3} mm bound",
+        2.0 * budget
     );
 }
