@@ -791,30 +791,37 @@ Four readings.
    remains. G-TIERCONTINUOUS verdict: fix the default, expect −15 %, not
    the collapse to the region count that the spec hoped for.
 2. **The fine tier's territory is not the islands. It is the islands
-   plus the overlap band, and the band fills the holes.** `preview_tier_map`
-   with the planner's dials reports tier 1 OWNS 12 224 mm² in 10 islands
-   at tolerance 0.05. Measured from the preview SVG
-   (`tier_map_r20_r10_tol005.svg`, `svg_island_area.py`): the largest
-   owned island is an outline of 31 255 mm² with 1 315 holes summing
-   19 316 mm² (net 11 939); the MACHINING copy of the same island, grown
-   by the 1.25 mm overlap, keeps 402 of those holes and nets 28 617 mm².
-   The R2.0's territory inside the valley network is 1 329 slivers with a
-   median area of 3.6 mm², and a 1.25 mm dilation on each side closes any
-   gap under 2.5 mm. The fine tier therefore machines 29 954 mm² of a
-   40 000 mm² board (75 %), which is why every island pass cuts near
-   whole-board distances (T3 rings 43.7 km ≈ 45 000 mm² of surface at
-   the 1.03 mm scallop pitch). At tolerance 0.146 the owned area is
+   plus the overlap band, and on this map the band swallows the coarse
+   tool's slivers.** `preview_tier_map` with the planner's dials reports
+   tier 1 OWNS 12 224 mm² in 10 islands at tolerance 0.05. Measured from
+   the preview SVG (`tier_map_r20_r10_tol005.svg`, `svg_island_area.py`):
+   the largest owned island is an outline of 31 255 mm² with 1 315 holes
+   summing 19 316 mm² (net 11 939); the MACHINING copy of the same
+   island, grown by the 1.25 mm overlap, keeps 402 of those holes and
+   nets 28 617 mm². The R2.0's territory inside the valley network is
+   1 329 slivers with a median area of 3.6 mm², and a hole narrower than
+   2 × 1.25 mm collapses under a correct dilation by definition. The
+   fine tier therefore machines 29 954 mm² of a 40 000 mm² board (75 %),
+   which is why every island pass cuts near whole-board distances (T3
+   rings 43.7 km ≈ 45 000 mm² of surface at the 1.03 mm scallop pitch).
+   This is not a dilation defect; reaching into the coarser territory is
+   what the band is for. It is a design consequence with two dials: an
+   overlap below half the sliver width, or a tier tolerance at or above
+   the coarse tool's own cusp. At tolerance 0.146 the owned area is
    4 482 mm² and the machining set 17 169 mm² (×3.8); at 0.30, 641 →
-   3 005 mm² (×4.7). Proposed ledger row G-OVERLAPFILL.
+   3 005 mm² (×4.7). Ledger row G-OVERLAPFILL records the measurement.
 3. **Confinement is retract-count-bound on this terrain.** T5 proves the
    core raster honours the island set (the path is the valley network
    with holes, `T5_..._path.png`), and it still loses to the whole-board
    T1: 954 row fragments, each ending in a retract to safe Z and a fed
-   plunge at 300 mm/min, against 76. Halving the territory (T5b, 21 thin
-   islands) doubles the fragments and the time. The same law holds for
-   the scallop (T3d). Across all eight runs the second pass's total time
-   follows its retract count, not its area. The lever is a surface link
-   between fragments inside a region (the intra-region link of
+   plunge at 300 mm/min, against 76. Cutting the territory by 43 % (T5b,
+   21 thin islands) more than doubles the fragments and adds 31 % to the
+   pair. The same law holds for the contour scallop (T3d). For the
+   raster and the contour scallop the second pass's total time follows
+   its retract count; the iso field is the exception (T2: 2 207 retracts
+   but 73.6 km of rings against T3's 38 km, so 19 804 s against T5b's
+   10 497 at 2 172 retracts). The lever is a surface link between
+   fragments inside a region (the intra-region link of
    `planning/link_and_reorder`), not a tighter boundary.
 4. **Entry load on the island scallops survives the fix.** The rerun
    halves the sample count and trims the peak, and T3b/T3c bring it to
@@ -822,14 +829,54 @@ Four readings.
    still critical at 1.05–1.39 mm. The worst point is the same ring start
    on both fields. Open; to the fix agent with the coordinates.
 
-Recommendation stands: Q2 then the whole-board R1.0 raster on remaining
-stock (T1, 6 478 s). The island tier as the planner builds it today
-cannot beat it: the overlap band hands it most of the board, and what
-the band does not hand over costs a retract per fragment. Artifacts:
+Recommendation at NOMINAL cusp: Q2 then the whole-board R1.0 raster
+on remaining stock (T1, 6 478 s). The island tier as the planner builds
+it today cannot beat it on time: the overlap band hands it most of the
+board, and what the band does not hand over costs a retract per
+fragment. The delivered-finish comparison of T1 against the best island
+scallop (T3c) follows in §2.7b; §2.8 showed that a nominal-cusp ranking
+of raster against scallop can invert at delivered finish.
+Artifacts:
 `T3b_…_sim.png`, `T3c_…_sim.png`, `T3d_…_sim.png`, `T5_…_sim.png` +
 `_path.png`, `T5b_…_sim.png` + `_path.png`, `T3_rerun_entryfix_sim.png`,
 `T2_rerun_entryfix_sim.png`, `tier_map_r20_r10_tol{005,0146,030}.svg`,
 `svg_island_area.py`.
+
+### 2.7b The two-tool pairs at delivered finish (2026-09-09)
+
+The same instrument as §2.8 (`cusp_measure.py`: simulated stock top at
+0.2 mm against `terrain.stl`, 980 100 columns, slope from the STL
+gradient) applied to the two pairs that matter: T1 (whole-board R1.0
+raster on remaining stock) and T3c (the best island scallop, `continuous`
+off, hookup 6). Q3 from §2.8 is the single-pass reference.
+
+| pass | time s | p50 mm | p90 mm | > 0.3 mm, whole board | by slope band (0–25 / 25–45 / 45–60 / 60–90°) p50 | > 0.3 mm by band |
+|---|---:|---:|---:|---:|---|---|
+| Q3 R1.5 iso-scallop h0.20, single pass (§2.8) | 4 372 | 0.141 | 0.573 | 25.5 % | 0.093 / 0.143 / 0.178 / 0.303 | 17.2 / 25.0 / 29.5 / 50.3 |
+| T1 Q2 + R1.0 raster s1.0 whole board | 6 478 | 0.133 | 0.561 | 26.7 % | 0.052 / 0.144 / 0.201 / 0.352 | 15.8 / 24.6 / 33.7 / 57.5 |
+| T3c Q2 + R1.0 scallop h0.14 on islands | 7 820 | 0.128 | 0.665 | 27.7 % | 0.073 / 0.138 / 0.194 / 0.335 | 16.3 / 26.6 / 35.4 / 53.8 |
+
+Readings. T1 and T3c deliver the same finish inside the instrument's
+0.2 mm quantisation: the scallop's median is 5 µm lower, its p90 is
+0.1 mm higher (the ring starts and the island seams are in the tail),
+and the whole-board share over 0.3 mm differs by one point. So the
+§2.7a time ranking holds at delivered finish: T1 is 17 % faster for the
+same surface, and the §2.8 inversion (raster loses to scallop at
+matched finish) does NOT recur here, because the R1.0 raster at s1.0 is
+already at a 0.13 mm flat-law cusp and the residual is reach, not
+pattern. The larger reading is against Q3: the single R1.5 iso-scallop
+delivers the same bar (25.5 % against 26.7 %) in 67 % of T1's time, and
+its median is 8 µm worse. Every pair in this study is bought at the
+price of a second setup, a second tool and a cascade, and none of them
+beats the one-pass R1.5 iso-scallop on this board at the 0.3 mm bar.
+The pairs win only on the median at the flat band (0.052 against
+0.093), which the 0.3 mm bar does not see.
+
+Recommendation on delivered finish: Q3 (R1.5 iso-scallop h0.20, one
+pass) unless the flats must carry the R1.0's 0.05 mm median, in which
+case T1. Neither the island scallop nor the island raster enters the
+ranking. Artifacts: `T1_dev.npy`, `T3c_dev.npy` (scratchpad; the two
+249 MB HTML exports are not kept).
 
 ### 2.8 The cusp the passes actually leave — raster vs iso-scallop (2026-09-09)
 

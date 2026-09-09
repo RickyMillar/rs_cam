@@ -141,19 +141,28 @@ Findings that change the spec:
 1. **G-TIERCONTINUOUS**: real, worth −15 %. Fix `plan_tier_operation`
    to `continuous: false` when the tier carries a `PlannedTierRegions`
    boundary. Do not expect more from it.
-2. **G-OVERLAPFILL (new)**: the overlap dilation in `tier_islands.rs`
-   (`region_polygons_from_mask_reported(..., overlap_mm, ...)`) closes
-   every hole narrower than 2 × overlap. On the wanaka map at tolerance
-   0.05 the owned set is 12 224 mm² with 1 329 holes; the machining set
-   is 29 954 mm² with 404 holes. The fine tier cuts 75 % of the board.
-   A band must not fill holes: grow the outline and shrink each hole by
-   the band, and drop a hole only when it collapses. Areas at three
-   tolerances: 0.05 → 12 224 / 29 954, 0.146 → 4 482 / 17 169, 0.30 →
-   641 / 3 005 (owned / machining, mm²).
+2. **G-OVERLAPFILL (new, a measured consequence, not a geometry
+   defect)**: the overlap dilation in `tier_islands.rs`
+   (`region_polygons_from_mask_reported(..., overlap_mm, ...)`) is a
+   correct dilation, and a hole narrower than 2 × overlap collapses
+   under it by definition; reaching into the coarser territory is the
+   band's stated purpose (`tier_islands.rs:81`). On a dendritic map that
+   purpose swallows the coarse tool's slivers: at tolerance 0.05 the
+   owned set is 12 224 mm² with 1 329 holes (median 3.6 mm²), the
+   machining set 29 954 mm² with 404 holes. The fine tier cuts 75 % of
+   the board. The levers are dials, not code: an overlap below half the
+   sliver width, or a tier tolerance at or above the coarse tool's own
+   cusp (0.146 for R2.0 at s1.5). Areas at three tolerances: 0.05 →
+   12 224 / 29 954, 0.146 → 4 482 / 17 169, 0.30 → 641 / 3 005 (owned /
+   machining, mm²). The dial that shrinks the territory also thins the
+   islands, which raises the fragment count (item 3).
 3. **Retract-count law**: with the holes kept, every island pass
-   fragments further (T3d, T5b). The pair time follows the retract
-   count. The product lever is a surface link between fragments inside
-   one region (raster row ends, ring ends), not a tighter boundary. The
+   fragments further (T3d, T5b). For the contour scallop and the raster
+   the pair time follows the retract count; the iso field is the
+   exception (T2: 2 207 retracts but 73.6 km of rings against T3's
+   38 km on the same islands, 19 804 s against T5b's 10 497 at 2 172).
+   The product lever is a surface link between fragments inside one
+   region (raster row ends, ring ends), not a tighter boundary. The
    island clip itself is not defective. T4 (unified tier forced to its
    raster band) is redundant after T5 and was not rerun.
 4. **Entry load** on the planner-default island scallops stays critical
@@ -162,3 +171,8 @@ Findings that change the spec:
 
 Measurement script: `planning/deep_doc_modulation_2026-09-08/svg_island_area.py`
 (exterior, holes and net area per island from a `preview_tier_map` SVG).
+
+Delivered finish (study doc §2.7b, `cusp_measure.py`): T1 26.7 % of
+columns > 0.3 mm (p50 0.133) at 6 478 s; T3c 27.7 % (p50 0.128) at
+7 820 s. Same surface, T1 17 % faster. The single-pass R1.5 iso-scallop
+(Q3, §2.8) delivers 25.5 % at 4 372 s and beats both pairs.
