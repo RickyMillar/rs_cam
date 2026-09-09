@@ -235,7 +235,7 @@ pub(crate) fn flat_chip_geometry_for_radius(
 /// | CUSP | tip-sphere feature scale | [`MillingCutter::cusp_radius_mm`] (= [`MillingCutter::cusp_radius`]) |
 /// | WIDTH(d) | cutter width at axial engagement `d` | [`MillingCutter::engagement_radius_mm`] (= [`MillingCutter::engagement_radius`]) |
 /// | CLEAR(r) | vertical clearance available at lateral radius `r` | [`MillingCutter::height_at_radius`] |
-/// | VALLEY | two-wall / profile fit in a valley | no API today (H2) |
+/// | VALLEY | two-wall / profile fit in a valley | [`MillingCutter::valley_radius_mm`] (H2, landed 2026-09-10) |
 /// | HEURISTIC | path scale only, no physical contract | `radius()` by convention — say so at the site |
 ///
 /// The `_mm`-suffixed names are documented aliases of the historical ones,
@@ -295,6 +295,24 @@ pub trait MillingCutter: Send + Sync {
     fn cusp_radius(&self) -> f64 {
         match self.geometry_hint() {
             crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
+            // G-BULLCUSP (2026-09-10): a bull nose forms its finest feature
+            // with the CORNER torus, not with the envelope. On a 10 mm bull
+            // with a 2 mm corner this used to fall through and report 5.0,
+            // so `scallop.rs` spaced its passes off a radius 2.5 times too
+            // large and left scallops taller than the operator asked for,
+            // silently, with the operation reporting success. The feeds side
+            // already read the corner (`feeds::cutter_constraints::
+            // max_doc_scallop`) and so did the pencil
+            // (`pencil::tip_contact_radius`); this is the shared geometry
+            // query catching up.
+            //
+            // A ZERO corner is a flat end mill wearing a bull's name. It
+            // keeps `radius()`, because a cusp radius of zero divides by
+            // zero in `equal_cusp_stepover_mm` and collapses every claim
+            // floor and region area that scales from it.
+            crate::feeds::ToolGeometryHint::Bull { corner_radius } if corner_radius > 0.0 => {
+                corner_radius
+            }
             _ => self.radius(),
         }
     }
@@ -310,6 +328,40 @@ pub trait MillingCutter: Send + Sync {
     /// queries that are.
     fn cusp_radius_mm(&self) -> f64 {
         self.cusp_radius()
+    }
+    /// VALLEY radius (mm) — the radius that decides whether this cutter can
+    /// DESCEND INTO a narrow feature. H2 in the taxonomy above, landed
+    /// 2026-09-10 by G-BULLCUSP.
+    ///
+    /// It answers "how small a valley does this tool fit in", which is a
+    /// different question from [`Self::cusp_radius`]'s "what is the finest
+    /// feature this tool can FORM". On a TAPERED BALL the two coincide — the
+    /// tip sphere both forms the cusp and is what enters the valley — and
+    /// that coincidence is why one accessor served both for a year.
+    ///
+    /// **On a BULL NOSE they differ, and in opposite directions.** The corner
+    /// torus forms the cusp, so `cusp_radius` is the corner radius. But the
+    /// full-diameter cylinder sits only `corner_radius` above the tip, so the
+    /// cutter binds on its FULL radius as soon as it descends past the
+    /// corner: it cannot enter a valley its corner radius would suggest. The
+    /// valley radius is therefore the envelope radius.
+    ///
+    /// Use this for rest-region dilation, trust-region erosion, reference
+    /// cutter resolution and any other "does it fit in there" question.
+    /// Consumers that want the feature scale want [`Self::cusp_radius`]; ones
+    /// that want a depth-resolved width want
+    /// [`Self::engagement_radius_mm`].
+    ///
+    /// This is `radius()` for every shape except a tapered ball, so it is
+    /// **byte-identical to what `cusp_radius` returned before the
+    /// G-BULLCUSP arm** — the call sites moved onto it do not change
+    /// behaviour for any tool, which is what
+    /// `tests/rest_region_tip_radius_dilation_f1.rs` pins.
+    fn valley_radius_mm(&self) -> f64 {
+        match self.geometry_hint() {
+            crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
+            _ => self.radius(),
+        }
     }
     fn length(&self) -> f64;
     fn helix_deg(&self) -> f64 {
@@ -701,6 +753,9 @@ impl MillingCutter for ToolDefinition {
     }
     fn cusp_radius_mm(&self) -> f64 {
         self.cutter.cusp_radius_mm()
+    }
+    fn valley_radius_mm(&self) -> f64 {
+        self.cutter.valley_radius_mm()
     }
     fn engagement_radius_mm(&self, depth_mm: f64) -> f64 {
         self.cutter.engagement_radius_mm(depth_mm)

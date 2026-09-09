@@ -2053,9 +2053,16 @@ impl ResolvedReference<'_> {
 /// default reference versus 2 at a reference above the shank, same tool and
 /// same fixture.
 ///
-/// The comparison is now against `cusp_radius_mm() * 2` — the tip diameter,
-/// which is `diameter()` for every non-tapered shape, so nothing but the
-/// tapered path moves.
+/// The comparison is now against `valley_radius_mm() * 2` — the diameter that
+/// has to FIT, which is `diameter()` for every non-tapered shape, so nothing
+/// but the tapered path moves.
+///
+/// G-BULLCUSP (2026-09-10) moved this from `cusp_radius_mm()` to
+/// `valley_radius_mm()`. The two returned the same number for every shape
+/// until a bull nose separated them, and this site asks the FIT question: a
+/// reference tool is "finer than the pencil" only if it can get where the
+/// pencil can, and a bull nose cannot do that on its corner radius. The
+/// change is byte-identical for every tool.
 fn resolve_reference_cutter<'a>(
     params: &'a PencilParams,
     pencil: &dyn MillingCutter,
@@ -2063,7 +2070,7 @@ fn resolve_reference_cutter<'a>(
     if let Some(rc) = params.reference_cutter.as_ref() {
         return ResolvedReference::Real(rc);
     }
-    let pencil_cutting_diameter = pencil.cusp_radius_mm() * 2.0;
+    let pencil_cutting_diameter = pencil.valley_radius_mm() * 2.0;
     if params.reference_tool_diameter > pencil_cutting_diameter + 1e-6 {
         return ResolvedReference::Nominal(crate::tool::BallEndmill::new(
             params.reference_tool_diameter,

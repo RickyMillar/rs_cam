@@ -258,9 +258,28 @@ fn the_moat_erosion_is_sized_off_the_tip_not_the_shank() {
 }
 
 /// F1 is an identity transformation for every non-tapered shape, by
-/// construction: `cusp_radius()` falls through to `radius()` unless the
-/// geometry hint is `TaperedBall`. Stated here as an executable claim so the
-/// controls above are not the only thing saying so.
+/// construction: the query falls through to `radius()` unless the geometry
+/// hint is `TaperedBall`. Stated here as an executable claim so the controls
+/// above are not the only thing saying so.
+///
+/// # The query this asserts against changed, the CLAIM did not
+///
+/// G-BULLCUSP (2026-09-10) gave `MillingCutter::cusp_radius` a `Bull` arm, so
+/// a bull nose now reports its CORNER radius there — which is right for the
+/// cusp and scallop equations and WRONG for this file's two radii. A bull
+/// nose cannot enter a valley its corner radius would suggest: the
+/// full-diameter cylinder sits only one corner radius above the tip, so the
+/// cutter binds on its FULL radius the moment it descends past the corner.
+/// Dilating a rest mask by a bull's corner radius would report territory the
+/// fine tool cannot reach.
+///
+/// So `rest_field` moved onto `MillingCutter::valley_radius_mm` — H2 in the
+/// tool-scale taxonomy, the "does it FIT in there" query, which is
+/// `radius()` for every shape except a tapered ball and therefore
+/// byte-identical to what this file has always measured. This arm now
+/// asserts the identity on THAT query: the thing F1 protects is that the
+/// dilation and the moat do not move for a non-tapered shape, and they do
+/// not.
 #[test]
 fn every_non_tapered_shape_keeps_the_radius_it_had() {
     let flat = FlatEndmill::new(6.0, 25.0);
@@ -275,10 +294,10 @@ fn every_non_tapered_shape_keeps_the_radius_it_had() {
     ];
     for (label, cutter) in shapes {
         assert!(
-            (cutter.cusp_radius_mm() - cutter.envelope_radius_mm()).abs() < 1e-12,
-            "{label}: cusp {} != envelope {} — F1 would change this shape's \
+            (cutter.valley_radius_mm() - cutter.envelope_radius_mm()).abs() < 1e-12,
+            "{label}: valley {} != envelope {} — F1 would change this shape's \
              dilation and moat, which it must not",
-            cutter.cusp_radius_mm(),
+            cutter.valley_radius_mm(),
             cutter.envelope_radius_mm(),
         );
     }
@@ -286,5 +305,20 @@ fn every_non_tapered_shape_keeps_the_radius_it_had() {
     // And the split the fix exists for is real on the taper.
     let taper = wanaka_taper();
     assert!((taper.envelope_radius_mm() - 3.0).abs() < 1e-9);
+    assert!((taper.valley_radius_mm() - 0.5).abs() < 1e-9);
     assert!((taper.cusp_radius_mm() - 0.5).abs() < 1e-9);
+
+    // G-BULLCUSP: the two queries really do part company on a bull nose, so
+    // this file's move onto `valley_radius_mm` is load-bearing and not a
+    // rename. If they ever agree again, something reverted.
+    assert!(
+        (bull.cusp_radius_mm() - 1.0).abs() < 1e-12,
+        "bull cusp {} — expected its 1.0 mm corner",
+        bull.cusp_radius_mm()
+    );
+    assert!(
+        (bull.valley_radius_mm() - 3.0).abs() < 1e-12,
+        "bull valley {} — expected its 3.0 mm envelope",
+        bull.valley_radius_mm()
+    );
 }

@@ -77,7 +77,7 @@ impl RestReference<'_> {
     /// pencil radius still erodes via the caller's `max`).
     ///
     /// **F1 (2026-08-23): the TIP sphere, not the envelope.**
-    /// [`MillingCutter::cusp_radius`] is the feature scale the reference
+    /// [`MillingCutter::valley_radius_mm`] is the FIT scale the reference
     /// actually forms; [`MillingCutter::radius`] is the SHANK on a tapered
     /// ball, and reading it here blanked a **3 mm rim** of genuinely
     /// trustworthy rest data on the Ø1-tip / Ø6-shank taper this project
@@ -87,7 +87,7 @@ impl RestReference<'_> {
     /// falls through to `radius()`), so nothing but the tapered arm moves.
     fn erosion_radius(&self) -> f64 {
         match self {
-            RestReference::Cutter { tool, .. } => tool.cusp_radius(),
+            RestReference::Cutter { tool, .. } => tool.valley_radius_mm(),
             RestReference::Stock(_) => 0.0,
         }
     }
@@ -148,7 +148,7 @@ pub struct RestFieldParams {
     /// fine (pencil) tool radius, when dilating the mask into
     /// [`RestFieldResult::region_polygons`]. Dilation radius is the fine
     /// (pencil) cutter's own **CUSP (tip-sphere) radius**
-    /// ([`MillingCutter::cusp_radius`]) plus this margin — enough that a
+    /// ([`MillingCutter::valley_radius_mm`]) plus this margin — enough that a
     /// boundary-clipped fine-tool op can actually reach the true region edge
     /// rather than stopping exactly at the eroded mask boundary. Read off the
     /// cutter, never off any routing dial (plan H2.1 rule 4).
@@ -749,12 +749,21 @@ pub fn detect_rest_valleys(
     // it would otherwise ring the part in a spurious rest "moat". The reading is
     // only trustworthy where the overhanging tool is fully supported.
     //
-    // F1 (2026-08-23): sized off the TIP sphere (`cusp_radius`), not the
+    // G-BULLCUSP (2026-09-10): the query is `valley_radius_mm`, not
+    // `cusp_radius`. Both return the same number for every shape this file
+    // has ever seen — the change is byte-identical — but they answer
+    // DIFFERENT questions, and a bull nose separates them: its corner torus
+    // forms the cusp while its full-diameter cylinder, which sits only one
+    // corner radius above the tip, is what actually has to fit into a
+    // valley. Dilating by a bull's corner radius would report rest regions
+    // the cutter cannot enter.
+    //
+    // F1 (2026-08-23): sized off the TIP sphere, not the
     // envelope. On the Ø1-tip / Ø6-shank taper the envelope blanked a 3 mm
     // rim of trustworthy readings — ~4% of a 240×250 board, and at the edge,
     // where the operator cares (T1 finding G6). Identical for every
     // non-tapered shape; see `RestReference::erosion_radius`.
-    let erode_cells = (pencil.cusp_radius().max(reference.erosion_radius()) / cell).ceil();
+    let erode_cells = (pencil.valley_radius_mm().max(reference.erosion_radius()) / cell).ceil();
     let boundary_dt = chamfer_distance(&contact);
     let mask_data: Vec<bool> = contact
         .as_slice()
@@ -870,7 +879,10 @@ pub fn detect_rest_valleys(
     // reach the region edge, then extract closed loops via marching squares.
     // See P2.2 `BoundarySource::DerivedRestRegions`.
     //
-    // F1 (2026-08-23): `cusp_radius()`, not `radius()`. The tip is what has
+    // G-BULLCUSP (2026-09-10): `valley_radius_mm()` — see the note at the
+    // erosion site above for why this is not `cusp_radius()` any more.
+    //
+    // F1 (2026-08-23): the TIP, not `radius()`. The tip is what has
     // to reach the region edge at depth; the shank is what the ENVELOPE
     // describes, and on a Ø1-tip / Ø6-shank taper that is a 3.5 mm dilation
     // that welds dendritic islands into one region. Same number on every
@@ -880,7 +892,7 @@ pub fn detect_rest_valleys(
         origin_x,
         origin_y,
         cell,
-        pencil.cusp_radius() + params.region_margin_mm,
+        pencil.valley_radius_mm() + params.region_margin_mm,
         None,
     );
     let region_cap = region_extraction.cap;
