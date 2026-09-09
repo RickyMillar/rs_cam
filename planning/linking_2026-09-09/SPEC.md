@@ -352,6 +352,19 @@ Fixture: `planning/deep_doc_modulation_2026-09-08/PENCIL_baseline_r10_rest.toml`
 (a durable copy of the 09-04 throwaway, which lived only in a working
 tree). Two arms, because the saved fixture is not a realistic pass.
 
+> **READ THIS BEFORE RE-RUNNING (2026-09-10, G-FRESHLINK).** The saved
+> fixture carries `stock_source = "fresh"` on the pencil, so it reproduces
+> the **P0** arm and NOTHING ELSE. A fresh op awaits no prior stock, so it
+> never blocks a fixpoint round and the reply still says `simulations: 1` —
+> the G-STALESTOCK check passes and the arm is still wrong. It also gets
+> `entry_stock: None`, so the clearance-hop tier CANNOT run and the link
+> report prints `linked_via_hop: 0` as if it were a measured zero.
+> For the P1 / correct chain use
+> `planning/deep_doc_modulation_2026-09-08/PENCIL_chain_r10_rest.toml`,
+> which is this file with that one line set to `from_remaining_stock`.
+> Verified 2026-09-10: as saved → 9 275 junctions, 8 348 at depth, 0 hops,
+> 30 841.9 s fed; correct chain → 1 969 / 735 / 993 and 4 415.2 s fed.
+
 | arm | stock the pencil sees | total s | entry s | cutting s | linking s | rapid s | fragments | retracts | rapid collisions |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | P0 | FRESH block (the 09-04 setup as saved) | 32 426 | 29 114 (89.8 %) | 1 418 | 723 | 1 170 | 9 282 | 987 | **32** |
