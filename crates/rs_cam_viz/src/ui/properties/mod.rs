@@ -3204,6 +3204,21 @@ fn compute_tab_badges(
     }
 }
 
+/// One small inspector line that carries a SENTENCE, wrapped explicitly.
+///
+/// G-REACHWRAP (UX-R09-001). `ui.label` inherits its wrap mode from the
+/// enclosing layout — `Wrap` under a vertical or main-wrapped one, `Extend`
+/// under a plain `ui.horizontal` — so whether a caveat survived at 1400×900
+/// depended on which row it happened to be written into. A sentence the
+/// operator has to read in full states its own wrapping instead, and does not
+/// change if the panel is later restructured.
+///
+/// Layout only. It sets no width and alters no text; the caller still owns
+/// the colour, because these lines are colour-coded by severity.
+fn wrapped_small_label(ui: &mut egui::Ui, text: String, color: egui::Color32) {
+    ui.add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap());
+}
+
 /// Tier of a diagnostic row in the params panel. Drives the colour
 /// scheme + collapse behaviour without polluting the core schema.
 #[derive(Debug, Clone, Copy)]
@@ -3301,10 +3316,19 @@ fn render_diagnostic_row(
         } else {
             format!("{category_label}: ")
         };
-        let row_label = ui.label(
-            egui::RichText::new(format!("{prefix}{}", d.message))
-                .small()
-                .color(color),
+        // Wrapped EXPLICITLY, not by inheritance from `horizontal_wrapped`
+        // (G-REACHWRAP). A diagnostic message is a whole sentence — the
+        // chipload-clamp caution names the guarantee that is NOT met and
+        // then the alternatives — and the review's 1400×900 capture shows
+        // it cut at "The whole derat…", which is the worst half to lose:
+        // a truncated caveat reads as an unqualified result.
+        let row_label = ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("{prefix}{}", d.message))
+                    .small()
+                    .color(color),
+            )
+            .wrap(),
         );
         if let Some(line) = evidence_hover {
             row_label.on_hover_text(line);
@@ -3874,11 +3898,10 @@ fn draw_toolpath_panel(
     });
     if !validation_errors.is_empty() {
         for err in &validation_errors {
-            ui.label(
-                egui::RichText::new(err)
-                    .color(egui::Color32::from_rgb(220, 150, 60))
-                    .small(),
-            );
+            // A sentence, so it wraps explicitly rather than inheriting a
+            // wrap mode from whatever layout encloses this panel
+            // (G-REACHWRAP).
+            wrapped_small_label(ui, err.clone(), egui::Color32::from_rgb(220, 150, 60));
         }
     }
 
@@ -3893,6 +3916,19 @@ fn draw_toolpath_panel(
                      where a gap is left. The measure is top-down, so undersides, overhangs \
                      and vertical walls are NOT MEASURED and keep the plain model colour.",
             );
+            // Only the two SHORT status words share the checkbox's row.
+            // A horizontal layout's wrap mode is `Extend` (egui's
+            // `Ui::wrap_mode`: a layout that is neither vertical nor
+            // main-wrapped falls to the `Extend` arm), so a bare `ui.label`
+            // here runs past the panel and clips. A `Label::wrap()` WOULD
+            // still wrap — the label's own mode overrides the Ui's
+            // (`label.rs:191`, `self.wrap_mode.unwrap_or_else(|| ui.wrap_mode())`) —
+            // but at `ui.available_width()`, which on this row is only what
+            // the checkbox leaves: a narrow column, not the panel width.
+            // These two readings are under twenty characters and carry no
+            // caveat, so either fate is fine for them; the ones that do
+            // carry a caveat are below, where they get the full width
+            // (G-REACHWRAP).
             match reach {
                 ReachPanelSummary::Computing => {
                     ui.label(
@@ -3911,55 +3947,75 @@ fn draw_toolpath_panel(
                             .color(egui::Color32::from_rgb(180, 170, 120)),
                     );
                 }
-                ReachPanelSummary::Measured {
-                    unreachable_pct,
-                    max_gap_mm,
-                    grid_note,
-                    area_basis_note,
-                    over_statement_note,
-                    tolerance_below_floor,
-                } => {
-                    // The base comes from `ReachMap::area_basis_note`, not
-                    // from a sentence written here. This line said "of
-                    // MEASURED area" while the panel legend said "of 3D
-                    // surface area, rim-eroded 3.0 mm" - two surfaces, one
-                    // quantity, two descriptions, and that is the drift the
-                    // shared notes exist to prevent.
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "unreachable {unreachable_pct:.1} % {area_basis_note} · \
-                             max gap {max_gap_mm:.2} mm"
-                        ))
-                        .small()
-                        .color(egui::Color32::from_rgb(180, 180, 190)),
-                    );
-                    ui.label(egui::RichText::new(grid_note.clone()).small().color(
-                        if *tolerance_below_floor {
-                            egui::Color32::from_rgb(220, 180, 60)
-                        } else {
-                            egui::Color32::from_rgb(140, 140, 150)
-                        },
-                    ));
-                    if *tolerance_below_floor {
-                        // The shared sentence, quoted - not a fourth
-                        // hand-written paraphrase of the same bias.
-                        ui.label(
-                            egui::RichText::new(over_statement_note.clone())
-                                .small()
-                                .color(egui::Color32::from_rgb(220, 180, 60)),
-                        );
-                    }
-                }
-                ReachPanelSummary::Failed(message) => {
-                    ui.label(
-                        egui::RichText::new(format!("reach: {message}"))
-                            .small()
-                            .color(egui::Color32::from_rgb(220, 150, 60)),
-                    );
-                }
-                ReachPanelSummary::Idle => {}
+                ReachPanelSummary::Measured { .. }
+                | ReachPanelSummary::Failed(_)
+                | ReachPanelSummary::Idle => {}
             }
         });
+
+        // G-REACHWRAP (UX-R09-001, 2026-09-10): the readings used to sit on
+        // the checkbox's row as bare `ui.label`s, which under that row's
+        // `Extend` mode ran past the panel and clipped — the review's
+        // 1400×900 capture shows the summary cut off mid-number with
+        // `grid_note` never drawn at all
+        // (`results/W02/evidence/01_finish_defaults.png`). `grid_note` and
+        // `over_statement_note` are the MISSING-GUARANTEE sentences — the
+        // cell, the floor and the bar, and the statement that the grid
+        // over-states — so a clipped one reads as an unqualified result.
+        // They now get the panel's full width, one wrapped line each.
+        match reach {
+            ReachPanelSummary::Measured {
+                unreachable_pct,
+                max_gap_mm,
+                grid_note,
+                area_basis_note,
+                over_statement_note,
+                tolerance_below_floor,
+            } => {
+                // The base comes from `ReachMap::area_basis_note`, not
+                // from a sentence written here. This line said "of
+                // MEASURED area" while the panel legend said "of 3D
+                // surface area, rim-eroded 3.0 mm" - two surfaces, one
+                // quantity, two descriptions, and that is the drift the
+                // shared notes exist to prevent.
+                wrapped_small_label(
+                    ui,
+                    format!(
+                        "unreachable {unreachable_pct:.1} % {area_basis_note} · \
+                         max gap {max_gap_mm:.2} mm"
+                    ),
+                    egui::Color32::from_rgb(180, 180, 190),
+                );
+                wrapped_small_label(
+                    ui,
+                    grid_note.clone(),
+                    if *tolerance_below_floor {
+                        egui::Color32::from_rgb(220, 180, 60)
+                    } else {
+                        egui::Color32::from_rgb(140, 140, 150)
+                    },
+                );
+                if *tolerance_below_floor {
+                    // The shared sentence, quoted - not a fourth
+                    // hand-written paraphrase of the same bias.
+                    wrapped_small_label(
+                        ui,
+                        over_statement_note.clone(),
+                        egui::Color32::from_rgb(220, 180, 60),
+                    );
+                }
+            }
+            ReachPanelSummary::Failed(message) => {
+                wrapped_small_label(
+                    ui,
+                    format!("reach: {message}"),
+                    egui::Color32::from_rgb(220, 150, 60),
+                );
+            }
+            ReachPanelSummary::Computing
+            | ReachPanelSummary::NotMeasured
+            | ReachPanelSummary::Idle => {}
+        }
     }
 
     // Contextual diagnostics (non-blocking). Native `Diagnostic`
