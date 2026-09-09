@@ -888,6 +888,31 @@ Ledger:
   The hard requirement this case adds to the stage: the link must arrive
   LATERALLY at cutting depth, not from above, or each fragment still pays
   a fresh ramp — routing through `relink_fragments` alone does not fix it.
+  **IMPLEMENTED 0c36a2f0 (2026-09-09), gates green, live measurement
+  pending.** `FinishingLinkStage::params()` is the one construction site;
+  ordering and rotation are a single interleaved walk (the picker's next
+  query is seeded from the previous fragment's EMITTED exit, and a
+  rotation moves it). `RelinkReport` gains `at_depth_links` /
+  `clearance_hops` / `rotated_loops` — the entries-eliminated measure,
+  since only an at-depth link removes an entry. The pencil keeps its own
+  emitter plus `link_hop_distance_mm` and an eight-counter
+  `PencilLinkReport`. Byte-identical families: unified finish,
+  project_curve, drop_cutter, waterline, iso-field scallop, pencil.
+  `scallop_intra_pass_relink_am7` passed UNMODIFIED, which is stronger
+  than the expected-to-move prediction. Deliberate gaps: the
+  Minimum-retract fallback untouched (G-RETRACTDIAL stays inert);
+  waterline links and reorders but does not rotate (its adapter cannot
+  tell a whole level from a boundary-split arc); unified finish not
+  converted (its boundary is a per-region polygon the adapter-level stage
+  cannot supply).
+- **G-LINKDESCENT (2026-09-09, OPEN — it biases the measure we judge the
+  link stage on):** a lifted hop's final descent is still a fed vertical
+  at CUTTING feed tagged `Linking` (pre-existing, G-BOUNDARYPLUNGE class).
+  So on the clearance-hop tier `entry_s` UNDER-reads and `linking_s`
+  OVER-reads: the very split the stage is measured by
+  (`at_depth_links` vs `clearance_hops`) sits on a channel that misfiles
+  the descent. Read the two counters, not the two times, until this is
+  fixed. Reported by the implementer, not introduced by it.
 - **G-PENCILPLUNGE (2026-09-09, OPEN):** the P1 pencil pass carries its
   own `plunge_class_load` CRITICAL — 10 of 322 vertical-dominant moves up
   to 6.6× the operation's plunge rate. Same class as P3 /
