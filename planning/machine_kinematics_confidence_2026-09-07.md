@@ -937,6 +937,38 @@ Ledger:
   that guard ever stops seeing these moves is large. The guard is
   geometric and cannot be bypassed by an intent tag (P3), which is why it
   holds here.
+- **G-PENCILHOP (2026-09-09, SHIPPING DEFECT from G-LINKSTAGE `0c36a2f0`,
+  fix in progress) — the pencil took a behaviour change with no dial, and
+  my byte-identity claim for it is FALSE.** `0c36a2f0`'s message says the
+  pencil is byte-identical "via hookup 0.0 / link_stage None /
+  link_hop_distance_mm None". It is not: for the pencil `None` means "the
+  same cap as `hookup_distance`", so the new clearance-hop tier fires —
+  **1 014 hops measured on a live chain** — where the pre-change code
+  emitted a full entry. And `link_hop_distance_mm` has NO `ParamDef` on
+  the Pencil op (`set_toolpath_param` refuses it; the valid list runs
+  bitangency_angle … spindle_rpm), so there is no operator dial and no way
+  to run a control. `ParamDef`s were added for DropCutter's and
+  Waterline's `hookup_mm` and the pencil was missed. **No sentry could
+  have caught it**: the fingerprint sentries do not cover the pencil
+  fixture. Fix: `None` means the hop tier is OFF and byte-identical,
+  `Some(d)` opts in; add the missing `ParamDef`; add a sentry that asserts
+  the unset field really is the pre-change path; audit every field
+  G-LINKSTAGE added against the valid lists. Found by rs-cam-15 trying to
+  run a control arm.
+- **G-STALESTOCK (2026-09-09, method defect, not a code defect):**
+  `generate_all` reporting **"0 simulations"** on a project containing a
+  rest-machining op means it did NOT refresh the machined stock, so a rest
+  op generates against whatever snapshot was there before. It invalidated
+  the pencil P1 baseline in the linking SPEC §8: that row was measured
+  against the stock left by P0 (the pencil on a FRESH block), i.e. the
+  pencil cutting its own earlier grooves. Correct chain, same project:
+  1 969 junctions, 96 % tip float (5 257 of 5 498), 2 294 retracts, against
+  the contaminated 319 / 39 % / 313. The upstream iso-scallop is identical
+  in both (171 334 moves, 100 556.6 mm), which is what proves the
+  difference is the pencil's INPUT STOCK. **Read the `simulations` count in
+  a `generate_all` reply before trusting any rest-driven measurement** —
+  `rounds: 1, simulations: 0` is not success on such a project. The SPEC §8
+  P1 row is marked contaminated; the P0 row stands.
 - **G-LINKTIERS (2026-09-09, the two-tier counter UNDER-claims — measured,
   wording being corrected):** I wrote that only an at-depth link removes an
   entry, and the narration said a clearance hop "removed only a retract".

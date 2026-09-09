@@ -355,7 +355,19 @@ tree). Two arms, because the saved fixture is not a realistic pass.
 | arm | stock the pencil sees | total s | entry s | cutting s | linking s | rapid s | fragments | retracts | rapid collisions |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | P0 | FRESH block (the 09-04 setup as saved) | 32 426 | 29 114 (89.8 %) | 1 418 | 723 | 1 170 | 9 282 | 987 | **32** |
-| P1 | after an R1.5 iso-scallop on fresh stock | **2 736** | **2 307 (84.3 %)** | **50** | **120** | **259** | 319 | 313 | 0 |
+| P1 ⚠ CONTAMINATED | after an R1.5 iso-scallop on fresh stock | 2 736 | 2 307 (84.3 %) | 50 | 120 | 259 | 319 | 313 | 0 |
+
+> ⚠ **The P1 row is NOT a valid baseline (2026-09-09, G-STALESTOCK).** Its
+> `generate_all` reported `rounds: 1, simulations: 0` — no simulation ran
+> during generation, so the pencil generated against the stale stock left
+> by the P0 run, i.e. the pencil cutting its own earlier grooves. The
+> correctly-simulated chain on the same project gives **1 969 junctions,
+> 96 % tip float (5 257 of 5 498), 2 294 retracts**, against the
+> contaminated 319 / 39 % / 313. The upstream iso-scallop is identical in
+> both (171 334 moves, 100 556.6 mm), which is what proves the difference
+> is the pencil's INPUT STOCK and not the chain. Read the `simulations`
+> count in a `generate_all` reply before trusting any rest-driven
+> measurement. The P0 row stands.
 
 P0 reproduces the 09-04 reading (entry 29 114 against 28 986, cutting
 1 418 against 1 418) on today's binary, so the emitter work of
