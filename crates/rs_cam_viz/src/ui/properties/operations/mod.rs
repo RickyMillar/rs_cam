@@ -1667,6 +1667,10 @@ struct ValidationModel {
     has_polygons: bool,
     has_mesh: bool,
     has_enriched_mesh: bool,
+    /// Pickable drill targets (DXF points and circle/arc centres) the model
+    /// exposes. The `Drill` arm reads this, never `has_polygons`
+    /// (G-DRILLCENTROID).
+    drill_target_count: usize,
 }
 
 struct ValidationSetup {
@@ -1697,6 +1701,7 @@ impl ToolpathValidationContext {
                     has_polygons: model.polygons.is_some(),
                     has_mesh: model.mesh.is_some(),
                     has_enriched_mesh: model.enriched_mesh.is_some(),
+                    drill_target_count: model.drill_targets.len(),
                 })
                 .collect(),
             setups: session
@@ -1812,10 +1817,32 @@ pub fn validate_toolpath_config(
                 }
             }
         }
+        OperationConfig::Drill(c) => {
+            if let Some(msg) = drill_targets_refusal(ctx, model_id, c) {
+                errs.push(msg.to_owned());
+            }
+        }
         _ => {}
     }
 
     errs
+}
+
+/// G-DRILLCENTROID (UX-R03-004): the same predicate the generator refuses
+/// with, read against the target model's drill-target count, so Generate is
+/// disabled with the generator's own sentence instead of a hole appearing
+/// at a polygon centroid.
+fn drill_targets_refusal(
+    ctx: &ToolpathValidationContext,
+    model_id: crate::state::job::ModelId,
+    cfg: &crate::state::toolpath::DrillConfig,
+) -> Option<&'static str> {
+    let targets = ctx
+        .models
+        .iter()
+        .find(|m| m.id == model_id)
+        .map_or(0, |m| m.drill_target_count);
+    rs_cam_core::compute::execute::drill_targets_refusal(cfg, targets)
 }
 
 pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext) -> Vec<String> {
@@ -1875,6 +1902,11 @@ pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext)
                             .into(),
                     );
                 }
+            }
+        }
+        OperationConfig::Drill(c) => {
+            if let Some(msg) = drill_targets_refusal(ctx, entry.model_id, c) {
+                errs.push(msg.to_owned());
             }
         }
         _ => {}
@@ -2435,6 +2467,95 @@ mod tests {
         assert!(
             errs.iter().any(|err| err.contains("2D geometry")),
             "expected 2D geometry validation error, got {errs:?}"
+        );
+    }
+
+    /// A drawing with one circle-centre target — what a DXF with a `CIRCLE`
+    /// entity imports to.
+    fn session_target_model(id: usize) -> rs_cam_core::session::LoadedModel {
+        let mut model = session_polygon_model(id);
+        model.drill_targets = Arc::new(vec![rs_cam_core::dxf_input::DrillTarget {
+            x: 0.0,
+            y: 0.0,
+            layer: "holes".to_owned(),
+            kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
+        }]);
+        model
+    }
+
+    fn drill_entry(model: usize) -> ToolpathEntry {
+        ToolpathEntry::for_operation(
+            ToolpathId(3),
+            "Drill".to_owned(),
+            ToolId(1),
+            ModelId(model),
+            OperationType::Drill,
+        )
+    }
+
+    /// G-DRILLCENTROID (UX-R03-004): a Drill op on a drawing with closed
+    /// shapes but no circles or points is blocked with the generator's own
+    /// sentence. Pre-fix the validator was silent and Generate drilled the
+    /// polygon centroid.
+    #[test]
+    fn validate_drill_blocks_when_model_exposes_no_targets() {
+        let mut session = ProjectSession::new_empty();
+        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
+        session.models_mut().push(session_polygon_model(2));
+
+        let errs = validate_toolpath(
+            &drill_entry(2),
+            &ToolpathValidationContext::from_session(&session),
+        );
+        assert!(
+            errs.iter()
+                .any(|e| e == rs_cam_core::compute::execute::NO_DRILL_TARGETS_MSG),
+            "expected {:?}, got {errs:?}",
+            rs_cam_core::compute::execute::NO_DRILL_TARGETS_MSG
+        );
+
+        // The session-config door prints the same sentence.
+        let tc =
+            make_session_toolpath_config("Drill", 1, 2, OperationConfig::Drill(Default::default()));
+        let errs =
+            validate_toolpath_config(&tc, &ToolpathValidationContext::from_session(&session));
+        assert!(
+            errs.iter()
+                .any(|e| e == rs_cam_core::compute::execute::NO_DRILL_TARGETS_MSG),
+            "config door: got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn validate_drill_passes_when_model_exposes_a_target() {
+        let mut session = ProjectSession::new_empty();
+        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
+        session.models_mut().push(session_target_model(2));
+
+        let errs = validate_toolpath(
+            &drill_entry(2),
+            &ToolpathValidationContext::from_session(&session),
+        );
+        assert!(
+            !errs.iter().any(|e| e.contains("drill targets")),
+            "a target-bearing model must not be blocked: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn validate_drill_passes_on_an_explicit_pick_without_model_targets() {
+        let mut session = ProjectSession::new_empty();
+        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
+        session.models_mut().push(session_polygon_model(2));
+
+        let mut entry = drill_entry(2);
+        if let OperationConfig::Drill(cfg) = &mut entry.operation {
+            cfg.selected_holes = Some(vec![[1.0, 2.0]]);
+        }
+        let errs = validate_toolpath(&entry, &ToolpathValidationContext::from_session(&session));
+        assert!(
+            !errs.iter().any(|e| e.contains("drill targets")),
+            "a pick is a hole source: {errs:?}"
         );
     }
 

@@ -63,6 +63,20 @@ fn polygon_model(id: usize) -> LoadedModel {
     }
 }
 
+/// A drawing with one circle-centre target — what a DXF with a `CIRCLE`
+/// imports to. The `Drill` precondition reads the targets, not the
+/// polygons (G-DRILLCENTROID).
+fn target_model(id: usize) -> LoadedModel {
+    let mut model = polygon_model(id);
+    model.drill_targets = Arc::new(vec![rs_cam_core::dxf_input::DrillTarget {
+        x: 0.0,
+        y: 0.0,
+        layer: "holes".to_owned(),
+        kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 3.0 },
+    }]);
+    model
+}
+
 fn mesh_model(id: usize) -> LoadedModel {
     // Minimal flat square so `mesh.is_some()` and `bbox()` resolves;
     // geometry isn't exercised by the diagnose path under test.
@@ -347,12 +361,12 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
 }
 
 #[test]
-fn drill_op_against_polygon_model_is_silent() {
+fn drill_op_against_target_bearing_model_is_silent() {
     let mut session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
     session.add_tool(tool);
-    let mid = session.add_model(polygon_model(0));
+    let mid = session.add_model(target_model(0));
 
     let idx = session
         .add_toolpath(
@@ -369,7 +383,48 @@ fn drill_op_against_polygon_model_is_silent() {
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
         !has_id(&diags, ids::PRECOND_DRILL_NO_HOLES),
-        "polygon-bearing drill model must not fire precondition: {:?}",
+        "target-bearing drill model must not fire precondition: {:?}",
         diags.iter().map(|d| d.id.as_str()).collect::<Vec<_>>()
+    );
+}
+
+/// G-DRILLCENTROID (UX-R03-004): a drawing with closed shapes but no
+/// circles or points is NOT a hole source. Pre-fix this was silent and the
+/// generator drilled the centroid of every polygon.
+#[test]
+fn drill_op_against_polygon_only_model_fires_no_targets() {
+    let mut session = ProjectSession::new_empty();
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    tool.diameter = 3.0;
+    session.add_tool(tool);
+    let mid = session.add_model(polygon_model(0));
+
+    let idx = session
+        .add_toolpath(
+            0,
+            make_tp(
+                "drill_outline_only",
+                OperationConfig::Drill(DrillConfig::default()),
+                0,
+                mid,
+            ),
+        )
+        .unwrap();
+
+    let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
+    let diag = diags
+        .iter()
+        .find(|d| d.id.as_str() == ids::PRECOND_DRILL_NO_HOLES)
+        .unwrap_or_else(|| {
+            panic!(
+                "polygon-only drill model must fire PRECOND_DRILL_NO_HOLES, got {:?}",
+                diags.iter().map(|d| d.id.as_str()).collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(diag.severity, Severity::Blocking);
+    assert!(
+        diag.message.contains("No drill targets"),
+        "got {:?}",
+        diag.message
     );
 }

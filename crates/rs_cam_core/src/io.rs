@@ -58,13 +58,18 @@ pub fn load_model_file(
             let mut polygons = crate::svg_input::load_svg(path, 0.1)
                 .map_err(|e| SessionError::Io(std::io::Error::other(e.to_string())))?;
             apply_uniform_scale_2d(&mut polygons, scale);
+            // G-DRILLCENTROID: circle-like closed rings are the SVG's drill
+            // targets (usvg has already flattened every `<circle>`).
+            // Classified AFTER the unit scale so the floor is in mm.
+            let drill_targets = crate::svg_input::circle_like_drill_targets(&polygons);
+            let layers = crate::svg_input::circle_like_layers(&drill_targets);
             Ok(LoadedModel {
                 id,
                 name,
                 mesh: None,
                 polygons: Some(Arc::new(polygons)),
-                drill_targets: Arc::new(Vec::new()),
-                layers: Arc::new(Vec::new()),
+                drill_targets: Arc::new(drill_targets),
+                layers: Arc::new(layers),
                 path: path.to_path_buf(),
                 kind: Some(kind),
                 units: Some(units),

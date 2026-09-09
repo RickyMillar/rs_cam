@@ -638,7 +638,11 @@ pub(crate) fn load_model_geometry(
             })?;
             let mut polys = polys;
             crate::io::apply_uniform_scale_2d(&mut polys, scale);
-            Ok(LoadedGeometry::Polygons(polys, Vec::new(), Vec::new()))
+            // Same classifier as `io::load_model_file` (the two doors must
+            // agree — G-UNITSRELOAD): circle-like rings are the drill targets.
+            let drill_targets = crate::svg_input::circle_like_drill_targets(&polys);
+            let layers = crate::svg_input::circle_like_layers(&drill_targets);
+            Ok(LoadedGeometry::Polygons(polys, drill_targets, layers))
         }
         ModelKind::Step => {
             #[cfg(feature = "step")]

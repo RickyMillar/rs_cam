@@ -2099,7 +2099,9 @@ static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::Drill,
     spec: OperationSpec {
         label: "Drill",
-        description: "Drill holes from SVG circle positions",
+        description: "Drill holes at the drawing's DXF points and circle/arc centres, and \
+                      circles in SVG drawings (pick targets in the viewport or by layer; \
+                      refuses when there are none)",
         family: OperationFamily::TwoPointFiveD,
         geometry: GeometryRequirement::Polygons,
         default_auto_regen: true,

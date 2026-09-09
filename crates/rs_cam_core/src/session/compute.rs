@@ -148,6 +148,11 @@ struct ResolvedGenInputs {
     tool: ToolConfig,
     mesh: Option<Arc<TriangleMesh>>,
     polygons: Option<Arc<Vec<crate::polygon::Polygon2>>>,
+    /// G-DRILLCENTROID: the target model's drill targets (DXF points and
+    /// circle/arc centres), the `Drill` family's hole source when nothing
+    /// is picked. Shared with the model, never transformed here — like
+    /// `selected_holes`, the generator maps them into the emission frame.
+    drill_targets: Arc<Vec<crate::dxf_input::DrillTarget>>,
     keep_out_footprints: Vec<crate::polygon::Polygon2>,
     boundary_config: crate::compute::config::BoundaryConfig,
     emission_stock_bbox: BoundingBox3,
@@ -1384,6 +1389,9 @@ impl ProjectSession {
             tool,
             mesh,
             polygons,
+            drill_targets: model
+                .map(|m| Arc::clone(&m.drill_targets))
+                .unwrap_or_default(),
             keep_out_footprints,
             boundary_config,
             emission_stock_bbox,
@@ -1482,6 +1490,7 @@ impl ProjectSession {
             tool,
             mesh,
             polygons,
+            drill_targets,
             keep_out_footprints,
             boundary_config,
             emission_stock_bbox,
@@ -1579,6 +1588,7 @@ impl ProjectSession {
             Some(&tc.rest_analysis),
             link_kinematics,
             setup_transform.as_ref(),
+            &drill_targets,
         );
 
         match tp_result {
@@ -1903,7 +1913,7 @@ impl ProjectSession {
                 // (F-016) see the workpiece's actual hardness.
                 let drill_op = crate::compute::execute::build_drill_op_for_config(
                     &operation,
-                    polygons.as_deref().map(|v| v.as_slice()),
+                    &drill_targets,
                     &tool_def,
                     &tool,
                     &emission_stock_bbox,
@@ -4345,6 +4355,7 @@ impl ProjectSession {
                 .map(|m| TargetModelGeometry {
                     has_polygons: m.polygons.as_ref().is_some_and(|p| !p.is_empty()),
                     has_mesh: m.mesh.is_some(),
+                    drill_target_count: m.drill_targets.len(),
                 });
 
         let any_loaded_model_has_mesh = self.models.iter().any(|m| m.mesh.is_some());

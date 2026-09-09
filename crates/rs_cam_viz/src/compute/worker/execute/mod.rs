@@ -261,6 +261,9 @@ fn generate_via_core(
         // the GUI/MCP path, i.e. the one a real job actually runs, so leaving
         // it `None` would have meant the fix applied only to the CLI.
         req.setup_transform.as_ref(),
+        // G-DRILLCENTROID: the model's drill targets, same slot the core
+        // session path fills from `ResolvedGenInputs::drill_targets`.
+        &req.drill_targets,
     )
     .map_err(ComputeError::from)?;
     let (result, findings) = result;
@@ -1045,7 +1048,7 @@ pub(super) fn run_compute_with_phase_tracker(
         let local_stock_bbox = req.stock_bbox.as_ref().unwrap_or(&default_bbox);
         let drill_op = rs_cam_core::compute::execute::build_drill_op_for_config(
             &req.operation,
-            req.polygons.as_deref().map(|v| v.as_slice()),
+            &req.drill_targets,
             &local_tool_def,
             &req.tool,
             local_stock_bbox,
@@ -1146,6 +1149,7 @@ mod tests {
             polygons: Some(Arc::new(vec![Polygon2::rectangle(
                 -20.0, -20.0, 20.0, 20.0,
             )])),
+            drill_targets: Arc::new(Vec::new()),
             mesh: None,
             enriched_mesh: None,
             face_selection: None,

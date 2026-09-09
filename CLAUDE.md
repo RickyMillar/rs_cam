@@ -218,7 +218,7 @@ Four things about that table an agent must not infer wrongly (all measured 2026-
 | `stl` (3D mesh) | `inspect_model` → bbox, triangle count | adaptive3d (rough), drop_cutter/waterline/scallop (finish) |
 | `step` (BREP) | `inspect_model` + `inspect_brep_faces` → face types, normals | Same as STL + face-selective operations |
 | `svg`/`dxf` (2D) | `inspect_model` → polygon count, area, perimeter | pocket, profile, adaptive, v_carve, trace |
-| Drill cycle (any model + hole positions) | Hole XY/Z from model centroids or stock `alignment_pins` snapshot | `drill`, `alignment_pin_drill` — bypass dexel stamping for analytical cone/cylinder removal; produce `DrillToolpathSummary` + `drill_gates` instead of engagement metrics |
+| Drill cycle (any model + hole positions) | Hole XY from the model's drill targets (circle-like closed polygons and DXF points/circle/arc centres) or an explicit pick; a drawing with none refuses; pin drill from the stock `alignment_pins` snapshot | `drill`, `alignment_pin_drill` — bypass dexel stamping for analytical cone/cylinder removal; produce `DrillToolpathSummary` + `drill_gates` instead of engagement metrics |
 
 ### Tool selection guidance
 

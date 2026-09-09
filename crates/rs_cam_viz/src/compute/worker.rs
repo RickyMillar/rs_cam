@@ -55,6 +55,13 @@ pub struct ComputeRequest {
     /// else. Mirrors `ResolvedGenInputs::setup_transform` on the core path.
     pub setup_transform: Option<rs_cam_core::compute::transform::SetupTransformInfo>,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
+    /// G-DRILLCENTROID: the target model's drill targets (DXF points and
+    /// circle/arc centres) — the `Drill` family's hole source when nothing
+    /// is picked. The model's own `Arc`, untransformed: like
+    /// `selected_holes` these are model coordinates the generator maps into
+    /// the emission frame itself. Empty for meshes, and a `Drill`
+    /// op with no pick then refuses.
+    pub drill_targets: Arc<Vec<rs_cam_core::dxf_input::DrillTarget>>,
     pub mesh: Option<Arc<TriangleMesh>>,
     pub enriched_mesh: Option<Arc<rs_cam_core::enriched_mesh::EnrichedMesh>>,
     pub face_selection: Option<Vec<rs_cam_core::enriched_mesh::FaceGroupId>>,

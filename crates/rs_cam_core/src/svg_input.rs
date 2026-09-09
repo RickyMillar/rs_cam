@@ -219,8 +219,93 @@ fn flatten_cubic(p0: P2, p1: P2, p2: P2, p3: P2, tolerance: f64, out: &mut Vec<P
     flatten_cubic(mid, m123, m23, p3, tolerance, out);
 }
 
+/// Layer name every circle-like SVG target carries, so the inspector's
+/// "select all in layer" works on an SVG too.
+pub const SVG_CIRCLE_LAYER: &str = "circles";
+
+/// Minimum vertex count for a closed ring to be a circle candidate.
+const CIRCLE_LIKE_MIN_VERTICES: usize = 8;
+/// Relative radial tolerance: every vertex within 2 % of the mean radius.
+const CIRCLE_LIKE_REL_TOL: f64 = 0.02;
+/// Absolute floor on that tolerance, mm, so a tiny circle is not rejected
+/// on rounding.
+const CIRCLE_LIKE_ABS_TOL_MM: f64 = 0.05;
+
+/// The centre and diameter of a closed ring when it is circle-like, else
+/// `None`. GEOMETRY CLASSIFIER, not a safety gate (G-DRILLCENTROID rework).
+///
+/// The rule: at least [`CIRCLE_LIKE_MIN_VERTICES`] vertices, and with `c`
+/// the vertex centroid and `r̄` the mean vertex distance from `c`, every
+/// vertex satisfies `|r_i − r̄| ≤ max(0.02·r̄, 0.05 mm)`. A star, a
+/// rectangle or a free shape fails on the radius spread; a triangle or a
+/// rectangle also fails on the count. A regular polygon of 8+ sides is
+/// accepted — it drills at its centre, which is what an operator who drew
+/// one on a hole layer meant. A duplicated closing vertex is harmless.
+pub fn circle_like_ring(ring: &[P2]) -> Option<(P2, f64)> {
+    if ring.len() < CIRCLE_LIKE_MIN_VERTICES {
+        return None;
+    }
+    let n = ring.len() as f64;
+    let (sx, sy) = ring
+        .iter()
+        .fold((0.0, 0.0), |(ax, ay), p| (ax + p.x, ay + p.y));
+    let c = P2::new(sx / n, sy / n);
+    let radii: Vec<f64> = ring.iter().map(|p| (p.x - c.x).hypot(p.y - c.y)).collect();
+    let mean = radii.iter().sum::<f64>() / n;
+    if !mean.is_finite() || mean <= 0.0 {
+        return None;
+    }
+    let tol = (CIRCLE_LIKE_REL_TOL * mean).max(CIRCLE_LIKE_ABS_TOL_MM);
+    radii
+        .iter()
+        .all(|r| (r - mean).abs() <= tol)
+        .then_some((c, 2.0 * mean))
+}
+
+/// Every circle-like ring in a polygon set — exteriors AND holes, because
+/// `detect_containment` files a circle drawn inside an outline as that
+/// outline's hole — as pickable drill targets on [`SVG_CIRCLE_LAYER`].
+///
+/// This is how an SVG drawing exposes drill targets at all: usvg flattens
+/// a `<circle>` to a path before this crate sees it, so the source element
+/// is gone and only the shape remains. Called by both 2D import doors
+/// (`io::load_model_file` and `session::project_file::load_model_geometry`)
+/// AFTER the unit scale is applied, so the diameters and the tolerance
+/// floor are in millimetres. Not applied to DXF, where a `CIRCLE` entity
+/// already yields its own target and this would double-count it.
+pub fn circle_like_drill_targets(polygons: &[Polygon2]) -> Vec<crate::dxf_input::DrillTarget> {
+    polygons
+        .iter()
+        .flat_map(|poly| {
+            std::iter::once(poly.exterior.as_slice()).chain(poly.holes.iter().map(Vec::as_slice))
+        })
+        .filter_map(circle_like_ring)
+        .map(|(c, diameter)| crate::dxf_input::DrillTarget {
+            x: c.x,
+            y: c.y,
+            layer: SVG_CIRCLE_LAYER.to_owned(),
+            kind: crate::dxf_input::DrillTargetKind::CircleCenter { diameter },
+        })
+        .collect()
+}
+
+/// The layer list a model built from `targets` carries: [`SVG_CIRCLE_LAYER`]
+/// when there is at least one target, else empty.
+pub fn circle_like_layers(targets: &[crate::dxf_input::DrillTarget]) -> Vec<String> {
+    if targets.is_empty() {
+        Vec::new()
+    } else {
+        vec![SVG_CIRCLE_LAYER.to_owned()]
+    }
+}
+
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
 
@@ -383,5 +468,70 @@ mod tests {
                 "All polygons should be CCW after ensure_winding"
             );
         }
+    }
+
+    #[test]
+    fn circle_like_classifier_accepts_circles_and_rejects_stars_and_rects() {
+        // A 32-gon of radius 10 about (3, 4).
+        let circle: Vec<P2> = (0..32)
+            .map(|i| {
+                let a = std::f64::consts::TAU * f64::from(i) / 32.0;
+                P2::new(3.0 + 10.0 * a.cos(), 4.0 + 10.0 * a.sin())
+            })
+            .collect();
+        let (c, d) = circle_like_ring(&circle).expect("a 32-gon is circle-like");
+        assert!((c.x - 3.0).abs() < 1e-9 && (c.y - 4.0).abs() < 1e-9);
+        assert!((d - 20.0).abs() < 1e-6, "diameter {d}");
+
+        // The demo star: ten vertices, radii alternate ~45 and ~18.
+        let star: Vec<P2> = [
+            (50.0, 5.0),
+            (61.0, 35.0),
+            (95.0, 35.0),
+            (68.0, 57.0),
+            (79.0, 91.0),
+            (50.0, 70.0),
+            (21.0, 91.0),
+            (32.0, 57.0),
+            (5.0, 35.0),
+            (39.0, 35.0),
+        ]
+        .iter()
+        .map(|&(x, y)| P2::new(x, y))
+        .collect();
+        assert!(circle_like_ring(&star).is_none(), "a star is not a circle");
+
+        // A rectangle: too few vertices, and the radii differ anyway.
+        let rect = Polygon2::rectangle(0.0, 0.0, 10.0, 4.0);
+        assert!(circle_like_ring(&rect.exterior).is_none());
+
+        // A 12-vertex ellipse 10 × 6 fails the 2 % spread.
+        let ellipse: Vec<P2> = (0..12)
+            .map(|i| {
+                let a = std::f64::consts::TAU * f64::from(i) / 12.0;
+                P2::new(10.0 * a.cos(), 6.0 * a.sin())
+            })
+            .collect();
+        assert!(
+            circle_like_ring(&ellipse).is_none(),
+            "an ellipse is not a circle"
+        );
+    }
+
+    #[test]
+    fn circle_inside_a_rect_is_a_target_via_the_hole_ring() {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+            <rect x="5" y="5" width="70" height="50"/>
+            <circle cx="40" cy="30" r="10"/>
+        </svg>"#;
+        let polys = load_svg_data(svg, 0.1).unwrap();
+        let targets = circle_like_drill_targets(&polys);
+        assert_eq!(targets.len(), 1, "one circle, one target: {targets:?}");
+        assert!((targets[0].x - 40.0).abs() < 0.1 && (targets[0].y - 30.0).abs() < 0.1);
+        assert_eq!(targets[0].layer, SVG_CIRCLE_LAYER);
+        assert_eq!(
+            circle_like_layers(&targets),
+            vec![SVG_CIRCLE_LAYER.to_owned()]
+        );
     }
 }

@@ -197,6 +197,7 @@ fn generate_with(
         None,
         None,
         None,
+        &[],
     )
     .expect("project_curve generates on the flat-plate fixture")
     .0

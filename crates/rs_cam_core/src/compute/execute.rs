@@ -10,6 +10,7 @@ use crate::compute::config::{DressupConfig, DressupEntryStyle, ResolvedHeights};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::{ToolConfig, ToolType};
 use crate::debug_trace::ToolpathDebugContext;
+use crate::dxf_input::DrillTarget;
 use crate::geo::BoundingBox3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
@@ -597,8 +598,9 @@ fn generated_with_drill_spans(toolpath: Toolpath) -> GeneratedToolpath {
 /// invariant.
 ///
 /// Hole-source asymmetry (§6.E):
-/// - `OperationConfig::Drill`: holes are polygon centroids
-///   (`HoleSource::ModelDerived`); re-resolved every regenerate.
+/// - `OperationConfig::Drill`: holes are the model's drill targets
+///   (`HoleSource::ModelDerived`); re-resolved every regenerate. An
+///   explicit pick round-trips as a `Snapshot` instead.
 /// - `OperationConfig::AlignmentPinDrill`: holes are snapshotted in
 ///   `cfg.holes`; `HoleSource::Snapshot` round-trips through project IO.
 ///
@@ -610,7 +612,7 @@ fn generated_with_drill_spans(toolpath: Toolpath) -> GeneratedToolpath {
 /// operation.
 pub fn build_drill_op_for_config(
     op: &OperationConfig,
-    polygons: Option<&[Polygon2]>,
+    drill_targets: &[DrillTarget],
     tool_def: &ToolDefinition,
     tool_cfg: &ToolConfig,
     stock_bbox: &BoundingBox3,
@@ -625,8 +627,8 @@ pub fn build_drill_op_for_config(
     match op {
         OperationConfig::Drill(cfg) => {
             // Selected targets (DXF picks) drill exactly those and round-trip
-            // as a snapshot; otherwise fall back to polygon centroids.
-            let hole_xys = drill_holes_for_config(cfg, polygons, setup_transform).ok()?;
+            // as a snapshot; otherwise every target the model exposes.
+            let hole_xys = drill_holes_for_config(cfg, drill_targets, setup_transform).ok()?;
             let hole_source = if cfg.selected_holes.is_some() {
                 HoleSource::Snapshot(hole_xys.clone())
             } else {
@@ -761,6 +763,12 @@ pub struct ExecutionContext<'a> {
     pub mesh: Option<&'a TriangleMesh>,
     pub index: Option<&'a SpatialIndex>,
     pub polygons: Option<&'a [Polygon2]>,
+    /// The model's pickable drill targets — DXF `POINT` entities and
+    /// circle/arc centres — in model coordinates, like `selected_holes`.
+    /// The `Drill` family's only hole source besides an explicit pick
+    /// (G-DRILLCENTROID); every other family ignores it. Empty for meshes
+    /// and SVG, and for callers that resolve no model.
+    pub drill_targets: &'a [DrillTarget],
     pub tool_def: &'a ToolDefinition,
     pub tool_cfg: &'a ToolConfig,
     pub heights: &'a ResolvedHeights,
@@ -933,60 +941,82 @@ fn pin_holes_in_emission_frame(
     holes
 }
 
+/// The refusal a `Drill` op gives when the model exposes no
+/// [`DrillTarget`] and nothing is picked. The GUI's static validator
+/// (`validate_toolpath`) and the core precondition adapter print the same
+/// sentence, so the Generate button, the diagnostics ribbon and the
+/// generator agree (G-DRILLCENTROID, UX-R03-004).
+pub const NO_DRILL_TARGETS_MSG: &str =
+    "No drill targets — pick points/circles or import a drawing with circles";
+
+/// The refusal for an explicit selection that is empty.
+pub const NO_DRILL_TARGETS_SELECTED_MSG: &str =
+    "No drill targets selected (pick points/holes in the viewport or choose a layer)";
+
+/// The refusal a `Drill` op earns from its selection and the model's target
+/// count alone, before any coordinate is read — `None` means it has a hole
+/// source. ONE predicate for the generator ([`drill_holes_for_config`]), the
+/// core precondition adapter and the GUI's static validator, so the Generate
+/// button, the diagnostics ribbon and the generator cannot drift
+/// (G-DRILLCENTROID).
+pub fn drill_targets_refusal(
+    cfg: &crate::compute::operation_configs::DrillConfig,
+    drill_target_count: usize,
+) -> Option<&'static str> {
+    match &cfg.selected_holes {
+        Some(picked) if !picked.is_empty() => None,
+        Some(_) => Some(NO_DRILL_TARGETS_SELECTED_MSG),
+        None => (drill_target_count == 0).then_some(NO_DRILL_TARGETS_MSG),
+    }
+}
+
 /// Resolve the drill hole positions for a [`DrillConfig`].
 ///
+/// A hole position comes from a [`DrillTarget`] — a DXF `POINT` entity or a
+/// circle/arc centre — or from an explicit pick. Never from a polygon
+/// outline.
+///
 /// When `cfg.selected_holes` is set the user has explicitly picked targets
-/// (DXF points / circle centres, in the viewport or by layer) — drill exactly
-/// those. An empty selection is an error rather than "all centroids", so a
-/// stale or cleared selection doesn't silently revert to drilling everything.
+/// (in the viewport or by layer) — drill exactly those. An empty selection is
+/// an error rather than "all targets", so a stale or cleared selection doesn't
+/// silently revert to drilling everything.
 ///
-/// When it is `None` (the legacy default), fall back to the centroid of every
-/// closed polygon in the model.
+/// When it is `None` (the default), drill every target the model exposes.
+/// When the model exposes none, refuse with [`NO_DRILL_TARGETS_MSG`].
 ///
-/// Only the picks take `setup_transform`: the centroids are computed from
-/// `polygons`, which the session already transformed into the setup frame
-/// before generation, so transforming them again would apply it twice
+/// Until 2026-09-10 the `None` arm fell back to the vertex centroid of every
+/// closed polygon in the model, so a drawing with no circles or points
+/// drilled a hole through the middle of each shape (G-DRILLCENTROID,
+/// UX-R03-004). The fallback is removed, not gated: the generator reads
+/// targets only. A circle in an SVG still drills, because the 2D import
+/// doors classify a circle-like closed ring as a target
+/// (`svg_input::circle_like_drill_targets`) — a star or an outline is not
+/// one.
+///
+/// Picks and targets share one frame — the viz picker copies a target's
+/// `(x, y)` straight into `selected_holes` — so both take `setup_transform`
 /// (G-DRILLPICK-FRAME — see [`pick_to_emission_frame`]).
 fn drill_holes_for_config(
     cfg: &crate::compute::operation_configs::DrillConfig,
-    polygons: Option<&[Polygon2]>,
+    drill_targets: &[DrillTarget],
     setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
 ) -> Result<Vec<[f64; 2]>, OperationError> {
+    if let Some(msg) = drill_targets_refusal(cfg, drill_targets.len()) {
+        return Err(OperationError::MissingGeometry(msg.to_owned()));
+    }
     if let Some(selected) = &cfg.selected_holes {
-        if selected.is_empty() {
-            return Err(OperationError::MissingGeometry(
-                "No drill targets selected (pick points/holes in the viewport \
-                 or choose a layer)"
-                    .to_owned(),
-            ));
-        }
         return Ok(selected
             .iter()
             .map(|&xy| pick_to_emission_frame(xy, setup_transform))
             .collect());
     }
-    let polys = require_polygons(polygons)?;
-    let mut holes = Vec::new();
-    for poly in polys {
-        if poly.exterior.is_empty() {
-            continue;
-        }
-        let (sx, sy) = poly
-            .exterior
-            .iter()
-            .fold((0.0, 0.0), |(ax, ay), pt| (ax + pt.x, ay + pt.y));
-        let n = poly.exterior.len() as f64;
-        holes.push([sx / n, sy / n]);
-    }
-    if holes.is_empty() {
-        return Err(OperationError::MissingGeometry(
-            "No hole positions found (import SVG/DXF with circles, or pick targets)".to_owned(),
-        ));
-    }
-    Ok(holes)
+    Ok(drill_targets
+        .iter()
+        .map(|t| pick_to_emission_frame([t.x, t.y], setup_transform))
+        .collect())
 }
 
-/// Drill family adapter (holes from polygon centroids).
+/// Drill family adapter (holes from the model's drill targets or picks).
 pub(crate) fn generate_drill(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
@@ -1000,7 +1030,7 @@ pub(crate) fn generate_drill(
     if ctx.cancel.load(Ordering::SeqCst) {
         return Err(OperationError::Cancelled);
     }
-    let holes = drill_holes_for_config(cfg, ctx.polygons, ctx.setup_transform)?;
+    let holes = drill_holes_for_config(cfg, ctx.drill_targets, ctx.setup_transform)?;
     let cycle = cfg.cycle.to_core(cfg);
     let params = crate::drill::DrillParams {
         depth: cfg.depth,
@@ -3278,6 +3308,9 @@ pub fn execute_operation_annotated(
         // "world is the emission frame" — which is what a caller with no
         // setup is asserting anyway.
         None,
+        // `drill_targets`: the same callers resolve no model, so a `Drill`
+        // op on this path drills only what it carries in `selected_holes`.
+        &[],
     )
     .map(|(generated, _findings)| generated)
 }
@@ -3334,6 +3367,12 @@ pub fn execute_operation_annotated_with_regions(
     // touches. `None` = identity setup = no-op. See
     // [`ExecutionContext::setup_transform`].
     setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
+    // G-DRILLCENTROID: the target model's drill targets (DXF points and
+    // circle/arc centres), the `Drill` family's hole source when nothing is
+    // picked. Config-carried picks and these share one frame. `&[]` for a
+    // caller with no model — a `Drill` op then refuses unless it carries an
+    // explicit pick.
+    drill_targets: &[DrillTarget],
 ) -> Result<(GeneratedToolpath, GenerationFindings), OperationError> {
     // Phase-5 (T11) family adapters: when the registry carries a
     // GenerateFn for this op's family, dispatch through it. The
@@ -3357,6 +3396,7 @@ pub fn execute_operation_annotated_with_regions(
         mesh,
         index,
         polygons,
+        drill_targets,
         tool_def,
         tool_cfg,
         heights,
@@ -4414,37 +4454,56 @@ mod tests {
     use crate::toolpath_spans::SpanKind;
 
     #[test]
-    fn drill_holes_selection_overrides_centroids() {
+    fn drill_holes_come_from_targets_or_picks_never_centroids() {
         use crate::compute::operation_configs::DrillConfig;
-        // A 10×10 square whose centroid is (5,5).
-        let square = Polygon2::new(vec![
-            crate::geo::P2::new(0.0, 0.0),
-            crate::geo::P2::new(10.0, 0.0),
-            crate::geo::P2::new(10.0, 10.0),
-            crate::geo::P2::new(0.0, 10.0),
-        ]);
-        let polys = [square];
+        use crate::dxf_input::DrillTargetKind;
+        // Two targets, as a DXF with one POINT and one CIRCLE imports to.
+        let targets = [
+            DrillTarget {
+                x: 1.0,
+                y: 2.0,
+                layer: "pts".to_owned(),
+                kind: DrillTargetKind::Point,
+            },
+            DrillTarget {
+                x: 7.0,
+                y: 8.0,
+                layer: "holes".to_owned(),
+                kind: DrillTargetKind::CircleCenter { diameter: 4.0 },
+            },
+        ];
 
-        // None => legacy centroid behaviour.
-        let legacy = DrillConfig::default();
-        let holes = drill_holes_for_config(&legacy, Some(&polys), None).unwrap();
-        assert_eq!(holes.len(), 1);
-        assert!((holes[0][0] - 5.0).abs() < 1e-9 && (holes[0][1] - 5.0).abs() < 1e-9);
-
-        // Some(picks) => drill exactly the picks, ignoring centroids.
-        let picked = DrillConfig {
-            selected_holes: Some(vec![[1.0, 2.0], [7.0, 8.0]]),
-            ..DrillConfig::default()
-        };
-        let holes = drill_holes_for_config(&picked, Some(&polys), None).unwrap();
+        // None => every target the model exposes.
+        let default = DrillConfig::default();
+        let holes = drill_holes_for_config(&default, &targets, None).unwrap();
         assert_eq!(holes, vec![[1.0, 2.0], [7.0, 8.0]]);
 
-        // Some(empty) => explicit "nothing selected" error, not all-centroids.
+        // None + no targets => refusal naming the missing input, never a
+        // polygon centroid (G-DRILLCENTROID).
+        let err = drill_holes_for_config(&default, &[], None).unwrap_err();
+        assert!(
+            matches!(&err, OperationError::MissingGeometry(m) if m == NO_DRILL_TARGETS_MSG),
+            "got {err:?}"
+        );
+
+        // Some(picks) => drill exactly the picks, ignoring the targets.
+        let picked = DrillConfig {
+            selected_holes: Some(vec![[3.0, 4.0]]),
+            ..DrillConfig::default()
+        };
+        let holes = drill_holes_for_config(&picked, &targets, None).unwrap();
+        assert_eq!(holes, vec![[3.0, 4.0]]);
+
+        // Some(empty) => explicit "nothing selected" error, not all targets.
         let empty = DrillConfig {
             selected_holes: Some(Vec::new()),
             ..DrillConfig::default()
         };
-        assert!(drill_holes_for_config(&empty, Some(&polys), None).is_err());
+        let err = drill_holes_for_config(&empty, &targets, None).unwrap_err();
+        assert!(
+            matches!(&err, OperationError::MissingGeometry(m) if m == NO_DRILL_TARGETS_SELECTED_MSG),
+            "got {err:?}"
+        );
     }
 
     /// F-XXX regression: adaptive3d's planner only supports a vertical
@@ -4481,6 +4540,17 @@ mod tests {
     }
 
     /// Build a default tool definition and config for a given tool type.
+    /// A default `Drill` op with an explicit pick. The in-file tests reach
+    /// the generator without a model, so the picks are their hole source
+    /// (G-DRILLCENTROID: polygon centroids no longer are).
+    fn drill_op_picking(holes: &[[f64; 2]]) -> OperationConfig {
+        let mut op = OperationConfig::new_default(OperationType::Drill);
+        if let OperationConfig::Drill(cfg) = &mut op {
+            cfg.selected_holes = Some(holes.to_vec());
+        }
+        op
+    }
+
     fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {
         let cfg = ToolConfig::new_default(ToolId(0), tool_type);
         let def = build_cutter(&cfg);
@@ -4745,7 +4815,10 @@ mod tests {
             },
             SpanCoverageCase {
                 name: "Drill",
-                op: OperationConfig::new_default(OperationType::Drill),
+                // Picks are the hole source on this model-less path
+                // (G-DRILLCENTROID); the `Drill` polygon fixture is kept so
+                // the polygon slot still exercises a 2D op with geometry.
+                op: drill_op_picking(&[[25.0, 25.0], [55.0, 55.0]]),
                 tool_type: ToolType::EndMill,
                 mesh: None,
                 polygons: Some(PolygonFixture::Drill),
@@ -5074,22 +5147,19 @@ mod tests {
 
     #[test]
     fn drill_produces_output() {
-        let op = OperationConfig::new_default(OperationType::Drill);
+        // This path resolves no model, so the hole is an explicit pick
+        // (G-DRILLCENTROID: a polygon centroid is no longer a hole source).
+        let op = drill_op_picking(&[[25.0, 25.0]]);
         let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
         let heights = test_heights();
         let bbox = test_stock_bbox();
         let cancel = AtomicBool::new(false);
 
-        // Create polygons representing circle centroids (small polygons
-        // whose centroid becomes the drill position).
-        let circle_poly = Polygon2::rectangle(24.0, 24.0, 26.0, 26.0);
-        let polys = vec![circle_poly];
-
         let result = execute_operation(
             &op,
             None,
             None,
-            Some(&polys),
+            None,
             &tool_def,
             &tool_cfg,
             &heights,
@@ -5589,21 +5659,17 @@ mod tests {
 
     #[test]
     fn drill_annotated_output_has_hole_and_plunge_spans_without_depth_barriers() {
-        let op = OperationConfig::new_default(OperationType::Drill);
+        let op = drill_op_picking(&[[25.0, 25.0], [55.0, 55.0]]);
         let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
         let heights = test_heights();
         let bbox = test_stock_bbox();
         let cancel = AtomicBool::new(false);
-        let polys = vec![
-            Polygon2::rectangle(24.0, 24.0, 26.0, 26.0),
-            Polygon2::rectangle(54.0, 54.0, 56.0, 56.0),
-        ];
 
         let result = execute_operation_annotated(
             &op,
             None,
             None,
-            Some(&polys),
+            None,
             &tool_def,
             &tool_cfg,
             &heights,
@@ -5699,12 +5765,11 @@ mod tests {
 
     #[test]
     fn drill_semantic_trace_has_hole_and_cycle_children() {
-        let op = OperationConfig::new_default(OperationType::Drill);
+        let op = drill_op_picking(&[[25.0, 25.0]]);
         let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
         let heights = test_heights();
         let bbox = test_stock_bbox();
         let cancel = AtomicBool::new(false);
-        let polys = vec![Polygon2::rectangle(24.0, 24.0, 26.0, 26.0)];
         let recorder = crate::semantic_trace::ToolpathSemanticRecorder::new("Drill", "Drill");
         let ctx = recorder.root_context();
 
@@ -5712,7 +5777,7 @@ mod tests {
             &op,
             None,
             None,
-            Some(&polys),
+            None,
             &tool_def,
             &tool_cfg,
             &heights,
@@ -5876,6 +5941,7 @@ mod tests {
             Some(&rest_analysis),
             None,
             None,
+            &[],
         )
         .expect("scallop with rest_analysis enabled should succeed");
 
@@ -5924,6 +5990,7 @@ mod tests {
             Some(&rest_analysis),
             None,
             None,
+            &[],
         )
         .expect("scallop should succeed");
 
@@ -5952,6 +6019,7 @@ mod tests {
             None,
             None,
             None,
+            &[],
         )
         .expect("scallop should succeed");
         assert!(result_none.rest_grid.is_none());
@@ -6012,6 +6080,7 @@ mod tests {
             Some(&rest_analysis),
             None,
             None,
+            &[],
         )
         .expect("pencil rest_depth should succeed");
 

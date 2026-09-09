@@ -327,6 +327,12 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .find(|m| m.id == model_id_raw);
         let mut polygons = model.and_then(|m| m.polygons.clone());
+        // G-DRILLCENTROID: the model's drill targets ride the request
+        // untransformed, like `selected_holes` — the generator maps both
+        // into the emission frame.
+        let drill_targets = model
+            .map(|m| Arc::clone(&m.drill_targets))
+            .unwrap_or_default();
         let mut mesh = model.and_then(|m| m.mesh.clone());
         let enriched_mesh = model.and_then(|m| m.enriched_mesh.clone());
         let face_selection = face_selection_for_toolpath;
@@ -760,6 +766,7 @@ impl<B: ComputeBackend> AppController<B> {
             toolpath_name,
             debug_options,
             polygons,
+            drill_targets,
             mesh,
             enriched_mesh,
             face_selection,

@@ -192,10 +192,12 @@ pub struct DrillConfig {
     /// Explicit drill locations (XY, mm) picked from the model — DXF POINT
     /// entities or circle/arc centres, chosen in the viewport or by layer.
     ///
-    /// `None` (the default) preserves the legacy behaviour of drilling the
-    /// centroid of every closed polygon in the model. `Some(_)` means the
-    /// user has taken control of the selection; an empty list then means
-    /// "no targets selected" rather than "all centroids".
+    /// `None` (the default) drills every drill target the model exposes,
+    /// and refuses when it exposes none — a polygon outline is not a hole
+    /// source (G-DRILLCENTROID, 2026-09-10; before that `None` drilled the
+    /// centroid of every closed polygon). `Some(_)` means the user has
+    /// taken control of the selection; an empty list then means "no
+    /// targets selected" rather than "all targets".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_holes: Option<Vec<[f64; 2]>>,
     /// Layer name(s) the user bulk-selected with "select all in layer".
@@ -2620,7 +2622,7 @@ mod tests {
             "retract_z": 2.0
         }"#;
         let cfg: DrillConfig = serde_json::from_str(legacy).unwrap();
-        assert_eq!(cfg.selected_holes, None, "legacy => all-centroids (None)");
+        assert_eq!(cfg.selected_holes, None, "legacy => all targets (None)");
         assert!(cfg.selected_layers.is_empty());
 
         // Round-trip with an explicit selection.

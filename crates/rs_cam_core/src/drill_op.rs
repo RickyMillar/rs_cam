@@ -49,9 +49,10 @@ pub struct DrillHole {
 /// - `Snapshot`: XY positions captured into the operation config at
 ///   submit time (e.g. `AlignmentPinDrillConfig.holes`). Survives
 ///   project save/load directly as part of the `OperationConfig` TOML.
-/// - `ModelDerived`: positions are computed from polygon centroids at
-///   generate-time and discarded after each regenerate. Project IO does
-///   not persist them; they re-resolve from the model on load.
+/// - `ModelDerived`: positions are the model's drill targets (DXF points
+///   and circle/arc centres) resolved at generate-time and discarded after
+///   each regenerate. Project IO does not persist them; they re-resolve
+///   from the model on load. Never polygon centroids (G-DRILLCENTROID).
 ///
 /// See §6.E AlignmentPin vs Drill hole-source asymmetry.
 #[derive(Debug, Clone, PartialEq)]

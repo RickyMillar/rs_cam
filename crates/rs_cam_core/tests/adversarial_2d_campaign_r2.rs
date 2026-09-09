@@ -253,7 +253,36 @@ enum ToolKind {
     VBit,
 }
 
+/// The vertex centroid of every closed polygon in the fixture — the hole
+/// set the `Drill` family used to derive on its own. Since G-DRILLCENTROID a
+/// polygon outline is not a hole source, so the campaign hands the same
+/// (hostile — NaN, degenerate) coordinates over as explicit picks. The cell
+/// keeps stressing the drill emitter on the same inputs it always saw.
+fn fixture_centroids(polys: &[Polygon2]) -> Vec<[f64; 2]> {
+    polys
+        .iter()
+        .filter(|p| !p.exterior.is_empty())
+        .map(|p| {
+            let n = p.exterior.len() as f64;
+            let (sx, sy) = p
+                .exterior
+                .iter()
+                .fold((0.0, 0.0), |(ax, ay), pt| (ax + pt.x, ay + pt.y));
+            [sx / n, sy / n]
+        })
+        .collect()
+}
+
 fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> ProjectSession {
+    let op = match op {
+        OperationConfig::Drill(cfg) if cfg.selected_holes.is_none() => {
+            OperationConfig::Drill(DrillConfig {
+                selected_holes: Some(fixture_centroids(&fixture.polys)),
+                ..cfg
+            })
+        }
+        other => other,
+    };
     let mut session = ProjectSession::new_empty();
     session.set_stock_config(stock_for(&fixture.polys));
     let tool = match kind {

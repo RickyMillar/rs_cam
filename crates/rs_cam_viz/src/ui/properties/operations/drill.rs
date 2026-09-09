@@ -15,29 +15,54 @@ fn xy_in(holes: &[[f64; 2]], xy: [f64; 2]) -> bool {
         .any(|h| (h[0] - xy[0]).abs() < TARGET_EPS && (h[1] - xy[1]).abs() < TARGET_EPS)
 }
 
+/// What the target sources are, printed on every drill panel so the operator
+/// knows what to import (G-DRILLCENTROID, UX-R03-004).
+const TARGET_SOURCES_NOTE: &str =
+    "Targets are DXF points and circle/arc centres, and circles in SVG drawings.";
+
 /// Shared "drill targets" selector: a count, viewport hint, Select all / Clear,
 /// and a per-layer "select all in layer" dropdown. Mutates `selected_holes`
 /// (the resolved positions) and `selected_layers` (display/round-trip).
+///
+/// `no_targets_refusal` is the sentence the generator refuses with when
+/// `targets` is empty and nothing is picked — `Some` for `Drill`, whose only
+/// hole sources these are, so the count (0 allowed) and the refusal are
+/// always visible; `None` for the pin drill, whose holes are the stock's
+/// alignment pins and for which an empty target list is unremarkable.
 fn draw_drill_target_selector(
     ui: &mut egui::Ui,
     selected_holes: &mut Option<Vec<[f64; 2]>>,
     selected_layers: &mut Vec<String>,
     layers: &[String],
     targets: &[DrillTarget],
+    no_targets_refusal: Option<&str>,
 ) {
     if targets.is_empty() {
+        let Some(refusal) = no_targets_refusal else {
+            return;
+        };
+        ui.separator();
+        ui.label("Drill targets: 0");
+        ui.colored_label(egui::Color32::from_rgb(220, 90, 60), refusal);
+        ui.label(egui::RichText::new(TARGET_SOURCES_NOTE).small().weak());
         return;
     }
     ui.separator();
     let total = targets.len();
     let sel_count = selected_holes.as_ref().map_or(0, Vec::len);
-    if sel_count == 0 {
-        ui.label(format!(
-            "Drill targets: {total} available (none selected → drilling all shapes)"
-        ));
-    } else {
-        ui.label(format!("Drill targets: {sel_count} of {total} selected"));
-    }
+    match selected_holes.as_ref() {
+        None => ui.label(format!(
+            "Drill targets: {total} available (none selected → drilling all targets)"
+        )),
+        Some(picked) if picked.is_empty() => ui.colored_label(
+            egui::Color32::from_rgb(220, 90, 60),
+            format!(
+                "Drill targets: 0 of {total} selected — {}",
+                rs_cam_core::compute::execute::NO_DRILL_TARGETS_SELECTED_MSG
+            ),
+        ),
+        Some(_) => ui.label(format!("Drill targets: {sel_count} of {total} selected")),
+    };
     ui.label(
         egui::RichText::new("Click points/holes in the viewport to toggle.")
             .small()
@@ -74,17 +99,18 @@ fn draw_drill_target_selector(
                 });
         }
     });
-    // Brief legend so circle vs point markers read clearly.
-    if targets
+    // Brief legend so circle vs point markers read clearly; the point count
+    // is named only when there are any.
+    let points = targets
         .iter()
-        .any(|t| matches!(t.kind, DrillTargetKind::Point))
-    {
-        ui.label(
-            egui::RichText::new("Targets include DXF points and circle/arc centres.")
-                .small()
-                .weak(),
-        );
-    }
+        .filter(|t| matches!(t.kind, DrillTargetKind::Point))
+        .count();
+    let legend = if points > 0 {
+        format!("{TARGET_SOURCES_NOTE} {points} of these are points.")
+    } else {
+        TARGET_SOURCES_NOTE.to_owned()
+    };
+    ui.label(egui::RichText::new(legend).small().weak());
 }
 
 pub(in crate::ui::properties) fn draw_drill_params(
@@ -179,6 +205,7 @@ pub(in crate::ui::properties) fn draw_drill_params(
         &mut cfg.selected_layers,
         drill_layers,
         drill_targets,
+        Some(rs_cam_core::compute::execute::NO_DRILL_TARGETS_MSG),
     );
 }
 
@@ -260,5 +287,6 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
         &mut cfg.selected_layers,
         drill_layers,
         drill_targets,
+        None,
     );
 }

@@ -212,7 +212,8 @@ pub struct LoadedModel {
     pub mesh: Option<Arc<TriangleMesh>>,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
     /// Pickable drill targets extracted from the source (DXF POINT entities
-    /// and circle/arc centres). Empty for meshes and SVG.
+    /// and circle/arc centres; circle-like closed shapes in an SVG, see
+    /// `svg_input::circle_like_drill_targets`). Empty for meshes.
     pub drill_targets: Arc<Vec<DrillTarget>>,
     /// Distinct layer names that contain drill targets (sorted). Empty for
     /// formats without layers.

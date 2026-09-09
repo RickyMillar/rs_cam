@@ -16,6 +16,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(1),
         toolpath_index: 0,
         toolpath_name: "Sample".to_owned(),
@@ -101,6 +102,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: id,
         toolpath_name: format!("Pocket {id}"),
@@ -147,6 +149,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: id,
         toolpath_name: format!("DropCutter {id}"),
@@ -191,6 +194,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Waterline {id}"),
@@ -236,6 +240,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Adaptive3d {id}"),
@@ -305,6 +310,22 @@ fn drill_request(id: usize) -> ComputeRequest {
             Polygon2::rectangle(-10.0, -10.0, -6.0, -6.0),
             Polygon2::rectangle(6.0, 6.0, 10.0, 10.0),
         ])),
+        // G-DRILLCENTROID: the holes are drill targets, not the two
+        // rectangles' centroids (which the generator no longer reads).
+        drill_targets: Arc::new(vec![
+            rs_cam_core::dxf_input::DrillTarget {
+                x: -8.0,
+                y: -8.0,
+                layer: "holes".to_owned(),
+                kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
+            },
+            rs_cam_core::dxf_input::DrillTarget {
+                x: 8.0,
+                y: 8.0,
+                layer: "holes".to_owned(),
+                kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
+            },
+        ]),
         mesh: None,
         enriched_mesh: None,
         face_selection: None,
@@ -338,6 +359,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("SteepShallow {id}"),
@@ -388,6 +410,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Pencil {id}"),
@@ -431,6 +454,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Scallop {id}"),
@@ -475,6 +499,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Ramp finish {id}"),
@@ -517,6 +542,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Spiral finish {id}"),
@@ -560,6 +586,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Radial finish {id}"),
@@ -602,6 +629,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Horizontal finish {id}"),
@@ -645,6 +673,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
     ComputeRequest {
         // Identity-setup fixtures: no local<->global transform to apply.
         setup_transform: None,
+        drill_targets: Arc::new(Vec::new()),
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Project curve {id}"),
