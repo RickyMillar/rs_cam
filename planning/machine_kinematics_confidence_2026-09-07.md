@@ -825,6 +825,14 @@ Ledger:
   (§ cost): fill a hole when its area < h·v·t_j summed over the crossing
   rows — break-even ~25 mm (~500 mm²) at t_j 1 s, i.e. every hole on this
   map.
+  **L1 READ (SPEC §7, headless CLI at 0.5, RUST_LOG=info — the counters
+  land on STDOUT):** T3b (hookup 3) fragments 600, surface_links 89,
+  retract_links 510, too_far 493, off_surface 0, slower_than_retract 0,
+  outside_boundary 17; T3c (hookup 6) 600 / 124 / 475 / 451 / 0 / 0 / 24.
+  The candidate-set diagnosis is CONFIRMED: too_far is 82 % / 75 % of
+  junctions, the kinematics and surface tests refused nothing, and
+  doubling the cap moved 42 out of too_far. Implementation can proceed
+  from the spec's design.
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and

@@ -325,3 +325,23 @@ Risks.
 - Two of the three offset panic classes are `debug_assert!`s in a
   dependency. A rotation or offset change is not comparable across a
   debug and a release build.
+
+## 7. L1 result (2026-09-09, headless CLI `project`, binary 09-06, resolution 0.5 — the relink counters do not depend on the stock cell)
+
+`RUST_LOG=info rs_cam_cli project <T3b|T3c>.toml --setup "Setup 2 — front"`;
+the counters go to STDOUT (the CLI's `tracing_subscriber::fmt()` default
+writer), not stderr. One line per scallop tier:
+
+| run | hookup mm | fragments | surface_links | retract_links | too_far | off_surface | slower_than_retract | outside_boundary |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| T3b | 3 | 600 | 89 | 510 | 493 | 0 | 0 | 17 |
+| T3c | 6 | 600 | 124 | 475 | 451 | 0 | 0 | 24 |
+
+Verdict on §2: CONFIRMED. `too_far` is 82 % of the junctions at 3 mm
+and 75 % at 6 mm; the kinematics test refused nothing (`slower_than_retract`
+0); the surface test refused nothing (`off_surface` 0); the boundary
+refused 17 and 24. Doubling the cap moved 42 junctions out of `too_far`
+and 35 of them became links. The candidate set (breadth-first ring
+order, no reorder, no loop rotation) is the cause. The GUI's 613 and
+567 retract trips are these 510 / 475 ring junctions plus the region
+and clip transitions.
