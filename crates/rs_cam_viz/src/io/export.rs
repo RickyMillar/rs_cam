@@ -40,7 +40,7 @@ fn log_machine_safety(gcode: &str, safe_z: f64) {
 use crate::state::job::ToolConfig;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::SimulationState;
-use crate::state::toolpath::{CompensationType, OperationConfig, ProfileSide};
+use crate::state::toolpath::{CompensationType, ComputeStatus, OperationConfig, ProfileSide};
 
 /// Pull the wizard's per-job overrides into a `WizardOverlay` for the
 /// emit step. The default overlay (no fields set) is byte-identical to
@@ -115,28 +115,138 @@ fn phase_tool_for_export(tool: &ToolConfig) -> PhaseTool<'_> {
 ///
 /// Sentried by `tests/modulated_feeds_reach_gcode_g_modexport.rs`, which
 /// asserts the emitted **F-words**, not the trace.
+///
+/// # An enabled op with no result refuses — G-EXPORTSKIP (2026-09-10)
+///
+/// Until this date the collect was a `filter_map`: an ENABLED toolpath
+/// with no result in either store dropped out and the program shipped
+/// without it, on every export surface, with no word to the operator
+/// (R05 §5). The reachable case is a rest op left `AwaitingPriorStock`
+/// by a `generate_all` that ran out of rounds; a never-generated op and
+/// an `Error` op are the other two shapes. Now every enabled op in scope
+/// with no result is a refusal that names it — see
+/// [`ungenerated_toolpaths`] — and a DISABLED op is still skipped, which
+/// is the intended meaning of "disabled".
 fn emitted_toolpaths<'a>(
     session: &'a ProjectSession,
     gui: &'a GuiState,
     indices: impl Iterator<Item = usize>,
-) -> Vec<(usize, std::borrow::Cow<'a, rs_cam_core::toolpath::Toolpath>)> {
-    indices
+) -> Result<
+    Vec<(usize, std::borrow::Cow<'a, rs_cam_core::toolpath::Toolpath>)>,
+    crate::error::VizError,
+> {
+    let indices: Vec<usize> = indices.collect();
+    let blockers = ungenerated_toolpaths(session, gui, indices.iter().copied());
+    if !blockers.is_empty() {
+        return Err(crate::error::VizError::Export(ungenerated_refusal_text(
+            &blockers,
+        )));
+    }
+    Ok(indices
+        .into_iter()
         .filter_map(|idx| {
             let tc = session.toolpath_configs().get(idx)?;
             if !tc.enabled {
                 return None;
             }
-            let toolpath = match session.get_result(idx) {
-                Some(result) => result.toolpath(),
-                None => gui.toolpath_rt.get(&tc.id)?.result.as_ref()?.toolpath(),
-            };
+            let toolpath = emitted_result_toolpath(session, gui, idx, tc)?;
             let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(session, idx);
             Some((
                 idx,
                 rs_cam_core::gcode::toolpath_in_export_datum(toolpath, shift),
             ))
         })
+        .collect())
+}
+
+/// The one result-lookup the export reads: `session.results` first, the
+/// viz store second (see the G-MODEXPORT note on [`emitted_toolpaths`]).
+/// `None` means the toolpath has NO result anywhere.
+fn emitted_result_toolpath<'a>(
+    session: &'a ProjectSession,
+    gui: &'a GuiState,
+    idx: usize,
+    tc: &rs_cam_core::session::ToolpathConfig,
+) -> Option<&'a rs_cam_core::toolpath::Toolpath> {
+    match session.get_result(idx) {
+        Some(result) => Some(result.toolpath()),
+        None => Some(gui.toolpath_rt.get(&tc.id)?.result.as_ref()?.toolpath()),
+    }
+}
+
+/// An ENABLED toolpath inside an export scope that has no result to emit
+/// (G-EXPORTSKIP). One row per such op; the export refuses on any, and
+/// the pre-flight modal lists each as a blocking row with the same
+/// `message`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UngeneratedToolpath {
+    /// Index into `session.toolpath_configs()`.
+    pub index: usize,
+    pub id: rs_cam_core::ToolpathId,
+    pub name: String,
+    /// The operator-facing sentence, from [`ungenerated_toolpath_message`].
+    pub message: String,
+}
+
+/// The one text builder for an enabled op with no result. The export
+/// refusal and the pre-flight row both print exactly this, so the two
+/// surfaces cannot disagree about why an op blocks the export.
+///
+/// The status is the GUI runtime's [`ComputeStatus`] for the op (a
+/// toolpath with no runtime entry reads as `Pending`).
+pub fn ungenerated_toolpath_message(name: &str, status: &ComputeStatus) -> String {
+    match status {
+        ComputeStatus::AwaitingPriorStock(_) => format!(
+            "'{name}' is still waiting on upstream stock — run Generate All / simulate the prior operation"
+        ),
+        ComputeStatus::Error(err) => format!("'{name}' failed to generate: {err}"),
+        ComputeStatus::Pending | ComputeStatus::Computing | ComputeStatus::Done => {
+            format!("'{name}' is not generated")
+        }
+        // Never stored (`ComputeStatus::effective` derives it), and a
+        // disabled op is not ungenerated — it is skipped. Kept exhaustive
+        // so a new status has to choose its sentence here.
+        ComputeStatus::Disabled => format!("'{name}' is not generated"),
+    }
+}
+
+/// Every ENABLED toolpath in `indices` with no result in either store, in
+/// scope order. Empty means the export can proceed. Disabled toolpaths and
+/// out-of-range indices are ignored.
+pub fn ungenerated_toolpaths(
+    session: &ProjectSession,
+    gui: &GuiState,
+    indices: impl Iterator<Item = usize>,
+) -> Vec<UngeneratedToolpath> {
+    indices
+        .filter_map(|idx| {
+            let tc = session.toolpath_configs().get(idx)?;
+            if !tc.enabled || emitted_result_toolpath(session, gui, idx, tc).is_some() {
+                return None;
+            }
+            let status = gui
+                .toolpath_rt
+                .get(&tc.id)
+                .map_or(&ComputeStatus::Pending, |rt| &rt.status);
+            Some(UngeneratedToolpath {
+                index: idx,
+                id: tc.id,
+                name: tc.name.clone(),
+                message: ungenerated_toolpath_message(&tc.name, status),
+            })
+        })
         .collect()
+}
+
+/// The refusal an export surface returns for one or more ungenerated
+/// ops: their messages, in scope order, joined with `; `. Wrapped by
+/// `VizError::Export`, so the operator reads `Export failed: 'X' is …`.
+fn ungenerated_refusal_text(blockers: &[UngeneratedToolpath]) -> String {
+    blockers
+        .iter()
+        .map(|b| b.message.as_str())
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn gcode_phase_for_session_toolpath<'a>(
@@ -226,7 +336,7 @@ pub fn export_gcode_from_session_with_policy(
 ) -> Result<String, crate::error::VizError> {
     let post = gui.post.format.definition();
 
-    let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len());
+    let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len())?;
     let phases: Vec<GcodePhase<'_>> = emitted
         .iter()
         .filter_map(|(idx, tp)| {
@@ -269,7 +379,7 @@ pub fn export_combined_gcode_from_session(
 
     // Shifted toolpaths must outlive the borrowed phases, so build the
     // whole project's set up front and slice it per setup below.
-    let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len());
+    let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len())?;
     let setup_phases: Vec<GcodeSetupPhase<'_>> = session
         .list_setups()
         .iter()
@@ -350,12 +460,16 @@ pub fn export_single_toolpath_from_session(
         )));
     }
 
-    let emitted = emitted_toolpaths(session, gui, std::iter::once(tp_index));
+    // G-EXPORTSKIP: an enabled op with no result is refused inside
+    // `emitted_toolpaths` with the shared text. The `first()` fallback is
+    // unreachable after that `?` and keeps the same sentence.
+    let emitted = emitted_toolpaths(session, gui, std::iter::once(tp_index))?;
     let (_, emitted_toolpath) = emitted.first().ok_or_else(|| {
-        crate::error::VizError::Export(format!(
-            "Toolpath '{}' has no computed result — generate it first",
-            tc.name
-        ))
+        let status = gui
+            .toolpath_rt
+            .get(&tc.id)
+            .map_or(&ComputeStatus::Pending, |rt| &rt.status);
+        crate::error::VizError::Export(ungenerated_toolpath_message(&tc.name, status))
     })?;
     let phase = gcode_phase_for_session_toolpath(session, gui, tc, emitted_toolpath.as_ref())
         .ok_or_else(|| {
@@ -417,7 +531,7 @@ pub fn export_setup_gcode_from_session_with_policy(
 
     let post = gui.post.format.definition();
 
-    let emitted = emitted_toolpaths(session, gui, setup.toolpath_indices.iter().copied());
+    let emitted = emitted_toolpaths(session, gui, setup.toolpath_indices.iter().copied())?;
     let phases: Vec<GcodePhase<'_>> = emitted
         .iter()
         .filter_map(|(idx, tp)| {

@@ -834,7 +834,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "export_gcode",
-        description = "Export G-code to a file path. Refuses if any toolpath has tool-load Exceeds or Unmodeled verdicts unless the corresponding accept flag is set."
+        description = "Export G-code to a file path. Refuses if any toolpath has tool-load Exceeds or Unmodeled verdicts unless the corresponding accept flag is set. Also refuses, naming the operation, when an ENABLED toolpath has no result (still waiting on upstream stock / failed to generate / not generated) — generate it or disable it first; a disabled toolpath is skipped."
     )]
     async fn export_gcode(
         &self,

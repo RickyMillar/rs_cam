@@ -34,6 +34,33 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 &mut still_open,
             );
 
+            // --- Ungenerated operations (G-EXPORTSKIP) ---
+            // One blocking row per ENABLED op with no result, printing the
+            // same sentence the export refusal prints — one text builder
+            // (`io::export::ungenerated_toolpath_message`), two callers.
+            // Pre-fix the export silently skipped such an op and this modal
+            // only said "3/4 computed".
+            let ungenerated = crate::io::export::ungenerated_toolpaths(
+                &state.session,
+                &state.gui,
+                0..state.session.toolpath_configs().len(),
+            );
+            for blocker in &ungenerated {
+                check_card(
+                    ui,
+                    CheckStatus::Fail,
+                    "Blocks export",
+                    &blocker.message,
+                    "Toolpaths",
+                    Some(AppEvent::SwitchWorkspace(
+                        crate::state::Workspace::Toolpaths,
+                    )),
+                    events,
+                    &mut still_open,
+                );
+            }
+            let ungenerated_blocks = !ungenerated.is_empty();
+
             // --- Simulation check ---
             let sim_status = readiness::simulation_check(state);
             let sim_detail = if sim.has_results() {
@@ -216,6 +243,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             let overrides = state.gui.tool_load_overrides;
             let load_gate_blocks = (load_blocked_exceeded && !overrides.accept_exceeded)
                 || (load_blocked_unmodeled && !overrides.accept_unmodeled);
+            // The export itself refuses on an ungenerated enabled op
+            // (G-EXPORTSKIP), so the button says so here instead of
+            // letting the click fail in the file dialog.
+            let export_blocked = load_gate_blocks || ungenerated_blocks;
 
             ui.horizontal(|ui| {
                 if has_failures {
@@ -227,16 +258,13 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                         } else {
                             egui::Color32::from_rgb(80, 40, 40)
                         });
-                    if ui
-                        .add_enabled(confirmed && !load_gate_blocks, btn)
-                        .clicked()
-                    {
+                    if ui.add_enabled(confirmed && !export_blocked, btn).clicked() {
                         events.push(AppEvent::ExportGcodeConfirmed);
                         still_open = false;
                     }
                 } else {
                     let btn = egui::Button::new("Export G-code");
-                    if ui.add_enabled(!load_gate_blocks, btn).clicked() {
+                    if ui.add_enabled(!export_blocked, btn).clicked() {
                         events.push(AppEvent::ExportGcodeConfirmed);
                         still_open = false;
                     }
@@ -245,6 +273,13 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 if load_gate_blocks {
                     ui.label(
                         egui::RichText::new("Tool-load gate blocks export")
+                            .small()
+                            .color(theme::ERROR),
+                    );
+                }
+                if ungenerated_blocks {
+                    ui.label(
+                        egui::RichText::new("Ungenerated operations block export")
                             .small()
                             .color(theme::ERROR),
                     );

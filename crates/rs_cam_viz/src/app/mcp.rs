@@ -3074,6 +3074,13 @@ impl super::RsCamApp {
         // gate graded the modulated trace. `io::export::emitted_toolpaths`
         // now reads `session.results` — the store the feed-modulation
         // post-pass writes — so bytes and verdict describe one schedule.
+        //
+        // G-EXPORTSKIP (2026-09-10): the same exporter refuses when an
+        // ENABLED toolpath has no result ("'X' is still waiting on upstream
+        // stock …" / "'X' failed to generate: …" / "'X' is not generated").
+        // Every `Err` arm below returns that text verbatim, so this tool
+        // and the GUI pre-flight modal name the same operation for the same
+        // reason. Pre-fix the op was silently dropped from the file.
         let state = self.controller.state();
         let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
             accept_unmodeled: accept_unmodeled_tool_load,
