@@ -905,6 +905,21 @@ Ledger:
   tell a whole level from a boundary-split arc); unified finish not
   converted (its boundary is a per-region polygon the adapter-level stage
   cannot supply).
+  **LIVE RESULTS (rs-cam-15, 0.2 mm on 44978c21).** Byte-identity CONFIRMED
+  on the live path, not only by fingerprint sentry: with `hookup_mm` 0.0
+  the island raster reproduces the previous binary to every digit
+  (7 985.080572550756 s, 46 720 moves, 49 432.797587308385 mm cutting,
+  `semantic_summary_count` 957). **Island raster (T5), stage ON: −13.5 %**
+  (7 985 → 6 905 s), moves −24 %, cutting −21 %, air 60 % → 53 %, entry
+  samples −86 %, 0 collisions; 953 fragments, 789 linked, 163 declined all
+  `too_far`. Confinement moves from clearly losing to nearly level against
+  whole-board T1 (6 478 s). **Island contour scallop (T3b), stage ON: no
+  change** — 8 034 vs 8 065 s, noise — and the counters say why: 2 at depth
+  against 309 hops, 340 loops rotated, all 288 declines `too_far`. Rotation
+  works; the rings are simply too far apart to join without lifting. Note
+  `retract_trips` RISES with more linking (613 → 754) because a clearance
+  hop is one contiguous rapid run and the counter counts it — a definition,
+  not a regression.
 - **G-LINKDESCENT (2026-09-09, OPEN — it biases the measure we judge the
   link stage on):** a lifted hop's final descent is still a fed vertical
   at CUTTING feed tagged `Linking` (pre-existing, G-BOUNDARYPLUNGE class).
@@ -913,6 +928,27 @@ Ledger:
   (`at_depth_links` vs `clearance_hops`) sits on a channel that misfiles
   the descent. Read the two counters, not the two times, until this is
   fixed. Reported by the implementer, not introduced by it.
+  **Quantified 2026-09-09 on the island raster:** the hop descents
+  classify as Plunge — narration's PLANNED reading is "plunge-class peak
+  2.1× this op's own plunge rate (796 of 958 vertical-dominant moves over
+  1×)". No `plunge_class_load` fired in triage, so the modulator's
+  geometric guard IS capping them on emitted motion and the pass is safe
+  as emitted; but 796 of 958 is most of the population, so the exposure if
+  that guard ever stops seeing these moves is large. The guard is
+  geometric and cannot be bypassed by an intent tag (P3), which is why it
+  holds here.
+- **G-LINKTIERS (2026-09-09, the two-tier counter UNDER-claims — measured,
+  wording being corrected):** I wrote that only an at-depth link removes an
+  entry, and the narration said a clearance hop "removed only a retract".
+  The island raster falsifies that as a measure of BENEFIT: `at_depth_links`
+  **0**, `clearance_hops` 789, and yet entry samples fell 292 219 → 42 289
+  (−86 %) and the pass ran 13.5 % faster (7 985 → 6 905 s). A hop keeps the
+  entry EVENT but removes most of the entry WORK, because the tool lifts to
+  the local stock ceiling and descends again instead of retracting to safe
+  Z and re-entering from the top. **Neither tier count alone predicted the
+  win.** The tier counts say what KIND of link was made; an entry figure
+  says what it BOUGHT; a reader needs both, and the narration is being
+  changed to carry both and to describe a hop by what it does.
 - **G-LINKVISIBLE (2026-09-09, FIXED f8622ac7) — a stage judged on
   counters nobody could see.** `ToolpathStats::relink` had ONE writer, the
   unified-finish arm. Every other family G-LINKSTAGE put on the shared
