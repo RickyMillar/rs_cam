@@ -212,6 +212,18 @@ Each item: what, where, acceptance, sentry. All independent; run in parallel.
 
 ## 4. Phase P2 — freshness model (after R0.1)
 
+> **OPERATOR DECISIONS, 2026-09-10.** Two of R0.1 §7's open questions are
+> answered and they override the research recommendation where they differ.
+> **Q1 stock edits: EVERYTHING STALES** — dimensions, pins and material
+> alone all drop every result in the setup, on the GUI route and the MCP
+> route alike. R0.1 recommended a dimensions-only split; the operator chose
+> the simple rule and accepted the cost (every stock nudge regenerates every
+> 2.5D op after the 500 ms debounce). **Q2 regenerate on load: 2.5D ops
+> only, respecting each op's own auto-regen dial** — 3D manual-regen ops
+> load as `NoResult`. That is the new task F2.6 below, not part of F2.1.
+> Q3 (kinematics stales the simulation only) and Q4 (reordered `Fresh` ops
+> stay `Current`) stand as R0.1 recommends. Q5 and Q6 are still open.
+
 | ID | Change | Acceptance |
 |---|---|---|
 | F2.1 | Implement the state per R0.1: one `FreshnessState` derived for every toolpath from the core result cache + edit tracking; `RuntimeSnapshot` carries it. | Unit tests over every mutation in the R08 matrix produce the expected state. |
@@ -219,6 +231,7 @@ Each item: what, where, acceptance, sentry. All independent; run in parallel.
 | F2.3 | Export gate: a stale or absent result blocks export unless an explicit accept flag is passed; remove the silent GUI-result fallback in `io/export.rs` or make it refuse with the reason. | `export_refuses_stale_result_g_stalexport.rs`. |
 | F2.4 | Late-result guard: a result arriving for a config edited since submission is stored but marked stale, never shown as current (3D manual-regen ops). | Extend the `a_param_edit_mid_generate_*` sentry to the manual-regen arm. |
 | F2.5 | Undo restores freshness meaning: `ToolChange` undo calls `invalidate_tool`; every undo arm calls `mark_edited`; `ToolpathParamChange` undo re-stales the simulation. | `controller/tests.rs` cases. |
+| F2.6 | Load-time regeneration policy per the operator's answer to R0.1 §7 Q2: `controller/io.rs::open_job_from_path` stops forcing `auto_regen = true` on every op and requests regeneration for 2.5D ops only, respecting each op's `default_auto_regen`. 3D manual-regen ops load as `NoResult` and wait for an explicit Generate. Removes the G-REGEN-RACE precondition. | `load_requests_only_25d_regen_g_loadregen.rs`: a loaded project with one pocket and one scallop submits the pocket and not the scallop; the scallop's state is `NoResult`, not `Error`. |
 
 ## 5. Phase P3 — MCP gap fill (parallel with P2)
 
@@ -244,6 +257,19 @@ parity test that `add_toolpath_via_gui` on the flat-first terrain seed
 reproduces the R0.3 contract.
 
 ## 6. Phase P4 — correctness needing research
+
+> **OPERATOR DECISIONS, 2026-09-10, binding on F4.2.** **R0.3 §7 Q3 — a
+> bull-nose tool on Scallop is ALLOWED**; widen `required_kinds` rather
+> than keeping the registry's exclusion (against R0.3's recommendation).
+> The generator was written for a ball tip, so F4.2 must PROVE from the
+> code that the scallop generator drives the tool's corner radius and not
+> an assumed ball of the envelope radius. If it does not, F4.2 records a
+> blocker and leaves the registry alone: a permissive registry over a
+> generator that cuts wrong is a new untruth, which is the one thing this
+> programme must not add. **R0.3 §7 Q6 — Spiral Finish joins the ball-tip
+> list**, so it refuses a flat tool at the same surface as Scallop and
+> Unified instead of generating and objecting only in the Feeds tab.
+> Q1, Q2 and Q5 are still open and keep R0.3's recommendations.
 
 | ID | Depends | Change | Acceptance |
 |---|---|---|---|
