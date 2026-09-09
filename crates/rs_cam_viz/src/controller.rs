@@ -274,6 +274,21 @@ impl<B: ComputeBackend> AppController<B> {
         });
     }
 
+    /// Push the toast for a synchronous MCP request from the handler's
+    /// OUTCOME (G-MCPTOAST, UX-R03-003): `success_message` at Info when the
+    /// handler succeeded, the handler's refusal text at Warning when it did
+    /// not. Call this AFTER the handler, never before it — the past tense
+    /// in the success text is only true once the handler has returned.
+    #[cfg(feature = "mcp")]
+    pub fn push_mcp_outcome(
+        &mut self,
+        success_message: String,
+        outcome: &crate::mcp_bridge::McpOutcome,
+    ) {
+        let (message, severity) = outcome.notification(success_message);
+        self.push_notification(message, severity);
+    }
+
     /// Get active (non-expired) notifications.
     pub fn active_notifications(&self) -> impl Iterator<Item = &Notification> {
         self.notifications.iter().filter(|n| !n.is_expired())

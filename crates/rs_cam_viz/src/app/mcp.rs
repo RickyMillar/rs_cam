@@ -12,8 +12,8 @@ use rs_cam_core::session::MutationKind;
 
 use crate::controller::Severity;
 use crate::mcp_bridge::{
-    GuiBanner, McpRequest, McpRequestKind, McpResponse, MutationResult, MutationWarning,
-    ProgressUpdate,
+    GuiBanner, McpOutcome, McpRequest, McpRequestKind, McpResponse, MutationResult,
+    MutationWarning, ProgressUpdate, mutation_error_json,
 };
 use crate::state::Workspace;
 use crate::state::selection::Selection;
@@ -363,53 +363,62 @@ impl super::RsCamApp {
                 let resp = self.mcp_remove_alignment_pin(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            // G-MCPTOAST (UX-R03-003): every synchronous mutation arm below
+            // pushes its toast AFTER the handler, from the handler's reply,
+            // through `push_mcp_outcome`. A refused request shows the
+            // refusal at Warning; the success text is unchanged and is only
+            // pushed once it is true. The three asynchronous compute arms
+            // ("Generating…", "Running simulation…") keep their progress
+            // toasts — the lane reports the outcome later.
             McpRequestKind::AddSetup { name } => {
-                self.controller
-                    .push_notification("MCP: Adding setup".to_owned(), Severity::Info);
                 let resp = self.mcp_add_setup(name.as_deref());
+                self.controller.push_mcp_outcome(
+                    "MCP: Adding setup".to_owned(),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::SetSetupFace {
                 setup_index,
                 face_up,
             } => {
-                self.controller.push_notification(
-                    format!("MCP: Set setup {setup_index} face to '{face_up}'"),
-                    Severity::Info,
-                );
                 self.controller
                     .events_mut()
                     .push(crate::ui::AppEvent::SwitchWorkspace(
                         crate::state::Workspace::Setup,
                     ));
                 let resp = self.mcp_set_setup_face(setup_index, &face_up);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Set setup {setup_index} face to '{face_up}'"),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::SetSetupRotation {
                 setup_index,
                 z_rotation,
             } => {
-                self.controller.push_notification(
-                    format!("MCP: Set setup {setup_index} Z rotation to '{z_rotation}'"),
-                    Severity::Info,
-                );
                 self.controller
                     .events_mut()
                     .push(crate::ui::AppEvent::SwitchWorkspace(
                         crate::state::Workspace::Setup,
                     ));
                 let resp = self.mcp_set_setup_rotation(setup_index, &z_rotation);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Set setup {setup_index} Z rotation to '{z_rotation}'"),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::MoveToolpathToSetup {
                 toolpath_index,
                 target_setup_index,
             } => {
-                self.controller.push_notification(
-                    format!("MCP: Moving toolpath {toolpath_index} to setup {target_setup_index}"),
-                    Severity::Info,
-                );
                 let resp = self.mcp_move_toolpath_to_setup(toolpath_index, target_setup_index);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Moving toolpath {toolpath_index} to setup {target_setup_index}"),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::ImportModel { path } => {
@@ -418,9 +427,11 @@ impl super::RsCamApp {
                     .and_then(|s| s.to_str())
                     .unwrap_or(&path)
                     .to_owned();
-                self.controller
-                    .push_notification(format!("MCP: Importing '{name}'"), Severity::Info);
                 let resp = self.mcp_import_model(&path);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Importing '{name}'"),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::LoadProject { path } => {
@@ -429,15 +440,15 @@ impl super::RsCamApp {
                     .and_then(|s| s.to_str())
                     .unwrap_or(&path)
                     .to_owned();
+                let (resp, outcome) = self.mcp_load_project(&path);
                 self.controller
-                    .push_notification(format!("MCP: Loaded '{name}'"), Severity::Info);
-                let resp = self.mcp_load_project(&path);
+                    .push_mcp_outcome(format!("MCP: Loaded '{name}'"), &outcome);
                 let _ = response_tx.send(resp);
             }
             McpRequestKind::SaveProject { path } => {
+                let (resp, outcome) = self.mcp_save_project(&path);
                 self.controller
-                    .push_notification("MCP: Saved project".to_owned(), Severity::Info);
-                let resp = self.mcp_save_project(&path);
+                    .push_mcp_outcome("MCP: Saved project".to_owned(), &outcome);
                 let _ = response_tx.send(resp);
             }
             McpRequestKind::ExportGcode {
@@ -492,10 +503,6 @@ impl super::RsCamApp {
                     serde_json::Value::String(s) => s.clone(),
                     other => other.to_string(),
                 };
-                self.controller.push_notification(
-                    format!("MCP: Set {param} = {value_str} on '{tp_name}'"),
-                    Severity::Info,
-                );
                 self.controller
                     .events_mut()
                     .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
@@ -510,6 +517,10 @@ impl super::RsCamApp {
                     self.controller.state_mut().selection = Selection::Toolpath(tp_id);
                 }
                 let resp = self.mcp_set_toolpath_param(index, &param, value);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Set {param} = {value_str} on '{tp_name}'"),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::SetToolpathHeights {
@@ -545,10 +556,6 @@ impl super::RsCamApp {
                     serde_json::Value::String(s) => s.clone(),
                     other => other.to_string(),
                 };
-                self.controller.push_notification(
-                    format!("MCP: Set {param} = {value_str} on '{tool_name}'"),
-                    Severity::Info,
-                );
                 // Record highlight for the changed parameter and select the tool.
                 if let Some((_, tool_id)) = tool_info {
                     let key = format!("tool_{tool_id}_{param}");
@@ -560,6 +567,10 @@ impl super::RsCamApp {
                     self.controller.state_mut().selection = Selection::Tool(ToolId(tool_id));
                 }
                 let resp = self.mcp_set_tool_param(index, &param, value);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Set {param} = {value_str} on '{tool_name}'"),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::AddToolpath {
@@ -569,16 +580,16 @@ impl super::RsCamApp {
                 model_id,
                 name,
             } => {
-                let display_name = name.as_deref().unwrap_or(&operation_type);
-                self.controller.push_notification(
-                    format!("MCP: Added toolpath '{display_name}'"),
-                    Severity::Info,
-                );
+                let display_name = name.as_deref().unwrap_or(&operation_type).to_owned();
                 self.controller
                     .events_mut()
                     .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
                 let resp =
                     self.mcp_add_toolpath(setup_index, &operation_type, tool_index, model_id, name);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Added toolpath '{display_name}'"),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 // Select the newly added toolpath so its properties are visible.
                 let tp_count = self.controller.state().session.toolpath_count();
                 if tp_count > 0
@@ -594,23 +605,27 @@ impl super::RsCamApp {
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::RemoveToolpath { index } => {
-                self.controller
-                    .push_notification(format!("MCP: Removed toolpath {index}"), Severity::Info);
                 let resp = self.mcp_remove_toolpath(index);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Removed toolpath {index}"),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::AddTool { spec } => {
-                self.controller
-                    .push_notification(format!("MCP: Added tool '{}'", spec.name), Severity::Info);
                 let resp = self.mcp_add_tool(&spec);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Added tool '{}'", spec.name),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::AddToolFromLibrary { catalog, index } => {
-                self.controller.push_notification(
-                    format!("MCP: Imported tool from library '{catalog}' #{index}"),
-                    Severity::Info,
-                );
                 let resp = self.mcp_add_tool_from_library(&catalog, index);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Imported tool from library '{catalog}' #{index}"),
+                    &McpOutcome::from_json_response(&resp),
+                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::RemoveTool { index } => {
@@ -2648,25 +2663,11 @@ impl super::RsCamApp {
         stale
     }
 
-    fn mcp_mutation_error(&self, summary: impl Into<String>, field: Option<String>) -> String {
-        let summary = summary.into();
-        let field_value = field
-            .map(serde_json::Value::String)
-            .unwrap_or(serde_json::Value::Null);
-        json_str(serde_json::json!({
-            "ok": false,
-            "summary": summary,
-            "applied": serde_json::Value::Null,
-            "stale_toolpaths": [],
-            "warnings": [{
-                "level": "error",
-                "field": field_value,
-                "message": summary,
-                "recommendation": null,
-            }],
-            "gui_banners": [],
-            "diagnostic_delta": [],
-        }))
+    /// The refusal reply. The shape lives in
+    /// [`crate::mcp_bridge::mutation_error_json`] so the toast classifier
+    /// (`McpOutcome::from_json_response`) reads the same document.
+    fn mcp_mutation_error(&self, summary: impl Into<String>, field: Option<&str>) -> String {
+        mutation_error_json(&summary.into(), field)
     }
 
     fn mcp_mutation_result<T>(
@@ -2787,7 +2788,7 @@ impl super::RsCamApp {
             _ => {
                 return self.mcp_mutation_error(
                     format!("Error: Unknown face '{face_up}'. Use: top, bottom, front, back, left, right"),
-                    Some("face_up".to_owned()),
+                    Some("face_up"),
                 );
             }
         };
@@ -2843,7 +2844,7 @@ impl super::RsCamApp {
                         "Error: Unknown Z rotation '{other}'. Use one of: 0, 90, 180, 270 \
                          (degrees). Nothing was written."
                     ),
-                    Some("z_rotation".to_owned()),
+                    Some("z_rotation"),
                 );
             }
         };
@@ -2978,8 +2979,12 @@ impl super::RsCamApp {
         }
     }
 
-    fn mcp_load_project(&mut self, path: &str) -> McpResponse {
-        match self.controller.open_job_from_path(Path::new(path)) {
+    /// Load a project. The reply is plain text, so the toast outcome rides
+    /// beside it as the controller's own `Result` (G-MCPTOAST).
+    fn mcp_load_project(&mut self, path: &str) -> (McpResponse, McpOutcome) {
+        let loaded = self.controller.open_job_from_path(Path::new(path));
+        let outcome = McpOutcome::from_result(&loaded);
+        let resp = match loaded {
             Ok(()) => {
                 let name = self.controller.state().session.name().to_owned();
                 let tp_count = self.controller.state().session.toolpath_count();
@@ -3003,18 +3008,23 @@ impl super::RsCamApp {
             Err(e) => McpResponse {
                 result: Ok(text(format!("Failed to load: {e}"))),
             },
-        }
+        };
+        (resp, outcome)
     }
 
-    fn mcp_save_project(&mut self, path: &str) -> McpResponse {
-        match self.controller.save_job_to_path(Path::new(path)) {
+    /// Save a project. Plain-text reply; outcome beside it, as for load.
+    fn mcp_save_project(&mut self, path: &str) -> (McpResponse, McpOutcome) {
+        let saved = self.controller.save_job_to_path(Path::new(path));
+        let outcome = McpOutcome::from_result(&saved);
+        let resp = match saved {
             Ok(()) => McpResponse {
                 result: Ok(text(format!("Project saved to {path}"))),
             },
             Err(e) => McpResponse {
                 result: Ok(text(format!("Save failed: {e}"))),
             },
-        }
+        };
+        (resp, outcome)
     }
 
     fn mcp_export_gcode(
@@ -3342,7 +3352,7 @@ impl super::RsCamApp {
                     &before,
                 )
             }
-            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(param.to_owned())),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(param)),
         }
     }
 
@@ -3447,7 +3457,7 @@ impl super::RsCamApp {
                     &before,
                 )
             }
-            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(param.to_owned())),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(param)),
         }
     }
 
@@ -3744,8 +3754,7 @@ impl super::RsCamApp {
             Some(name) => match resolve_material(name) {
                 Ok(m) => Some(m),
                 Err(e) => {
-                    return self
-                        .mcp_mutation_error(format!("Error: {e}"), Some("material".to_owned()));
+                    return self.mcp_mutation_error(format!("Error: {e}"), Some("material"));
                 }
             },
             None => None,
@@ -3754,10 +3763,8 @@ impl super::RsCamApp {
             Some(name) => match parse_workholding_rigidity(name) {
                 Ok(r) => Some(r),
                 Err(e) => {
-                    return self.mcp_mutation_error(
-                        format!("Error: {e}"),
-                        Some("workholding_rigidity".to_owned()),
-                    );
+                    return self
+                        .mcp_mutation_error(format!("Error: {e}"), Some("workholding_rigidity"));
                 }
             },
             None => None,
@@ -3768,7 +3775,7 @@ impl super::RsCamApp {
             {
                 return self.mcp_mutation_error(
                     format!("Error: stock {label} must be a positive number of mm (got {v})."),
-                    Some(label.to_owned()),
+                    Some(label),
                 );
             }
         }
@@ -3782,7 +3789,7 @@ impl super::RsCamApp {
             {
                 return self.mcp_mutation_error(
                     format!("Error: stock {label} must be a finite number of mm (got {v})."),
-                    Some(label.to_owned()),
+                    Some(label),
                 );
             }
         }
@@ -4086,7 +4093,7 @@ impl super::RsCamApp {
                          operation produces them when its rest analysis is enabled \
                          and the project carries a mesh."
                             .to_owned(),
-                        Some("source_toolpath_id".to_owned()),
+                        Some("source_toolpath_id"),
                     );
                 };
                 let source_id = rs_cam_core::ToolpathId(raw_id);
@@ -4102,7 +4109,7 @@ impl super::RsCamApp {
                             "Error: source_toolpath_id {raw_id} does not match any \
                              toolpath in this project."
                         ),
-                        Some("source_toolpath_id".to_owned()),
+                        Some("source_toolpath_id"),
                     );
                 }
                 BoundarySource::DerivedRestRegions {
@@ -4115,7 +4122,7 @@ impl super::RsCamApp {
                         "Error: Unknown boundary source '{other}'. Use 'stock', \
                          'model_silhouette', or 'derived_rest_regions'."
                     ),
-                    Some("source".to_owned()),
+                    Some("source"),
                 );
             }
         };
@@ -4127,7 +4134,7 @@ impl super::RsCamApp {
             Some(other) => {
                 return self.mcp_mutation_error(
                     format!("Error: Unknown containment '{other}'. Use 'center', 'inside', or 'outside'."),
-                    Some("containment".to_owned()),
+                    Some("containment"),
                 );
             }
         };
@@ -4236,7 +4243,7 @@ impl super::RsCamApp {
                             "Error: reference_tool_id {raw_id} does not match any tool in \
                              this project."
                         ),
-                        Some("reference_tool_id".to_owned()),
+                        Some("reference_tool_id"),
                     );
                 }
                 Some(tool_id)
@@ -4753,7 +4760,7 @@ impl super::RsCamApp {
                     &before,
                 )
             }
-            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(key.to_owned())),
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(key)),
         }
     }
 
@@ -4791,7 +4798,7 @@ impl super::RsCamApp {
                     format!(
                         "Error: unknown stock_source '{other}'. Expected 'fresh' or 'from_remaining_stock'."
                     ),
-                    Some("stock_source".to_owned()),
+                    Some("stock_source"),
                 );
             }
         };
@@ -4831,7 +4838,7 @@ impl super::RsCamApp {
                     format!(
                         "Error: unknown spindle_strategy '{other}'. Expected 'match_chart' or 'max_speed'."
                     ),
-                    Some("spindle_strategy".to_owned()),
+                    Some("spindle_strategy"),
                 );
             }
         };
@@ -4900,7 +4907,7 @@ impl super::RsCamApp {
                          does not change the cut), 'cut_geometry' (stepover/DOC, CHANGES THE \
                          CUT) or 'both'."
                     ),
-                    Some("scope".to_owned()),
+                    Some("scope"),
                 );
             }
         };
@@ -4914,7 +4921,7 @@ impl super::RsCamApp {
         else {
             return self.mcp_mutation_error(
                 format!("Error: toolpath index {index} not found"),
-                Some("index".to_owned()),
+                Some("index"),
             );
         };
         if let Err(why) = self
@@ -4926,7 +4933,7 @@ impl super::RsCamApp {
                     "Error: nothing applied to toolpath {index} — this tool cannot run this \
                      operation: {why}"
                 ),
-                Some("index".to_owned()),
+                Some("index"),
             );
         }
         let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {

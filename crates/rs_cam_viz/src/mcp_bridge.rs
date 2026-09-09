@@ -1003,6 +1003,94 @@ pub struct McpResponse {
     pub result: Result<String, String>,
 }
 
+/// What a synchronous MCP mutation handler did, read from its reply
+/// (G-MCPTOAST, UX-R03-003).
+///
+/// The GUI toast for an MCP request used to be pushed BEFORE the handler
+/// ran, in the past tense, and nothing corrected it when the handler
+/// refused: a Scallop on a flat end mill was refused by the Suggest door
+/// and the screen still read "MCP: Added toolpath". The dispatch now
+/// classifies the handler's reply with this type and pushes the toast from
+/// it, through `AppController::push_mcp_outcome`.
+///
+/// Two reply shapes carry a refusal. Mutation handlers answer with
+/// `mutation_error_json` (`"ok": false` plus a `summary`); the import and
+/// library handlers answer with a bare top-level `"error"` string. Anything
+/// else is a success. A reply that is not JSON at all is also a success —
+/// the plain-text handlers (load / save) classify from their `Result`
+/// through [`McpOutcome::from_result`] instead, never from the text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpOutcome {
+    Succeeded,
+    /// The handler's own refusal text, as it appears in the reply.
+    Refused(String),
+}
+
+impl McpOutcome {
+    /// Classify a JSON reply from a mutation, import or library handler.
+    pub fn from_json_response(response: &str) -> Self {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(response) else {
+            return Self::Succeeded;
+        };
+        if value.get("ok").and_then(serde_json::Value::as_bool) == Some(false) {
+            let summary = value
+                .get("summary")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("request refused")
+                .to_owned();
+            return Self::Refused(summary);
+        }
+        if let Some(error) = value.get("error").and_then(serde_json::Value::as_str) {
+            return Self::Refused(error.to_owned());
+        }
+        Self::Succeeded
+    }
+
+    /// Classify from a handler's own `Result`, for handlers whose reply is
+    /// plain text rather than JSON.
+    pub fn from_result<T, E: std::fmt::Display>(result: &Result<T, E>) -> Self {
+        match result {
+            Ok(_) => Self::Succeeded,
+            Err(e) => Self::Refused(e.to_string()),
+        }
+    }
+
+    /// The toast for this outcome: `success_message` unchanged on success,
+    /// `MCP: {refusal}` at Warning on a refusal.
+    pub fn notification(&self, success_message: String) -> (String, crate::controller::Severity) {
+        match self {
+            Self::Succeeded => (success_message, crate::controller::Severity::Info),
+            Self::Refused(refusal) => (
+                format!("MCP: {refusal}"),
+                crate::controller::Severity::Warning,
+            ),
+        }
+    }
+}
+
+/// The refusal reply every synchronous MCP mutation handler returns. One
+/// construction site, so [`McpOutcome::from_json_response`] and the
+/// handlers cannot drift apart on the shape.
+pub fn mutation_error_json(summary: &str, field: Option<&str>) -> String {
+    let field_value = field
+        .map(|f| serde_json::Value::String(f.to_owned()))
+        .unwrap_or(serde_json::Value::Null);
+    rs_cam_mcp::server::json_str(serde_json::json!({
+        "ok": false,
+        "summary": summary,
+        "applied": serde_json::Value::Null,
+        "stale_toolpaths": [],
+        "warnings": [{
+            "level": "error",
+            "field": field_value,
+            "message": summary,
+            "recommendation": null,
+        }],
+        "gui_banners": [],
+        "diagnostic_delta": [],
+    }))
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct MutationResult<T>
 where
