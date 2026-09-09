@@ -705,6 +705,159 @@ Ledger:
   quieting it on R1.0 finish passes is a dial decision, not a defect),
   entry samples > 1 mm 80 → 0, time −6.8 %. Sentry arm g (chord-sampling
   measure; the target-only measure reads 0 on a gouging leg).
+- **G-LINEVIS (2026-09-09, FIXED 241efd45):** the P5.3 release crashed on
+  launch — the line shader's fragment stage read `uniforms.dim` while the
+  bind-group-layout entry stayed VERTEX-only, and wgpu refused the
+  pipeline. Found by rs-cam-38 on the live launch; the fix is the
+  visibility flag. No gate creates a device, so no gate could see it.
+- **G-PIPESMOKE (2026-09-09, DONE `render_pipelines_headless_g_pipesmoke.rs`; proved red on the G-LINEVIS flag, green on the fix, lavapipe 0.22 s):** a headless wgpu
+  software-adapter test that constructs every render pipeline in
+  `render/mod.rs`, so a layout/shader mismatch fails in `cargo test`
+  instead of at the operator's launch.
+- **G-RASTERLADDER note (2026-09-09, rs-cam-28/38):** the no-code stand-in
+  for raster-per-island (planner tier 1 as `unified_finish` forced to its
+  raster band: steep_threshold 85 clamped, waterline 89, overlap 1.25, after
+  the Q2 raster) took ~15 min to GENERATE tier 1 alone on the wanaka board
+  — the decomposition + per-region raster path is itself the cost, before
+  any simulation. The 0.2 mm simulation of that three-toolpath project
+  was then OOM-killed (journal 09:36: `rs_cam_gui` SIGKILL, oom-kill; the
+  box carried a 11 GB rust-analyzer and a full 8 GB swap at the time). No
+  toml was saved; recipe above for the rerun. RETRACTED the same day: the
+  scallop already generates one ring set per region (scallop.rs P2.3,
+  `pre_boundary_regions` threaded from the planner), so there is no
+  "post-generation clip walk" to replace. What the code shows instead:
+  `plan_tier_operation` sets `continuous: true` on every scallop tier;
+  under continuous the spiral connector falls back to
+  retract/rapid/replunge on any hop over the ring-spacing bound and the
+  intra-pass relink is skipped — T3's 484 rings / 989 retracts is every
+  ring unchained. Hypothesis under test: the island fragmentation is a
+  PLANNER DEFAULT, not a clip defect (one dial: T3 with continuous:false,
+  hookup 3.0 / 6.0). Also to check: whether the DropCutter arm receives
+  `ctx.boundary_regions` — ANSWERED (rs-cam-15, `planning/island_clip_2026-09-09/SPEC.md`):
+  it does (execute.rs DropCutter arm → `raster_toolpath_from_grid`, each
+  row cut into engaging runs per island crossing) and compute.rs applies
+  no op-family gate to `PlannedTierRegions`, so the core raster is already
+  region-aware. G-RASTERLADDER is therefore a two-surface gap, not a
+  generator gap: (a) `tier_strategies` (multitool.rs) has no raster value
+  — the missing arm emits `OperationConfig::DropCutter` with the
+  equal-cusp stepover; (b) MCP `set_boundary_config` accepts stock /
+  model_silhouette / derived_rest_regions only, no planned_tier_regions.
+  A hand-edited project file carries the boundary as data (T5 fixture).
+- **G-TIERCONTINUOUS (2026-09-09, FIXED fb6027fb — planner default):** `plan_tier_operation` sets
+  `continuous: true` on every per-island scallop tier; under continuous
+  the connector retracts/rapids/replunges on any hop over the ring-spacing
+  bound and the intra-pass relink is skipped (scallop.rs). Retracts per
+  ring measured: T3 2.04, T2 1.44. VERDICT (T3b/T3c, 0.2 mm): real but
+  small — continuous:false + hookup 3.0: retracts 929 → 613 (1.02/ring),
+  pair 9 535 → 8 065 s (−15 %), entry_load falls to Caution (peak 0.81);
+  hookup 6.0 buys 46 more links (567 / 7 820). Fix the default in
+  `plan_tier_operation`; do not expect a collapse to the region count.
+- **G-OVERLAPFILL (2026-09-09, MEASURED CONSEQUENCE, not a defect):**
+  `preview_tier_map` at the planner's dials says tier 1 OWNS 12 224 mm²
+  (10 islands); its MACHINING copy (grown by the 1.25 mm seam band in
+  `tier_islands.rs::region_polygons_from_mask_reported`) nets 29 954 mm²:
+  the big owned island is a 31 255 mm² outline with 1 329 holes and the
+  band closes 925 of them, because a hole narrower than 2 × overlap
+  collapses under a correct dilation BY DEFINITION, and tier_islands.rs:81
+  states that reaching into the coarser tier's territory is the band's
+  purpose. On a dendritic map the fine tier therefore machines 75 % of the
+  board, which is why every island trial cut near whole-board distances.
+  Not a band redesign; the levers are DIALS: an overlap below half the
+  coarse tool's sliver width (median hole 3.6 mm² here), or a tier
+  tolerance at or above the coarse tool's own cusp (0.146 mm for R2.0 at
+  s1.5: owned 4 482 vs machining 17 169 mm²). The code change is to make
+  the consequence visible — owned vs machining area, ratio and holes
+  closed per tier in the planner output and UI, with an advisory naming
+  the two dials (branch `tier-overlap`). Evidence: `svg_island_area.py`,
+  `tier_map_r20_r10_tol*.svg`.
+  **Shipped as a REPORT (fb6027fb):** `TierIslandSet` publishes
+  machining area, both hole counts, median owned hole area and the
+  overlap; `TierBandAdvisory` above 1.5× names the two dials, on
+  `preview_tier_map`, the planner panel and `plan_multitool_finishing`.
+  Instrument at the T3b dials: tol 0.05 2.52×, 0.146 1.52×, 0.30 2.12×;
+  a clamp to half the sliver width measured 2.11× — a dial, not shipped.
+  Sub-row A: the band also CREATES holes (a sealed bay encloses; 155 →
+  255 at 0.146) — both counts ship. Sub-row B, OPEN: the cap's
+  close-radius auto-raise (`first · 1.5³` = 1.688 mm when the island count
+  exceeds `max_regions_per_tier`) welds the dendritic network into slabs
+  and inflates OWNED territory 7.9× at tol 0.146 (2 261 → 17 812 mm²),
+  more than the band's 1.52×; owned area is non-monotonic in the
+  tolerance, and any owned figure quoted without `cap.close_raises`
+  beside it is a slab area. Not fixed.
+- **Confinement is retract-count-bound (2026-09-09, eight runs):** T5
+  (drop_cutter on the planner islands, tol 0.05) confirms the core raster
+  honours the region set (path = valley network) yet loses to whole-board
+  T1: 953 row fragments / 954 retracts / 7 985 s vs 76 / 6 478. T5b (tol
+  0.146, 21 thin islands) 2 172 retracts / 10 497 s; T3d (scallop, 0.146)
+  1 266 / 10 146, entry CRITICAL again (peak 1.05). Pair time mostly
+  follows retract count rather than area — T2 (2 207 retracts, 19 804 s)
+  vs T5b (2 172, 10 497 s) is the exception, the iso field's over-coverage
+  — so the lever is a surface link between fragments INSIDE a region (the
+  intra-region link item), not a tighter boundary. DELIVERED FINISH
+  (§2.7b, cusp_measure.py, same bar as §2.8): T1 26.7 % > 0.3 mm at
+  6 478 s and T3c 27.7 % at 7 820 s are the same surface within the
+  0.2 mm quantisation, so the T1-over-T3c ranking HOLDS at delivered
+  finish (the R1.0 raster at s1.0 is already at a 0.13 mm flat-law cusp;
+  the residual is reach). The single-pass R1.5 iso-scallop Q3 (25.5 % at
+  4 372 s) reaches the same bar in 67 % of T1's time (25.5 vs 26.7 % is
+  inside the same quantisation); the pairs win only the flat-band median
+  (0.052 vs 0.093). The §2.8 inversion is untested here: T3c is a contour
+  scallop over the 75 % machining set, not an iso pairing. The TAILS are
+  the same for T1 / T3c / Q3 (p99 1.20 / 1.70 / 1.23 mm, max 4.46 / 4.79 /
+  4.27): the R1.0 buys no reach over the R1.5 on this terrain — the deep
+  residual is beyond every ball in the ladder and belongs to the
+  river/pencil work, not to a finer tier. Recommendation on record: Q3 one
+  pass; T1 if the flats must carry the R1.0 median.
+- **G-ISOCLIPENTRY residual (2026-09-09, live 0.2 reruns on the fix):**
+  T3 pair 11 105 → 9 535 s, over-bar 7 756 → 1 879, peak 1.79 → 1.39 mm;
+  T2 25 580 → 19 804 s, 17 538 → 5 335, peak 1.44 → 1.39 — STILL CRITICAL
+  on both, and the peak sits at the same point (115.8, 182.4, −1.59) on
+  both fields: one ring start shared by both. For the entry agent. T2's
+  rapid collision at move 68538 is GONE on the rerun (0) before the rapid
+  fix landed — so that collision was an entry-path rapid; G-ISOCLIPRAPID's
+  fix is still being confirmed headlessly.
+- **G-RETRACTDIAL (2026-09-09, OPEN — dead dial):** `retract_strategy`
+  (`RetractStrategy`, compute/config.rs) is defined, defaulted, shown in
+  the GUI properties panel and named in the MCP `set_dressup_config`
+  description, and consumed by NO generator or dressup in core. T5 with
+  `retract_strategy = "minimum"` is byte-identical to T5 (46 720 moves,
+  954 retracts, 7 985.08 s; fixture `T5m_r10_raster_islands_retract_min.toml`).
+  An operator-facing dial with no effect. Either build the Minimum
+  behaviour (the linking SPEC in `planning/linking_2026-09-09/` takes it
+  as a fallback that must now be BUILT, not enabled) or remove the dial
+  from every surface.
+- **G-LINKSTAGE (2026-09-09, SPEC `planning/linking_2026-09-09/SPEC.md`,
+  3 UNVERIFIED marks):** a shared surface-link stage for fragmented
+  finishing passes. Findings the spec spot-checked against code: the
+  scallop relink joins few rings because of the CANDIDATE SET, not the
+  distance/boundary/kinematics tests — rings come out breadth-first by
+  offset level (scallop.rs ~1500-1535) so adjacent entries are different
+  loops tens of mm apart, the relink is called with `reorder: false`
+  (~2557) and never rotates a closed ring to the point nearest the previous
+  exit (rotation exists only in the continuous branch ~2379);
+  `surface_link::relink_fragments` is already the shared kernel and the gap
+  is the 12 call sites plus two defects — scallop passes
+  `link_ceiling: None` (no lifted hop on a rest-driven island) and the TSP's
+  `internal_link_ceiling_z` (execute.rs ~3500) returns None for every
+  non-drill family (a Minimum-retract fallback would be re-planted at
+  safe_z by the reorder). Design: one execute.rs helper building
+  RelinkParams (reorder on, ceiling from initial stock, boundary,
+  kinematics), fragment kind OpenRun/ClosedLoop with loop rotation, the
+  Minimum-retract fallback selected by the now-inert `retract_strategy`
+  dial (G-RETRACTDIAL), byte-identity via hookup_mm == 0 defaults.
+  Experiments L1-L6 (§5) are one-dial GUI runs; L1 is a stderr counter
+  read of the RelinkReport at scallop.rs ~2580. Tier-islands cost rule
+  (§ cost): fill a hole when its area < h·v·t_j summed over the crossing
+  rows — break-even ~25 mm (~500 mm²) at t_j 1 s, i.e. every hole on this
+  map.
+  **L1 READ (SPEC §7, headless CLI at 0.5, RUST_LOG=info — the counters
+  land on STDOUT):** T3b (hookup 3) fragments 600, surface_links 89,
+  retract_links 510, too_far 493, off_surface 0, slower_than_retract 0,
+  outside_boundary 17; T3c (hookup 6) 600 / 124 / 475 / 451 / 0 / 0 / 24.
+  The candidate-set diagnosis is CONFIRMED: too_far is 82 % / 75 % of
+  junctions, the kinematics and surface tests refused nothing, and
+  doubling the cap moved 42 out of too_far. Implementation can proceed
+  from the spec's design.
 - **G-LEADGATE (2026-09-09, OPEN):** the GUI worker gates the entry probe on
   `entry_style != None` (`worker/helpers.rs`) while `apply_dressups` also
   feeds it into lead-in/out, so an op with `entry_style = None` and
