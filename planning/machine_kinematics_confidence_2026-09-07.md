@@ -937,24 +937,42 @@ Ledger:
   that guard ever stops seeing these moves is large. The guard is
   geometric and cannot be bypassed by an intent tag (P3), which is why it
   holds here.
-- **G-PENCILHOP (2026-09-09, SHIPPING DEFECT from G-LINKSTAGE `0c36a2f0`,
-  fix in progress) — the pencil took a behaviour change with no dial, and
-  my byte-identity claim for it is FALSE.** `0c36a2f0`'s message says the
-  pencil is byte-identical "via hookup 0.0 / link_stage None /
-  link_hop_distance_mm None". It is not: for the pencil `None` means "the
-  same cap as `hookup_distance`", so the new clearance-hop tier fires —
-  **1 014 hops measured on a live chain** — where the pre-change code
-  emitted a full entry. And `link_hop_distance_mm` has NO `ParamDef` on
-  the Pencil op (`set_toolpath_param` refuses it; the valid list runs
-  bitangency_angle … spindle_rpm), so there is no operator dial and no way
-  to run a control. `ParamDef`s were added for DropCutter's and
-  Waterline's `hookup_mm` and the pencil was missed. **No sentry could
-  have caught it**: the fingerprint sentries do not cover the pencil
-  fixture. Fix: `None` means the hop tier is OFF and byte-identical,
-  `Some(d)` opts in; add the missing `ParamDef`; add a sentry that asserts
-  the unset field really is the pre-change path; audit every field
-  G-LINKSTAGE added against the valid lists. Found by rs-cam-15 trying to
-  run a control arm.
+- **G-PENCILHOP (2026-09-09) — RETRACTED AND RESTATED. My "the byte-identity
+  claim is false" was WRONG; the real gap is that the pencil has no dial at
+  all.** I claimed `0c36a2f0` shipped an on-by-default behaviour change on the
+  pencil because `link_hop_distance_mm: None` means "the same cap as
+  `hookup_distance`". Verified in code and the claim does not hold:
+  `hop_cap = link_hop_distance_mm.unwrap_or(hookup_distance)` (`pencil.rs`
+  ~1687), and `if gap > params.hookup_distance { too_far; return None; }`
+  already ran at ~1731, so the `if gap > hop_cap` check added at ~1776 is
+  UNREACHABLE when the field is `None`. `None` is byte-identical to
+  pre-`0c36a2f0`, exactly as the commit message said. The clearance-hop tier
+  itself is older: `git log -S "PencilJunction::Lifted"` returns one commit,
+  `fb5339da` (G-LINKLOAD), before the link stage. So the 1 014 hops measured
+  live are pre-existing behaviour, not a regression, and making `None` mean
+  "hop tier OFF" would have been a NEW change dressed as a restoration — it
+  would revert G-LINKLOAD and contradict the raster measurement, where hops
+  bought −86 % entry samples and −13.5 % wall clock.
+  **What IS real, and is a gap not a defect:** the pencil has no
+  `PencilConfig` field for it at all — `compute/execute.rs` ~2234 hardcodes
+  `None` with a comment saying the omission is deliberate until a measured
+  pair says which two numbers to expose — so there is no `ParamDef`, and the
+  split is unreachable from any project file, GUI or MCP call. That is what
+  blocks the control arm. Fix shape: add the config field, wire it, add
+  `ParamDef::optional`, and offer `Some(0.0)` as the operator's OFF switch
+  (`gap <= 1e-6` already returns early, so a zero cap refuses every hop).
+  Then the CLAUDE.md field-add audit: setup sheet, project IO, and the
+  `PencilParams` literals in `param_sweep.rs` and
+  `capability_link_moves_safety.rs`. **Lesson: I wrote a defect row from a
+  live symptom plus a plausible reading of my own diff, and did not check
+  whether the added branch was reachable. The agent I briefed to implement
+  the "fix" disputed the premise with `git log -S` and a two-line
+  reachability argument instead of doing as it was told, which is the right
+  behaviour and saved a reverted feature.**
+  `ParamDef` audit (clean): `0c36a2f0` added exactly two config fields,
+  `DropCutterConfig::hookup_mm` and `WaterlineConfig::hookup_mm`, and BOTH
+  have `ParamDef::optional("hookup_mm","f64")`. Unchecked corner: the +14
+  lines the commit added to `unified_finish.rs`.
 - **G-STALESTOCK (2026-09-09, method defect, not a code defect):**
   `generate_all` reporting **"0 simulations"** on a project containing a
   rest-machining op means it did NOT refresh the machined stock, so a rest
