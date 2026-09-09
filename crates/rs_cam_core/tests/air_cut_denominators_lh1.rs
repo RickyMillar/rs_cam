@@ -201,6 +201,9 @@ fn narration_air_cut_line_names_its_denominators() {
         tip_float: None,
         retract_trips: None,
         relink: None,
+        // G-LINKVISIBLE — this fixture runs no pencil, so its link stage is
+        // NOT MEASURED.
+        pencil_link: None,
         // Checkpoint C — the 2D failure contract's two report-only slots.
         offset_library_failures: None,
         boundary_clip_dropped: None,

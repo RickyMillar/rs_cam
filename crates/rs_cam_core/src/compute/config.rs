@@ -544,19 +544,59 @@ pub struct ToolpathStats {
     ///
     /// **Three-valued, the A/M9 X-19 contract:**
     ///
-    /// * `None` — **not measured**. The operation runs no intra-region
-    ///   relink (anything that is not a `UnifiedFinish`, and a
-    ///   `UnifiedFinish` whose `intra_region_hookup_mm` is `0.0`, which
-    ///   disables the pass). Do NOT read it as "nothing retracted".
+    /// * `None` — **not measured**. This operation ran no link stage: a
+    ///   family that has none, or one whose own hookup dial is `0.0`, which
+    ///   disables the pass. Do NOT read it as "nothing retracted".
     /// * `Some(t)` with `t.surface_links > 0` — the pass ran and kept
     ///   junctions down.
     /// * `Some(t)` with every counter zero — the pass ran and found no
     ///   junction to act on (one fragment per region).
     ///
+    /// **Four families write here (G-LINKVISIBLE, 2026-09-09)**, each
+    /// through its own dial: `unified_finish` (`intra_region_hookup_mm`),
+    /// `scallop` (`intra_pass_hookup_mm`), `drop_cutter` and `waterline`
+    /// (`hookup_mm`). They share the slot because they share the KERNEL —
+    /// every one of them sums a [`crate::surface_link::RelinkReport`], so
+    /// the counters mean the same thing in each — and because one toolpath
+    /// is one operation, so which dial produced a reading is never
+    /// ambiguous. Until G-LINKVISIBLE only `unified_finish` wrote here and
+    /// the other three logged their totals and dropped them, which left the
+    /// ACCEPTANCE measure for G-LINKSTAGE readable only by scraping a
+    /// headless run's stdout.
+    ///
+    /// The PENCIL does not write here. It runs a different linker with a
+    /// different counter set; see [`Self::pencil_link`].
+    ///
     /// NOT boxed: eight words, the same call [`Self::region_cap`] makes.
     ///
     /// Report-only: no gate consumes it and no verdict changes on it.
     pub relink: Option<crate::unified_finish::RelinkTotals>,
+    /// G-LINKVISIBLE (2026-09-09): what the PENCIL's own link stage did.
+    ///
+    /// **The same three-valued contract [`Self::relink`] documents:**
+    ///
+    /// * `None` — **not measured**. Not a pencil, or a pencil whose
+    ///   detector produced no centreline at all, so the emitter — and with
+    ///   it every junction decision — never ran. Do NOT read it as "nothing
+    ///   retracted".
+    /// * `Some(r)` with `r.linked_at_depth > 0` — the stage ran and removed
+    ///   entries.
+    /// * `Some(r)` with every counter zero — the stage ran and found no
+    ///   junction to act on (a single emitted run).
+    ///
+    /// **Why its own slot rather than [`Self::relink`].** The pencil's
+    /// report carries eight counters against
+    /// [`crate::unified_finish::RelinkTotals`]' six, and the two that a
+    /// mapping would have to drop —
+    /// [`crate::pencil::PencilLinkReport::hop_too_far`] and this pass's own
+    /// at-depth/hop split — are exactly the ones that name the pencil's
+    /// binding constraint. A measurement squeezed into another
+    /// measurement's shape reads clean and means something else.
+    ///
+    /// NOT boxed: eight words, the same call [`Self::region_cap`] makes.
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub pencil_link: Option<crate::pencil::PencilLinkReport>,
 }
 
 /// S-4 (G-BYTE): which machined-stock snapshot a generation consumed.

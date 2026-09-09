@@ -1713,6 +1713,25 @@ pub struct ScallopReport {
     /// report this, which made a report-only number depend on a side channel
     /// the report already knew. Report-only: nothing gates on it.
     pub ring_count: usize,
+    /// G-LINKVISIBLE: what the ring-to-ring link stage did.
+    ///
+    /// The counters used to reach a `tracing::info!` line and nothing else,
+    /// so the ACCEPTANCE measure for G-LINKSTAGE
+    /// ([`crate::surface_link::RelinkReport::at_depth_links`]) was readable
+    /// only by scraping a headless run's stdout. This carries it to the op
+    /// adapter, which publishes it on
+    /// [`crate::compute::config::ToolpathStats::relink`].
+    ///
+    /// * `None` — **not measured**. The pass never ran:
+    ///   `intra_pass_hookup_mm` is `0.0` (which disables it), `continuous`
+    ///   (spiral mode chains its own contours, so no ring-to-ring junction
+    ///   is left), or the cascade produced no ring at all. Never read it as
+    ///   "nothing retracted".
+    /// * `Some(t)` with every counter zero — the pass ran and found no
+    ///   junction to act on.
+    ///
+    /// Report-only: no gate consumes it.
+    pub relink: Option<crate::unified_finish::RelinkTotals>,
 }
 
 impl ScallopReport {
@@ -2372,6 +2391,9 @@ pub fn scallop_toolpath_research_with_stage(
                 standing_mm2,
                 cascade_ring_count: 0,
                 ring_count: 0,
+                // The link stage sits below this early return, so it never
+                // ran. `None` = not measured, per the field's contract.
+                relink: None,
             },
             trace,
         ));
@@ -2642,6 +2664,11 @@ pub fn scallop_toolpath_research_with_stage(
     //
     // Skipped under `continuous`: spiral mode already chains its contours,
     // so there are no ring-to-ring junctions left to convert.
+    //
+    // G-LINKVISIBLE: `relink_totals` stays `None` unless the block below
+    // runs. That is the "not measured" half of `ScallopReport::relink` —
+    // written exactly where the pass is, so the two cannot disagree.
+    let mut relink_totals: Option<crate::unified_finish::RelinkTotals> = None;
     if params.intra_pass_hookup_mm > 0.0 && !params.continuous {
         // G-LINKSTAGE. Two configurations, and the caller picks by handing a
         // stage or not.
@@ -2730,6 +2757,13 @@ pub fn scallop_toolpath_research_with_stage(
             ceiling_above_safe_z = rep.ceiling_above_safe_z,
             "Scallop intra-pass relink"
         );
+        // G-LINKVISIBLE: the same counters the line above logs, on their way
+        // to `ToolpathStats::relink`. Recorded even when every one is zero —
+        // "the stage ran and had no junction to act on" is a different
+        // answer from "the stage never ran".
+        let mut totals = crate::unified_finish::RelinkTotals::default();
+        totals.add(&rep);
+        relink_totals = Some(totals);
         // C1: the ring annotations are this site's index-carrying channel,
         // so they are declared and the type system carries them across —
         // no hand-rolled `old -> new` lookup.
@@ -2762,6 +2796,7 @@ pub fn scallop_toolpath_research_with_stage(
         // and the discrete branch — so this IS the emitted count, not a
         // proxy for it.
         ring_count: annotations.len(),
+        relink: relink_totals,
     };
     Ok((tp, annotations, report, trace))
 }

@@ -165,11 +165,18 @@ pub struct GenerationFindings {
     /// rest-analysis attach; see
     /// [`crate::compute::config::ToolpathStats::region_cap`].
     pub region_cap: Option<crate::region_mask::RegionCapReport>,
-    /// Phase O item 3: what the intra-region stay-down relink did, and why
-    /// it declined. `None` = the pass never ran (not a `UnifiedFinish`, or
-    /// its `intra_region_hookup_mm` is `0.0`, which disables it). See
+    /// Phase O item 3 / G-LINKVISIBLE: what this operation's finishing link
+    /// stage did, and why it declined. `None` = the stage never ran (a
+    /// family that has none, or one whose hookup dial is `0.0`). Written by
+    /// `unified_finish`, `scallop`, `drop_cutter` and `waterline`. See
     /// [`crate::compute::config::ToolpathStats::relink`].
     pub relink: Option<crate::unified_finish::RelinkTotals>,
+    /// G-LINKVISIBLE: what the PENCIL's own link stage did. `None` = not a
+    /// pencil, or a pencil whose detector produced no centreline, so the
+    /// emitter — and with it every junction decision — never ran. Its own
+    /// slot rather than [`Self::relink`] because its counter set differs;
+    /// see [`crate::compute::config::ToolpathStats::pencil_link`].
+    pub pencil_link: Option<crate::pencil::PencilLinkReport>,
     /// C2: what the shallow band's monotone-cell decomposition did. `None` =
     /// the pass never ran (not a `UnifiedFinish`, or its
     /// `monotone_cell_decomposition` is off, or the op emitted no Shallow
@@ -360,13 +367,23 @@ fn record_region_cap(
     cell.borrow_mut().region_cap = Some(report);
 }
 
-/// Record what the intra-region stay-down relink did (Phase O item 3).
+/// Record what a finishing link stage did (Phase O item 3; widened to the
+/// whole finishing family by G-LINKVISIBLE).
 ///
 /// **Call this even when every counter is zero.** Like
 /// [`record_region_cap`], this is a MEASUREMENT, not a defect report: the
 /// question it answers is *why* junctions retracted, and "the pass ran and
 /// had no junction to act on" is a different answer from "the pass never
 /// ran". Only call it from a path that actually ran the relink.
+///
+/// Four families reach here, each through its own hookup dial:
+/// `unified_finish` (`intra_region_hookup_mm`), `scallop`
+/// (`intra_pass_hookup_mm`), `drop_cutter` and `waterline` (`hookup_mm`).
+/// They share the slot because they share the kernel — every one of them
+/// sums a [`crate::surface_link::RelinkReport`] — and one toolpath is one
+/// operation, so which dial produced a reading is never ambiguous. The
+/// pencil runs a DIFFERENT linker with a different counter set and has its
+/// own slot ([`record_pencil_link`]).
 fn record_relink_totals(
     cell: &std::cell::RefCell<GenerationFindings>,
     totals: crate::unified_finish::RelinkTotals,
@@ -387,6 +404,25 @@ fn record_monotone_cells(
     totals: crate::unified_finish::MonotoneCellTotals,
 ) {
     cell.borrow_mut().monotone_cells = Some(totals);
+}
+
+/// Record what the PENCIL's link stage did (G-LINKVISIBLE).
+///
+/// Separate from [`record_relink_totals`] because the pencil runs its own
+/// linker, whose report carries eight counters against
+/// [`crate::unified_finish::RelinkTotals`]' six — including `hop_too_far`
+/// and its own at-depth/hop split, which is exactly the pair that names this
+/// pass's binding constraint. Folding it into the shared shape would drop
+/// them, and a measurement squeezed into another measurement's shape reads
+/// clean and means something else.
+///
+/// **Call this even when every counter is zero**, for the same reason
+/// [`record_relink_totals`] says so.
+fn record_pencil_link(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    report: crate::pencil::PencilLinkReport,
+) {
+    cell.borrow_mut().pencil_link = Some(report);
 }
 
 /// Record how many 2D offset calls this generation made that came back with
@@ -2011,6 +2047,11 @@ fn finishing_link_stage<'c, 'a: 'c>(
 /// reconcile set is empty and saying so is the whole contract. The scallop
 /// does hold one (its ring annotations), which is why its stage runs inside
 /// the generator instead.
+///
+/// G-LINKVISIBLE: the totals come BACK rather than being written to
+/// `ctx.findings` in here, because the context would be an eighth parameter
+/// and the two callers each already hold their own `ctx`. The caller records
+/// them unconditionally — reaching this function at all IS the measurement.
 fn relink_in_adapter(
     stage: &crate::surface_link::FinishingLinkStage<'_>,
     geom: &crate::surface_link::LinkGeometry,
@@ -2019,7 +2060,7 @@ fn relink_in_adapter(
     cutter: &ToolDefinition,
     tp: Toolpath,
     family: &'static str,
-) -> Toolpath {
+) -> (Toolpath, crate::unified_finish::RelinkTotals) {
     let rp = stage.params(geom);
     let (linked, rep) =
         crate::surface_link::relink_fragments(AnnotatedToolpath::new(tp), mesh, index, cutter, &rp);
@@ -2039,10 +2080,15 @@ fn relink_in_adapter(
         ceiling_above_safe_z = rep.ceiling_above_safe_z,
         "Finishing link stage"
     );
-    linked
-        .reconcile(&mut ReconcileSet::empty())
-        .into_inner()
-        .toolpath
+    let mut totals = crate::unified_finish::RelinkTotals::default();
+    totals.add(&rep);
+    (
+        linked
+            .reconcile(&mut ReconcileSet::empty())
+            .into_inner()
+            .toolpath,
+        totals,
+    )
 }
 
 fn chain_project_curve(
@@ -2205,6 +2251,7 @@ pub(crate) fn generate_pencil(
     let mut rest_grid_out: Option<crate::rest_field::RestGrid> = None;
     let mut rest_regions_out: Option<Vec<Polygon2>> = None;
     let mut tip_float_out: Option<crate::compute::config::TipFloatFinding> = None;
+    let mut link_report_out: Option<crate::pencil::PencilLinkReport> = None;
     let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated_with_cancel(
         m,
         idx,
@@ -2217,6 +2264,7 @@ pub(crate) fn generate_pencil(
         &mut rest_grid_out,
         &mut rest_regions_out,
         &mut tip_float_out,
+        &mut link_report_out,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
@@ -2225,6 +2273,12 @@ pub(crate) fn generate_pencil(
     // pass that proved the tool reached the floor must not look alike.
     if let Some(float) = tip_float_out {
         record_tip_float(ctx.findings, float);
+    }
+    // G-LINKVISIBLE: the generator sets this exactly when the emitter ran,
+    // so pass its `Option` through. `None` reaches the stats channel as "not
+    // measured" — no centreline, so no junction decision was ever taken.
+    if let Some(link) = link_report_out {
+        record_pencil_link(ctx.findings, link);
     }
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_pencil(&annotations, &tp, sem);
@@ -2325,6 +2379,13 @@ pub(crate) fn generate_scallop(
         scallop_report.untouched_mm2,
         scallop_report.standing_mm2,
     );
+    // G-LINKVISIBLE: the generator already decided whether the stage ran, so
+    // pass its `Option` straight through rather than re-deriving the
+    // question from the config here — a hookup above zero on a `continuous`
+    // pass, or one whose cascade produced no ring, measured nothing.
+    if let Some(totals) = scallop_report.relink {
+        record_relink_totals(ctx.findings, totals);
+    }
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(
             &annotations,
@@ -2985,26 +3046,34 @@ pub(crate) fn generate_drop_cutter(
     // 954 retracts (`planning/linking_2026-09-09/SPEC.md` §1). Raster rows
     // are OPEN runs, so no fragment kind is declared: reversing a row would
     // flip its cut direction and rotation does not apply.
+    // G-LINKVISIBLE: `None` here reaches `ToolpathStats::relink` as `None`,
+    // which is the honest "the stage never ran" — `hookup_mm` at its shipped
+    // `0.0`. A recorded zero would claim a measurement that never happened.
     let tp = match finishing_link_stage(ctx, cfg.hookup_mm) {
         None => tp,
-        Some(stage) => relink_in_adapter(
-            &stage,
-            &crate::surface_link::LinkGeometry {
-                // The raster rides the drop-cutter grid itself, so there is
-                // no crest to stand off from and no separate leave dial on
-                // this op (`WaterlineConfig`'s absent-capability note).
-                stock_to_leave: 0.0,
-                sampling: grid.x_step.max(0.01),
-                feed_rate,
-                plunge_rate,
-                safe_z,
-            },
-            m,
-            idx,
-            ctx.tool_def,
-            tp,
-            "drop_cutter",
-        ),
+        Some(stage) => {
+            let (tp, totals) = relink_in_adapter(
+                &stage,
+                &crate::surface_link::LinkGeometry {
+                    // The raster rides the drop-cutter grid itself, so there
+                    // is no crest to stand off from and no separate leave
+                    // dial on this op (`WaterlineConfig`'s
+                    // absent-capability note).
+                    stock_to_leave: 0.0,
+                    sampling: grid.x_step.max(0.01),
+                    feed_rate,
+                    plunge_rate,
+                    safe_z,
+                },
+                m,
+                idx,
+                ctx.tool_def,
+                tp,
+                "drop_cutter",
+            );
+            record_relink_totals(ctx.findings, totals);
+            tp
+        }
     };
     Ok(with_depth_run_annotation(
         generated_with_cut_run_spans(tp, "Raster row"),
@@ -3055,23 +3124,29 @@ pub(crate) fn generate_waterline(
     // split, and a mis-declared kind rotates the wrong fragment. Declaring
     // them inside `waterline_toolpath_with_cancel`, the way the scallop does,
     // is the follow-up.
+    // G-LINKVISIBLE: same contract as the raster's — an unrun stage stays
+    // `None` on the stats channel.
     let tp = match finishing_link_stage(ctx, cfg.hookup_mm) {
         None => tp,
-        Some(stage) => relink_in_adapter(
-            &stage,
-            &crate::surface_link::LinkGeometry {
-                stock_to_leave: params.stock_to_leave,
-                sampling: cfg.sampling.max(0.01),
-                feed_rate: params.feed_rate,
-                plunge_rate: params.plunge_rate,
-                safe_z: params.safe_z,
-            },
-            m,
-            idx,
-            ctx.tool_def,
-            tp,
-            "waterline",
-        ),
+        Some(stage) => {
+            let (tp, totals) = relink_in_adapter(
+                &stage,
+                &crate::surface_link::LinkGeometry {
+                    stock_to_leave: params.stock_to_leave,
+                    sampling: cfg.sampling.max(0.01),
+                    feed_rate: params.feed_rate,
+                    plunge_rate: params.plunge_rate,
+                    safe_z: params.safe_z,
+                },
+                m,
+                idx,
+                ctx.tool_def,
+                tp,
+                "waterline",
+            );
+            record_relink_totals(ctx.findings, totals);
+            tp
+        }
     };
     // R2.8: waterline has a real Z-level ladder (unlike the single-level
     // Face op) — pass it to the span builder instead of `&[]` so

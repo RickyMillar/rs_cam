@@ -88,6 +88,9 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // point of the channel, and a finished move list cannot say why a
         // junction it retracted was not linked.
         relink: None,
+        // G-LINKVISIBLE: same rule, same reason, for the pencil's own
+        // linker.
+        pencil_link: None,
         // C2: same rule again. Whether a shallow region was decomposed into
         // monotone cells is a generation-time decision; a finished move list
         // cannot say whether the cells it came from ever existed.
@@ -186,6 +189,7 @@ pub fn stats_with_findings(
         inert_claims_dial: _,
         region_cap: _,
         relink: _,
+        pencil_link: _,
         monotone_cells: _,
         // S-4: caller-owned, like the findings — the helper's honest `None`
         // is about to be replaced by the parameter.
@@ -211,6 +215,7 @@ pub fn stats_with_findings(
         inert_claims_dial,
         region_cap,
         relink,
+        pencil_link,
         monotone_cells,
     } = findings;
 
@@ -239,6 +244,7 @@ pub fn stats_with_findings(
         inert_claims_dial,
         region_cap,
         relink,
+        pencil_link,
         monotone_cells,
         stock_snapshot,
     }

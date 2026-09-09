@@ -534,3 +534,67 @@ fn pct(from: f64, to: f64) -> f64 {
         (to - from) / from * 100.0
     }
 }
+
+/// G-LINKSTAGE (2026-09-09): the stage's WIRING, not its kernel.
+///
+/// # The gap this closes
+///
+/// Every other assertion in this file is an INVARIANT — no cut position
+/// lost, no new collision, honest labels — and each one passes on the
+/// legacy path too, by construction. `tests/link_stage_g_linkstage.rs`
+/// asserts the new behaviour but calls `relink_fragments_with_kinds`
+/// directly and never builds a `ProjectSession`, so it never crosses
+/// `compute/execute.rs`.
+///
+/// So nothing asserted that `generate_scallop` actually HANDS the stage in.
+/// Return `None` from `finishing_link_stage` for the scallop, or pass
+/// hookup 0.0, and the invariants above would still hold and the kernel
+/// test would still pass: the stage would be silently off with a green
+/// gate. Found by review, not by a failure.
+///
+/// This test reads the totals the generator publishes on
+/// `ToolpathStats::relink`, which is the only channel that proves the
+/// adapter ran. It asserts the POPULATION first for the reason CLAUDE.md
+/// gives: a gate handed an empty population passes and looks healthy.
+#[test]
+fn the_scallop_adapter_hands_the_link_stage_in() {
+    let on = corrugated_session(candidate_hookup_mm());
+    let stats = &on.get_result(0).expect("relinked generated").stats;
+
+    let totals = stats.relink.as_ref().expect(
+        "A/M7 wiring: the scallop published no relink totals at all, so the \
+         link stage never ran through compute/execute.rs — `None` here means \
+         NOT MEASURED, never 'nothing to link'",
+    );
+
+    // Population before verdict: with no junctions to act on, every counter
+    // below is vacuous and this fixture has stopped testing the wiring.
+    assert!(
+        totals.fragments > 1,
+        "A/M7 wiring: the fixture produced {} fragment(s), so the stage had \
+         no junction to act on and this assertion is vacuous: {totals:?}",
+        totals.fragments
+    );
+
+    // The stage is judged on entries eliminated, so an at-depth link is the
+    // counter that proves it ran AND did the thing it exists for. Rotation
+    // is the other half — a closed ring started near the previous exit is
+    // what the ordering walk buys, and it is `0` on the legacy path.
+    assert!(
+        totals.at_depth_links > 0 || totals.rotated_loops > 0,
+        "A/M7 wiring: the stage published totals but neither joined a \
+         junction at depth nor rotated a loop, which is what the legacy \
+         path reads. Either the adapter passes no stage, or this fixture no \
+         longer exercises one: {totals:?}"
+    );
+
+    println!(
+        "A/M7 wiring: fragments {} · at_depth {} · hops {} · rotated {} · \
+         retract_links {}",
+        totals.fragments,
+        totals.at_depth_links,
+        totals.clearance_hops,
+        totals.rotated_loops,
+        totals.retract_links
+    );
+}

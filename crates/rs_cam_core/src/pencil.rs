@@ -1635,8 +1635,15 @@ pub(crate) fn emit_paths_with_entry_stock(
 /// removes [`emit_entry_descent`], and on this pass an entry costs 7.2 s
 /// against 0.16 s of cutting per fragment. A hop that removes a retract and
 /// leaves the ramp standing scores zero here, correctly.
+/// G-LINKVISIBLE (2026-09-09): published on
+/// [`crate::compute::config::ToolpathStats::pencil_link`], in its OWN slot
+/// rather than mapped onto [`crate::unified_finish::RelinkTotals`]. The two
+/// counters a mapping would have to drop — [`Self::hop_too_far`] and this
+/// pass's own at-depth/hop split — are exactly the ones that name the
+/// pencil's binding constraint, and a measurement squeezed into another
+/// measurement's shape reads clean and means something else.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct PencilLinkReport {
+pub struct PencilLinkReport {
     /// Transitions between two emitted runs — every junction that had a link
     /// decision to make. The first run of the pass is not one.
     pub junctions: usize,
@@ -1961,6 +1968,8 @@ pub fn pencil_toolpath_structured_annotated(
         // Wave D1: this legacy entry point predates the tip-float channel
         // and has no slot to return it through. Callers that need the
         // finding (the op adapter does) call the cancellable form.
+        &mut None,
+        // G-LINKVISIBLE: same reading for the link report.
         &mut None,
         &never_cancel,
     )
@@ -2436,6 +2445,13 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     // zero points, which is a different statement from "not measured", and
     // the op adapter is what turns the distinction into a report.
     tip_float_out: &mut Option<TipFloatFinding>,
+    // G-LINKVISIBLE out: what the link stage did, on its way to
+    // `ToolpathStats::pencil_link`. Set ONLY where the emitter produces it,
+    // so a detector that found no centreline leaves it `None` — the emitter,
+    // and with it every junction decision, never ran. That is a different
+    // statement from `tip_float_out`'s, which is `Some` even on an empty
+    // pass because the detector always measures float.
+    link_report_out: &mut Option<PencilLinkReport>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<PencilRuntimeAnnotation>), Cancelled> {
     check_cancel(cancel)?;
@@ -2474,8 +2490,17 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
 
     // Step 7: Emit toolpath. The input stock goes in so entries can ramp
     // along the crease instead of carving down into it (G-ENTRYLOAD).
-    let (tp, annotations) =
-        emit_paths_with_entry_stock(&all_paths, mesh, index, cutter, params, initial_stock);
+    let (tp, annotations, link_report) = emit_paths_with_entry_stock_reported(
+        &all_paths,
+        mesh,
+        index,
+        cutter,
+        params,
+        initial_stock,
+    );
+    // G-LINKVISIBLE: recorded even when every counter is zero — the emitter
+    // ran, so the measurement exists.
+    *link_report_out = Some(link_report);
 
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {

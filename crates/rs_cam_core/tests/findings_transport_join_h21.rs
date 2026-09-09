@@ -48,6 +48,7 @@ use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
 use rs_cam_core::geo::P3;
 use rs_cam_core::measurement::{MeasurementDomain, MeasurementProvenance, MeasurementStage};
+use rs_cam_core::pencil::PencilLinkReport;
 use rs_cam_core::ramp_finish::RampReachClamp;
 use rs_cam_core::region_mask::RegionCapReport;
 use rs_cam_core::toolpath::Toolpath;
@@ -208,6 +209,20 @@ fn every_finding_recorded() -> GenerationFindings {
             membership_fallbacks: 1,
             empty_fallbacks: 0,
         }),
+        // G-LINKVISIBLE. A pencil link stage that RAN and declined, so a
+        // dropped channel reads as `None` rather than coincidentally
+        // matching a healthy zero. Its own slot, never mapped onto
+        // `RelinkTotals` — `hop_too_far` has no counterpart there.
+        pencil_link: Some(PencilLinkReport {
+            junctions: 11,
+            linked_at_depth: 3,
+            linked_via_hop: 2,
+            too_far: 3,
+            hop_too_far: 1,
+            off_surface: 1,
+            ceiling_refused: 1,
+            slower_than_retract: 0,
+        }),
     }
 }
 
@@ -249,6 +264,7 @@ fn every_recorded_finding_survives_the_single_join() {
         inert_claims_dial,
         region_cap,
         relink,
+        pencil_link,
         monotone_cells,
         // NOT a finding: S-4's snapshot provenance arrives as the join's
         // fourth PARAMETER, because only the caller knows which
@@ -294,6 +310,7 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(inert_claims_dial, findings.inert_claims_dial);
     assert_eq!(region_cap, findings.region_cap);
     assert_eq!(relink, findings.relink);
+    assert_eq!(pencil_link, findings.pencil_link);
     assert_eq!(monotone_cells, findings.monotone_cells);
 }
 
@@ -369,6 +386,12 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
         "Phase O: a generation that ran no intra-region relink has measured \
          nothing — `Some(default)` here would claim every junction was \
          considered and none declined"
+    );
+    assert_eq!(
+        stats.pencil_link, None,
+        "G-LINKVISIBLE: a generation that ran no pencil emitter has measured \
+         nothing — `Some(default)` here would claim every junction was \
+         considered and none linked"
     );
     assert_eq!(
         stats.monotone_cells, None,

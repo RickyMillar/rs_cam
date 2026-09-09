@@ -6427,6 +6427,8 @@ mod tests {
                 region_cap: None,
                 // Nor an intra-region relink (Phase O).
                 relink: None,
+                // Nor a pencil link stage (G-LINKVISIBLE).
+                pencil_link: None,
                 retract_trips: None,
                 // Nor a monotone-cell decomposition (C2).
                 monotone_cells: None,

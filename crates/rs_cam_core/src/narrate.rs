@@ -167,15 +167,25 @@ pub struct ToolpathNarrationContext<'a> {
     /// is present — it is a statement about the config, and the vast majority
     /// of toolpaths have nothing to say about it.
     pub inert_claims_dial: Option<crate::compute::config::InertClaimsDialFinding>,
-    /// Phase O: the intra-region relinker's decline attribution, off
-    /// [`crate::compute::config::ToolpathStats::relink`]. `None` = the
-    /// relink pass never ran (hookup 0, or a family that has no relink).
-    /// Narration prints the line only when junctions were DECLINED —
-    /// `retract_trips` above already counts the retracts themselves; this
-    /// says WHY, which is exactly the number whoever is tuning
-    /// `intra_region_hookup_mm` needs on the agent surface (G-LINKVETO was
-    /// diagnosed blind for want of it).
+    /// Phase O: the finishing link stage's totals and decline attribution,
+    /// off [`crate::compute::config::ToolpathStats::relink`]. `None` = the
+    /// stage never ran (hookup 0, or a family that has none).
+    ///
+    /// Narration prints the line whenever this is `Some` — **widened from
+    /// "only when junctions were declined" by G-LINKVISIBLE (2026-09-09)**.
+    /// The declines answer "why did it retract" (G-LINKVETO was diagnosed
+    /// blind for want of them), but `at_depth_links` is the ACCEPTANCE
+    /// measure for G-LINKSTAGE, and a stage that linked everything used to
+    /// print nothing at all — so the one reading the stage is judged on was
+    /// the one reading that never reached an operator surface.
     pub relink: Option<crate::unified_finish::RelinkTotals>,
+    /// G-LINKVISIBLE: the PENCIL's own link stage, off
+    /// [`crate::compute::config::ToolpathStats::pencil_link`]. `None` = not
+    /// a pencil, or a pencil that emitted no centreline. Printed on the same
+    /// rule as [`Self::relink`], on its own line and with its own counter
+    /// names — the two reports do not have the same shape and must not be
+    /// read as if they did.
+    pub pencil_link: Option<crate::pencil::PencilLinkReport>,
 }
 
 /// Is this toolpath a drill cycle, for the purposes of
@@ -306,6 +316,7 @@ impl<'a> ToolpathNarrationContext<'a> {
             //    report about the decomposition rather than about the cut.
             monotone_cells: _,
             relink,
+            pencil_link,
         } = stats;
 
         self.truncated_core_mm2 = *truncated_core_mm2;
@@ -321,6 +332,7 @@ impl<'a> ToolpathNarrationContext<'a> {
         self.boundary_clip_dropped = *boundary_clip_dropped;
         self.inert_claims_dial = *inert_claims_dial;
         self.relink = *relink;
+        self.pencil_link = *pencil_link;
     }
 }
 
@@ -536,7 +548,8 @@ pub fn narrate_toolpath_with_context(
     append_boundary_clip_dropped(&mut output, context.boundary_clip_dropped);
     append_inert_claims_dial(&mut output, context.inert_claims_dial);
     append_retract_trips(&mut output, context.retract_trips);
-    append_relink_declines(&mut output, context.relink.as_ref());
+    append_relink_totals(&mut output, context.relink.as_ref(), context.operation_kind);
+    append_pencil_link(&mut output, context.pencil_link.as_ref());
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
     output.push_str(".\n");
@@ -1389,43 +1402,108 @@ fn append_retract_trips(
     }
 }
 
-/// Phase O: WHY the intra-region relinker declined junctions — the
-/// attribution behind `retract_trips` above. Printed only when something was
-/// declined: a fully-linked toolpath's story is already told by a low trip
-/// count, and an op with no relink pass has nothing to attribute.
-fn append_relink_declines(
+/// Which hookup dial tunes this operation's link stage.
+///
+/// Four families write [`crate::compute::config::ToolpathStats::relink`] and
+/// each spells its dial differently, so naming one of them unconditionally —
+/// which this narration did until G-LINKVISIBLE — sends three quarters of
+/// its readers to a field their operation does not have. `None` when the op
+/// kind is not in scope: the narration then lists all three spellings rather
+/// than guess.
+fn relink_dial_for(kind: Option<crate::compute::catalog::OperationType>) -> Option<&'static str> {
+    use crate::compute::catalog::OperationType;
+    match kind? {
+        OperationType::UnifiedFinish => Some("intra_region_hookup_mm"),
+        OperationType::Scallop => Some("intra_pass_hookup_mm"),
+        OperationType::DropCutter | OperationType::Waterline => Some("hookup_mm"),
+        _ => None,
+    }
+}
+
+/// Phase O / G-LINKVISIBLE: what the finishing link stage did, and why it
+/// declined what it declined.
+///
+/// Printed whenever the stage RAN, not only when something was declined. The
+/// old rule hid the acceptance measure on exactly the passes that pass:
+/// `at_depth_links` is the counter G-LINKSTAGE is judged on, and a stage that
+/// linked every junction printed nothing at all. Silent on `None`, which is
+/// "the stage never ran" — a not-measured line on every pocket op is noise.
+///
+/// `at_depth_links` and `clearance_hops` are named apart, in those words,
+/// because only the first removes an ENTRY. `surface_links` is their sum and
+/// is stated as such.
+fn append_relink_totals(
     output: &mut String,
     relink: Option<&crate::unified_finish::RelinkTotals>,
+    kind: Option<crate::compute::catalog::OperationType>,
 ) {
     let Some(r) = relink else {
         return;
     };
-    let declined = r.too_far
-        + r.off_surface
-        + r.slower_than_retract
-        + r.outside_boundary
-        + r.ceiling_above_safe_z;
-    if declined == 0 {
-        return;
-    }
+    let lever = relink_dial_for(kind).map_or_else(
+        || {
+            "the operation's own hookup dial (`intra_region_hookup_mm`, \
+             `intra_pass_hookup_mm` or `hookup_mm`)"
+                .to_owned()
+        },
+        |dial| format!("`{dial}`"),
+    );
     output.push_str(&format!(
-        "Relink declines: {declined} junction(s) kept their retract — too_far \
-         (gap > hookup): {}, off_surface: {}, slower_than_retract: {}, \
-         outside_boundary (surface-riding links only): {}, \
-         ceiling_above_safe_z: {}. {} fragment(s), {} linked ({} at cutting \
-         depth — these removed an entry — and {} clearance hops, which did \
-         not), {} loop(s) rotated. Tuning lever: `intra_region_hookup_mm`. \
+        "Link stage: {} fragment(s), {} linked = {} AT CUTTING DEPTH (these \
+         removed an entry) + {} clearance hop(s) (these removed only a \
+         retract), {} loop(s) rotated, {} junction(s) kept their retract. \
+         Declined {}: too_far (gap > hookup) {}, off_surface {}, \
+         slower_than_retract {}, outside_boundary (surface-riding links \
+         only) {}, ceiling_above_safe_z {}. Tuning lever: {lever}. \
          Report-only — no gate consumes this.\n",
-        r.too_far,
-        r.off_surface,
-        r.slower_than_retract,
-        r.outside_boundary,
-        r.ceiling_above_safe_z,
         r.fragments,
         r.surface_links,
         r.at_depth_links,
         r.clearance_hops,
         r.rotated_loops,
+        r.retract_links,
+        r.declined(),
+        r.too_far,
+        r.off_surface,
+        r.slower_than_retract,
+        r.outside_boundary,
+        r.ceiling_above_safe_z,
+    ));
+}
+
+/// G-LINKVISIBLE: the PENCIL's link stage, on its own line.
+///
+/// Deliberately NOT folded into [`append_relink_totals`]. The pencil runs a
+/// different linker, and two of its counters have no counterpart in
+/// [`crate::unified_finish::RelinkTotals`] — `hop_too_far`, which is the
+/// clearance tier's own cap, and `ceiling_refused`, which is a refusal rather
+/// than a decline against a boundary. Printing them under the shared line's
+/// labels would make a reader compare numbers that do not measure the same
+/// thing.
+///
+/// Same silence rule: nothing on `None`, which means the emitter never ran.
+fn append_pencil_link(output: &mut String, link: Option<&crate::pencil::PencilLinkReport>) {
+    let Some(p) = link else {
+        return;
+    };
+    output.push_str(&format!(
+        "Pencil link stage: {} junction(s), {} joined AT CUTTING DEPTH (these \
+         removed an entry) + {} lifted hop(s) (these removed only a retract). \
+         Declined: too_far (gap > hookup_distance) {}, hop_too_far (gap > \
+         link_hop_distance_mm, after the candidate needed a lift) {}, \
+         off_surface {}, ceiling_refused (clearance reached safe_z) {}, \
+         slower_than_retract {}. Entry motion dominates this pass, so \
+         `linked_at_depth` is the counter that moves its wall clock. \
+         Tuning lever: `hookup_distance`. Report-only — no gate consumes \
+         this.\n",
+        p.junctions,
+        p.linked_at_depth,
+        p.linked_via_hop,
+        p.too_far,
+        p.hop_too_far,
+        p.off_surface,
+        p.ceiling_refused,
+        p.slower_than_retract,
     ));
 }
 
@@ -2233,6 +2311,8 @@ mod tests {
             inert_claims_dial: None,
             retract_trips: None,
             relink: None,
+            // Nor a pencil link stage (G-LINKVISIBLE): not measured.
+            pencil_link: None,
         };
 
         let report = narrate_toolpath_with_context(
