@@ -250,10 +250,14 @@ Four things about that table an agent must not infer wrongly (all measured 2026-
   it reads that dial ALONE — never a pinned Bottom Z, per the bullet above.
   It answers only for operations declaring `DepthSemantics::Explicit(_)`;
   for every other operation it ABSTAINS, which means NOT MEASURED and never
-  "the cut is inside the board". A GUI-side rule of the same name still
-  exists in `ui/properties/operations/mod.rs` and additionally ORs the pin,
-  so the two surfaces can disagree on exactly that case until the UI
-  programme switches over.
+  "the cut is inside the board". J8 deleted the GUI-side rule of the same
+  name, so both surfaces read core's rule. Until N4 (2026-09-10) the
+  core/MCP route projected its heights through
+  `ResolvedHeights::from_context` and dropped a pinned Top Z, so it missed
+  the caution the GUI showed, and it could never raise
+  `geom.bottom_above_top_z`, `geom.feed_z_below_top_z` or
+  `geom.clearance_z_below_retract_z`. Since N4 the route resolves the
+  toolpath's own `HeightsConfig`.
 - Scallop requires a ball-tip tool (ball nose or tapered ball nose)
 - Horizontal finish is useless on terrain — only cuts near-flat areas
 - After `set_toolpath_param`, the toolpath is stale — must `generate_toolpath` again

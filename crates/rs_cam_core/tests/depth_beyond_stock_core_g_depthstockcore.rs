@@ -30,7 +30,7 @@
 //!
 //! The three operations whose floor really CAN be a pinned bottom —
 //! Adaptive3d, UnifiedFinish, Waterline — abstain here rather than guess,
-//! because `ResolvedHeights::from_context` carries no pin flag.
+//! because the `ResolvedHeights` snapshot carries no pin flag.
 //!
 //! ## What this does NOT do
 //!
@@ -82,9 +82,16 @@ fn flat_endmill() -> ToolConfig {
     }
 }
 
-/// The snapshot the session builds at `session/compute.rs` before it calls
-/// `diagnose_toolpath_inputs` — `ResolvedHeights::from_context` on the
-/// toolpath's own `HeightContext`.
+/// A projected snapshot: `ResolvedHeights::from_context` on a bare
+/// `HeightContext`.
+///
+/// The arms below use it to exercise the RULE, which reads five numbers and
+/// a stock span. It is no longer what the session builds — N4 (2026-09-10)
+/// moved that route to `ResolvedHeights::from_heights`, which resolves the
+/// toolpath's own `HeightsConfig`. The two constructors put different
+/// numbers in `feed_z`, `bottom_z` and `clearance_z`. They agree on `top_z`
+/// and the stock span whenever Top Z is Auto, and those three values are
+/// the whole input to the rule this file measures.
 fn snapshot(op_depth: f64) -> ResolvedHeights {
     ResolvedHeights::from_context(&HeightContext {
         safe_z: 10.0,
@@ -335,7 +342,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
 /// `get_toolpath_diagnostics` calls, and it builds its own
 /// `HeightContext` through `height_context_for_toolpath`. Reading that
 /// chain is not the same as running it — the stock span has to survive
-/// `HeightContext` -> `ResolvedHeights::from_context` -> the rule, and only
+/// `HeightContext` -> `ResolvedHeights::from_heights` -> the rule, and only
 /// a run shows that it does.
 ///
 /// The MCP server is down this session, so this is the MCP route minus the

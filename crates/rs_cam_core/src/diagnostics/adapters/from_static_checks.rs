@@ -16,7 +16,7 @@
 //! consume this list instead.
 
 use crate::compute::catalog::{OperationConfig, UiProcessRole};
-use crate::compute::config::HeightContext;
+use crate::compute::config::{HeightContext, HeightsConfig};
 use crate::compute::tool_config::{ToolConfig, ToolType};
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
@@ -72,20 +72,54 @@ pub struct ResolvedHeights {
 }
 
 impl ResolvedHeights {
-    /// Build from the GUI's [`HeightContext`] using stock-top as a
-    /// fallback when only the context is in hand. Used by the
-    /// adapter caller path that already has the context.
+    /// Build from a [`HeightContext`] alone, for a caller that holds no
+    /// [`HeightsConfig`].
+    ///
+    /// This constructor PROJECTS. It puts the stock top in `top_z` and
+    /// `feed_z`, the stock bottom in `bottom_z`, and the safe Z in
+    /// `retract_z` and `clearance_z`. It drops every pin the operator
+    /// set. Three of the four plane-order checks in `heights_checks`
+    /// therefore cannot fire on the result at all, the fourth
+    /// (`retract_z` below `feed_z`) fires only on a bad safe Z, and
+    /// [`depth_beyond_stock`] misses a Top Z pinned below the stock top.
+    ///
+    /// A caller that holds the toolpath's own [`HeightsConfig`] calls
+    /// [`Self::from_heights`] instead. N4 (2026-09-10) moved the
+    /// session route across for exactly that reason.
     pub fn from_context(ctx: &HeightContext) -> Self {
-        // Without a HeightsConfig in scope we just project the
-        // stock-top + safe_z numbers; consumers that have the
-        // resolved heights should call the struct constructor
-        // directly.
         Self {
             top_z: ctx.stock_top_z,
             bottom_z: ctx.stock_bottom_z,
             feed_z: ctx.stock_top_z,
             retract_z: ctx.safe_z,
             clearance_z: ctx.safe_z,
+            stock_top_z: Some(ctx.stock_top_z),
+            stock_bottom_z: Some(ctx.stock_bottom_z),
+        }
+    }
+
+    /// Build from the toolpath's own [`HeightsConfig`], resolved against
+    /// `ctx` (N4, 2026-09-10).
+    ///
+    /// This is the constructor for every caller that holds a
+    /// `HeightsConfig`. The snapshot carries the planes the operator
+    /// pinned, so `heights_checks` compares the heights the machine
+    /// gets and [`depth_beyond_stock`] reads a pinned Top Z.
+    ///
+    /// The snapshot still carries no pin FLAG: it holds five numbers and
+    /// no record of which of them the operator set. That is why
+    /// [`depth_beyond_stock_applies`] abstains for the three operations
+    /// whose floor can be a pinned Bottom Z.
+    ///
+    /// The stock span is `Some` because the context always carries it.
+    pub fn from_heights(heights: &HeightsConfig, ctx: &HeightContext) -> Self {
+        let resolved = heights.resolve(ctx);
+        Self {
+            top_z: resolved.top_z,
+            bottom_z: resolved.bottom_z,
+            feed_z: resolved.feed_z,
+            retract_z: resolved.retract_z,
+            clearance_z: resolved.clearance_z,
             stock_top_z: Some(ctx.stock_top_z),
             stock_bottom_z: Some(ctx.stock_bottom_z),
         }
@@ -427,9 +461,9 @@ impl DepthBeyondStock {
 ///   `Adaptive3d`, `UnifiedFinish`, `Waterline`
 ///   ([`crate::compute::catalog::OperationType::honors_pinned_bottom_z`]).
 ///   Their floor CAN be a pinned Bottom Z, and this adapter's snapshot
-///   carries no pin flag: `ResolvedHeights::from_context` sets `bottom_z` to
-///   the stock bottom whatever the operator pinned. Answering for them would
-///   mean guessing.
+///   carries no pin FLAG: [`ResolvedHeights`] holds five numbers and no
+///   record of which of them the operator set, whichever constructor built
+///   it. Answering for them would mean guessing.
 /// * The surface-riding finish family, where the mesh is the floor and
 ///   `depth_semantics()` is `DepthSemantics::None`.
 /// * `ProjectCurve`, whose depth drops below the MESH surface rather than the

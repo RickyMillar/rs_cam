@@ -4319,8 +4319,16 @@ impl ProjectSession {
         let load_verdict = report.per_toolpath.iter().find(|v| v.toolpath_id == tc.id);
 
         let height_ctx = self.height_context_for_toolpath(tc);
+        // N4 (2026-09-10): resolve the toolpath's OWN heights. This used to
+        // call `ResolvedHeights::from_context`, which projects the stock top
+        // and the safe Z into the five slots and drops every pin. Three of the
+        // four plane-order checks could not fire on this route at all, the
+        // fourth only on a bad safe Z, and a pinned Top Z never reached
+        // `geom.depth_beyond_stock`. The GUI ribbon resolved the same config
+        // all along; the two surfaces now share one derivation.
         let heights =
-            crate::diagnostics::adapters::from_static_checks::ResolvedHeights::from_context(
+            crate::diagnostics::adapters::from_static_checks::ResolvedHeights::from_heights(
+                &tc.heights,
                 &height_ctx,
             );
         let feeds_result = self.feeds_result_for_toolpath(tc, tool);

@@ -2083,12 +2083,13 @@ const DEPTH_BEYOND_STOCK_EPSILON_MM: f64 = core_static_checks::DEPTH_BEYOND_STOC
 
 /// The resolved-heights snapshot every GUI diagnostic surface hands to core.
 ///
-/// Built from the entry's OWN `HeightsConfig`, not from
-/// `ResolvedHeights::from_context`. `from_context` is core's fallback "when
-/// only the context is in hand" — it projects `top_z` and `feed_z` onto the
-/// stock top and `bottom_z` onto the stock bottom, so it drops whatever the
-/// operator pinned. The GUI holds the real `HeightsConfig`, and core's own
-/// doc says a caller that does should build the struct directly.
+/// One line, because the derivation belongs to core. N4 (2026-09-10) hoisted
+/// the body into `ResolvedHeights::from_heights`, and the session route —
+/// which MCP `get_toolpath_diagnostics` calls — now uses the same
+/// constructor. Before that this GUI copy was the only caller that read the
+/// entry's OWN `HeightsConfig`; the session route called
+/// `ResolvedHeights::from_context`, which projects the stock top and the safe
+/// Z into the five slots and drops every pin.
 ///
 /// This matters for the depth rule: the generators cut `top_z - depth`, so a
 /// Top Z pinned below the stock top deepens the emitted floor.
@@ -2102,16 +2103,7 @@ fn diagnostics_heights(
     heights: &HeightsConfig,
     ctx: &HeightContext,
 ) -> core_static_checks::ResolvedHeights {
-    let resolved = heights.resolve(ctx);
-    core_static_checks::ResolvedHeights {
-        top_z: resolved.top_z,
-        bottom_z: resolved.bottom_z,
-        feed_z: resolved.feed_z,
-        retract_z: resolved.retract_z,
-        clearance_z: resolved.clearance_z,
-        stock_top_z: Some(ctx.stock_top_z),
-        stock_bottom_z: Some(ctx.stock_bottom_z),
-    }
+    core_static_checks::ResolvedHeights::from_heights(heights, ctx)
 }
 
 /// UX-R03-007 / G-DEPTHSTOCK: does this cut go below the stock bottom?
@@ -2248,10 +2240,13 @@ pub fn profile_through_cut(
 /// more (see [`depth_beyond_stock`]).
 ///
 /// The heights snapshot is [`diagnostics_heights`], built from the
-/// entry's own `HeightsConfig`. The session route still builds its own
-/// with `ResolvedHeights::from_context`, which drops a pinned Top Z —
-/// see `planning/ui_fix_2026-09-09/reports/J8_GUI.md` for that
-/// follow-up.
+/// entry's own `HeightsConfig`. Since N4 (2026-09-10) the session
+/// route builds its snapshot with the same core constructor, so a
+/// pinned Top Z reaches both surfaces. One asymmetry remains and is
+/// deliberate: this function passes `preconditions: None` and
+/// `model_refs: None`, and the session route passes `Some(..)`. The
+/// sentry `crates/rs_cam_viz/tests/ribbon_and_mcp_diagnostic_ids_n4.rs`
+/// excludes that case rather than hiding it.
 ///
 /// Load-gate (chipload / power / deflection / drill) diagnostics are
 /// included when a `load_verdict` is supplied — they render in the
@@ -2640,126 +2635,6 @@ mod tests {
                 .any(|err| err.contains("earlier enabled operation")),
             "expected earlier-operation validation error, got {errs:?}"
         );
-    }
-
-    /// PR-6 polish (P7.13): the session-level
-    /// [`ProjectSession::diagnose_toolpath_with_trace`] path and the
-    /// GUI-side [`collect_diagnostics`] path produce the same set of
-    /// diagnostic IDs for the same toolpath, modulo whether the GUI
-    /// has cached a `feeds_result` on the entry.
-    ///
-    /// This guards the contract that MCP `get_toolpath_diagnostics`
-    /// (which routes via the session method) and the GUI params panel
-    /// (which routes via `collect_diagnostics`) tell the operator the
-    /// same story. Drift here means the MCP agent and the human see
-    /// different findings.
-    #[test]
-    fn gui_and_mcp_diagnostic_ids_match() {
-        use rs_cam_core::compute::tool_config::ToolId as CoreToolId;
-        use std::collections::HashSet;
-
-        let mut session = ProjectSession::new_empty();
-        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 6.0)]);
-        session.models_mut().push(session_polygon_model(4));
-        let pocket_config = make_session_toolpath_config(
-            "Pocket",
-            1,
-            4,
-            OperationConfig::Pocket(Default::default()),
-        );
-        let idx = session.add_toolpath(0, pocket_config).unwrap();
-        // SAFETY: idx returned by add_toolpath.
-        #[allow(clippy::indexing_slicing)]
-        let tc = &session.toolpath_configs()[idx];
-        let tc_id = tc.id;
-        let tc_name = tc.name.clone();
-        let tc_tool_id = tc.tool_id;
-        let tc_model_id = tc.model_id;
-
-        // Session path — MCP `get_toolpath_diagnostics` calls this.
-        let session_diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
-
-        // GUI path — the params panel calls this.
-        let entry = ToolpathEntry::for_operation(
-            tc_id,
-            tc_name,
-            ToolId(tc_tool_id),
-            ModelId(tc_model_id),
-            OperationType::Pocket,
-        );
-        let core_tool = session
-            .tools()
-            .iter()
-            .find(|t| t.id.0 == tc_tool_id)
-            .cloned()
-            .unwrap();
-        // Resolve heights the same way the GUI does via the session
-        // helper so both paths see identical input.
-        let height_ctx = session.height_context_for_toolpath(tc);
-        let stale_defaults = rs_cam_core::compute::validate::validate_one_toolpath(
-            tc,
-            Some(&core_tool),
-            &session.stock_config().material,
-            session.stock_config().bbox().min.z,
-        );
-        // Match the session's feeds_result + load_verdict computation
-        // so the parity check isolates the orchestration path, not
-        // the input source.
-        let feeds_result = session.feeds_result_for_toolpath(tc, &core_tool);
-        let heights =
-            rs_cam_core::diagnostics::adapters::from_static_checks::ResolvedHeights::from_context(
-                &height_ctx,
-            );
-        let load_report = rs_cam_core::gcode::project_load_report(&session, None);
-        let load_verdict = load_report
-            .per_toolpath
-            .iter()
-            .find(|v| v.toolpath_id == tc.id);
-        // For parity with the session path, replicate the same
-        // PreconditionContext the session builds — Pocket has no
-        // precondition rules so this is a no-op for the assert below,
-        // but doing it here keeps the parity test honest if a future
-        // change adds Pocket preconditions.
-        let preconditions = rs_cam_core::diagnostics::diagnose::PreconditionContext {
-            tool_diameters: session
-                .tools()
-                .iter()
-                .map(|t| rs_cam_core::diagnostics::diagnose::ToolDiameterEntry {
-                    id: t.id,
-                    diameter: t.diameter,
-                })
-                .collect(),
-            ..Default::default()
-        };
-        let model_refs = rs_cam_core::diagnostics::diagnose::ModelRefContext {
-            model_id: tc.model_id,
-            model_resolved: session.models().iter().any(|m| m.id == tc.model_id),
-        };
-        let inputs = rs_cam_core::diagnostics::ToolpathDiagnoseInputs {
-            toolpath_id: tc.id,
-            operation: &tc.operation,
-            tool: &core_tool,
-            heights: Some(&heights),
-            feeds_result: feeds_result.as_ref(),
-            load_verdict,
-            stale_defaults: &stale_defaults,
-            preconditions: Some(&preconditions),
-            model_refs: Some(&model_refs),
-            stats: None,
-        };
-        let gui_diags = rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs);
-
-        // Compare by ID set — ordering may differ between adapters.
-        let session_ids: HashSet<_> = session_diags.iter().map(|d| d.id.0.clone()).collect();
-        let gui_ids: HashSet<_> = gui_diags.iter().map(|d| d.id.0.clone()).collect();
-        assert_eq!(
-            session_ids, gui_ids,
-            "session and GUI diagnostic paths produced different IDs\nsession: {session_ids:?}\nGUI: {gui_ids:?}"
-        );
-
-        // _Use the variable_ — silences clippy.
-        let _ = entry;
-        let _ = CoreToolId(tc.tool_id);
     }
 
     #[test]
