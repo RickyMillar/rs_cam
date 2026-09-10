@@ -18,6 +18,7 @@
 //! | [`height_field`] / [`height_field_grid`] | `checkpoint_b_resolution_ab.rs` fixtures |
 //! | [`extrude_profile`] | `unified_finish_tapered_end_to_end_m21.rs` |
 //! | [`plate_with_hole`] / [`stacked_shelf`] / [`non_manifold_fin`] | `classification_strategy_m3.rs` |
+//! | [`disconnected_hemispheres`] | `disconnected_finish_retract_structure_p0.rs`; reproduces `capability_link_moves_safety.rs`'s local `scallop_island_mesh` (centres `(±15, ±15)`, radius 5.0, divisions 10), which keeps its own copy |
 
 #![allow(dead_code)]
 #![allow(
@@ -28,7 +29,7 @@
 )]
 
 use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::TriangleMesh;
+use rs_cam_core::mesh::{TriangleMesh, make_test_hemisphere};
 
 // ── Height fields ───────────────────────────────────────────────────────
 
@@ -442,4 +443,47 @@ pub fn non_manifold_fin(size: f64, height: f64) -> TriangleMesh {
         [5, 6, 7],
     ];
     TriangleMesh::from_raw(v, t)
+}
+
+// ── Disconnected surfaces ───────────────────────────────────────────────
+
+/// Several hemisphere domes in one mesh, one per XY centre, with air
+/// between them.
+///
+/// This is the only DISCONNECTED 3D surface the finishing sentries have.
+/// Each dome comes from [`make_test_hemisphere`], so the surface is a
+/// closed-form sphere cap of the given `radius` standing on `z = 0`, and
+/// the drop-cutter reach of a ball of radius `r` around one centre is
+/// exactly `radius + r`. Pick centres far enough apart that those reach
+/// discs stay disjoint; the caller then reads a run on one dome as a run
+/// on one island.
+///
+/// Lifted from `capability_link_moves_safety.rs`'s `scallop_island_mesh`,
+/// which calls it with `[(±15, ±15)]`, `radius` 5.0 and `divisions` 10.
+/// That file KEEPS its own copy — it carries no `mod common;`, and the
+/// migration policy in `common/mod.rs` says a working sentry moves over
+/// only when it is being edited anyway. The vertex and triangle operand
+/// order below reproduces that copy exactly.
+pub fn disconnected_hemispheres(
+    centres: &[(f64, f64)],
+    radius: f64,
+    divisions: usize,
+) -> TriangleMesh {
+    let mut vertices = Vec::new();
+    let mut triangles = Vec::new();
+    for &(cx, cy) in centres {
+        let bump = make_test_hemisphere(radius, divisions);
+        let base = vertices.len() as u32;
+        vertices.extend(
+            bump.vertices
+                .iter()
+                .map(|v| P3::new(v.x + cx, v.y + cy, v.z)),
+        );
+        triangles.extend(
+            bump.triangles
+                .iter()
+                .map(|t| [t[0] + base, t[1] + base, t[2] + base]),
+        );
+    }
+    TriangleMesh::from_raw(vertices, triangles)
 }
