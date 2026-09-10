@@ -1,4 +1,12 @@
 pub(crate) mod execute;
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod gen_parity_p0_tests;
 pub mod helpers;
 #[cfg(test)]
 #[allow(
