@@ -537,3 +537,96 @@ fn an_edit_during_the_check_leaves_the_verdict_stale_g_holderstale() {
          above is firing on everything"
     );
 }
+
+// ── the state and the words ────────────────────────────────────────────────
+//
+// `HolderClearance` and `holder_clearance_detail` do not exist on the
+// unfixed code, so these two tests arrive with the fix that introduces them.
+// They are not red-first and are not claimed to be: there is no earlier
+// behaviour for them to contradict. They matter because the tier is the
+// SAME in four of the five states — pre-fix and post-fix both answer `Fail`
+// to a stale strike and `Warning` to a stale clear — so the detail string is
+// where the staleness reaches the operator, and it needs pinning.
+
+/// Walk the classes again and pin the STATE, not just the tier.
+#[test]
+fn the_stale_states_name_what_they_are_g_holderstale() {
+    use crate::ui::readiness::{HolderClearance, holder_clearance_state};
+
+    let classes = edit_classes();
+    assert!(!classes.is_empty(), "an empty walk proves nothing");
+
+    for class in &classes {
+        let mut clear = seeded_controller();
+        run_collision_check(&mut clear, Verdict::Clear);
+        assert_eq!(
+            holder_clearance_state(&clear.state),
+            HolderClearance::Clear,
+            "the walk starts from a current clear check"
+        );
+        (class.apply)(&mut clear);
+        assert_eq!(
+            holder_clearance_state(&clear.state),
+            HolderClearance::StaleClear,
+            "after the {} edit a clear verdict becomes an abstention",
+            class.name
+        );
+
+        let mut colliding = seeded_controller();
+        run_collision_check(&mut colliding, Verdict::Colliding);
+        let strikes = colliding.state.simulation.checks.holder_collision_count;
+        assert_eq!(
+            holder_clearance_state(&colliding.state),
+            HolderClearance::Collisions(strikes),
+            "and from a current check that found strikes"
+        );
+        (class.apply)(&mut colliding);
+        assert_eq!(
+            holder_clearance_state(&colliding.state),
+            HolderClearance::StaleCollisions(strikes),
+            "after the {} edit a measured strike keeps its count and gains \
+             the fact that the evidence is old",
+            class.name
+        );
+    }
+}
+
+/// The row's words. A stale strike must say the count and say the evidence
+/// is old, in that order, so neither fact needs a hover.
+#[test]
+fn the_detail_says_the_count_before_it_says_the_age_g_holderstale() {
+    use crate::ui::readiness::holder_clearance_detail;
+
+    let fresh = seeded_controller();
+    assert_eq!(holder_clearance_detail(&fresh.state), "Not checked");
+
+    let mut clear = seeded_controller();
+    run_collision_check(&mut clear, Verdict::Clear);
+    assert_eq!(holder_clearance_detail(&clear.state), "Clear");
+    edit_tool_stickout(&mut clear);
+    let stale_clear = holder_clearance_detail(&clear.state);
+    assert!(
+        !stale_clear.contains("Clear"),
+        "a withdrawn clearance claim must not still read as one: {stale_clear}"
+    );
+    assert!(
+        stale_clear.contains("re-check"),
+        "and it must say what to do: {stale_clear}"
+    );
+
+    let mut colliding = seeded_controller();
+    run_collision_check(&mut colliding, Verdict::Colliding);
+    assert_eq!(holder_clearance_detail(&colliding.state), "1 collision(s)");
+    edit_tool_stickout(&mut colliding);
+    let stale_strike = holder_clearance_detail(&colliding.state);
+    let count_at = stale_strike
+        .find("1 collision(s)")
+        .expect("the count survives the edit and is still named");
+    let age_at = stale_strike
+        .find("edited")
+        .expect("and the row says the evidence is old");
+    assert!(
+        count_at < age_at,
+        "count first, then the age: {stale_strike}"
+    );
+}

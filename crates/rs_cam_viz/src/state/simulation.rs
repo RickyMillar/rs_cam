@@ -697,7 +697,31 @@ pub struct SimulationChecks {
     /// Number of holder collisions from last dedicated collision check.
     pub holder_collision_count: usize,
     /// Min safe stickout from last collision check.
+    ///
+    /// Written only when the check FOUND collisions; a clear check leaves it
+    /// `None`. It therefore says nothing about whether a check has run, and
+    /// [`crate::ui::readiness::holder_clearance_check`] no longer reads it as
+    /// if it did — see [`Self::checked_at_edit_counter`].
     pub min_safe_stickout: Option<f64>,
+    /// [`crate::state::runtime::GuiState::edit_counter`] as it stood when the
+    /// collision check that produced the verdict above was SUBMITTED
+    /// (F2.12, G-HOLDERSTALE).
+    ///
+    /// `None` means no check has run. Any other value is compared against the
+    /// live counter by [`SimulationState::collision_check_is_stale`], which is
+    /// how the holder-clearance row says its evidence is old. The check reads
+    /// the holder assembly, the workholding obstacles and the emitted motion;
+    /// every GUI route that changes one of those calls `mark_edited`, so the
+    /// one project-wide counter follows them all.
+    ///
+    /// Staleness withdraws a CLEARANCE claim; it never withdraws a measured
+    /// STRIKE. See [`crate::ui::readiness::holder_clearance_check`].
+    ///
+    /// This is the same counter and the same two-stamp shape the simulation
+    /// already uses ([`SimulationState::submitted_edit_counter`],
+    /// `SimulationRunMeta::last_sim_edit_counter`, F2.10). The collision check
+    /// stamped it nowhere, so its verdict survived every edit.
+    pub checked_at_edit_counter: Option<u64>,
 }
 
 impl SimulationChecks {
@@ -754,6 +778,19 @@ pub struct SimulationState {
     /// the first (`ThreadedComputeBackend::submit_analysis` clears the queue
     /// and sets the cancel flag), so at most one result can arrive per stamp.
     pub submitted_edit_counter: Option<u64>,
+    /// [`crate::state::runtime::GuiState::edit_counter`] as it stood when the
+    /// in-flight COLLISION check was submitted (F2.12, G-HOLDERSTALE).
+    ///
+    /// The collision lane is the analysis lane, so `submit_analysis` clears
+    /// the queue and cancels any in-flight job before queuing a new one. At
+    /// most one collision result can therefore arrive per stamp, which is
+    /// what makes a single `Option<u64>` sound rather than a map keyed by
+    /// run. The drain `take()`s it, so a result with no submit of its own
+    /// leaves [`SimulationChecks::checked_at_edit_counter`] at `None` and the
+    /// row reads "Not checked". The simulation falls back to the live counter
+    /// in that position; this row does not, because a holder verdict is a
+    /// safety claim and an unstamped result cannot say when it was measured.
+    pub submitted_collision_edit_counter: Option<u64>,
     /// Heightmap cell size in mm (smaller = finer detail, more memory/time).
     pub resolution: f64,
     /// When true, resolution is auto-calculated from the smallest tool.
@@ -806,9 +843,11 @@ impl SimulationState {
                 collision_report: None,
                 holder_collision_count: 0,
                 min_safe_stickout: None,
+                checked_at_edit_counter: None,
             },
             last_run: None,
             submitted_edit_counter: None,
+            submitted_collision_edit_counter: None,
             resolution: 0.25,
             auto_resolution: true,
             metric_options: SimulationMetricOptions::default(),
@@ -1024,6 +1063,25 @@ impl SimulationState {
         self.last_run
             .as_ref()
             .is_some_and(|meta| current_edit_counter > meta.last_sim_edit_counter)
+    }
+
+    /// True when a collision check HAS run and the project has been edited
+    /// since it was submitted (F2.12, G-HOLDERSTALE).
+    ///
+    /// A project with no check returns `false` here. That is not "clear": it
+    /// is "there is nothing to be stale", and
+    /// [`crate::ui::readiness::holder_clearance_check`] separates the two by
+    /// reading [`SimulationChecks::checked_at_edit_counter`] first.
+    ///
+    /// The counter is project-wide, so an edit that could not have changed
+    /// the holder verdict still stales it. That coarseness is F2.10 §3's,
+    /// accepted for the same reason: the cost is one re-check, and the cost
+    /// of the other error is telling an operator a cut is clear on evidence
+    /// that belongs to a different machine setup.
+    pub fn collision_check_is_stale(&self, current_edit_counter: u64) -> bool {
+        self.checks
+            .checked_at_edit_counter
+            .is_some_and(|checked_at| current_edit_counter > checked_at)
     }
 
     pub fn progress(&self) -> f32 {

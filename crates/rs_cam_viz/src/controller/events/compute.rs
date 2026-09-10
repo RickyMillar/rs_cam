@@ -1312,6 +1312,28 @@ impl<B: ComputeBackend> AppController<B> {
                         } else {
                             None
                         };
+                        // G-HOLDERSTALE (F2.12): record WHEN this verdict was
+                        // asked for, from the submit stamp rather than from
+                        // the live counter, so an edit made while the lane
+                        // worked is not folded into the record of when the
+                        // check ran. Same rule F2.10 gave the simulation.
+                        //
+                        // The result itself is KEPT and marked not-current,
+                        // for F2.10's reason: it is still the only evidence
+                        // there is, and an emptied row cannot be told from
+                        // one that never ran.
+                        //
+                        // A result with NO stamp of its own cannot say when
+                        // it was measured. The simulation falls back to the
+                        // live counter there; this row does not, because a
+                        // holder verdict is a safety claim and "I do not
+                        // know when this was measured" is not one to make.
+                        // `None` reads as "Not checked".
+                        self.state.simulation.checks.checked_at_edit_counter = self
+                            .state
+                            .simulation
+                            .submitted_collision_edit_counter
+                            .take();
                         // Extract MCP response data before moving ownership
                         #[cfg(feature = "mcp")]
                         let mcp_collision_count = collision.report.collisions.len();
@@ -1333,10 +1355,15 @@ impl<B: ComputeBackend> AppController<B> {
                         );
                     }
                     Err(ComputeError::Cancelled) => {
+                        // The stamp describes a check that produced nothing.
+                        // Clearing it here keeps it from being read by a
+                        // later arrival that had no submit of its own.
+                        self.state.simulation.submitted_collision_edit_counter = None;
                         #[cfg(feature = "mcp")]
                         self.notify_mcp_collision_error("Collision check cancelled");
                     }
                     Err(ComputeError::Message(error)) => {
+                        self.state.simulation.submitted_collision_edit_counter = None;
                         tracing::error!("Collision check failed: {error}");
                         self.push_notification(
                             format!("Collision check failed: {error}"),
