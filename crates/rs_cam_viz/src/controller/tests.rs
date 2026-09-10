@@ -3359,6 +3359,132 @@ fn a_param_edit_mid_generate_regenerates_without_a_pending_flicker() {
     );
 }
 
+/// The manual-regeneration arm of the same race — F2.4, G-LATERESULT.
+///
+/// The test above covers the AUTO arm, and that arm was already safe by a
+/// route that has nothing to do with freshness: a second edit resubmits, the
+/// resubmit supersedes, and G-REGEN-RACE drops the abandoned result before it
+/// reaches the store. **Nothing supersedes on a 3D manual-regen operation.**
+/// The operator presses G, edits a parameter while the long generation runs,
+/// and the result that lands was computed from the parameter set they just
+/// left. It was written into `session.results`, which is what
+/// `FreshnessState` reads for `Current`, so every surface F2.2 wired reported
+/// the edit as answered and the export gate F2.3 built would have let it
+/// through.
+///
+/// The row's requirement is "stored but marked stale, never shown as
+/// current", and all three halves are asserted here: the geometry survives on
+/// `rt.result` (a discarded result costs a long generation and explains
+/// nothing), the core slot stays empty, and the state reads `EditedSince`.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_param_edit_mid_generate_manual_arm_keeps_the_edit_g_lateresult() {
+    let (mut controller, tp_id) = freshly_loaded_controller();
+    // The arm under test: 3D ops default to manual regeneration, so no sweep
+    // will resubmit and nothing will supersede.
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(tp_id)
+        .auto_regen = false;
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(tp_id)
+        .stale_since = None;
+
+    // The operator presses G. One job, on the lane.
+    controller.handle_internal_event(AppEvent::GenerateToolpath(tp_id));
+    assert_eq!(
+        controller.compute.active,
+        Some(tp_id),
+        "the manual generate must reach the lane"
+    );
+    let submitted_revision = controller.state.gui.toolpath_rt[&tp_id].submitted_revision;
+    assert!(
+        submitted_revision.is_some(),
+        "the submit must stamp the revision it computes from"
+    );
+
+    // While it runs, they change a parameter through the panel's own
+    // write-back — the same door every inspector edit goes through.
+    panel_edit(&mut controller, tp_id, |entry| {
+        entry.operation.set_feed_rate(1234.0);
+    });
+    assert!(
+        controller.state.session.get_result(0).is_none(),
+        "the edit drops the core result (F2.1); this test is about what \
+         happens when the in-flight job then lands"
+    );
+    assert_eq!(
+        state_of(&controller, 0),
+        FreshnessState::Regenerating,
+        "while the lane holds it the honest state is Regenerating — the lane's \
+         status precedes the cache check in `freshness`, and the operator is \
+         told work is in progress rather than that it is stale"
+    );
+
+    // The job finishes and reports. Nothing superseded it.
+    controller.compute.finish_active();
+    controller.drain_compute_results();
+
+    assert!(
+        !controller.superseded_toolpaths.contains(&tp_id),
+        "no resubmit happened, so this is not the G-REGEN-RACE path"
+    );
+    let rt = &controller.state.gui.toolpath_rt[&tp_id];
+    assert!(
+        matches!(rt.status, crate::state::toolpath::ComputeStatus::Done),
+        "the generation finished and the status says so, got {:?}",
+        rt.status.label()
+    );
+    assert!(
+        rt.result.is_some(),
+        "STORED, not discarded: the geometry stays drawable so the operator \
+         does not lose a long 3D generation and get told nothing"
+    );
+    assert!(
+        controller.state.session.get_result(0).is_none(),
+        "but NOT into the core cache — that is what `Current` is read from, \
+         and this result answers the parameter set the operator just left"
+    );
+    assert_eq!(
+        state_of(&controller, 0),
+        FreshnessState::EditedSince,
+        "so the card, the header, the chips and the export gate all still say \
+         the edit is unanswered"
+    );
+}
+
+/// The other side of the same guard: with no edit in flight, a manual
+/// generate's result IS accepted. A guard that rejected everything would pass
+/// the test above and break the application.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_manual_generate_with_no_edit_is_accepted_g_lateresult() {
+    let (mut controller, tp_id) = freshly_loaded_controller();
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(tp_id)
+        .auto_regen = false;
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(tp_id)
+        .stale_since = None;
+
+    controller.handle_internal_event(AppEvent::GenerateToolpath(tp_id));
+    controller.compute.finish_active();
+    controller.drain_compute_results();
+
+    assert!(
+        controller.state.session.get_result(0).is_some(),
+        "an unedited generation must land in the core cache"
+    );
+    assert_eq!(state_of(&controller, 0), FreshnessState::Current);
+}
+
 // ── Phase U: the multi-tool finishing planner dialog ─────────────────────
 //
 // The claim these carry is the VETO: opening the dialog and rejecting it must

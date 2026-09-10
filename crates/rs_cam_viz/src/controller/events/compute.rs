@@ -759,6 +759,18 @@ impl<B: ComputeBackend> AppController<B> {
             rapid_feed_mm_min: machine.max_feed_mm_min.max(1.0),
         });
 
+        // G-LATERESULT (F2.4): stamp the revision the lane is about to
+        // compute from, BEFORE handing it over. The comparison on arrival
+        // (`drain_compute_results`) is what tells a result that answers the
+        // current configuration from one that answers a superseded parameter
+        // set. Stamped here rather than carried on the request because the
+        // request crosses a thread boundary and this is a GUI-side bookkeeping
+        // fact, not an input to generation.
+        self.state
+            .gui
+            .toolpath_rt_or_default(tp_id)
+            .submitted_revision = Some(self.state.session.toolpath_revision(tp_idx));
+
         let submit_outcome = self.compute.submit_toolpath(ComputeRequest {
             setup_transform: ctx.local_to_global,
             toolpath_id: tp_id,
@@ -890,8 +902,39 @@ impl<B: ComputeBackend> AppController<B> {
                             // gcode export / load-report paths read stale-empty
                             // `session.results[idx]` after Apply (see
                             // `planning/F1_RCA.md`).
-                            if let Some((tp_index, _)) =
-                                self.state.session.find_toolpath_config_by_id(tp_id)
+                            // G-LATERESULT (F2.4): the core cache is what
+                            // `FreshnessState` reads for `Current`, so writing
+                            // a late result into it is what made an edit
+                            // silently lose. If an input moved while this job
+                            // ran, the result is KEPT — `rt.result` below, so
+                            // the viewport still draws it and the operator
+                            // does not lose a long 3D generation — but the
+                            // core slot stays empty, which derives
+                            // `EditedSince` and puts STALE on every surface
+                            // F2.2 wired.
+                            //
+                            // The auto-regen arm was already safe by a
+                            // different route: a resubmit supersedes, and
+                            // G-REGEN-RACE drops the abandoned result before
+                            // it reaches here. Nothing supersedes on a 3D
+                            // manual-regen operation, which is why the row
+                            // names that arm.
+                            let revision_now = self
+                                .state
+                                .session
+                                .find_toolpath_config_by_id(tp_id)
+                                .map(|(index, _)| self.state.session.toolpath_revision(index));
+                            let answers_current_inputs = match (rt.submitted_revision, revision_now)
+                            {
+                                (Some(submitted), Some(now)) => submitted == now,
+                                // Never submitted through this controller, or
+                                // the toolpath is gone. Neither is a mismatch
+                                // this guard can claim.
+                                _ => true,
+                            };
+                            if answers_current_inputs
+                                && let Some((tp_index, _)) =
+                                    self.state.session.find_toolpath_config_by_id(tp_id)
                             {
                                 // Honour the §6.E dual-representation
                                 // invariant: drill ops carry both the
