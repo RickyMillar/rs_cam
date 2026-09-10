@@ -665,12 +665,24 @@ pub(crate) fn load_model_geometry(
         ModelKind::Step => {
             #[cfg(feature = "step")]
             {
-                let enriched = crate::step_input::load_step(&full_path, 0.1).map_err(|e| {
+                let mut enriched = crate::step_input::load_step(&full_path, 0.1).map_err(|e| {
                     SessionError::ModelLoad {
                         name: model.name.clone(),
                         detail: format!("STEP load failed: {e}"),
                     }
                 })?;
+                // G-STEPUNITS: apply the declared units here, as
+                // `io::load_model_file` does. `truck-stepio`'s reader
+                // performs no unit conversion, so `ModelUnits` is the ONLY
+                // one a STEP file gets. This arm used to bind `scale` above
+                // and never read it, so a project that declared inches
+                // re-imported its model 25.4 times too small. Fourth
+                // divergence in this loader pair; G-UNITSRELOAD closed the
+                // third. `apply_uniform_scale` moves the BREP data as well
+                // as the mesh, so face selection survives.
+                if (scale - 1.0).abs() > 1e-9 {
+                    enriched.apply_uniform_scale(scale);
+                }
                 // Preserve BREP topology — the parallel `io::load_model_file`
                 // loader already does this. Downgrading to a flat mesh here
                 // (the prior bug) silently broke face-selective operations.
