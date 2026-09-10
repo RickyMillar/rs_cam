@@ -582,6 +582,65 @@ impl OperationType {
             Profile | Chamfer | Inlay | VCarve | Trace => Some(40.0),
         }
     }
+
+    /// Whether a pinned Bottom Z on the Heights tab reaches this operation's
+    /// EMITTED motion (F1.19).
+    ///
+    /// Three of the twenty-four operations read
+    /// [`crate::compute::config::ResolvedHeights::bottom_z`] when they
+    /// generate. The three sites are in `compute/execute.rs`:
+    ///
+    /// * `Adaptive3d` — `z_floor: heights.bottom_pinned.then_some(heights.bottom_z)`
+    /// * `UnifiedFinish` — hands `heights.bottom_z` to the band ladder
+    /// * `Waterline` — `waterline_z_levels(heights.top_z, heights.bottom_z, z_step)`
+    ///
+    /// Every other operation anchors its floor at `heights.top_z` minus its
+    /// OWN depth dial, and a pinned bottom changes nothing it emits. For the
+    /// seven depth-stepping operations the mechanism is
+    /// [`OperationConfig::cutting_levels`], which takes `top_z` and nothing
+    /// else: `session/compute.rs` builds the ladder before generation, and
+    /// `execute.rs`'s `effective_levels` returns that ladder whenever it is
+    /// non-empty — which it always is for those seven. The `else` branch of
+    /// `effective_levels` is the one place a pinned bottom WOULD reach a 2.5D
+    /// ladder, through `ResolvedHeights::depth()`, and it is unreachable from
+    /// all six of its callers.
+    ///
+    /// This states what the generator does. It is not a recommendation. An
+    /// operator who pins Bottom Z on a pocket sets a dial that moves no
+    /// motion, and a surface that cautions on that number describes a cut the
+    /// machine does not make — which is why F1.18's caution predicate reads
+    /// the operation's own depth and never the pin.
+    ///
+    /// The repo has ruled this way before, in the other direction: adaptive3d
+    /// "deliberately ignores a pinned top" because roughing must start at the
+    /// real material top (`compute/config.rs`, `ResolvedHeights::top_pinned`).
+    /// A family declaring one pin inert is established practice here.
+    pub fn honors_pinned_bottom_z(self) -> bool {
+        use OperationType::{
+            Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
+            HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
+            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish, VCarve,
+            Waterline, Zigzag,
+        };
+        match self {
+            // The three that read heights.bottom_z.
+            Adaptive3d | UnifiedFinish | Waterline => true,
+            // Depth-stepping family: the floor is `top_z - cfg.depth`, carried
+            // in the pre-computed `cutting_levels` ladder.
+            Pocket | Profile | Adaptive | Zigzag | Rest | Trace | Face => false,
+            // Top-anchored own-depth ops that do not step: VCarve max_depth,
+            // Inlay pocket_depth, Chamfer width, Drill depth, and the pin
+            // drill's spoilboard allowance.
+            VCarve | Inlay | Chamfer | Drill | AlignmentPinDrill => false,
+            // Surface-riding finish ops: the mesh is the floor. They read
+            // `heights.retract_z` only.
+            DropCutter | Scallop | Pencil | HorizontalFinish | SteepShallow | RampFinish
+            | SpiralFinish | RadialFinish => false,
+            // ProjectCurve drops its depth below the mesh surface it projects
+            // onto, not below the stock top, and reads `fallback_top_z`.
+            ProjectCurve => false,
+        }
+    }
 }
 
 /// Common parameter accessors for all operation configs.
