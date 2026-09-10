@@ -289,6 +289,10 @@ Treat those seven as gaps, not coverage. N4 is the worst case of the class.
   `crates/rs_cam_core/tests/mutation_paths_invalidate_alike_p0.rs`
   (`720c95e7`); N6, N14 and N15 divergences asserted with Phase 1A flip
   notes.
+- 2026-09-11: the GUI worker door and the session door are pinned by
+  `compute/worker/gen_parity_p0_tests.rs` (`41c3b6cd`): one geometry with
+  feed-opt off; the feed-opt-stock divergence (N12 item 3) asserted with a
+  Phase 3 flip note; N12 items 1, 2 and 4-7 unpinned.
 
 ---
 
