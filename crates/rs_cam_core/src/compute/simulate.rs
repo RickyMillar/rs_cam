@@ -1494,44 +1494,11 @@ fn apply_kinematics_cycle_time(
     // enough to drag a 99.2 %-modelled estimate down to the `CuttingOnly`
     // basis on every operator-facing surface.
     //
-    // The list is written first and separately because it answers a different
-    // question from `toolpath_summaries`: "was this integrated?", not "does
-    // this have engagement metrics?". Conflating the two into one slot is what
-    // produced the defect.
-    trace.toolpath_runtimes = per_toolpath_runtime
-        .iter()
-        .map(
-            |(&toolpath_id, &breakdown)| crate::simulation_cut::ToolpathKinematicRuntime {
-                toolpath_id,
-                breakdown,
-            },
-        )
-        .collect();
-
-    let mut project_breakdown = CycleTimeBreakdown::default();
-    for tp_summary in &mut trace.toolpath_summaries {
-        if let Some(&b) = per_toolpath_runtime.get(&tp_summary.toolpath_id) {
-            tp_summary.total_runtime_s = b.total_s;
-            tp_summary.runtime_by_intent = Some(b);
-        }
-    }
-    // The project total folds over the INTEGRATED set, plus any engagement
-    // summary the integrator did not reach (which keeps its own naive runtime
-    // rather than being dropped). The two sets do not overlap by construction:
-    // the second arm is exactly the summaries missing from
-    // `per_toolpath_runtime`.
-    let mut project_total = 0.0;
-    for b in per_toolpath_runtime.values() {
-        project_total += b.total_s;
-        project_breakdown += *b;
-    }
-    for tp_summary in &trace.toolpath_summaries {
-        if !per_toolpath_runtime.contains_key(&tp_summary.toolpath_id) {
-            project_total += tp_summary.total_runtime_s;
-        }
-    }
-    trace.summary.total_runtime_s = project_total;
-    trace.summary.runtime_by_intent = Some(project_breakdown);
+    // N2 (2026-09-10): the publish tail lives in
+    // `simulation_cut::publish_cycle_times`, because the modulation re-time
+    // publishes the same three slots and its own copy of the tail had the
+    // defect above. Read that function for the two-arm project total.
+    crate::simulation_cut::publish_cycle_times(trace, &per_toolpath_runtime);
 
     if ctx.use_predicted_feed_in_gates && !predicted_feeds.is_empty() {
         trace.predicted_feeds = predicted_feeds;

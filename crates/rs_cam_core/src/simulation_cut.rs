@@ -827,6 +827,79 @@ pub struct ToolpathKinematicRuntime {
     pub breakdown: crate::machine_kinematics::CycleTimeBreakdown,
 }
 
+/// Publish a set of kinematics-integrated runtimes onto a trace: the
+/// per-toolpath list, the matching engagement summaries, and the project
+/// total.
+///
+/// # Why two callers share one publisher (N2, 2026-09-10)
+///
+/// The integrator (`crate::compute::simulate::apply_kinematics_cycle_time`)
+/// writes this tail after the dexel pass. The adaptive feed modulation
+/// re-time (`crate::session::ProjectSession::apply_adaptive_feed_modulation`)
+/// writes it again after it rewrites the per-move feeds. Before N2 the
+/// re-time carried its own copy of the tail. That copy folded only over
+/// `toolpath_summaries`, so a drill — which has no summary row — lost its
+/// seconds from the project total, and the copy never rewrote
+/// `toolpath_runtimes` at all, so every milling readiness figure stayed at
+/// the commanded feeds. One publisher removes both defects together.
+///
+/// # The project total has two arms, and they are disjoint
+///
+/// `per_toolpath` is the INTEGRATED set. A summary missing from it was not
+/// integrated, so it keeps its own `total_runtime_s` rather than being
+/// dropped. The two sets do not overlap by construction: the second arm is
+/// exactly the summaries missing from `per_toolpath`.
+///
+/// # The breakdown fold reads a summary the caller may have written
+///
+/// The second arm also folds a summary's own `runtime_by_intent` when it
+/// carries one. For the integrator that arm adds nothing: every summary
+/// reaches this call with `runtime_by_intent: None`, because the summary
+/// builders construct the field as `None` and nothing writes it earlier.
+/// For the re-time the arm preserves the answer on a project whose machine
+/// carries no `kinematics` block. The integrator then publishes no runtimes,
+/// the re-time integrates each summary itself, and those breakdowns must
+/// still reach the project total.
+pub(crate) fn publish_cycle_times(
+    trace: &mut SimulationCutTrace,
+    per_toolpath: &BTreeMap<ToolpathId, crate::machine_kinematics::CycleTimeBreakdown>,
+) {
+    // The list is written first and separately because it answers a different
+    // question from `toolpath_summaries`: "was this integrated?", not "does
+    // this have engagement metrics?". Conflating the two into one slot is what
+    // produced G-DRILLTIME.
+    trace.toolpath_runtimes = per_toolpath
+        .iter()
+        .map(|(&toolpath_id, &breakdown)| ToolpathKinematicRuntime {
+            toolpath_id,
+            breakdown,
+        })
+        .collect();
+
+    let mut project_breakdown = crate::machine_kinematics::CycleTimeBreakdown::default();
+    for tp_summary in &mut trace.toolpath_summaries {
+        if let Some(&b) = per_toolpath.get(&tp_summary.toolpath_id) {
+            tp_summary.total_runtime_s = b.total_s;
+            tp_summary.runtime_by_intent = Some(b);
+        }
+    }
+    let mut project_total = 0.0;
+    for b in per_toolpath.values() {
+        project_total += b.total_s;
+        project_breakdown += *b;
+    }
+    for tp_summary in &trace.toolpath_summaries {
+        if !per_toolpath.contains_key(&tp_summary.toolpath_id) {
+            project_total += tp_summary.total_runtime_s;
+            if let Some(b) = tp_summary.runtime_by_intent {
+                project_breakdown += b;
+            }
+        }
+    }
+    trace.summary.total_runtime_s = project_total;
+    trace.summary.runtime_by_intent = Some(project_breakdown);
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationCutTrace {
     pub schema_version: u32,

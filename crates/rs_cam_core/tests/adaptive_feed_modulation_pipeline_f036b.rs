@@ -269,18 +269,21 @@ fn collect_f_words(gcode: &str) -> Vec<f64> {
 /// `planning/toolpath_acceptance/baselines/2026-05-26.csv` to continue
 /// passing byte-identical, and that baseline runs with the flag OFF.
 ///
-/// The control here is the same session with `kinematics = None`,
-/// which makes the F-036b post-pass an unconditional no-op (the
-/// `is_some()` guard inside `apply_adaptive_feed_modulation` short-
-/// circuits before the trace walk).
+/// The control here is the same session with `kinematics = None`. The
+/// flag is OFF on every path below, and `modulate_simulation_trace`
+/// returns before it calls `apply_adaptive_feed_modulation`, so no path
+/// modulates. Note what does NOT hold any more: there is no `is_some()`
+/// kinematics guard inside `apply_adaptive_feed_modulation`. It falls
+/// back to `effective_kinematics()`, so a machine with no kinematics
+/// block still modulates when the flag is ON.
 #[test]
 fn flag_off_emits_identical_gcode_to_pre_f036() {
     // Path A: kinematics attached + flag OFF.
     let session_a = run_session(true, false);
     let gcode_a = export_session_gcode(&session_a);
 
-    // Path B: no kinematics. The post-pass guard short-circuits even
-    // if the flag is ON (it isn't here). Either way, no modulation.
+    // Path B: no kinematics. The flag is OFF, so the post-pass never
+    // runs. The flag is the gate here, not the kinematics block.
     let session_b = run_session(false, false);
     let gcode_b = export_session_gcode(&session_b);
 
