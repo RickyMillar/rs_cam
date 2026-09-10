@@ -97,10 +97,15 @@ impl<B: ComputeBackend> AppController<B> {
             .iter_mut()
             .find(|m| m.id == model_id.0)
         {
-            model.mesh = new_model.mesh.clone();
-            model.polygons = new_model.polygons.clone();
-            model.units = new_model.units;
-            model.winding_report = new_model.winding_report;
+            // G-RELOADTARGETS (F4.4): one shared field split, so this door
+            // cannot skip `drill_targets` and `layers` again. Pre-fix a
+            // rescale moved the polygons by the unit scale and left the
+            // targets where they were, so the drawn circle and the hole the
+            // machine cut sat in different places.
+            model.adopt_geometry(new_model);
+            // A rescale IS the declared-units change, so this door sets the
+            // units itself — `adopt_geometry` keeps them.
+            model.units = Some(new_units);
             if auto_stock && let Some(mesh) = &model.mesh {
                 stock_bbox_update = Some(mesh.bbox);
             }
@@ -137,11 +142,13 @@ impl<B: ComputeBackend> AppController<B> {
             .iter_mut()
             .find(|m| m.id == model_id.0)
         {
-            model.mesh = reloaded.mesh.clone();
-            model.polygons = reloaded.polygons.clone();
-            model.enriched_mesh = reloaded.enriched_mesh.clone();
-            model.winding_report = reloaded.winding_report;
-            model.load_error = reloaded.load_error;
+            // G-RELOADTARGETS (F4.4). This door used to assign five fields
+            // by hand and never `drill_targets` or `layers`, so the previous
+            // import's targets survived beside the new polygons. A drill
+            // operation reads the record at generation time, so a reloaded
+            // drawing drilled the previous version's holes. `path` and
+            // `kind` are the ones this call was given, so they do not move.
+            model.adopt_geometry(reloaded);
         }
 
         // G-FRESHSTATE: the geometry every dependent result was generated
@@ -232,19 +239,11 @@ impl<B: ComputeBackend> AppController<B> {
             .find(|m| m.id == model_id.0)
         {
             // Moved, not cloned: `relinked` is this function's own import
-            // and is dropped here.
-            model.mesh = relinked.mesh;
-            model.polygons = relinked.polygons;
-            model.enriched_mesh = relinked.enriched_mesh;
-            model.winding_report = relinked.winding_report;
-            model.load_error = relinked.load_error;
-            // Unlike `reload_model`, these two move as well: a relink can
-            // point at a different DXF, and a stale drill-target or layer
-            // list belongs to the file that is no longer there.
-            model.drill_targets = relinked.drill_targets;
-            model.layers = relinked.layers;
-            model.kind = Some(kind);
-            model.path = new_path.to_path_buf();
+            // and is dropped here. The field split this door wrote by hand
+            // is now `LoadedModel::adopt_geometry`, shared with reload and
+            // rescale (G-RELOADTARGETS, F4.4) — `path` and `kind` come from
+            // the import of `new_path`, which is what a relink wants.
+            model.adopt_geometry(relinked);
         }
 
         // The id did NOT change, and that is exactly why this call is
