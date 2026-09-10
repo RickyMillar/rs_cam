@@ -325,7 +325,10 @@ pub fn export_gcode_checked(
         .toolpath_configs()
         .iter()
         .enumerate()
-        .filter_map(|(idx, _)| {
+        .filter_map(|(idx, tc)| {
+            if !tc.enabled {
+                return None;
+            }
             let result = project.get_result(idx)?;
             let shift = export_datum_shift_for_toolpath(project, idx);
             Some((idx, toolpath_in_export_datum(result.toolpath(), shift)))

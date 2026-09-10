@@ -108,6 +108,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 ### Export
 
 - G-code: GRBL, grblHAL, LinuxCNC, Mach3 (`PostFormat`; grblHAL differs from GRBL by accepting `M6`/`M7`, which GRBL's post filters out)
+- core/session export (used by CLI) skips disabled operations even when their generated result is retained in cache; re-enabling restores that cached operation without regeneration (N1, 2026-09-10; `tests/export_disabled_cached_n1.rs`)
 - the GUI / MCP export refuses, naming the operation, when an ENABLED operation has no result (`'X' is still waiting on upstream stock …`, `'X' failed to generate: …`, `'X' is not generated`) instead of emitting the program without it; the pre-flight modal lists each such operation as a blocking row with the same text, and a disabled operation is still skipped (G-EXPORTSKIP, 2026-09-10)
 - SVG toolpath preview
 - HTML setup sheet
