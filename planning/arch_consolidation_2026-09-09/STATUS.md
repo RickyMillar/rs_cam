@@ -140,6 +140,26 @@ verdict below is from reading, and the reports say so; treat "STILL TRUE" as
   workspace all-target Clippy with `rs_cam_core/heavy-tests` /
   `-D warnings` passes.
 
+## Execution checkpoint — 2026-09-10 late, N1–N5 DONE
+
+- **N1** `d4e1154b` (sentry `2687b82b`), **N5** `1e4373aa` (sentry `3b8cd298`),
+  **N4** `44c68add` (sentry `6d1d2026`), **N2** `736a2959` (sentry `8634acf1`).
+  Each sentry ran RED alone and GREEN after its fix; the red output is in
+  each fix commit's body. N3 was already closed by G-STEPUNITS.
+- Full core heavy gate after all four: **3793 passed, 1 failed, 288 ignored**
+  across 303 result targets. The one failure is the F-036b instrument, red by
+  design. Not a green full gate. Viz suite 606/0, CLI 31/0. fmt and clippy
+  (heavy-tests, `-D warnings`) clean. Log `/tmp/rs_cam_gate_n245.log`.
+- **Open before the phases:** N6 (folds into Phase 1A), N7 (needs an operator
+  ruling), N9 (small), N10 (needs an operator ruling), N11 (Phase 4B). N8 was
+  closed inside N4.
+- **The N1 checkpoint above says "N4 and N5 remain open". That was true when
+  written and is superseded by this checkpoint.**
+- The three landing commits carry a `docs(status): Nx DONE` row edit each.
+- Process note for the next verifier: never `git reset --hard` in this tree.
+  It drops the foreign `.mcp.json` edit. The N5 verifier did that once and
+  restored the file byte-identical (blob `e74e2a8c`).
+
 ## Do these before the phases. They are defects, not refactors.
 
 The rows below retain the original audit evidence. N1/N3's current execution
