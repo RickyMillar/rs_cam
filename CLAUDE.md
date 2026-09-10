@@ -230,6 +230,30 @@ Four things about that table an agent must not infer wrongly (all measured 2026-
 ### Common pitfalls
 
 - `stock_top_z` in roughing config must match actual stock height, not an arbitrary value
+- **A pinned Bottom Z reaches emitted motion on only THREE operations**
+  (G-BOTTOMPIN, 2026-09-10): `Adaptive3d`, `UnifiedFinish` and `Waterline`.
+  Those are the only reads of `heights.bottom_z` in the generator dispatch.
+  Every other operation floors its cut at `top_z` minus its OWN depth dial,
+  because `OperationConfig::cutting_levels(top_z)` takes no bottom parameter
+  and `execute.rs`'s `effective_levels` returns that pre-computed ladder
+  whenever it is non-empty — which it always is for the seven depth-stepping
+  ops, so the `else` branch that WOULD read a pinned bottom is unreachable
+  from all six of its callers. Ask
+  `OperationType::honors_pinned_bottom_z()` rather than assume. Measured: a
+  pin moved 14 mm on a test pocket and the emitted floor did not move.
+  Whether the pin SHOULD drive a 2.5D cut is an open operator decision
+  (`planning/ui_fix_2026-09-09/reports/J7.md` recommends against).
+- **`geom.depth_beyond_stock` is a core diagnostic since 2026-09-10**
+  (G-DEPTHSTOCKCORE), so it reaches MCP `get_toolpath_diagnostics` and the
+  CLI `project` report, not only the GUI inspector ribbon. It fires when an
+  operation's own depth dial puts its cut floor below the stock bottom, and
+  it reads that dial ALONE — never a pinned Bottom Z, per the bullet above.
+  It answers only for operations declaring `DepthSemantics::Explicit(_)`;
+  for every other operation it ABSTAINS, which means NOT MEASURED and never
+  "the cut is inside the board". A GUI-side rule of the same name still
+  exists in `ui/properties/operations/mod.rs` and additionally ORs the pin,
+  so the two surfaces can disagree on exactly that case until the UI
+  programme switches over.
 - Scallop requires a ball-tip tool (ball nose or tapered ball nose)
 - Horizontal finish is useless on terrain — only cuts near-flat areas
 - After `set_toolpath_param`, the toolpath is stale — must `generate_toolpath` again
