@@ -1,5 +1,12 @@
 # Core track — handover, 2026-09-10
 
+> **SUPERSEDED.** The single combined handover for BOTH tracks is
+> `planning/ui_fix_2026-09-09/HANDOVER_PROMPT.md` on branch
+> `ui-fix-2026-09-09` (commit after `d1844f55`). Read that one. This file is
+> kept because it sits beside the core code it describes, but the combined
+> document is the current one and it corrects the outgoing UI handover's
+> claim that J0 is unfinished.
+
 Written before a compaction, at the point the operator took the UI/UX account
 offline and gave this account the whole track. Read this first.
 
