@@ -160,6 +160,33 @@ verdict below is from reading, and the reports say so; treat "STILL TRUE" as
   It drops the foreign `.mcp.json` edit. The N5 verifier did that once and
   restored the file byte-identical (blob `e74e2a8c`).
 
+## Execution checkpoint — N9 DONE (`52fdd7dd`)
+
+Standing operator approval covers commits and advancing items; tests, review,
+resource limits and unresolved-policy stop conditions remain binding. N1–N5
+were already landed and were not repeated. N9 now snapshots canonical session
+precondition and model-reference contexts alongside the GUI's temporary entry;
+the ribbon requires both contexts. The extended N4 sentry consumes that same
+production snapshot, not a hand-rebuilt parallel input path. Missing Rest
+predecessor and dangling-model cases reproduced at **4 passed / 2 failed**
+before the fix; all **6 passed** after it, including valid controls. GUI
+load-verdict, feeds, generation-stat and height inputs are preserved.
+
+Review ACCEPT. Full viz **609/0**, MCP **29/0**, format and heavy-enabled
+workspace Clippy pass. Full core heavy: **3793 passed, 1 failed, 288 ignored**,
+303 result targets; only F-036b at **0.0214** vs **[0.0320, 0.0550]**, exactly
+the preceding baseline. This is not a green full gate. No live GUI/MCP check
+was run. Local evidence: `/tmp/rs_cam_n9_red.log`, `/tmp/rs_cam_n9_retry.log`,
+`/tmp/rs_cam_n9_gates/summary.json` and sibling gate logs. An attributable type
+import compilation error in the first implementation was fixed in one retry;
+the final sentry also guards actual production snapshot assembly.
+
+`.mcp.json` remains byte-identical (Git blob
+`e74e2a8ce2f72ac0ed51f3f7b95638d4133de980`); raw file SHA-1 is a different hash
+algorithm input and must not be compared to the Git blob hash.
+Next is Phase 0's remaining executable evidence. N7 and N10 remain explicitly
+decision-blocked; N6 and N11 retain their phase assignments.
+
 ## Do these before the phases. They are defects, not refactors.
 
 The rows below retain the original audit evidence. N1/N3's current execution
@@ -175,7 +202,7 @@ states above supersede their historical descriptions.
 | **N6** | `set_drill_selected_holes` is a second narrow mutation path the audit did not name, sitting beside a wide one. | `core/session/mutation.rs:944` vs `:911` | Small; folds into Phase 1A. |
 | **N7** | **The modulation retime integrates on an unguarded kinematics fallback.** `apply_adaptive_feed_modulation` takes `self.machine.effective_kinematics()` with no `is_some()` guard, and that falls back to `generic_wood_router`. With modulation ON (the default) and `kinematics: None` the retime overwrites `trace.summary.total_runtime_s` and stamps `runtime_by_intent = Some(..)`, so `readiness.rs` labels the toolpath `MachineModel` on a machine that has no kinematics block. `machine.rs:141-146` says `None` must keep live-sim runtime byte-identical. `f036b.rs:281-284` still claims an `is_some()` guard that no longer exists. Found by the N2 scout 2026-09-10 (read, not run). Behaviour decision, not a fold bug: needs an operator ruling before a fix. | `core/session/compute.rs:3055`, `machine.rs:147-150`, `viz/ui/readiness.rs:507-509` | Small once ruled. |
 | **N8** | **The core/MCP diagnostics route projects heights and drops every pin.** `ResolvedHeights::from_context` writes `top_z = stock_top_z`, `bottom_z = stock_bottom_z`, `feed_z = stock_top_z`, `retract_z = clearance_z = safe_z`, so on that route `geom.bottom_above_top_z`, `geom.feed_z_below_top_z` and `geom.clearance_z_below_retract_z` can never fire and `geom.depth_beyond_stock` misses a pinned Top Z (J8.1). The GUI's `diagnostics_heights` resolves the real `HeightsConfig`. Root cause is a missed call: `tc.heights` is in scope at the call site. Found by the N4 scout 2026-09-10 (read, not run). Fixed inside the N4 work package. | `core/diagnostics/adapters/from_static_checks.rs:78-90`, `core/session/compute.rs:4265` | Small; in N4. |
-| **N9** | **The ribbon and the session route disagree on preconditions and model refs by design.** `collect_diagnostics` passes `preconditions: None` and `model_refs: None`; `diagnose_toolpath_with_trace` passes `Some(..)`. A Rest with no prior op exposes it. The N4 sentry excludes this family and says so. Found by the N4 scout 2026-09-10. | `viz/ui/properties/operations/mod.rs:2281,2285` vs `core/session/compute.rs:4291-4292` | Small; viz holds the session and can pass both. |
+| **N9 — DONE (`52fdd7dd`)** | **The ribbon and the session route disagree on preconditions and model refs by design.** `collect_diagnostics` passes `preconditions: None` and `model_refs: None`; `diagnose_toolpath_with_trace` passes `Some(..)`. A Rest with no prior op exposes it. The N4 sentry excludes this family and says so. Found by the N4 scout 2026-09-10. | `viz/ui/properties/operations/mod.rs:2281,2285` vs `core/session/compute.rs:4291-4292` | Small; viz holds the session and can pass both. |
 | **N10** | **`radial_finish` divides by two unranged params.** `angular_step` and `point_spacing` are `ParamDef::required(.., "f64")` with no `ParamRange`; `0.0` saturates `num_spokes` to `usize::MAX` and overflows `Vec::with_capacity`; a negative value gives an empty toolpath with no error. Adding a range row is a numeric threshold, so it needs an operator ruling; the precedent shape is `peck_depth`'s `required_ranged(.., ParamRange::greater_than(0.0), ..)`. Found by the N5 scout 2026-09-10. Phase 4B. | `core/radial_finish.rs:96,108`, `catalog.rs:1933-1940` | Small once ruled. |
 | **N11** | **The Apply/pill funnel discards a Stepover apply on a no-field op by the same mechanism as N5.** `suggest.rs:1084-1085` calls the defaulted `set_stepover` and does not read whether it wrote. Found by the N5 scout 2026-09-10. Phase 4B. | `core/feeds/suggest.rs:1084-1085` | Small. |
 
