@@ -364,7 +364,11 @@ pub fn export_gcode_checked(
                 ),
                 label: &tc.name,
                 tool,
-                coolant: CoolantMode::Off,
+                // P0-D1 (2026-09-11): read the operation's own coolant
+                // setting. This line hardcoded `CoolantMode::Off`, so
+                // the GUI door and the CLI job-file door emitted the
+                // coolant words and this door emitted none.
+                coolant: tc.coolant,
                 pre_gcode: tc.pre_gcode.as_deref(),
                 post_gcode: tc.post_gcode.as_deref(),
                 controller_compensation: controller_comp_for_project_toolpath(tc),
