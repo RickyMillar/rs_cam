@@ -122,13 +122,8 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
 
             // --- Holder clearance check ---
             let holder_status = readiness::holder_clearance_check(state);
-            let holder_detail = if sim.checks.holder_collision_count > 0 {
-                format!("{} issues", sim.checks.holder_collision_count)
-            } else if sim.checks.min_safe_stickout.is_some() {
-                "Clear".to_owned()
-            } else {
-                "Not checked".to_owned()
-            };
+            // F2.12 — one derivation, shared with the Readiness panel.
+            let holder_detail = readiness::holder_clearance_detail(state);
             check_card(
                 ui,
                 holder_status,

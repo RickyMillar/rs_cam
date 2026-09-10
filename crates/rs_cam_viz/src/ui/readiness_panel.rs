@@ -100,13 +100,11 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 events,
             );
 
-            let holder_detail = if sim.checks.holder_collision_count > 0 {
-                format!("{} collision(s)", sim.checks.holder_collision_count)
-            } else if sim.checks.min_safe_stickout.is_some() {
-                "Clear".to_owned()
-            } else {
-                "Not checked".to_owned()
-            };
+            // F2.12 — one derivation, shared with the pre-flight gate. This
+            // arm used to read `min_safe_stickout`, which the drain writes
+            // only on a FAILING check, so a clean current check printed "Not
+            // checked" and a stale verdict printed as if it were current.
+            let holder_detail = readiness::holder_clearance_detail(state);
             check_row(
                 ui,
                 holder_status,

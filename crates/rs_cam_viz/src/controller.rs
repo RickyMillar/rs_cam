@@ -10,6 +10,14 @@ mod events;
 )]
 mod fixpoint_resolution_notice_g_resnotice;
 pub mod generate_all;
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod holder_clearance_staleness_g_holderstale;
 mod io;
 #[cfg(test)]
 #[allow(

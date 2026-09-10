@@ -405,6 +405,12 @@ impl<B: ComputeBackend> AppController<B> {
             });
 
         if let Some((annotated, tool, mesh, obstacles)) = toolpath_data {
+            // G-HOLDERSTALE (F2.12): the counter as it stands at SUBMIT, and
+            // only on the branch that really submits. The `else` arm below
+            // reaches the lane with nothing, and a stamp written before the
+            // search would sit there for an unrelated later arrival.
+            self.state.simulation.submitted_collision_edit_counter =
+                Some(self.state.gui.edit_counter);
             self.compute.submit_collision(CollisionRequest {
                 annotated,
                 tool,

@@ -135,16 +135,96 @@ pub fn rapid_collision_check(state: &AppState) -> CheckStatus {
     }
 }
 
-/// Holder/collet clearance — Fail on any holder collision, Pass once a safe
-/// stickout is known, Warning when not yet checked.
+/// Holder/collet clearance — Fail on any check that found a strike, current
+/// or stale; Pass on a current check that found none; Warning when no check
+/// has run, or when a check that found nothing has been overtaken by an edit.
+///
+/// F2.12, G-HOLDERSTALE. This row is the one that says the cutter will not
+/// hit the workholding, and it used to answer from
+/// [`crate::state::simulation::SimulationChecks`] alone. The check reads the
+/// holder assembly, the workholding obstacles and the emitted motion; the
+/// operator could change any of them and the row went on reporting the
+/// verdict computed against the previous machine setup. Every other
+/// readiness row declares itself out of date through `GuiState::edit_counter`
+/// — [`crate::state::simulation::SimulationState::collision_check_is_stale`]
+/// is that same counter, read the same way.
+///
+/// `min_safe_stickout` is no longer the freshness proxy. The drain writes it
+/// only when the check FOUND collisions, so the old `Pass` arm was
+/// unreachable from the shipped lane and a clean, current check reported
+/// "Not checked".
+/// [`crate::state::simulation::SimulationChecks::checked_at_edit_counter`]
+/// answers "was it checked" directly, which is what that proxy stood in for.
+///
+/// **Staleness withdraws a CLEARANCE claim. It never withdraws a STRIKE.**
+/// A stale clear verdict is an abstention — absence of a strike was never
+/// proof of clearance, so "it was clear, then you edited" carries no evidence
+/// about the state now, and `Warning` is the honest severity. A stale
+/// colliding verdict is the opposite: it is positive evidence of a strike,
+/// measured slightly earlier, and a feed-rate edit cannot move a holder out
+/// of a clamp. De-escalating it to `Warning` would turn red into amber on the
+/// one row an operator scans for red, so it stays `Fail` and the detail says
+/// the evidence is old. This also keeps the row and the export gate in
+/// agreement: `preflight.rs` computes `has_failures` from the raw collision
+/// count, which a stale strike still trips.
 pub fn holder_clearance_check(state: &AppState) -> CheckStatus {
+    match holder_clearance_state(state) {
+        HolderClearance::NotChecked | HolderClearance::StaleClear => CheckStatus::Warning,
+        HolderClearance::Clear => CheckStatus::Pass,
+        HolderClearance::StaleCollisions(_) | HolderClearance::Collisions(_) => CheckStatus::Fail,
+    }
+}
+
+/// What the holder-clearance evidence amounts to right now.
+///
+/// One derivation for both surfaces (the Readiness panel and the export
+/// pre-flight gate), because the two used to build their own detail strings
+/// out of `min_safe_stickout` and could disagree — the duplication this
+/// module exists to prevent.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HolderClearance {
+    /// No collision check has run. Absence of a strike is not clearance.
+    NotChecked,
+    /// A check found no strike, and the project has been edited since it was
+    /// submitted. An abstention: no evidence either way about the state now.
+    StaleClear,
+    /// A check found this many strikes, and the project has been edited since
+    /// it was submitted. **Not** an abstention — the strikes were measured.
+    StaleCollisions(usize),
+    /// A current check found no strike.
+    Clear,
+    /// A current check found this many strikes.
+    Collisions(usize),
+}
+
+/// Derive [`HolderClearance`] from the check record and the edit counter.
+pub fn holder_clearance_state(state: &AppState) -> HolderClearance {
     let sim = &state.simulation;
-    if sim.checks.holder_collision_count > 0 {
-        CheckStatus::Fail
-    } else if sim.checks.min_safe_stickout.is_some() {
-        CheckStatus::Pass
-    } else {
-        CheckStatus::Warning
+    if sim.checks.checked_at_edit_counter.is_none() {
+        return HolderClearance::NotChecked;
+    }
+    let stale = sim.collision_check_is_stale(state.gui.edit_counter);
+    match (stale, sim.checks.holder_collision_count) {
+        (true, 0) => HolderClearance::StaleClear,
+        (true, count) => HolderClearance::StaleCollisions(count),
+        (false, 0) => HolderClearance::Clear,
+        (false, count) => HolderClearance::Collisions(count),
+    }
+}
+
+/// The row's detail text, shared by both surfaces.
+///
+/// A stale strike names BOTH facts, count first, so the severity and the
+/// staleness are visible together without a hover.
+pub fn holder_clearance_detail(state: &AppState) -> String {
+    match holder_clearance_state(state) {
+        HolderClearance::NotChecked => "Not checked".to_owned(),
+        HolderClearance::StaleClear => "Checked, then edited — re-check".to_owned(),
+        HolderClearance::StaleCollisions(count) => {
+            format!("{count} collision(s) found, then edited — re-check")
+        }
+        HolderClearance::Clear => "Clear".to_owned(),
+        HolderClearance::Collisions(count) => format!("{count} collision(s)"),
     }
 }
 
