@@ -190,8 +190,34 @@ impl<B: ComputeBackend> AppController<B> {
 
                 // Populate toolpath runtime entries.
                 for tc in session.toolpath_configs() {
-                    let mut rt = ToolpathRuntime::new(true);
-                    rt.stale_since = Some(loaded_at);
+                    // G-LOADREGEN (F2.6, operator ruling on R0.1 §7 Q2):
+                    // a load requests regeneration for 2.5D operations
+                    // only, respecting each operation's own dial. Opening
+                    // a 3D job should not silently start minutes of
+                    // compute the operator did not ask for.
+                    //
+                    // This used to force `auto_regen = true` on EVERY
+                    // operation regardless of `default_auto_regen()`, so
+                    // `process_auto_regen` submitted all of them 500 ms
+                    // after load — including the 3D families the card
+                    // labels MAN. That load-time sweep is the precondition
+                    // the G-REGEN-RACE reproduction is built on (see
+                    // `controller/tests.rs`, the G-REGEN-RACE section): an
+                    // agent's `generate_all` arriving while one of those
+                    // submits is still the lane's ACTIVE job resubmits it.
+                    // The race itself stays fixed by
+                    // `ToolpathSubmitOutcome` and is still needed, because
+                    // 2.5D operations still auto-regenerate on load.
+                    //
+                    // A manual-regen operation therefore loads with no
+                    // result and no request: its freshness reads
+                    // `NoResult`, which every surface renders as pending
+                    // work, never as a failure.
+                    let auto_regen = tc.operation.default_auto_regen();
+                    let mut rt = ToolpathRuntime::new(auto_regen);
+                    if auto_regen {
+                        rt.stale_since = Some(loaded_at);
+                    }
                     gui.toolpath_rt.insert(tc.id, rt);
 
                     // Warn about missing tool/model references
@@ -287,8 +313,15 @@ impl<B: ComputeBackend> AppController<B> {
 
                 let loaded_at = Instant::now();
                 for tp in job.all_toolpaths() {
+                    // G-LOADREGEN: the legacy loader already carried a
+                    // per-operation `auto_regen` from the file; the
+                    // regeneration REQUEST now follows it too, instead of
+                    // being set on every operation and then ignored by the
+                    // sweep for the manual ones.
                     let mut rt = ToolpathRuntime::new(tp.auto_regen);
-                    rt.stale_since = Some(loaded_at);
+                    if tp.auto_regen {
+                        rt.stale_since = Some(loaded_at);
+                    }
                     gui.toolpath_rt.insert(tp.id, rt);
                 }
 
