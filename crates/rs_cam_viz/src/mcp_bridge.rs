@@ -577,6 +577,8 @@ pub enum McpRequestKind {
     },
     LoadProject {
         path: String,
+        /// G-OPENGUARD: throw away the open project's unsaved changes.
+        discard_unsaved: bool,
     },
     SaveProject {
         path: String,

@@ -67,6 +67,16 @@ pub struct ImportModelParam {
 pub struct LoadProjectParam {
     /// Path to the project TOML file
     pub path: String,
+    /// Throw away the open project's unsaved changes and load anyway.
+    /// Default false.
+    ///
+    /// Loading REPLACES the project in the GUI. When the open one has
+    /// edits that are not on disk, the load is refused and the refusal
+    /// says what would be lost — there is no dialog to ask, the way the
+    /// GUI asks a human. Save it first with `save_project`, or set this
+    /// knowingly.
+    #[serde(default)]
+    pub discard_unsaved: bool,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

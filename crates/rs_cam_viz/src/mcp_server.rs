@@ -806,15 +806,21 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "load_project",
-        description = "Load a project TOML file. Must be called before other tools if no project was specified on startup."
+        description = "Load a project TOML file. Must be called before other tools if no project was specified on startup. Loading REPLACES the project currently open: when that project has unsaved changes the load is refused, naming what would be lost — save it first with save_project, or pass discard_unsaved: true."
     )]
     async fn load_project(
         &self,
-        Parameters(LoadProjectParam { path }): Parameters<LoadProjectParam>,
+        Parameters(LoadProjectParam {
+            path,
+            discard_unsaved,
+        }): Parameters<LoadProjectParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::LoadProject { path })
-                .await,
+            self.send_request(McpRequestKind::LoadProject {
+                path,
+                discard_unsaved,
+            })
+            .await,
         )
     }
 

@@ -725,3 +725,58 @@ fn w10_model_removal_blocked_when_toolpath_references_it() {
         "Selection should stay since model wasn't removed"
     );
 }
+
+// ── G-OPENGUARD — unsaved edits are named before anything discards them ──
+//
+// F1.12. Quitting asked; File > Open / Ctrl+O and MCP `load_project`
+// replaced the project just as completely and asked nothing. The GUI arm
+// now routes through the SAME dialog quitting uses (that arm needs an
+// `eframe::CreationContext`, so it is pinned by source in
+// `tests/open_guard_asks_before_discarding_g_openguard.rs`); this is the
+// decision underneath both, driven through a real controller.
+
+/// A clean project has nothing to warn about; an edited one names what
+/// would be lost, and says which of the two shapes it is.
+#[test]
+fn unsaved_project_summary_names_what_would_be_lost() {
+    let mut c = stl_controller();
+    assert_eq!(
+        crate::state::unsaved_project_summary(&c.state),
+        None,
+        "a project with no edits has nothing to lose"
+    );
+
+    // An edit through the controller — the same call every mutation makes.
+    c.state.gui.mark_edited();
+
+    let never_saved = crate::state::unsaved_project_summary(&c.state)
+        .expect("an edited project must be reported");
+    assert!(
+        never_saved.contains("never been saved"),
+        "a project with no file on disk loses EVERYTHING, and the sentence \
+         must say so; got: {never_saved}"
+    );
+    assert!(
+        never_saved.contains("setups") && never_saved.contains("toolpaths"),
+        "for that case the counts ARE what would be lost; got: {never_saved}"
+    );
+
+    // Once it has a file, what is at risk is the changes since, not the
+    // whole project — and the sentence names the file they are missing
+    // from instead of counting anything.
+    c.state.gui.file_path = Some(std::path::PathBuf::from("/tmp/some_job.toml"));
+    let saved_before = crate::state::unsaved_project_summary(&c.state)
+        .expect("an edited project must be reported");
+    assert!(
+        saved_before.contains("/tmp/some_job.toml"),
+        "the sentence must name the file the changes are missing from; got: {saved_before}"
+    );
+    assert!(
+        !saved_before.contains("never been saved"),
+        "a project WITH a file has not lost everything; got: {saved_before}"
+    );
+
+    // Saving clears it — the guard must not survive the thing that fixes it.
+    c.state.gui.dirty = false;
+    assert_eq!(crate::state::unsaved_project_summary(&c.state), None);
+}

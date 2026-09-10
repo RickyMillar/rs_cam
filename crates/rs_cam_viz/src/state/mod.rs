@@ -85,6 +85,43 @@ impl Workspace {
     }
 }
 
+/// The sentence describing an open project that has edits which are not on
+/// disk, or `None` when there is nothing unsaved to lose.
+///
+/// G-OPENGUARD (F1.12). Anything that REPLACES the open project — quitting,
+/// File > Open, MCP `load_project` — discards those edits. The GUI asks a
+/// human through the unsaved-changes dialog; MCP has nobody to ask, so it
+/// turns this sentence into a refusal and requires `discard_unsaved: true`
+/// to proceed.
+///
+/// It names what would be lost rather than only that something would be. A
+/// project that has NEVER been saved loses everything in it, so the
+/// sentence counts what is there; one with a file on disk loses the changes
+/// made since, and the sentence names the file they are missing from. It
+/// deliberately does not invent a count of "changes": `GuiState::edit_counter`
+/// counts `mark_edited` calls, not distinct differences, and quoting it
+/// would be a number that means nothing to the operator.
+pub fn unsaved_project_summary(state: &AppState) -> Option<String> {
+    if !state.gui.dirty {
+        return None;
+    }
+    let name = state.session.name();
+    let label = if name.trim().is_empty() {
+        "the open project".to_owned()
+    } else {
+        format!("the open project '{name}'")
+    };
+    Some(match state.gui.file_path.as_ref() {
+        Some(path) => format!("{label} has changes that are not in {}", path.display()),
+        None => format!(
+            "{label} has never been saved, so everything in it would be lost              -- {} setups, {} toolpaths, {} tools",
+            state.session.setup_count(),
+            state.session.toolpath_count(),
+            state.session.tools().len(),
+        ),
+    })
+}
+
 /// Top-level application state. Single source of truth.
 pub struct AppState {
     pub workspace: Workspace,

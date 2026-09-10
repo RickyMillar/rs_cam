@@ -13,6 +13,41 @@ use crate::render::RenderResources;
 use crate::render::camera::OrbitCamera;
 use crate::state::Workspace;
 
+/// What the unsaved-changes dialog is guarding — the action that runs once
+/// the operator answers Save or Discard.
+///
+/// G-OPENGUARD (F1.12): the dialog used to guard exactly one action, so it
+/// was a `bool` and every button ended in `ViewportCommand::Close`. File ›
+/// Open / Ctrl+O discards the project just as thoroughly as quitting does
+/// and asked nothing. One dialog, one set of three answers, two things it
+/// can be guarding — rather than a second dialog that would drift from
+/// this one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UnsavedGuard {
+    /// Close the window.
+    Quit,
+    /// Open another project, replacing this one.
+    OpenJob,
+}
+
+impl UnsavedGuard {
+    /// The verb the dialog's buttons end in.
+    fn verb(self) -> &'static str {
+        match self {
+            Self::Quit => "Quit",
+            Self::OpenJob => "Open\u{2026}",
+        }
+    }
+
+    /// What the operator is about to lose the project to.
+    fn consequence(self) -> &'static str {
+        match self {
+            Self::Quit => "Quitting will close this project.",
+            Self::OpenJob => "Opening another project will replace this one.",
+        }
+    }
+}
+
 pub struct RsCamApp {
     controller: AppController,
     /// The egui context, held so [`RsCamApp::off_frame_pump`] can dispatch
@@ -32,8 +67,9 @@ pub struct RsCamApp {
     minimize_after_frames: Option<u32>,
     /// Currently hovered BREP face (updated on mouse move in Toolpaths workspace).
     last_hover_face: Option<rs_cam_core::enriched_mesh::FaceGroupId>,
-    /// Flag: show the unsaved-changes confirmation dialog before quitting.
-    show_quit_dialog: bool,
+    /// The unsaved-changes confirmation dialog, and what it is guarding.
+    /// `None` means it is not shown. See [`UnsavedGuard`].
+    unsaved_guard: Option<UnsavedGuard>,
     /// Every upload-time overlay dial, as one comparable key. See the
     /// detector in [`RsCamApp::update`].
     last_overlay_upload_key: OverlayUploadKey,
@@ -212,7 +248,7 @@ impl RsCamApp {
             auto_screenshot_frame,
             minimize_after_frames,
             last_hover_face: None,
-            show_quit_dialog: false,
+            unsaved_guard: None,
             last_overlay_upload_key,
             last_drill_marker_key: None,
             #[cfg(feature = "mcp")]
@@ -624,7 +660,7 @@ impl RsCamApp {
         let os_close_requested = ctx.input(|i| i.viewport().close_requested());
         if os_close_requested && self.controller.state().gui.dirty {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.show_quit_dialog = true;
+            self.unsaved_guard = Some(UnsavedGuard::Quit);
         }
 
         // Handle screenshot results from previous frame. An in-flight MCP

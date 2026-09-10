@@ -375,24 +375,15 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::OpenJob => {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("TOML Job", &["toml"])
-                        .pick_file()
-                    {
-                        match self.controller.open_job_from_path(&path) {
-                            Ok(()) => {
-                                // G-WSMENU (2026-09-10): a load replaces every
-                                // model in the project, so the camera has to
-                                // move with it — the import dispatch above has
-                                // always fitted and this route never did,
-                                // leaving a loaded job off screen at whatever
-                                // the previous project's scale was. Same
-                                // routine as Reset View, not a second fit.
-                                self.fit_camera_to_first_model();
-                                tracing::info!("Loaded job from {}", path.display());
-                            }
-                            Err(error) => self.controller.push_error(&error),
-                        }
+                    // G-OPENGUARD (F1.12): opening another project replaces
+                    // this one, so an unsaved project asks the SAME question
+                    // quitting asks, through the same dialog. The check sits
+                    // ahead of the file picker and the load, so a cancelled
+                    // answer moves nothing — not the project, not the camera.
+                    if self.controller.state().gui.dirty {
+                        self.unsaved_guard = Some(super::UnsavedGuard::OpenJob);
+                    } else {
+                        self.open_job_interactive();
                     }
                 }
 
@@ -402,7 +393,7 @@ impl RsCamApp {
 
                 AppEvent::Quit => {
                     if self.controller.state().gui.dirty {
-                        self.show_quit_dialog = true;
+                        self.unsaved_guard = Some(super::UnsavedGuard::Quit);
                     } else {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
@@ -630,5 +621,35 @@ impl RsCamApp {
                 pb.speed = (pb.speed * 2.0).min(50000.0);
             }
         });
+    }
+
+    /// Pick a project file and open it, fitting the camera on success.
+    ///
+    /// G-OPENGUARD (F1.12): extracted from the `AppEvent::OpenJob` arm so
+    /// the unsaved-changes dialog can run the SAME flow after Save or
+    /// Discard. Nothing here checks `dirty` — the guard is the caller's
+    /// job, and this is deliberately the only place the picker, the load
+    /// and the camera fit live.
+    pub(super) fn open_job_interactive(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("TOML Job", &["toml"])
+            .pick_file()
+        else {
+            return;
+        };
+        match self.controller.open_job_from_path(&path) {
+            Ok(()) => {
+                // G-WSMENU (2026-09-10): a load replaces every model in the
+                // project, so the camera has to move with it — the import
+                // dispatch has always fitted and this route never did,
+                // leaving a loaded job off screen at whatever the previous
+                // project's scale was. Same routine as Reset View, not a
+                // second fit. It runs only on `Ok`, and only after the
+                // unsaved guard has been answered.
+                self.fit_camera_to_first_model();
+                tracing::info!("Loaded job from {}", path.display());
+            }
+            Err(error) => self.controller.push_error(&error),
+        }
     }
 }

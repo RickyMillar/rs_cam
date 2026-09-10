@@ -434,13 +434,16 @@ impl super::RsCamApp {
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
-            McpRequestKind::LoadProject { path } => {
+            McpRequestKind::LoadProject {
+                path,
+                discard_unsaved,
+            } => {
                 let name = Path::new(&path)
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or(&path)
                     .to_owned();
-                let (resp, outcome) = self.mcp_load_project(&path);
+                let (resp, outcome) = self.mcp_load_project(&path, discard_unsaved);
                 self.controller
                     .push_mcp_outcome(format!("MCP: Loaded '{name}'"), &outcome);
                 let _ = response_tx.send(resp);
@@ -3054,7 +3057,20 @@ impl super::RsCamApp {
 
     /// Load a project. The reply is plain text, so the toast outcome rides
     /// beside it as the controller's own `Result` (G-MCPTOAST).
-    fn mcp_load_project(&mut self, path: &str) -> (McpResponse, McpOutcome) {
+    fn mcp_load_project(&mut self, path: &str, discard_unsaved: bool) -> (McpResponse, McpOutcome) {
+        // G-OPENGUARD (F1.12): a load replaces the open project. The GUI
+        // asks a human (Save / Discard / Cancel); an agent has nobody to
+        // ask, so the equivalent is a refusal that names what would go and
+        // an explicit flag to override it. Checked BEFORE the load, so a
+        // refusal leaves the project, the camera and the file untouched.
+        if !discard_unsaved && let Some(refusal) = self.unsaved_project_refusal() {
+            return (
+                McpResponse {
+                    result: Ok(text(refusal.clone())),
+                },
+                McpOutcome::Refused(refusal),
+            );
+        }
         let loaded = self.controller.open_job_from_path(Path::new(path));
         let outcome = McpOutcome::from_result(&loaded);
         let resp = match loaded {
@@ -3088,6 +3104,23 @@ impl super::RsCamApp {
             },
         };
         (resp, outcome)
+    }
+
+    /// The refusal text when the open project has unsaved changes, or
+    /// `None` when a load may proceed (G-OPENGUARD).
+    ///
+    /// The sentence naming what would be lost is
+    /// [`crate::state::unsaved_project_summary`], shared with anything
+    /// else that has to describe the same situation; this adds only the
+    /// two ways out.
+    fn unsaved_project_refusal(&self) -> Option<String> {
+        crate::state::unsaved_project_summary(self.controller.state()).map(|summary| {
+            format!(
+                "Refused: {summary}. Loading would replace it and throw those \
+                 changes away. Save it first (save_project), or pass \
+                 discard_unsaved: true."
+            )
+        })
     }
 
     /// Save a project. Plain-text reply; outcome beside it, as for load.

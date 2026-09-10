@@ -411,51 +411,84 @@ impl RsCamApp {
         }
     }
 
-    /// Render the unsaved-changes confirmation dialog when the user tries to quit.
+    /// Render the unsaved-changes confirmation dialog.
+    ///
+    /// G-OPENGUARD (F1.12): ONE dialog for every action that discards the
+    /// open project. It used to guard only Quit; File > Open / Ctrl+O
+    /// replaced the project just as completely and asked nothing, so an
+    /// unsaved job could be lost by opening another one. The three answers
+    /// are the same in both cases — Save, Discard, Cancel — and only the
+    /// verb and the consequence line change, so the two routes cannot
+    /// drift apart the way two dialogs would.
     pub(super) fn show_unsaved_changes_dialog(&mut self, ctx: &egui::Context) {
-        if !self.show_quit_dialog {
+        let Some(guard) = self.unsaved_guard else {
             return;
-        }
+        };
         egui::Window::new("Unsaved Changes")
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                ui.label("You have unsaved changes. What would you like to do?");
+                ui.label(format!("You have unsaved changes. {}", guard.consequence()));
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Save & Quit").clicked() {
-                        let path = self.controller.state().gui.file_path.clone().or_else(|| {
-                            rfd::FileDialog::new()
-                                .add_filter("TOML Job", &["toml"])
-                                .set_file_name("job.toml")
-                                .save_file()
-                        });
-                        if let Some(path) = path {
-                            match self.controller.save_job_to_path(&path) {
-                                Ok(()) => {
-                                    tracing::info!("Saved job to {}", path.display());
-                                    self.show_quit_dialog = false;
-                                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                                }
-                                Err(error) => self.controller.push_error(&error),
-                            }
-                        }
-                        // If user cancelled the file dialog, keep the dialog open
+                    if ui.button(format!("Save & {}", guard.verb())).clicked()
+                        && self.save_for_unsaved_guard()
+                    {
+                        self.unsaved_guard = None;
+                        self.proceed_past_unsaved_guard(ctx, guard);
                     }
-                    if ui.button("Discard & Quit").clicked() {
+                    // If the operator cancelled the file dialog,
+                    // `save_for_unsaved_guard` returns false and this
+                    // dialog stays open — nothing is discarded.
+                    if ui.button(format!("Discard & {}", guard.verb())).clicked() {
                         // Clear the dirty flag so the next-frame
                         // close_requested check in `update` doesn't
                         // re-open this dialog and trap the user in a
                         // CancelClose loop.
                         self.controller.state_mut().gui.dirty = false;
-                        self.show_quit_dialog = false;
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        self.unsaved_guard = None;
+                        self.proceed_past_unsaved_guard(ctx, guard);
                     }
                     if ui.button("Cancel").clicked() {
-                        self.show_quit_dialog = false;
+                        self.unsaved_guard = None;
                     }
                 });
             });
+    }
+
+    /// Save the open project for the unsaved-changes dialog, asking for a
+    /// path when it has never been saved. Returns whether it saved: `false`
+    /// means the operator cancelled the file dialog or the save failed, and
+    /// the guarded action must NOT proceed.
+    fn save_for_unsaved_guard(&mut self) -> bool {
+        let path = self.controller.state().gui.file_path.clone().or_else(|| {
+            rfd::FileDialog::new()
+                .add_filter("TOML Job", &["toml"])
+                .set_file_name("job.toml")
+                .save_file()
+        });
+        let Some(path) = path else {
+            return false;
+        };
+        match self.controller.save_job_to_path(&path) {
+            Ok(()) => {
+                tracing::info!("Saved job to {}", path.display());
+                true
+            }
+            Err(error) => {
+                self.controller.push_error(&error);
+                false
+            }
+        }
+    }
+
+    /// Run the action the dialog was guarding, now that the project is
+    /// saved or the operator has chosen to discard it.
+    fn proceed_past_unsaved_guard(&mut self, ctx: &egui::Context, guard: super::UnsavedGuard) {
+        match guard {
+            super::UnsavedGuard::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            super::UnsavedGuard::OpenJob => self.open_job_interactive(),
+        }
     }
 }
