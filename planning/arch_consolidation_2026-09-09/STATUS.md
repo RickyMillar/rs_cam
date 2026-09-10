@@ -187,6 +187,14 @@ algorithm input and must not be compared to the Git blob hash.
 Next is Phase 0's remaining executable evidence. N7 and N10 remain explicitly
 decision-blocked; N6 and N11 retain their phase assignments.
 
+## Phase 0 policy decisions — pending operator rulings (2026-09-11)
+
+| # | Question | Facts (read, not run) | Options |
+|---|---|---|---|
+| P0-D1 | **Coolant: which export door is right?** | `ToolpathConfig::coolant` is a per-toolpath core field (`session/mod.rs:769`), round-trips both project loaders, and the emitter carries an A3 fix so a coolant change between same-tool phases is not suppressed. The GUI door (`viz/io/export.rs:340`) and the CLI job door (`cli/src/main.rs:547,613`) honour it. The core door hardcodes `CoolantMode::Off` (`core/gcode/mod.rs:367`), so `rs_cam_cli project --emit-gcode` and `rs_cam_cli run` drop the setting silently. **No GUI control and no MCP setter writes the field**; the export wizard's tally points at an inspector control that does not exist. | (a) core honours `tc.coolant`; the Phase 0 test inverts into an equality. (b) declare the field dead and delete it with the test. Opposite Phase 1 work; not decided here. |
+| P0-D2 | **N7: retime on an unguarded kinematics fallback** | See row N7. | (a) guard with `is_some()` so `kinematics: None` keeps live-sim runtime byte-identical, per `machine.rs:141-146`. (b) accept the fallback and change the readiness label rule. |
+| P0-D3 | **N10: `radial_finish` unranged divisors** | See row N10. | (a) add `ParamRange::greater_than(0.0)` rows (a threshold; operator's call). (b) leave and record. |
+
 ## Do these before the phases. They are defects, not refactors.
 
 The rows below retain the original audit evidence. N1/N3's current execution
@@ -257,7 +265,11 @@ design.
 
 The largest genuine gap is **core-versus-GUI export parity**: exactly one test
 crosses the doors (`g_modexport`) for one property. Coolant, per-operation
-RPM, tool changes and datums have none. The registry-driven-coverage ask is
+RPM, tool changes and datums have none.
+**Correction 2026-09-11 (read, not run):** `g_modexport` calls only the GUI
+door (`export_gcode_from_session_with_policy`); no viz test calls
+`export_gcode_checked`. Before Phase 0's parity test, NO test compared the two
+doors on one session. The registry-driven-coverage ask is
 mostly paid — nine binaries already drive off `for_each_op!`.
 
 **Ten source-level string-pin sentries exist.** Three name their own weakness
