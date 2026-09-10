@@ -293,6 +293,11 @@ Treat those seven as gaps, not coverage. N4 is the worst case of the class.
   `compute/worker/gen_parity_p0_tests.rs` (`41c3b6cd`): one geometry with
   feed-opt off; the feed-opt-stock divergence (N12 item 3) asserted with a
   Phase 3 flip note; N12 items 1, 2 and 4-7 unpinned.
+- 2026-09-11: a disconnected Scallop finish is pinned by
+  `crates/rs_cam_core/tests/disconnected_finish_retract_structure_p0.rs`
+  (`3fa62094`): every inter-island transition retracts (hookup cap 3.0
+  against a 17 mm gap), descents tag `EntryPlunge`, and no fed move leaves
+  the islands.
 
 ---
 
