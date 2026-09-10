@@ -887,7 +887,7 @@ impl<B: ComputeBackend> AppController<B> {
         else {
             return Err(format!("toolpath {} not found", toolpath_id.0));
         };
-        let (operation, tool_id, pass_role) = {
+        let (operation, tool_id, pass_role, signature_before) = {
             let Some(tc) = self.state.session.toolpath_configs().get(idx) else {
                 return Err(format!("toolpath {} disappeared", toolpath_id.0));
             };
@@ -895,6 +895,7 @@ impl<B: ComputeBackend> AppController<B> {
                 tc.operation.clone(),
                 tc.tool_id,
                 tc.operation.feeds_style().1,
+                crate::ui::properties::generation_inputs_signature(tc),
             )
         };
         let Some(tool) = self
@@ -950,6 +951,14 @@ impl<B: ComputeBackend> AppController<B> {
                 suggest: rs_cam_core::feeds::suggest::SuggestContext::default(),
             },
         );
+        // N13: the write above changed a generation input, so the core's
+        // cached result is geometry from the previous parameter set. Ask
+        // the inspector's own question, and use the inspector's own door.
+        let inputs_changed =
+            crate::ui::properties::generation_inputs_signature(tc) != signature_before;
+        if inputs_changed {
+            self.state.session.invalidate_toolpath_inputs(idx);
+        }
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());

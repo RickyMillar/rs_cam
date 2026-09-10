@@ -3704,7 +3704,13 @@ pub fn boundary_summary_line(
 /// `PartialEq`. This is the same technique, and the same per-frame cost,
 /// as the `op_before` / `heights_before` snapshots the caller already
 /// takes.
-fn generation_inputs_signature(tc: &rs_cam_core::session::ToolpathConfig) -> String {
+///
+/// N13 gave it a second caller. The feeds Apply funnel
+/// (`controller/events/mod.rs::apply_feeds_through_funnel`) writes
+/// `tc.operation` directly too, so it asks the same question here and
+/// calls the same invalidation door. The two routes agree because they
+/// share this function.
+pub(crate) fn generation_inputs_signature(tc: &rs_cam_core::session::ToolpathConfig) -> String {
     format!(
         "{}|{}|{}|{:?}|{:?}|{}|{}|{:?}|{:?}",
         serde_json::to_string(&tc.operation).unwrap_or_default(),
