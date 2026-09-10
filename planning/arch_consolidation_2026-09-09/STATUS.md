@@ -113,6 +113,33 @@ verdict below is from reading, and the reports say so; treat "STILL TRUE" as
   needed no change on either commit, and workspace all-target Clippy with
   `rs_cam_core/heavy-tests` / `-D warnings` passes.
 
+## Execution checkpoint — 2026-09-10, N2 DONE
+
+- **N2: DONE (`736a2959`; sentry `8634acf1`).** The cycle-time integrator
+  published `toolpath_runtimes` for every toolpath and folded the project
+  total over the engagement summary list, which carries no drill row. The
+  modulation re-time then rebuilt only part of that, so the two published
+  runtimes disagreed and the project total dropped the drill.
+  `simulation_cut::publish_cycle_times` is now the one publisher: the
+  integrator tail and the re-time both call it, so every runtime reaches
+  every surface on one clock. `session::compute::reintegrate_toolpath`
+  builds the map the re-time hands it.
+- **Verification:** sentry RED pre-fix at `3 passed; 2 failed` (a runtime
+  red). Its three fixture and non-vacuity tests were green pre-fix, so the
+  fixture is not vacuous. GREEN post-fix at `5 passed; 0 failed`.
+  `drill_cycle_time_integration_g_drilltime` 4;
+  `air_cut_one_time_base_g_airdenom` 6; viz `cycle_time_basis_g_timeest`
+  12. `adaptive_feed_modulation_pipeline_f036b` reads **9 passed, 1
+  failed** — its one failure is the established red-by-design
+  `modulation_raises_cutting_chipload_toward_band` at **0.0214** against
+  **[0.0320, 0.0550]**, the same number as before this fix. No other
+  expected number moved. The core dev loop: **3746 passed, 1 failed, 271
+  ignored** across 291 result targets (the five new sentry tests are the
+  whole delta from the N4 checkpoint). `rs_cam_viz` 606; `rs_cam_cli` 31.
+  `cargo fmt --all -- --check` needed no change on either commit, and
+  workspace all-target Clippy with `rs_cam_core/heavy-tests` /
+  `-D warnings` passes.
+
 ## Do these before the phases. They are defects, not refactors.
 
 The rows below retain the original audit evidence. N1/N3's current execution
@@ -122,7 +149,7 @@ states above supersede their historical descriptions.
 |---|---|---|---|
 | **N3 — DONE (`069a2314`)** | **Historical: STEP unit scale is DROPPED on the project loader.** `rs_cam_cli run --units inches part.step` cuts geometry **25.4x wrong**. Two lanes confirmed independently. `project_file.rs:617` computes the scale; the STL, DXF and SVG arms pass it; the STEP arm (`:665-678`) never reads it. Lane B read `truck-stepio` 0.3.0 and found its READER performs **no unit conversion at all**, so `ModelUnits` is the only unit conversion a STEP file gets in this product. Not a double-scale: the interactive door is correct and the project door is wrong. Reachable on three doors; the GUI alone cannot create such a record (`import_step_path` hardcodes 1.0, `rescale_model` refuses STEP). | `core/session/project_file.rs:665-678` vs `core/io.rs:31,108` | **ONE LINE**, plus a STEP row in `model_units_survive_reload_g_unitsreload.rs`, which today has ZERO `step` hits. G-UNITSRELOAD closed the third divergence in this loader pair and left the fourth. |
 | **N1 — DONE (`d4e1154b`; sentry `2687b82b`)** | **Historical: CLI export may emit a DISABLED operation's toolpath.** `set_toolpath_enabled` calls `invalidate_output_dependents`, not `invalidate_result_chain`, so a disabled operation keeps its cached result on purpose. Core's export phase collect discards the `ToolpathConfig` and never reads `enabled`. The GUI and MCP routes filter; `rs_cam_cli project --emit-gcode` and `rs_cam_cli run` appear not to. **THIS IS A READ, NOT A REPRODUCTION** — reproduce before believing it. No test pins either behaviour. | `core/session/mutation.rs:339`, `core/gcode/mod.rs:328` | Small, once reproduced. Wrong-cut class if real. |
-| **N2** | **G-DRILLTIME is closed on one path and live on another.** `apply_kinematics_cycle_time` integrates every toolpath including drills. The post-modulation retime (`session/compute.rs:3183-3257`) resets `project_total` to zero and folds over `trace.toolpath_summaries` — the engagement population, which a drill never joins. It never rewrites `trace.toolpath_runtimes`, and that is what `readiness::toolpath_cycle_time` reads FIRST for the readiness panel, pre-flight gate, export wizard and setup sheet. Needs a configured machine kinematics block. No sentry covers it: the one test exercising the retime has no drill in its fixture. **`CLAUDE.md`'s G-DRILLTIME entry is therefore now half-true and must be amended when this is fixed.** | `core/session/compute.rs:3183-3257` vs `core/compute/simulate.rs:1464-1533` | Medium. Two writers of one field. |
+| **N2 — DONE (`736a2959`; sentry `8634acf1`)** | **G-DRILLTIME is closed on one path and live on another.** `apply_kinematics_cycle_time` integrates every toolpath including drills. The post-modulation retime (`session/compute.rs:3183-3257`) resets `project_total` to zero and folds over `trace.toolpath_summaries` — the engagement population, which a drill never joins. It never rewrites `trace.toolpath_runtimes`, and that is what `readiness::toolpath_cycle_time` reads FIRST for the readiness panel, pre-flight gate, export wizard and setup sheet. Needs a configured machine kinematics block. No sentry covers it: the one test exercising the retime has no drill in its fixture. **`CLAUDE.md`'s G-DRILLTIME entry is therefore now half-true and must be amended when this is fixed.** | `core/session/compute.rs:3183-3257` vs `core/compute/simulate.rs:1464-1533` | Medium. Two writers of one field. |
 | **N4 — DONE (`44c68add`; sentry `6d1d2026`)** | **A parity guard that cannot bite.** `gui_and_mcp_diagnostic_ids_match` hand-rebuilds the session's inputs, and its "GUI arm" calls `ResolvedHeights::from_context` — the MCP-route call. **It compares MCP against a replica of MCP.** Recorded earlier as J8.4 "a mirror that became a parallel copy"; it is worse than that. | `viz/ui/properties/operations/mod.rs:2657` | Small. Rewrite or delete. |
 | **N5 — DONE (`1e4373aa`; sentry `3b8cd298`)** | **`set_toolpath_param` accepts and silently discards a write on many operations.** The named `"stepover"` arm returns `Ok(())` on every operation whose config omits the setter — **11 operations**. `depth_per_pass` the same on **14**. The six named arms also bypass the DR-LIVE `ParamRange` gate entirely, which lives only in the generic `_` arm. `angular_step` / `point_spacing` have no registry range and are divisors. | `core/session/compute.rs:509`, `radial_finish.rs:96,108` | Part of Phase 4B, but the silent-success half is a defect now. |
 | **N6** | `set_drill_selected_holes` is a second narrow mutation path the audit did not name, sitting beside a wide one. | `core/session/mutation.rs:944` vs `:911` | Small; folds into Phase 1A. |
