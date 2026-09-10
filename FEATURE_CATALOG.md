@@ -93,6 +93,8 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 - SVG vector import
 - DXF vector import
 - STEP file import (AP203/AP214 via truck crate, face-aware tessellation)
+- **"Locate file…" repairs a model whose file has moved** (G-MODELRELINK, 2026-09-10). The model inspector prints the loader's own reason when a model failed to load (`Not loaded: …` — before this, `load_error` was rendered nowhere in the GUI and every failure read "was not found", including a corrupt file sitting where the project said) and offers a browse action that points the model at a different file. The model keeps its id, its name and its declared units, so every operation built on it survives — and every one is invalidated and marked for regeneration, because the geometry changed under it. A relink to a different KIND is refused, naming the operation's Input control as the tool for "use a different model". Before this a project moved between machines had no repair route at all: Reload retried the path that had just failed, and Delete is refused while any toolpath references the model
+- **model paths: resolved in memory, relative on disk when the model is under the project directory** (G-MODELRELINK, 2026-09-10). A project folder that carries its own models can be copied or moved and still open. Previously the loader stored the raw string from the file — so a relative path resolved against whatever directory `rs_cam_gui` was launched from — and the save wrote that string back verbatim, making portability depend on how each model happened to have been added. A model outside the project directory is stored absolute, which is the only honest description of where it is
 
 ### BREP / face selection
 

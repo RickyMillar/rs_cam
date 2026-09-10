@@ -63,6 +63,13 @@ pub enum AppEvent {
     RescaleModel(ModelId, crate::state::job::ModelUnits),
     RemoveModel(ModelId),
     ReloadModel(ModelId),
+    /// Point an existing model at a different file on disk, keeping its id,
+    /// name and declared units (G-MODELRELINK, F4.3).
+    ///
+    /// Not "import as new": every `ToolpathConfig::model_id` that names this
+    /// model keeps naming it, which is the whole point — the geometry moved,
+    /// the operations did not.
+    RelinkModel(ModelId, std::path::PathBuf),
     ExportGcode,
     ExportCombinedGcode,
     ExportSetupGcode(SetupId),

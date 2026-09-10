@@ -162,6 +162,125 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(())
     }
 
+    /// Point an existing model at a different file, keeping its identity.
+    ///
+    /// G-MODELRELINK (F4.3). Before this there was no browse-for-a-new-path
+    /// route in the GUI at all: a project whose model had moved offered
+    /// "Reload from disk" (the same path that just failed) or "Delete"
+    /// (refused while any toolpath references it), so a project moved between
+    /// machines had no repair route.
+    ///
+    /// **The id, name and declared units are kept and the geometry is
+    /// replaced.** Keeping the id is the point — every
+    /// `ToolpathConfig::model_id` goes on naming this model, so the operations
+    /// survive the repair. Keeping the units is R0.7's ruling: the declared
+    /// units describe the operator's source, not the bytes on disk, and
+    /// `reload_model` already keeps them.
+    ///
+    /// **The kind must match.** A relink is "this file moved", not "use a
+    /// different model" — the Input combo is the tool for the second. A mesh
+    /// operation cannot run on polygons, so a kind change is refused with a
+    /// notification rather than silently producing a project whose every
+    /// toolpath is unrunnable.
+    pub fn relink_model(&mut self, model_id: ModelId, new_path: &Path) -> Result<(), VizError> {
+        let Some(model) = self
+            .state
+            .session
+            .models()
+            .iter()
+            .find(|m| m.id == model_id.0)
+        else {
+            return Err(VizError::Other(format!("Model {model_id:?} not found")));
+        };
+
+        let units = model.units.unwrap_or(ModelUnits::Millimeters);
+        let previous_kind = model.kind;
+        let name = model.name.clone();
+
+        let Some(kind) = kind_from_extension(new_path) else {
+            self.push_notification(
+                format!(
+                    "Cannot relink '{name}': '{}' is not a model file rs_cam reads",
+                    new_path.display()
+                ),
+                crate::controller::Severity::Warning,
+            );
+            return Ok(());
+        };
+        if let Some(previous_kind) = previous_kind
+            && previous_kind != kind
+        {
+            self.push_notification(
+                format!(
+                    "Cannot relink '{name}' to a {kind:?} file: it is a {previous_kind:?} model, and the operations built on it expect that geometry. Use the operation's Input control to point it at a different model."
+                ),
+                crate::controller::Severity::Warning,
+            );
+            return Ok(());
+        }
+
+        // The interactive door, as Import and Reload use — the door the
+        // `model_units_survive_reload_g_unitsreload` sentry pins against the
+        // project door.
+        let relinked = import::import_model(new_path, model_id.0, kind, units)?;
+
+        if let Some(model) = self
+            .state
+            .session
+            .models_mut()
+            .iter_mut()
+            .find(|m| m.id == model_id.0)
+        {
+            // Moved, not cloned: `relinked` is this function's own import
+            // and is dropped here.
+            model.mesh = relinked.mesh;
+            model.polygons = relinked.polygons;
+            model.enriched_mesh = relinked.enriched_mesh;
+            model.winding_report = relinked.winding_report;
+            model.load_error = relinked.load_error;
+            // Unlike `reload_model`, these two move as well: a relink can
+            // point at a different DXF, and a stale drill-target or layer
+            // list belongs to the file that is no longer there.
+            model.drill_targets = relinked.drill_targets;
+            model.layers = relinked.layers;
+            model.kind = Some(kind);
+            model.path = new_path.to_path_buf();
+        }
+
+        // The id did NOT change, and that is exactly why this call is
+        // required. `generation_inputs_signature` includes `model_id`, so the
+        // signature comparison that catches an operator re-pointing the Input
+        // combo sees NOTHING here — same id, same everything, different
+        // geometry. `invalidate_model` keys on the id rather than on a
+        // signature, which is what makes it the right instrument.
+        let affected = self.state.session.invalidate_model(model_id.0);
+        let now = std::time::Instant::now();
+        for index in affected {
+            if let Some(tc) = self.state.session.get_toolpath_config(index) {
+                let id = tc.id;
+                // `rt.result` is KEPT, as `reload_model` keeps it and as F2.4
+                // keeps a late result: the geometry it holds is the previous
+                // generation's answer, which is what `EditedSince` means and
+                // what the STALE chip, the dimmed viewport path and the
+                // "old:" figures are for. Clearing it would read `NoResult` —
+                // "never generated" — which is false, and would replace a
+                // stale picture with no picture.
+                self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
+            }
+        }
+
+        // The repair is done, so the complaint goes with it. Pruned by the
+        // model name because `load_warnings` is a `Vec<String>`; typing it is
+        // R0.7 §7 Q4 and reaches `app.rs`, `app/mcp.rs` and the harness.
+        let prefix = format!("Model '{name}' could not be loaded");
+        self.load_warnings.retain(|w| !w.starts_with(&prefix));
+        self.show_load_warnings = !self.load_warnings.is_empty();
+
+        self.pending_upload = true;
+        self.state.gui.mark_edited();
+        Ok(())
+    }
+
     pub fn save_job_to_path(&mut self, path: &Path) -> Result<(), VizError> {
         // Sync the viz post config into the session before saving.
         let session_post = GuiState::post_to_session(&self.state.gui.post);
@@ -241,11 +360,24 @@ impl<B: ComputeBackend> AppController<B> {
                 for m in session.models() {
                     let has_geometry = m.mesh.is_some() || m.polygons.is_some();
                     if !has_geometry {
-                        warning_messages.push(format!(
-                            "Model '{}' could not be loaded because '{}' was not found.",
-                            m.name,
-                            m.path.display()
-                        ));
+                        // G-MODELRELINK: say what actually went wrong.
+                        // `load_error` holds the loader's own reason and was
+                        // rendered NOWHERE — so a corrupt STL, an unreadable
+                        // DXF and a genuinely absent file all reported "was
+                        // not found", sending the operator to look for a file
+                        // that was sitting right there.
+                        warning_messages.push(match &m.load_error {
+                            Some(detail) => format!(
+                                "Model '{}' could not be loaded from '{}': {detail}",
+                                m.name,
+                                m.path.display()
+                            ),
+                            None => format!(
+                                "Model '{}' could not be loaded because '{}' was not found.",
+                                m.name,
+                                m.path.display()
+                            ),
+                        });
                     }
                 }
 
@@ -523,4 +655,25 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
 
     session.replace_setups_and_toolpaths(session_setups, session_tp_configs);
     session
+}
+
+/// The model kind a file extension names, or `None` when rs_cam does not
+/// read that extension (G-MODELRELINK).
+///
+/// Mirrors the `match` in `app::mcp::mcp_import_model`; core's
+/// `project_file::infer_model_kind` is `pub(crate)` and not reachable from
+/// this crate.
+fn kind_from_extension(path: &Path) -> Option<ModelKind> {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("stl") => Some(ModelKind::Stl),
+        Some("dxf") => Some(ModelKind::Dxf),
+        Some("svg") => Some(ModelKind::Svg),
+        Some("step" | "stp") => Some(ModelKind::Step),
+        _ => None,
+    }
 }

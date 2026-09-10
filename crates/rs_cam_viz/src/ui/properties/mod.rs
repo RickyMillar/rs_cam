@@ -845,6 +845,49 @@ fn draw_model_properties(
     ui.label(format!("Type: {:?}", model.kind));
     ui.label(format!("Path: {}", model.path.display()));
 
+    // G-MODELRELINK (F4.3). Two things this panel could not do before.
+    //
+    // It could not say WHY. `LoadedModel::load_error` holds the loader's own
+    // reason and was rendered nowhere in the GUI — only MCP `inspect_model`
+    // ever published it — so a model that failed to load showed three lines
+    // (name, type, path) and no explanation.
+    //
+    // And it offered no repair. The only routes were "Reload from disk" (the
+    // same path that just failed) and "Delete" (refused while any toolpath
+    // references it), so a project moved between machines was stuck. "Locate
+    // file…" is the missing one, and it is shown on healthy models too
+    // (R0.7 §7 Q3): pointing a model at a different file is the same
+    // operation whether or not the old one is still there.
+    if let Some(detail) = &model.load_error {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("Not loaded: {detail}"))
+                    .small()
+                    .color(egui::Color32::from_rgb(220, 150, 60)),
+            )
+            .wrap(),
+        );
+    }
+    let (filter_label, extensions): (&str, &[&str]) = match model.kind {
+        Some(crate::state::job::ModelKind::Stl) => ("STL Files", &["stl", "STL"]),
+        Some(crate::state::job::ModelKind::Dxf) => ("DXF Files", &["dxf", "DXF"]),
+        Some(crate::state::job::ModelKind::Svg) => ("SVG Files", &["svg", "SVG"]),
+        Some(crate::state::job::ModelKind::Step) => ("STEP Files", &["step", "stp", "STEP", "STP"]),
+        None => ("Model Files", &["stl", "dxf", "svg", "step", "stp"]),
+    };
+    if ui
+        .button("Locate file\u{2026}")
+        .on_hover_text(
+            "Point this model at a different file on disk. The model keeps its name, its declared units and its identity, so every operation built on it keeps working — and every one of them is marked for regeneration, because the geometry changed.",
+        )
+        .clicked()
+        && let Some(path) = rfd::FileDialog::new()
+            .add_filter(filter_label, extensions)
+            .pick_file()
+    {
+        events.push(AppEvent::RelinkModel(id, path));
+    }
+
     if let Some(mesh) = &model.mesh {
         let bb = &mesh.bbox;
         let dx = bb.max.x - bb.min.x;

@@ -43,6 +43,12 @@ impl<B: ComputeBackend> AppController<B> {
                     self.push_error(&error);
                 }
             }
+            AppEvent::RelinkModel(model_id, ref path) => {
+                let path = path.clone();
+                if let Err(error) = self.relink_model(model_id, &path) {
+                    self.push_error(&error);
+                }
+            }
 
             // --- Tree / selection events ---
             AppEvent::Select(ref selection) => self.handle_select(selection),

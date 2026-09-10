@@ -43,6 +43,38 @@ fn cut_direction_to_key(cd: BitCutDirection) -> String {
     .to_owned()
 }
 
+/// How a model path is written to a project file (G-MODELRELINK, F4.3).
+///
+/// **Relative when the model sits under the project directory, absolute
+/// otherwise.** A project folder that holds its own models can be copied to
+/// another machine, or moved on this one, and still open — which is the case
+/// this exists for. A model outside that folder has no shorter honest
+/// description than its absolute path; writing `../../..` chains instead
+/// would be fragile, unreadable, and undefined across Windows drives.
+///
+/// The save used to be a pass-through of whatever
+/// [`crate::session::LoadedModel::path`] happened to hold, so a project was
+/// absolute-or-relative according to how its models were first added. Since
+/// F4.3 the in-memory path is always the resolved absolute one
+/// (`project_file::resolve_model_path`), so this is the single place the
+/// question is answered.
+///
+/// Ported verbatim in behaviour from `rs_cam_viz`'s fallback loader
+/// (`io/project.rs::persist_model_path`), which had the rule right and no
+/// production caller. That copy stays where it is; it belongs to that
+/// loader.
+fn persist_model_path(project_dir: Option<&Path>, model_path: &Path) -> String {
+    let Some(project_dir) = project_dir else {
+        return model_path.to_string_lossy().into_owned();
+    };
+    if model_path.is_absolute()
+        && let Ok(relative) = model_path.strip_prefix(project_dir)
+    {
+        return relative.to_string_lossy().into_owned();
+    }
+    model_path.to_string_lossy().into_owned()
+}
+
 impl ProjectSession {
     /// Save the current session state to a TOML project file.
     ///
@@ -50,7 +82,11 @@ impl ProjectSession {
     /// same directory, then renamed into place.
     #[instrument(skip(self))]
     pub fn save(&self, path: &Path) -> Result<(), SessionError> {
-        let project = self.to_project_file();
+        // G-MODELRELINK (F4.3): the destination directory decides how model
+        // paths are written — see `persist_model_path`. `save` is the only
+        // caller that knows it, which is why the rule lives here and not in
+        // `to_project_file`.
+        let project = self.to_project_file(path.parent());
         let toml_string = toml::to_string_pretty(&project)
             .map_err(|e| SessionError::TomlSerialize(e.to_string()))?;
 
@@ -67,7 +103,7 @@ impl ProjectSession {
     /// Construct a `ProjectFile` from the current session state.
     ///
     /// This is the reverse of `build_session_from_project`.
-    fn to_project_file(&self) -> ProjectFile {
+    fn to_project_file(&self, project_dir: Option<&Path>) -> ProjectFile {
         // Stock
         let stock = ProjectStockConfig {
             x: self.stock.x,
@@ -138,7 +174,7 @@ impl ProjectSession {
             .iter()
             .map(|m| ProjectModelSection {
                 id: Some(m.id),
-                path: m.path.to_string_lossy().into_owned(),
+                path: persist_model_path(project_dir, &m.path),
                 name: m.name.clone(),
                 kind: m.kind,
                 units: m.units,

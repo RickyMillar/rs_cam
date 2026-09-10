@@ -1,6 +1,6 @@
 //! TOML project file types and loading/saving helpers.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -566,16 +566,34 @@ pub(crate) fn infer_model_kind(path: &Path) -> Option<ModelKind> {
         })
 }
 
+/// Resolve a stored model path against the project file's own directory.
+///
+/// G-MODELRELINK (F4.3): this rule used to live inside
+/// [`load_model_geometry`] and be applied only for the READ — the session
+/// then stored the raw string, so a project with `path = "m.stl"` kept a
+/// path that resolves against the process working directory. Reload from
+/// disk looked for `./m.stl` wherever `rs_cam_gui` was launched, and the
+/// missing-model warning printed a string that named no directory anyone
+/// had searched.
+///
+/// Hoisted so `LoadedModel::path` can hold the RESOLVED path, which is what
+/// the interactive import door has always stored. One rule, one meaning:
+/// **in memory a model path is absolute** (or as absolute as the stored
+/// string and the project's location allow).
+pub(crate) fn resolve_model_path(raw: &str, base_dir: &Path) -> PathBuf {
+    let raw_path = Path::new(raw);
+    if raw_path.is_absolute() {
+        raw_path.to_path_buf()
+    } else {
+        base_dir.join(raw_path)
+    }
+}
+
 pub(crate) fn load_model_geometry(
     model: &ProjectModelSection,
     base_dir: &Path,
 ) -> Result<LoadedGeometry, SessionError> {
-    let raw_path = Path::new(&model.path);
-    let full_path = if raw_path.is_absolute() {
-        raw_path.to_path_buf()
-    } else {
-        base_dir.join(raw_path)
-    };
+    let full_path = resolve_model_path(&model.path, base_dir);
 
     let kind = model
         .kind
@@ -831,7 +849,11 @@ pub(super) fn build_session_from_project(
     let mut models = Vec::new();
     for (idx, model_section) in project.models.iter().enumerate() {
         let model_id = model_section.id.unwrap_or(idx);
-        let model_path = std::path::PathBuf::from(&model_section.path);
+        // G-MODELRELINK: the RESOLVED path, not the raw string — see
+        // `resolve_model_path`. All four arms below (mesh, polygons, step,
+        // and the error placeholder) share this binding, so a model that
+        // failed to load still carries the path that was actually searched.
+        let model_path = resolve_model_path(&model_section.path, base_dir);
         let model_kind = model_section.kind.or_else(|| infer_model_kind(&model_path));
         let model_units = model_section.units;
 
