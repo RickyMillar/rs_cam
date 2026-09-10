@@ -29,6 +29,7 @@ const PANEL_SRC: &str = include_str!("../src/ui/toolpath_panel.rs");
 const RENDER_SRC: &str = include_str!("../src/render/mod.rs");
 const VIEWPORT_SRC: &str = include_str!("../src/app/viewport.rs");
 const READINESS_PANEL_SRC: &str = include_str!("../src/ui/readiness_panel.rs");
+const WORKSPACE_BAR_SRC: &str = include_str!("../src/ui/workspace_bar.rs");
 
 /// The inspector header's status line reads the freshness state, and its
 /// `EditedSince` arm says both halves — the generation finished, and what it
@@ -141,28 +142,92 @@ fn readiness_says_current_and_names_the_edited_ones() {
     );
 }
 
-/// The caution this whole task ships under: F2.3 owns the export gate, and
-/// until it lands an operation reading STALE can still be exported from the
-/// GUI's retained result. No text this task adds may imply otherwise.
+/// No freshness surface writes its own export-blocking sentence.
 ///
-/// A census over the strings F2.2 introduced, so a later edit cannot quietly
-/// turn a freshness notice into an export promise.
+/// **This test changed its subject on 2026-09-10 (F2.9), and the reason is
+/// worth keeping.** It was written under F2.2, against a head where F2.3 had
+/// not landed: an operation whose card read STALE could still export its old
+/// geometry, so the risk was that a freshness string would over-promise and
+/// turn a display notice into a safety claim the programme had not earned.
+/// The test therefore refused the word "export" anywhere near "stale".
+///
+/// F2.3 merged and the gate exists. That caution is spent, and keeping it
+/// would now be actively wrong twice over: its failure message asserted a
+/// falsehood, and it would have failed a future card chip that said "this
+/// will not export until you regenerate" — a true and useful sentence.
+///
+/// **The risk inverted.** It is no longer over-promising; it is a second
+/// surface explaining WHY an operation blocks, in its own words, and drifting
+/// from the one builder F2.3 gave export, pre-flight and MCP `export_gcode`
+/// (`io::export::blocking_toolpath_message`). Two texts for one refusal is
+/// the shape of every defect this phase has closed: three freshness stores in
+/// R0.1, four workspace lists in G-WSMENU, two chip vocabularies here.
+///
+/// So the rule is now: a freshness surface may SAY an operation will not
+/// export — but the sentence comes from the shared builder, not from a
+/// literal it wrote itself. The word "export" on its own is fine, and has to
+/// be: `readiness_panel.rs` carries an "Export G-code…" button and
+/// `properties/mod.rs` a Getting-started step.
 #[test]
-fn no_freshness_text_promises_that_export_is_gated() {
+fn no_freshness_surface_writes_its_own_export_blocking_sentence() {
+    /// Words that turn a mention of export into a claim about whether one
+    /// will happen. A label or a menu item contains none of them.
+    const BLOCKING_CLAIM: &[&str] = &[
+        "cannot",
+        "can't",
+        "won't",
+        "will not",
+        "unable",
+        "block",
+        "refus",
+        "prevent",
+        "not be export",
+    ];
+
     for (label, src) in [
         ("toolpath_panel.rs", PANEL_SRC),
         ("readiness_panel.rs", READINESS_PANEL_SRC),
+        ("workspace_bar.rs", WORKSPACE_BAR_SRC),
+        ("properties/mod.rs", PROPERTIES_SRC),
     ] {
-        for line in src.lines() {
+        // A surface that calls the shared builder is using the one text by
+        // construction; the rule is about surfaces that write their own.
+        if src.contains("blocking_toolpath_message") {
+            continue;
+        }
+        for (number, line) in src.lines().enumerate() {
             let lower = line.to_lowercase();
-            if !lower.contains("stale") && !lower.contains("edited since") {
+            // Only string literals — a comment may discuss the gate freely,
+            // and several of them do.
+            if !line.contains('"') || !lower.contains("export") {
                 continue;
             }
-            assert!(
-                !lower.contains("export"),
-                "{label}: a freshness string mentions export, but F2.3 has not \
-                 landed the gate and a stale operation still exports: {line}"
-            );
+            let trimmed = lower.trim_start();
+            if trimmed.starts_with("//") || trimmed.starts_with("///") {
+                continue;
+            }
+            if let Some(claim) = BLOCKING_CLAIM.iter().find(|c| lower.contains(**c)) {
+                panic!(
+                    "{label}:{}: this surface writes its own export-blocking sentence                      (matched {claim:?}). That text has ONE home since F2.3 —                      `io::export::blocking_toolpath_message` — which export, the                      pre-flight modal and MCP `export_gcode` all share. Call it                      instead of writing a second wording that can drift from it:\n{line}",
+                    number + 1
+                );
+            }
         }
     }
+}
+
+/// The other half of the same rule: the shared builder is reachable. A rule
+/// that says "call this instead" is only fair if a surface can.
+#[test]
+fn the_shared_blocking_text_is_available_to_a_freshness_surface() {
+    let src = include_str!("../src/io/export.rs");
+    assert!(
+        src.contains("pub fn blocking_toolpath_message("),
+        "the one builder must stay public, or the rule above has no remedy"
+    );
+    assert!(
+        src.contains("FreshnessState::EditedSince => format!("),
+        "and it must still key on the freshness state, which is what let it \
+         say something an edited operation could not say under ComputeStatus"
+    );
 }
