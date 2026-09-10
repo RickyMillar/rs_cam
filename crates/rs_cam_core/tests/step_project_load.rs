@@ -12,6 +12,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(feature = "step")]
 
+use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::ProjectSession;
 use std::path::Path;
 
@@ -44,6 +45,85 @@ fn project_session_load_preserves_step_brep_topology() {
     // Cube has 6 faces; assert we got the expected geometry, not just a
     // stub enriched mesh.
     assert_eq!(enriched.face_count(), 6, "cube should have 6 BREP faces");
+}
+
+/// **G-STEPUNITS** — the project loader DROPS a STEP model's unit scale.
+///
+/// `ModelUnits` is the only unit conversion a STEP file gets in this
+/// product. `truck-stepio`'s reader performs none: the crate's only
+/// `LENGTH_UNIT` / `SI_UNIT` handling is in its WRITER, which emits a
+/// hardcoded millimetre header. `step_input::load_step` adds none of its
+/// own.
+///
+/// `load_model_geometry` binds `let scale = model.units…scale_factor()` and
+/// passes it to the STL arm, the DXF arm and the SVG arm. The STEP arm never
+/// reads it. The interactive door `io::load_model_file` DOES apply it.
+///
+/// This is the FOURTH divergence found in this loader pair. G-UNITSRELOAD
+/// closed the third (SVG and DXF) and left this one; that sentry has no STEP
+/// coverage at all.
+///
+/// Reachable on three doors, none of them the GUI alone — `import_step_path`
+/// hardcodes a scale of 1.0 and `rescale_model` refuses STEP outright. The
+/// plainest is `rs_cam_cli run --units inches part.step`, which cuts the
+/// program on geometry 25.4 times too small.
+///
+/// The test asserts the two doors AGREE. It does not assert a magic size,
+/// for the reason G-UNITSRELOAD gives: a size assertion pins one door's
+/// answer and hides which door is wrong.
+#[test]
+fn both_doors_apply_a_step_models_declared_units() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let step_path = manifest.join("tests/fixtures/step/occt-cube.step");
+    assert!(step_path.exists(), "fixture STEP missing: {step_path:?}");
+
+    // NON-VACUITY: the interactive door must actually move the geometry when
+    // the units change. Without this the agreement assertion below could
+    // pass because neither door scales anything.
+    let as_mm =
+        rs_cam_core::io::load_model_file(&step_path, 1, ModelKind::Step, ModelUnits::Millimeters)
+            .expect("interactive load, mm");
+    let as_inches =
+        rs_cam_core::io::load_model_file(&step_path, 1, ModelKind::Step, ModelUnits::Inches)
+            .expect("interactive load, inches");
+    let mm_bbox = as_mm.bbox().expect("mm bbox");
+    let inch_bbox = as_inches.bbox().expect("inch bbox");
+    let mm_x = mm_bbox.max.x - mm_bbox.min.x;
+    let inch_x = inch_bbox.max.x - inch_bbox.min.x;
+    assert!(
+        (inch_x - mm_x * 25.4).abs() < 1e-6,
+        "non-vacuity: the interactive door must scale a STEP model by its \
+         declared units. mm span {mm_x}, inch span {inch_x}"
+    );
+
+    // The project door, same file, same declared units.
+    let tmp = tempdir_for_test("step_units");
+    let model_dst = tmp.join("occt-cube.step");
+    std::fs::copy(&step_path, &model_dst).expect("copy step fixture");
+    let toml_dst = tmp.join("project.toml");
+    std::fs::write(&toml_dst, project_toml_with_units("inches")).expect("write project toml");
+
+    let session = ProjectSession::load(&toml_dst).expect("session load");
+    let model = session.models().first().expect("at least one model");
+    let project_bbox = model.bbox().expect("project-door bbox");
+    let project_x = project_bbox.max.x - project_bbox.min.x;
+
+    assert!(
+        (project_x - inch_x).abs() < 1e-6,
+        "the two doors must agree on a STEP model's declared units. The \
+         interactive door gives a span of {inch_x} mm and the project door \
+         gives {project_x} mm. The project door drops the scale, so a saved \
+         project re-imports an inch-authored STEP model 25.4 times too small."
+    );
+}
+
+/// The same template as [`project_toml_template`], with the declared units
+/// as a parameter.
+fn project_toml_with_units(units_kind: &str) -> String {
+    project_toml_template().replace(
+        "kind = \"millimeters\"",
+        &format!("kind = \"{units_kind}\""),
+    )
 }
 
 fn tempdir_for_test(name: &str) -> std::path::PathBuf {
