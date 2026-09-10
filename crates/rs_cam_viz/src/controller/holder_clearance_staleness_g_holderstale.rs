@@ -71,10 +71,17 @@ use crate::ui::readiness::{CheckStatus, holder_clearance_check};
 
 /// Accepts every submission, counts the collision ones, and hands back
 /// whatever has been queued on it.
+///
+/// F2.13 widened this to `pub(super)` and made it RECORD the motion each
+/// collision submit carried. `holder_clearance_scope_g_holderscope`'s
+/// contract is about which toolpaths one check examines, and the only way
+/// to read that off the real submit is to keep the request.
 #[derive(Default)]
-struct ScriptedLane {
-    drained: Vec<ComputeMessage>,
-    collision_submits: usize,
+pub(super) struct ScriptedLane {
+    pub(super) drained: Vec<ComputeMessage>,
+    pub(super) collision_submits: usize,
+    /// The motion each collision submit carried, in submit order.
+    pub(super) collision_motion: Vec<Arc<rs_cam_core::toolpath_spans::AnnotatedToolpath>>,
 }
 
 impl ComputeBackend for ScriptedLane {
@@ -82,8 +89,9 @@ impl ComputeBackend for ScriptedLane {
         ToolpathSubmitOutcome::Queued
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
-    fn submit_collision(&mut self, _request: CollisionRequest) {
+    fn submit_collision(&mut self, request: CollisionRequest) {
         self.collision_submits += 1;
+        self.collision_motion.push(Arc::clone(&request.annotated));
     }
     fn submit_optimize(&mut self, _request: OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: ComputeLane) {}
@@ -100,7 +108,7 @@ impl ComputeBackend for ScriptedLane {
 
 // ── the project ────────────────────────────────────────────────────────────
 
-fn toolpath(id: usize) -> ToolpathConfig {
+pub(super) fn toolpath(id: usize) -> ToolpathConfig {
     ToolpathConfig {
         id: rs_cam_core::ToolpathId(id),
         name: format!("Op {id}"),
@@ -130,7 +138,7 @@ fn toolpath(id: usize) -> ToolpathConfig {
 /// GUI result, a tool matching `tool_id` and a model carrying a mesh, so all
 /// three are required before the check can run at all. The fixture is here so
 /// the obstacle-edit classes have something to move.
-fn seeded_controller() -> AppController<ScriptedLane> {
+pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
     let mut controller = AppController::with_backend(ScriptedLane::default());
     controller
         .state
@@ -163,7 +171,7 @@ fn seeded_controller() -> AppController<ScriptedLane> {
 
 /// Finish the operation the way the lane would, so the GUI holds the motion
 /// the collision check reads.
-fn land_a_result_for(controller: &mut AppController<ScriptedLane>, tp_id: ToolpathId) {
+pub(super) fn land_a_result_for(controller: &mut AppController<ScriptedLane>, tp_id: ToolpathId) {
     let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
         rs_cam_core::toolpath::Toolpath::new(),
     ));
@@ -191,12 +199,12 @@ fn land_a_result_for(controller: &mut AppController<ScriptedLane>, tp_id: Toolpa
 
 /// Which verdict the lane is asked to return.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Verdict {
+pub(super) enum Verdict {
     Clear,
     Colliding,
 }
 
-fn report_for(verdict: Verdict) -> CollisionReport {
+pub(super) fn report_for(verdict: Verdict) -> CollisionReport {
     match verdict {
         Verdict::Clear => CollisionReport {
             collisions: Vec::new(),
@@ -217,7 +225,7 @@ fn report_for(verdict: Verdict) -> CollisionReport {
 
 /// Run the whole collision check the way the operator's "Re-check" button
 /// does: the real request, the real lane reply, the real drain arm.
-fn run_collision_check(controller: &mut AppController<ScriptedLane>, verdict: Verdict) {
+pub(super) fn run_collision_check(controller: &mut AppController<ScriptedLane>, verdict: Verdict) {
     let before = controller.compute.collision_submits;
     controller.handle_internal_event(AppEvent::RunCollisionCheck);
     assert_eq!(
