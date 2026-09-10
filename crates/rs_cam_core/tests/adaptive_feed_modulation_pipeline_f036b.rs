@@ -272,10 +272,14 @@ fn collect_f_words(gcode: &str) -> Vec<f64> {
 /// The control here is the same session with `kinematics = None`. The
 /// flag is OFF on every path below, and `modulate_simulation_trace`
 /// returns before it calls `apply_adaptive_feed_modulation`, so no path
-/// modulates. Note what does NOT hold any more: there is no `is_some()`
-/// kinematics guard inside `apply_adaptive_feed_modulation`. It falls
-/// back to `effective_kinematics()`, so a machine with no kinematics
-/// block still modulates when the flag is ON.
+/// modulates. Note what the kinematics block does and does not gate
+/// inside `apply_adaptive_feed_modulation`. The modulation of feeds has
+/// no kinematics guard: it reads `effective_kinematics()`, so a machine
+/// with no kinematics block still modulates when the flag is ON. Since
+/// N7 (2026-09-11) the pass's cycle-time re-integration is guarded on
+/// `self.machine.kinematics.is_some()`, so that machine's published
+/// runtimes stay byte-identical on both sides of the flag
+/// (`tests/retime_respects_no_kinematics_n7.rs`).
 #[test]
 fn flag_off_emits_identical_gcode_to_pre_f036() {
     // Path A: kinematics attached + flag OFF.

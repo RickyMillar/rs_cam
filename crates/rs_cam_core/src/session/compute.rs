@@ -2742,6 +2742,9 @@ impl ProjectSession {
         // block — it falls back to `effective_kinematics` (the generic
         // wood-router profile), matching the strategy advisor. The GUI/MCP
         // sim path applies the same pass via [`modulate_simulation_trace`].
+        // N7 (2026-09-11): the pass's cycle-time re-integration DOES require
+        // that block, so with `kinematics: None` the feeds move and the
+        // published runtimes do not.
         self.modulate_simulation_trace(&mut result.cut_trace, opts);
 
         self.simulation = Some(result);
@@ -3264,113 +3267,140 @@ impl ProjectSession {
             return;
         };
         let trace = Arc::make_mut(trace_arc);
-        // N2 (2026-09-10) — ONE CLOCK for every runtime this pass publishes.
-        // The re-time integrates on `effective_kinematics()` and the cutting
-        // feed ceiling — the clock the EMITTED feeds run at. The integrator
-        // inside `run_simulation` used the machine's own `kinematics` block
-        // and `max_feed_mm_min`, so the two clocks can differ. After this pass
-        // no published runtime carries the integrator's clock:
-        // `toolpath_runtimes`, the engagement summaries and the project total
-        // are re-integrated together and published together.
+        // N7 (2026-09-11, operator ruling) — the re-time integrates only when
+        // the machine carries a kinematics block. `MachineProfile::kinematics`
+        // is the F-034 feature flag: its `None` keeps the live-sim
+        // `total_runtime_s` byte-identical, and every preset ships `None`.
+        // `effective_kinematics()` below falls back to the generic wood
+        // router, so without this guard an unconfigured machine got a full
+        // re-integration whenever modulation ran — and `readiness.rs` then
+        // labelled that guess `CycleTimeBasis::MachineModel`.
         //
-        // The map covers every toolpath the integrator reached, DRILLS
-        // INCLUDED. A drill has no engagement summary, so a fold over
-        // `toolpath_summaries` alone drops its seconds. That is G-DRILLTIME,
-        // and N2 is the same defect re-opened on this path.
-        let mut per_toolpath_runtime: std::collections::BTreeMap<
-            ToolpathId,
-            crate::machine_kinematics::CycleTimeBreakdown,
-        > = std::collections::BTreeMap::new();
-        for entry in &trace.toolpath_runtimes {
-            // A toolpath with no config or no cached result cannot be
-            // re-integrated. Keep the integrator's own value rather than drop
-            // the entry: dropping it is the exact shape of the defect above.
-            let b = self
-                .reintegrate_toolpath(entry.toolpath_id, &kinematics, max_feed, rapid_feed)
-                .unwrap_or(entry.breakdown);
-            per_toolpath_runtime.insert(entry.toolpath_id, b);
-        }
-        // G-AIRDENOM (2026-09-08) — the loop below rewrites
-        // `total_runtime_s` onto the integrator's clock. The cutting
-        // slices must move with it or the two air-cut percentages divide
-        // one numerator by two different time models. Deltas are folded
-        // into the project summary after the loop, the same way the project
-        // total is, so a toolpath the loop skips keeps whatever the
-        // accumulator gave it.
-        let mut air_delta = 0.0;
-        let mut cutting_delta = 0.0;
-        let mut low_engagement_delta = 0.0;
-        let mut rapid_delta = 0.0;
-        // Disjoint field borrows: the loop takes `toolpath_summaries`
-        // mutably while the rebase reads `samples`.
-        let samples = &trace.samples;
-        for tp_summary in &mut trace.toolpath_summaries {
-            // Recompute the MoveIntent breakdown alongside the total —
-            // leaving F-034's pre-modulation breakdown in place would
-            // desynchronize `runtime_by_intent.total_s` from the
-            // modulated `total_runtime_s` written below.
-            let b = match per_toolpath_runtime.get(&tp_summary.toolpath_id) {
-                Some(&b) => b,
-                // N2 — the integrator published no runtime for this toolpath.
-                // That is the whole trace when the machine carries no
-                // `kinematics` block: `build_sim_request` then supplies no
-                // `KinematicsContext`, `toolpath_runtimes` stays empty, and
-                // the map is empty with it. Integrate here, exactly as this
-                // loop did before N2, and leave the empty slot empty.
-                None => {
-                    let Some(b) = self.reintegrate_toolpath(
-                        tp_summary.toolpath_id,
-                        &kinematics,
-                        max_feed,
-                        rapid_feed,
-                    ) else {
-                        continue;
-                    };
-                    b
-                }
-            };
-            tp_summary.total_runtime_s = b.total_s;
-            tp_summary.runtime_by_intent = Some(b);
-            // G-AIRDENOM — rebase this toolpath's cutting seconds onto the
-            // clock just written above. `None` means the toolpath carried
-            // no cutting samples (drill-only, all-rapid); leave it alone
-            // rather than writing a zero over a measured value.
-            if let Some(rebased) = crate::simulation_cut::rebase_cutting_times(
-                samples,
-                tp_summary.toolpath_id,
-                &modulated_feeds,
-                &b,
-            ) {
-                cutting_delta += rebased.cutting_runtime_s - tp_summary.cutting_runtime_s;
-                air_delta += rebased.air_cut_time_s - tp_summary.air_cut_time_s;
-                low_engagement_delta +=
-                    rebased.low_engagement_time_s - tp_summary.low_engagement_time_s;
-                rapid_delta += rebased.rapid_runtime_s - tp_summary.rapid_runtime_s;
-                tp_summary.cutting_runtime_s = rebased.cutting_runtime_s;
-                tp_summary.air_cut_time_s = rebased.air_cut_time_s;
-                tp_summary.low_engagement_time_s = rebased.low_engagement_time_s;
-                tp_summary.rapid_runtime_s = rebased.rapid_runtime_s;
-                // `average_mrr_mm3_s` is `removed_volume / cutting_runtime_s`,
-                // baked at build time. Leaving it would break an identity a
-                // reader can check from two published fields, so it moves to
-                // the wall clock with its own denominator.
-                if rebased.cutting_runtime_s > 1e-9 {
-                    tp_summary.average_mrr_mm3_s =
-                        tp_summary.total_removed_volume_est_mm3 / rebased.cutting_runtime_s;
+        // The modulation of feeds above is NOT guarded. It still applies on
+        // every machine. Only the cycle-time re-integration is skipped.
+        //
+        // The G-AIRDENOM rebase inside the loop is skipped with the block, on
+        // purpose. `rebase_cutting_times` takes the integrator's own
+        // `CycleTimeBreakdown` as the clock it moves the cutting seconds onto.
+        // With no integration there is no such clock, so the naive dexel
+        // seconds at the commanded feed stay the one time base. A rebase
+        // against a fallback integration, with `total_runtime_s` left naive,
+        // rebuilds the exact mixed-base defect G-AIRDENOM closed.
+        //
+        // Sentry: `tests/retime_respects_no_kinematics_n7.rs`.
+        if self.machine.kinematics.is_some() {
+            // N2 (2026-09-10) — ONE CLOCK for every runtime this pass publishes.
+            // The re-time integrates on `effective_kinematics()` and the cutting
+            // feed ceiling — the clock the EMITTED feeds run at. The integrator
+            // inside `run_simulation` used the machine's own `kinematics` block
+            // and `max_feed_mm_min`, so the two clocks can differ. After this pass
+            // no published runtime carries the integrator's clock:
+            // `toolpath_runtimes`, the engagement summaries and the project total
+            // are re-integrated together and published together.
+            //
+            // The map covers every toolpath the integrator reached, DRILLS
+            // INCLUDED. A drill has no engagement summary, so a fold over
+            // `toolpath_summaries` alone drops its seconds. That is G-DRILLTIME,
+            // and N2 is the same defect re-opened on this path.
+            let mut per_toolpath_runtime: std::collections::BTreeMap<
+                ToolpathId,
+                crate::machine_kinematics::CycleTimeBreakdown,
+            > = std::collections::BTreeMap::new();
+            for entry in &trace.toolpath_runtimes {
+                // A toolpath with no config or no cached result cannot be
+                // re-integrated. Keep the integrator's own value rather than drop
+                // the entry: dropping it is the exact shape of the defect above.
+                let b = self
+                    .reintegrate_toolpath(entry.toolpath_id, &kinematics, max_feed, rapid_feed)
+                    .unwrap_or(entry.breakdown);
+                per_toolpath_runtime.insert(entry.toolpath_id, b);
+            }
+            // G-AIRDENOM (2026-09-08) — the loop below rewrites
+            // `total_runtime_s` onto the integrator's clock. The cutting
+            // slices must move with it or the two air-cut percentages divide
+            // one numerator by two different time models. Deltas are folded
+            // into the project summary after the loop, the same way the project
+            // total is, so a toolpath the loop skips keeps whatever the
+            // accumulator gave it.
+            let mut air_delta = 0.0;
+            let mut cutting_delta = 0.0;
+            let mut low_engagement_delta = 0.0;
+            let mut rapid_delta = 0.0;
+            // Disjoint field borrows: the loop takes `toolpath_summaries`
+            // mutably while the rebase reads `samples`.
+            let samples = &trace.samples;
+            for tp_summary in &mut trace.toolpath_summaries {
+                // Recompute the MoveIntent breakdown alongside the total —
+                // leaving F-034's pre-modulation breakdown in place would
+                // desynchronize `runtime_by_intent.total_s` from the
+                // modulated `total_runtime_s` written below.
+                let b = match per_toolpath_runtime.get(&tp_summary.toolpath_id) {
+                    Some(&b) => b,
+                    // N2 — the integrator published no runtime for this
+                    // toolpath. Integrate here, exactly as this loop did
+                    // before N2, and leave the empty slot empty.
+                    //
+                    // N7 — this arm no longer covers the no-kinematics case.
+                    // That machine exits at the guard above, because a
+                    // fallback integration is not a machine model. The arm
+                    // stays defensive: it covers a summary the integrator
+                    // itself did not reach on a machine that DOES carry a
+                    // `kinematics` block.
+                    None => {
+                        let Some(b) = self.reintegrate_toolpath(
+                            tp_summary.toolpath_id,
+                            &kinematics,
+                            max_feed,
+                            rapid_feed,
+                        ) else {
+                            continue;
+                        };
+                        b
+                    }
+                };
+                tp_summary.total_runtime_s = b.total_s;
+                tp_summary.runtime_by_intent = Some(b);
+                // G-AIRDENOM — rebase this toolpath's cutting seconds onto the
+                // clock just written above. `None` means the toolpath carried
+                // no cutting samples (drill-only, all-rapid); leave it alone
+                // rather than writing a zero over a measured value.
+                if let Some(rebased) = crate::simulation_cut::rebase_cutting_times(
+                    samples,
+                    tp_summary.toolpath_id,
+                    &modulated_feeds,
+                    &b,
+                ) {
+                    cutting_delta += rebased.cutting_runtime_s - tp_summary.cutting_runtime_s;
+                    air_delta += rebased.air_cut_time_s - tp_summary.air_cut_time_s;
+                    low_engagement_delta +=
+                        rebased.low_engagement_time_s - tp_summary.low_engagement_time_s;
+                    rapid_delta += rebased.rapid_runtime_s - tp_summary.rapid_runtime_s;
+                    tp_summary.cutting_runtime_s = rebased.cutting_runtime_s;
+                    tp_summary.air_cut_time_s = rebased.air_cut_time_s;
+                    tp_summary.low_engagement_time_s = rebased.low_engagement_time_s;
+                    tp_summary.rapid_runtime_s = rebased.rapid_runtime_s;
+                    // `average_mrr_mm3_s` is `removed_volume / cutting_runtime_s`,
+                    // baked at build time. Leaving it would break an identity a
+                    // reader can check from two published fields, so it moves to
+                    // the wall clock with its own denominator.
+                    if rebased.cutting_runtime_s > 1e-9 {
+                        tp_summary.average_mrr_mm3_s =
+                            tp_summary.total_removed_volume_est_mm3 / rebased.cutting_runtime_s;
+                    }
                 }
             }
-        }
-        // N2 — publish `toolpath_runtimes`, the matching summaries and the
-        // project total through the one tail the integrator also uses, so both
-        // paths write the same three slots the same way.
-        crate::simulation_cut::publish_cycle_times(trace, &per_toolpath_runtime);
-        trace.summary.cutting_runtime_s += cutting_delta;
-        trace.summary.air_cut_time_s += air_delta;
-        trace.summary.low_engagement_time_s += low_engagement_delta;
-        trace.summary.rapid_runtime_s += rapid_delta;
-        if trace.summary.cutting_runtime_s > 1e-9 {
-            trace.summary.average_mrr_mm3_s =
-                trace.summary.total_removed_volume_est_mm3 / trace.summary.cutting_runtime_s;
+            // N2 — publish `toolpath_runtimes`, the matching summaries and the
+            // project total through the one tail the integrator also uses, so both
+            // paths write the same three slots the same way.
+            crate::simulation_cut::publish_cycle_times(trace, &per_toolpath_runtime);
+            trace.summary.cutting_runtime_s += cutting_delta;
+            trace.summary.air_cut_time_s += air_delta;
+            trace.summary.low_engagement_time_s += low_engagement_delta;
+            trace.summary.rapid_runtime_s += rapid_delta;
+            if trace.summary.cutting_runtime_s > 1e-9 {
+                trace.summary.average_mrr_mm3_s =
+                    trace.summary.total_removed_volume_est_mm3 / trace.summary.cutting_runtime_s;
+            }
         }
         // F-039 — stamp the per-move binding map + per-toolpath
         // modulation summaries onto the trace. Both fields are
