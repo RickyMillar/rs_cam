@@ -34,22 +34,32 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 &mut still_open,
             );
 
-            // --- Ungenerated operations (G-EXPORTSKIP) ---
-            // One blocking row per ENABLED op with no result, printing the
-            // same sentence the export refusal prints — one text builder
-            // (`io::export::ungenerated_toolpath_message`), two callers.
-            // Pre-fix the export silently skipped such an op and this modal
-            // only said "3/4 computed".
-            let ungenerated = crate::io::export::ungenerated_toolpaths(
+            // --- Operations that are not current (G-EXPORTSKIP,
+            // G-STALEXPORT) ---
+            // One row per ENABLED op whose result is not the answer for the
+            // configuration on screen, printing the same sentence the
+            // export refusal prints — one text builder
+            // (`io::export::blocking_toolpath_message`), three callers
+            // (here, the export, MCP `export_gcode`). Pre-fix the export
+            // silently skipped an ungenerated op and silently emitted an
+            // EDITED op's previous geometry, while this modal said
+            // "3/4 computed".
+            let blocking = crate::io::export::blocking_toolpaths(
                 &state.session,
                 &state.gui,
                 0..state.session.toolpath_configs().len(),
+                state.gui.stale_export,
             );
-            for blocker in &ungenerated {
+            for blocker in &blocking {
+                let (status, label) = if blocker.waived_by_operator {
+                    (CheckStatus::Warning, "Accepted — exports previous geometry")
+                } else {
+                    (CheckStatus::Fail, "Blocks export")
+                };
                 check_card(
                     ui,
-                    CheckStatus::Fail,
-                    "Blocks export",
+                    status,
+                    label,
                     &blocker.message,
                     "Toolpaths",
                     Some(AppEvent::SwitchWorkspace(
@@ -59,7 +69,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                     &mut still_open,
                 );
             }
-            let ungenerated_blocks = !ungenerated.is_empty();
+            let ungenerated_blocks = blocking.iter().any(|b| !b.waived_by_operator);
+            let any_edited_since = blocking
+                .iter()
+                .any(|b| b.freshness == crate::state::freshness::FreshnessState::EditedSince);
 
             // --- Simulation check ---
             let sim_status = readiness::simulation_check(state);
@@ -210,6 +223,12 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 ui.add_space(4.0);
             }
 
+            // --- Edited-since acceptance (G-STALEXPORT) ---
+            if any_edited_since {
+                draw_stale_export_acceptance(ui, state, events);
+                ui.add_space(4.0);
+            }
+
             let has_failures =
                 sim.checks.holder_collision_count > 0 || !sim.checks.rapid_collisions.is_empty();
 
@@ -279,7 +298,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 }
                 if ungenerated_blocks {
                     ui.label(
-                        egui::RichText::new("Ungenerated operations block export")
+                        egui::RichText::new("Operations without a current result block export")
                             .small()
                             .color(theme::ERROR),
                     );
@@ -366,6 +385,55 @@ fn tool_load_summary_detail(report: &ToolLoadReport) -> String {
     } else {
         format!("{total} toolpath(s) within all modeled bounds")
     }
+}
+
+/// Render the acceptance for operations edited since they were generated
+/// (G-STALEXPORT).
+///
+/// Separate from the tool-load overrides and never folded into them: the
+/// tool-load flags accept a predicted CONSEQUENCE of cutting the emitted
+/// geometry, and this one accepts emitting DIFFERENT geometry from the
+/// one the panel shows. The checkbox says that in those words rather than
+/// "export anyway", because that is the decision being made.
+fn draw_stale_export_acceptance(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    use crate::state::runtime::StaleResultPolicy;
+
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(50, 45, 25))
+        .stroke(egui::Stroke::new(1.5, theme::WARNING))
+        .inner_margin(8.0)
+        .corner_radius(4)
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("Edited since generation")
+                    .strong()
+                    .color(theme::WARNING),
+            );
+            ui.add_space(2.0);
+            ui.label(
+                egui::RichText::new(
+                    "The stored result for the operations above is the geometry from \
+                     before the edit. Regenerating them is the fix.",
+                )
+                .small()
+                .color(theme::TEXT_MUTED),
+            );
+            ui.add_space(4.0);
+            let mut accepted = state.gui.stale_export.accepts_previous_geometry();
+            if ui
+                .checkbox(
+                    &mut accepted,
+                    "Cut the PREVIOUS geometry — the file will not match the parameters on screen",
+                )
+                .changed()
+            {
+                events.push(AppEvent::SetStaleExportPolicy(if accepted {
+                    StaleResultPolicy::AcceptPreviousGeometry
+                } else {
+                    StaleResultPolicy::Refuse
+                }));
+            }
+        });
 }
 
 /// Render the tool-load override panel: per-criterion summary and the two

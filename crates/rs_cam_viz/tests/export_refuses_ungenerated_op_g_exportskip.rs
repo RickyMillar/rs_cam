@@ -42,12 +42,12 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
-    export_combined_gcode_from_session, export_gcode_from_session_with_policy,
-    export_setup_gcode_from_session_with_policy, ungenerated_toolpath_message,
-    ungenerated_toolpaths,
+    blocking_toolpath_message, blocking_toolpaths, export_combined_gcode_from_session,
+    export_gcode_from_session_with_policy, export_setup_gcode_from_session_with_policy,
 };
+use rs_cam_viz::state::freshness::freshness_at;
 use rs_cam_viz::state::job::SetupId;
-use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
+use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
 use rs_cam_viz::state::toolpath::{ComputeStatus, OperationConfig, ToolpathResult};
 
@@ -201,7 +201,13 @@ fn export_and_write(
     sim: &SimulationState,
     path: &std::path::Path,
 ) -> Result<(), VizError> {
-    let gcode = export_gcode_from_session_with_policy(session, gui, sim, policy())?;
+    let gcode = export_gcode_from_session_with_policy(
+        session,
+        gui,
+        sim,
+        policy(),
+        StaleResultPolicy::Refuse,
+    )?;
     std::fs::write(path, gcode).expect("write g-code");
     Ok(())
 }
@@ -263,7 +269,13 @@ fn export_refuses_an_op_awaiting_prior_stock_with_the_upstream_text() {
     let (session, gui, sim) = build_state(SecondOp::Ungenerated(awaiting_prior_stock()));
 
     let msg = expect_export_error(
-        export_gcode_from_session_with_policy(&session, &gui, &sim, policy()),
+        export_gcode_from_session_with_policy(
+            &session,
+            &gui,
+            &sim,
+            policy(),
+            StaleResultPolicy::Refuse,
+        ),
         "export_gcode_from_session_with_policy",
     );
     assert!(
@@ -286,7 +298,13 @@ fn export_refuses_an_errored_op_and_carries_the_generator_error() {
     )));
 
     let msg = expect_export_error(
-        export_gcode_from_session_with_policy(&session, &gui, &sim, policy()),
+        export_gcode_from_session_with_policy(
+            &session,
+            &gui,
+            &sim,
+            policy(),
+            StaleResultPolicy::Refuse,
+        ),
         "export_gcode_from_session_with_policy",
     );
     assert!(
@@ -307,7 +325,14 @@ fn per_setup_and_combined_exports_refuse_the_same_op() {
     let setup_id = SetupId(session.list_setups()[0].id);
 
     let per_setup = expect_export_error(
-        export_setup_gcode_from_session_with_policy(&session, &gui, &sim, setup_id, policy()),
+        export_setup_gcode_from_session_with_policy(
+            &session,
+            &gui,
+            &sim,
+            setup_id,
+            policy(),
+            StaleResultPolicy::Refuse,
+        ),
         "export_setup_gcode_from_session_with_policy",
     );
     assert!(
@@ -351,9 +376,14 @@ fn a_disabled_op_with_no_result_is_skipped_and_the_export_succeeds() {
 // ── 3. The pre-flight rows and the refusal share one text ───────────────
 
 /// `ui/preflight.rs` draws one `Fail` card per row of
-/// `ungenerated_toolpaths` with `row.message` as its detail. The export
+/// `blocking_toolpaths` with `row.message` as its detail. The export
 /// refusal is those same messages joined. Assert the two agree for every
 /// status shape, and that the row list is empty when nothing blocks.
+///
+/// G-STALEXPORT renamed the builder and keyed it on `FreshnessState`
+/// instead of the raw `ComputeStatus`, because the status alone cannot
+/// tell a never-generated op from one whose result belongs to a previous
+/// parameter set. The three texts asserted here are unchanged.
 #[test]
 fn preflight_rows_carry_the_same_text_as_the_export_refusal() {
     for status in [
@@ -365,7 +395,7 @@ fn preflight_rows_carry_the_same_text_as_the_export_refusal() {
         let (session, gui, sim) = build_state(SecondOp::Ungenerated(status.clone()));
         let scope = 0..session.toolpath_configs().len();
 
-        let rows = ungenerated_toolpaths(&session, &gui, scope);
+        let rows = blocking_toolpaths(&session, &gui, scope, StaleResultPolicy::Refuse);
         assert_eq!(
             rows.len(),
             1,
@@ -377,14 +407,26 @@ fn preflight_rows_carry_the_same_text_as_the_export_refusal() {
             "[{label}] the row names the ungenerated op's index"
         );
         assert_eq!(row.name, UNGENERATED_NAME, "[{label}] the row names the op");
+        let freshness = freshness_at(&session, &gui, 1).expect("toolpath 1 exists");
         assert_eq!(
             row.message,
-            ungenerated_toolpath_message(UNGENERATED_NAME, &status),
+            blocking_toolpath_message(UNGENERATED_NAME, &freshness),
             "[{label}] the row text IS the shared builder's text"
+        );
+        assert!(
+            !row.waived_by_operator,
+            "[{label}] a missing result can never be waived — there is no \
+             geometry to put in its place"
         );
 
         let refusal = expect_export_error(
-            export_gcode_from_session_with_policy(&session, &gui, &sim, policy()),
+            export_gcode_from_session_with_policy(
+                &session,
+                &gui,
+                &sim,
+                policy(),
+                StaleResultPolicy::Refuse,
+            ),
             "export_gcode_from_session_with_policy",
         );
         assert!(
@@ -397,7 +439,12 @@ fn preflight_rows_carry_the_same_text_as_the_export_refusal() {
 
     // Nothing blocks when the second op is disabled — no row, no refusal.
     let (session, gui, _sim) = build_state(SecondOp::Disabled);
-    let rows = ungenerated_toolpaths(&session, &gui, 0..session.toolpath_configs().len());
+    let rows = blocking_toolpaths(
+        &session,
+        &gui,
+        0..session.toolpath_configs().len(),
+        StaleResultPolicy::Refuse,
+    );
     assert!(
         rows.is_empty(),
         "a disabled op must not produce a blocking row; got {rows:?}"

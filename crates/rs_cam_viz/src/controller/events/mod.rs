@@ -424,6 +424,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::SwitchWorkspace(_)
             | AppEvent::ShowShortcuts
             | AppEvent::SetToolLoadOverride { .. }
+            | AppEvent::SetStaleExportPolicy(_)
             | AppEvent::OpenExportWizard
             | AppEvent::CloseExportWizard
             | AppEvent::WizardSetStep(_)

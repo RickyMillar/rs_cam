@@ -457,6 +457,7 @@ impl super::RsCamApp {
                 accept_exceeded_tool_load,
                 tool_change_mode,
                 split_setups,
+                accept_previous_geometry,
             } => {
                 let resp = self.mcp_export_gcode(
                     &path,
@@ -464,6 +465,7 @@ impl super::RsCamApp {
                     accept_exceeded_tool_load,
                     tool_change_mode.as_deref(),
                     split_setups,
+                    accept_previous_geometry,
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -3049,6 +3051,7 @@ impl super::RsCamApp {
         accept_exceeded_tool_load: bool,
         tool_change_mode: Option<&str>,
         split_setups: bool,
+        accept_previous_geometry: bool,
     ) -> String {
         // Apply the requested tool-change handling to the session wizard
         // before export so `overlay_for` picks it up — the MCP equivalent
@@ -3096,10 +3099,22 @@ impl super::RsCamApp {
         // Every `Err` arm below returns that text verbatim, so this tool
         // and the GUI pre-flight modal name the same operation for the same
         // reason. Pre-fix the op was silently dropped from the file.
+        //
+        // G-STALEXPORT (2026-09-10): and when an ENABLED toolpath was
+        // EDITED after it was generated. `accept_previous_geometry` waives
+        // that one case — never a missing result — and is passed here
+        // explicitly rather than read from `gui.stale_export`, so an
+        // automation client cannot inherit a checkbox a human left ticked
+        // in the pre-flight modal.
         let state = self.controller.state();
         let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
             accept_unmodeled: accept_unmodeled_tool_load,
             accept_exceeded: accept_exceeded_tool_load,
+        };
+        let stale = if accept_previous_geometry {
+            crate::state::runtime::StaleResultPolicy::AcceptPreviousGeometry
+        } else {
+            crate::state::runtime::StaleResultPolicy::Refuse
         };
 
         // Two-sided / multi-setup split: one self-contained file per setup,
@@ -3140,6 +3155,7 @@ impl super::RsCamApp {
                             accept_unmodeled: accept_unmodeled_tool_load,
                             accept_exceeded: accept_exceeded_tool_load,
                         },
+                        stale,
                     ) {
                         Ok(g) => g,
                         Err(e) => return text(format!("Export failed (setup '{name}'): {e}")),
@@ -3209,6 +3225,7 @@ impl super::RsCamApp {
             &state.gui,
             &state.simulation,
             policy,
+            stale,
         ) {
             Ok(g) => g,
             Err(e) => return text(format!("Export failed: {e}")),

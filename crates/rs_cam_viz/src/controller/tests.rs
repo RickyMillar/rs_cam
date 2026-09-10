@@ -527,6 +527,32 @@ fn fixture_projects_load_2d_and_3d_models() {
 fn controller_save_open_and_export_smoke() {
     let mut controller = sample_controller();
     controller.state.session.set_name("Smoke".to_owned());
+    let generated = {
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
+        toolpath.feed_to(P3::new(5.0, 5.0, -1.0), 500.0);
+        toolpath
+    };
+    // G-STALEXPORT: seed BOTH stores, which is what a real generation
+    // leaves (`drain_compute_results` inserts into the session and the
+    // viz store together). Seeding only the viz store used to export
+    // through the silent fallback; it now reads as an operation edited
+    // since it was generated, and the export refuses by name.
+    controller
+        .state
+        .session
+        .insert_result(
+            0,
+            rs_cam_core::session::ToolpathComputeResult {
+                op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(
+                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(generated.clone()),
+                )),
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+            },
+        )
+        .expect("seed the core result");
     controller
         .state
         .gui
@@ -534,12 +560,9 @@ fn controller_save_open_and_export_smoke() {
         .get_mut(&ToolpathId(0))
         .unwrap()
         .result = Some(ToolpathResult {
-        annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new({
-            let mut toolpath = Toolpath::new();
-            toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
-            toolpath.feed_to(P3::new(5.0, 5.0, -1.0), 500.0);
-            toolpath
-        })),
+        annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+            generated,
+        )),
         stats: Default::default(),
         debug_trace: None,
         semantic_trace: None,

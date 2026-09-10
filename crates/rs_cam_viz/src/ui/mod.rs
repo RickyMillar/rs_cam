@@ -254,6 +254,12 @@ pub enum AppEvent {
         accept_unmodeled: bool,
         accept_exceeded: bool,
     },
+    /// G-STALEXPORT: accept, or stop accepting, the PREVIOUS geometry for
+    /// operations edited since they were generated. Deliberately a
+    /// separate decision from the tool-load overrides — those accept a
+    /// predicted consequence of cutting the emitted geometry, this
+    /// accepts emitting different geometry from the one on screen.
+    SetStaleExportPolicy(crate::state::runtime::StaleResultPolicy),
 
     // Optimize (U2 of OPTIMIZER_UX_PLAN.md)
     /// Open the Optimize modal for a specific toolpath. Triggers

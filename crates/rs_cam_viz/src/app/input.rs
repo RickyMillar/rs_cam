@@ -237,6 +237,9 @@ impl RsCamApp {
                     gui.tool_load_overrides.accept_unmodeled = accept_unmodeled;
                     gui.tool_load_overrides.accept_exceeded = accept_exceeded;
                 }
+                AppEvent::SetStaleExportPolicy(policy) => {
+                    self.controller.state_mut().gui.stale_export = policy;
+                }
                 AppEvent::ExportCombinedGcode => {
                     match crate::io::export::export_combined_gcode_from_session(
                         &self.controller.state().session,

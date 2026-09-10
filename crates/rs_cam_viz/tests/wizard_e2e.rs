@@ -32,7 +32,9 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::PostFormat;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
-use rs_cam_core::session::{LoadedModel, OutputLayout, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{
+    LoadedModel, OutputLayout, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
@@ -54,6 +56,50 @@ fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rs_cam_wizard_e2e_{name}_{nanos}"));
     std::fs::create_dir_all(&dir).expect("create temp dir");
     dir
+}
+
+/// Seed a generated result for `tp_id` into BOTH stores, which is what a
+/// real generation leaves: `drain_compute_results` inserts into
+/// `session.results` and `gui.toolpath_rt[..].result` together.
+///
+/// G-STALEXPORT: seeding only the viz store used to export through the
+/// silent fallback. It now reads as an operation edited since it was
+/// generated, and the export refuses by name — so a fixture that wants an
+/// exportable operation has to seed both.
+fn seed_generated_result(
+    session: &mut ProjectSession,
+    gui: &mut GuiState,
+    tp_id: rs_cam_core::ToolpathId,
+    path: Toolpath,
+) {
+    let index = session
+        .toolpath_configs()
+        .iter()
+        .position(|tc| tc.id == tp_id)
+        .expect("toolpath id is in the session");
+    session
+        .insert_result(
+            index,
+            ToolpathComputeResult {
+                op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(AnnotatedToolpath::new(
+                    path.clone(),
+                ))),
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+            },
+        )
+        .expect("seed the core result");
+    let mut rt = ToolpathRuntime::new(true);
+    rt.result = Some(ToolpathResult {
+        annotated: Arc::new(AnnotatedToolpath::new(path)),
+        stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+        debug_trace_path: None,
+        drill_op: None,
+    });
+    gui.toolpath_rt.insert(tp_id, rt);
 }
 
 fn build_session() -> (ProjectSession, GuiState, SimulationState) {
@@ -117,16 +163,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     path.rapid_to(P3::new(10.0, 10.0, 5.0));
 
     let mut gui = GuiState::new();
-    let mut rt = ToolpathRuntime::new(true);
-    rt.result = Some(ToolpathResult {
-        annotated: Arc::new(AnnotatedToolpath::new(path)),
-        stats: Default::default(),
-        debug_trace: None,
-        semantic_trace: None,
-        debug_trace_path: None,
-        drill_op: None,
-    });
-    gui.toolpath_rt.insert(tp_id, rt);
+    seed_generated_result(&mut session, &mut gui, tp_id, path);
 
     // C1 (2026-06-11): the phase-level checked exports now enforce the
     // tool-load gate. This harness never runs a simulation, so every
@@ -410,16 +447,7 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
     let mut path = Toolpath::new();
     path.rapid_to(P3::new(20.0, 0.0, 5.0));
     path.feed_to(P3::new(30.0, 0.0, -1.0), 600.0);
-    let mut rt = ToolpathRuntime::new(true);
-    rt.result = Some(ToolpathResult {
-        annotated: Arc::new(AnnotatedToolpath::new(path)),
-        stats: Default::default(),
-        debug_trace: None,
-        semantic_trace: None,
-        debug_trace_path: None,
-        drill_op: None,
-    });
-    gui.toolpath_rt.insert(tp2_id, rt);
+    seed_generated_result(&mut session, &mut gui, tp2_id, path);
 
     let default_rpm = gui.post.spindle_speed;
     assert_ne!(default_rpm, 12_345, "test premise: override differs");
@@ -579,16 +607,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
     let mut path = Toolpath::new();
     path.rapid_to(P3::new(0.0, 0.0, 5.0));
     path.feed_to(P3::new(20.0, 0.0, -1.0), 600.0);
-    let mut rt = ToolpathRuntime::new(true);
-    rt.result = Some(ToolpathResult {
-        annotated: Arc::new(AnnotatedToolpath::new(path)),
-        stats: Default::default(),
-        debug_trace: None,
-        semantic_trace: None,
-        debug_trace_path: None,
-        drill_op: None,
-    });
-    gui.toolpath_rt.insert(bottom_tp_id, rt);
+    seed_generated_result(&mut session, &mut gui, bottom_tp_id, path);
 
     // The combined-gcode emit is what produces inter-setup M0s; the
     // SingleFile path concatenates phases without setup boundaries.
@@ -627,14 +646,20 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
 /// `session.results`. The bug previously produced a 0-byte output file.
 /// This exercises the `_with_policy` variant the MCP wraps.
 #[test]
-fn export_with_policy_emits_gcode_from_viz_results() {
+fn export_with_policy_emits_gcode_from_the_generated_results() {
     let (session, gui, sim) = build_session();
     let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
         accept_unmodeled: true,
         accept_exceeded: true,
     };
-    let gcode = export_gcode_from_session_with_policy(&session, &gui, &sim, policy)
-        .expect("policy export succeeds");
+    let gcode = export_gcode_from_session_with_policy(
+        &session,
+        &gui,
+        &sim,
+        policy,
+        rs_cam_viz::state::runtime::StaleResultPolicy::Refuse,
+    )
+    .expect("policy export succeeds");
     assert!(
         !gcode.is_empty(),
         "policy export must not produce empty output"
@@ -711,22 +736,21 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         .map(|&i| session.toolpath_configs()[i].id)
         .expect("bottom setup has a toolpath");
 
-    // Byte-identical stub to the one `build_session` gave setup 0.
-    let mut path = Toolpath::new();
-    path.rapid_to(P3::new(0.0, 0.0, 5.0));
-    path.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
-    path.feed_to(P3::new(10.0, 10.0, -1.0), 600.0);
-    path.rapid_to(P3::new(10.0, 10.0, 5.0));
-    let mut rt = ToolpathRuntime::new(true);
-    rt.result = Some(ToolpathResult {
-        annotated: Arc::new(AnnotatedToolpath::new(path)),
-        stats: Default::default(),
-        debug_trace: None,
-        semantic_trace: None,
-        debug_trace_path: None,
-        drill_op: None,
-    });
-    gui.toolpath_rt.insert(bottom_tp_id, rt);
+    // Byte-identical stub to the one `build_session` gave setup 0 — and
+    // setup 0's own result is re-seeded here, because the
+    // `set_stock_config` above dropped every result in the project
+    // (G-FRESHSTATE / R0.1 §7 Q1: any stock edit stales everything).
+    let stub = || {
+        let mut path = Toolpath::new();
+        path.rapid_to(P3::new(0.0, 0.0, 5.0));
+        path.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+        path.feed_to(P3::new(10.0, 10.0, -1.0), 600.0);
+        path.rapid_to(P3::new(10.0, 10.0, 5.0));
+        path
+    };
+    let top_tp_id = session.toolpath_configs()[0].id;
+    seed_generated_result(&mut session, &mut gui, top_tp_id, stub());
+    seed_generated_result(&mut session, &mut gui, bottom_tp_id, stub());
 
     let top_gcode = export_setup_gcode_from_session(&session, &gui, &sim, top_id)
         .expect("identity setup exports");

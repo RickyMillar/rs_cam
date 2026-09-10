@@ -189,6 +189,17 @@ pub struct ExportParam {
     /// `path`. Ignored for single-setup projects.
     #[serde(default)]
     pub split_setups: bool,
+    /// Emit the PREVIOUS generation's geometry for any operation that was
+    /// edited after it was generated, instead of refusing. Default false.
+    ///
+    /// What is being accepted: the file will cut the geometry from before
+    /// the edit, which is NOT what the operation's parameters now
+    /// describe. Regenerating the operation is the fix; this flag exists
+    /// for the case where the operator knowingly wants the earlier
+    /// program. It does NOT make a missing, failed or still-generating
+    /// result exportable — there is no geometry to put in its place.
+    #[serde(default)]
+    pub accept_previous_geometry: bool,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

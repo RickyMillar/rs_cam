@@ -587,6 +587,9 @@ pub enum McpRequestKind {
         accept_exceeded_tool_load: bool,
         tool_change_mode: Option<String>,
         split_setups: bool,
+        /// G-STALEXPORT: emit an edited operation's previous geometry
+        /// rather than refusing. See `ExportParam::accept_previous_geometry`.
+        accept_previous_geometry: bool,
     },
     SetToolpathParam {
         index: usize,
