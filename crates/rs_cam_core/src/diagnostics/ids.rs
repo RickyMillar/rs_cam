@@ -111,6 +111,19 @@ pub const GEOM_FEED_Z_BELOW_TOP_Z: &str = "geom.feed_z_below_top_z";
 pub const GEOM_RETRACT_Z_BELOW_FEED_Z: &str = "geom.retract_z_below_feed_z";
 pub const GEOM_CLEARANCE_Z_BELOW_RETRACT_Z: &str = "geom.clearance_z_below_retract_z";
 pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed";
+
+/// A 2.5D operation's own depth dial puts its cut floor below the bottom of
+/// the stock: the tool goes through the board and into whatever holds it.
+///
+/// Read from EMITTED motion only — the operation's depth from the resolved
+/// Top Z. A pinned Bottom Z is deliberately not part of this rule; for every
+/// operation the rule applies to, the pin reaches no motion
+/// (`OperationType::honors_pinned_bottom_z`, F1.19).
+///
+/// The string matches the GUI-side rule F1.6 shipped
+/// (`ui/properties/operations/mod.rs`), so the switchover is a deletion there
+/// rather than a rename for the operator.
+pub const GEOM_DEPTH_BEYOND_STOCK: &str = "geom.depth_beyond_stock";
 /// A ring cascade hit its cap and left the middle of a region uncut.
 /// Sim-independent: measured during generation, not from a dexel run.
 pub const GEOM_STANDING_MATERIAL: &str = "geom.standing_material";
@@ -300,6 +313,7 @@ pub const ALL: &[&str] = &[
     GEOM_RETRACT_Z_BELOW_FEED_Z,
     GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
     GEOM_PLUNGE_EXCEEDS_FEED,
+    GEOM_DEPTH_BEYOND_STOCK,
     GEOM_STANDING_MATERIAL,
     GEOM_UNMACHINED_BAND,
     GEOM_TIP_FLOAT,
