@@ -32,6 +32,22 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Architecture consolidation — 2026-09-10 (N1 DONE)
+
+On `ui-fix-2026-09-09`, N1 now excludes disabled cached operations from core
+checked G-code export, the door both CLI routes consume. A pre-fix reproduction
+failed; the new sentry checks motion and phase metadata omission, retained
+cache, an enabled control, and re-enable without regeneration. Review accepted.
+No enabled missing/stale-result policy changed and no phase is complete.
+N3/STEP units was already fixed by `069a2314`; it was not redone.
+
+Focused export/core/GUI/CLI checks, workspace format and heavy-enabled Clippy
+passed. Full heavy core: **3783 passed, 1 failed, 288 ignored**; the sole failure
+is the documented F-036b all-F-word-median baseline (0.0214 vs [0.0320, 0.0550]),
+not a green gate or a new N1 regression. Evidence and next-item ordering:
+`arch_consolidation_2026-09-09/STATUS.md`. N1 is committed: the fix is
+`d4e1154b` and the sentry is `2687b82b`. N2 is next.
+
 ## Recent work (2026-09-07 → 08)
 
 ### Datum belongs to the setup — export now consumes it

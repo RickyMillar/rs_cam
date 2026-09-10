@@ -17,12 +17,55 @@ verdict below is from reading, and the reports say so; treat "STILL TRUE" as
 
 ---
 
+## Execution checkpoint — 2026-09-10, N1 DONE
+
+- **N3: DONE (`069a2314`).** Already fixed by G-STEPUNITS before this
+  execution. The project loader applies `EnrichedMesh::apply_uniform_scale`;
+  `tests/step_project_load.rs::both_doors_apply_a_step_models_declared_units`
+  pins both import doors. This phase did not reimplement it. The default
+  heavy gate does not enable `step`, so its zero-test STEP binaries are not
+  a rerun of that sentry.
+- **N1: DONE (`d4e1154b`; sentry `2687b82b`).** Reproduced through core
+  checked export before the fix: a disabled operation's label was emitted
+  from its retained result. Core
+  now filters `!tc.enabled` before result lookup and datum transformation.
+  `tests/export_disabled_cached_n1.rs` asserts disabled motion, tool, RPM and
+  pre/post snippets are absent, an enabled control remains, and re-enabling
+  restores the cached operation without regeneration. Cache retention and
+  enabled missing/stale-result policy are unchanged. Both CLI callers use
+  this corrected core door; the cached-disabled reproduction is a core test,
+  not a separate CLI-command reproduction.
+- **Verification:** focused N1 1 passed; core G-code 35; datum 5; GUI export
+  6; CLI 31. `cargo fmt --all -- --check` and workspace all-target Clippy
+  with `rs_cam_core/heavy-tests` / `-D warnings` passed. The full core heavy
+  gate completed in 2718 s: **3783 passed, 1 failed, 288 ignored**, across
+  301 result targets (299 integration binaries plus library and doctests).
+  This is **not a green full gate**. Its sole failure is the established
+  F-036b `modulation_raises_cutting_chipload_toward_band`: **0.0214** against
+  **[0.0320, 0.0550]**, exactly the baseline documented in
+  `../ui_fix_2026-09-09/reports/J2.md` (lines 303–367) and its sibling
+  `HANDOVER.md` (lines 74–86).
+  The all-F-word median includes G-RAMPCONTAIN's extra entry segments; the
+  cutting-only population is 0.0550. No assertion was weakened or ignored.
+  Local logs: `/tmp/rs_cam_n1/`, `/tmp/rs_cam_n1_clippy.log`,
+  `/tmp/rs_cam_n1_core_heavy.log` (matching `.status` files); these are local
+  execution artifacts, not repository fixtures.
+- **Next:** N2. The operator gave standing approval on 2026-09-10 ("I approve
+  it all … assume approval … dont worry about me for the gates"), so the
+  per-item human gate is lifted. The tests, the review step and the stop
+  conditions all stand unchanged. N4 and N5 remain open; N6 stays with
+  Phase 1A. No architecture phase is claimed complete. `PLAN.md` and
+  `AUDIT.md` remain verbatim.
+
 ## Do these before the phases. They are defects, not refactors.
+
+The rows below retain the original audit evidence. N1/N3's current execution
+states above supersede their historical descriptions.
 
 | ID | What | Evidence | Size |
 |---|---|---|---|
-| **N3** | **STEP unit scale is DROPPED on the project loader.** `rs_cam_cli run --units inches part.step` cuts geometry **25.4x wrong**. Two lanes confirmed independently. `project_file.rs:617` computes the scale; the STL, DXF and SVG arms pass it; the STEP arm (`:665-678`) never reads it. Lane B read `truck-stepio` 0.3.0 and found its READER performs **no unit conversion at all**, so `ModelUnits` is the only unit conversion a STEP file gets in this product. Not a double-scale: the interactive door is correct and the project door is wrong. Reachable on three doors; the GUI alone cannot create such a record (`import_step_path` hardcodes 1.0, `rescale_model` refuses STEP). | `core/session/project_file.rs:665-678` vs `core/io.rs:31,108` | **ONE LINE**, plus a STEP row in `model_units_survive_reload_g_unitsreload.rs`, which today has ZERO `step` hits. G-UNITSRELOAD closed the third divergence in this loader pair and left the fourth. |
-| **N1** | **CLI export may emit a DISABLED operation's toolpath.** `set_toolpath_enabled` calls `invalidate_output_dependents`, not `invalidate_result_chain`, so a disabled operation keeps its cached result on purpose. Core's export phase collect discards the `ToolpathConfig` and never reads `enabled`. The GUI and MCP routes filter; `rs_cam_cli project --emit-gcode` and `rs_cam_cli run` appear not to. **THIS IS A READ, NOT A REPRODUCTION** — reproduce before believing it. No test pins either behaviour. | `core/session/mutation.rs:339`, `core/gcode/mod.rs:328` | Small, once reproduced. Wrong-cut class if real. |
+| **N3 — DONE (`069a2314`)** | **Historical: STEP unit scale is DROPPED on the project loader.** `rs_cam_cli run --units inches part.step` cuts geometry **25.4x wrong**. Two lanes confirmed independently. `project_file.rs:617` computes the scale; the STL, DXF and SVG arms pass it; the STEP arm (`:665-678`) never reads it. Lane B read `truck-stepio` 0.3.0 and found its READER performs **no unit conversion at all**, so `ModelUnits` is the only unit conversion a STEP file gets in this product. Not a double-scale: the interactive door is correct and the project door is wrong. Reachable on three doors; the GUI alone cannot create such a record (`import_step_path` hardcodes 1.0, `rescale_model` refuses STEP). | `core/session/project_file.rs:665-678` vs `core/io.rs:31,108` | **ONE LINE**, plus a STEP row in `model_units_survive_reload_g_unitsreload.rs`, which today has ZERO `step` hits. G-UNITSRELOAD closed the third divergence in this loader pair and left the fourth. |
+| **N1 — DONE (`d4e1154b`; sentry `2687b82b`)** | **Historical: CLI export may emit a DISABLED operation's toolpath.** `set_toolpath_enabled` calls `invalidate_output_dependents`, not `invalidate_result_chain`, so a disabled operation keeps its cached result on purpose. Core's export phase collect discards the `ToolpathConfig` and never reads `enabled`. The GUI and MCP routes filter; `rs_cam_cli project --emit-gcode` and `rs_cam_cli run` appear not to. **THIS IS A READ, NOT A REPRODUCTION** — reproduce before believing it. No test pins either behaviour. | `core/session/mutation.rs:339`, `core/gcode/mod.rs:328` | Small, once reproduced. Wrong-cut class if real. |
 | **N2** | **G-DRILLTIME is closed on one path and live on another.** `apply_kinematics_cycle_time` integrates every toolpath including drills. The post-modulation retime (`session/compute.rs:3183-3257`) resets `project_total` to zero and folds over `trace.toolpath_summaries` — the engagement population, which a drill never joins. It never rewrites `trace.toolpath_runtimes`, and that is what `readiness::toolpath_cycle_time` reads FIRST for the readiness panel, pre-flight gate, export wizard and setup sheet. Needs a configured machine kinematics block. No sentry covers it: the one test exercising the retime has no drill in its fixture. **`CLAUDE.md`'s G-DRILLTIME entry is therefore now half-true and must be amended when this is fixed.** | `core/session/compute.rs:3183-3257` vs `core/compute/simulate.rs:1464-1533` | Medium. Two writers of one field. |
 | **N4** | **A parity guard that cannot bite.** `gui_and_mcp_diagnostic_ids_match` hand-rebuilds the session's inputs, and its "GUI arm" calls `ResolvedHeights::from_context` — the MCP-route call. **It compares MCP against a replica of MCP.** Recorded earlier as J8.4 "a mirror that became a parallel copy"; it is worse than that. | `viz/ui/properties/operations/mod.rs:2657` | Small. Rewrite or delete. |
 | **N5** | **`set_toolpath_param` accepts and silently discards a write on many operations.** The named `"stepover"` arm returns `Ok(())` on every operation whose config omits the setter — **11 operations**. `depth_per_pass` the same on **14**. The six named arms also bypass the DR-LIVE `ParamRange` gate entirely, which lives only in the generic `_` arm. `angular_step` / `point_spacing` have no registry range and are divisors. | `core/session/compute.rs:509`, `radial_finish.rs:96,108` | Part of Phase 4B, but the silent-success half is a defect now. |
