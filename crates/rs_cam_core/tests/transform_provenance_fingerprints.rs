@@ -371,21 +371,46 @@ fn arc_raster_full_dressups_fingerprint() {
     //     move 29  [22.0,  8.0, 10.0] -> [23.5,  9.5, 10.0]
     //     move 39  [22.0, 12.0, 10.0] -> [23.5, 13.5, 10.0]
     //
-    // Link sites below are UNCHANGED under both re-pins.
+    // Link sites below were UNCHANGED under the first two re-pins. The THIRD
+    // one moves them, by a shift that is itself the measurement — see below.
+    //
+    // THIRD RE-PIN, 2026-09-10 (J2, G-RAMPCONTAIN): (40, 1344905273783580007)
+    // -> (48, 10027966985113258553). A prism ramp now folds along the
+    // operation's own following cut instead of drawing two blind straight
+    // legs, and this fixture's following cut is an ARC raster, so each of the
+    // four entries rides the arc and `fit_arcs` collapses it: EntryRamp 8 ->
+    // 16, arcs 8 -> 16, eight added moves. The sibling pin in
+    // `arcfit_intent_key_cost_f1` carries the same fingerprint and the seam
+    // census beside it. The two fixtures in that file whose following cut is
+    // STRAIGHT are byte-identical under the same change.
     assert_eq!(
         fingerprint(&out.toolpath),
-        (40, 1_344_905_273_783_580_007),
-        "arc_raster geometry moved; re-pinned 2026-08-14 for the lead-out retract \
-         lift (268e427), before that by PR-6 (arcfit intent key), originally \
-         captured at HEAD 5d32150 before C1"
+        (48, 10_027_966_985_113_258_553),
+        "arc_raster geometry moved; re-pinned 2026-09-10 for the G-RAMPCONTAIN \
+         ramp fold, 2026-08-14 for the lead-out retract lift (268e427), before \
+         that by PR-6 (arcfit intent key), originally captured at HEAD 5d32150 \
+         before C1"
     );
+    // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN). The ramp fold adds two moves
+    // at each of this fixture's four entries, and the landing sites shift by
+    // exactly the number of added moves that precede each one:
+    //
+    //     head   (0, 16) -> (0, 20)     +0 start, +4 end   (2 entries before its end)
+    //     body  (16, 27) -> (20, 33)    +4 start, +6 end   (a third entry inside it)
+    //     tail  (27, 39) -> (33, 47)    +6 start, +8 end   (the fourth)
+    //     whole  (0, 39) -> (0, 47)     +0 start, +8 end   (all four)
+    //
+    // Nothing here is a re-pin of convenience: a 1 -> K entry expansion MUST
+    // carry the spans after it forward by K - 1, and this arithmetic is the
+    // provenance remap being right. A shift that did NOT accumulate in
+    // entry order would be the defect.
     assert_eq!(
         link_sites(&recorder.finish()),
         expect_sites(&[
-            ("head", Some((0, 16))),
-            ("body", Some((16, 27))),
-            ("tail", Some((27, 39))),
-            ("whole", Some((0, 39))),
+            ("head", Some((0, 20))),
+            ("body", Some((20, 33))),
+            ("tail", Some((33, 47))),
+            ("whole", Some((0, 47))),
         ]),
         "arc_raster semantic link landing sites moved; captured at HEAD 5d32150 before C1"
     );

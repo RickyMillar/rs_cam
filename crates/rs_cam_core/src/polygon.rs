@@ -310,6 +310,38 @@ impl Polygon2 {
     /// widens the boundary by `eps` so those points read as inside
     /// consistently. Does not change `contains_point` itself — that stays
     /// the hot-path check used by adaptive/material_grid.
+    /// Unsigned distance (mm) from `p` to the nearest ring edge — the
+    /// exterior and every hole.
+    ///
+    /// It says how far the point is from the boundary, never which side it
+    /// is on; pair it with [`Self::contains_point`] for that. Added for
+    /// `entry_audit::fed_moves_outside_region` (G-RAMPCONTAIN), which needs
+    /// "is the tool DISC clear of the wall", a question the containment
+    /// tests cannot answer on their own.
+    ///
+    /// A polygon with no edge returns [`f64::INFINITY`].
+    #[must_use]
+    pub fn distance_to_boundary(&self, p: &P2) -> f64 {
+        let mut best = f64::INFINITY;
+        for ring in std::iter::once(&self.exterior).chain(self.holes.iter()) {
+            let n = ring.len();
+            if n < 2 {
+                continue;
+            }
+            // SAFETY: i and its (+1)%n successor are bounded by 0..n.
+            #[allow(clippy::indexing_slicing)]
+            for i in 0..n {
+                let a = &ring[i];
+                let b = &ring[(i + 1) % n];
+                let d = point_segment_distance_sq(p, a, b);
+                if d < best {
+                    best = d;
+                }
+            }
+        }
+        if best.is_finite() { best.sqrt() } else { best }
+    }
+
     pub fn contains_point_eps(&self, p: &P2, eps: f64) -> bool {
         if self.contains_point(p) {
             return true;

@@ -206,6 +206,12 @@ pub struct PencilParams {
     /// 30 mm made the pass **4.2× worse** (4 985 s → 20 997 s), with
     /// `tip_float` 528 → 4 917. Splitting the caps is what lets the at-depth
     /// reach grow without buying that.
+    ///
+    /// The operator dial is
+    /// [`crate::compute::operation_configs::PencilConfig::link_hop_distance_mm`],
+    /// which `execute.rs` copies here. `Some(0.0)` refuses every hop and
+    /// keeps the at-depth tier, which is the control arm that measures what
+    /// each tier is worth on its own.
     pub link_hop_distance_mm: Option<f64>,
 }
 
@@ -2047,9 +2053,16 @@ impl ResolvedReference<'_> {
 /// default reference versus 2 at a reference above the shank, same tool and
 /// same fixture.
 ///
-/// The comparison is now against `cusp_radius_mm() * 2` — the tip diameter,
-/// which is `diameter()` for every non-tapered shape, so nothing but the
-/// tapered path moves.
+/// The comparison is now against `valley_radius_mm() * 2` — the diameter that
+/// has to FIT, which is `diameter()` for every non-tapered shape, so nothing
+/// but the tapered path moves.
+///
+/// G-BULLCUSP (2026-09-10) moved this from `cusp_radius_mm()` to
+/// `valley_radius_mm()`. The two returned the same number for every shape
+/// until a bull nose separated them, and this site asks the FIT question: a
+/// reference tool is "finer than the pencil" only if it can get where the
+/// pencil can, and a bull nose cannot do that on its corner radius. The
+/// change is byte-identical for every tool.
 fn resolve_reference_cutter<'a>(
     params: &'a PencilParams,
     pencil: &dyn MillingCutter,
@@ -2057,7 +2070,7 @@ fn resolve_reference_cutter<'a>(
     if let Some(rc) = params.reference_cutter.as_ref() {
         return ResolvedReference::Real(rc);
     }
-    let pencil_cutting_diameter = pencil.cusp_radius_mm() * 2.0;
+    let pencil_cutting_diameter = pencil.valley_radius_mm() * 2.0;
     if params.reference_tool_diameter > pencil_cutting_diameter + 1e-6 {
         return ResolvedReference::Nominal(crate::tool::BallEndmill::new(
             params.reference_tool_diameter,
@@ -3421,6 +3434,35 @@ mod tests {
     /// Two runs on a flat surface, a stated XY gap apart, emitted through the
     /// real emitter so the report reads the shipped decision path.
     fn two_run_link_report(gap_mm: f64, hop_cap: Option<f64>) -> PencilLinkReport {
+        two_run_link_report_over(gap_mm, hop_cap, None)
+    }
+
+    /// Flat stock whose top is `z = 0` — the mesh itself — except a rib of
+    /// `x` left standing at `rib_top` right across the run-to-run gap. A
+    /// surface link between the two runs then has material above it, which
+    /// is the only condition that reaches `plan_link_lift`.
+    fn flat_stock_with_rib(x0: f64, x1: f64, rib_top: f64) -> crate::dexel_stock::TriDexelStock {
+        let mut stock =
+            crate::dexel_stock::TriDexelStock::from_stock(0.0, 0.0, 40.0, 40.0, -6.0, 2.0, 0.25);
+        let (rows, cols) = (stock.z_grid.rows, stock.z_grid.cols);
+        let (cs, ou) = (stock.z_grid.cell_size, stock.z_grid.origin_u);
+        for row in 0..rows {
+            for col in 0..cols {
+                let x = ou + col as f64 * cs;
+                let top = if x >= x0 && x <= x1 { rib_top } else { 0.0 };
+                stock.clear_above_at(row, col, top as f32);
+            }
+        }
+        stock
+    }
+
+    /// [`two_run_link_report`] with a stock reading, so the lifted tier can
+    /// fire. `None` cannot reach `plan_link_lift` at all.
+    fn two_run_link_report_over(
+        gap_mm: f64,
+        hop_cap: Option<f64>,
+        stock: Option<&crate::dexel_stock::TriDexelStock>,
+    ) -> PencilLinkReport {
         let mesh = make_convex_box(40.0);
         let index = SpatialIndex::build(&mesh, 10.0);
         let tool = BallEndmill::new(2.0, 25.0);
@@ -3448,7 +3490,7 @@ mod tests {
             &index,
             &tool,
             &params,
-            None,
+            stock,
         );
         report
     }
@@ -3493,6 +3535,43 @@ mod tests {
              must not refuse a 4 mm at-depth link"
         );
         assert_eq!(tiny_cap.hop_too_far, 0, "{tiny_cap:?}");
+    }
+
+    /// G-PENCILHOP: the dial's whole purpose. On a junction that DOES need a
+    /// lift, `Some(0.0)` refuses the hop and says so on `hop_too_far`; the
+    /// at-depth tier is untouched, which is what makes the pair a control.
+    ///
+    /// The operator dial that reaches this is
+    /// [`crate::compute::operation_configs::PencilConfig::link_hop_distance_mm`]
+    /// (`tests/pencil_hop_dial_g_pencilhop.rs` pins the wiring). Before it,
+    /// `execute.rs` hardcoded `None` and no project file, GUI or MCP call
+    /// could take this measurement.
+    #[test]
+    fn a_zero_hop_cap_refuses_a_lifted_link_and_keeps_the_at_depth_tier() {
+        // The rib stands right across the 4 mm gap between the two runs.
+        let stock = flat_stock_with_rib(13.0, 15.0, 2.0);
+        let lifted = two_run_link_report_over(4.0, None, Some(&stock));
+
+        // Population before verdict: with no hop taken every assertion
+        // below is vacuous, so the fixture must fail here instead.
+        assert_eq!(
+            lifted.linked_via_hop, 1,
+            "population: the rib must force the link to lift, or this pair              cannot see what the hop cap does: {lifted:?}"
+        );
+
+        let refused = two_run_link_report_over(4.0, Some(0.0), Some(&stock));
+        assert_eq!(
+            refused.linked_via_hop, 0,
+            "a zero hop cap must refuse every hop: {refused:?}"
+        );
+        assert_eq!(
+            refused.hop_too_far, 1,
+            "the refused hop must be ATTRIBUTED, not merely missing — that              counter is what names the pencil's binding constraint:              {refused:?}"
+        );
+        assert_eq!(
+            refused.linked_at_depth, lifted.linked_at_depth,
+            "the hop cap must not touch the at-depth tier: {lifted:?} vs              {refused:?}"
+        );
     }
 
     /// A link riding the bottom of a valley is NOT ploughing a ridge, even

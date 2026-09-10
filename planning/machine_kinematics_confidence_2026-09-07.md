@@ -973,6 +973,33 @@ Ledger:
   `DropCutterConfig::hookup_mm` and `WaterlineConfig::hookup_mm`, and BOTH
   have `ParamDef::optional("hookup_mm","f64")`. Unchecked corner: the +14
   lines the commit added to `unified_finish.rs`.
+  **The gap is CLOSED (2026-09-10).** `PencilConfig::link_hop_distance_mm`
+  is a serde-defaulted `Option<f64>` with
+  `ParamDef::optional_desc("link_hop_distance_mm","option<f64>", ...)`, and
+  `compute/execute.rs` copies it instead of hardcoding `None`. The default
+  did not move: `None` still means one cap for both tiers, so every saved
+  project emits what it emitted before. Two corrections to the fix shape
+  written above. (a) The OFF mechanism is NOT the `gap <= 1e-6` early
+  return — that gate only rejects a zero-length gap. `Some(0.0)` works
+  because a LIFTED candidate then fails `if gap > hop_cap`, so the hop is
+  refused and attributed to `hop_too_far`; a candidate that needs no lift
+  never reaches that test, which is exactly why the at-depth tier survives
+  and the pair is a control. (b) The field-add audit found NOTHING to
+  update: every `PencilConfig` literal in the workspace spreads
+  `..PencilConfig::default()`, and the two files the row names carry
+  `PencilParams` literals, which already had the field. The GUI properties
+  panel gets NO widget in this change — the dial is reachable from a
+  project file and from MCP `set_toolpath_param`, which is what the
+  measurement needs; a widget waits on the ruling. Sentries:
+  `tests/pencil_hop_dial_g_pencilhop.rs` (the wiring — default unset, MCP
+  accepts the name and `null` resets it, and `None` emits the same
+  toolpath as `Some(hookup_distance)` move for move, which pins the
+  retraction as MOTION) and, in the crate,
+  `pencil::tests::a_zero_hop_cap_refuses_a_lifted_link_and_keeps_the_at_depth_tier`
+  (the refusal itself, over a ribbed stock — a hop needs standing material,
+  so a fresh-stock session hands the emitter `entry_stock: None` and joins
+  every junction at depth, which is why the refusal cannot live in the
+  integration file). **Control pair RUN 2026-09-10 — see G-PENCILTIERS.**
 - **G-STALESTOCK (2026-09-09, method defect, not a code defect):**
   `generate_all` reporting **"0 simulations"** on a project containing a
   rest-machining op means it did NOT refresh the machined stock, so a rest
@@ -1222,3 +1249,112 @@ Ledger:
   second simulation of the same unchanged toolpath reports 53 877. The
   summary is stale or unpopulated on the sim that follows the fixpoint,
   not on the modulator.
+- **G-PENCILTIERS (2026-09-10, MEASURED — the pencil control pair, and what
+  a hop actually removes).** Fixture
+  `planning/deep_doc_modulation_2026-09-08/PENCIL_chain_r10_rest.toml`
+  (rough → iso-scallop R1.5 → pencil R1.0, 0.3 mm, `generate_all` fixpoint
+  reporting `simulations` ≥ 1, pencil at index 9). Two arms, one chain,
+  nothing else touched: `link_hop_distance_mm` UNSET against `= 0`.
+
+  | arm | junctions | at depth | hops | too_far | hop_too_far | pencil fed s | project s |
+  |---|---:|---:|---:|---:|---:|---:|---:|
+  | unset | 1 969 | 735 | 993 | 216 | 0 | 4 415.2 | 17 159.5 |
+  | `= 0` | 1 969 | 735 | **0** | 216 | **993** | 4 296.8 | 17 617.1 |
+
+  The dial moves EXACTLY one tier. Every one of the 993 hops reappears on
+  `hop_too_far`; `linked_at_depth` and `too_far` do not move by a single
+  junction. That is the sentry invariant, now confirmed live on a real
+  chain instead of a synthetic rib.
+  **Verdict: the hop tier is worth 457.6 s on this pass (+2.7 % of the
+  project when refused).** Only the pencil changed between the arms, so the
+  whole project delta is the pencil's. RECOMMENDATION for the pencil: keep
+  the stage ON and leave `link_hop_distance_mm` UNSET — one cap for both
+  tiers, which is the shipped default. Both tiers earn their place here;
+  this is the family where at-depth fires at all (735), and the hop tier is
+  still the bigger contributor by wall clock. Operator ruling still owed on
+  the OTHER families (raster ON, contour scallop OFF).
+  **The finding worth more than the timing: a hop keeps the retract EVENT
+  and removes most of the retract DISTANCE.** Retract trips went 2 262 →
+  2 263 — ONE — while rapid distance went 48 834 → 63 377 mm (+29.8 %) and
+  the pencil's own FED time FELL by 118.5 s (a hop is emitted as fed
+  motion). So refusing 993 hops added ~576 s of rapid and removed ~118 s of
+  feed. This is the pencil-side twin of G-LINKTIERS on the raster: **the
+  counter that names a tier does not measure its benefit**, and a
+  retract-trip count is blind to this lever by construction. Anyone tuning
+  the link stage on trip counts will conclude it did nothing.
+- **G-FRESHLINK (2026-09-10, OPEN — `linked_via_hop: 0` conflates "no lift
+  was needed" with "there was no stock to read").** The pencil's clearance
+  hop needs `entry_stock`, which is `Some` only when the op consumes what a
+  prior op left. On a `stock_source = "fresh"` op it is `None`,
+  `plan_link_lift` never runs, and every joined junction is recorded AT
+  DEPTH. `PencilLinkReport` then publishes `linked_via_hop: 0` and
+  `ceiling_refused: 0` as measured zeros, and narration prints them as
+  such. Nothing on any surface says the tier could not run.
+  **What that cost, measured today.** The saved fixture
+  `PENCIL_baseline_r10_rest.toml` ships the pencil at `"fresh"`. Run as
+  saved through a correct fixpoint it gives 9 275 junctions, **8 348 at
+  depth, 0 hops**, and 30 841.9 s of fed time — against 1 969 / 735 / 993
+  and 4 415.2 s on the same project with the one line changed. That is the
+  SPEC §8 **P0** arm reproduced to the item (9 282 fragments, 987 retract
+  trips), and read without knowing the stock source it says "the at-depth
+  tier dominates the pencil", which is the opposite of the truth.
+  **Why the G-STALESTOCK check does not catch it.** A `"fresh"` op awaits
+  nothing, so it reports no `awaiting_prior_stock`, never blocks a round,
+  and the reply still says `simulations: 1`. The count is necessary and NOT
+  sufficient: this chain is two deep (rough → scallop → pencil) and a
+  `"fresh"` consumer silently opts out of the second hand-off.
+  **Fix shape (not written):** give the report the repo's own None-vs-zero
+  contract — `linked_via_hop: Option<usize>`, `None` = the tier never ran
+  because no stock reading existed, and have narration say
+  "not measured — this pass reads no input stock" rather than print a zero.
+  The same reading applies to `ceiling_refused`. Cheap, and it makes the
+  fixture defect self-announcing. See also "Pencil on FRESH stock is unsafe
+  by construction" above — same root, different symptom.
+- **G-LINKTRACE (2026-09-10) — FIXED. The link stage deleted the scallop's
+  semantic trace; the toolpath was never wrong.** Reproduced on the
+  corrugated scallop fixture: switching the stage on took the trace from 25
+  items to **1**, regions 1 → **0**, rings 23 → **0**, with the emitted
+  motion unchanged. Narration, the GUI span list and the MCP trace all went
+  blank for the op.
+  **Mechanism.** `ScallopAnnotationChannel` asked
+  `MoveProvenance::remap_range(i, i + 1)`. Under `Permutation` that applies
+  the foreign-intrusion rule, and `relink_fragments_with_kinds` produces
+  intrusion at EVERY junction by construction: the DELETED junction rapid is
+  remapped onto the whole replacement junction, and the next fragment's
+  first move onto that junction's last output, so the two ranges overlap.
+  Every ring annotation was dropped. **`reorder` alone does it** — the
+  repro fixture rotates nothing (`rotated_loops == 0`), which corrects the
+  first guess that rotation was needed.
+  **Fix.** `MoveProvenance::remap_point` — a single-move ANCHOR asks only
+  where one move went. It has no width, so it cannot widen, so the rule that
+  guards a multi-move CLAIM does not apply to it; applying it there deletes
+  a correct answer rather than making it safer. Used ONLY by the scallop
+  channel; `SemanticLinkChannel` carries real ranges and rightly keeps the
+  drop. Plus a STABLE sort into emitted order, because
+  `compute::annotate::annotate_scallop` derives each ring's end from the
+  NEXT annotation's index and groups regions by CONSECUTIVE runs, and a
+  reorder scatters that vector.
+  **After: 25 items, 25 move-linked, regions 1, rings 23**, and the emitted
+  move digest is `4512f8ccb89d9097` **before and after** — measured, not
+  claimed by construction. Two false comments corrected
+  (`surface_link.rs` ~1187, which said ring annotations anchor on the
+  junction rapid and need no re-anchoring — both halves wrong; and
+  `transform_provenance.rs`, which now says why the range channel keeps the
+  rule the anchor channel drops).
+  Sentry `tests/scallop_trace_survives_relink_g_linktrace.rs`, shaped around
+  the two traps: it reads its POPULATION from `relink.fragments` because
+  `ScallopReport::ring_count` is computed AFTER the reconcile and makes
+  `rings == ring_count` pass vacuously as `0 == 0` on the broken binary; and
+  it pins the pre-fix digest as a literal so "no motion moved" is measured.
+  **Not settled, and deliberately not forced:** whether a reorder can
+  interleave two regions and so make `annotate_scallop`'s
+  consecutive-run grouping report MORE region items than there are regions.
+  This fixture has one region and rotates nothing, so it cannot answer.
+  The grouping is unchanged by this fix.
+  **Gate run: targeted only.** `scallop_trace_survives_relink_g_linktrace`,
+  `transform_provenance_fingerprints`, `scallop_intra_pass_relink_am7`,
+  `link_stage_g_linkstage`, `link_counters_visible_g_linkvisible`,
+  `pencil_hop_dial_g_pencilhop`, the `transform_provenance` lib tests, fmt,
+  and clippy on `rs_cam_core --all-targets`. **The FULL heavy-tests gate is
+  NOT run and is owed** — the operator asked for it to be skipped on this
+  machine.

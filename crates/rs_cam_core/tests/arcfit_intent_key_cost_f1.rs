@@ -332,6 +332,26 @@ fn run(
 /// `246b7ae` with the arcfit change stashed out. That equality IS the
 /// measurement: the intent term, strict `Unknown` included, and the `Region`
 /// barrier together cost zero arcs and zero moves on all five fixtures.
+///
+/// Two later changes have moved numbers here, both for reasons outside this
+/// file's subject, and the second one moved ARCS. Read both before citing the
+/// paragraph above.
+///
+/// 1. `38f8d151` (G-ISOCLIPRAPID) added a vertical retract lift to the
+///    lead-in dressup: `face_full` moves 74 -> 80, arcs unchanged.
+/// 2. **G-RAMPCONTAIN (2026-09-10) moved the ARC counts on three fixtures.**
+///    A prism ramp now folds along the operation's own following cut instead
+///    of drawing two blind straight legs, so an entry that leads into CURVED
+///    geometry is itself curved and `fit_arcs` collapses it. This is NOT the
+///    run key getting stricter — the assertion message below offers that as
+///    the explanation for a risen arc count and it is no longer the only
+///    one. The two fixtures whose following cut is STRAIGHT
+///    (`three_pass`, `face_full`) are byte-identical, fingerprint included,
+///    which is what isolates the cause.
+///
+/// The F1 Q3 measurement itself is unaffected: `intent_breaks_unknown_strict`
+/// is unchanged on every fixture, and that is the count the Q3 ruling asked
+/// PR-6 to price.
 #[test]
 fn pr6_measure_arcfit_intent_key_cost() {
     run(
@@ -345,6 +365,12 @@ fn pr6_measure_arcfit_intent_key_cost() {
             census: (28, 2, 3, 0),
         },
     );
+    // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN): (40, 8) -> (48, 16), census
+    // (216, 4, 4, 0) -> (232, 4, 4, 0). The ramp folds along this fixture's
+    // ARC raster instead of drawing straight legs, so each entry is now
+    // curved and `fit_arcs` collapses it: EntryRamp 8 -> 16 and arcs 8 -> 16,
+    // i.e. exactly one arc per folded entry. `intent_breaks_unknown_strict`
+    // stays 4, so the Q3 quantity did not move.
     run(
         "arc_raster",
         arc_raster(),
@@ -352,10 +378,23 @@ fn pr6_measure_arcfit_intent_key_cost() {
         1200.0,
         OperationType::Adaptive3d,
         &Expect {
-            out: (40, 8),
-            census: (216, 4, 4, 0),
+            out: (48, 16),
+            census: (232, 4, 4, 0),
         },
     );
+    // MOVES RE-PINNED 74 -> 80 on 2026-09-10 (J1). `38f8d151` (G-ISOCLIPRAPID)
+    // gave the lead-in dressup a pure-vertical `MoveIntent::Retract` lift
+    // before its pre-position rapid, because a rising DIAGONAL out of the cut
+    // is a strike to every reader of the IR. Six of this fixture's seven
+    // lead-ins stood below the retract plane and gained one lift each.
+    //
+    // Measured either side of that commit, same test binary:
+    //   01ec1e41  moves=74 arcs=13 Retract=7  pre_arcfit_moves=159
+    //   38f8d151  moves=80 arcs=13 Retract=13 pre_arcfit_moves=165
+    //
+    // The F1 Q3 quantity this file exists to protect did NOT move: arcs stay
+    // 13 and the seam census stays (118, 20, 0, 0), because a Rapid is not a
+    // same-feed Linear join and forms no arc. Six added rapids, zero arc cost.
     run(
         "face_full",
         face_fixture(),
@@ -363,7 +402,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         1500.0,
         OperationType::Face,
         &Expect {
-            out: (74, 13),
+            out: (80, 13),
             census: (118, 20, 0, 0),
         },
     );
@@ -377,8 +416,13 @@ fn pr6_measure_arcfit_intent_key_cost() {
         1000.0,
         OperationType::Scallop,
         &Expect {
-            out: (32, 8),
-            census: (180, 8, 0, 0),
+            // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN): arcs 8 -> 16, census
+            // joins 180 -> 362. The move COUNT is unchanged at 32: these
+            // passes are radius 8-11 circles, far longer than the 19.08 mm
+            // half ramp, so the fold walks a single arc and fits back to one
+            // arc per entry. Q3's `unknown_strict` stays 0.
+            out: (32, 16),
+            census: (362, 8, 0, 0),
         },
     );
     // Pass radii AT the shipped `lead_radius`: the lead-out quarter-circle is
@@ -394,8 +438,17 @@ fn pr6_measure_arcfit_intent_key_cost() {
         1000.0,
         OperationType::Scallop,
         &Expect {
-            out: (32, 8),
-            census: (180, 8, 0, 0),
+            // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN): (32, 8) -> (76, 44),
+            // census (180, 8, 0, 0) -> (1084, 12, 0, 0). The largest move on
+            // this file, and it is the fold's LAP path showing up: these
+            // passes are radius-2 circles of circumference 12.57 mm against a
+            // 19.08 mm half ramp, so the fold laps the ring about 1.5 times
+            // on the way down and retraces it. EntryRamp 8 -> 36. That is the
+            // designed degrade for a closed run shorter than the ramp, and it
+            // is contained by construction where the old straight legs were
+            // not. Q3's `unknown_strict` stays 0.
+            out: (76, 44),
+            census: (1084, 12, 0, 0),
         },
     );
 }

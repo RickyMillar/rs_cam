@@ -1183,9 +1183,20 @@ pub fn relink_fragments_with_kinds(
     // holding moves from outside the claim. `Remap` would silently widen the
     // claim to cover those strangers; `Permutation` DROPS it, which is the
     // honest answer. G-LINKSTAGE deliberately reuses this flavour rather than
-    // adding a fourth: a rotation IS a permutation, it carries no distinct
-    // drop rule of its own, and the scallop's ring annotations anchor on the
-    // junction rapid (which no rotation moves), so nothing needs re-anchoring.
+    // adding a fourth: a rotation IS a permutation and carries no distinct
+    // drop rule of its own.
+    //
+    // G-LINKTRACE correction (2026-09-10): this used to end "the scallop's
+    // ring annotations anchor on the junction rapid (which no rotation
+    // moves), so nothing needs re-anchoring." Both halves were wrong. The
+    // junction rapid is DELETED here, and its old index is remapped onto the
+    // WHOLE replacement junction, which OVERLAPS the range the next
+    // fragment's first move maps onto. That is foreign intrusion at every
+    // junction, produced by `reorder` alone with no rotation in play.
+    // Through the RANGE query the drop rule then deleted every ring
+    // annotation and this op's semantic trace collapsed. A single-move
+    // anchor now asks `MoveProvenance::remap_point`, which states why the
+    // rule does not reach it.
     let transformed = if params.reorder || report.rotated_loops > 0 {
         Transformed::from_permutation(annotated, remap)
     } else {

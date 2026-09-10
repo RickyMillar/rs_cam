@@ -1413,6 +1413,11 @@ pub(super) fn segments_to_toolpath(
                             max_angle_deg,
                             params.plunge_rate,
                             &entry_safety(params.safe_z),
+                            // G-RAMPCONTAIN: no fold. This door enters PRISM
+                            // stock with `dir = (1.0, 0.0)`; a leg past the
+                            // mesh footprint cuts stock this operation is
+                            // allowed to cut (R0.2 section 2.2).
+                            None,
                         );
                     }
                 };
@@ -1576,6 +1581,8 @@ pub(super) fn segments_to_toolpath(
                             max_angle_deg,
                             params.plunge_rate,
                             &entry_safety(descent_floor),
+                            // G-RAMPCONTAIN: no fold — see the sibling call.
+                            None,
                         );
                     }
                 };

@@ -175,6 +175,40 @@ impl MoveProvenance {
         }
     }
 
+    /// Where a SINGLE move went — the ANCHOR query, as against
+    /// [`Self::remap_range`]'s CLAIM query.
+    ///
+    /// `None` means the move did not survive: every output it produced was
+    /// deleted.
+    ///
+    /// # Why this does not apply the foreign-intrusion rule
+    ///
+    /// [`Self::Permutation`] drops a claim whose bounding range also holds
+    /// moves from outside the claim, because such a range would silently
+    /// WIDEN the claim to cover strangers. A single-move anchor makes no
+    /// such claim. It asks only "where did this one move go", it has no
+    /// width, and a width of one cannot widen. Applying the rule to it does
+    /// not make the answer safer; it deletes a correct answer.
+    ///
+    /// G-LINKTRACE is what that cost. The finishing link stage maps the
+    /// junction rapid it DELETED and the next fragment's first move onto
+    /// OVERLAPPING output ranges — the deleted rapid onto the whole
+    /// junction, the first move onto its last output — which is intrusion
+    /// by construction at every junction. Routed through `remap_range`,
+    /// every scallop ring annotation was dropped and the contour scallop's
+    /// semantic trace collapsed from 25 items to 1 (regions 1 → 0, rings
+    /// 23 → 0) with the toolpath itself unchanged.
+    #[must_use]
+    pub fn remap_point(&self, old: usize, new_n_moves: usize) -> Option<usize> {
+        match self {
+            Self::Mapping(_) => self.remap_range(old, old + 1, new_n_moves).map(|r| r.start),
+            // No intrusion check on either arm: see the doc above.
+            Self::Remap(remap) | Self::Permutation(remap) => {
+                remap.remap_range(old, old + 1).map(|r| r.start)
+            }
+        }
+    }
+
     /// Bounding POST-transform range of the moves this transform actually
     /// restructured — inserted, deleted, collapsed, fanned out or reordered.
     ///
@@ -411,6 +445,12 @@ pub trait RemapConsumer: sealed::Sealed {
 /// transform's own reported provenance. The observable rules are unchanged —
 /// same UNLINK policy for deleted moves, same foreign-intrusion drop for
 /// reordered ones, same post-transform geometry re-derivation.
+///
+/// This channel carries RANGES and so keeps the foreign-intrusion drop, and
+/// that is correct here: a semantic item claims a span of moves, and a
+/// bounding range holding strangers really would be a lie. Contrast
+/// [`ScallopAnnotationChannel`], which carries single-move ANCHORS and asks
+/// [`MoveProvenance::remap_point`] instead (G-LINKTRACE).
 pub struct SemanticLinkChannel<'a>(&'a ToolpathSemanticRecorder);
 
 impl<'a> SemanticLinkChannel<'a> {
@@ -439,9 +479,22 @@ impl RemapConsumer for SemanticLinkChannel<'_> {
 /// Unlike the semantic trace, this channel cannot express "unlinked": a
 /// `move_index` is a plain `usize`. An annotation whose move did not
 /// survive the transform is therefore DROPPED rather than pointed at a
-/// neighbour it does not describe. (The relinker itself maps every input
-/// move onto something, so nothing is dropped there; the rule matters for
-/// whatever transform is routed through this channel next.)
+/// neighbour it does not describe.
+///
+/// # It asks [`MoveProvenance::remap_point`], never `remap_range`
+///
+/// A ring annotation is an ANCHOR on one move, not a claim over a range,
+/// so the permutation's foreign-intrusion rule must not reach it — see
+/// that method's doc for why, and for what it cost (G-LINKTRACE).
+///
+/// # And it re-sorts afterwards
+///
+/// `compute::annotate::annotate_scallop` derives each ring's END from the
+/// NEXT annotation's `move_index`, and groups regions by CONSECUTIVE runs.
+/// Both read this vector in order. A reorder scatters the indices, so the
+/// vector arrives out of emitted order and those two derivations produce
+/// nonsense. The sort is STABLE, so annotations that share a `move_index`
+/// keep the generator's order between them.
 pub struct ScallopAnnotationChannel<'a>(&'a mut Vec<crate::scallop::ScallopRuntimeAnnotation>);
 
 impl<'a> ScallopAnnotationChannel<'a> {
@@ -455,15 +508,16 @@ impl sealed::Sealed for ScallopAnnotationChannel<'_> {}
 impl RemapConsumer for ScallopAnnotationChannel<'_> {
     fn consume_provenance(&mut self, provenance: &MoveProvenance, toolpath: &Toolpath) {
         let n = toolpath.moves.len();
-        self.0.retain_mut(
-            |a| match provenance.remap_range(a.move_index, a.move_index + 1, n) {
-                Some(r) => {
-                    a.move_index = r.start;
+        self.0
+            .retain_mut(|a| match provenance.remap_point(a.move_index, n) {
+                Some(i) => {
+                    a.move_index = i;
                     true
                 }
                 None => false,
-            },
-        );
+            });
+        // Emitted order, not input order — see the type doc.
+        self.0.sort_by_key(|a| a.move_index);
     }
 }
 

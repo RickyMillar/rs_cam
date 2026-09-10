@@ -44,7 +44,7 @@ pub fn diagnostics_from_static_checks(
     out.extend(depth_checks(&scope, op, tool));
     out.extend(feed_checks(&scope, feed, plunge));
     if let Some(h) = heights_resolved {
-        out.extend(heights_checks(&scope, h));
+        out.extend(heights_checks(&scope, op, h));
     }
 
     out
@@ -61,6 +61,14 @@ pub struct ResolvedHeights {
     pub feed_z: f64,
     pub retract_z: f64,
     pub clearance_z: f64,
+    /// Top of the stock this setup presents, when the caller knows it.
+    ///
+    /// `None` means **NOT MEASURED**, never "the cut is inside the board".
+    /// [`depth_beyond_stock`] abstains rather than guess a thickness.
+    pub stock_top_z: Option<f64>,
+    /// Bottom of the stock this setup presents. Same contract as
+    /// [`Self::stock_top_z`].
+    pub stock_bottom_z: Option<f64>,
 }
 
 impl ResolvedHeights {
@@ -78,6 +86,8 @@ impl ResolvedHeights {
             feed_z: ctx.stock_top_z,
             retract_z: ctx.safe_z,
             clearance_z: ctx.safe_z,
+            stock_top_z: Some(ctx.stock_top_z),
+            stock_bottom_z: Some(ctx.stock_bottom_z),
         }
     }
 }
@@ -374,7 +384,121 @@ fn feed_checks(scope: &Scope, feed: f64, plunge: f64) -> Vec<Diagnostic> {
 
 // ── heights cross-validation ────────────────────────────────────────
 
-fn heights_checks(scope: &Scope, h: &ResolvedHeights) -> Vec<Diagnostic> {
+/// An operation whose own depth dial puts its cut floor below the stock.
+///
+/// F1.6 shipped this rule GUI-side, so it reached the inspector ribbon and
+/// nothing else — not the Operations card row, and not MCP
+/// `get_toolpath_diagnostics`, which routes through
+/// [`crate::diagnostics::diagnose_toolpath_inputs`]. F1.18 moves the
+/// predicate here so one rule serves every surface.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DepthBeyondStock {
+    /// How far below the stock bottom the cut floor sits, in mm. Always
+    /// above [`DEPTH_BEYOND_STOCK_EPS_MM`].
+    pub excess_mm: f64,
+    /// Stock top minus stock bottom, in mm.
+    pub stock_thickness_mm: f64,
+    /// The floor the operation emits: resolved Top Z minus its depth dial.
+    pub cut_floor_z: f64,
+    /// The stock bottom this compares against.
+    pub stock_bottom_z: f64,
+}
+
+/// A through cut landing exactly on the stock bottom is the normal way to cut
+/// a part out, so the rule needs a tolerance rather than a strict compare.
+/// This is an equality epsilon, not a machining allowance.
+pub const DEPTH_BEYOND_STOCK_EPS_MM: f64 = 1e-6;
+
+impl DepthBeyondStock {
+    /// The operator-facing sentence. Kept identical to the GUI rule F1.6
+    /// shipped, so the switchover does not change what the operator reads.
+    pub fn message(&self) -> String {
+        format!("Depth exceeds stock thickness by {:.2} mm", self.excess_mm)
+    }
+}
+
+/// Whether [`depth_beyond_stock`] can answer for this operation at all.
+///
+/// It answers for operations whose cut floor is `resolved Top Z` minus their
+/// OWN depth dial. Three groups are excluded, and each `false` here means
+/// **NOT MEASURED** — never "this operation stays inside the board":
+///
+/// * The operations that read `ResolvedHeights::bottom_z` as their floor —
+///   `Adaptive3d`, `UnifiedFinish`, `Waterline`
+///   ([`crate::compute::catalog::OperationType::honors_pinned_bottom_z`]).
+///   Their floor CAN be a pinned Bottom Z, and this adapter's snapshot
+///   carries no pin flag: `ResolvedHeights::from_context` sets `bottom_z` to
+///   the stock bottom whatever the operator pinned. Answering for them would
+///   mean guessing.
+/// * The surface-riding finish family, where the mesh is the floor and
+///   `depth_semantics()` is `DepthSemantics::None`.
+/// * `ProjectCurve`, whose depth drops below the MESH surface rather than the
+///   stock top, and `AlignmentPinDrill`, whose whole purpose is to reach into
+///   the spoilboard.
+///
+/// `Drill` is included: it has a depth dial anchored at the top and no
+/// spoilboard allowance of its own (`DrillConfig`).
+pub fn depth_beyond_stock_applies(op: &OperationConfig) -> bool {
+    use crate::compute::catalog::OperationType::{AlignmentPinDrill, ProjectCurve};
+    // Subsumed today — all three of Adaptive3d / UnifiedFinish / Waterline
+    // declare `DepthSemantics::None`, so the `Explicit` requirement below
+    // already excludes them. It is kept because it states the REASON they
+    // cannot be answered for, which the `Explicit` check does not: their
+    // floor can be a pinned Bottom Z, and this snapshot carries no pin flag.
+    if op.op_type().honors_pinned_bottom_z() {
+        return false;
+    }
+    if matches!(op.op_type(), ProjectCurve | AlignmentPinDrill) {
+        return false;
+    }
+    // `Explicit(_)` and nothing else. `DepthSemantics::None` is the
+    // surface-riding family, where the mesh is the floor. `DerivedStockTop`
+    // is `DropCutter`, whose `min_z` CLAMPS a surface-riding descent rather
+    // than commanding a floor — a `min_z` below the board does not mean the
+    // tool reaches it. The GUI rule F1.6 shipped requires `Explicit(_)` for
+    // the same reason, so the two agree on WHICH operations they answer for
+    // and differ only on the pinned Bottom Z.
+    matches!(
+        op.depth_semantics(),
+        crate::compute::catalog::DepthSemantics::Explicit(_)
+    )
+}
+
+/// Compare the operation's emitted cut floor with the bottom of the stock.
+///
+/// `None` covers three states and the caller must not read it as "clean":
+/// the operation is outside [`depth_beyond_stock_applies`]; the caller
+/// supplied no stock span (`ResolvedHeights::stock_bottom_z` is `None`); or
+/// the floor is at or above the stock bottom, which is the only one of the
+/// three that means clean. Call [`depth_beyond_stock_applies`] to separate
+/// the first from the other two.
+///
+/// **The pinned Bottom Z is deliberately not part of this comparison.** For
+/// every operation this rule applies to, a pinned bottom reaches no emitted
+/// motion (F1.19), so folding it in would caution on a number the machine
+/// never cuts. The GUI rule F1.6 shipped takes the deeper of the two bottoms;
+/// this one takes only the one that becomes motion, and that is the single
+/// behavioural difference between them.
+pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<DepthBeyondStock> {
+    if !depth_beyond_stock_applies(op) {
+        return None;
+    }
+    let stock_top_z = h.stock_top_z?;
+    let stock_bottom_z = h.stock_bottom_z?;
+    let cut_floor_z = h.top_z - op.default_depth_for_heights().abs();
+    let excess_mm = stock_bottom_z - cut_floor_z;
+    if excess_mm <= DEPTH_BEYOND_STOCK_EPS_MM {
+        return None;
+    }
+    Some(DepthBeyondStock {
+        excess_mm,
+        stock_thickness_mm: stock_top_z - stock_bottom_z,
+        cut_floor_z,
+        stock_bottom_z,
+    })
+}
+
+fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     if h.bottom_z > h.top_z {
         out.push(Diagnostic {
@@ -442,6 +566,22 @@ fn heights_checks(scope: &Scope, h: &ResolvedHeights) -> Vec<Diagnostic> {
             source: Source::StaticValidation,
             message: "Clearance Z is below Retract Z. Rapid moves between operations may collide."
                 .to_owned(),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        });
+    }
+    if let Some(found) = depth_beyond_stock(op, h) {
+        out.push(Diagnostic {
+            id: DiagnosticId::from(ids::GEOM_DEPTH_BEYOND_STOCK),
+            scope: scope.clone(),
+            category: Category::Safety,
+            severity: Severity::Caution,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::StaticValidation,
+            message: found.message(),
             evidence: None,
             fix: None,
             supersedes: vec![],

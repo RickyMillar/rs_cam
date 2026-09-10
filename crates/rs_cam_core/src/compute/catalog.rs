@@ -582,6 +582,65 @@ impl OperationType {
             Profile | Chamfer | Inlay | VCarve | Trace => Some(40.0),
         }
     }
+
+    /// Whether a pinned Bottom Z on the Heights tab reaches this operation's
+    /// EMITTED motion (F1.19).
+    ///
+    /// Three of the twenty-four operations read
+    /// [`crate::compute::config::ResolvedHeights::bottom_z`] when they
+    /// generate. The three sites are in `compute/execute.rs`:
+    ///
+    /// * `Adaptive3d` — `z_floor: heights.bottom_pinned.then_some(heights.bottom_z)`
+    /// * `UnifiedFinish` — hands `heights.bottom_z` to the band ladder
+    /// * `Waterline` — `waterline_z_levels(heights.top_z, heights.bottom_z, z_step)`
+    ///
+    /// Every other operation anchors its floor at `heights.top_z` minus its
+    /// OWN depth dial, and a pinned bottom changes nothing it emits. For the
+    /// seven depth-stepping operations the mechanism is
+    /// [`OperationConfig::cutting_levels`], which takes `top_z` and nothing
+    /// else: `session/compute.rs` builds the ladder before generation, and
+    /// `execute.rs`'s `effective_levels` returns that ladder whenever it is
+    /// non-empty — which it always is for those seven. The `else` branch of
+    /// `effective_levels` is the one place a pinned bottom WOULD reach a 2.5D
+    /// ladder, through `ResolvedHeights::depth()`, and it is unreachable from
+    /// all six of its callers.
+    ///
+    /// This states what the generator does. It is not a recommendation. An
+    /// operator who pins Bottom Z on a pocket sets a dial that moves no
+    /// motion, and a surface that cautions on that number describes a cut the
+    /// machine does not make — which is why F1.18's caution predicate reads
+    /// the operation's own depth and never the pin.
+    ///
+    /// The repo has ruled this way before, in the other direction: adaptive3d
+    /// "deliberately ignores a pinned top" because roughing must start at the
+    /// real material top (`compute/config.rs`, `ResolvedHeights::top_pinned`).
+    /// A family declaring one pin inert is established practice here.
+    pub fn honors_pinned_bottom_z(self) -> bool {
+        use OperationType::{
+            Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
+            HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
+            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish, VCarve,
+            Waterline, Zigzag,
+        };
+        match self {
+            // The three that read heights.bottom_z.
+            Adaptive3d | UnifiedFinish | Waterline => true,
+            // Depth-stepping family: the floor is `top_z - cfg.depth`, carried
+            // in the pre-computed `cutting_levels` ladder.
+            Pocket | Profile | Adaptive | Zigzag | Rest | Trace | Face => false,
+            // Top-anchored own-depth ops that do not step: VCarve max_depth,
+            // Inlay pocket_depth, Chamfer width, Drill depth, and the pin
+            // drill's spoilboard allowance.
+            VCarve | Inlay | Chamfer | Drill | AlignmentPinDrill => false,
+            // Surface-riding finish ops: the mesh is the floor. They read
+            // `heights.retract_z` only.
+            DropCutter | Scallop | Pencil | HorizontalFinish | SteepShallow | RampFinish
+            | SpiralFinish | RadialFinish => false,
+            // ProjectCurve drops its depth below the mesh surface it projects
+            // onto, not below the stock top, and reads `fallback_top_z`.
+            ProjectCurve => false,
+        }
+    }
 }
 
 /// Common parameter accessors for all operation configs.
@@ -1500,7 +1559,11 @@ const POCKET_PARAMS: &[ParamDef] = &[
 ];
 
 const PROFILE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("side", "enum:on|inside|outside"),
+    // G-SCHEMAENUM: `on` was never a `ProfileSide` and the generator has no
+    // on-the-line arm. The on-the-line cut ships twice under its own names —
+    // `project_curve` with `side: center` (labelled "On Line") and `trace`
+    // with `compensation: none`, whose tool centre follows the path exactly.
+    ParamDef::required("side", "enum:inside|outside"),
     ParamDef::required("depth", "f64"),
     ParamDef::required("depth_per_pass", "f64"),
     ParamDef::required("feed_rate", "f64"),
@@ -1587,7 +1650,8 @@ const TRACE_PARAMS: &[ParamDef] = &[
     ParamDef::required("depth_per_pass", "f64"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("compensation", "enum:center|left|right"),
+    // G-SCHEMAENUM: the variant is `none`, not `center`.
+    ParamDef::required("compensation", "enum:none|left|right"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
@@ -1704,13 +1768,23 @@ const PENCIL_PARAMS: &[ParamDef] = &[
         "option<usize>",
         "Library tool id whose real geometry defines the pencil rest reference (else nominal diameter)",
     ),
+    ParamDef::optional_desc(
+        "link_hop_distance_mm",
+        "option<f64>",
+        "Reach (mm) of the CLEARANCE-HOP link tier only; hookup_distance caps the at-depth \
+         tier. Absent = one cap for both tiers (the shipped emission, byte for byte) — absent \
+         does NOT mean the hop tier is off. 0 refuses every hop and keeps the at-depth tier, \
+         which is the control arm that separates the two tiers.",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const SCALLOP_PARAMS: &[ParamDef] = &[
     ParamDef::required("scallop_height", "f64"),
     ParamDef::required("tolerance", "f64"),
-    ParamDef::required("direction", "enum:x|y"),
+    // G-SCHEMAENUM: was `x|y`, a raster-axis dial `ScallopConfig` does not
+    // have. `ScallopDirection` is outside-in or inside-out.
+    ParamDef::required("direction", "enum:outside_in|inside_out"),
     ParamDef::required("continuous", "bool"),
     ParamDef::required("slope_from", "f64"),
     ParamDef::required("slope_to", "f64"),
@@ -1847,7 +1921,9 @@ const RAMP_FINISH_PARAMS: &[ParamDef] = &[
 
 const SPIRAL_FINISH_PARAMS: &[ParamDef] = &[
     ParamDef::required("stepover", "f64"),
-    ParamDef::required("direction", "enum:outward|inward"),
+    // G-SCHEMAENUM: was `outward|inward`; `SpiralDirection` spells the same
+    // two directions `inside_out` and `outside_in`.
+    ParamDef::required("direction", "enum:inside_out|outside_in"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("stock_to_leave", "f64"),

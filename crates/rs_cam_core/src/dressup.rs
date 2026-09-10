@@ -141,8 +141,9 @@ pub fn apply_entry(
     style: EntryStyle,
     plunge_rate: f64,
     safety: EntrySafety<'_>,
+    tool_radius_mm: f64,
 ) -> AnnotatedToolpath {
-    apply_entry_with_provenance(annotated, style, plunge_rate, safety)
+    apply_entry_with_provenance(annotated, style, plunge_rate, safety, tool_radius_mm)
         .reconcile(&mut ReconcileSet::empty())
         .into_inner()
 }
@@ -155,6 +156,7 @@ pub fn apply_entry_with_provenance(
     style: EntryStyle,
     plunge_rate: f64,
     safety: EntrySafety<'_>,
+    tool_radius_mm: f64,
 ) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
@@ -184,6 +186,22 @@ pub fn apply_entry_with_provenance(
                 EntryStyle::Ramp { max_angle_deg } => {
                     // Look ahead for the next XY move to determine ramp direction
                     let ramp_dir = find_next_xy_direction(&toolpath.moves, i);
+                    // G-RAMPCONTAIN: the following cut, for the ramp to fold
+                    // along. `max_angle_deg` bounds the walk, so the scan is
+                    // half a ramp length of path and not the whole pass.
+                    let want = fold_walk_budget(max_angle_deg);
+                    let follow = collect_following_cut(&toolpath.moves, i, want);
+                    let closed = follow.len() >= 3
+                        && follow.last().is_some_and(|p| {
+                            let dx = p.x - m.target.x;
+                            let dy = p.y - m.target.y;
+                            (dx * dx + dy * dy).sqrt() < XY_STATIONARY_EPS_MM
+                        });
+                    let fold = RampFold {
+                        follow: &follow,
+                        closed,
+                        min_run_mm: tool_radius_mm.max(1.0),
+                    };
                     emit_ramp(
                         &mut result,
                         &toolpath.moves[i - 1].target,
@@ -192,6 +210,7 @@ pub fn apply_entry_with_provenance(
                         max_angle_deg,
                         feed_rate.min(plunge_rate),
                         &safety,
+                        Some(&fold),
                     );
                 }
                 EntryStyle::Helix { radius, pitch } => {
@@ -727,9 +746,269 @@ fn find_next_xy_direction(moves: &[Move], from_idx: usize) -> (f64, f64) {
     (1.0, 0.0) // fallback: ramp along X
 }
 
+/// How much of the following cut a ramp fold can consume, in mm of XY.
+///
+/// The fold walks out for half the total ramp length and retraces it, so
+/// half is all it can use. An invalid angle gets zero: [`emit_ramp`] falls
+/// back to a straight plunge before it looks at the fold.
+fn fold_walk_budget(max_angle_deg: f64) -> f64 {
+    if max_angle_deg <= 0.0 || max_angle_deg >= 90.0 {
+        return 0.0;
+    }
+    ENTRY_CLEARANCE / max_angle_deg.to_radians().tan() / 2.0
+}
+
+/// Sample spacing (mm) used to linearise an arc in the following cut.
+const FOLD_ARC_SPACING_MM: f64 = 0.5;
+
+/// Collect the fed cut moves that follow the plunge at `from_idx`.
+///
+/// The walk starts AT the plunge target and stops at the first rapid, the
+/// first following plunge, or once it has `want` mm of XY in hand — the
+/// most a fold can consume. Arc moves are linearised.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+fn collect_following_cut(moves: &[Move], from_idx: usize, want: f64) -> Vec<P3> {
+    let mut points = vec![moves[from_idx].target];
+    if want <= 0.0 {
+        return points;
+    }
+    let mut acc = 0.0;
+    let mut prev = moves[from_idx].target;
+    for idx in from_idx + 1..moves.len() {
+        let n = &moves[idx];
+        match n.move_type {
+            MoveType::Rapid => break,
+            MoveType::Linear { .. } => {
+                if is_plunge(&moves[idx - 1], n) {
+                    break;
+                }
+                points.push(n.target);
+            }
+            MoveType::ArcCW { i, j, .. } => {
+                points.extend(crate::arc_util::linearize_arc(
+                    prev,
+                    n.target,
+                    i,
+                    j,
+                    true,
+                    FOLD_ARC_SPACING_MM,
+                ));
+            }
+            MoveType::ArcCCW { i, j, .. } => {
+                points.extend(crate::arc_util::linearize_arc(
+                    prev,
+                    n.target,
+                    i,
+                    j,
+                    false,
+                    FOLD_ARC_SPACING_MM,
+                ));
+            }
+        }
+        let dx = n.target.x - prev.x;
+        let dy = n.target.y - prev.y;
+        acc += (dx * dx + dy * dy).sqrt();
+        prev = n.target;
+        if acc >= want {
+            break;
+        }
+    }
+    points
+}
+
 /// Clearance height (mm) above cut depth to start ramping/helixing.
 pub(crate) const ENTRY_CLEARANCE: f64 = 2.0;
 
+/// The operation's own following cut moves, for a ramp to fold along
+/// (G-RAMPCONTAIN, 2026-09-10).
+///
+/// [`emit_ramp`] used to draw two blind straight legs of
+/// `ENTRY_CLEARANCE / tan(angle) / 2` mm — 19.08 mm at the shipped 3
+/// degrees, for every depth per pass — from the entry column along the
+/// first following chord. The emitter holds no region, no polygon and no
+/// tool radius, so it could not constrain them: on
+/// `fixtures/demo_pocket.svg` the return leg ran 11 mm past the pocket
+/// wall and cut the surrounding stock, under a clean verdict
+/// (UX-R03-001).
+///
+/// The fold rides [`Self::follow`] instead. Every point of that polyline
+/// is a tool-centre point the generator itself placed at this level, so
+/// the entry is contained wherever the operation's own cut is contained —
+/// with no region polygon, no offset call and no tool radius needed at
+/// emit time. The slope stays `tan(angle)` because Z is interpolated by
+/// cumulative XY distance, and a chord is never longer than the arc it
+/// replaces, so a folded leg is never steeper than the planned one.
+///
+/// `None` at the call site keeps the legacy straight legs. The adaptive3d
+/// door passes `None`: it enters prism stock with `dir = (1.0, 0.0)` and a
+/// leg past the mesh footprint cuts stock that operation is allowed to
+/// cut (R0.2 §2.2).
+pub(crate) struct RampFold<'a> {
+    /// The fed cut moves that follow the plunge, in emission order,
+    /// starting AT the plunge target. Arc moves are already linearised.
+    /// The walk stops at the next rapid or the next plunge.
+    pub follow: &'a [P3],
+    /// True where `follow` closes back onto the plunge target in XY, so
+    /// the walk laps the ring rather than bouncing off its far end.
+    pub closed: bool,
+    /// Below this XY run length the fold degrades to a plunge. A run
+    /// shorter than the tool radius is a scrub in place, not a ramp.
+    pub min_run_mm: f64,
+}
+
+/// XY length of a polyline, in mm.
+// SAFETY: `windows(2)` yields slices of exactly two elements.
+#[allow(clippy::indexing_slicing)]
+fn polyline_xy_len(points: &[P3]) -> f64 {
+    points
+        .windows(2)
+        .map(|w| {
+            let dx = w[1].x - w[0].x;
+            let dy = w[1].y - w[0].y;
+            (dx * dx + dy * dy).sqrt()
+        })
+        .sum()
+}
+
+/// Guard on the lap / bounce loop in [`extend_fold_path`]. A run of any
+/// usable length reaches 19 mm in a handful of laps; the cap only stops a
+/// degenerate run of near-zero-length segments from spinning.
+const FOLD_EXTEND_MAX_ROUNDS: usize = 64;
+
+/// Grow `base` until its XY length reaches `want`, by lapping a closed
+/// ring or bouncing off the far end of an open run.
+///
+/// Returns `base` unchanged when it is already long enough, and gives up
+/// (returning what it has) on a run too degenerate to grow.
+// SAFETY: every slice below is guarded by the `base.len() < 2` early return.
+#[allow(clippy::indexing_slicing)]
+fn extend_fold_path(base: &[P3], closed: bool, want: f64) -> Vec<P3> {
+    let mut ext = base.to_vec();
+    if base.len() < 2 {
+        return ext;
+    }
+    let per_round = polyline_xy_len(base);
+    if per_round <= 1e-9 {
+        return ext;
+    }
+    let mut rounds = 0;
+    while polyline_xy_len(&ext) < want && rounds < FOLD_EXTEND_MAX_ROUNDS {
+        rounds += 1;
+        if closed {
+            // The ring returns to its own start, so replaying it from the
+            // second point continues the lap without a duplicate vertex.
+            ext.extend_from_slice(&base[1..]);
+        } else {
+            // Bounce: back down the run, then out along it again.
+            let back: Vec<P3> = base.iter().rev().skip(1).copied().collect();
+            ext.extend_from_slice(&back);
+            ext.extend_from_slice(&base[1..]);
+        }
+    }
+    ext
+}
+
+/// Walk `path` from its start for `want` mm of XY distance.
+///
+/// Returns every vertex crossed plus the interpolated turn-around point.
+/// A path SHORTER than `want` is returned whole and therefore falls short.
+/// That is not harmless — the same Z drop over less XY is a STEEPER ramp
+/// than the angle dial asked for — so [`fold_ramp_points`] checks the
+/// walked length and degrades to a plunge rather than emit it.
+// SAFETY: `windows(2)` yields slices of exactly two elements.
+#[allow(clippy::indexing_slicing)]
+fn walk_fold_path(path: &[P3], want: f64) -> Vec<P3> {
+    let mut walked = Vec::new();
+    let Some(first) = path.first() else {
+        return walked;
+    };
+    walked.push(*first);
+    let mut acc = 0.0;
+    for w in path.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let seg = (dx * dx + dy * dy).sqrt();
+        if seg <= 1e-12 {
+            continue;
+        }
+        if acc + seg >= want {
+            let t = (want - acc) / seg;
+            walked.push(P3::new(a.x + dx * t, a.y + dy * t, a.z + (b.z - a.z) * t));
+            return walked;
+        }
+        acc += seg;
+        walked.push(b);
+    }
+    walked
+}
+
+/// Build the folded ramp: out along the cut polyline for `half_len`, then
+/// back over the same ground to the entry column.
+///
+/// Z is interpolated by cumulative XY distance over the whole out-and-back,
+/// from `ramp_start_z` at the entry column down to `end_z` when it returns
+/// there. Each point is then FLOORED at the cut polyline's own Z, which is
+/// inert on a level pass and stops the fold diving under a shallow carve.
+///
+/// The returned points exclude the starting position — the caller already
+/// stands at `(entry column, ramp_start_z)`.
+// SAFETY: `windows(2)` yields slices of exactly two elements.
+#[allow(clippy::indexing_slicing)]
+fn fold_ramp_points(
+    follow: &[P3],
+    closed: bool,
+    half_len: f64,
+    ramp_start_z: f64,
+    end_z: f64,
+) -> Vec<P3> {
+    let extended = extend_fold_path(follow, closed, half_len);
+    let out = walk_fold_path(&extended, half_len);
+    if out.len() < 2 {
+        return Vec::new();
+    }
+    // The walk must reach the full half length. Falling short would drop the
+    // same 2 mm over less XY, which is a ramp STEEPER than the angle dial
+    // asked for. The caller degrades to a plunge instead.
+    //
+    // `extend_fold_path` cannot cap out on a run the caller admits — its
+    // guard is 64 rounds and the caller refuses a run under 1 mm, so the
+    // extension reaches at least 64 mm against a half length of 19.08 mm at
+    // the shipped 3 degrees. This is the belt to that braces.
+    if polyline_xy_len(&out) < half_len - 1e-6 {
+        return Vec::new();
+    }
+    // Out, then the same vertices in reverse: the classic zigzag ramp bent
+    // onto the cut path.
+    let mut path: Vec<P3> = out.clone();
+    path.extend(out.iter().rev().skip(1).copied());
+
+    let total = polyline_xy_len(&path);
+    if total <= 1e-9 {
+        return Vec::new();
+    }
+    let drop = ramp_start_z - end_z;
+    let mut acc = 0.0;
+    let mut points = Vec::with_capacity(path.len());
+    for (idx, w) in path.windows(2).enumerate() {
+        let (a, b) = (w[0], w[1]);
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        acc += (dx * dx + dy * dy).sqrt();
+        let planned_z = ramp_start_z - drop * (acc / total);
+        // The last point must land exactly on the entry target, so the
+        // cut that follows starts where the generator put it.
+        let is_last = idx + 2 == path.len();
+        let z = if is_last { end_z } else { planned_z.max(b.z) };
+        points.push(P3::new(b.x, b.y, z));
+    }
+    points
+}
+
+// SAFETY: eight parameters, one over clippy's threshold. The eighth is
+// `fold`, and grouping the rest into a struct would move the emitter's
+// existing contract for one added argument.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_ramp(
     tp: &mut Toolpath,
     start: &P3,
@@ -738,6 +1017,7 @@ pub(crate) fn emit_ramp(
     max_angle_deg: f64,
     feed_rate: f64,
     safety: &EntrySafety<'_>,
+    fold: Option<&RampFold<'_>>,
 ) {
     use crate::toolpath::MoveIntent;
     let stock_top = safety.stock_top;
@@ -892,8 +1172,29 @@ pub(crate) fn emit_ramp(
                 tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
             }
         }
+    } else if let Some(fold) = fold {
+        // G-RAMPCONTAIN: no surface probe, so this is a PRISM operation and
+        // the legs below it were blind in XY as well as in Z. Fold them
+        // along the operation's own following cut instead — see
+        // [`RampFold`]. The degrade is a plunge, never a refusal: the entry
+        // column is a cut point of the operation by construction.
+        let run = polyline_xy_len(fold.follow);
+        let folded = if fold.follow.len() >= 2 && run >= fold.min_run_mm {
+            fold_ramp_points(fold.follow, fold.closed, half_len, ramp_start_z, end.z)
+        } else {
+            Vec::new()
+        };
+        if folded.is_empty() {
+            tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+        } else {
+            for p in folded {
+                tp.feed_to_with_intent(p, feed_rate, MoveIntent::EntryRamp);
+            }
+        }
     } else {
-        // Legacy blind legs — honest only with no mesh surface to probe.
+        // Legacy blind legs — honest only with no mesh surface to probe AND
+        // no following cut to fold along. The adaptive3d door is the one
+        // caller that lands here (R0.2 section 2.2).
         tp.feed_to_with_intent(planned[1], feed_rate, MoveIntent::EntryRamp);
         tp.feed_to_with_intent(planned[2], feed_rate, MoveIntent::EntryRamp);
     }
@@ -2878,6 +3179,9 @@ mod tests {
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
 
@@ -2918,6 +3222,9 @@ mod tests {
             EntryStyle::Ramp { max_angle_deg: 5.0 },
             500.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
 
@@ -2937,6 +3244,9 @@ mod tests {
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
 
@@ -2964,6 +3274,9 @@ mod tests {
             },
             500.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
 
@@ -2987,6 +3300,9 @@ mod tests {
             },
             500.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
 
@@ -3005,6 +3321,9 @@ mod tests {
             },
             500.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
 
@@ -3874,6 +4193,9 @@ mod tests {
             style,
             50.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
         // Should not contain NaN or infinity
@@ -3897,6 +4219,9 @@ mod tests {
             style,
             50.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
         for m in &result.moves {
@@ -3919,6 +4244,9 @@ mod tests {
             style,
             50.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
         for m in &result.moves {
@@ -3941,6 +4269,9 @@ mod tests {
             style,
             50.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         )
         .toolpath;
         for m in &result.moves {
@@ -3996,6 +4327,9 @@ mod tests {
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         );
         result
             .check_invariants()
@@ -4022,6 +4356,9 @@ mod tests {
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         );
         let entries: Vec<&Span> = result
             .spans
@@ -4049,6 +4386,9 @@ mod tests {
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
             no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. It only sets the floor under
+            // which a ramp fold degrades to a plunge.
+            3.0,
         );
         assert!(!result.spans_valid);
         // Garbage span returned untouched.
