@@ -1500,7 +1500,11 @@ const POCKET_PARAMS: &[ParamDef] = &[
 ];
 
 const PROFILE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("side", "enum:on|inside|outside"),
+    // G-SCHEMAENUM: `on` was never a `ProfileSide` and the generator has no
+    // on-the-line arm. The on-the-line cut ships twice under its own names —
+    // `project_curve` with `side: center` (labelled "On Line") and `trace`
+    // with `compensation: none`, whose tool centre follows the path exactly.
+    ParamDef::required("side", "enum:inside|outside"),
     ParamDef::required("depth", "f64"),
     ParamDef::required("depth_per_pass", "f64"),
     ParamDef::required("feed_rate", "f64"),
@@ -1587,7 +1591,8 @@ const TRACE_PARAMS: &[ParamDef] = &[
     ParamDef::required("depth_per_pass", "f64"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("compensation", "enum:center|left|right"),
+    // G-SCHEMAENUM: the variant is `none`, not `center`.
+    ParamDef::required("compensation", "enum:none|left|right"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
@@ -1718,7 +1723,9 @@ const PENCIL_PARAMS: &[ParamDef] = &[
 const SCALLOP_PARAMS: &[ParamDef] = &[
     ParamDef::required("scallop_height", "f64"),
     ParamDef::required("tolerance", "f64"),
-    ParamDef::required("direction", "enum:x|y"),
+    // G-SCHEMAENUM: was `x|y`, a raster-axis dial `ScallopConfig` does not
+    // have. `ScallopDirection` is outside-in or inside-out.
+    ParamDef::required("direction", "enum:outside_in|inside_out"),
     ParamDef::required("continuous", "bool"),
     ParamDef::required("slope_from", "f64"),
     ParamDef::required("slope_to", "f64"),
@@ -1855,7 +1862,9 @@ const RAMP_FINISH_PARAMS: &[ParamDef] = &[
 
 const SPIRAL_FINISH_PARAMS: &[ParamDef] = &[
     ParamDef::required("stepover", "f64"),
-    ParamDef::required("direction", "enum:outward|inward"),
+    // G-SCHEMAENUM: was `outward|inward`; `SpiralDirection` spells the same
+    // two directions `inside_out` and `outside_in`.
+    ParamDef::required("direction", "enum:inside_out|outside_in"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("stock_to_leave", "f64"),
