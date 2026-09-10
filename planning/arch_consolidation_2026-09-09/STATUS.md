@@ -285,6 +285,10 @@ Treat those seven as gaps, not coverage. N4 is the worst case of the class.
   `crates/rs_cam_viz/tests/export_parity_core_vs_gui_p0.rs` (`1e497aa6`):
   RPM, tool changes and datums byte-identical; coolant divergence pinned
   pending P0-D1.
+- 2026-09-11: the four param write paths are pinned by
+  `crates/rs_cam_core/tests/mutation_paths_invalidate_alike_p0.rs`
+  (`720c95e7`); N6, N14 and N15 divergences asserted with Phase 1A flip
+  notes.
 
 ---
 
