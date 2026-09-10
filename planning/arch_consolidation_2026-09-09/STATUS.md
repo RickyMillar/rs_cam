@@ -89,6 +89,30 @@ verdict below is from reading, and the reports say so; treat "STILL TRUE" as
   executed. Local log: `/tmp/n5_core.log` — a local artifact, not a
   repository fixture.
 
+## Execution checkpoint — 2026-09-10, N4 DONE
+
+- **N4: DONE (`44c68add`; sentry `6d1d2026`).** `gui_and_mcp_diagnostic_ids_match`
+  hand-rebuilt the session's input and compared the result with itself, so it
+  could not bite. The core diagnose route built its `ResolvedHeights` from
+  defaults instead of the toolpath's own `heights`, so a pinned Top Z and a
+  retract pinned below the feed plane reached the GUI ribbon and never
+  reached the MCP route. `ResolvedHeights::from_heights` is the one
+  resolver; the diagnose route passes `&tc.heights`, and the GUI's
+  `diagnostics_heights` delegates to it. The tautology test is deleted and
+  the sentry replaces it: it drives the real MCP entry point and the ribbon
+  on one session and asserts the two id sets agree.
+- **Verification:** sentry RED pre-fix at `1 passed; 2 failed` (a runtime
+  red; arm 1, the auto-heights baseline, was already green), GREEN post-fix
+  at `3 passed; 0 failed`. `depth_beyond_stock_core_g_depthstockcore` 8;
+  `inert_claims_dial_f4` 5; `unified_finish_dropped_band_finding_d1` 3. The
+  whole `rs_cam_viz` suite: **606 passed, 0 failed**, across 36 result
+  targets — the deleted test's module still compiles and carries no unused
+  import. The core dev loop is unchanged from the N5 checkpoint at **3741
+  passed, 1 failed, 271 ignored** across 290 result targets, its sole
+  failure the established F-036b baseline. `cargo fmt --all -- --check`
+  needed no change on either commit, and workspace all-target Clippy with
+  `rs_cam_core/heavy-tests` / `-D warnings` passes.
+
 ## Do these before the phases. They are defects, not refactors.
 
 The rows below retain the original audit evidence. N1/N3's current execution
@@ -99,7 +123,7 @@ states above supersede their historical descriptions.
 | **N3 — DONE (`069a2314`)** | **Historical: STEP unit scale is DROPPED on the project loader.** `rs_cam_cli run --units inches part.step` cuts geometry **25.4x wrong**. Two lanes confirmed independently. `project_file.rs:617` computes the scale; the STL, DXF and SVG arms pass it; the STEP arm (`:665-678`) never reads it. Lane B read `truck-stepio` 0.3.0 and found its READER performs **no unit conversion at all**, so `ModelUnits` is the only unit conversion a STEP file gets in this product. Not a double-scale: the interactive door is correct and the project door is wrong. Reachable on three doors; the GUI alone cannot create such a record (`import_step_path` hardcodes 1.0, `rescale_model` refuses STEP). | `core/session/project_file.rs:665-678` vs `core/io.rs:31,108` | **ONE LINE**, plus a STEP row in `model_units_survive_reload_g_unitsreload.rs`, which today has ZERO `step` hits. G-UNITSRELOAD closed the third divergence in this loader pair and left the fourth. |
 | **N1 — DONE (`d4e1154b`; sentry `2687b82b`)** | **Historical: CLI export may emit a DISABLED operation's toolpath.** `set_toolpath_enabled` calls `invalidate_output_dependents`, not `invalidate_result_chain`, so a disabled operation keeps its cached result on purpose. Core's export phase collect discards the `ToolpathConfig` and never reads `enabled`. The GUI and MCP routes filter; `rs_cam_cli project --emit-gcode` and `rs_cam_cli run` appear not to. **THIS IS A READ, NOT A REPRODUCTION** — reproduce before believing it. No test pins either behaviour. | `core/session/mutation.rs:339`, `core/gcode/mod.rs:328` | Small, once reproduced. Wrong-cut class if real. |
 | **N2** | **G-DRILLTIME is closed on one path and live on another.** `apply_kinematics_cycle_time` integrates every toolpath including drills. The post-modulation retime (`session/compute.rs:3183-3257`) resets `project_total` to zero and folds over `trace.toolpath_summaries` — the engagement population, which a drill never joins. It never rewrites `trace.toolpath_runtimes`, and that is what `readiness::toolpath_cycle_time` reads FIRST for the readiness panel, pre-flight gate, export wizard and setup sheet. Needs a configured machine kinematics block. No sentry covers it: the one test exercising the retime has no drill in its fixture. **`CLAUDE.md`'s G-DRILLTIME entry is therefore now half-true and must be amended when this is fixed.** | `core/session/compute.rs:3183-3257` vs `core/compute/simulate.rs:1464-1533` | Medium. Two writers of one field. |
-| **N4** | **A parity guard that cannot bite.** `gui_and_mcp_diagnostic_ids_match` hand-rebuilds the session's inputs, and its "GUI arm" calls `ResolvedHeights::from_context` — the MCP-route call. **It compares MCP against a replica of MCP.** Recorded earlier as J8.4 "a mirror that became a parallel copy"; it is worse than that. | `viz/ui/properties/operations/mod.rs:2657` | Small. Rewrite or delete. |
+| **N4 — DONE (`44c68add`; sentry `6d1d2026`)** | **A parity guard that cannot bite.** `gui_and_mcp_diagnostic_ids_match` hand-rebuilds the session's inputs, and its "GUI arm" calls `ResolvedHeights::from_context` — the MCP-route call. **It compares MCP against a replica of MCP.** Recorded earlier as J8.4 "a mirror that became a parallel copy"; it is worse than that. | `viz/ui/properties/operations/mod.rs:2657` | Small. Rewrite or delete. |
 | **N5 — DONE (`1e4373aa`; sentry `3b8cd298`)** | **`set_toolpath_param` accepts and silently discards a write on many operations.** The named `"stepover"` arm returns `Ok(())` on every operation whose config omits the setter — **11 operations**. `depth_per_pass` the same on **14**. The six named arms also bypass the DR-LIVE `ParamRange` gate entirely, which lives only in the generic `_` arm. `angular_step` / `point_spacing` have no registry range and are divisors. | `core/session/compute.rs:509`, `radial_finish.rs:96,108` | Part of Phase 4B, but the silent-success half is a defect now. |
 | **N6** | `set_drill_selected_holes` is a second narrow mutation path the audit did not name, sitting beside a wide one. | `core/session/mutation.rs:944` vs `:911` | Small; folds into Phase 1A. |
 | **N7** | **The modulation retime integrates on an unguarded kinematics fallback.** `apply_adaptive_feed_modulation` takes `self.machine.effective_kinematics()` with no `is_some()` guard, and that falls back to `generic_wood_router`. With modulation ON (the default) and `kinematics: None` the retime overwrites `trace.summary.total_runtime_s` and stamps `runtime_by_intent = Some(..)`, so `readiness.rs` labels the toolpath `MachineModel` on a machine that has no kinematics block. `machine.rs:141-146` says `None` must keep live-sim runtime byte-identical. `f036b.rs:281-284` still claims an `is_some()` guard that no longer exists. Found by the N2 scout 2026-09-10 (read, not run). Behaviour decision, not a fold bug: needs an operator ruling before a fix. | `core/session/compute.rs:3055`, `machine.rs:147-150`, `viz/ui/readiness.rs:507-509` | Small once ruled. |
