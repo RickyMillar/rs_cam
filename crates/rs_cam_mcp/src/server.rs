@@ -379,6 +379,32 @@ pub struct SetToolpathHeightsParam {
     pub bottom_z: Option<f64>,
 }
 
+/// F3.1 — add a toolpath through the GUI's own add path.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct AddToolpathViaGuiParam {
+    /// Operation type, same vocabulary `add_toolpath` accepts (e.g.
+    /// "pocket", "scallop", "adaptive3d").
+    pub operation_type: String,
+    /// Setup index (0-based) to add into. The GUI takes the target setup
+    /// from the CURRENT SELECTION, so passing this selects that setup
+    /// first, exactly as clicking the setup would. Omit to add into
+    /// whatever is selected now — which is what the operator's next click
+    /// would do, and may not be setup 0.
+    pub setup_index: Option<usize>,
+}
+
+/// F3.5 — read the toast stack.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct GetNotificationsParam {
+    /// Include entries that have aged past their TTL but have not been
+    /// collected yet. Default `true`: a test asserting what the operator
+    /// saw must not lose the evidence to a slow assertion. Pass `false`
+    /// for only what is on screen right now.
+    pub include_expired: Option<bool>,
+    /// Return at most this many, newest first. Omit for all of them.
+    pub limit: Option<usize>,
+}
+
 /// F3.7 — rebind a toolpath's cutter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetToolpathToolParam {

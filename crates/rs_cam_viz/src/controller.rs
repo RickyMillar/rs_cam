@@ -302,6 +302,22 @@ impl<B: ComputeBackend> AppController<B> {
         self.notifications.iter().filter(|n| !n.is_expired())
     }
 
+    /// The WHOLE toast stack, newest last, including entries that have
+    /// aged past their TTL but have not yet been collected (F3.5).
+    ///
+    /// [`Self::active_notifications`] is what the operator can still see;
+    /// this is the record of what was pushed. The two differ for at most
+    /// one frame in the running app — `gc_notifications` runs once per
+    /// frame from `app.rs` — but they differ for as long as you like in a
+    /// test, which is the point: a test asserting *what the operator saw*
+    /// must not lose the evidence because the assertion ran a second late.
+    ///
+    /// Read-only. Nothing here removes an entry; only `gc_notifications`
+    /// does, and only when it has expired.
+    pub fn notifications(&self) -> &[Notification] {
+        &self.notifications
+    }
+
     /// Remove expired notifications.
     pub fn gc_notifications(&mut self) {
         self.notifications.retain(|n| !n.is_expired());

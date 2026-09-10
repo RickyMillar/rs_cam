@@ -19,12 +19,13 @@ use crate::mcp_bridge::{
 
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
-    AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam, ApplyFeedsParam,
-    CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam, GenerateAllParam,
-    GenerateToolpathParam, ImportMachineSettingsParam, IndexParam, InspectSpansParam,
-    ListToolCatalogParam, LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam,
-    OperationSchemaParam, OptimizeToolpathInput, PlanMultitoolFinishingParam, PreviewTierMapParam,
-    ReachMapParam, RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
+    AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
+    AddToolpathViaGuiParam, ApplyFeedsParam, CollisionCheckParam, CutTraceParam, ExportParam,
+    GenDebugTraceParam, GenerateAllParam, GenerateToolpathParam, GetNotificationsParam,
+    ImportMachineSettingsParam, IndexParam, InspectSpansParam, ListToolCatalogParam,
+    LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, OperationSchemaParam,
+    OptimizeToolpathInput, PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam,
+    RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
     ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
     SetDressupConfigParam, SetDressupFieldParam, SetMachineKinematicsParam,
     SetRestAnalysisConfigParam, SetSetupRotationParam, SetSpindleStrategyParam,
@@ -927,6 +928,46 @@ impl EmbeddedCamServer {
                 index,
                 param,
                 value,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "add_toolpath_via_gui",
+        description = "Add a toolpath the way the GUI's Add menu does, by dispatching the same `AppEvent::AddToolpath` the menu item emits. Use this — not `add_toolpath` — when you need the GUI's own behaviour: it binds the FIRST tool and the FIRST model in project order (it does not read your selection, and it does not look for a compatible tool), and it runs the add-time Suggest door, which REFUSES some operation × tool-shape pairs and creates nothing at all (a flat end mill on Scallop is the standing example). `add_toolpath` takes an explicit tool_index and model_id and is the right tool when you know what you want bound. The reply says which happened: on success `created` carries the new index, id, name and the tool and model it bound; on a refusal `created` is null and `refusal` carries the operator-visible text verbatim. Either way `notifications` lists the toasts this call pushed — the same entries `get_notifications` returns — because the GUI add path reports a refusal ONLY as a toast. `setup_index` selects that setup first, as clicking it would; omit it to add into the current selection."
+    )]
+    async fn add_toolpath_via_gui(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(AddToolpathViaGuiParam {
+            operation_type,
+            setup_index,
+        }): Parameters<AddToolpathViaGuiParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::AddToolpathViaGui {
+                operation_type,
+                setup_index,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "get_notifications",
+        description = "Read the GUI's toast stack — what the operator saw — newest first. READ-ONLY: it removes nothing, so two calls return the same entries and a test cannot consume the evidence out from under the next reader. Each entry carries `message`, `severity` (info / warning / error), `age_seconds` since it was pushed, its `ttl_seconds` by severity (info 4, warning 6, error 8) and `visible` (still inside its TTL). The stack lives only in the running GUI process: it is not persisted, ages are measured from the push, and it is empty after a restart. Entries are dropped once expired, by a collector that runs on the frame loop — `include_expired` (default true) keeps ones that have aged out but not yet been collected, which is what you want when asserting a toast that has been on screen for a while. Pair with `add_toolpath_via_gui`, whose refusal is reported only as a toast."
+    )]
+    async fn get_notifications(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(GetNotificationsParam {
+            include_expired,
+            limit,
+        }): Parameters<GetNotificationsParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::GetNotifications {
+                include_expired: include_expired.unwrap_or(true),
+                limit,
             })
             .await,
         )

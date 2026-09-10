@@ -601,6 +601,18 @@ pub enum McpRequestKind {
         param: String,
         value: serde_json::Value,
     },
+    /// F3.1 — add a toolpath through `handle_add_toolpath`, the same
+    /// `AppEvent::AddToolpath` the Add menu emits, so the GUI's own
+    /// tool/model binding and its add-time refusal path run.
+    AddToolpathViaGui {
+        operation_type: String,
+        setup_index: Option<usize>,
+    },
+    /// F3.5 — read the toast stack. Read-only: it removes nothing.
+    GetNotifications {
+        include_expired: bool,
+        limit: Option<usize>,
+    },
     /// F3.7 — rebind a toolpath's CUTTER. `tool_id` is the project-assigned
     /// tool id (a `list_tools` row's `id`), not a positional index.
     /// `set_toolpath_param` cannot reach this field; see

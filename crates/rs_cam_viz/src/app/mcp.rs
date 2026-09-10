@@ -525,6 +525,31 @@ impl super::RsCamApp {
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::AddToolpathViaGui {
+                operation_type,
+                setup_index,
+            } => {
+                // NO toast is pushed here, deliberately. Every other
+                // synchronous arm pushes one from its reply (F1.1,
+                // G-MCPTOAST) because its handler pushes none. This
+                // handler is the GUI's own add path, which already pushes
+                // exactly the toast F1.1 asks for — the refusal text at
+                // Warning — and a second one would break the very rule
+                // F1.1 established: one toast per request. The reply
+                // reports the toasts the GUI path pushed instead.
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
+                let resp = self.mcp_add_toolpath_via_gui(&operation_type, setup_index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::GetNotifications {
+                include_expired,
+                limit,
+            } => {
+                let resp = self.mcp_get_notifications(include_expired, limit);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::SetToolpathTool { index, tool_id } => {
                 // F1.1 pattern: select + switch workspace before, toast AFTER
                 // the handler, from its reply.
@@ -3450,6 +3475,211 @@ impl super::RsCamApp {
         if let Some(tp_id) = tp_id {
             self.controller.state_mut().selection = Selection::Toolpath(tp_id);
         }
+    }
+
+    /// One toast-stack entry, as F3.5 publishes it. `index` is the
+    /// position in the stack (0 = oldest), so a caller can line two reads
+    /// up against each other.
+    #[cfg(feature = "mcp")]
+    fn notification_json(index: usize, n: &crate::controller::Notification) -> serde_json::Value {
+        let age = n.created_at.elapsed();
+        let ttl = n.ttl();
+        serde_json::json!({
+            "index": index,
+            "message": n.message,
+            "severity": match n.severity {
+                crate::controller::Severity::Info => "info",
+                crate::controller::Severity::Warning => "warning",
+                crate::controller::Severity::Error => "error",
+            },
+            "age_seconds": age.as_secs_f64(),
+            "ttl_seconds": ttl.as_secs_f64(),
+            "visible": !n.is_expired(),
+        })
+    }
+
+    /// F3.1 — add a toolpath through the GUI's own path (PLAN.md §5).
+    ///
+    /// Dispatches `AppEvent::AddToolpath`, the event
+    /// `ui/toolpath_panel.rs`'s Add menu item pushes, through
+    /// `AppController::handle_internal_event`, whose `AddToolpath` arm
+    /// calls `handle_add_toolpath`. None of that binding logic is
+    /// reimplemented here: if the GUI path and a direct core add ever
+    /// disagree, this tool shows the disagreement rather than hiding it.
+    ///
+    /// The handler returns `()` and reports a refusal ONLY by pushing a
+    /// toast, so the refusal text is read back off the notification stack
+    /// — the same stack `get_notifications` (F3.5) publishes, through the
+    /// same `AppController::notifications` accessor.
+    fn mcp_add_toolpath_via_gui(
+        &mut self,
+        operation_type: &str,
+        setup_index: Option<usize>,
+    ) -> String {
+        let op_type = match parse_operation_type(operation_type) {
+            Ok(ot) => ot,
+            Err(e) => {
+                return self.mcp_mutation_error(format!("Error: {e}"), Some("operation_type"));
+            }
+        };
+
+        // The GUI reads the target setup from the CURRENT SELECTION, so
+        // honour `setup_index` the way a click does: select the setup,
+        // then raise the event. Refuse an out-of-range index BEFORE
+        // dispatching, so a typo never reaches the GUI path and never
+        // produces a toast.
+        if let Some(setup_index) = setup_index {
+            let setups = self.controller.state().session.list_setups();
+            let Some(setup) = setups.get(setup_index) else {
+                let count = setups.len();
+                return self.mcp_mutation_error(
+                    format!("Error: setup index {setup_index} not found ({count} setups)"),
+                    Some("setup_index"),
+                );
+            };
+            let setup_id = crate::state::job::SetupId(setup.id);
+            self.controller.state_mut().selection = Selection::Setup(setup_id);
+        }
+
+        let before = self.mcp_diagnostic_snapshot();
+        let ids_before: std::collections::HashSet<rs_cam_core::ToolpathId> = self
+            .controller
+            .state()
+            .session
+            .toolpath_configs()
+            .iter()
+            .map(|tc| tc.id)
+            .collect();
+        let toasts_before = self.controller.notifications().len();
+
+        self.controller
+            .handle_internal_event(AppEvent::AddToolpath(op_type));
+
+        // Whatever this call put on the stack. The GUI add path pushes at
+        // most one, but read the tail rather than assuming a count.
+        let pushed: Vec<serde_json::Value> = self
+            .controller
+            .notifications()
+            .iter()
+            .enumerate()
+            .skip(toasts_before)
+            .map(|(i, n)| Self::notification_json(i, n))
+            .collect();
+
+        let created = self
+            .controller
+            .state()
+            .session
+            .toolpath_configs()
+            .iter()
+            .enumerate()
+            .find(|(_, tc)| !ids_before.contains(&tc.id))
+            .map(|(index, tc)| {
+                let session = &self.controller.state().session;
+                let tool_name = session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == tc.tool_id)
+                    .map(|t| t.name.clone());
+                let model_name = session
+                    .models()
+                    .iter()
+                    .find(|m| m.id == tc.model_id)
+                    .map(|m| m.name.clone());
+                let setup_index = session
+                    .list_setups()
+                    .iter()
+                    .position(|s| s.toolpath_indices.contains(&index));
+                serde_json::json!({
+                    "index": index,
+                    "id": tc.id.0,
+                    "name": tc.name,
+                    "operation": tc.operation.op_type().kind_str(),
+                    "setup_index": setup_index,
+                    "tool_id": tc.tool_id,
+                    "tool_name": tool_name,
+                    "model_id": tc.model_id,
+                    "model_name": model_name,
+                })
+            });
+
+        // The refusal text IS the toast. Nothing else carries it.
+        let refusal = pushed
+            .iter()
+            .find(|n| n.get("severity").and_then(|s| s.as_str()) != Some("info"))
+            .and_then(|n| n.get("message").and_then(|m| m.as_str()))
+            .map(str::to_owned);
+
+        match created {
+            Some(created) => {
+                let stale = self.mcp_apply_stale(MutationKind::AllToolpaths);
+                let index = created.get("index").and_then(serde_json::Value::as_u64);
+                self.mcp_mutation_result(
+                    match index {
+                        Some(i) => format!("Added toolpath at index {i} through the GUI add path."),
+                        None => "Added toolpath through the GUI add path.".to_owned(),
+                    },
+                    serde_json::json!({
+                        "created": created,
+                        "refusal": serde_json::Value::Null,
+                        "notifications": pushed,
+                    }),
+                    stale,
+                    &before,
+                )
+            }
+            None => {
+                let summary = refusal.clone().unwrap_or_else(|| {
+                    "The GUI add path created no toolpath and pushed no toast.".to_owned()
+                });
+                // Same refusal document every mutation uses, plus the two
+                // fields that make this one diagnosable: nothing was
+                // created, and here is exactly what the operator saw.
+                let mut doc: serde_json::Value =
+                    serde_json::from_str(&mutation_error_json(&summary, None))
+                        .unwrap_or_else(|_| serde_json::json!({ "ok": false, "summary": summary }));
+                if let Some(obj) = doc.as_object_mut() {
+                    obj.insert("created".to_owned(), serde_json::Value::Null);
+                    obj.insert(
+                        "refusal".to_owned(),
+                        refusal.map_or(serde_json::Value::Null, serde_json::Value::String),
+                    );
+                    obj.insert("notifications".to_owned(), serde_json::Value::Array(pushed));
+                }
+                json_str(doc)
+            }
+        }
+    }
+
+    /// F3.5 — the toast stack, newest first (PLAN.md §5). Read-only.
+    ///
+    /// `&self`: this cannot clear the stack even by accident. A reader
+    /// that consumed what it read would change what the next reader sees,
+    /// and the next reader is usually the operator.
+    fn mcp_get_notifications(&self, include_expired: bool, limit: Option<usize>) -> String {
+        let all = self.controller.notifications();
+        let mut rows: Vec<serde_json::Value> = all
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| include_expired || !n.is_expired())
+            .map(|(i, n)| Self::notification_json(i, n))
+            .collect();
+        rows.reverse(); // newest first
+        let total = rows.len();
+        if let Some(limit) = limit {
+            rows.truncate(limit);
+        }
+        json_str(serde_json::json!({
+            "notifications": rows,
+            "total": total,
+            "returned": rows.len(),
+            "visible_count": all.iter().filter(|n| !n.is_expired()).count(),
+            "include_expired": include_expired,
+            "note": "Read-only; nothing was removed. Ages are measured from the push and \
+                     live only in this GUI process — the stack is not persisted and is empty \
+                     after a restart. Expired entries are collected on the frame loop, so an \
+                     expired one may already be gone.",
+        }))
     }
 
     /// F3.7 — rebind a toolpath's cutter (R0.3 §4, §7 Q4).
