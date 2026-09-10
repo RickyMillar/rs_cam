@@ -362,3 +362,34 @@ Each was found while doing another task. None was absorbed into that task.
 | F4.11 | F4.8 lane | The Generate button and the diagnostics ribbon cannot see a stale pick. `drill_targets_refusal`'s two other callers receive only a `drill_target_count`, so the refusal reaches the operator at generation time and nowhere earlier. |
 | F4.12 | F4.8 lane | `set_toolpath_model` (`session/mutation.rs:845-868`) carries `selected_holes` onto the NEW model. After F4.8 that produces a refusal rather than a wrong cut, which is the safe outcome, but the picks should be cleared on a rebind instead. |
 | F1.25 | F1.24 lane | `the_temp_name_is_not_the_pid_alone` knows the pre-fix name, so a future rename of the temp prefix makes that arm vacuous. Recorded by the lane in the sentry's own header. Low priority; the other two arms do not depend on the name. |
+
+### Opened 2026-09-10 by the operator, looking at the running GUI
+
+The operator opened the GUI and found no way to create a setup. Investigated
+the same session. **Two defects and one process finding.**
+
+| ID | Source | What |
+|---|---|---|
+| F5.1 | operator, GUI | **The `+ Add Setup` button is hidden exactly when it is needed.** `ui/setup_panel.rs:82-88` guards it with `setups.len() > 1 \|\| !setups.is_empty()`. The first term is entirely subsumed by the second, so the guard reduces to `!setups.is_empty()` — the button renders ONLY when a setup already exists. A project with zero setups therefore cannot create one, and the GUI has no other affordance for it. The condition reads as if it handles two cases; it handles one, and excludes the empty case. Fix is one line. |
+| F5.2 | operator, GUI | **Two doors disagree about whether a project has a default setup.** `ProjectSession::new_empty()` seeds `SetupData { id: 0, name: "Setup 1", .. }`. `project_file::load` does not backfill one — `project_file.rs:1025` guards with `if !project.setups.is_empty()`. So File → New gives you a setup and loading a setup-less project TOML does not. With F5.1 that state is unrecoverable from the GUI. Same two-door divergence pattern as G-UNITSRELOAD, G-STEPUNITS and F4.4. Decide the policy once and apply it at both doors. |
+| — | process | **REACHABILITY, stated honestly: no SHIPPED project file has zero setups**, and `fixtures/demo_job.toml` is a CLI job file, not a project. The state is reached by loading a hand-written project TOML with no `[[setups]]`, which is how the orchestrator hit it during MCP checks. So F5.1/F5.2 are LATENT, not something a user meets today. They are still real: the guard is wrong on its face, and the state has no exit. |
+
+**Why the whole programme missed this, which matters more than the bug.**
+
+All NINE R03 review seeds ship with exactly one `[[setups]]` already authored,
+so every executed review round began from a prepared project and never saw the
+empty state.
+
+The review DID scope it. `briefs/R01_START_AND_MODELS.md` task card 1 is
+**"Blank start: … Start with F0 and raw F1 SVG, not the prepared project."**
+That card would have caught it.
+
+**`results/` contains W00, W01, W01b, W02, W03, IA and R03. There is no R01.**
+The round that would have found this was never run. The gap is not in the
+briefs; it is in which briefs were executed.
+
+**Consequence for P5 and for the tech-debt programme: neither PLAN.md nor P5
+contains any item about CREATING a setup.** P5's D1 mentions setups only as a
+field in the context header. Every P5 acceptance journey starts from a project
+that already exists. **A cold-start journey should be added before P5 is
+scoped**, or P5 will design the same blind spot into the new IA.
