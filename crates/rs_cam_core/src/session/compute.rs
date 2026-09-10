@@ -95,6 +95,51 @@ pub(crate) fn strip_outer_quotes(s: &str) -> &str {
     }
 }
 
+/// The one refusal a caller gets when a parameter name reaches no field
+/// on this operation.
+///
+/// The generic serde arm and the two optional named arms (`stepover`,
+/// `depth_per_pass`) all build the message here, so the two routes
+/// cannot report the same condition in different words (N5).
+fn unknown_param_error(
+    operation: &crate::compute::catalog::OperationConfig,
+    param: &str,
+) -> SessionError {
+    SessionError::InvalidParam(format!(
+        "unknown parameter '{param}' for {} operation. Valid parameters: {}",
+        operation.label(),
+        operation.param_names().join(", ")
+    ))
+}
+
+/// DR-LIVE (2026-08-14): refuse a value outside the domain the registry
+/// declares for this param, BEFORE it reaches the config. A refusal, not
+/// a clamp — the caller finds out its number was rejected instead of
+/// quietly becoming another number. A param with no declared range is
+/// unchanged (see `ParamRange`'s doc: absent means *not stated*, and
+/// stating them is a per-param decision, not a sweep).
+///
+/// Every numeric route into `set_toolpath_param` calls this one helper,
+/// so a named arm and the generic serde arm cannot drift apart (N5).
+fn check_param_range(
+    operation: &crate::compute::catalog::OperationConfig,
+    param: &str,
+    value: f64,
+) -> Result<(), SessionError> {
+    let Some(range) = operation.param_range(param) else {
+        return Ok(());
+    };
+    if range.accepts(value) {
+        return Ok(());
+    }
+    Err(SessionError::InvalidParam(format!(
+        "'{param}' = {value} is outside the accepted range for {} \
+         ({}); the value was NOT applied",
+        operation.label(),
+        range.describe(),
+    )))
+}
+
 /// Transform an axis-aligned bbox from world frame into a setup-local
 /// frame defined by `info`. Result remains axis-aligned because all
 /// setup transforms are 90° increments + translation.
@@ -278,6 +323,14 @@ impl ProjectSession {
     /// (e.g. `angle`, `min_z`, `passes`) are applied via serde round-trip so that
     /// all 23 operation variants are handled generically.
     ///
+    /// `stepover` and `depth_per_pass` are OPTIONAL on the
+    /// [`OperationParams`](crate::compute::catalog::OperationParams)
+    /// trait. An operation whose config has no such field refuses the
+    /// write with the same `unknown parameter` message the serde arm
+    /// uses (N5). Before that refusal existed the arm discarded the
+    /// value, stamped manual provenance on the absent field, staled the
+    /// result chain and reported success.
+    ///
     /// Invalidates the cached compute result for this toolpath.
     #[instrument(skip(self, value))]
     pub fn set_toolpath_param(
@@ -323,6 +376,7 @@ impl ProjectSession {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("feed_rate must be a number".to_owned())
                 })?;
+                check_param_range(&tc.operation, param, v)?;
                 tc.operation.set_feed_rate(v);
                 tc.feeds_provenance.set(
                     crate::feeds::FeedsField::FeedRate,
@@ -333,6 +387,7 @@ impl ProjectSession {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("plunge_rate must be a number".to_owned())
                 })?;
+                check_param_range(&tc.operation, param, v)?;
                 tc.operation.set_plunge_rate(v);
                 tc.feeds_provenance.set(
                     crate::feeds::FeedsField::PlungeRate,
@@ -343,7 +398,15 @@ impl ProjectSession {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("stepover must be a number".to_owned())
                 })?;
-                tc.operation.set_stepover(v);
+                check_param_range(&tc.operation, param, v)?;
+                // N5: `set_stepover` reports whether this config carries
+                // the field. On `false` nothing was written, so the
+                // caller gets the serde arm's own refusal. The
+                // provenance stamp below and the result invalidation at
+                // the end of this function are never reached.
+                if !tc.operation.set_stepover(v) {
+                    return Err(unknown_param_error(&tc.operation, param));
+                }
                 tc.feeds_provenance.set(
                     crate::feeds::FeedsField::Stepover,
                     crate::feeds::ValueProvenance::manual(),
@@ -353,7 +416,17 @@ impl ProjectSession {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("depth_per_pass must be a number".to_owned())
                 })?;
-                tc.operation.set_depth_per_pass(v);
+                check_param_range(&tc.operation, param, v)?;
+                // N5, as for `stepover` above. Note the three ALIAS
+                // setters this arm is the only route to: Waterline maps
+                // `depth_per_pass` onto `z_step`, RampFinish onto
+                // `max_stepdown`, and Pencil maps `stepover` onto
+                // `offset_stepover`. The registry publishes none of
+                // those names, so each returns `true` here and is
+                // unaffected by the refusal.
+                if !tc.operation.set_depth_per_pass(v) {
+                    return Err(unknown_param_error(&tc.operation, param));
+                }
                 tc.feeds_provenance.set(
                     crate::feeds::FeedsField::DepthPerPass,
                     crate::feeds::ValueProvenance::manual(),
@@ -389,6 +462,9 @@ impl ProjectSession {
                         Some(f as u32)
                     }
                 };
+                if let Some(r) = rpm {
+                    check_param_range(&tc.operation, param, f64::from(r))?;
+                }
                 tc.operation.set_spindle_rpm(rpm);
                 tc.feeds_provenance.set(
                     crate::feeds::FeedsField::SpindleRpm,
@@ -410,7 +486,6 @@ impl ProjectSession {
             _ => {
                 // Config-specific param: serialize -> merge -> deserialize
                 let target_type = tc.operation.param_type_name(param);
-                let range_for_param = tc.operation.param_range(param);
                 let mut json = serde_json::to_value(&tc.operation).map_err(|e| {
                     SessionError::InvalidParam(format!("failed to serialize config: {e}"))
                 })?;
@@ -499,34 +574,17 @@ impl ProjectSession {
                     }
                     _ => value,
                 };
-                // DR-LIVE (2026-08-14): refuse a value outside the domain
-                // the registry declares for this param, BEFORE it reaches
-                // serde. A refusal, not a clamp — the caller finds out its
-                // number was rejected instead of quietly becoming another
-                // number. Params with no declared range are unchanged (see
-                // `ParamRange`'s doc: absent means *not stated*, and
-                // stating them is a per-param decision, not a sweep).
-                if let Some(range) = range_for_param
-                    && let Some(n) = value.as_f64()
-                    && !range.accepts(n)
-                {
-                    return Err(SessionError::InvalidParam(format!(
-                        "'{param}' = {n} is outside the accepted range for {} \
-                         ({}); the value was NOT applied",
-                        tc.operation.label(),
-                        range.describe(),
-                    )));
+                // DR-LIVE, now through the helper the named arms share
+                // (N5). The range gate runs BEFORE the value reaches
+                // serde.
+                if let Some(n) = value.as_f64() {
+                    check_param_range(&tc.operation, param, n)?;
                 }
                 params_obj.insert(param.to_owned(), value);
-                let valid_params = tc.operation.param_names();
                 let new_op: crate::compute::catalog::OperationConfig = serde_json::from_value(json)
                     .map_err(|e| {
                         if !existed && target_type.is_none() {
-                            SessionError::InvalidParam(format!(
-                                "unknown parameter '{param}' for {} operation. Valid parameters: {}",
-                                tc.operation.label(),
-                                valid_params.join(", ")
-                            ))
+                            unknown_param_error(&tc.operation, param)
                         } else {
                             SessionError::InvalidParam(format!("invalid value for '{param}': {e}"))
                         }
@@ -546,11 +604,7 @@ impl ProjectSession {
                         .and_then(|v| v.as_object())
                         .is_some_and(|obj| obj.contains_key(param));
                     if !found {
-                        return Err(SessionError::InvalidParam(format!(
-                            "unknown parameter '{param}' for {} operation. Valid parameters: {}",
-                            tc.operation.label(),
-                            valid_params.join(", ")
-                        )));
+                        return Err(unknown_param_error(&tc.operation, param));
                     }
                 }
                 tc.operation = new_op;

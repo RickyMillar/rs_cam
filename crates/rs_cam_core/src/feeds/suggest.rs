@@ -1081,8 +1081,15 @@ impl FieldApplyPreview {
             // `value` came from `spindle_rpm()` on the scratch clone, a `u32`,
             // so the round-trip is exact (same cast the funnel itself makes).
             FeedsField::SpindleRpm => operation.set_spindle_rpm(Some(self.value.round() as u32)),
-            FeedsField::Stepover => operation.set_stepover(self.value),
-            FeedsField::DepthPerPass => operation.set_depth_per_pass(self.value),
+            // These two setters report whether the operation carries the
+            // field (N5). This funnel keeps its existing behaviour and
+            // discards the answer.
+            FeedsField::Stepover => {
+                operation.set_stepover(self.value);
+            }
+            FeedsField::DepthPerPass => {
+                operation.set_depth_per_pass(self.value);
+            }
             FeedsField::ScallopHeight => operation.set_scallop_height(self.value),
         }
         provenance.set(self.field, self.provenance.clone());

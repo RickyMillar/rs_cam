@@ -711,8 +711,15 @@ impl<B: ComputeBackend> AppController<B> {
         match axis {
             KnobAxis::Feed => new_op.set_feed_rate(value),
             KnobAxis::SpindleRpm => new_op.set_spindle_rpm(Some(value.round().max(0.0) as u32)),
-            KnobAxis::Stepover => new_op.set_stepover(value),
-            KnobAxis::DepthPerPass => new_op.set_depth_per_pass(value),
+            // These two setters report whether the operation carries the
+            // field (N5). This path keeps its existing behaviour and
+            // discards the answer.
+            KnobAxis::Stepover => {
+                new_op.set_stepover(value);
+            }
+            KnobAxis::DepthPerPass => {
+                new_op.set_depth_per_pass(value);
+            }
             KnobAxis::ScallopHeight => new_op.set_scallop_height(value),
         }
         // Checkpoint I-4 (2026-08-12): route the accepted axis value through

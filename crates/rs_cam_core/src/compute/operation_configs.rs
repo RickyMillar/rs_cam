@@ -1691,14 +1691,16 @@ impl OperationParams for FaceConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
@@ -1727,14 +1729,16 @@ impl OperationParams for PocketConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
@@ -1763,8 +1767,9 @@ impl OperationParams for ProfileConfig {
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
@@ -1793,14 +1798,16 @@ impl OperationParams for AdaptiveConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
@@ -1829,8 +1836,9 @@ impl OperationParams for VCarveConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.max_depth)
@@ -1859,14 +1867,16 @@ impl OperationParams for RestConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
@@ -1895,8 +1905,9 @@ impl OperationParams for InlayConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.pocket_depth)
@@ -1925,14 +1936,16 @@ impl OperationParams for ZigzagConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
@@ -1961,8 +1974,9 @@ impl OperationParams for TraceConfig {
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::Explicit(self.depth)
@@ -2065,8 +2079,9 @@ impl OperationParams for DropCutterConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn scallop_height(&self) -> Option<f64> {
         self.scallop_height
@@ -2101,14 +2116,16 @@ impl OperationParams for Adaptive3dConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
@@ -2141,8 +2158,9 @@ impl OperationParams for WaterlineConfig {
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.z_step)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.z_step = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
@@ -2179,8 +2197,9 @@ impl OperationParams for PencilConfig {
             None
         }
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.offset_stepover = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
@@ -2269,8 +2288,9 @@ impl OperationParams for SteepShallowConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
@@ -2305,8 +2325,9 @@ impl OperationParams for RampFinishConfig {
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.max_stepdown)
     }
-    fn set_depth_per_pass(&mut self, value: f64) {
+    fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.max_stepdown = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
@@ -2335,8 +2356,9 @@ impl OperationParams for SpiralFinishConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None
@@ -2389,8 +2411,9 @@ impl OperationParams for HorizontalFinishConfig {
     fn stepover(&self) -> Option<f64> {
         Some(self.stepover)
     }
-    fn set_stepover(&mut self, value: f64) {
+    fn set_stepover(&mut self, value: f64) -> bool {
         self.stepover = value;
+        true
     }
     fn depth_semantics(&self) -> DepthSemantics {
         DepthSemantics::None

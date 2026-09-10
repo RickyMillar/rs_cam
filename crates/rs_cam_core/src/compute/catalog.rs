@@ -647,6 +647,12 @@ impl OperationType {
 ///
 /// Implemented by each config struct to eliminate per-variant match arms.
 /// Optional fields (stepover, depth_per_pass) return None by default.
+///
+/// The two optional setters report whether they wrote. A config that
+/// carries the field overrides the setter and returns `true`; a config
+/// that has no such field keeps the default body, writes nothing and
+/// returns `false`. `ProjectSession::set_toolpath_param` refuses on
+/// `false` instead of reporting a success it did not deliver (N5).
 pub trait OperationParams {
     fn feed_rate(&self) -> f64;
     fn set_feed_rate(&mut self, value: f64);
@@ -658,12 +664,21 @@ pub trait OperationParams {
     fn stepover(&self) -> Option<f64> {
         None
     }
-    fn set_stepover(&mut self, _value: f64) {}
+    /// Write the stepover. Returns `false` when this config has no such
+    /// field, so the caller can refuse instead of discarding the value.
+    fn set_stepover(&mut self, _value: f64) -> bool {
+        false
+    }
 
     fn depth_per_pass(&self) -> Option<f64> {
         None
     }
-    fn set_depth_per_pass(&mut self, _value: f64) {}
+    /// Write the depth per pass. Returns `false` when this config has no
+    /// such field, so the caller can refuse instead of discarding the
+    /// value.
+    fn set_depth_per_pass(&mut self, _value: f64) -> bool {
+        false
+    }
 
     /// Maximum scallop ridge height between adjacent passes (mm). Used
     /// by surface-following finish ops (currently only `ScallopConfig`)
@@ -1014,16 +1029,20 @@ impl OperationConfig {
         self.as_params().stepover()
     }
 
-    pub fn set_stepover(&mut self, value: f64) {
-        self.as_params_mut().set_stepover(value);
+    /// Write the stepover. Returns `false` when this operation carries no
+    /// stepover field and nothing was written (N5).
+    pub fn set_stepover(&mut self, value: f64) -> bool {
+        self.as_params_mut().set_stepover(value)
     }
 
     pub fn depth_per_pass(&self) -> Option<f64> {
         self.as_params().depth_per_pass()
     }
 
-    pub fn set_depth_per_pass(&mut self, value: f64) {
-        self.as_params_mut().set_depth_per_pass(value);
+    /// Write the depth per pass. Returns `false` when this operation
+    /// carries no such field and nothing was written (N5).
+    pub fn set_depth_per_pass(&mut self, value: f64) -> bool {
+        self.as_params_mut().set_depth_per_pass(value)
     }
 
     pub fn scallop_height(&self) -> Option<f64> {
