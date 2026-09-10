@@ -459,6 +459,7 @@ impl RsCamApp {
                 if let Some((mid, selected)) = active_drill.as_ref()
                     && model.id == *mid
                 {
+                    use rs_cam_core::compute::execute::drill_pick_matches;
                     use rs_cam_core::dxf_input::DrillTargetKind;
                     for t in model.drill_targets.iter() {
                         let (tx, ty) = if let Some(setup) = setup_ref {
@@ -468,9 +469,13 @@ impl RsCamApp {
                         } else {
                             (t.x, t.y)
                         };
-                        let is_sel = selected
-                            .iter()
-                            .any(|h| (h[0] - t.x).abs() < 1e-6 && (h[1] - t.y).abs() < 1e-6);
+                        // G-DRILLPICKSTALE: the generator's own predicate,
+                        // not a fourth hand-written copy of the tolerance.
+                        // Note what this loop is over — TARGETS. A pick
+                        // that names no target is drawn nowhere, so a stale
+                        // pick is not on screen and a click cannot remove
+                        // it. That is why the refusal says "press Clear".
+                        let is_sel = selected.iter().any(|&h| drill_pick_matches(h, t));
                         let marker_color = if is_sel {
                             [0.2_f32, 0.95, 0.4] // bright green = selected
                         } else {

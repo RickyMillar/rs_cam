@@ -1034,6 +1034,16 @@ pub const STALE_DRILL_PICKS_PHRASE: &str = "no longer";
 /// from the drawing, so the list goes empty and the stale picks stand — needs
 /// a "was a model resolved" signal this seam does not carry. It is recorded
 /// in `planning/ui_fix_2026-09-09/reports/F4.8.md`.
+///
+/// # Why the message says Clear, and not "re-pick"
+///
+/// The viewport draws one marker per model TARGET and colours it by whether
+/// a pick names it (`app/gpu_upload.rs`, the drill-marker loop). A pick that
+/// names no target is drawn nowhere, so the operator cannot see it and a
+/// click cannot toggle it off — `AppEvent::ToggleDrillTarget` fires from a
+/// target. Picking the moved hole ADDS it and leaves the stale coordinate in
+/// the vector, so the op would refuse again. Clear is the only instruction
+/// that works.
 pub fn stale_drill_picks_refusal(
     picks: &[[f64; 2]],
     drill_targets: &[DrillTarget],
@@ -1054,8 +1064,9 @@ pub fn stale_drill_picks_refusal(
     Some(format!(
         "Picked drill holes {STALE_DRILL_PICKS_PHRASE} match this model: \
          {stale} of {total} picks name no drill target. The drawing changed \
-         after the pick. Re-pick the holes in the viewport, or press Clear \
-         to drill every target."
+         after the pick. The viewport draws a marker only at a target, so a \
+         stale pick is not on screen and a click cannot remove it. Press \
+         Clear, then pick the holes again."
     ))
 }
 
