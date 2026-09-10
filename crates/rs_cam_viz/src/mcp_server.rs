@@ -29,8 +29,9 @@ use rs_cam_mcp::server::{
     SetDressupConfigParam, SetDressupFieldParam, SetMachineKinematicsParam,
     SetRestAnalysisConfigParam, SetSetupRotationParam, SetSpindleStrategyParam,
     SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
-    SetToolpathHeightsParam, SetToolpathParamInput, SetUiViewParam, SimJumpToMoveParam,
-    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam, json_str,
+    SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput, SetToolpathToolParam,
+    SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam,
+    SimulationParam, json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -911,7 +912,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_toolpath_param",
-        description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type — call `get_operation_schema` for the full typed list. `value` accepts ANY JSON type: numbers, strings (enum-valued params), booleans, and ARRAYS/OBJECTS for list-valued params — e.g. a drill op's hole list `[[2.5, 2.5], [237.5, 247.5]]`. Pass the array itself, not a string containing one; a stringified container is unwrapped server-side as a fallback. Writes the raw value with no validation and no clamps — use `apply_feeds` when you want the engine's guarantees. Marks the toolpath as stale — regenerate to apply."
+        description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type — call `get_operation_schema` for the full typed list. `value` accepts ANY JSON type: numbers, strings (enum-valued params), booleans, and ARRAYS/OBJECTS for list-valued params — e.g. a drill op's hole list `[[2.5, 2.5], [237.5, 247.5]]`. Pass the array itself, not a string containing one; a stringified container is unwrapped server-side as a fallback. Writes the raw value with no validation and no clamps — use `apply_feeds` when you want the engine's guarantees. This writes the OPERATION's own params only: it cannot change which cutter or which input model the toolpath is bound to, and refuses those keys — use `set_toolpath_tool` / `set_toolpath_model`. Marks the toolpath as stale — regenerate to apply."
     )]
     async fn set_toolpath_param(
         &self,
@@ -928,6 +929,40 @@ impl EmbeddedCamServer {
                 value,
             })
             .await,
+        )
+    }
+
+    #[tool(
+        name = "set_toolpath_tool",
+        description = "Rebind a toolpath to a DIFFERENT CUTTER. This is the only route to a toolpath's tool — `set_toolpath_param` writes the operation's own parameters and refuses the key `tool_id` (no operation declares one); Rest's `prev_tool_id` is a different thing, the rest-analysis reference tool. `tool_id` is the project-assigned `id` from a `list_tools` row, NOT its 0-based position (`add_toolpath` takes a `tool_index` — these differ once a tool has been removed), so check the `tool` object in the reply. Use this to repair an operation blocked on its tool shape: the rebind is ALLOWED even when the operation rejects that shape (e.g. a flat end mill on Scallop), and the generator still refuses until you bind a tool it accepts. Invalidates this toolpath's result and every downstream operation that machines the stock it leaves — regenerate to apply."
+    )]
+    async fn set_toolpath_tool(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetToolpathToolParam { index, tool_id }): Parameters<
+            SetToolpathToolParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetToolpathTool { index, tool_id })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "set_toolpath_model",
+        description = "Rebind a toolpath to a DIFFERENT INPUT MODEL (its geometry input). This is the only route to a toolpath's model — `set_toolpath_param` refuses the key `model_id`. `model_id` is the project-assigned `id` from an `inspect_model` row, NOT a 0-based positional index; the same convention `add_toolpath` uses. A model id that resolves to nothing is refused and the reply lists the ids that exist, so this is also the repair for a toolpath whose stored model reference is missing. The geometry KIND is not checked here (a 2D-only operation can be pointed at a mesh); the operation's own precondition still applies at generate time. Does NOT clear a BREP face selection — face ids belong to the model that was bound when they were picked, so re-pick faces after a rebind. Invalidates this toolpath's result and every downstream operation that machines the stock it leaves — regenerate to apply."
+    )]
+    async fn set_toolpath_model(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(SetToolpathModelParam { index, model_id }): Parameters<
+            SetToolpathModelParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetToolpathModel { index, model_id })
+                .await,
         )
     }
 

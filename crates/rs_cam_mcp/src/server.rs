@@ -379,6 +379,30 @@ pub struct SetToolpathHeightsParam {
     pub bottom_z: Option<f64>,
 }
 
+/// F3.7 — rebind a toolpath's cutter.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetToolpathToolParam {
+    /// Toolpath index (0-based) from `list_toolpaths`.
+    pub index: usize,
+    /// Project-assigned tool **id** — the `id` field of a `list_tools`
+    /// row, NOT the 0-based position in that list. This differs from
+    /// `add_toolpath`, which takes `tool_index`. The two numbers agree
+    /// in a project that has never had a tool removed, so read the
+    /// `tool` object in the reply to confirm which tool you bound.
+    pub tool_id: usize,
+}
+
+/// F3.8 — rebind a toolpath's input model / geometry.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetToolpathModelParam {
+    /// Toolpath index (0-based) from `list_toolpaths`.
+    pub index: usize,
+    /// Project-assigned model **id** — the `id` field of an
+    /// `inspect_model` row, NOT a 0-based positional index. Same
+    /// convention `add_toolpath`'s `model_id` uses.
+    pub model_id: usize,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetToolParamInput {
     /// Tool index (0-based)

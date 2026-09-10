@@ -601,6 +601,21 @@ pub enum McpRequestKind {
         param: String,
         value: serde_json::Value,
     },
+    /// F3.7 — rebind a toolpath's CUTTER. `tool_id` is the project-assigned
+    /// tool id (a `list_tools` row's `id`), not a positional index.
+    /// `set_toolpath_param` cannot reach this field; see
+    /// `ProjectSession::set_toolpath_tool`.
+    SetToolpathTool {
+        index: usize,
+        tool_id: usize,
+    },
+    /// F3.8 — rebind a toolpath's INPUT MODEL. `model_id` is the
+    /// project-assigned model id (an `inspect_model` row's `id`), not a
+    /// positional index.
+    SetToolpathModel {
+        index: usize,
+        model_id: usize,
+    },
     /// Set a toolpath's clearance/retract/feed/top/bottom Z planes.
     /// Each field is optional; `None` leaves that plane unchanged. A
     /// `Some(v)` pins the plane to absolute Z `v` (HeightMode::Manual).

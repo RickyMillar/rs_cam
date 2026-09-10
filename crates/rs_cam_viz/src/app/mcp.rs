@@ -525,6 +525,42 @@ impl super::RsCamApp {
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::SetToolpathTool { index, tool_id } => {
+                // F1.1 pattern: select + switch workspace before, toast AFTER
+                // the handler, from its reply.
+                let tp_name = self
+                    .controller
+                    .state()
+                    .session
+                    .toolpath_configs()
+                    .get(index)
+                    .map(|tc| tc.name.clone())
+                    .unwrap_or_else(|| format!("#{index}"));
+                self.select_toolpath_for_mcp(index);
+                let resp = self.mcp_set_toolpath_tool(index, tool_id);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Bound tool {tool_id} to '{tp_name}'"),
+                    &McpOutcome::from_json_response(&resp),
+                );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::SetToolpathModel { index, model_id } => {
+                let tp_name = self
+                    .controller
+                    .state()
+                    .session
+                    .toolpath_configs()
+                    .get(index)
+                    .map(|tc| tc.name.clone())
+                    .unwrap_or_else(|| format!("#{index}"));
+                self.select_toolpath_for_mcp(index);
+                let resp = self.mcp_set_toolpath_model(index, model_id);
+                self.controller.push_mcp_outcome(
+                    format!("MCP: Bound model {model_id} to '{tp_name}'"),
+                    &McpOutcome::from_json_response(&resp),
+                );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::SetToolpathHeights {
                 index,
                 clearance_z,
@@ -3392,6 +3428,139 @@ impl super::RsCamApp {
                 )
             }
             Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some(param)),
+        }
+    }
+
+    /// Put the operator's screen on the toolpath an MCP mutation is about
+    /// to change: switch to the Toolpaths workspace and select the row.
+    /// The same two moves the `SetToolpathParam` arm makes inline (that
+    /// arm also records an `mcp_highlights` key for the param it changed,
+    /// which a rebind has no equivalent of).
+    fn select_toolpath_for_mcp(&mut self, index: usize) {
+        let tp_id = self
+            .controller
+            .state()
+            .session
+            .toolpath_configs()
+            .get(index)
+            .map(|tc| tc.id);
+        self.controller
+            .events_mut()
+            .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
+        if let Some(tp_id) = tp_id {
+            self.controller.state_mut().selection = Selection::Toolpath(tp_id);
+        }
+    }
+
+    /// F3.7 — rebind a toolpath's cutter (R0.3 §4, §7 Q4).
+    ///
+    /// Routes through [`rs_cam_core::session::ProjectSession::set_toolpath_tool`],
+    /// which is the same layer the GUI inspector's Tool: combo writes to
+    /// (that combo mutates the panel's `ToolpathEntry` and the panel's
+    /// write-back copies `entry.tool_id` into `ToolpathConfig.tool_id`
+    /// — it emits no `AppEvent`, so there is no widget event to share).
+    /// The core setter additionally invalidates the cached result and the
+    /// downstream stock chain, which the GUI write-back does NOT do.
+    fn mcp_set_toolpath_tool(&mut self, index: usize, tool_id: usize) -> String {
+        let before = self.mcp_diagnostic_snapshot();
+        match self
+            .controller
+            .state_mut()
+            .session
+            .set_toolpath_tool(index, tool_id)
+        {
+            Ok(()) => {
+                self.controller.state_mut().gui.mark_edited();
+                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                let session = &self.controller.state().session;
+                let tool = session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == tool_id)
+                    .map(|t| {
+                        serde_json::json!({
+                            "id": t.id.0,
+                            "name": t.name,
+                            "tool_type": t.tool_type,
+                            "diameter": t.diameter,
+                        })
+                    })
+                    .unwrap_or(serde_json::Value::Null);
+                self.mcp_mutation_result(
+                    format!("Bound toolpath {index} to tool id {tool_id}. Regenerate to apply."),
+                    serde_json::json!({ "index": index, "tool": tool }),
+                    stale,
+                    &before,
+                )
+            }
+            // Name what WAS valid — an agent that passed a positional
+            // index where an id was wanted needs the list, not just the
+            // refusal. Only for the tool arm: a bad toolpath index is a
+            // different mistake and the tool list would be noise.
+            Err(e @ rs_cam_core::session::SessionError::ToolNotFound(_)) => {
+                let ids: Vec<usize> = self
+                    .controller
+                    .state()
+                    .session
+                    .tools()
+                    .iter()
+                    .map(|t| t.id.0)
+                    .collect();
+                self.mcp_mutation_error(
+                    format!("Error: {e}. Tool ids in this project: {ids:?}"),
+                    Some("tool_id"),
+                )
+            }
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some("index")),
+        }
+    }
+
+    /// F3.8 — rebind a toolpath's input model (R0.3 §4, §7 Q4). Same
+    /// shape as [`Self::mcp_set_toolpath_tool`]; see its doc for why the
+    /// GUI combo has no event to share.
+    fn mcp_set_toolpath_model(&mut self, index: usize, model_id: usize) -> String {
+        let before = self.mcp_diagnostic_snapshot();
+        match self
+            .controller
+            .state_mut()
+            .session
+            .set_toolpath_model(index, model_id)
+        {
+            Ok(()) => {
+                self.controller.state_mut().gui.mark_edited();
+                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                let session = &self.controller.state().session;
+                let model = session
+                    .models()
+                    .iter()
+                    .find(|m| m.id == model_id)
+                    .map(|m| {
+                        serde_json::json!({
+                            "id": m.id,
+                            "name": m.name,
+                            "kind": m.kind,
+                            "has_mesh": m.mesh.is_some(),
+                            "has_polygons": m.polygons.is_some(),
+                        })
+                    })
+                    .unwrap_or(serde_json::Value::Null);
+                self.mcp_mutation_result(
+                    format!("Bound toolpath {index} to model id {model_id}. Regenerate to apply."),
+                    serde_json::json!({ "index": index, "model": model }),
+                    stale,
+                    &before,
+                )
+            }
+            // The core setter's own refusal already lists the model ids
+            // that exist, so nothing is appended here.
+            Err(e @ rs_cam_core::session::SessionError::MissingGeometry(_)) => {
+                self.mcp_mutation_error(format!("Error: {e}"), Some("model_id"))
+            }
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), Some("index")),
         }
     }
 

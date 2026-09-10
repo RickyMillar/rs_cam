@@ -772,6 +772,101 @@ impl ProjectSession {
 
     // ── Toolpath config updates ──────────────────────────────────
 
+    /// Rebind a toolpath to a different **tool**, invalidating its cached
+    /// result and everything downstream of the stock it leaves.
+    ///
+    /// `tool_id` is the project-assigned [`ToolConfig::id`] (the `id` field
+    /// of a `list_tools` row), NOT a positional index — it is the same
+    /// number [`crate::session::ToolpathConfig::tool_id`] stores.
+    ///
+    /// This is a BINDING change, not an operation parameter: no operation
+    /// config carries a `tool_id` field, so
+    /// [`ProjectSession::set_toolpath_param`](Self::set_toolpath_param)
+    /// cannot reach it and refuses the key. Keep the two routes disjoint —
+    /// `set_toolpath_param` writes the operation's own params through a
+    /// serde round-trip, and Rest's `prev_tool_id` IS one of those params
+    /// (the rest-analysis reference tool), which is a different thing from
+    /// the cutter this toolpath runs.
+    ///
+    /// The tool must exist. Its SHAPE is deliberately not checked here: an
+    /// operation with a tool its registry entry rejects is a *blocked*
+    /// operation the operator can fix by rebinding, and refusing the
+    /// rebind would remove the only fix. The shape refusal stays where it
+    /// is — `ToolConstraintsDef::allows`, read by the generators.
+    ///
+    /// A rebind to the tool already bound is a no-op and invalidates
+    /// nothing.
+    #[instrument(skip(self))]
+    pub fn set_toolpath_tool(&mut self, index: usize, tool_id: usize) -> Result<(), SessionError> {
+        if !self.tools.iter().any(|t| t.id.0 == tool_id) {
+            return Err(SessionError::ToolNotFound(ToolId(tool_id)));
+        }
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        if tc.tool_id == tool_id {
+            return Ok(());
+        }
+        tc.tool_id = tool_id;
+        let enabled = tc.enabled;
+        // A different cutter removes different material, so this is a
+        // stock-chain change: same invalidation as `set_face_selection`
+        // and `set_heights_config`, not the narrower `remove_result`.
+        self.invalidate_result_chain(index, enabled);
+        Ok(())
+    }
+
+    /// Rebind a toolpath to a different **input model**, invalidating its
+    /// cached result and everything downstream of the stock it leaves.
+    ///
+    /// `model_id` is the project-assigned [`super::LoadedModel::id`] — the
+    /// `id` field of an `inspect_model` row, NOT a positional index. It is
+    /// the same number [`crate::session::ToolpathConfig::model_id`] stores.
+    ///
+    /// The model must exist. Unlike `add_toolpath`, which accepts an
+    /// unresolvable `model_id` and leaves the operation carrying a dangling
+    /// reference, this setter refuses one: the whole point of the route is
+    /// to REPAIR a binding.
+    ///
+    /// The geometry KIND is deliberately not checked (a 2D-only operation
+    /// may be pointed at a mesh). That precondition belongs to the refusal
+    /// contract, not to this setter.
+    ///
+    /// **Caveat this does not handle:** `face_selection` holds
+    /// [`FaceGroupId`]s of the model that was bound when the faces were
+    /// picked. A rebind leaves them in place, pointing into a different
+    /// mesh. Clearing them is a separate decision; the GUI's Input combo
+    /// does not clear them either.
+    ///
+    /// A rebind to the model already bound is a no-op and invalidates
+    /// nothing.
+    #[instrument(skip(self))]
+    pub fn set_toolpath_model(
+        &mut self,
+        index: usize,
+        model_id: usize,
+    ) -> Result<(), SessionError> {
+        if !self.models.iter().any(|m| m.id == model_id) {
+            let known: Vec<String> = self.models.iter().map(|m| m.id.to_string()).collect();
+            return Err(SessionError::MissingGeometry(format!(
+                "Model id {model_id} not found; project model ids: [{}]",
+                known.join(", ")
+            )));
+        }
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        if tc.model_id == model_id {
+            return Ok(());
+        }
+        tc.model_id = model_id;
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
+        Ok(())
+    }
+
     /// Set the BREP face selection for a toolpath, invalidating its cached result.
     #[instrument(skip(self, face_ids))]
     pub fn set_face_selection(
