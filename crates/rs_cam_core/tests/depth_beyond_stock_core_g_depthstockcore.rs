@@ -46,17 +46,31 @@
     clippy::print_stderr
 )]
 
+mod common;
+use common::make_endmill_6mm;
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::HeightContext;
+use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{
-    Adaptive3dConfig, DropCutterConfig, PocketConfig, WaterlineConfig,
+    Adaptive3dConfig, DropCutterConfig, PocketConfig, PocketPattern, WaterlineConfig,
 };
+use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::diagnostics::adapters::from_static_checks::{
     ResolvedHeights, depth_beyond_stock, depth_beyond_stock_applies, diagnostics_from_static_checks,
 };
 use rs_cam_core::diagnostics::ids;
+use rs_cam_core::gcode::CoolantMode;
+use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::material::{Material, WoodSpecies};
+use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
 
 const STOCK_TOP_Z: f64 = 0.0;
 const STOCK_BOTTOM_Z: f64 = -18.0;
@@ -233,4 +247,125 @@ fn a_missing_stock_span_abstains() {
 fn the_id_is_in_the_registry() {
     assert!(ids::ALL.contains(&ids::GEOM_DEPTH_BEYOND_STOCK));
     assert_eq!(ids::GEOM_DEPTH_BEYOND_STOCK, "geom.depth_beyond_stock");
+}
+
+// ── the session route, exercised rather than read ───────────────────────
+
+/// Build the same project the operator would: an 18 mm board, one Ø6 end
+/// mill, one pocket at `depth`.
+fn pocket_session(depth: f64) -> ProjectSession {
+    let mut session = ProjectSession::new_empty();
+    session.set_stock_config(StockConfig {
+        x: 100.0,
+        y: 100.0,
+        z: STOCK_TOP_Z - STOCK_BOTTOM_Z,
+        origin_x: -10.0,
+        origin_y: -10.0,
+        // Negative, so the stock TOP sits at Z = 0 and 2D ops cut downward.
+        origin_z: STOCK_BOTTOM_Z,
+        auto_from_model: false,
+        material: Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        },
+        ..StockConfig::default()
+    });
+    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_id = session.tools()[tool_idx].id.0;
+    let model_id = session.add_model(LoadedModel {
+        id: 0,
+        name: "board".to_owned(),
+        mesh: None,
+        polygons: Some(Arc::new(vec![Polygon2::new(vec![
+            P2::new(5.0, 5.0),
+            P2::new(75.0, 5.0),
+            P2::new(75.0, 55.0),
+            P2::new(5.0, 55.0),
+        ])])),
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        path: PathBuf::from("synthetic://board.svg"),
+        kind: None,
+        units: None,
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+    });
+    let tc = ToolpathConfig {
+        id: ToolpathId(0),
+        name: "Pocket".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Pocket(PocketConfig {
+            stepover: 2.0,
+            depth,
+            depth_per_pass: 2.0,
+            feed_rate: 770.0,
+            plunge_rate: 385.0,
+            climb: true,
+            pattern: PocketPattern::Contour,
+            angle: 0.0,
+            finishing_passes: 0,
+            spindle_rpm: Some(18_000),
+        }),
+        dressups: DressupConfig::default(),
+        // Auto everywhere. The point is that the OPERATION's depth reaches
+        // the caution with no Heights pin involved at all.
+        heights: HeightsConfig::default(),
+        tool_id,
+        model_id,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: BoundaryConfig::default(),
+        boundary_inherit: true,
+        stock_source: StockSource::default(),
+        coolant: CoolantMode::Off,
+        face_selection: None,
+        debug_options: ToolpathDebugOptions::default(),
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+        planner_origin: None,
+    };
+    session.add_toolpath(0, tc).expect("add pocket toolpath");
+    session
+}
+
+/// The claim this arm exists to stop me over-stating.
+///
+/// Everything above proves the RULE. This proves the ROUTE:
+/// `ProjectSession::diagnose_toolpath` is the entry MCP
+/// `get_toolpath_diagnostics` calls, and it builds its own
+/// `HeightContext` through `height_context_for_toolpath`. Reading that
+/// chain is not the same as running it — the stock span has to survive
+/// `HeightContext` -> `ResolvedHeights::from_context` -> the rule, and only
+/// a run shows that it does.
+///
+/// The MCP server is down this session, so this is the MCP route minus the
+/// transport. It is not a live GUI check and must not be reported as one.
+#[test]
+fn the_session_route_carries_the_caution_to_its_mcp_entry_point() {
+    let session = pocket_session(25.0);
+    let ids: Vec<String> = session
+        .diagnose_toolpath(0)
+        .expect("the toolpath exists")
+        .into_iter()
+        .map(|d| d.id.as_str().to_owned())
+        .collect();
+    eprintln!("G-DEPTHSTOCKCORE session route: {ids:?}");
+    assert!(
+        ids.iter().any(|id| id == ids::GEOM_DEPTH_BEYOND_STOCK),
+        "diagnose_toolpath must carry {}; it carried {ids:?}",
+        ids::GEOM_DEPTH_BEYOND_STOCK
+    );
+
+    // The control. Without it a rule that always fires would pass above.
+    let shallow: Vec<String> = pocket_session(6.0)
+        .diagnose_toolpath(0)
+        .expect("the toolpath exists")
+        .into_iter()
+        .map(|d| d.id.as_str().to_owned())
+        .collect();
+    eprintln!("G-DEPTHSTOCKCORE session route, 6 mm pocket: {shallow:?}");
+    assert!(
+        !shallow.iter().any(|id| id == ids::GEOM_DEPTH_BEYOND_STOCK),
+        "a 6 mm cut in an 18 mm board must not caution; got {shallow:?}"
+    );
 }
