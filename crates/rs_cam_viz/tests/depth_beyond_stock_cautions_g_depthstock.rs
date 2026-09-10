@@ -10,8 +10,27 @@
 //!     stays enabled;
 //! (b) depth 18 mm on 18 mm stock (a through cut): no caution;
 //! (c) a 3D operation (DropCutter): the rule does not apply;
-//! (d) a pinned bottom Z below the stock bottom: caution;
+//! (d) a pinned bottom Z below the stock bottom: NO caution;
 //! plus a flipped setup, which has the same thickness and the same excess.
+//!
+//! # Case (d) changed its expectation on 2026-09-10 (F1.18 / J8)
+//!
+//! It used to assert a 3.00 mm caution. The GUI rule this file was written
+//! against took the DEEPER of two bottoms — the operation's depth dial and
+//! the Heights tab's resolved Bottom Z — so a 6 mm pocket with Bottom Z
+//! pinned 3 mm below an 18 mm board cautioned on the pin.
+//!
+//! F1.19 then measured the pin. It reaches emitted motion on three of the
+//! twenty-four operations, and on none of the operations this rule answers
+//! for: the pin moved 14 mm on a test pocket and the emitted floor did not
+//! move at all. The caution therefore described a cut the machine does not
+//! make. The core predicate reads the depth dial alone, the GUI now consumes
+//! it, and 6 mm of cut into an 18 mm board is not a cut through the board.
+//!
+//! The Heights tab says the other half of that sentence beside the field
+//! itself (`bottom_z_pin_note`, G-BOTTOMPIN): the pin is not used by this
+//! operation. Two findings, two surfaces. Merging them produced the false
+//! caution.
 
 #![allow(
     clippy::unwrap_used,
@@ -29,14 +48,14 @@ use rs_cam_core::compute::config::{HeightMode, HeightReference, ReferenceOffset}
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
+use rs_cam_core::diagnostics::ids::GEOM_DEPTH_BEYOND_STOCK;
 use rs_cam_core::diagnostics::{Diagnostic, Severity};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
 use rs_cam_viz::state::job::{ModelId, ModelKind, ModelUnits};
 use rs_cam_viz::state::toolpath::{OperationType, ToolpathEntry};
 use rs_cam_viz::ui::properties::{
-    DEPTH_BEYOND_STOCK_ID, ToolpathValidationContext, collect_diagnostics, depth_beyond_stock,
-    validate_toolpath,
+    ToolpathValidationContext, collect_diagnostics, depth_beyond_stock, validate_toolpath,
 };
 
 const TOOL: usize = 1;
@@ -241,7 +260,7 @@ fn a_the_rule_reads_the_excess_and_the_diagnostic_carries_its_id() {
     let diags = header_diagnostics(&session, idx, &entry);
     let by_id: Vec<_> = diags
         .iter()
-        .filter(|d| d.id.0 == DEPTH_BEYOND_STOCK_ID)
+        .filter(|d| d.id.0 == GEOM_DEPTH_BEYOND_STOCK)
         .collect();
     assert_eq!(by_id.len(), 1, "(a) one diagnostic under the rule's id");
     assert!(
@@ -315,7 +334,7 @@ fn c_a_3d_operation_is_outside_the_rule() {
     let entry = entry_for(&session, idx, OperationType::DropCutter);
     let diags = header_diagnostics(&session, idx, &entry);
     assert!(
-        diags.iter().all(|d| d.id.0 != DEPTH_BEYOND_STOCK_ID),
+        diags.iter().all(|d| d.id.0 != GEOM_DEPTH_BEYOND_STOCK),
         "(c) no depth-beyond-stock diagnostic on a 3D op"
     );
 }
@@ -338,8 +357,12 @@ fn c2_alignment_pin_drill_penetrates_the_spoilboard_by_design() {
 
 // ── (d) a pinned Bottom Z below the stock bottom ────────────────────────
 
+/// RE-PINNED 2026-09-10 (F1.18 / J8). Before: the rule fired and the message
+/// read `Depth exceeds stock thickness by 3.00 mm`. Now: silence, because the
+/// pocket cuts 6 mm into an 18 mm board and the pin reaches no emitted motion
+/// (F1.19). See this file's header for the full argument.
 #[test]
-fn d_a_bottom_z_pinned_below_the_stock_bottom_is_a_caution() {
+fn d_a_bottom_z_pinned_below_the_stock_bottom_is_not_a_caution() {
     let mut session = session();
     let mut tc = toolpath("Pocket", MODEL_2D, pocket(6.0));
     tc.heights.bottom_z = HeightMode::FromReference(ReferenceOffset {
@@ -347,15 +370,32 @@ fn d_a_bottom_z_pinned_below_the_stock_bottom_is_a_caution() {
         offset: -3.0,
     });
     let idx = session.add_toolpath(0, tc).unwrap();
-    let finding = rule(&session, idx).expect("(d) the pinned bottom fires the rule");
-    assert!(
-        (finding.excess_mm - 3.0).abs() < 1e-9,
-        "(d) excess is the pin's 3 mm, got {}",
-        finding.excess_mm
-    );
     assert_eq!(
-        finding.message(),
-        "Depth exceeds stock thickness by 3.00 mm"
+        rule(&session, idx),
+        None,
+        "(d) the pin moves no motion on a pocket, so it raises no caution"
+    );
+
+    // The header must agree: the rule and the ribbon are one predicate.
+    let entry = entry_for(&session, idx, OperationType::Pocket);
+    let diags = header_diagnostics(&session, idx, &entry);
+    assert!(
+        diags.iter().all(|d| d.id.0 != GEOM_DEPTH_BEYOND_STOCK),
+        "(d) no depth-beyond-stock diagnostic on the header: {:?}",
+        diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
+}
+
+/// The other half of the F1.19 finding, on the surface that DOES read it: the
+/// Heights tab annotates the Bottom row on a Pocket, so the operator is told
+/// why the pin changed nothing.
+#[test]
+fn d_the_heights_tab_says_the_pin_is_not_used_on_a_pocket() {
+    let note = rs_cam_viz::ui::properties::bottom_z_pin_note(OperationType::Pocket)
+        .expect("(d) a Pocket ignores the pin, so the row carries a note");
+    assert!(
+        note.contains("floor"),
+        "(d) the note names the dial that sets the floor: {note}"
     );
 }
 

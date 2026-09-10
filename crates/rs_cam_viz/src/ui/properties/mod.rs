@@ -7,9 +7,9 @@ pub mod stock;
 pub mod tool;
 
 pub use operations::{
-    DEPTH_BEYOND_STOCK_ID, DepthBeyondStock, ThroughCut, ToolpathValidationContext,
-    bottom_z_pin_note, collect_diagnostics, depth_beyond_stock, profile_through_cut,
-    profile_through_cut_line, validate_toolpath, validate_toolpath_config,
+    DepthBeyondStock, ThroughCut, ToolpathValidationContext, bottom_z_pin_note,
+    collect_diagnostics, depth_beyond_stock, profile_through_cut, profile_through_cut_line,
+    validate_toolpath, validate_toolpath_config,
 };
 use operations::{
     StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
@@ -5247,10 +5247,14 @@ fn depth_caution_row(ui: &mut egui::Ui, caution: Option<&operations::DepthBeyond
             .small()
             .color(egui::Color32::from_rgb(220, 180, 60)),
     )
+    // F1.18: the last clause used to name the Bottom Z on the Heights tab as
+    // a third thing to check. The rule no longer reads that field, and on
+    // every operation this caution fires for the pin moves no motion at all
+    // (F1.19), so naming it sent the operator to a dial that cannot fix this.
     .on_hover_text(format!(
-        "The cut bottom sits {:.2} mm below the bottom of a {:.2} mm board, so the \
-         tool cuts into the bed. Generate stays enabled. Check the depth, the stock \
-         thickness on the Stock panel, or the Bottom Z on the Heights tab.",
+        "The cut floor sits {:.2} mm below the bottom of a {:.2} mm board, so the \
+         tool cuts into the bed. Generate stays enabled. Check the operation's \
+         Depth field, or the stock thickness on the Stock panel.",
         caution.excess_mm, caution.stock_thickness_mm
     ));
     ui.end_row();

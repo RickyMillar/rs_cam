@@ -22,7 +22,9 @@ pub(super) use surface_3d::{
     draw_steep_shallow_params, draw_unified_finish_params, draw_waterline_params,
 };
 
-use rs_cam_core::compute::catalog::DepthSemantics;
+// F1.18: `DepthSemantics` left with the GUI's copy of the
+// depth-beyond-stock rule. The applicability test lives in core now.
+use rs_cam_core::diagnostics::adapters::from_static_checks as core_static_checks;
 
 use crate::state::job::ToolType;
 use crate::state::rest_dependency::{RestCandidate, rest_predecessors};
@@ -2061,96 +2063,80 @@ fn has_prior_rest_source(
     })
 }
 
-// ── Depth vs stock thickness (G-DEPTHSTOCK) ─────────────────────────────
+// ── Depth vs stock thickness (G-DEPTHSTOCK / G-DEPTHSTOCKCORE) ──────────
 
-/// Diagnostic id of the depth-beyond-stock caution. GUI-only: the rule reads
-/// the entry's `HeightsConfig`, which the core static-check adapter does not
-/// receive (it gets `ResolvedHeights::from_context`, whose bottom IS the stock
-/// bottom), so MCP `get_toolpath_diagnostics` does not carry it yet.
-pub const DEPTH_BEYOND_STOCK_ID: &str = "geom.depth_beyond_stock";
+/// The depth-beyond-stock finding, re-exported from core.
+///
+/// F1.6 shipped this rule GUI-side. F1.18 moved the predicate to
+/// [`core_static_checks::depth_beyond_stock`] and F1.18's GUI half deleted
+/// the copy, so the Operations card row, the Safety header and MCP
+/// `get_toolpath_diagnostics` all answer from ONE predicate. The name stays
+/// here so the per-operation forms need no edit; the fields are core's, and
+/// the old `bottom_z` field is now `cut_floor_z`.
+pub use rs_cam_core::diagnostics::adapters::from_static_checks::DepthBeyondStock;
 
-/// Excesses at or under this are arithmetic, not a cut into the bed. A through
-/// cut EXACTLY at the stock thickness must not trigger the caution (UX-R03-006
-/// owns that case).
-const DEPTH_BEYOND_STOCK_EPSILON_MM: f64 = 1e-6;
+/// The equality epsilon the through-cut line shares with the depth rule.
+/// One definition, in core: excesses at or under this are arithmetic, not a
+/// cut into the bed, and a through cut EXACTLY at the stock thickness must
+/// not trigger the caution (UX-R03-006 owns that case).
+const DEPTH_BEYOND_STOCK_EPSILON_MM: f64 = core_static_checks::DEPTH_BEYOND_STOCK_EPS_MM;
 
-/// A 2.5D cut whose bottom sits below the stock bottom of its setup.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DepthBeyondStock {
-    /// How far the cut bottom sits below the stock bottom, in mm. Always > 0.
-    pub excess_mm: f64,
-    /// The stock thickness the rule compared against, in mm.
-    pub stock_thickness_mm: f64,
-    /// The cut bottom the rule read, in the setup's own frame.
-    pub bottom_z: f64,
-    /// The stock bottom in the same frame.
-    pub stock_bottom_z: f64,
-}
-
-impl DepthBeyondStock {
-    /// The one sentence every surface prints (UX-R03-007 proposal wording).
-    pub fn message(&self) -> String {
-        format!("Depth exceeds stock thickness by {:.2} mm", self.excess_mm)
+/// The resolved-heights snapshot every GUI diagnostic surface hands to core.
+///
+/// Built from the entry's OWN `HeightsConfig`, not from
+/// `ResolvedHeights::from_context`. `from_context` is core's fallback "when
+/// only the context is in hand" — it projects `top_z` and `feed_z` onto the
+/// stock top and `bottom_z` onto the stock bottom, so it drops whatever the
+/// operator pinned. The GUI holds the real `HeightsConfig`, and core's own
+/// doc says a caller that does should build the struct directly.
+///
+/// This matters for the depth rule: the generators cut `top_z - depth`, so a
+/// Top Z pinned below the stock top deepens the emitted floor.
+/// [`profile_through_cut`] in the same form already reads that pin
+/// (`a_top_z_pinned_below_the_stock_top_counts_towards_the_through_cut_g_throughcut`),
+/// and the two lines must not disagree at the boundary they share.
+///
+/// The stock span is `Some` because the context always carries it. `None`
+/// there means NOT MEASURED and makes core's rule abstain.
+fn diagnostics_heights(
+    heights: &HeightsConfig,
+    ctx: &HeightContext,
+) -> core_static_checks::ResolvedHeights {
+    let resolved = heights.resolve(ctx);
+    core_static_checks::ResolvedHeights {
+        top_z: resolved.top_z,
+        bottom_z: resolved.bottom_z,
+        feed_z: resolved.feed_z,
+        retract_z: resolved.retract_z,
+        clearance_z: resolved.clearance_z,
+        stock_top_z: Some(ctx.stock_top_z),
+        stock_bottom_z: Some(ctx.stock_bottom_z),
     }
 }
 
-/// Does the depth-beyond-stock rule read this operation?
+/// UX-R03-007 / G-DEPTHSTOCK: does this cut go below the stock bottom?
 ///
-/// Every 2.5D operation with an explicit depth field: Face, Pocket, Profile,
-/// Adaptive, VCarve (max depth), Rest, Inlay (pocket depth), Zigzag, Trace,
-/// Drill and Chamfer (chamfer width, the same proxy the Heights tab uses for
-/// its Bottom Z). Not read: the 3D family (its floor is the mesh),
-/// ProjectCurve (its depth is below the mesh surface, not the stock top) and
-/// AlignmentPinDrill (spoilboard penetration is the point of the operation).
-fn depth_beyond_stock_applies(operation: &OperationConfig) -> bool {
-    if operation.is_3d() || operation.needs_both() {
-        return false;
-    }
-    if matches!(operation, OperationConfig::AlignmentPinDrill(_)) {
-        return false;
-    }
-    matches!(operation.depth_semantics(), DepthSemantics::Explicit(_))
-}
-
-/// UX-R03-007 / G-DEPTHSTOCK: does this 2.5D cut go below the stock bottom?
+/// **This function carries no rule.** It is an input adapter: it resolves the
+/// entry's heights and hands them to [`core_static_checks::depth_beyond_stock`].
+/// Which operations the rule answers for, the comparison, the epsilon and the
+/// sentence all live in core.
 ///
-/// The cut bottom is the deeper of two readings:
+/// Two things a reader must not infer wrongly.
 ///
-/// - the operation's own depth field, measured from the resolved Top Z. This
-///   is what the generators cut: `OperationConfig::cutting_levels(top_z)`
-///   steps from `top_z` to `top_z - depth`, VCarve / Inlay / Chamfer / Drill
-///   anchor their depth at `top_z` the same way, and none of them read a
-///   pinned Bottom Z;
-/// - the resolved Bottom Z from the Heights tab. In `Auto` it equals the
-///   first reading; a `Manual` / `FromReference` pin below the stock bottom
-///   is what the Heights tab shows the operator, so it cautions too.
-///
-/// `ctx.stock_bottom_z` / `stock_top_z` are in the setup's own frame (world
-/// for an identity setup, zero-rooted local for a flip), so a flipped setup
-/// has the same thickness and the same excess. `None` when the rule does not
-/// read the operation, or when the excess is zero or negative. A caution,
-/// never a block: Generate stays enabled.
+/// - The pinned BOTTOM Z is deliberately not read. F1.19 measured that a
+///   pinned bottom reaches no emitted motion on any operation this rule
+///   answers for, so cautioning on it described a cut the machine does not
+///   make. The Heights tab says that beside the field instead
+///   ([`bottom_z_pin_note`]).
+/// - `None` covers three states and none of them is "clean on a measured
+///   value": the rule does not answer for this operation, the caller supplied
+///   no stock span, or the floor is at or above the stock bottom.
 pub fn depth_beyond_stock(
     operation: &OperationConfig,
     heights: &HeightsConfig,
     ctx: &HeightContext,
 ) -> Option<DepthBeyondStock> {
-    if !depth_beyond_stock_applies(operation) {
-        return None;
-    }
-    let resolved = heights.resolve(ctx);
-    let field_bottom_z = resolved.top_z - operation.default_depth_for_heights();
-    let bottom_z = field_bottom_z.min(resolved.bottom_z);
-    let excess_mm = ctx.stock_bottom_z - bottom_z;
-    if !excess_mm.is_finite() || excess_mm <= DEPTH_BEYOND_STOCK_EPSILON_MM {
-        return None;
-    }
-    Some(DepthBeyondStock {
-        excess_mm,
-        stock_thickness_mm: ctx.stock_top_z - ctx.stock_bottom_z,
-        bottom_z,
-        stock_bottom_z: ctx.stock_bottom_z,
-    })
+    core_static_checks::depth_beyond_stock(operation, &diagnostics_heights(heights, ctx))
 }
 
 // ── Profile through cut (G-THROUGHCUT, UX-R03-006) ──────────────────────
@@ -2249,39 +2235,6 @@ pub fn profile_through_cut(
     })
 }
 
-/// The header form of [`depth_beyond_stock`]: a `Caution` in the Safety
-/// category, `Current`, `Static`, so the inspector ribbon prints it in the
-/// actionable tier and the Mods tab badge turns yellow.
-fn depth_beyond_stock_diagnostic(
-    toolpath_id: ToolpathId,
-    finding: &DepthBeyondStock,
-) -> rs_cam_core::diagnostics::Diagnostic {
-    use rs_cam_core::diagnostics::{
-        Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
-        Severity, Source,
-    };
-    Diagnostic {
-        id: DiagnosticId::new(DEPTH_BEYOND_STOCK_ID),
-        scope: Scope::Toolpath { id: toolpath_id },
-        category: Category::Safety,
-        severity: Severity::Caution,
-        confidence: Confidence::Static,
-        state: DiagnosticState::Current,
-        source: Source::StaticValidation,
-        message: finding.message(),
-        evidence: Some(DiagnosticEvidence::GeometryCompare {
-            lhs_label: "bottom_z".to_owned(),
-            lhs_value: finding.bottom_z,
-            rhs_label: "stock_bottom_z".to_owned(),
-            rhs_value: finding.stock_bottom_z,
-            unit: "mm".to_owned(),
-        }),
-        fix: None,
-        supersedes: Vec::new(),
-        suppressed_diagnostics: Vec::new(),
-    }
-}
-
 // ── Contextual diagnostics ──────────────────────────────────────────────
 
 /// Collect the unified [`rs_cam_core::diagnostics::Diagnostic`]
@@ -2290,8 +2243,15 @@ fn depth_beyond_stock_diagnostic(
 /// function — it delegates to
 /// [`rs_cam_core::diagnostics::diagnose_toolpath_inputs`] so the
 /// params panel and MCP `get_toolpath_diagnostics` produce identical
-/// findings for the same project state, plus the one GUI-only finding
-/// [`DEPTH_BEYOND_STOCK_ID`] (see [`depth_beyond_stock`]).
+/// findings for the same project state. Since F1.18 that includes
+/// `geom.depth_beyond_stock`: the GUI carries no rule of its own any
+/// more (see [`depth_beyond_stock`]).
+///
+/// The heights snapshot is [`diagnostics_heights`], built from the
+/// entry's own `HeightsConfig`. The session route still builds its own
+/// with `ResolvedHeights::from_context`, which drops a pinned Top Z —
+/// see `planning/ui_fix_2026-09-09/reports/J8_GUI.md` for that
+/// follow-up.
 ///
 /// Load-gate (chipload / power / deflection / drill) diagnostics are
 /// included when a `load_verdict` is supplied — they render in the
@@ -2306,8 +2266,7 @@ pub fn collect_diagnostics(
     let Some(tool) = tool else {
         return Vec::new();
     };
-    let heights = height_ctx
-        .map(rs_cam_core::diagnostics::adapters::from_static_checks::ResolvedHeights::from_context);
+    let heights = height_ctx.map(|ctx| diagnostics_heights(&entry.heights, ctx));
     let inputs = rs_cam_core::diagnostics::ToolpathDiagnoseInputs {
         toolpath_id: entry.id,
         operation: &entry.operation,
@@ -2332,15 +2291,13 @@ pub fn collect_diagnostics(
         // nothing has been measured yet.
         stats: entry.result.as_ref().map(|result| &result.stats),
     };
-    let mut diagnostics = rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs);
-    // G-DEPTHSTOCK (UX-R03-007): the one GUI-only finding. It reads the
-    // entry's `HeightsConfig`, which the core adapter does not receive.
-    if let Some(ctx) = height_ctx
-        && let Some(finding) = depth_beyond_stock(&entry.operation, &entry.heights, ctx)
-    {
-        diagnostics.push(depth_beyond_stock_diagnostic(entry.id, &finding));
-    }
-    diagnostics
+    // G-DEPTHSTOCKCORE (F1.18): the depth-beyond-stock caution used to be
+    // appended here from a second, GUI-side copy of the rule. Both copies
+    // fired, both stamped `geom.depth_beyond_stock`, and the operator read
+    // the identical sentence twice. The copy is deleted; the caution now
+    // arrives inside this list, from the one core predicate, on the snapshot
+    // `diagnostics_heights` built above.
+    rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs)
 }
 
 #[cfg(test)]

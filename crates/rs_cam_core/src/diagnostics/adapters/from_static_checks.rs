@@ -582,7 +582,20 @@ fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> V
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
             message: found.message(),
-            evidence: None,
+            // The GUI rule F1.6 shipped carried this evidence line and the
+            // inspector ribbon renders it (`ui/properties/mod.rs`, the
+            // `GeometryCompare` arm). F1.18's switchover deletes that rule,
+            // so the line is carried here instead of being lost. The left
+            // label is `cut_floor_z`, not the old `bottom_z`: the value is
+            // the floor the operation emits, never the Heights tab's Bottom
+            // Z, and the old spelling is the confusion J7 removed.
+            evidence: Some(DiagnosticEvidence::GeometryCompare {
+                lhs_label: "cut_floor_z".to_owned(),
+                lhs_value: found.cut_floor_z,
+                rhs_label: "stock_bottom_z".to_owned(),
+                rhs_value: found.stock_bottom_z,
+                unit: "mm".to_owned(),
+            }),
             fix: None,
             supersedes: vec![],
             suppressed_diagnostics: vec![],
