@@ -337,17 +337,42 @@ Answered BY ASSUMPTION and still open: R0.1 §7 Q5 (the export accept-flag is
 per-export, never persisted), Q6 (stale path drawn at the existing 0.45 dim,
 same palette), and R0.3 §7 Q1/Q2/Q5.
 
-## Decisions waiting on the operator
+## Decisions the operator gave at handover, 2026-09-10
 
-1. **Merge topology** — both branches to master, or one rebased onto the
-   other. Nothing should assume an answer.
-2. **J7 / F1.19** — should a pinned Bottom Z drive a 2.5D cut, or should the
-   field be disabled for the twenty-one operations that ignore it?
-3. **`f036b`** — re-point another programme's instrument?
-4. **CLAUDE.md `a0a79a29`** — two bullets where the brief permitted "a
-   sentence". One `git revert` drops it if the operator prefers.
-5. **The three stale branch pointers** (`isoclip-rapid`, `ui-string-sentry`,
-   `pipesmoke`) — safe to delete; their content is in master.
+These four were asked and answered in session. They are settled; do not
+re-litigate them, and do not treat them as assumptions.
+
+1. **Merge: `core-consolidation` INTO `ui-fix-2026-09-09`. Master stays
+   untouched at `3d88406b`.** Do this first — re-gate the merged head, and
+   expect `arcfit_intent_key_cost_f1` and `narrate_regions_closed_c8` to go
+   green. That unblocks F4.2. **The "never commit to master, never open a
+   PR" rule still stands**; the operator will decide about master separately.
+2. **J7 / F1.19: DISABLE OR ANNOTATE the Bottom Z field** on the twenty-one
+   operations that ignore it. **Do NOT make the pin drive the cut.** No cut
+   geometry changes. Consume `OperationType::honors_pinned_bottom_z()` in the
+   GUI.
+3. **The GUI stays closed for now.** Keep to source-level work. V6.2 and the
+   three tasks with visual confirmation owed (F1.13, F1.15, F2.2) stay
+   recorded as owed. Tell the operator when the queue is worth one GUI
+   session; do not start it.
+4. **First up: the two safety-class follow-ons.**
+   - **F4.4** — `reload_model` drops `drill_targets` and `layers`, so
+     reloading a drawing whose holes MOVED keeps the previous version's
+     targets and the program drills holes that are not in the file. A
+     wrong-cut path.
+   - **F2.12** — the collision check has no staleness counter, so a
+     holder-clearance verdict survives any edit still reading `Clear`, and it
+     feeds `readiness::holder_clearance_check`.
+
+## Still waiting on the operator
+
+- **`f036b`** — re-point another programme's instrument? The measured fix is
+  in `reports/J2.md`.
+- **CLAUDE.md `a0a79a29`** — two bullets where the brief permitted "a
+  sentence". One `git revert` drops it.
+- **The three stale branch pointers** (`isoclip-rapid`, `ui-string-sentry`,
+  `pipesmoke`) — safe to delete; their content is in master.
+- **R0.1 §7 Q5/Q6 and R0.3 §7 Q1/Q2/Q5**, all answered by assumption so far.
 
 ## Rules
 
