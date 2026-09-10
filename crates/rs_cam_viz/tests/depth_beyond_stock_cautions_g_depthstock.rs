@@ -52,10 +52,12 @@ use rs_cam_core::diagnostics::ids::GEOM_DEPTH_BEYOND_STOCK;
 use rs_cam_core::diagnostics::{Diagnostic, Severity};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
-use rs_cam_viz::state::job::{ModelId, ModelKind, ModelUnits};
-use rs_cam_viz::state::toolpath::{OperationType, ToolpathEntry};
+use rs_cam_viz::state::job::{ModelKind, ModelUnits};
+use rs_cam_viz::state::runtime::GuiState;
+use rs_cam_viz::state::toolpath::OperationType;
 use rs_cam_viz::ui::properties::{
-    ToolpathValidationContext, collect_diagnostics, depth_beyond_stock, validate_toolpath,
+    ToolpathPanelSnapshot, ToolpathValidationContext, collect_diagnostics, depth_beyond_stock,
+    toolpath_panel_snapshot, validate_toolpath,
 };
 
 const TOOL: usize = 1;
@@ -150,12 +152,20 @@ fn session() -> ProjectSession {
     session
 }
 
+/// Build the same owned entry + static-context snapshot as the production
+/// properties-panel caller.
+fn panel_snapshot(session: &ProjectSession, idx: usize) -> ToolpathPanelSnapshot {
+    let id = session.toolpath_configs()[idx].id;
+    toolpath_panel_snapshot(id, session, &GuiState::default())
+        .expect("the toolpath resolves for the properties panel")
+}
+
 /// The header surface: what the inspector ribbon shows for the toolpath at
-/// `idx`, built the way the params panel builds it.
+/// `idx`, built from the production panel snapshot.
 fn header_diagnostics(
     session: &ProjectSession,
     idx: usize,
-    entry: &ToolpathEntry,
+    snapshot: &ToolpathPanelSnapshot,
 ) -> Vec<Diagnostic> {
     let tc = &session.toolpath_configs()[idx];
     let tool = session
@@ -165,22 +175,15 @@ fn header_diagnostics(
         .cloned()
         .expect("tool is in the session");
     let height_ctx = session.height_context_for_toolpath(tc);
-    collect_diagnostics(entry, Some(&tool), &[], Some(&height_ctx), None)
-}
-
-/// A GUI entry that mirrors the session config at `idx`.
-fn entry_for(session: &ProjectSession, idx: usize, op_type: OperationType) -> ToolpathEntry {
-    let tc = &session.toolpath_configs()[idx];
-    let mut entry = ToolpathEntry::for_operation(
-        tc.id,
-        tc.name.clone(),
-        rs_cam_viz::state::job::ToolId(tc.tool_id),
-        ModelId(tc.model_id),
-        op_type,
-    );
-    entry.operation = tc.operation.clone();
-    entry.heights = tc.heights.clone();
-    entry
+    collect_diagnostics(
+        &snapshot.entry,
+        Some(&tool),
+        &[],
+        Some(&height_ctx),
+        &snapshot.preconditions,
+        &snapshot.model_refs,
+        None,
+    )
 }
 
 fn depth_cautions(diags: &[Diagnostic]) -> Vec<&Diagnostic> {
@@ -208,10 +211,10 @@ fn a_pocket_deeper_than_the_stock_cautions_on_the_header_and_does_not_block() {
     let idx = session
         .add_toolpath(0, toolpath("Pocket", MODEL_2D, pocket(25.0)))
         .unwrap();
-    let entry = entry_for(&session, idx, OperationType::Pocket);
+    let snapshot = panel_snapshot(&session, idx);
 
     // Header: exactly one caution, worded with the excess.
-    let diags = header_diagnostics(&session, idx, &entry);
+    let diags = header_diagnostics(&session, idx, &snapshot);
     let cautions = depth_cautions(&diags);
     assert_eq!(
         cautions.len(),
@@ -231,7 +234,10 @@ fn a_pocket_deeper_than_the_stock_cautions_on_the_header_and_does_not_block() {
     );
 
     // Generate stays enabled: the blocking validator has nothing to say.
-    let errs = validate_toolpath(&entry, &ToolpathValidationContext::from_session(&session));
+    let errs = validate_toolpath(
+        &snapshot.entry,
+        &ToolpathValidationContext::from_session(&session),
+    );
     assert!(
         errs.is_empty(),
         "(a) the blocking validator must stay silent, it said {errs:?}"
@@ -256,8 +262,8 @@ fn a_the_rule_reads_the_excess_and_the_diagnostic_carries_its_id() {
         "Depth exceeds stock thickness by 7.00 mm"
     );
 
-    let entry = entry_for(&session, idx, OperationType::Pocket);
-    let diags = header_diagnostics(&session, idx, &entry);
+    let snapshot = panel_snapshot(&session, idx);
+    let diags = header_diagnostics(&session, idx, &snapshot);
     let by_id: Vec<_> = diags
         .iter()
         .filter(|d| d.id.0 == GEOM_DEPTH_BEYOND_STOCK)
@@ -291,8 +297,8 @@ fn b_depth_equal_to_the_stock_thickness_is_not_a_caution() {
         None,
         "(b) a through cut is UX-R03-006's case"
     );
-    let entry = entry_for(&session, idx, OperationType::Pocket);
-    let diags = header_diagnostics(&session, idx, &entry);
+    let snapshot = panel_snapshot(&session, idx);
+    let diags = header_diagnostics(&session, idx, &snapshot);
     assert!(
         depth_cautions(&diags).is_empty(),
         "(b) no depth caution on the header: {:?}",
@@ -331,8 +337,8 @@ fn c_a_3d_operation_is_outside_the_rule() {
         None,
         "(c) the rule does not read a 3D op"
     );
-    let entry = entry_for(&session, idx, OperationType::DropCutter);
-    let diags = header_diagnostics(&session, idx, &entry);
+    let snapshot = panel_snapshot(&session, idx);
+    let diags = header_diagnostics(&session, idx, &snapshot);
     assert!(
         diags.iter().all(|d| d.id.0 != GEOM_DEPTH_BEYOND_STOCK),
         "(c) no depth-beyond-stock diagnostic on a 3D op"
@@ -377,8 +383,8 @@ fn d_a_bottom_z_pinned_below_the_stock_bottom_is_not_a_caution() {
     );
 
     // The header must agree: the rule and the ribbon are one predicate.
-    let entry = entry_for(&session, idx, OperationType::Pocket);
-    let diags = header_diagnostics(&session, idx, &entry);
+    let snapshot = panel_snapshot(&session, idx);
+    let diags = header_diagnostics(&session, idx, &snapshot);
     assert!(
         diags.iter().all(|d| d.id.0 != GEOM_DEPTH_BEYOND_STOCK),
         "(d) no depth-beyond-stock diagnostic on the header: {:?}",

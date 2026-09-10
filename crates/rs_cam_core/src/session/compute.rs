@@ -4417,8 +4417,9 @@ impl ProjectSession {
     /// Captures whether the toolpath's `model_id` resolves against the
     /// project's loaded models so the unified diagnostic stream emits
     /// the same "Selected model missing" signal the GUI banner has
-    /// always shown.
-    fn model_ref_context_for_toolpath(
+    /// always shown. GUI consumers snapshot this context before borrowing
+    /// their editable toolpath entry.
+    pub fn model_ref_context_for_toolpath(
         &self,
         tc: &super::ToolpathConfig,
     ) -> crate::diagnostics::diagnose::ModelRefContext {
@@ -4437,8 +4438,9 @@ impl ProjectSession {
     /// larger" check.
     ///
     /// Pure helper — no I/O, no mutation. Safe to call repeatedly per
-    /// diagnose round.
-    fn precondition_context_for_toolpath(
+    /// diagnose round. GUI consumers snapshot this context before borrowing
+    /// their editable toolpath entry.
+    pub fn precondition_context_for_toolpath(
         &self,
         tc: &super::ToolpathConfig,
     ) -> crate::diagnostics::diagnose::PreconditionContext {

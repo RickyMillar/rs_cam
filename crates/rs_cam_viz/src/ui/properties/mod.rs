@@ -729,11 +729,16 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // used to leave the card green and request no regeneration.
             let mut inputs_changed = false;
 
-            // Build a temporary ToolpathEntry from session config + gui runtime
-            // so the existing draw_toolpath_panel can work unchanged.
-            if let Some(mut entry) =
-                build_entry_from_session_and_gui(id, &state.session, &state.gui)
-            {
+            // Build the temporary entry and its canonical session diagnostic
+            // contexts together. Keeping them in one snapshot makes it
+            // impossible for this production call chain to draw an entry while
+            // silently omitting either static context.
+            if let Some(snapshot) = toolpath_panel_snapshot(id, &state.session, &state.gui) {
+                let ToolpathPanelSnapshot {
+                    mut entry,
+                    preconditions,
+                    model_refs,
+                } = snapshot;
                 draw_toolpath_panel(
                     ui,
                     &mut entry,
@@ -751,6 +756,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     model_has_enriched,
                     model_is_step_missing_brep,
                     height_ctx.as_ref(),
+                    &preconditions,
+                    &model_refs,
                     &stale_default_defects,
                     load_verdict_for_tp.as_ref(),
                     tab_override,
@@ -3587,20 +3594,31 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabB
     });
 }
 
-/// Build a temporary `ToolpathEntry` from session `ToolpathConfig` + GUI `ToolpathRuntime`.
+/// Owned inputs assembled for the production toolpath-properties panel.
 ///
-/// This allows the existing `draw_toolpath_panel` to work unchanged while the
-/// underlying data migrates from `JobState` to `ProjectSession`.
-pub(crate) fn build_entry_from_session_and_gui(
+/// The entry and both static diagnostic contexts are captured together so a
+/// caller cannot render a resolved toolpath while accidentally substituting
+/// `None` for one of the contexts.
+pub struct ToolpathPanelSnapshot {
+    pub entry: ToolpathEntry,
+    pub preconditions: rs_cam_core::diagnostics::diagnose::PreconditionContext,
+    pub model_refs: rs_cam_core::diagnostics::diagnose::ModelRefContext,
+}
+
+/// Build the production panel snapshot from session config + GUI runtime.
+///
+/// This is public only so integration sentries can exercise the exact assembly
+/// used by [`draw`], rather than manually recreating its contexts.
+pub fn toolpath_panel_snapshot(
     id: crate::state::toolpath::ToolpathId,
     session: &rs_cam_core::session::ProjectSession,
     gui: &crate::state::runtime::GuiState,
-) -> Option<ToolpathEntry> {
+) -> Option<ToolpathPanelSnapshot> {
     let (_, tc) = session.find_toolpath_config_by_id(id)?;
     let rt = gui.toolpath_rt.get(&id);
     let default_rt = crate::state::runtime::ToolpathRuntime::new(true);
     let rt = rt.unwrap_or(&default_rt);
-    Some(ToolpathEntry {
+    let entry = ToolpathEntry {
         id: tc.id,
         pill_stamped_fields: Vec::new(),
         name: tc.name.clone(),
@@ -3630,7 +3648,22 @@ pub(crate) fn build_entry_from_session_and_gui(
         debug_trace: rt.debug_trace.clone(),
         semantic_trace: rt.semantic_trace.clone(),
         debug_trace_path: rt.debug_trace_path.clone(),
+    };
+    Some(ToolpathPanelSnapshot {
+        entry,
+        preconditions: session.precondition_context_for_toolpath(tc),
+        model_refs: session.model_ref_context_for_toolpath(tc),
     })
+}
+
+/// Test-only entry projection used by the inspector write-back sentries.
+#[cfg(test)]
+pub(crate) fn build_entry_from_session_and_gui(
+    id: crate::state::toolpath::ToolpathId,
+    session: &rs_cam_core::session::ProjectSession,
+    gui: &crate::state::runtime::GuiState,
+) -> Option<ToolpathEntry> {
+    toolpath_panel_snapshot(id, session, gui).map(|snapshot| snapshot.entry)
 }
 
 /// The one line the Geometry tab prints above the boundary controls
@@ -3865,6 +3898,8 @@ fn draw_toolpath_panel(
     model_has_enriched: bool,
     model_is_step_missing_brep: bool,
     height_ctx: Option<&HeightContext>,
+    preconditions: &rs_cam_core::diagnostics::diagnose::PreconditionContext,
+    model_refs: &rs_cam_core::diagnostics::diagnose::ModelRefContext,
     stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     tab_override: Option<ToolpathTab>,
@@ -4118,6 +4153,8 @@ fn draw_toolpath_panel(
         tool_for_diags,
         stale_default_defects,
         height_ctx,
+        preconditions,
+        model_refs,
         load_verdict,
     );
     // Auto-regen workflow notice: still a GUI-state-only finding

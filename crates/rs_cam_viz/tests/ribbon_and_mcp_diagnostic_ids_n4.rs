@@ -30,18 +30,14 @@
 //! assertion could not fail. This file calls the real ribbon function
 //! instead.
 //!
-//! # One asymmetry this file EXCLUDES
+//! # N9 runtime-red extension
 //!
-//! `collect_diagnostics` passes `preconditions: None` and
-//! `model_refs: None`; the session route passes `Some(..)` for both.
-//! The fixture keeps that difference inert: it uses a Pocket, which
-//! declares no precondition rules
-//! (`diagnostics/adapters/from_preconditions.rs` matches Rest, Drill,
-//! AlignmentPinDrill and ProjectCurve only), and it binds a model the
-//! session resolves, so the model-ref adapter stays silent. Closing
-//! that asymmetry is a separate follow-up. This file does not measure
-//! it, and equality here is NOT evidence that the two routes agree on a
-//! Rest or a Drill.
+//! N9 adds Rest and dangling-model fixtures for the former context
+//! asymmetry. The ribbon arm calls `toolpath_panel_snapshot`, the same owned
+//! entry + context assembly helper used by the production `draw` caller, and
+//! the GUI collector requires both contexts. These arms therefore fail if
+//! production assembly drops either context instead of merely proving that
+//! the collector accepts manually built inputs.
 
 #![allow(
     clippy::unwrap_used,
@@ -66,11 +62,13 @@ use rs_cam_core::diagnostics::ids::{
 };
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
-use rs_cam_viz::state::job::{ModelId, ModelKind, ModelUnits};
-use rs_cam_viz::state::toolpath::{OperationType, ToolpathEntry};
-use rs_cam_viz::ui::properties::collect_diagnostics;
+use rs_cam_viz::state::job::{ModelKind, ModelUnits};
+use rs_cam_viz::state::runtime::GuiState;
+use rs_cam_viz::ui::properties::{collect_diagnostics, toolpath_panel_snapshot};
 
 const TOOL: usize = 1;
+const REST_TOOL: usize = 2;
+const PREVIOUS_TOOL: usize = 3;
 const MODEL_2D: usize = 4;
 const STOCK_THICKNESS_MM: f64 = 18.0;
 
@@ -144,12 +142,16 @@ fn pinned(reference: HeightReference, offset: f64) -> HeightMode {
     HeightMode::FromReference(ReferenceOffset { reference, offset })
 }
 
-/// One tool, one 2D model, an 18 mm board, one setup.
+/// Three tools, one 2D model, an 18 mm board, one setup.
 fn session() -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
-    session.replace_tools(vec![tool]);
+    let mut rest_tool = ToolConfig::new_default(ToolId(REST_TOOL), ToolType::EndMill);
+    rest_tool.diameter = 3.0;
+    let mut previous_tool = ToolConfig::new_default(ToolId(PREVIOUS_TOOL), ToolType::EndMill);
+    previous_tool.diameter = 6.0;
+    session.replace_tools(vec![tool, rest_tool, previous_tool]);
     session.models_mut().push(polygon_model(MODEL_2D));
     let stock = StockConfig {
         z: STOCK_THICKNESS_MM,
@@ -160,29 +162,30 @@ fn session() -> ProjectSession {
     session
 }
 
+/// Add one operation and return its index.
+fn add_operation(session: &mut ProjectSession, config: ToolpathConfig) -> usize {
+    session
+        .add_toolpath(0, config)
+        .expect("the session accepts the operation")
+}
+
 /// Add one Pocket and return its index.
 fn add_pocket(session: &mut ProjectSession, depth: f64, heights: HeightsConfig) -> usize {
-    session
-        .add_toolpath(0, toolpath("Pocket", MODEL_2D, pocket(depth), heights))
-        .expect("the session accepts the pocket")
+    add_operation(
+        session,
+        toolpath("Pocket", MODEL_2D, pocket(depth), heights),
+    )
+}
+
+fn rest() -> OperationConfig {
+    let mut op = OperationConfig::Rest(Default::default());
+    if let OperationConfig::Rest(cfg) = &mut op {
+        cfg.prev_tool_id = Some(ToolId(PREVIOUS_TOOL));
+    }
+    op
 }
 
 // ── the two surfaces ────────────────────────────────────────────────────
-
-/// A GUI entry that mirrors the session config at `idx`.
-fn entry_for(session: &ProjectSession, idx: usize) -> ToolpathEntry {
-    let tc = &session.toolpath_configs()[idx];
-    let mut entry = ToolpathEntry::for_operation(
-        tc.id,
-        tc.name.clone(),
-        rs_cam_viz::state::job::ToolId(tc.tool_id),
-        ModelId(tc.model_id),
-        OperationType::Pocket,
-    );
-    entry.operation = tc.operation.clone();
-    entry.heights = tc.heights.clone();
-    entry
-}
 
 /// The ribbon arm. This is the function `ui/properties/mod.rs` calls to
 /// fill the inspector's diagnostics ribbon, with the inputs that panel
@@ -209,13 +212,16 @@ fn ribbon_diagnostics(session: &ProjectSession, idx: usize) -> Vec<Diagnostic> {
         .per_toolpath
         .iter()
         .find(|v| v.toolpath_id == tc.id);
-    let mut entry = entry_for(session, idx);
-    entry.feeds_result = session.feeds_result_for_toolpath(tc, &tool);
+    let mut snapshot = toolpath_panel_snapshot(tc.id, session, &GuiState::default())
+        .expect("the toolpath resolves for the properties panel");
+    snapshot.entry.feeds_result = session.feeds_result_for_toolpath(tc, &tool);
     collect_diagnostics(
-        &entry,
+        &snapshot.entry,
         Some(&tool),
         &stale_defaults,
         Some(&height_ctx),
+        &snapshot.preconditions,
+        &snapshot.model_refs,
         load_verdict,
     )
 }
@@ -252,6 +258,14 @@ fn the_two_surfaces_agree_on_a_pocket_with_auto_heights() {
     let ribbon = ribbon_ids(&session, idx);
     let mcp = mcp_ids(&session, idx);
 
+    assert!(
+        !ribbon.contains(rs_cam_core::diagnostics::ids::REF_MODEL_MISSING),
+        "a resolved model must raise no missing-model finding on the ribbon; it reported {ribbon:?}"
+    );
+    assert!(
+        !mcp.contains(rs_cam_core::diagnostics::ids::REF_MODEL_MISSING),
+        "a resolved model must raise no missing-model finding on the MCP route; it reported {mcp:?}"
+    );
     for id in HEIGHT_IDS {
         assert!(
             !ribbon.contains(*id),
@@ -349,5 +363,90 @@ fn a_retract_pinned_below_the_feed_plane_reaches_both_surfaces() {
         ribbon, mcp,
         "the ribbon and the MCP route disagree on pinned retract and feed \
          planes\nribbon: {ribbon:?}\nMCP: {mcp:?}"
+    );
+}
+
+// ── N9: ribbon/session context parity ──────────────────────────────────
+
+#[test]
+fn rest_without_an_enabled_previous_tool_reaches_both_surfaces() {
+    let mut session = session();
+    let idx = add_operation(
+        &mut session,
+        toolpath("Rest", MODEL_2D, rest(), HeightsConfig::default()),
+    );
+    session.toolpath_configs_mut()[idx].tool_id = REST_TOOL;
+
+    let ribbon = ribbon_ids(&session, idx);
+    assert!(
+        ribbon.contains(rs_cam_core::diagnostics::ids::PRECOND_REST_NO_PRIOR),
+        "the ribbon must report the missing Rest predecessor; it reported {ribbon:?}"
+    );
+
+    let mcp = mcp_ids(&session, idx);
+    assert!(
+        mcp.contains(rs_cam_core::diagnostics::ids::PRECOND_REST_NO_PRIOR),
+        "the MCP route must report the missing Rest predecessor; it reported {mcp:?}"
+    );
+    assert_eq!(
+        ribbon, mcp,
+        "the ribbon and MCP route disagree on a Rest operation without a predecessor\n\
+         ribbon: {ribbon:?}\nMCP: {mcp:?}"
+    );
+}
+
+#[test]
+fn rest_with_an_enabled_previous_tool_clears_the_precondition_on_both_surfaces() {
+    let mut session = session();
+    let predecessor = add_operation(
+        &mut session,
+        toolpath("Rough", MODEL_2D, pocket(6.0), HeightsConfig::default()),
+    );
+    session.toolpath_configs_mut()[predecessor].tool_id = PREVIOUS_TOOL;
+    let rest = add_operation(
+        &mut session,
+        toolpath("Rest", MODEL_2D, rest(), HeightsConfig::default()),
+    );
+    session.toolpath_configs_mut()[rest].tool_id = REST_TOOL;
+
+    let ribbon = ribbon_ids(&session, rest);
+    let mcp = mcp_ids(&session, rest);
+    assert!(
+        !ribbon.contains(rs_cam_core::diagnostics::ids::PRECOND_REST_NO_PRIOR),
+        "the ribbon must clear the Rest predecessor finding; it reported {ribbon:?}"
+    );
+    assert!(
+        !mcp.contains(rs_cam_core::diagnostics::ids::PRECOND_REST_NO_PRIOR),
+        "the MCP route must clear the Rest predecessor finding; it reported {mcp:?}"
+    );
+    assert_eq!(
+        ribbon, mcp,
+        "the surfaces disagree on a valid Rest predecessor"
+    );
+}
+
+#[test]
+fn a_pocket_with_a_dangling_model_reaches_both_surfaces() {
+    let mut session = session();
+    let idx = add_operation(
+        &mut session,
+        toolpath("Pocket", 999, pocket(6.0), HeightsConfig::default()),
+    );
+
+    let ribbon = ribbon_ids(&session, idx);
+    assert!(
+        ribbon.contains(rs_cam_core::diagnostics::ids::REF_MODEL_MISSING),
+        "the ribbon must report the dangling model reference; it reported {ribbon:?}"
+    );
+
+    let mcp = mcp_ids(&session, idx);
+    assert!(
+        mcp.contains(rs_cam_core::diagnostics::ids::REF_MODEL_MISSING),
+        "the MCP route must report the dangling model reference; it reported {mcp:?}"
+    );
+    assert_eq!(
+        ribbon, mcp,
+        "the ribbon and MCP route disagree on a dangling model reference\n\
+         ribbon: {ribbon:?}\nMCP: {mcp:?}"
     );
 }

@@ -73,6 +73,23 @@ failure is the F-036b instrument, red by design. Viz 606/0, CLI 31/0. New
 rows N7–N11 and the checkpoint are in `arch_consolidation_2026-09-09/STATUS.md`.
 No live MCP check ran this session; the server did not connect.
 
+## Architecture consolidation — N9 diagnostic-context parity
+
+N9 brings the GUI ribbon's Rest preconditions and model-reference findings
+onto the same canonical contexts as session/MCP diagnosis. The production
+`ToolpathPanelSnapshot` captures the entry and both contexts together; the
+ribbon requires them rather than accepting an absent context. Existing GUI
+load-verdict, feeds, generation-stat and height inputs remain unchanged.
+
+The extended real ribbon-vs-session sentry reproduced **4 passed / 2 failed**
+before the fix (missing Rest predecessor and dangling model), then passed all
+6, including valid controls. Review accepted. Full viz **609/0**, MCP **29/0**,
+format and heavy-enabled workspace Clippy pass. Full heavy core remains
+**3793 passed, 1 failed, 288 ignored**, solely the same F-036b instrument at
+0.0214 vs [0.0320, 0.0550]; it is not a green full gate. No live GUI/MCP check
+was performed. Logs: `/tmp/rs_cam_n9_gates/`; current phase/decision status:
+`arch_consolidation_2026-09-09/STATUS.md`.
+
 ## Recent work (2026-09-07 → 08)
 
 ### Datum belongs to the setup — export now consumes it

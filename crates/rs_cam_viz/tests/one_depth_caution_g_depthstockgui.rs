@@ -50,9 +50,11 @@ use rs_cam_core::diagnostics::Diagnostic;
 use rs_cam_core::diagnostics::ids::GEOM_DEPTH_BEYOND_STOCK;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
-use rs_cam_viz::state::job::{ModelId, ModelKind, ModelUnits};
-use rs_cam_viz::state::toolpath::{OperationType, ToolpathEntry};
-use rs_cam_viz::ui::properties::{collect_diagnostics, depth_beyond_stock};
+use rs_cam_viz::state::job::{ModelKind, ModelUnits};
+use rs_cam_viz::state::runtime::GuiState;
+use rs_cam_viz::ui::properties::{
+    collect_diagnostics, depth_beyond_stock, toolpath_panel_snapshot,
+};
 
 const TOOL: usize = 1;
 const MODEL_2D: usize = 4;
@@ -148,7 +150,6 @@ fn session() -> ProjectSession {
 struct Case {
     name: &'static str,
     op: OperationConfig,
-    op_type: OperationType,
     model_id: usize,
     heights: HeightsConfig,
 }
@@ -172,35 +173,30 @@ fn cases() -> Vec<Case> {
         Case {
             name: "pocket 25 mm, heights auto — through the board",
             op: pocket(25.0),
-            op_type: OperationType::Pocket,
             model_id: MODEL_2D,
             heights: HeightsConfig::default(),
         },
         Case {
             name: "pocket 6 mm, heights auto — inside the board",
             op: pocket(6.0),
-            op_type: OperationType::Pocket,
             model_id: MODEL_2D,
             heights: HeightsConfig::default(),
         },
         Case {
             name: "pocket 6 mm, Bottom Z pinned 3 mm under the board",
             op: pocket(6.0),
-            op_type: OperationType::Pocket,
             model_id: MODEL_2D,
             heights: bottom_pinned,
         },
         Case {
             name: "pocket 15 mm, Top Z pinned 5 mm down — 2 mm through",
             op: pocket(15.0),
-            op_type: OperationType::Pocket,
             model_id: MODEL_2D,
             heights: top_pinned,
         },
         Case {
             name: "drop cutter — the mesh is the floor, the rule abstains",
             op: OperationConfig::DropCutter(Default::default()),
-            op_type: OperationType::DropCutter,
             model_id: MODEL_3D,
             heights: HeightsConfig::default(),
         },
@@ -218,28 +214,29 @@ fn read_case(case: &Case) -> (Option<String>, Vec<Diagnostic>) {
 
     let tc = &session.toolpath_configs()[idx];
     let height_ctx = session.height_context_for_toolpath(tc);
+    let snapshot = toolpath_panel_snapshot(tc.id, &session, &GuiState::default())
+        .expect("the toolpath resolves for the properties panel");
 
     // The Operations card row.
     let found = depth_beyond_stock(&tc.operation, &tc.heights, &height_ctx);
     let row = found.map(|f| f.message());
 
     // The Safety header.
-    let mut entry = ToolpathEntry::for_operation(
-        tc.id,
-        tc.name.clone(),
-        rs_cam_viz::state::job::ToolId(tc.tool_id),
-        ModelId(tc.model_id),
-        case.op_type,
-    );
-    entry.operation = tc.operation.clone();
-    entry.heights = tc.heights.clone();
     let tool = session
         .tools()
         .iter()
         .find(|t| t.id.0 == tc.tool_id)
         .cloned()
         .expect("the tool is in the session");
-    let header = collect_diagnostics(&entry, Some(&tool), &[], Some(&height_ctx), None);
+    let header = collect_diagnostics(
+        &snapshot.entry,
+        Some(&tool),
+        &[],
+        Some(&height_ctx),
+        &snapshot.preconditions,
+        &snapshot.model_refs,
+        None,
+    );
     (row, header)
 }
 

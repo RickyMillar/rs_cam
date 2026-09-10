@@ -2242,11 +2242,10 @@ pub fn profile_through_cut(
 /// The heights snapshot is [`diagnostics_heights`], built from the
 /// entry's own `HeightsConfig`. Since N4 (2026-09-10) the session
 /// route builds its snapshot with the same core constructor, so a
-/// pinned Top Z reaches both surfaces. One asymmetry remains and is
-/// deliberate: this function passes `preconditions: None` and
-/// `model_refs: None`, and the session route passes `Some(..)`. The
-/// sentry `crates/rs_cam_viz/tests/ribbon_and_mcp_diagnostic_ids_n4.rs`
-/// excludes that case rather than hiding it.
+/// pinned Top Z reaches both surfaces. The caller supplies the required
+/// precondition and model-reference contexts from the same owned panel
+/// snapshot as the editable entry, so these static checks cannot be omitted
+/// from this GUI path.
 ///
 /// Load-gate (chipload / power / deflection / drill) diagnostics are
 /// included when a `load_verdict` is supplied — they render in the
@@ -2256,6 +2255,8 @@ pub fn collect_diagnostics(
     tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,
     stale_defaults: &[rs_cam_core::compute::validate::StaleDefault],
     height_ctx: Option<&HeightContext>,
+    preconditions: &rs_cam_core::diagnostics::diagnose::PreconditionContext,
+    model_refs: &rs_cam_core::diagnostics::diagnose::ModelRefContext,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
 ) -> Vec<rs_cam_core::diagnostics::Diagnostic> {
     let Some(tool) = tool else {
@@ -2270,14 +2271,8 @@ pub fn collect_diagnostics(
         feeds_result: entry.feeds_result.as_ref(),
         load_verdict,
         stale_defaults,
-        // GUI panel runs against the in-flight entry without a session
-        // context; precondition checks are surfaced via the session
-        // `diagnose_toolpath_with_trace` path that the MCP layer reads.
-        preconditions: None,
-        // Same rationale for model-ref checks — the viz-side
-        // `validate_geometry_selection` already covers this case
-        // inline. MCP routes through `diagnose_toolpath_with_trace`.
-        model_refs: None,
+        preconditions: Some(preconditions),
+        model_refs: Some(model_refs),
         // A/M9: generation-time findings (standing material) ride on the
         // entry's own result. Passing `None` here was why the GUI's
         // diagnostics ribbon — the surface a router operator actually
