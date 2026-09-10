@@ -1,6 +1,7 @@
 //! Save a [`ProjectSession`] back to a TOML project file.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::instrument;
 
@@ -75,11 +76,36 @@ fn persist_model_path(project_dir: Option<&Path>, model_path: &Path) -> String {
     model_path.to_string_lossy().into_owned()
 }
 
+/// A process-wide counter that gives every save its own temp file name.
+///
+/// F1.24. The name used to be `.rs_cam_save_{pid}.tmp`, so two saves running
+/// at the same time in one process wrote ONE file: the first rename could
+/// publish the other save's bytes and report success, and the second rename
+/// then failed with `NotFound`. The counter gives every CALL a distinct
+/// name, and the process id keeps two processes apart. A timestamp would add
+/// nothing to that guarantee, and it would make a temp file left by a killed
+/// process permanent, because no later save could ever overwrite it.
+static SAVE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Build the temp file name for one save.
+///
+/// The name stays hidden, and [`ProjectSession::save`] keeps the file in the
+/// DESTINATION directory. An atomic rename cannot cross a filesystem
+/// boundary, which is why the temp file is not in the system temp directory.
+fn save_temp_file_name() -> String {
+    let pid = std::process::id();
+    let seq = SAVE_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!(".rs_cam_save_{pid}_{seq}.tmp")
+}
+
 impl ProjectSession {
     /// Save the current session state to a TOML project file.
     ///
     /// The file is written atomically: contents go to a temporary file in the
-    /// same directory, then renamed into place.
+    /// same directory, then renamed into place. The temp name is unique per
+    /// CALL — see `save_temp_file_name` — so two saves from one process
+    /// into one directory do not share it. A failed save removes its own
+    /// temp file.
     #[instrument(skip(self))]
     pub fn save(&self, path: &Path) -> Result<(), SessionError> {
         // G-MODELRELINK (F4.3): the destination directory decides how model
@@ -90,12 +116,21 @@ impl ProjectSession {
         let toml_string = toml::to_string_pretty(&project)
             .map_err(|e| SessionError::TomlSerialize(e.to_string()))?;
 
-        // Atomic write: temp file in the same directory, then rename.
+        // Atomic write: temp file in the same directory, then rename. The
+        // name is unique per call, so two saves from one process into one
+        // directory never share it (F1.24).
         let parent = path.parent().unwrap_or(Path::new("."));
-        let temp_path = parent.join(format!(".rs_cam_save_{}.tmp", std::process::id()));
+        let temp_path = parent.join(save_temp_file_name());
 
-        std::fs::write(&temp_path, &toml_string)?;
-        std::fs::rename(&temp_path, path)?;
+        if let Err(e) = std::fs::write(&temp_path, &toml_string) {
+            // A failed write can still leave a partial file behind.
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e.into());
+        }
+        if let Err(e) = std::fs::rename(&temp_path, path) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(e.into());
+        }
 
         Ok(())
     }
@@ -334,21 +369,29 @@ mod tests {
         }
     }
 
-    /// Per-test temp directory so concurrent saves don't race on the shared
-    /// `.rs_cam_save_{pid}.tmp` temp filename that `save()` uses.
+    /// ONE directory for the whole test module, and one file per test.
+    ///
+    /// These tests run in parallel threads of one process, and they all save
+    /// into this one directory. That is the case `save`'s per-call temp name
+    /// exists for (F1.24), so the helper exercises it instead of avoiding
+    /// it. Each test used to get a directory of its own, which was a
+    /// workaround for the shared `.rs_cam_save_{pid}.tmp` name.
     fn temp_path(name: &str) -> std::path::PathBuf {
+        let pid = std::process::id();
         let mut dir = std::env::temp_dir();
-        dir.push(format!("rs_cam_test_{}_{}", std::process::id(), name));
+        dir.push(format!("rs_cam_test_save_{pid}"));
         std::fs::create_dir_all(&dir).unwrap();
-        dir.push("project.toml");
+        dir.push(format!("{name}.toml"));
         dir
     }
 
+    /// Remove one project file.
+    ///
+    /// The shared directory stays. One test that removed it while another
+    /// test was between `create_dir_all` and `save` would break that test's
+    /// write.
     fn cleanup(path: &std::path::Path) {
         let _ = std::fs::remove_file(path);
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::remove_dir(dir);
-        }
     }
 
     #[test]
