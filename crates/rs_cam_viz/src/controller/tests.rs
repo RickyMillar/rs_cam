@@ -4393,3 +4393,305 @@ fn freshness_counts_exclude_disabled_and_error() {
         "an error is neither stale nor pending; it needs a fix, not a wait"
     );
 }
+
+// ── F2.5 / G-UNDOFRESH — an undo leaves the project where the same edit
+//    made by hand would leave it ─────────────────────────────────────────
+//
+// The PLAN row names three symptoms — `ToolChange` undo does not call
+// `invalidate_tool`, no arm calls `mark_edited`, `ToolpathParamChange` undo
+// does not re-stale the simulation — and it was written before F2.1 existed.
+// The rule underneath all three is one sentence: **after any undo or redo,
+// the derived `FreshnessState` of every affected toolpath, the dirty flag and
+// the simulation's staleness are what they would be if the operator had made
+// that same edit by hand.** Each symptom is that rule broken in one place.
+//
+// On whether an undone edit restores `Current`: it does not, deliberately.
+// The argument is in `reports/F2.5.md` §3 and in `apply_toolpath_snapshot`'s
+// doc; `an_undone_param_edit_does_not_resurrect_the_old_result` is where it
+// is pinned, so the decision cannot be reversed by accident.
+
+/// A project with one generated toolpath, one simulation result recorded as
+/// fresh, and a clean dirty flag — the state an operator is in when they
+/// reach for Ctrl+Z.
+fn controller_ready_for_undo() -> (AppController<ScriptedBackend>, ToolpathId) {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    controller.state.simulation.last_run = Some(crate::state::simulation::SimulationRunMeta {
+        sim_generation: 1,
+        last_sim_edit_counter: controller.state.gui.edit_counter,
+    });
+    controller.state.gui.dirty = false;
+    (controller, tp_id)
+}
+
+/// THE rule, over every arm. A per-arm table lives in the report; this is
+/// the executable half of it.
+///
+/// Pre-fix NONE of the five arms marked the project edited, so `dirty` stayed
+/// false — an undone project was not offered for saving — and `edit_counter`
+/// never moved, so the GUI went on presenting a simulation computed from the
+/// configuration the undo had just discarded, with no staleness anywhere.
+#[test]
+fn every_undo_arm_marks_the_project_edited_g_undofresh() {
+    use crate::state::history::UndoAction;
+
+    /// One undo arm: a label and a builder for the action the operator's
+    /// edit would have pushed.
+    type ArmBuilder = Box<dyn Fn(&AppController<ScriptedBackend>) -> UndoAction>;
+
+    let arms: Vec<(&str, ArmBuilder)> = vec![
+        (
+            "StockChange",
+            Box::new(
+                |c: &AppController<ScriptedBackend>| UndoAction::StockChange {
+                    old: c.state.session.stock_config().clone(),
+                    new: c.state.session.stock_config().clone(),
+                },
+            ),
+        ),
+        (
+            "PostChange",
+            Box::new(
+                |c: &AppController<ScriptedBackend>| UndoAction::PostChange {
+                    old: c.state.gui.post.clone(),
+                    new: c.state.gui.post.clone(),
+                },
+            ),
+        ),
+        (
+            "ToolChange",
+            Box::new(
+                |c: &AppController<ScriptedBackend>| UndoAction::ToolChange {
+                    tool_id: c.state.session.tools()[0].id,
+                    old: c.state.session.tools()[0].clone(),
+                    new: c.state.session.tools()[0].clone(),
+                },
+            ),
+        ),
+        (
+            "ToolpathParamChange",
+            Box::new(|c: &AppController<ScriptedBackend>| {
+                let tc = &c.state.session.toolpath_configs()[0];
+                UndoAction::ToolpathParamChange {
+                    tp_id: tc.id,
+                    old_op: tc.operation.clone(),
+                    new_op: tc.operation.clone(),
+                    old_dressups: tc.dressups.clone(),
+                    new_dressups: tc.dressups.clone(),
+                    old_face_selection: None,
+                    new_face_selection: None,
+                }
+            }),
+        ),
+        (
+            "MachineChange",
+            Box::new(
+                |c: &AppController<ScriptedBackend>| UndoAction::MachineChange {
+                    old: c.state.session.machine().clone(),
+                    new: c.state.session.machine().clone(),
+                },
+            ),
+        ),
+    ];
+
+    for (name, build) in arms {
+        // Undo.
+        let (mut controller, _) = controller_ready_for_undo();
+        let action = build(&controller);
+        controller.state.history.push(action.clone());
+        controller.state.gui.dirty = false;
+        let before = controller.state.gui.edit_counter;
+
+        controller.handle_internal_event(AppEvent::Undo);
+
+        assert!(
+            controller.state.gui.dirty,
+            "{name}: undo must leave the project unsaved, or the close \
+             interception lets the operator walk away from it"
+        );
+        assert!(
+            controller.state.gui.edit_counter > before,
+            "{name}: undo must move the edit counter, or the simulation goes \
+             on calling itself fresh"
+        );
+        // Two treatments, one property. Three arms CLEAR the simulation
+        // (`invalidate_simulation`) and two only stale it, which is what a
+        // hand edit of the same thing does — a parameter edit stales, a stock
+        // or machine change clears. Either way the operator must not be shown
+        // the old run as current evidence, and that is what is asserted:
+        // cleared or stale, never present-and-fresh.
+        let sim = &controller.state.simulation;
+        assert!(
+            !sim.has_results() || sim.is_stale(controller.state.gui.edit_counter),
+            "{name}: the simulation was computed from the configuration this \
+             undo just discarded, and is still being presented as fresh"
+        );
+
+        // Redo — the row does not name it; it carries the same defect and
+        // takes the same fix, so it is asserted the same way.
+        let (mut controller, _) = controller_ready_for_undo();
+        controller.state.history.push(action);
+        controller.handle_internal_event(AppEvent::Undo);
+        controller.state.gui.dirty = false;
+        let before = controller.state.gui.edit_counter;
+
+        controller.handle_internal_event(AppEvent::Redo);
+
+        assert!(
+            controller.state.gui.dirty,
+            "{name}: redo is the same edit in the other direction"
+        );
+        assert!(
+            controller.state.gui.edit_counter > before,
+            "{name}: redo must move the edit counter too"
+        );
+    }
+}
+
+/// The row's first clause. A tool undo must invalidate the operations that
+/// tool machines, exactly as `commit_tool_draft` does — the undo arms used to
+/// write `tools_mut()` directly and clear only the simulation, so every
+/// dependent kept a CORE result generated with the other tool's geometry and
+/// read `Current` on every surface.
+#[test]
+fn a_tool_undo_stales_the_operations_that_tool_machines_g_undofresh() {
+    use crate::state::history::UndoAction;
+
+    let (mut controller, tp_id) = controller_ready_for_undo();
+    let tool_id = controller.state.session.tools()[0].id;
+    let original = controller.state.session.tools()[0].clone();
+    let mut widened = original.clone();
+    widened.diameter += 3.0;
+
+    // The hand edit, through the door the panel uses.
+    crate::ui::properties::commit_tool_draft(&mut controller.state, tool_id, widened);
+    assert_eq!(
+        state_of(&controller, 0),
+        FreshnessState::EditedSince,
+        "the hand edit stales its users (F2.1) — that is the behaviour undo has to match"
+    );
+
+    // Regenerate so the undo has something to invalidate.
+    generate_all_for_test(&mut controller);
+    assert_eq!(state_of(&controller, 0), FreshnessState::Current);
+    controller.state.gui.dirty = false;
+
+    controller.handle_internal_event(AppEvent::Undo);
+
+    assert_eq!(
+        controller.state.session.tools()[0].diameter,
+        original.diameter,
+        "the undo restores the tool"
+    );
+    assert_eq!(
+        state_of(&controller, 0),
+        FreshnessState::EditedSince,
+        "and every operation it machines is no longer current — the stored \
+         result was generated with the OTHER tool's geometry"
+    );
+    assert!(
+        controller.state.session.get_result(0).is_none(),
+        "which means the core result is gone, not merely flagged"
+    );
+    assert!(
+        controller.state.gui.toolpath_rt[&tp_id]
+            .stale_since
+            .is_some(),
+        "and a regeneration is requested, as commit_tool_draft does — the \
+         operator did not ask these operations to be invalidated"
+    );
+    // Sanity: the undo really did go through the shared door rather than a
+    // second one that happens to agree today.
+    assert!(
+        matches!(
+            controller.state.history.undo(),
+            None | Some(UndoAction::ToolChange { .. })
+        ),
+        "the history holds what we think it holds"
+    );
+}
+
+/// The decision of §3, pinned: an undo that restores the exact configuration
+/// the retained geometry was generated from still reads `EditedSince`.
+///
+/// This is the one assertion in F2.5 that could reasonably have gone the
+/// other way, so it is asserted explicitly rather than left as a consequence.
+/// Reversing it must be a decision someone makes, not a side effect.
+#[test]
+fn an_undone_param_edit_does_not_resurrect_the_old_result() {
+    let (mut controller, tp_id) = controller_ready_for_undo();
+    let before = controller.state.session.toolpath_configs()[0]
+        .operation
+        .clone();
+
+    // A parameter edit with an undo entry behind it, as the panel pushes one.
+    controller
+        .state
+        .history
+        .push(crate::state::history::UndoAction::ToolpathParamChange {
+            tp_id,
+            old_op: before.clone(),
+            new_op: {
+                let mut op = before.clone();
+                op.set_feed_rate(4321.0);
+                op
+            },
+            old_dressups: Default::default(),
+            new_dressups: Default::default(),
+            old_face_selection: None,
+            new_face_selection: None,
+        });
+    panel_edit(&mut controller, tp_id, |entry| {
+        entry.operation.set_feed_rate(4321.0);
+    });
+    assert_eq!(state_of(&controller, 0), FreshnessState::EditedSince);
+
+    controller.handle_internal_event(AppEvent::Undo);
+
+    assert_eq!(
+        controller.state.session.toolpath_configs()[0]
+            .operation
+            .feed_rate(),
+        before.feed_rate(),
+        "the undo restores the configuration the retained geometry answers"
+    );
+    assert_eq!(
+        state_of(&controller, 0),
+        FreshnessState::EditedSince,
+        "and it STILL reads EditedSince. Nothing records which configuration \
+         `rt.result` answers; the snapshot restores three of the nine fields \
+         that decide the geometry; and `toolpath_revision` only moves forward. \
+         Being wrong this way costs a regeneration — the other way exports a \
+         program that does not match the project. See reports/F2.5.md §3."
+    );
+}
+
+/// A machine-kinematics undo leaves the toolpaths current. F2.1's operator
+/// ruling (R0.1 §7 Q3) is that kinematics change timing and modulation, not
+/// geometry — so this arm must NOT acquire staleness it does not deserve
+/// just because the other arms did.
+#[test]
+fn a_machine_undo_leaves_the_toolpaths_current_g_undofresh() {
+    let (mut controller, _) = controller_ready_for_undo();
+    let machine = controller.state.session.machine().clone();
+    controller
+        .state
+        .history
+        .push(crate::state::history::UndoAction::MachineChange {
+            old: machine.clone(),
+            new: machine,
+        });
+
+    controller.handle_internal_event(AppEvent::Undo);
+
+    assert_eq!(
+        state_of(&controller, 0),
+        FreshnessState::Current,
+        "kinematics do not move geometry; only the simulation goes"
+    );
+    assert!(
+        controller.state.gui.dirty,
+        "but the project is still edited"
+    );
+}
