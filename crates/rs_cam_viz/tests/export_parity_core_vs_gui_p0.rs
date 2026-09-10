@@ -1,11 +1,14 @@
 //! Phase 0 — "Core and GUI export agree on coolant, RPM, tools, and datums".
 //!
 //! Plan: `planning/arch_consolidation_2026-09-09/PLAN.md` lines 76-131.
-//! This file is a CHARACTERIZATION TEST. It changes no production code.
 //! Test A states the properties the two doors must agree on and then
-//! pins the whole byte string. Test B pins a divergence the plan calls
-//! wrong. Read Test B's own doc before you treat its assertion as
-//! desired behaviour.
+//! pins the whole byte string on a fixture whose coolant is `Off`
+//! everywhere. Test B measures coolant on its own fixture, because a
+//! coolant word appears only when an operation asks for one.
+//!
+//! Both tests state DESIRED behaviour. Test B pinned a divergence on
+//! 2026-09-11; the operator ruled P0-D1 (a) the same day, so the core
+//! door honours `ToolpathConfig::coolant` and Test B is an equality.
 //!
 //! # The two doors
 //!
@@ -121,6 +124,10 @@
 //!   flipped (0, 0, -12). The sample toolpath spans X 0..10 in its own
 //!   frame, so the identity phases emit X 20..30 and the flipped phase
 //!   emits X 0..10.
+//! - Coolant on the last toolpath. `build_state` takes the mode as its
+//!   one argument. Test A passes `Off`, so its byte string carries no
+//!   coolant word and coolant is one of the properties that byte string
+//!   holds equal. Test B passes `Flood` and reads the words directly.
 //!
 //! The fixture inserts every result LAST. A mutating method on
 //! `ProjectSession` drops cached results (G-FRESHSTATE), so a mutation
@@ -358,6 +365,19 @@ fn has_line(gcode: &str, word: &str) -> bool {
     gcode.lines().any(|line| line.trim() == word)
 }
 
+/// The zero-based index of the LAST line that is exactly `word`, or
+/// `None` when no line is. Test B orders the coolant words with this:
+/// the program opens a mode with `M8` and closes it with a later `M9`,
+/// so an `M9` that precedes the last `M8` leaves the mode open.
+fn last_line_index(gcode: &str, word: &str) -> Option<usize> {
+    gcode
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.trim() == word)
+        .map(|(index, _)| index)
+        .last()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Extents {
     x_min: f64,
@@ -440,6 +460,11 @@ fn phase_extents(gcode: &str, labels: &[&str], wanted: &str) -> Extents {
 /// The per-property block then compares each property between the two
 /// strings. It runs before the byte comparison, so a failure names the
 /// property instead of a diff offset.
+///
+/// Coolant is a fourth agreeing property since P0-D1 (2026-09-11). This
+/// fixture holds it at `Off`, so the byte string below carries no
+/// coolant word and states only that neither door invents one. Test B
+/// drives the property with `Flood`.
 #[test]
 fn core_and_gui_export_are_byte_identical_on_the_agreeing_properties() {
     let (session, gui, sim) = build_state(CoolantMode::Off);
@@ -522,70 +547,82 @@ fn core_and_gui_export_are_byte_identical_on_the_agreeing_properties() {
     );
 }
 
-// ── Test B — the pinned divergence ────────────────────────────────
+// ── Test B — coolant ──────────────────────────────────────────────
 
-/// The core door drops the operation's coolant setting. The GUI door
-/// honours it.
+/// The core door and the GUI door emit the same coolant words.
 ///
-/// CAUTION: this test PINS CURRENT BEHAVIOUR. It does not state desired
-/// behaviour. `ToolpathConfig::coolant`
+/// `ToolpathConfig::coolant`
 /// (`crates/rs_cam_core/src/session/mod.rs:769`) is a per-toolpath core
 /// field, and both project-file loaders persist it. The GUI door reads
-/// it (`io/export.rs:340`). The core door hardcodes `CoolantMode::Off`
-/// (`gcode/mod.rs:367`), so one project emits coolant through one door
-/// and not through the other.
+/// it (`io/export.rs:340`). The core door read it as `CoolantMode::Off`
+/// until P0-D1, so one project emitted coolant through one door and not
+/// through the other.
 ///
-/// The operator can make either of two rulings.
-///
-/// - Ruling (a): the core door honours `tc.coolant` at
-///   `gcode/mod.rs:367`. This test then inverts into an equality, and
-///   Test A absorbs coolant as a fourth agreeing property.
-/// - Ruling (b): the field is dead, because no GUI control writes it
-///   and MCP has no setter for it. The field and this test are then
-///   deleted together.
-///
-/// Which routes drop the setting today: the core door itself, and
-/// therefore `rs_cam_cli project --emit-gcode`
+/// This test pinned that divergence on 2026-09-11. The operator ruled
+/// P0-D1 (a) the same day: the core door honours `tc.coolant`
+/// (`gcode/mod.rs:367`). The routes that dropped the setting were the
+/// core door itself, and therefore `rs_cam_cli project --emit-gcode`
 /// (`crates/rs_cam_cli/src/project.rs:604`) and `rs_cam_cli run`
 /// (`crates/rs_cam_cli/src/run.rs:173`, through
 /// `ProjectSession::export_gcode_with_policy`). The CLI job-file route
-/// in this file's module doc keeps its own coolant and is a separate
-/// question.
+/// in this file's module doc always kept its own coolant and is a
+/// separate question.
 ///
 /// The fixture puts `Flood` on the LAST toolpath. The builder emits
 /// `M8` inside that phase's tool-change block and closes the program
 /// with a bare `M9` before the final retract, so both halves of the
 /// coolant contract are visible. The module doc says why `Mist` is the
 /// wrong probe on this post.
+///
+/// The non-vacuity block runs FIRST, on the GUI door, which honoured
+/// the field before and after the ruling. It shows that the fixture
+/// emits an `M8` and a LATER `M9`. Without it the core assertions could
+/// pass on a program that opens a mode it never closes.
 #[test]
-fn core_export_drops_the_operations_coolant_setting() {
+fn core_and_gui_export_agree_on_coolant() {
     let (session, gui, sim) = build_state(CoolantMode::Flood);
     let core = core_export(&session);
     let viz = gui_export(&session, &gui, &sim);
 
+    // ── Non-vacuity ──
     assert!(
         has_line(&viz, "M8"),
         "the GUI door must emit the flood-coolant start word M8 for an \
          operation whose coolant is Flood (io/export.rs:340)"
     );
     assert!(
-        has_line(&viz, "M9"),
-        "the GUI door must close an active coolant mode with M9 \
-         (program_builder.rs:199-201)"
+        last_line_index(&viz, "M9") > last_line_index(&viz, "M8"),
+        "the GUI door must close the coolant mode with an M9 that \
+         follows the last M8 (program_builder.rs:199-201). Last M8 line \
+         {:?}, last M9 line {:?}.",
+        last_line_index(&viz, "M8"),
+        last_line_index(&viz, "M9")
     );
 
+    // ── The core door ──
     assert!(
-        !has_line(&core, "M8"),
-        "PINNED DIVERGENCE: the core door hardcodes CoolantMode::Off \
-         (gcode/mod.rs:367), so it emits no M8 today. If this line \
-         fails, the core door now honours tc.coolant — that is ruling \
-         (a) in this test's doc. Invert this test and move coolant into \
-         Test A."
+        has_line(&core, "M8"),
+        "P0-D1 ruling (a): the core door must emit the flood-coolant \
+         start word M8 for an operation whose coolant is Flood. The GUI \
+         door emits it on this same fixture. A core door that reads \
+         CoolantMode::Off instead of tc.coolant (gcode/mod.rs:367) \
+         emits none."
     );
     assert!(
-        !has_line(&core, "M9"),
-        "PINNED DIVERGENCE: with the coolant dropped the core door \
-         opens no coolant mode, so it emits no closing M9 today. See \
-         the M8 assertion above."
+        last_line_index(&core, "M9") > last_line_index(&core, "M8"),
+        "P0-D1 ruling (a): the core door must close the coolant mode \
+         with an M9 that follows the last M8. Last M8 line {:?}, last \
+         M9 line {:?}.",
+        last_line_index(&core, "M8"),
+        last_line_index(&core, "M9")
+    );
+
+    // ── Bytes ──
+    assert_eq!(
+        core, viz,
+        "The two export doors disagree byte for byte on a fixture whose \
+         last operation asks for flood coolant. Both doors emit the \
+         coolant words above, so the coolant field itself is NOT the \
+         cause. Test A states what the remaining properties are."
     );
 }
