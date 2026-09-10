@@ -113,6 +113,23 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(mesh_bbox) = stock_bbox_update {
             self.state.session.stock_mut().update_from_bbox(&mesh_bbox);
         }
+
+        // G-RESCALESTALE (F4.7): the same sweep `reload_model` and
+        // `relink_model` run, for the same reason. A rescale moves every
+        // polygon by the unit scale — 25.4x from millimetres to inches — so
+        // every cached result answers the PREVIOUS size. This door ran no
+        // sweep at all, so the cards stayed green and export emitted those
+        // paths. The `ModelKind::Step` arm returns above, before the
+        // import, so a door that moved nothing still invalidates nothing.
+        let affected = self.state.session.invalidate_model(model_id.0);
+        let now = Instant::now();
+        for index in affected {
+            if let Some(tc) = self.state.session.get_toolpath_config(index) {
+                let id = tc.id;
+                self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
+            }
+        }
+
         self.pending_upload = true;
         self.state.gui.mark_edited();
         Ok(bbox)
