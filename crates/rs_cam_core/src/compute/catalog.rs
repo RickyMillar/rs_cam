@@ -1950,8 +1950,26 @@ const SPIRAL_FINISH_PARAMS: &[ParamDef] = &[
 ];
 
 const RADIAL_FINISH_PARAMS: &[ParamDef] = &[
-    ParamDef::required("angular_step", "f64"),
-    ParamDef::required("point_spacing", "f64"),
+    ParamDef::required_ranged(
+        "angular_step",
+        "f64",
+        ParamRange::greater_than(0.0),
+        "Angle (degrees) between two spokes. Must be strictly positive \
+         and finite: `radial_finish` computes the spoke count as \
+         `360.0 / angular_step`, so a zero gives `inf` and casts to \
+         `usize::MAX` spokes, and a negative value casts to zero spokes \
+         and emits nothing (N10).",
+    ),
+    ParamDef::required_ranged(
+        "point_spacing",
+        "f64",
+        ParamRange::greater_than(0.0),
+        "Distance (mm) between two sample points along one spoke. Must \
+         be strictly positive and finite: `radial_finish` computes the \
+         point count as `max_radius / point_spacing`, so a zero \
+         overflows the point allocation and a negative value leaves one \
+         point per spoke and emits nothing (N10).",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("stock_to_leave", "f64"),

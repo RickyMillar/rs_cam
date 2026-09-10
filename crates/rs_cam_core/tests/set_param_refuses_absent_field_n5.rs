@@ -46,16 +46,18 @@
 //!
 //! ## Why assertion 5 asserts wiring and not a refusal
 //!
-//! The registry declares a `ParamRange` on four param defs only
+//! The registry declares a `ParamRange` on six param defs only
 //! (`peck_depth` on the two drill families, `chain_distance_mm` on
-//! ProjectCurve). No named param declares a range on any operation, so
-//! the population an out-of-range assertion draws from is EMPTY, and a
-//! gate handed an empty population passes and looks healthy. The
-//! helper's own refusal behaviour is covered by
+//! ProjectCurve, and — since N10, 2026-09-11 — `angular_step` and
+//! `point_spacing` on RadialFinish). No named param declares a range on
+//! any operation, so the population an out-of-range assertion draws from
+//! is EMPTY, and a gate handed an empty population passes and looks
+//! healthy. The helper's own refusal behaviour is covered by
 //! `set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse`
-//! in `session::compute`'s unit tests, which drives it through the
-//! generic arm. This test asserts only that the five arms call the same
-//! helper, so the two routes cannot drift apart.
+//! in `session::compute`'s unit tests, and by
+//! `radial_finish_ranges_n10.rs`; both drive it through the generic
+//! arm. This test asserts only that the five arms call the same helper,
+//! so the two routes cannot drift apart.
 
 #![allow(
     clippy::unwrap_used,

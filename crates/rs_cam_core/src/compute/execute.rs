@@ -3033,6 +3033,28 @@ pub(crate) fn generate_radial_finish(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, RadialFinish, "generate_radial_finish");
+    // N10: the registry gate in `set_toolpath_param` guards the MCP and
+    // CLI route only. A project file and the GUI inspector write the
+    // config directly, so the generator reads the SAME declared domain
+    // and refuses here. `ParamRange::accepts` also rejects a non-finite
+    // value, which a bare `<= 0.0` comparison lets through.
+    let op_type = OperationType::RadialFinish;
+    for (name, value) in [
+        ("angular_step", cfg.angular_step),
+        ("point_spacing", cfg.point_spacing),
+    ] {
+        let Some(range) = OperationConfig::param_range_for_type(op_type, name) else {
+            continue;
+        };
+        if !range.accepts(value) {
+            return Err(OperationError::Other(format!(
+                "Radial Finish '{name}' = {value} is outside the accepted range ({}). \
+                 The generator divides by this dial, so a value outside the range \
+                 emits nothing or runs without end. Set a value inside the range.",
+                range.describe()
+            )));
+        }
+    }
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "RadialFinish")?;
     let params = crate::radial_finish::RadialFinishParams {
