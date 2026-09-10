@@ -664,7 +664,9 @@ pub fn build_drill_op_for_config(
             // Both frame corrections `generate_alignment_pin_drill` applies,
             // applied identically here — this view has to name the holes
             // that toolpath drills, not the raw config numbers.
-            let hole_xys = pin_holes_in_emission_frame(cfg, stock_bbox, setup_transform);
+            let pin_holes =
+                pin_holes_in_emission_frame(cfg, stock_bbox, setup_transform, drill_targets);
+            let hole_xys = pin_holes.ok()?;
             if hole_xys.is_empty() {
                 return None;
             }
@@ -920,11 +922,19 @@ fn pick_to_emission_frame(
 /// - `cfg.selected_holes` are picks in the WORLD frame and take the setup
 ///   transform instead, never the stock-relative translation
 ///   (G-DRILLPICK-FRAME). Applying both would move them twice.
+///
+/// The picks are also re-resolved against the model's current targets, and
+/// this function refuses when one names none of them — the same
+/// G-DRILLPICKSTALE contract [`drill_holes_for_config`] carries, through the
+/// same two shared functions, because the two families store the identical
+/// frozen coordinate. `cfg.holes` is a stock snapshot and is untouched by
+/// that check.
 fn pin_holes_in_emission_frame(
     cfg: &crate::compute::operation_configs::AlignmentPinDrillConfig,
     stock_bbox: &BoundingBox3,
     setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
-) -> Vec<[f64; 2]> {
+    drill_targets: &[DrillTarget],
+) -> Result<Vec<[f64; 2]>, OperationError> {
     let stock_origin = stock_bbox.min;
     let mut holes: Vec<[f64; 2]> = cfg
         .holes
@@ -932,13 +942,17 @@ fn pin_holes_in_emission_frame(
         .map(|h| [h[0] + stock_origin.x, h[1] + stock_origin.y])
         .collect();
     if let Some(selected) = &cfg.selected_holes {
+        if let Some(msg) = stale_drill_picks_refusal(selected, drill_targets) {
+            return Err(OperationError::MissingGeometry(msg));
+        }
+        let resolved = resolve_drill_picks(selected, drill_targets);
         holes.extend(
-            selected
-                .iter()
-                .map(|&xy| pick_to_emission_frame(xy, setup_transform)),
+            resolved
+                .into_iter()
+                .map(|xy| pick_to_emission_frame(xy, setup_transform)),
         );
     }
-    holes
+    Ok(holes)
 }
 
 /// The refusal a `Drill` op gives when the model exposes no
@@ -970,6 +984,111 @@ pub fn drill_targets_refusal(
     }
 }
 
+/// The distance at which a stored pick and a [`DrillTarget`] are the same
+/// point.
+///
+/// This is NOT a new tolerance. The GUI picker already compared picks to each
+/// other at this value in two places — the panel's `TARGET_EPS` and the
+/// viewport toggle's `EPS` — because a pick IS a copy of a target's `(x, y)`
+/// and the two therefore agree bit-for-bit. Both sites now read this
+/// constant, so the picker, the toggle and the generator cannot drift.
+pub const DRILL_PICK_MATCH_EPS_MM: f64 = 1e-6;
+
+/// Does `pick` name `target`?
+pub fn drill_pick_matches(pick: [f64; 2], target: &DrillTarget) -> bool {
+    (pick[0] - target.x).abs() < DRILL_PICK_MATCH_EPS_MM
+        && (pick[1] - target.y).abs() < DRILL_PICK_MATCH_EPS_MM
+}
+
+/// The phrase every stale-pick refusal carries, so the operator can tell a
+/// stale pick from the two refusals [`drill_targets_refusal`] already gives.
+pub const STALE_DRILL_PICKS_PHRASE: &str = "no longer";
+
+/// Refuse when a stored pick names no target on the model (G-DRILLPICKSTALE,
+/// F4.8). `None` means every pick resolves, or that there is nothing to
+/// resolve against.
+///
+/// # Why a pick can go stale
+///
+/// A pick is stored as a raw XY COORDINATE, not as a reference into the
+/// model's targets — [`DrillTarget`] carries no id, and an index is worse
+/// than a coordinate because deleting one hole shifts every later index and
+/// would drill the wrong hole silently. So the coordinate IS the only
+/// identity a pick has. F4.4 (G-RELOADTARGETS) made every GUI refresh door
+/// replace `LoadedModel::drill_targets`, so the record follows the file and
+/// the picks do not. An operator who moves a hole in CAD and reloads used to
+/// get the previous version's position, with nothing said.
+///
+/// # Why an empty target list is exempt
+///
+/// An empty list means two different things at this seam, and this function
+/// cannot tell them apart:
+///
+/// - the model exposes no targets, or
+/// - the CALLER resolved no model — [`execute_operation_annotated`] passes
+///   `&[]` deliberately, and states that a `Drill` op on that path drills
+///   only what it carries in `selected_holes`.
+///
+/// With no target to compare against there is no evidence either way, so the
+/// picks stand. The residual that leaves — the operator DELETES every hole
+/// from the drawing, so the list goes empty and the stale picks stand — needs
+/// a "was a model resolved" signal this seam does not carry. It is recorded
+/// in `planning/ui_fix_2026-09-09/reports/F4.8.md`.
+///
+/// # Why the message says Clear, and not "re-pick"
+///
+/// The viewport draws one marker per model TARGET and colours it by whether
+/// a pick names it (`app/gpu_upload.rs`, the drill-marker loop). A pick that
+/// names no target is drawn nowhere, so the operator cannot see it and a
+/// click cannot toggle it off — `AppEvent::ToggleDrillTarget` fires from a
+/// target. Picking the moved hole ADDS it and leaves the stale coordinate in
+/// the vector, so the op would refuse again. Clear is the only instruction
+/// that works.
+pub fn stale_drill_picks_refusal(
+    picks: &[[f64; 2]],
+    drill_targets: &[DrillTarget],
+) -> Option<String> {
+    if drill_targets.is_empty() {
+        return None;
+    }
+    let mut stale = 0_usize;
+    for &pick in picks {
+        if !drill_targets.iter().any(|t| drill_pick_matches(pick, t)) {
+            stale += 1;
+        }
+    }
+    if stale == 0 {
+        return None;
+    }
+    let total = picks.len();
+    Some(format!(
+        "Picked drill holes {STALE_DRILL_PICKS_PHRASE} match this model: \
+         {stale} of {total} picks name no drill target. The drawing changed \
+         after the pick. The viewport draws a marker only at a target, so a \
+         stale pick is not on screen and a click cannot remove it. Press \
+         Clear, then pick the holes again."
+    ))
+}
+
+/// Move each pick onto the target it names. The result is still in the
+/// model frame; both callers map it through [`pick_to_emission_frame`].
+///
+/// Resolving THROUGH the target makes the model the source of truth: a pick
+/// that still names a target follows that target. Every pick reaching here
+/// has already cleared [`stale_drill_picks_refusal`], so the fallback arm
+/// (keep the pick) is the no-targets case that function exempts.
+fn resolve_drill_picks(picks: &[[f64; 2]], drill_targets: &[DrillTarget]) -> Vec<[f64; 2]> {
+    picks
+        .iter()
+        .map(|&pick| {
+            drill_targets
+                .iter()
+                .find(|t| drill_pick_matches(pick, t))
+                .map_or(pick, |t| [t.x, t.y])
+        })
+        .collect()
+}
+
 /// Resolve the drill hole positions for a [`DrillConfig`].
 ///
 /// A hole position comes from a [`DrillTarget`] — a DXF `POINT` entity or a
@@ -996,6 +1115,10 @@ pub fn drill_targets_refusal(
 /// Picks and targets share one frame — the viz picker copies a target's
 /// `(x, y)` straight into `selected_holes` — so both take `setup_transform`
 /// (G-DRILLPICK-FRAME — see [`pick_to_emission_frame`]).
+///
+/// A pick is re-resolved against the model's CURRENT targets and the op
+/// refuses when one names none of them (G-DRILLPICKSTALE — see
+/// [`stale_drill_picks_refusal`]).
 fn drill_holes_for_config(
     cfg: &crate::compute::operation_configs::DrillConfig,
     drill_targets: &[DrillTarget],
@@ -1005,9 +1128,13 @@ fn drill_holes_for_config(
         return Err(OperationError::MissingGeometry(msg.to_owned()));
     }
     if let Some(selected) = &cfg.selected_holes {
-        return Ok(selected
-            .iter()
-            .map(|&xy| pick_to_emission_frame(xy, setup_transform))
+        if let Some(msg) = stale_drill_picks_refusal(selected, drill_targets) {
+            return Err(OperationError::MissingGeometry(msg));
+        }
+        let resolved = resolve_drill_picks(selected, drill_targets);
+        return Ok(resolved
+            .into_iter()
+            .map(|xy| pick_to_emission_frame(xy, setup_transform))
             .collect());
     }
     Ok(drill_targets
@@ -1070,7 +1197,8 @@ pub(crate) fn generate_alignment_pin_drill(
     // the op drills. See `pin_holes_in_emission_frame` for both frames and
     // why neither correction may be applied to the other's holes
     // (G-PINDRILL-FRAME, G-DRILLPICK-FRAME).
-    let holes = pin_holes_in_emission_frame(cfg, ctx.stock_bbox, ctx.setup_transform);
+    let targets = ctx.drill_targets;
+    let holes = pin_holes_in_emission_frame(cfg, ctx.stock_bbox, ctx.setup_transform, targets)?;
     if holes.is_empty() {
         return Err(OperationError::MissingGeometry(
             "No alignment pin positions defined".to_owned(),
@@ -4489,12 +4617,38 @@ mod tests {
             "got {err:?}"
         );
 
-        // Some(picks) => drill exactly the picks, ignoring the targets.
+        // Some(picks) => drill exactly the picks.
+        //
+        // This arm read `selected_holes: Some(vec![[3.0, 4.0]])` — a
+        // coordinate naming NEITHER target — and asserted the op drilled it
+        // "ignoring the targets". That is the G-DRILLPICKSTALE defect stated
+        // as a contract: a pick is a copy of a target's own `(x, y)`, so a
+        // pick that names no target is a pick whose target moved or was
+        // deleted. The pick here now names a real target, which is what the
+        // picker can produce; the stale case is the refusal below.
         let picked = DrillConfig {
-            selected_holes: Some(vec![[3.0, 4.0]]),
+            selected_holes: Some(vec![[7.0, 8.0]]),
             ..DrillConfig::default()
         };
         let holes = drill_holes_for_config(&picked, &targets, None).unwrap();
+        assert_eq!(holes, vec![[7.0, 8.0]]);
+
+        // Some(picks) naming no target => refusal, never the frozen
+        // coordinate (G-DRILLPICKSTALE, F4.8).
+        let stale = DrillConfig {
+            selected_holes: Some(vec![[3.0, 4.0]]),
+            ..DrillConfig::default()
+        };
+        let err = drill_holes_for_config(&stale, &targets, None).unwrap_err();
+        let OperationError::MissingGeometry(msg) = &err else {
+            panic!("expected MissingGeometry, got {err:?}");
+        };
+        assert!(msg.contains(STALE_DRILL_PICKS_PHRASE), "got {msg:?}");
+
+        // The same pick with NO targets to compare against still drills:
+        // an empty list also means "the caller resolved no model", which is
+        // what `execute_operation_annotated` passes.
+        let holes = drill_holes_for_config(&stale, &[], None).unwrap();
         assert_eq!(holes, vec![[3.0, 4.0]]);
 
         // Some(empty) => explicit "nothing selected" error, not all targets.

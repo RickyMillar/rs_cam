@@ -210,8 +210,11 @@ impl<B: ComputeBackend> AppController<B> {
                         _ => None,
                     };
                     let mut holes = current.unwrap_or_default();
-                    // Toggle membership with a tolerance (no float == on picks).
-                    const EPS: f64 = 1e-6;
+                    // Toggle membership with a tolerance (no float == on
+                    // picks). The core constant, not a local copy: the
+                    // generator resolves a pick against the model's targets
+                    // at this same distance (G-DRILLPICKSTALE).
+                    const EPS: f64 = rs_cam_core::compute::execute::DRILL_PICK_MATCH_EPS_MM;
                     if let Some(pos) = holes
                         .iter()
                         .position(|h| (h[0] - xy[0]).abs() < EPS && (h[1] - xy[1]).abs() < EPS)
