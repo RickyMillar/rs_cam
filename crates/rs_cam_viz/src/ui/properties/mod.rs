@@ -8,8 +8,8 @@ pub mod tool;
 
 pub use operations::{
     DEPTH_BEYOND_STOCK_ID, DepthBeyondStock, ThroughCut, ToolpathValidationContext,
-    collect_diagnostics, depth_beyond_stock, profile_through_cut, profile_through_cut_line,
-    validate_toolpath, validate_toolpath_config,
+    bottom_z_pin_note, collect_diagnostics, depth_beyond_stock, profile_through_cut,
+    profile_through_cut_line, validate_toolpath, validate_toolpath_config,
 };
 use operations::{
     StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
@@ -5161,7 +5161,11 @@ fn draw_toolpath_panel(
         ToolpathTab::Heights => {
             let fallback_ctx = HeightContext::simple(10.0, 5.0);
             let ctx = height_ctx.unwrap_or(&fallback_ctx);
-            draw_heights_params(ui, &mut entry.heights, ctx);
+            // F1.19 / G-BOTTOMPIN: the Bottom row is annotated per operation,
+            // so the panel needs the operation. Read before the mutable
+            // borrow of `entry.heights`; `OperationType` is `Copy`.
+            let op_type = entry.operation.op_type();
+            draw_heights_params(ui, &mut entry.heights, ctx, op_type);
             ui.add_space(6.0);
             draw_height_diagram(ui, &mut entry.heights, ctx);
         }

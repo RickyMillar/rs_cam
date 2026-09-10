@@ -27,8 +27,8 @@ use rs_cam_core::compute::catalog::DepthSemantics;
 use crate::state::job::ToolType;
 use crate::state::rest_dependency::{RestCandidate, rest_predecessors};
 use crate::state::toolpath::{
-    HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig, PocketPattern,
-    ProfileConfig, ReferenceOffset, ToolpathEntry, ToolpathId,
+    HeightContext, HeightMode, HeightReference, HeightsConfig, OperationConfig, OperationType,
+    PocketPattern, ProfileConfig, ReferenceOffset, ToolpathEntry, ToolpathId,
 };
 
 // Feed / plunge editing moved off the per-op Geometry panel into the
@@ -186,10 +186,75 @@ fn find_nearest_reference(z: f64, ctx: &HeightContext) -> HeightReference {
     best
 }
 
+/// F1.19 / G-BOTTOMPIN: the sentence the Heights tab prints beside the Bottom
+/// row when the operation does not read a pinned Bottom Z.
+///
+/// `None` means the pin DOES drive the cut, so the row is offered plain.
+/// `Some(note)` names the dial that really sets the floor.
+///
+/// The core half measured the fact and declared it as
+/// [`rs_cam_core::compute::catalog::OperationType::honors_pinned_bottom_z`]:
+/// three of the twenty-four operations read `heights.bottom_z`, and on the
+/// other twenty-one a pinned bottom reaches no emitted motion. This match
+/// carries its own arm per operation because each family names a DIFFERENT
+/// dial, and the sentry
+/// (`crates/rs_cam_viz/tests/bottom_z_pin_note_g_bottompin.rs`) ties the two
+/// enumerations together so they cannot drift.
+///
+/// The panel ANNOTATES rather than disables. A disabled row cannot be set
+/// back to Auto, and a legacy project can carry a pin that puts the resolved
+/// bottom above the top — which the Heights badge and the core
+/// `geom.bottom_above_top_z` check both report. The operator must keep the
+/// one control that clears it.
+pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
+    use crate::state::toolpath::OperationType as Op;
+
+    const DEPTH: &str = "Not used by this operation. Its Depth field sets the floor.";
+    const MAX_DEPTH: &str = "Not used by this operation. Its Max Depth sets the floor.";
+    const POCKET_DEPTH: &str = "Not used by this operation. Its Pocket Depth sets the floor.";
+    const WIDTH: &str = "Not used by this operation. Its Chamfer Width sets the floor.";
+    const PIN_DRILL: &str = "Not used by this operation. Its Depth and Spoilboard set the floor.";
+    const CURVE: &str = "Not used by this operation. The projected surface sets the floor.";
+    const SURFACE: &str = "Not used by this operation. The model surface sets the floor.";
+
+    // One arm per operation. The `match` is exhaustive, so a new operation
+    // cannot be added to the catalog without an answer here, and the sentry
+    // ties every answer to `honors_pinned_bottom_z()`.
+    match op_type {
+        // The three that read `heights.bottom_z`. No note.
+        Op::Adaptive3d | Op::UnifiedFinish | Op::Waterline => None,
+        Op::Face => Some(DEPTH),
+        Op::Pocket => Some(DEPTH),
+        Op::Profile => Some(DEPTH),
+        Op::Adaptive => Some(DEPTH),
+        Op::Rest => Some(DEPTH),
+        Op::Zigzag => Some(DEPTH),
+        Op::Trace => Some(DEPTH),
+        Op::Drill => Some(DEPTH),
+        Op::VCarve => Some(MAX_DEPTH),
+        Op::Inlay => Some(POCKET_DEPTH),
+        Op::Chamfer => Some(WIDTH),
+        Op::AlignmentPinDrill => Some(PIN_DRILL),
+        Op::ProjectCurve => Some(CURVE),
+        Op::DropCutter => Some(SURFACE),
+        Op::Scallop => Some(SURFACE),
+        Op::Pencil => Some(SURFACE),
+        Op::HorizontalFinish => Some(SURFACE),
+        Op::SteepShallow => Some(SURFACE),
+        Op::RampFinish => Some(SURFACE),
+        Op::SpiralFinish => Some(SURFACE),
+        Op::RadialFinish => Some(SURFACE),
+    }
+}
+
+/// The Bottom row tooltip for an operation that DOES read the pin.
+const BOTTOM_Z_TOOLTIP: &str = "Deepest cut depth. The tool stops at this Z.";
+
 pub(super) fn draw_heights_params(
     ui: &mut egui::Ui,
     heights: &mut HeightsConfig,
     ctx: &HeightContext,
+    op_type: OperationType,
 ) {
     // What an `Auto` row shows is the value the CORE resolver produces for
     // THIS config — not a second set of defaults maintained here. The panel
@@ -199,6 +264,16 @@ pub(super) fn draw_heights_params(
     // rather than a visible disagreement. Rows other than `Auto` ignore this
     // value and display their own stored offset / absolute Z.
     let auto = heights.resolve(ctx);
+
+    // F1.19 / G-BOTTOMPIN: the Bottom row's own tooltip used to say that
+    // pinning the row overrides the operation's floor. That is true on three
+    // operations and false on twenty-one. The note replaces the claim on the
+    // twenty-one and names the dial that does set the floor.
+    let pin_note = bottom_z_pin_note(op_type);
+    let bottom_tooltip = match pin_note {
+        Some(note) => format!("{note} The row still shows the stored value."),
+        None => BOTTOM_Z_TOOLTIP.to_owned(),
+    };
 
     egui::Grid::new("heights_p")
         .num_columns(4)
@@ -247,9 +322,7 @@ pub(super) fn draw_heights_params(
             draw_height_row(
                 ui,
                 "Bottom:",
-                "Deepest cut depth. The tool will not cut below this Z. Left on \
-                 auto, the operation decides its own floor — 3D operations drive \
-                 it from the model, and pinning this row overrides that.",
+                &bottom_tooltip,
                 &mut heights.bottom_z,
                 HeightReference::StockTop,
                 auto.bottom_z,
@@ -257,6 +330,19 @@ pub(super) fn draw_heights_params(
                 "h_bottom",
             );
         });
+
+    // F1.19 / G-BOTTOMPIN: the note is drawn, not hidden behind a hover. The
+    // row above stays editable, so an operator can still read a stored pin
+    // and set it back to auto.
+    if let Some(note) = pin_note {
+        ui.add_space(2.0);
+        ui.label(
+            egui::RichText::new(format!("Bottom: {note}"))
+                .small()
+                .italics()
+                .color(egui::Color32::from_rgb(150, 150, 170)),
+        );
+    }
 }
 
 // ── Stepover Pattern Diagram ─────────────────────────────────────────────
