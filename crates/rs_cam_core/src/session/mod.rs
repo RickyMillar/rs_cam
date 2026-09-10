@@ -317,6 +317,60 @@ impl LoadedModel {
         }
     }
 
+    /// Adopt the geometry a fresh import produced, keeping this record's
+    /// identity.
+    ///
+    /// **KEPT**: `id`, `name`, `units`. Every `ToolpathConfig::model_id`
+    /// names the id, so the operations built on this model survive the
+    /// refresh. The name is the operator's label, not the file's. The
+    /// declared units describe the operator's source rather than the bytes
+    /// on disk — and `io::load_model_file` reports `Millimeters` for a STEP
+    /// file whatever the record declares, so a door that CHANGES the units
+    /// sets them itself, after this call.
+    ///
+    /// **REPLACED**: every field the file content determines — `mesh`,
+    /// `polygons`, `enriched_mesh`, `drill_targets`, `layers`,
+    /// `winding_report`, `load_error` — plus `path` and `kind`, which name
+    /// the file the geometry came from. A reload and a rescale re-import the
+    /// path and kind they were given, so those two do not move there; a
+    /// relink points the record at a different file, and they do.
+    ///
+    /// G-RELOADTARGETS (F4.4). Three GUI doors refresh a model record in
+    /// place — rescale, reload and relink — and each hand-copied its own
+    /// subset of these fields. Two of the three left `drill_targets` and
+    /// `layers` behind, so the previous import's targets survived beside the
+    /// new polygons. A drill operation reads the record at generation time,
+    /// so a reloaded drawing drilled the previous version's holes.
+    ///
+    /// The destructuring is the guard. Add a field to `LoadedModel` and this
+    /// function stops compiling until someone decides which side of the
+    /// split it belongs on. Three hand-written copies could not offer that.
+    pub fn adopt_geometry(&mut self, fresh: Self) {
+        let Self {
+            mesh,
+            polygons,
+            drill_targets,
+            layers,
+            path,
+            kind,
+            enriched_mesh,
+            winding_report,
+            load_error,
+            id: _,
+            name: _,
+            units: _,
+        } = fresh;
+        self.mesh = mesh;
+        self.polygons = polygons;
+        self.drill_targets = drill_targets;
+        self.layers = layers;
+        self.path = path;
+        self.kind = kind;
+        self.enriched_mesh = enriched_mesh;
+        self.winding_report = winding_report;
+        self.load_error = load_error;
+    }
+
     /// Compute the bounding box of the model's geometry.
     ///
     /// For mesh models, returns the stored mesh bbox. For 2D polygon models,
