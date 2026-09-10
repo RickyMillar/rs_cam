@@ -30,8 +30,9 @@
 )]
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -79,29 +80,31 @@ fn fixtures_dir() -> PathBuf {
         .join("fixtures")
 }
 
-/// A project path in a directory of its own.
+/// Keeps the project FILE names apart inside the shared directory.
+static PROJECT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// A project path. Every test in this binary shares ONE directory.
 ///
-/// Not just a unique FILE name: `ProjectSession::save` writes its atomic
-/// temp file as `.rs_cam_save_<pid>.tmp` in the project's parent
-/// directory, so two saves from the same process into the same directory
-/// race and one of them loses the rename. These tests run in parallel in
-/// one process, so each gets its own directory.
+/// These tests run in parallel in one process and they all save into that
+/// directory. `ProjectSession::save` gives every call its own temp file
+/// (F1.24), so the saves do not collide. This helper used to give each
+/// test a directory of its own, which was a workaround for the shared
+/// `.rs_cam_save_<pid>.tmp` temp name. The counter keeps the FILE names
+/// apart, which is a separate need and stays.
 fn temp_project_path(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock before epoch")
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("rs_cam_{name}_{nanos}"));
+    let pid = std::process::id();
+    let seq = PROJECT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("rs_cam_loadregen_{pid}"));
     std::fs::create_dir_all(&dir).expect("create the project directory");
-    dir.join("job.toml")
+    dir.join(format!("{name}_{seq}.toml"))
 }
 
-/// Remove the project and the directory made for it.
+/// Remove one project file.
+///
+/// The shared directory stays. One test that removed it while another test
+/// was between `create_dir_all` and `save` would break that test's write.
 fn clean_up(path: &std::path::Path) {
     std::fs::remove_file(path).ok();
-    if let Some(dir) = path.parent() {
-        std::fs::remove_dir(dir).ok();
-    }
 }
 
 fn toolpath(id: usize, name: &str, model_id: usize, operation: OperationConfig) -> ToolpathConfig {
