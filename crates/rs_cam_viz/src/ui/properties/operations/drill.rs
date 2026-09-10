@@ -1,4 +1,5 @@
 use super::super::pills::PillSuggestions;
+use rs_cam_core::compute::execute::stale_drill_picks_refusal;
 use rs_cam_core::dxf_input::{DrillTarget, DrillTargetKind};
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
@@ -7,7 +8,12 @@ use super::super::{depth_caution_row, dv, dv_pill};
 use super::DepthBeyondStock;
 
 /// Match tolerance for comparing a picked hole to a target position (mm).
-const TARGET_EPS: f64 = 1e-6;
+///
+/// The core constant, not a local copy: the generator resolves a pick
+/// against the model's targets at this same distance (G-DRILLPICKSTALE), so
+/// a hole this panel calls "already picked" is a hole the generator will
+/// resolve.
+const TARGET_EPS: f64 = rs_cam_core::compute::execute::DRILL_PICK_MATCH_EPS_MM;
 
 fn xy_in(holes: &[[f64; 2]], xy: [f64; 2]) -> bool {
     holes
@@ -63,6 +69,16 @@ fn draw_drill_target_selector(
         ),
         Some(_) => ui.label(format!("Drill targets: {sel_count} of {total} selected")),
     };
+    // G-DRILLPICKSTALE (F4.8): the operator must be able to see a stale
+    // pick BEFORE pressing Generate, not only in the refusal. Same
+    // predicate the generator refuses with, so the panel and the generator
+    // cannot say different things.
+    let stale = selected_holes
+        .as_ref()
+        .and_then(|picked| stale_drill_picks_refusal(picked, targets));
+    if let Some(msg) = stale {
+        ui.colored_label(egui::Color32::from_rgb(220, 90, 60), msg);
+    }
     ui.label(
         egui::RichText::new("Click points/holes in the viewport to toggle.")
             .small()
