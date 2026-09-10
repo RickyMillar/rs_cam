@@ -685,6 +685,54 @@ pub struct SimulationPlayback {
     pub display_deviations: Option<Vec<f32>>,
 }
 
+/// The population one holder-clearance verdict covers (F2.13, G-HOLDERSCOPE).
+///
+/// `AppController::request_collision_check` examines ONE toolpath — the first
+/// that has a result, a cutter and a mesh — while the row it feeds is titled
+/// "Holder clearance" for the whole job. A verdict that does not carry its own
+/// population cannot say so, and a clear reading off one operation then
+/// presents as a clean job-wide verdict.
+///
+/// `Default` is the EMPTY population: `examined` 0, and [`Self::covers_the_job`]
+/// is `false`. A gate handed an empty population must not pass.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct HolderCheckScope {
+    /// ENABLED toolpaths the verdict examined — one, or zero, on every
+    /// shipped path today.
+    ///
+    /// Zero is reachable: the selection takes the first toolpath that has a
+    /// result and a mesh, with no `enabled` test, and a switched-off
+    /// operation keeps its GUI result. A verdict about motion the job does
+    /// not contain examines none of the job.
+    pub examined: usize,
+    /// Enabled toolpaths in the job when the check was submitted — the
+    /// population the row is labelled for.
+    ///
+    /// Deliberately NOT "toolpaths a check could examine". An operation with
+    /// no mesh is one this checker cannot reach, and counting it out of the
+    /// denominator would let the row read Clear for a job most of which was
+    /// never asked about — the same overstatement through a different door.
+    pub population: usize,
+    /// 1-based position, in the operation list, of the one toolpath examined.
+    /// `None` when the verdict covers none, or more than one.
+    pub position: Option<usize>,
+}
+
+impl HolderCheckScope {
+    /// True only when the verdict covers every enabled operation.
+    ///
+    /// An empty population is false, not true. Three gates on this repo once
+    /// returned `Within` over `sample_range 0..0`.
+    pub fn covers_the_job(self) -> bool {
+        self.examined > 0 && self.population > 0 && self.examined == self.population
+    }
+
+    /// Enabled operations this verdict never examined.
+    pub fn unexamined(self) -> usize {
+        self.population.saturating_sub(self.examined)
+    }
+}
+
 /// Verification / check outputs.
 #[derive(Default)]
 pub struct SimulationChecks {
@@ -722,6 +770,15 @@ pub struct SimulationChecks {
     /// `SimulationRunMeta::last_sim_edit_counter`, F2.10). The collision check
     /// stamped it nowhere, so its verdict survived every edit.
     pub checked_at_edit_counter: Option<u64>,
+    /// The population [`Self::holder_collision_count`] was measured over
+    /// (F2.13, G-HOLDERSCOPE), stamped at SUBMIT like the counter above.
+    ///
+    /// `HolderCheckScope::default()` (`examined: 0`) means no check has run.
+    /// [`crate::ui::readiness::holder_clearance_check`] reads
+    /// [`HolderCheckScope::covers_the_job`] before it lets the row read
+    /// `Pass`, so a verdict about one operation of four is never published as
+    /// the job's.
+    pub checked_scope: HolderCheckScope,
 }
 
 impl SimulationChecks {
@@ -791,6 +848,16 @@ pub struct SimulationState {
     /// in that position; this row does not, because a holder verdict is a
     /// safety claim and an unstamped result cannot say when it was measured.
     pub submitted_collision_edit_counter: Option<u64>,
+    /// The population of the in-flight collision check, stamped at SUBMIT
+    /// beside [`Self::submitted_collision_edit_counter`] (F2.13,
+    /// G-HOLDERSCOPE).
+    ///
+    /// Stamped at submit rather than read live at render, for the reason the
+    /// counter is: it describes what the check COVERED, and the operation list
+    /// can move under it while the lane works. An operation added afterwards
+    /// moves the edit counter, so the row withdraws the claim through
+    /// staleness instead of quietly re-scoping a verdict that never saw it.
+    pub submitted_collision_scope: Option<HolderCheckScope>,
     /// Heightmap cell size in mm (smaller = finer detail, more memory/time).
     pub resolution: f64,
     /// When true, resolution is auto-calculated from the smallest tool.
@@ -844,10 +911,12 @@ impl SimulationState {
                 holder_collision_count: 0,
                 min_safe_stickout: None,
                 checked_at_edit_counter: None,
+                checked_scope: HolderCheckScope::default(),
             },
             last_run: None,
             submitted_edit_counter: None,
             submitted_collision_edit_counter: None,
+            submitted_collision_scope: None,
             resolution: 0.25,
             auto_resolution: true,
             metric_options: SimulationMetricOptions::default(),

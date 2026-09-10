@@ -262,3 +262,45 @@ fn a_disabled_operation_is_not_a_verdict_about_the_job_g_holderscope() {
          must not read a clean job-wide verdict"
     );
 }
+
+// ── the population, and the fix that introduces it ─────────────────────────
+//
+// `HolderCheckScope` and `HolderClearance::PartialClear` do not exist on the
+// unfixed code, so the test below arrives with the fix. It is not red-first
+// and is not claimed to be: there is no earlier behaviour for it to
+// contradict. It matters because the population is what the three tests above
+// assert THROUGH, and an empty population is the shape that passes every gate
+// and looks healthy.
+
+/// The verdict carries the population it was measured over, and an empty
+/// population never reads as a clean job.
+#[test]
+fn a_partial_verdict_carries_its_own_population_g_holderscope() {
+    use crate::state::simulation::HolderCheckScope;
+    use crate::ui::readiness::{HolderClearance, holder_clearance_state};
+
+    let mut controller = two_operation_job();
+    run_collision_check(&mut controller, Verdict::Clear);
+
+    let scope = controller.state.simulation.checks.checked_scope;
+    assert_eq!(scope.examined, 1, "one toolpath reached the checker");
+    assert_eq!(scope.population, 2, "the job carries two operations");
+    assert_eq!(scope.position, Some(1), "the first one is what it read");
+    assert!(
+        !scope.covers_the_job(),
+        "one of two is not the job, and the row is titled for the job"
+    );
+    assert_eq!(scope.unexamined(), 1, "one operation was never asked");
+
+    assert_eq!(
+        holder_clearance_state(&controller.state),
+        HolderClearance::PartialClear(scope),
+        "the state names the partiality; it does not leave it to the words"
+    );
+
+    assert!(
+        !HolderCheckScope::default().covers_the_job(),
+        "an EMPTY population must not read as a covered job — a gate handed \
+         one passes and looks healthy"
+    );
+}

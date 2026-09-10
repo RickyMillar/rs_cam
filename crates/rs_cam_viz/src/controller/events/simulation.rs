@@ -7,6 +7,7 @@ use crate::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, SetupSimGroup, SetupSimToolpath,
     SimulationRequest,
 };
+use crate::state::simulation::HolderCheckScope;
 use crate::state::toolpath::ToolpathId;
 
 use super::super::AppController;
@@ -373,7 +374,35 @@ impl<B: ComputeBackend> AppController<B> {
         );
     }
 
+    /// Submit the holder/shank clearance check.
+    ///
+    /// **It examines ONE toolpath** — the first that has a result, a cutter
+    /// and a mesh — and the row it feeds is titled "Holder clearance" for the
+    /// whole job. F2.13 (G-HOLDERSCOPE) does not widen the check: pricing a
+    /// per-toolpath sweep needs a measurement this lane could not take
+    /// (`run_collision_check` builds a spatial index and runs a drop-cutter
+    /// query per 1 mm sample per assembly segment). It makes the verdict carry
+    /// its own population instead, so the row states what it measured rather
+    /// than reading Clear for operations it never asked about.
+    ///
+    /// The selection is unchanged, including the two things it does not do:
+    /// it does not skip a DISABLED toolpath, and it does not look for the
+    /// toolpath most likely to strike. The scope's `examined` counts the
+    /// ENABLED toolpath it reached, so a verdict about a switched-off
+    /// operation examines none of the job and cannot read as the job's.
     pub(crate) fn request_collision_check(&mut self) {
+        // F2.13: the denominator is the ENABLED operation list, not the list
+        // of toolpaths a check could examine. An operation with no mesh is one
+        // this checker cannot reach, and counting it out of the denominator
+        // would let the row read Clear for a job most of which was never
+        // asked about.
+        let population = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .filter(|tc| tc.enabled)
+            .count();
         // Find first toolpath with a result and matching tool/model
         let toolpath_data = self
             .state
@@ -401,16 +430,38 @@ impl<B: ComputeBackend> AppController<B> {
                 // W0.1 — carry the setup's fixtures so the GUI check
                 // flags holder-vs-clamp crashes, not just mesh hits.
                 let obstacles = self.state.session.collision_obstacles_for_toolpath(index);
-                Some((Arc::clone(&result.annotated), tool, mesh, obstacles))
+                Some((
+                    index,
+                    tc.enabled,
+                    Arc::clone(&result.annotated),
+                    tool,
+                    mesh,
+                    obstacles,
+                ))
             });
 
-        if let Some((annotated, tool, mesh, obstacles)) = toolpath_data {
+        if let Some((index, enabled, annotated, tool, mesh, obstacles)) = toolpath_data {
             // G-HOLDERSTALE (F2.12): the counter as it stands at SUBMIT, and
             // only on the branch that really submits. The `else` arm below
             // reaches the lane with nothing, and a stamp written before the
             // search would sit there for an unrelated later arrival.
             self.state.simulation.submitted_collision_edit_counter =
                 Some(self.state.gui.edit_counter);
+            // G-HOLDERSCOPE (F2.13): and the population it covers, on the same
+            // branch and for the same reason.
+            //
+            // `examined` counts the ENABLED toolpath the check reached, and
+            // the selection above can reach a DISABLED one — the Add/Remove
+            // toggle flips the config and leaves the GUI result in place. A
+            // verdict about motion the job does not contain examines NONE of
+            // the job, so it stamps zero and the row refuses to call the job
+            // clear. The arithmetic closes what the selection leaves open;
+            // the selection itself is unchanged.
+            self.state.simulation.submitted_collision_scope = Some(HolderCheckScope {
+                examined: usize::from(enabled),
+                population,
+                position: Some(index + 1),
+            });
             self.compute.submit_collision(CollisionRequest {
                 annotated,
                 tool,

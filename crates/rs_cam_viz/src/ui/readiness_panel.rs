@@ -104,6 +104,11 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             // arm used to read `min_safe_stickout`, which the drain writes
             // only on a FAILING check, so a clean current check printed "Not
             // checked" and a stale verdict printed as if it were current.
+            //
+            // F2.13 — the title is the job's, and the check reads ONE
+            // toolpath. Where the two differ the detail names the operation
+            // the check examined and how many it did not, and the tier
+            // refuses `Pass`.
             let holder_detail = readiness::holder_clearance_detail(state);
             check_row(
                 ui,
