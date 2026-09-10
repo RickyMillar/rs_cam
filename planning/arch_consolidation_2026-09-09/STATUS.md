@@ -195,6 +195,23 @@ decision-blocked; N6 and N11 retain their phase assignments.
 | P0-D2 | **N7: retime on an unguarded kinematics fallback** | See row N7. | (a) guard with `is_some()` so `kinematics: None` keeps live-sim runtime byte-identical, per `machine.rs:141-146`. (b) accept the fallback and change the readiness label rule. |
 | P0-D3 | **N10: `radial_finish` unranged divisors** | See row N10. | (a) add `ParamRange::greater_than(0.0)` rows (a threshold; operator's call). (b) leave and record. |
 
+## Operator rulings — 2026-09-11
+
+- **Branch.** Work on `master` directly. `ui-fix-2026-09-09` was fast-forwarded
+  into master at `8f14e02e`. No pull requests. This is a personal project.
+- **Architecture.** `RULING_ONE_COMMAND_SURFACE_DRAFT.md` is ADOPTED as Phase
+  0's architecture ruling: four kinds (`Command` / `Query` / `Job` /
+  `UiCommand`), unconstructible resolved inputs, the six mutation hatches
+  `pub(crate)`, `macro_rules!` registry with a completeness sentry, CLI surfaces
+  declared per row and never generated. First step: `SetToolpathParam` alone.
+- **P0-D1 coolant → (a).** The core export door honours `ToolpathConfig::coolant`.
+  The Phase 0 parity test inverts to equality.
+- **N7 → (a).** The modulation retime guards on `machine.kinematics.is_some()`;
+  a machine with no kinematics block keeps the plain simulated runtime.
+- **N10 → add rows.** `angular_step` and `point_spacing` get
+  `ParamRange::greater_than(0.0)` in the `peck_depth` shape. Operator-authored
+  threshold.
+
 ## Do these before the phases. They are defects, not refactors.
 
 The rows below retain the original audit evidence. N1/N3's current execution
