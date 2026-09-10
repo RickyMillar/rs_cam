@@ -281,6 +281,11 @@ in their headers; seven do not. A source-level pin is weaker than a test that
 runs the path, and Phase 0's job is evidence a refactor cannot silently break.
 Treat those seven as gaps, not coverage. N4 is the worst case of the class.
 
+- 2026-09-11: core-vs-GUI export parity is now pinned by
+  `crates/rs_cam_viz/tests/export_parity_core_vs_gui_p0.rs` (`1e497aa6`):
+  RPM, tool changes and datums byte-identical; coolant divergence pinned
+  pending P0-D1.
+
 ---
 
 ## What earlier work already closed, per finding
