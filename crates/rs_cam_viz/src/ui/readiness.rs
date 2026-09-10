@@ -45,8 +45,36 @@ impl CheckStatus {
     }
 }
 
-/// Operations check — `(status, computed, enabled)`. Warning while any enabled
-/// op has no result yet.
+/// `(stale, pending)` over every toolpath, from the one freshness model.
+///
+/// Shared by the two workspace chips and the Readiness operations row so the
+/// three cannot disagree about how many operations are outstanding (F2.2).
+///
+/// `Error` is in neither bucket: it will not resolve by waiting, and A/M11's
+/// rule that a sequencing block is never counted as a failure has its mirror
+/// here — a failure is never counted as a block. `Disabled` is excluded
+/// because a switched-off operation is not work outstanding.
+pub fn freshness_counts(state: &AppState) -> (usize, usize) {
+    use crate::state::freshness::FreshnessState;
+
+    let mut stale = 0usize;
+    let mut pending = 0usize;
+    for index in 0..state.session.toolpath_configs().len() {
+        match crate::state::freshness::freshness_at(&state.session, &state.gui, index) {
+            Some(FreshnessState::EditedSince) => stale += 1,
+            Some(
+                FreshnessState::NoResult
+                | FreshnessState::Regenerating
+                | FreshnessState::WaitingOnUpstream(_),
+            ) => pending += 1,
+            _ => {}
+        }
+    }
+    (stale, pending)
+}
+
+/// Operations check — `(status, current, enabled)`. Warning while any enabled
+/// operation is not [`crate::state::freshness::FreshnessState::Current`].
 pub fn operations_check(state: &AppState) -> (CheckStatus, usize, usize) {
     let enabled = state
         .session
@@ -54,18 +82,22 @@ pub fn operations_check(state: &AppState) -> (CheckStatus, usize, usize) {
         .iter()
         .filter(|tc| tc.enabled)
         .count();
-    let computed = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .filter(|tc| {
-            tc.enabled
-                && state
-                    .gui
-                    .toolpath_rt
-                    .get(&tc.id)
-                    .and_then(|rt| rt.result.as_ref())
-                    .is_some()
+    // F1.17, folded into F2.2 as PLAN §11 directs. This counted the GUI
+    // store (`gui.toolpath_rt[..].result`), which an operation KEEPS after
+    // an edit so the viewport can go on drawing it. The core result — the
+    // thing an export actually emits — was already gone. So Readiness could
+    // read a confident "2/2 computed" beside an export row that refuses,
+    // which is the readiness dashboard contradicting the gate it exists to
+    // predict. `is_current()` is true for exactly one state, and it is the
+    // state the core cache defines.
+    let computed = (0..state.session.toolpath_configs().len())
+        .filter(|index| {
+            state
+                .session
+                .get_toolpath_config(*index)
+                .is_some_and(|tc| tc.enabled)
+                && crate::state::freshness::freshness_at(&state.session, &state.gui, *index)
+                    .is_some_and(|f| f.is_current())
         })
         .count();
     let status = if computed < enabled {

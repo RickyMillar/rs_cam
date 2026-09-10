@@ -706,6 +706,17 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     ReachPanelSummary::Idle
                 }
             };
+            // F2.2 — the one freshness state, derived here where the
+            // session and the GUI store are both in hand. The panel takes a
+            // `ToolpathEntry`, a snapshot, and cannot derive it itself.
+            let freshness_for_tp = state
+                .session
+                .find_toolpath_config_by_id(id)
+                .and_then(|(index, _)| {
+                    crate::state::freshness::freshness_at(&state.session, &state.gui, index)
+                })
+                .unwrap_or(crate::state::freshness::FreshnessState::NoResult);
+
             // Copied out and written back so the panel's `&mut bool` cannot
             // collide with the session borrows in the same argument list.
             let mut show_reach_map = state.viewport.show_reach_map;
@@ -747,6 +758,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &drill_targets,
                     &mut show_reach_map,
                     &reach_summary,
+                    &freshness_for_tp,
                     events,
                 );
 
@@ -3823,6 +3835,10 @@ fn draw_toolpath_panel(
     // costs no borrow of `AppState`.
     show_reach_map: &mut bool,
     reach: &ReachPanelSummary,
+    // F2.2 — derived by the caller from the core result cache. The header
+    // prints it in place of the raw `ComputeStatus`, which cannot say
+    // "generated, then edited".
+    freshness: &crate::state::freshness::FreshnessState,
     events: &mut Vec<AppEvent>,
 ) {
     // ── Shared header (always visible above tabs) ───────────────────
@@ -3849,18 +3865,40 @@ fn draw_toolpath_panel(
         {
             events.push(AppEvent::GenerateToolpath(entry.id));
         }
-        // A/M11: same resolver the toolpath list and MCP use.
-        match ComputeStatus::effective(entry.enabled, &entry.status) {
-            ComputeStatus::Pending => {
+        // F2.2 — the same one state the card chip and the workspace counts
+        // read (R0.1 §4.4), in place of the raw `ComputeStatus`. The two
+        // agree on six of seven; the seventh is why this changed.
+        use crate::state::freshness::FreshnessState;
+        match freshness {
+            FreshnessState::NoResult => {
                 ui.label("Ready");
             }
-            ComputeStatus::Computing => {
+            FreshnessState::Regenerating => {
                 ui.label("Computing...");
             }
-            ComputeStatus::Done => {
+            FreshnessState::Current => {
                 ui.label(egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)));
             }
-            ComputeStatus::AwaitingPriorStock(block) => {
+            // NOT green, and it says both halves: the generation finished,
+            // AND what it produced no longer answers the configuration on
+            // this screen. "Done" alone was the whole defect — the header
+            // sat directly above the fields the operator had just changed
+            // and reported success at them.
+            FreshnessState::EditedSince => {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new("Done \u{00B7} edited since \u{2014} regenerate")
+                            .color(egui::Color32::from_rgb(220, 180, 60)),
+                    )
+                    .wrap(),
+                )
+                .on_hover_text(
+                    "This operation generated successfully, then one of its inputs changed. \
+                     The path in the viewport and the figures on this panel are from that \
+                     earlier generation, not from the settings shown here.",
+                );
+            }
+            FreshnessState::WaitingOnUpstream(block) => {
                 // Amber, not red: this operation is fine, it is waiting its
                 // turn. The hover names the operation it is waiting for.
                 ui.add(
@@ -3872,12 +3910,12 @@ fn draw_toolpath_panel(
                 )
                 .on_hover_text(&block.message);
             }
-            ComputeStatus::Disabled => {
+            FreshnessState::Disabled => {
                 ui.label(
                     egui::RichText::new("Disabled").color(egui::Color32::from_rgb(140, 140, 150)),
                 );
             }
-            ComputeStatus::Error(e) => {
+            FreshnessState::Error(e) => {
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(format!("Error: {e}"))

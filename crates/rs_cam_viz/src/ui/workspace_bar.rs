@@ -94,24 +94,19 @@ fn workspace_tab(
     ui.add_space(2.0);
 }
 
-/// Badge for the Toolpaths tab: count of pending operations.
-fn toolpath_badge(state: &AppState) -> Option<(String, egui::Color32)> {
-    use crate::state::runtime::ComputeStatus;
-    let pending = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .filter(|tc| {
-            let rt = state.gui.toolpath_rt.get(&tc.id);
-            let raw = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
-            // A/M11: `effective` folds in `enabled`, and `needs_generation`
-            // counts a sequencing block as still-to-do (it will generate once
-            // its upstream stock exists) but not an outright failure.
-            let status = ComputeStatus::effective(tc.enabled, raw);
-            status.needs_generation() || matches!(status, ComputeStatus::Computing)
-        })
-        .count();
-    if pending > 0 {
+/// Badge for the Toolpaths tab: stale operations, else pending ones.
+///
+/// F2.2 (R0.1 §4.4). Stale outranks pending and is reported separately,
+/// because the two ask the operator for different things: a pending
+/// operation has never produced an answer, while a stale one has produced a
+/// WRONG one that every other surface is still drawing and counting. Folding
+/// them into one "N pending" would have gone on reading zero on a project
+/// where every operation was edited after generation.
+pub(crate) fn toolpath_badge(state: &AppState) -> Option<(String, egui::Color32)> {
+    let (stale, pending) = crate::ui::readiness::freshness_counts(state);
+    if stale > 0 {
+        Some((format!("{stale} stale"), theme::WARNING))
+    } else if pending > 0 {
         Some((format!("{pending} pending"), theme::WARNING))
     } else {
         None
@@ -142,24 +137,15 @@ fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
 
 /// Badge for the Setup tab: aggregate export readiness.
 /// Shows issues that would prevent a clean export.
-fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32)> {
+pub(crate) fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32)> {
     let sim = &state.simulation;
 
-    // Count uncomputed enabled operations
-    let uncomputed = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .filter(|tc| {
-            tc.enabled
-                && state
-                    .gui
-                    .toolpath_rt
-                    .get(&tc.id)
-                    .and_then(|rt| rt.result.as_ref())
-                    .is_none()
-        })
-        .count();
+    // F2.2 — from the one freshness model. This used to ask
+    // `gui.toolpath_rt[..].result.is_none()`, the GUI store, which an edited
+    // operation KEEPS so the viewport can still draw it. So the chip counted
+    // an operation whose result the core had dropped as computed, and read
+    // clean on a project where nothing could be reproduced.
+    let (stale_ops, uncomputed) = crate::ui::readiness::freshness_counts(state);
 
     // Check collisions
     let collisions = sim.checks.total_collision_count();
@@ -167,8 +153,15 @@ fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32)> {
     // Check simulation staleness
     let stale = sim.has_results() && sim.is_stale(state.gui.edit_counter);
 
+    // Order: collisions, then stale operations, then uncomputed, then a
+    // stale simulation. Safety outranks everything (SHE-003), and an edited
+    // operation outranks an ungenerated one for the same reason it does on
+    // the Toolpaths chip — one of the two is currently showing a wrong
+    // answer rather than no answer.
     if collisions > 0 {
         Some((format!("{collisions} collision(s)"), theme::ERROR))
+    } else if stale_ops > 0 {
+        Some((format!("{stale_ops} stale"), theme::WARNING))
     } else if uncomputed > 0 {
         Some((format!("{uncomputed} uncomputed"), theme::WARNING))
     } else if stale {

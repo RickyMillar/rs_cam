@@ -42,11 +42,24 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         // Detail rows gated by freshness: a stale sim dims + banners the whole
         // readout rather than asserting fresh verdicts on stale evidence.
         FreshnessGate::new(stale).show(ui, |ui| {
+            // F2.2 — "current", not "computed". An operation edited after
+            // generation WAS computed; what it is not is the answer to the
+            // configuration now in the project, and the count here is the
+            // one the export gate will read. Naming the edited ones
+            // separately is what distinguishes "never generated" from
+            // "generated, then changed" — the same distinction the card
+            // chip draws, on the surface that predicts the export.
+            let (stale_ops, _) = readiness::freshness_counts(state);
+            let ops_detail = if stale_ops > 0 {
+                format!("{computed}/{enabled} current \u{2014} {stale_ops} edited since generation")
+            } else {
+                format!("{computed}/{enabled} current")
+            };
             check_row(
                 ui,
                 ops_status,
                 "Operations",
-                &format!("{computed}/{enabled} computed"),
+                &ops_detail,
                 (ops_status != CheckStatus::Pass)
                     .then_some(("Toolpaths", AppEvent::SwitchWorkspace(Workspace::Toolpaths))),
                 events,

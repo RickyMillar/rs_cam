@@ -4052,3 +4052,218 @@ fn freshness_pre_fix_reproduction_a_direct_field_write_keeps_the_core_result() {
         "which is why the card read OK over geometry from other inputs"
     );
 }
+
+// ── F2.2 / G-FRESHRENDER — the surfaces draw the state F2.1 derived ──────
+//
+// F2.1 built one `FreshnessState` and proved every mutation lands on the
+// right one. Nothing read it: the card chip, the inspector header, the two
+// workspace chips and Readiness each still asked their own question, and on
+// an edited operation every one of them answered "fine". The card asked
+// `ComputeStatus`, which is `Done` — the generation really did finish.
+// Readiness and the Readiness chip asked `gui.toolpath_rt[..].result`, the
+// GUI's retained copy, which an edit deliberately KEEPS so the viewport can
+// still draw something. So a project where no operation could be reproduced
+// read `OK`, `2/2 computed` and no chip at all.
+//
+// These tests drive the real surface functions, not a source read: the chip
+// vocabulary, the two badges, `operations_check` and the shared counter are
+// all pure over `&AppState`. The three surfaces that cannot be driven from a
+// test — the egui header, the card body, the wgpu draw — are asserted in
+// `tests/freshness_surfaces_g_freshrender.rs` by reading their source, which
+// says so in its own doc.
+//
+// NOT asserted anywhere, and deliberately: that an operation reading STALE
+// cannot be exported. It still can. F2.3 owns the export gate; until it
+// lands, `emitted_toolpaths` falls back to the GUI's retained result and
+// will emit the old geometry. Nothing in this task's UI text says otherwise.
+
+/// The chip vocabulary, one state at a time. `EditedSince` is the row that
+/// did not exist before: it used to fall through to `Done` → `OK` green.
+#[test]
+fn freshness_chip_says_stale_and_never_says_ok() {
+    use crate::ui::toolpath_panel::status_chip;
+
+    let cases = [
+        (FreshnessState::Current, "OK"),
+        (FreshnessState::EditedSince, "STALE"),
+        (FreshnessState::Regenerating, "GEN"),
+        (FreshnessState::NoResult, "PEND"),
+        (FreshnessState::Disabled, "OFF"),
+        (FreshnessState::Error("boom".to_owned()), "ERR"),
+    ];
+    for (state, expected) in &cases {
+        let (text, _, _) = status_chip(state);
+        assert_eq!(&text, expected, "{state:?}");
+    }
+
+    // The one that matters, in detail. Amber and not the success colour;
+    // red stays reserved for ERR and collisions.
+    let (text, colour, hover) = status_chip(&FreshnessState::EditedSince);
+    assert_eq!(text, "STALE");
+    assert_eq!(colour, crate::ui::theme::WARNING);
+    assert_ne!(colour, crate::ui::theme::SUCCESS_BRIGHT);
+    assert_ne!(colour, crate::ui::theme::ERROR);
+    let hover = hover.expect("four letters cannot carry this on their own");
+    assert!(
+        hover.contains("PREVIOUS generation"),
+        "the hover must say whose numbers these are: {hover}"
+    );
+    assert!(
+        hover.contains("Regenerate"),
+        "and what to do about it: {hover}"
+    );
+    // The caution the programme is under until F2.3: this text must not
+    // imply the export is gated on it, because it is not.
+    assert!(
+        !hover.to_lowercase().contains("export"),
+        "F2.3 owns the export gate; this hover must not promise it: {hover}"
+    );
+}
+
+/// THE headline row. One panel edit on a generated project and every
+/// surface that can be driven from a test moves together.
+#[test]
+fn freshness_surfaces_agree_after_one_edit_g_freshrender() {
+    use crate::ui::readiness;
+    use crate::ui::workspace_bar;
+
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+    let total = controller.state.session.toolpath_configs().len();
+
+    // Before: everything current, nothing to report.
+    assert_eq!(state_of(&controller, 0), FreshnessState::Current);
+    let (status, current, enabled) = readiness::operations_check(&controller.state);
+    assert_eq!((current, enabled), (total, total));
+    assert_eq!(status, readiness::CheckStatus::Pass);
+    assert_eq!(readiness::freshness_counts(&controller.state), (0, 0));
+    assert!(workspace_bar::toolpath_badge(&controller.state).is_none());
+
+    panel_edit(&mut controller, id, |entry| {
+        entry.operation.set_feed_rate(4321.0);
+    });
+
+    // After: one stale operation, said the same way everywhere.
+    assert_eq!(state_of(&controller, 0), FreshnessState::EditedSince);
+    assert_eq!(
+        readiness::freshness_counts(&controller.state),
+        (1, 0),
+        "one stale, none merely pending"
+    );
+
+    let (status, current, enabled) = readiness::operations_check(&controller.state);
+    assert_eq!(
+        current,
+        total - 1,
+        "F1.17: Readiness counted the GUI's retained result and read {total}/{total} here"
+    );
+    assert_eq!(enabled, total);
+    assert_eq!(status, readiness::CheckStatus::Warning);
+
+    let (chip, colour) =
+        workspace_bar::toolpath_badge(&controller.state).expect("the Toolpaths tab must say so");
+    assert_eq!(chip, "1 stale");
+    assert_eq!(colour, crate::ui::theme::WARNING);
+
+    let (chip, _) = workspace_bar::readiness_badge(&controller.state)
+        .expect("the Readiness tab must say so too");
+    assert_eq!(chip, "1 stale");
+
+    // And the card's own chip.
+    let (text, _, _) = crate::ui::toolpath_panel::status_chip(&state_of(&controller, 0));
+    assert_eq!(text, "STALE");
+}
+
+/// Stale outranks pending on both chips, and the two counts do not merge.
+/// A project with one of each must report the stale one: it is the one
+/// currently showing a wrong answer rather than no answer.
+#[test]
+fn freshness_chip_reports_stale_ahead_of_pending() {
+    use crate::ui::readiness;
+    use crate::ui::workspace_bar;
+
+    let mut controller = sample_controller();
+    let second = push_toolpath(&mut controller, "Second");
+    generate_all_for_test(&mut controller);
+    let first = controller.state.session.toolpath_configs()[0].id;
+
+    // Toolpath 1 never generated, toolpath 0 generated then edited.
+    controller.state.session.invalidate_toolpath_inputs(1);
+    if let Some(rt) = controller.state.gui.toolpath_rt.get_mut(&second) {
+        rt.result = None;
+    }
+    panel_edit(&mut controller, first, |entry| {
+        entry.operation.set_feed_rate(999.0);
+    });
+
+    assert_eq!(state_of(&controller, 0), FreshnessState::EditedSince);
+    assert_eq!(state_of(&controller, 1), FreshnessState::NoResult);
+    assert_eq!(readiness::freshness_counts(&controller.state), (1, 1));
+
+    let (chip, _) = workspace_bar::toolpath_badge(&controller.state).expect("something to report");
+    assert_eq!(
+        chip, "1 stale",
+        "a stale operation outranks a pending one; folding them into one \
+         count is what let the chip read zero on a fully edited project"
+    );
+}
+
+/// A collision still outranks staleness on the Readiness chip. SHE-003's
+/// order is not weakened by adding a state above "uncomputed".
+#[test]
+fn freshness_does_not_outrank_a_collision() {
+    use crate::ui::workspace_bar;
+
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+    panel_edit(&mut controller, id, |entry| {
+        entry.operation.set_feed_rate(4321.0);
+    });
+    controller.state.simulation.checks.rapid_collisions =
+        vec![rs_cam_core::collision::RapidCollision {
+            move_index: 0,
+            start: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+            end: rs_cam_core::geo::P3::new(1.0, 0.0, 0.0),
+        }];
+
+    let (chip, colour) =
+        workspace_bar::readiness_badge(&controller.state).expect("a collision must be reported");
+    assert!(chip.contains("collision"), "{chip}");
+    assert_eq!(colour, crate::ui::theme::ERROR);
+}
+
+/// Disabled operations are not outstanding work, and an errored one is not
+/// "still to do" — A/M11's rule that a block is never a failure, mirrored.
+#[test]
+fn freshness_counts_exclude_disabled_and_error() {
+    use crate::ui::readiness;
+
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+
+    controller
+        .state
+        .session
+        .set_toolpath_enabled(0, false)
+        .expect("index 0 exists");
+    assert_eq!(state_of(&controller, 0), FreshnessState::Disabled);
+    assert_eq!(readiness::freshness_counts(&controller.state).0, 0);
+
+    controller
+        .state
+        .session
+        .set_toolpath_enabled(0, true)
+        .expect("index 0 exists");
+    if let Some(rt) = controller.state.gui.toolpath_rt.get_mut(&id) {
+        rt.status = crate::state::runtime::ComputeStatus::Error("nope".to_owned());
+    }
+    let (stale, pending) = readiness::freshness_counts(&controller.state);
+    assert_eq!(
+        (stale, pending),
+        (0, 0),
+        "an error is neither stale nor pending; it needs a fix, not a wait"
+    );
+}

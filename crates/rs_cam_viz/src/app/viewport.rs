@@ -517,6 +517,22 @@ impl RsCamApp {
                 .iter()
                 .map(|(id, v)| (*id, (v.show_cutting, v.show_rapids)))
                 .collect(),
+            // F2.2 — derived here from the one freshness model, never
+            // stored. `EditedSince` alone: every other non-current state
+            // has no drawable geometry to dim in the first place.
+            stale_toolpaths: state
+                .session
+                .toolpath_configs()
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| {
+                    matches!(
+                        crate::state::freshness::freshness_at(&state.session, &state.gui, *index),
+                        Some(crate::state::freshness::FreshnessState::EditedSince)
+                    )
+                })
+                .map(|(_, tc)| tc.id)
+                .collect(),
             show_tool_model: state.workspace == Workspace::Simulation
                 && state.simulation.has_results()
                 && state.simulation.playback.tool_position.is_some(),

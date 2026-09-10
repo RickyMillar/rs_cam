@@ -7,7 +7,6 @@ use crate::render::toolpath_render::palette_color;
 use crate::state::AppState;
 use crate::state::freshness::{FreshnessState, freshness};
 use crate::state::job::{SetupId, ToolId};
-use crate::state::runtime::ComputeStatus;
 use crate::state::selection::Selection;
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{OperationType, ToolpathId};
@@ -29,17 +28,11 @@ struct CardInfo {
 struct RuntimeSnapshot {
     visible: bool,
     auto_regen: bool,
-    status: ComputeStatus,
     has_result: bool,
     stats: Option<ToolpathStats>,
     /// The one state every surface should read (R0.1 §4.4). Derived here,
     /// beside the core result cache the derivation needs, because the card
     /// body no longer holds the session borrow.
-    ///
-    /// F2.1 lands the state and its sentries; F2.2 is the task that draws
-    /// it (a `STALE` chip beside `OK`, a dimmed viewport path, the
-    /// workspace counts), which is why nothing reads it yet.
-    #[allow(dead_code)]
     freshness: FreshnessState,
 }
 
@@ -79,14 +72,15 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                         .color(theme::TEXT_HEADING),
                 );
                 // Count ready/total
+                // F2.2 — `is_current()`, not `ComputeStatus::Done`. An
+                // edited operation keeps `Done`, so this header read n/n
+                // beside a card that said STALE: the same panel disagreeing
+                // with itself about the same operation.
                 let ready = toolpath_indices
                     .iter()
                     .filter(|&&idx| {
-                        state
-                            .session
-                            .get_toolpath_config(idx)
-                            .and_then(|tc| state.gui.toolpath_rt.get(&tc.id))
-                            .is_some_and(|rt| matches!(rt.status, ComputeStatus::Done))
+                        crate::state::freshness::freshness_at(&state.session, &state.gui, idx)
+                            .is_some_and(|f| f.is_current())
                     })
                     .count();
                 let total = toolpath_indices.len();
@@ -136,7 +130,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     .map(|r| RuntimeSnapshot {
                         visible: r.visible,
                         auto_regen: r.auto_regen,
-                        status: r.status.clone(),
                         has_result: r.result.is_some(),
                         stats: r.result.as_ref().map(|res| res.stats.clone()),
                         freshness: freshness(
@@ -284,13 +277,14 @@ fn draw_toolpath_card(
     let selected = state.selection == Selection::Toolpath(tp_id);
     let visible = rt.is_none_or(|r| r.visible);
     let auto_regen = rt.is_none_or(|r| r.auto_regen);
-    // A/M11: one taxonomy for GUI and MCP. `enabled: false` wins over
-    // whatever the op last recorded, so a switched-off toolpath shows OFF
-    // rather than the rest-stock error it had while it was on.
-    let status = ComputeStatus::effective(
-        tc.enabled,
-        rt.map_or(&ComputeStatus::Pending, |r| &r.status),
-    );
+    // F2.2 — the one state the chip, the stats row and the ▶ button all
+    // read. It replaces the `ComputeStatus::effective` call that used to
+    // stand here: A/M11's "one taxonomy" rule is unchanged and `enabled`
+    // still wins over everything, but `FreshnessState` folds that in itself
+    // (`Disabled` is its first arm) and adds the one state `ComputeStatus`
+    // cannot express — generated, then edited. A card with no runtime entry
+    // at all has never been generated.
+    let freshness = rt.map_or(&FreshnessState::NoResult, |r| &r.freshness);
     let has_result = rt.is_some_and(|r| r.has_result);
     let stats = rt.and_then(|r| r.stats.as_ref());
     // G-TIMEEST — the card's per-op time. Resolved HERE, before the card body
@@ -408,27 +402,16 @@ fn draw_toolpath_card(
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 14.0), egui::Sense::hover());
                 ui.painter().rect_filled(rect, 2.0, swatch_color);
 
-                // Status chip — capture the error message so the ERR chip
-                // can show it on hover instead of being a mute symbol.
-                let (status_text, status_color, err_msg) = match status {
-                    ComputeStatus::Pending => ("PEND", theme::TEXT_DIM, None),
-                    ComputeStatus::Computing => ("GEN", theme::WARNING, None),
-                    ComputeStatus::Done => ("OK", theme::SUCCESS_BRIGHT, None),
-                    // A/M11: WAIT is a sequencing state, not a failure — it
-                    // must not read as red. Hover names the blocking op.
-                    ComputeStatus::AwaitingPriorStock(block) => {
-                        ("WAIT", theme::WARNING, Some(block.message.as_str()))
-                    }
-                    ComputeStatus::Disabled => ("OFF", theme::TEXT_FAINT, None),
-                    ComputeStatus::Error(msg) => ("ERR", theme::ERROR, Some(msg.as_str())),
-                };
+                // Status chip. The mapping is a pure function so the
+                // sentry can drive every state without a `Ui` (F2.2).
+                let (status_text, status_color, hover) = status_chip(freshness);
                 let chip_resp = ui.label(
                     egui::RichText::new(status_text)
                         .small()
                         .strong()
                         .color(status_color),
                 );
-                if let Some(msg) = err_msg {
+                if let Some(msg) = hover {
                     chip_resp.on_hover_text(msg);
                 }
                 // Manual-gen indicator for 3D ops
@@ -493,8 +476,18 @@ fn draw_toolpath_card(
                         events.push(AppEvent::InspectToolpathInSimulation(tp_id));
                     }
 
-                    // Quick generate button
-                    if status.needs_generation()
+                    // Quick generate button. F2.2: driven by freshness, not
+                    // `ComputeStatus::needs_generation()`, which answers
+                    // `false` for `Done` — and an edited operation keeps
+                    // `Done`, so the button was hidden on precisely the card
+                    // whose whole message is "regenerate me".
+                    let needs_generation = !matches!(
+                        freshness,
+                        FreshnessState::Current
+                            | FreshnessState::Regenerating
+                            | FreshnessState::Disabled
+                    );
+                    if needs_generation
                         && ui
                             .small_button("\u{25B6}")
                             .on_hover_text("Generate")
@@ -513,14 +506,27 @@ fn draw_toolpath_card(
                     // No estimate is a dash, never a plausible-looking 0 s.
                     None => "\u{2014}".to_owned(),
                 };
+                // F2.2 (R0.1 §4.4): on an edited operation these figures
+                // count the PREVIOUS generation's moves. Left unmarked they
+                // are the strongest thing on the card saying "this is a
+                // finished, measured operation" — an amber chip two rows up
+                // does not undo three confident numbers. The prefix says
+                // whose they are and the fainter colour stops them reading
+                // as the current answer.
+                let is_stale = matches!(freshness, FreshnessState::EditedSince);
                 let stats_text = format!(
-                    "{} moves \u{00B7} {} \u{00B7} {:.1} m",
-                    stats.move_count, time_str, total_dist_m,
+                    "{}{} moves \u{00B7} {} \u{00B7} {:.1} m",
+                    if is_stale { "old: " } else { "" },
+                    stats.move_count,
+                    time_str,
+                    total_dist_m,
                 );
                 let resp = ui.label(
-                    egui::RichText::new(stats_text)
-                        .small()
-                        .color(theme::TEXT_DIM),
+                    egui::RichText::new(stats_text).small().color(if is_stale {
+                        theme::TEXT_FAINT
+                    } else {
+                        theme::TEXT_DIM
+                    }),
                 );
                 // The card is too narrow for the basis inline, so it lives on
                 // hover here — the surfaces an operator plans a cut from
@@ -659,6 +665,52 @@ fn compute_drop_index(response: &egui::Response, ui: &egui::Ui, count: usize) ->
     idx.min(count)
 }
 
+/// Chip text, colour and hover for one freshness state — the card's whole
+/// vocabulary, as a pure function so it can be tested without a `Ui`.
+///
+/// F2.2: driven by [`FreshnessState`], not `ComputeStatus`. The two agree on
+/// six of seven; the seventh is the point. An operation whose inputs moved
+/// after it was generated still carries `ComputeStatus::Done` — the
+/// generation that produced the drawn geometry really did finish — so this
+/// chip used to read a confident green `OK` over geometry the project can no
+/// longer reproduce.
+pub(crate) fn status_chip(
+    freshness: &FreshnessState,
+) -> (&'static str, egui::Color32, Option<&str>) {
+    match freshness {
+        FreshnessState::NoResult => ("PEND", theme::TEXT_DIM, None),
+        FreshnessState::Regenerating => ("GEN", theme::WARNING, None),
+        FreshnessState::Current => ("OK", theme::SUCCESS_BRIGHT, None),
+        // Amber, and never green: this is not a fresh result. Amber rather
+        // than red because nothing is WRONG — no gate tripped, no collision
+        // — the answer on screen is simply the previous question's. Red is
+        // what this panel spends on ERR and on collisions, and spending it
+        // here would flatten that distinction.
+        //
+        // The word is "STALE" because that is the vocabulary the simulation
+        // badge, `is_stale` and the MCP wire already use, and a second word
+        // for one idea is how three stores came to disagree in the first
+        // place. The hover carries the weight four letters cannot: what is
+        // drawn AND the numbers below it are the previous generation's.
+        FreshnessState::EditedSince => (
+            "STALE",
+            theme::WARNING,
+            Some(
+                "Inputs changed after this was generated. The path drawn in the viewport \
+                 and the figures below are from the PREVIOUS generation, not from the \
+                 settings now in the project. Regenerate.",
+            ),
+        ),
+        // A/M11: WAIT is a sequencing state, not a failure — it must not
+        // read as red. Hover names the blocking op.
+        FreshnessState::WaitingOnUpstream(block) => {
+            ("WAIT", theme::WARNING, Some(block.message.as_str()))
+        }
+        FreshnessState::Disabled => ("OFF", theme::TEXT_FAINT, None),
+        FreshnessState::Error(msg) => ("ERR", theme::ERROR, Some(msg.as_str())),
+    }
+}
+
 /// Menu button for adding a toolpath to a specific setup.
 /// Emits Select(Setup(id)) first, then AddToolpath, so the handler targets the right setup.
 fn add_toolpath_menu(
@@ -781,15 +833,25 @@ pub fn rest_badge(
     if predecessors.is_empty() {
         return RestBadge::Missing;
     }
-    // A predecessor that needs generation or is stale is not ready. A/M11: a
-    // dep that is blocked on upstream stock is just as un-ready as a pending
-    // one.
+    // A predecessor that is not CURRENT is not ready. A/M11: a dep that is
+    // blocked on upstream stock is just as un-ready as a pending one.
+    //
+    // F2.2: `is_current()`, not `needs_generation() || stale_since.is_some()`.
+    // `ComputeStatus::Done` is what an edited predecessor still carries, so
+    // the first half said "ready"; the second half leaned on `stale_since`,
+    // which F2.1 demoted to the auto-regeneration debounce clock and is NOT
+    // a claim about correctness. The rows that drop a core result without
+    // setting a regeneration request — toggle enabled, reorder,
+    // move-to-setup, setup orientation (F2.1 §5) — therefore left this badge
+    // green over a predecessor whose result no longer exists.
     let dep_stale = predecessors.iter().any(|dep_id| {
         state
-            .gui
-            .toolpath_rt
-            .get(dep_id)
-            .is_none_or(|rt| rt.status.needs_generation() || rt.stale_since.is_some())
+            .session
+            .find_toolpath_config_by_id(*dep_id)
+            .and_then(|(index, _)| {
+                crate::state::freshness::freshness_at(&state.session, &state.gui, index)
+            })
+            .is_none_or(|f| !f.is_current())
     });
     if dep_stale {
         RestBadge::Stale

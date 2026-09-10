@@ -128,7 +128,31 @@ fn add(state: &mut AppState, setup_idx: usize, tc: ToolpathConfig) -> ToolpathId
     let mut rt = ToolpathRuntime::new(true);
     rt.status = ComputeStatus::Done;
     state.gui.toolpath_rt.insert(id, rt);
+    // F2.2: "generated" now means the CORE holds a result, because that is
+    // what `FreshnessState::Current` is derived from — a `Done` status over
+    // an empty core slot is precisely the edited-since state the badge must
+    // not read as ready. Before F2.2 the badge asked
+    // `ComputeStatus::needs_generation() || stale_since.is_some()`, so a
+    // status alone was enough to model a generated predecessor here.
+    state
+        .session
+        .insert_result(idx, generated_result())
+        .expect("index is in range");
     id
+}
+
+/// A cached core result, standing for "this toolpath has been generated".
+fn generated_result() -> rs_cam_core::session::ToolpathComputeResult {
+    rs_cam_core::session::ToolpathComputeResult {
+        op_data: rs_cam_core::drill_op::OpData::Toolpath(std::sync::Arc::new(
+            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                rs_cam_core::toolpath::Toolpath::new(),
+            ),
+        )),
+        stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+    }
 }
 
 /// Both surfaces for the Rest op `rest_id` (stored model `model_id`).
@@ -275,7 +299,18 @@ fn c2_a_qualifying_predecessor_that_needs_generation_reads_stale_dep() {
         0,
         toolpath("Rest", REST_TOOL, MODEL_A, rest_op()),
     );
+    // Not generated: no core result, and the lane says so. F2.2 — dropping
+    // the core result is what "needs generation" now means; the status alone
+    // would leave `freshness` reading `Current` off the cached result.
+    let rough_idx = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .position(|tc| tc.id == rough_id)
+        .unwrap();
+    state.session.invalidate_toolpath_inputs(rough_idx);
     state.gui.toolpath_rt.get_mut(&rough_id).unwrap().status = ComputeStatus::Pending;
+    state.gui.toolpath_rt.get_mut(&rough_id).unwrap().result = None;
 
     let (badge, validator_blocks) = both_surfaces(&state, rest_id, MODEL_A);
     assert_dependency("(c2) pending predecessor", badge, validator_blocks);

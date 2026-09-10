@@ -850,6 +850,15 @@ pub struct ViewportCallback {
     /// AND'd with the global `show_cutting` / `show_rapids`. Missing entries
     /// default to both-visible.
     pub toolpath_move_visibility: std::collections::HashMap<rs_cam_core::ToolpathId, (bool, bool)>,
+    /// Toolpaths whose [`crate::state::freshness::FreshnessState`] is
+    /// `EditedSince` — the geometry uploaded for them was generated from
+    /// inputs the project no longer holds (F2.2, R0.1 §4.4).
+    ///
+    /// Their moves draw through the same dimmed bind group the reach overlay
+    /// uses. Drawn, not hidden: the operator asked to see this operation, and
+    /// hiding it would replace a wrong picture with no picture. Dimming says
+    /// "this is last generation's answer" while leaving it locatable.
+    pub stale_toolpaths: std::collections::HashSet<rs_cam_core::ToolpathId>,
     pub show_tool_model: bool,
     /// If Some, only draw toolpath moves up to this index (sim scrubbing).
     pub toolpath_move_limit: Option<usize>,
@@ -1208,12 +1217,28 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 // and rapids alike; no registry flag moves, so the Overlays
                 // panel still shows the row ON and the operator still owns
                 // the switch.
-                let moves_bind_group =
-                    if self.show_reach_overlay && resources.reach_overlay_data.is_some() {
-                        &resources.line_dim_bind_group
-                    } else {
-                        &resources.line_bind_group
-                    };
+                //
+                // F2.2 adds the second reason to take the same treatment: a
+                // toolpath whose result the core no longer holds is drawn
+                // from the GUI's retained copy, i.e. from the PREVIOUS
+                // generation's inputs. One dim factor serves both because
+                // the line pipeline carries exactly one dim uniform, and a
+                // second constant for a 0.05 difference nobody has ruled on
+                // would be a new tunable, not a clearer picture. Consequence
+                // to know: while the reach overlay is painting, every move is
+                // dimmed anyway, so the stale dim adds no signal there — the
+                // card chip and the inspector header are the ones that still
+                // say it.
+                let stale = tp_gpu
+                    .toolpath_id
+                    .is_some_and(|id| self.stale_toolpaths.contains(&id));
+                let moves_bind_group = if stale
+                    || (self.show_reach_overlay && resources.reach_overlay_data.is_some())
+                {
+                    &resources.line_dim_bind_group
+                } else {
+                    &resources.line_bind_group
+                };
                 pass.set_bind_group(0, moves_bind_group, &[]);
 
                 let (tp_show_cut, tp_show_rapid) = tp_gpu
