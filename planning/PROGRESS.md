@@ -48,6 +48,31 @@ not a green gate or a new N1 regression. Evidence and next-item ordering:
 `arch_consolidation_2026-09-09/STATUS.md`. N1 is committed: the fix is
 `d4e1154b` and the sentry is `2687b82b`. N2 is next.
 
+## Architecture consolidation — 2026-09-10 late (N1, N2, N4, N5 DONE)
+
+Three more pre-phase defects landed on `ui-fix-2026-09-09`, each as a sentry
+commit that fails alone and a fix commit that carries the red output:
+
+- N5 `1e4373aa` (sentry `3b8cd298`): `set_toolpath_param` refuses `stepover`
+  and `depth_per_pass` on an operation without the field. Before, it reported
+  success, stamped manual provenance and staled the result chain. The three
+  alias setters (Pencil, Waterline, RampFinish) still write. `rs_cam_cli run
+  --set` on an unsupported field is now an error.
+- N4 `44c68add` (sentry `6d1d2026`): the core diagnostics route resolves the
+  toolpath's own `HeightsConfig`. Before, it projected heights onto the stock,
+  so a pinned Top Z never reached MCP `get_toolpath_diagnostics` and three
+  `geom.*` height checks could never fire there. The tautology parity test is
+  replaced by a real ribbon-vs-session test.
+- N2 `736a2959` (sentry `8634acf1`): the modulation retime republishes
+  `toolpath_runtimes`, the summaries and the project total through one
+  publisher on one clock. Before, the project total dropped every drill and
+  the per-toolpath runtimes stayed pre-modulation.
+
+Full heavy core after all four: **3793 passed, 1 failed, 288 ignored**; the one
+failure is the F-036b instrument, red by design. Viz 606/0, CLI 31/0. New
+rows N7–N11 and the checkpoint are in `arch_consolidation_2026-09-09/STATUS.md`.
+No live MCP check ran this session; the server did not connect.
+
 ## Recent work (2026-09-07 → 08)
 
 ### Datum belongs to the setup — export now consumes it
