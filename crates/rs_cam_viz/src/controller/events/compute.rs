@@ -1334,6 +1334,17 @@ impl<B: ComputeBackend> AppController<B> {
                             .simulation
                             .submitted_collision_edit_counter
                             .take();
+                        // G-HOLDERSCOPE (F2.13): and the population the check
+                        // covered, from the same submit. A result with no
+                        // stamp of its own leaves the EMPTY population, which
+                        // `covers_the_job` refuses — an unstamped verdict
+                        // cannot claim the job.
+                        self.state.simulation.checks.checked_scope = self
+                            .state
+                            .simulation
+                            .submitted_collision_scope
+                            .take()
+                            .unwrap_or_default();
                         // Extract MCP response data before moving ownership
                         #[cfg(feature = "mcp")]
                         let mcp_collision_count = collision.report.collisions.len();
@@ -1359,11 +1370,13 @@ impl<B: ComputeBackend> AppController<B> {
                         // Clearing it here keeps it from being read by a
                         // later arrival that had no submit of its own.
                         self.state.simulation.submitted_collision_edit_counter = None;
+                        self.state.simulation.submitted_collision_scope = None;
                         #[cfg(feature = "mcp")]
                         self.notify_mcp_collision_error("Collision check cancelled");
                     }
                     Err(ComputeError::Message(error)) => {
                         self.state.simulation.submitted_collision_edit_counter = None;
+                        self.state.simulation.submitted_collision_scope = None;
                         tracing::error!("Collision check failed: {error}");
                         self.push_notification(
                             format!("Collision check failed: {error}"),

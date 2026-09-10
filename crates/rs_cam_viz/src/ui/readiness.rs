@@ -20,6 +20,7 @@
 
 use crate::state::AppState;
 use crate::state::runtime::GuiState;
+use crate::state::simulation::HolderCheckScope;
 use rs_cam_core::ToolpathId;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutTrace;
@@ -167,9 +168,21 @@ pub fn rapid_collision_check(state: &AppState) -> CheckStatus {
 /// the evidence is old. This also keeps the row and the export gate in
 /// agreement: `preflight.rs` computes `has_failures` from the raw collision
 /// count, which a stale strike still trips.
+///
+/// **F2.13, G-HOLDERSCOPE — the row must not overstate its SCOPE either.**
+/// `AppController::request_collision_check` examines ONE toolpath: the first
+/// that has a result, a cutter and a mesh. One toolpath, one tool, one holder.
+/// A job whose second operation carries a longer holder is never asked about,
+/// and the row read `Clear` for it. The verdict now travels with the
+/// population it covers ([`crate::state::simulation::HolderCheckScope`]), and
+/// a clear reading that does not cover every enabled operation is
+/// [`HolderClearance::PartialClear`] — `Warning`, naming the operation it
+/// measured. A measured strike keeps `Fail` whatever the scope: a partial
+/// check that found a strike understates the job, it does not overstate it.
 pub fn holder_clearance_check(state: &AppState) -> CheckStatus {
     match holder_clearance_state(state) {
         HolderClearance::NotChecked | HolderClearance::StaleClear => CheckStatus::Warning,
+        HolderClearance::PartialClear(_) => CheckStatus::Warning,
         HolderClearance::Clear => CheckStatus::Pass,
         HolderClearance::StaleCollisions(_) | HolderClearance::Collisions(_) => CheckStatus::Fail,
     }
@@ -191,23 +204,34 @@ pub enum HolderClearance {
     /// A check found this many strikes, and the project has been edited since
     /// it was submitted. **Not** an abstention — the strikes were measured.
     StaleCollisions(usize),
-    /// A current check found no strike.
+    /// A current check found no strike, and it covered every enabled
+    /// operation.
     Clear,
+    /// A current check found no strike — in the part of the job it examined.
+    /// The rest of the job was never asked about, so this is **not** a
+    /// clearance claim for the job (F2.13, G-HOLDERSCOPE).
+    PartialClear(HolderCheckScope),
     /// A current check found this many strikes.
     Collisions(usize),
 }
 
-/// Derive [`HolderClearance`] from the check record and the edit counter.
+/// Derive [`HolderClearance`] from the check record, the edit counter and the
+/// population the check covered.
 pub fn holder_clearance_state(state: &AppState) -> HolderClearance {
     let sim = &state.simulation;
     if sim.checks.checked_at_edit_counter.is_none() {
         return HolderClearance::NotChecked;
     }
     let stale = sim.collision_check_is_stale(state.gui.edit_counter);
+    let scope = sim.checks.checked_scope;
     match (stale, sim.checks.holder_collision_count) {
         (true, 0) => HolderClearance::StaleClear,
         (true, count) => HolderClearance::StaleCollisions(count),
-        (false, 0) => HolderClearance::Clear,
+        // A stale verdict is withdrawn whatever its scope, so the two are not
+        // crossed: the remedy is one re-check either way, and the scope shows
+        // again on the answer.
+        (false, 0) if scope.covers_the_job() => HolderClearance::Clear,
+        (false, 0) => HolderClearance::PartialClear(scope),
         (false, count) => HolderClearance::Collisions(count),
     }
 }
@@ -215,8 +239,10 @@ pub fn holder_clearance_state(state: &AppState) -> HolderClearance {
 /// The row's detail text, shared by both surfaces.
 ///
 /// A stale strike names BOTH facts, count first, so the severity and the
-/// staleness are visible together without a hover.
+/// staleness are visible together without a hover. A partial verdict names
+/// the operation it measured and how many it did not, for the same reason.
 pub fn holder_clearance_detail(state: &AppState) -> String {
+    let scope = state.simulation.checks.checked_scope;
     match holder_clearance_state(state) {
         HolderClearance::NotChecked => "Not checked".to_owned(),
         HolderClearance::StaleClear => "Checked, then edited — re-check".to_owned(),
@@ -224,7 +250,33 @@ pub fn holder_clearance_detail(state: &AppState) -> String {
             format!("{count} collision(s) found, then edited — re-check")
         }
         HolderClearance::Clear => "Clear".to_owned(),
-        HolderClearance::Collisions(count) => format!("{count} collision(s)"),
+        HolderClearance::PartialClear(scope) => {
+            let op = examined_operation(state, scope);
+            let rest = scope.unexamined();
+            format!("Clear in {op} only — {rest} more not checked")
+        }
+        HolderClearance::Collisions(count) if scope.covers_the_job() => {
+            format!("{count} collision(s)")
+        }
+        HolderClearance::Collisions(count) => {
+            let op = examined_operation(state, scope);
+            let rest = scope.unexamined();
+            format!("{count} collision(s) in {op} — {rest} more not checked")
+        }
+    }
+}
+
+/// Name the operation a partial verdict measured, the way the operation list
+/// names it. Falls back to a count when the verdict covers more than one.
+fn examined_operation(state: &AppState, scope: HolderCheckScope) -> String {
+    let named = scope
+        .position
+        .and_then(|position| position.checked_sub(1))
+        .and_then(|index| state.session.get_toolpath_config(index))
+        .map(|tc| tc.name.clone());
+    match named {
+        Some(name) => name,
+        None => format!("{} operation(s)", scope.examined),
     }
 }
 
