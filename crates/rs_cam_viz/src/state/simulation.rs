@@ -735,6 +735,25 @@ pub struct SimulationState {
     pub checks: SimulationChecks,
     /// Staleness metadata from the last simulation run.
     pub last_run: Option<SimulationRunMeta>,
+    /// [`crate::state::runtime::GuiState::edit_counter`] as it stood when the
+    /// in-flight simulation was SUBMITTED (F2.10, G-LATESIM).
+    ///
+    /// The drain used to stamp `last_sim_edit_counter` from the live counter
+    /// on ARRIVAL, which folded any edit made while the simulation ran into
+    /// the record of when it was run — so a result answering a discarded
+    /// configuration was recorded as current evidence and
+    /// [`SimulationState::is_stale`] said `false`. Same defect shape as
+    /// F2.4's late toolpath result, on the surface an operator reads
+    /// collision counts and engagement off.
+    ///
+    /// `None` means no submit has been seen through this controller, in which
+    /// case the drain falls back to the live counter — the old behaviour, and
+    /// not a claim this guard can make.
+    ///
+    /// The analysis lane runs one job at a time and a second submit cancels
+    /// the first (`ThreadedComputeBackend::submit_analysis` clears the queue
+    /// and sets the cancel flag), so at most one result can arrive per stamp.
+    pub submitted_edit_counter: Option<u64>,
     /// Heightmap cell size in mm (smaller = finer detail, more memory/time).
     pub resolution: f64,
     /// When true, resolution is auto-calculated from the smallest tool.
@@ -789,6 +808,7 @@ impl SimulationState {
                 min_safe_stickout: None,
             },
             last_run: None,
+            submitted_edit_counter: None,
             resolution: 0.25,
             auto_resolution: true,
             metric_options: SimulationMetricOptions::default(),

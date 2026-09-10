@@ -1229,9 +1229,29 @@ impl<B: ComputeBackend> AppController<B> {
                             .last_run
                             .as_ref()
                             .map_or(0, |m| m.sim_generation);
+                        // G-LATESIM (F2.10): the counter as it stood at
+                        // SUBMIT, not now. Stamping the live counter here
+                        // recorded the run as having been made against every
+                        // edit that landed while it ran, so an operator who
+                        // changed a parameter mid-simulation was shown the
+                        // old run as current evidence — with no "stale" chip,
+                        // no Readiness warning and no dimmed readout.
+                        //
+                        // The result itself is KEPT, exactly as F2.4 keeps a
+                        // late toolpath result: a simulation is minutes of
+                        // work, and discarding it would leave the operator
+                        // with nothing and no way to tell a cancelled run
+                        // from one that never happened. Stored, and marked
+                        // not-current.
+                        let submitted_at = self
+                            .state
+                            .simulation
+                            .submitted_edit_counter
+                            .take()
+                            .unwrap_or(self.state.gui.edit_counter);
                         self.state.simulation.last_run = Some(SimulationRunMeta {
                             sim_generation: prev_gen + 1,
-                            last_sim_edit_counter: self.state.gui.edit_counter,
+                            last_sim_edit_counter: submitted_at,
                         });
 
                         self.pending_upload = true;

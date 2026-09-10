@@ -258,6 +258,12 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.simulation.metric_options.capture_arc_engagement = true;
         }
 
+        // G-LATESIM (F2.10): record the project's edit state as it is NOW,
+        // because that is the configuration this run answers. The drain used
+        // to read the live counter when the result landed, which quietly
+        // absorbed every edit made while the simulation ran.
+        self.state.simulation.submitted_edit_counter = Some(self.state.gui.edit_counter);
+
         let machine = self.state.session.machine();
         let max_feed_mm_min = machine.max_feed_mm_min.max(1.0);
         let kinematics = machine.kinematics;

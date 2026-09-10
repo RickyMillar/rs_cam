@@ -4695,3 +4695,119 @@ fn a_machine_undo_leaves_the_toolpaths_current_g_undofresh() {
         "but the project is still edited"
     );
 }
+
+// ── F2.10 / G-LATESIM — the simulation arm of the late-arrival race ──────
+//
+// F2.4 closed the toolpath arm: a generation result that answers a
+// superseded configuration is stored but not made current. This is the same
+// defect on the simulation, and it matters at least as much — an operator
+// makes machining decisions off collision counts, engagement and air-cut, so
+// a run that answers a discarded configuration, presented as current
+// evidence, is the export defect on the surface people trust to tell them it
+// is safe to cut.
+//
+// `SimulationRunMeta::last_sim_edit_counter` was stamped in the DRAIN from
+// the live `edit_counter`, which folded every edit made while the simulation
+// ran into the record of when it was run. `is_stale` then said `false`.
+//
+// The counter is project-wide and that is deliberate — see `reports/F2.10.md`
+// §3. In short: this is already `is_stale`'s semantics after a run, so
+// stamping at submit adds no new coarseness; it makes the in-flight window
+// behave like the window either side of it.
+
+/// THE race. An edit lands while the simulation runs; the result that
+/// arrives answers the configuration the operator has already left.
+///
+/// Pre-fix the drain stamped the live counter, so `is_stale` read `false` and
+/// every surface — the Simulation tab chip, `readiness::simulation_check`,
+/// the Readiness panel's `FreshnessGate` — presented the run as current.
+#[test]
+fn an_edit_during_a_simulation_leaves_the_result_stale_g_latesim() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let tp_id = controller.state.session.toolpath_configs()[0].id;
+
+    // Submit the run. The stamp is taken here, not when the result lands.
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    let submitted_at = controller.state.simulation.submitted_edit_counter;
+    assert!(
+        submitted_at.is_some(),
+        "the submit must record the configuration this run answers"
+    );
+
+    // The operator changes a parameter while it runs.
+    panel_edit(&mut controller, tp_id, |entry| {
+        entry.operation.set_feed_rate(4321.0);
+    });
+    let after_edit = controller.state.gui.edit_counter;
+    assert!(
+        Some(after_edit) != submitted_at,
+        "the edit must move the counter, or this test proves nothing"
+    );
+
+    // The result lands.
+    inject_sim_results(&mut controller, 1);
+
+    assert!(
+        controller.state.simulation.has_results(),
+        "STORED, not discarded: a simulation is minutes of work, and throwing \
+         it away leaves the operator unable to tell a cancelled run from one \
+         that never happened"
+    );
+    assert!(
+        controller.state.simulation.is_stale(after_edit),
+        "but NOT current — this run measured the configuration the operator \
+         has already left, and it is the surface they read collision counts \
+         off"
+    );
+    assert_eq!(
+        controller
+            .state
+            .simulation
+            .last_run
+            .as_ref()
+            .map(|m| m.last_sim_edit_counter),
+        submitted_at,
+        "the run is recorded against the counter it was SUBMITTED at, not the \
+         one that happened to be live when it landed"
+    );
+}
+
+/// The other side: with no edit in flight, the result is current. A guard
+/// that staled every simulation would pass the test above and make the
+/// Simulation workspace useless.
+#[test]
+fn a_simulation_with_no_edit_in_flight_is_current_g_latesim() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    inject_sim_results(&mut controller, 1);
+
+    assert!(controller.state.simulation.has_results());
+    assert!(
+        !controller
+            .state
+            .simulation
+            .is_stale(controller.state.gui.edit_counter),
+        "an unedited run is current evidence"
+    );
+}
+
+/// The stamp is consumed by the run it belongs to. A second result arriving
+/// with no submit behind it falls back to the live counter — the pre-F2.10
+/// behaviour, which is not a claim this guard can make either way.
+#[test]
+fn the_submit_stamp_belongs_to_one_run_g_latesim() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    assert!(controller.state.simulation.submitted_edit_counter.is_some());
+    inject_sim_results(&mut controller, 1);
+    assert!(
+        controller.state.simulation.submitted_edit_counter.is_none(),
+        "the stamp is taken by the result it describes, so it cannot be \
+         re-used by a later one that had no submit of its own"
+    );
+}
