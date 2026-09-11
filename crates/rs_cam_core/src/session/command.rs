@@ -31,12 +31,19 @@
 //! the GUI redo stack take. It is the first row that invalidates
 //! UNCONDITIONALLY by contract: it compares nothing, so a restore of a
 //! byte-identical configuration still drops the chain.
+//!
+//! WP5 adds `ReplaceToolpathConfig`, the door the GUI inspector takes. It
+//! is the first row that GATES its invalidation: the panel applies it on
+//! every frame it is open, so the row always writes the configuration and
+//! drops the chain only when
+//! [`ToolpathConfig::generation_inputs_signature`] moved. The two rows
+//! answer two different questions, and neither can serve the other.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::cycle_time::{self, CycleTime};
-use super::{ProjectSession, SessionError, ToolpathComputeResult};
+use super::{ProjectSession, SessionError, ToolpathComputeResult, ToolpathConfig};
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::DressupConfig;
 use crate::enriched_mesh::FaceGroupId;
@@ -63,7 +70,7 @@ macro_rules! for_each_command {
             (Command, SetToolpathParam, "set_toolpath_param", SetToolpathParamArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI inspector writes ToolpathConfig fields directly; WP5 gives it a door",
+                     "the GUI inspector replaces the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
@@ -97,6 +104,17 @@ macro_rules! for_each_command {
                      "undo and redo are GUI actions; MCP has no history",
                  ),
                  cli: Reach::Skip("the CLI holds no undo history"),
+             }),
+            (Command, ReplaceToolpathConfig, "replace_toolpath_config",
+             ReplaceToolpathConfigArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the MCP door edits one named parameter through set_toolpath_param",
+                 ),
+                 cli: Reach::Skip(
+                     "the CLI writes a whole job file, not a live config",
+                 ),
              }),
         }
     };
@@ -211,6 +229,40 @@ pub struct RestoreToolpathSnapshotArgs {
     /// `None` means the caller restores no provenance. The toolpath
     /// keeps the provenance it carries, and the command clears nothing.
     pub feeds_provenance: Option<Box<FeedsProvenance>>,
+}
+
+/// The arguments of the `replace_toolpath_config` command.
+///
+/// The GUI inspector holds no commit event. It rebuilds an owned entry
+/// from the session, lets the widgets write it, and writes the entry back
+/// on every frame the panel is open. So this command runs on every such
+/// frame, and the gate below — not the panel — decides whether the cached
+/// geometry survives.
+///
+/// **The command always writes the configuration, and invalidates only
+/// when [`ToolpathConfig::generation_inputs_signature`] moved.** The two
+/// halves are independent. Name, coolant, the pre and post G-code and the
+/// debug options sit OUTSIDE the signature: they dirty the project and
+/// change no motion, so they must land on a frame that drops nothing. A
+/// return before the write would stop them landing.
+///
+/// This row therefore differs from
+/// [`RestoreToolpathSnapshotArgs`], which invalidates unconditionally by
+/// contract. A restore compares nothing because nothing records which
+/// configuration a cached result answers; a replacement carries the whole
+/// configuration, so the comparison is available and correct.
+///
+/// The configuration is boxed. [`Command`] is one enum, so its size is
+/// the size of its largest variant, and a [`ToolpathConfig`] carries an
+/// operation configuration, a dressup configuration, a heights
+/// configuration and six provenance slots. `large_enum_variant` is
+/// denied.
+#[derive(Debug, Clone)]
+pub struct ReplaceToolpathConfigArgs {
+    /// The index of the toolpath the command replaces.
+    pub index: usize,
+    /// The configuration to install, in full.
+    pub config: Box<ToolpathConfig>,
 }
 
 /// What a command changed.
@@ -518,6 +570,36 @@ impl ProjectSession {
                     // byte-identical restore still drops the chain
                     // (F2.5). The index is checked above, so the read
                     // below answers `Some`.
+                    let enabled = session
+                        .toolpath_configs
+                        .get(index)
+                        .is_some_and(|tc| tc.enabled);
+                    session.invalidate_result_chain(index, enabled);
+                }))
+            }
+            Command::ReplaceToolpathConfig(args) => {
+                let ReplaceToolpathConfigArgs { index, config } = args;
+                if index >= self.toolpath_count() {
+                    return Err(SessionError::ToolpathNotFound(index));
+                }
+                Ok(self.with_effects(Some(index), move |session| {
+                    let after = config.generation_inputs_signature();
+                    let Some(slot) = session.toolpath_configs.get_mut(index) else {
+                        return;
+                    };
+                    let before = slot.generation_inputs_signature();
+                    // The write is unconditional. Name, coolant, the pre
+                    // and post G-code and the debug options are outside
+                    // the signature, so they must land on a frame that
+                    // drops nothing.
+                    *slot = *config;
+                    if after == before {
+                        return;
+                    }
+                    // A generation input moved, so the cached geometry
+                    // answers a configuration that is gone. `enabled` is
+                    // read after the write, because the replacement can
+                    // move it and the chain walk reads the new value.
                     let enabled = session
                         .toolpath_configs
                         .get(index)

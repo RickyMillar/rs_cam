@@ -13,8 +13,8 @@
 //! |---|---|---|---|
 //! | 1 | MCP and CLI setter | `set_toolpath_param` -> `ProjectSession::apply` -> `set_toolpath_param_impl` | WIDE |
 //! | 2 | GUI undo and redo | `ProjectSession::apply` -> `Command::RestoreToolpathSnapshot` | WIDE |
-//! | 3 | GUI inspector write-back | a direct field write, then `session/mutation.rs:1385` `invalidate_toolpath_inputs` | WIDE |
-//! | 4 | wholesale config replacement | `session/mutation.rs:1205` `replace_toolpath_config` | WIDE |
+//! | 3 | feeds Apply funnel | a direct field write, then `invalidate_toolpath_inputs` | WIDE |
+//! | 4 | wholesale config replacement | `ProjectSession::apply` -> `Command::ReplaceToolpathConfig` | WIDE |
 //!
 //! A WIDE path calls `invalidate_result_chain` (`mutation.rs:236`). That
 //! drops the edited toolpath's own result. It then walks the setup's
@@ -38,6 +38,14 @@
 //!
 //! Arm 4 also corrects the audit. `AUDIT.md:68` calls
 //! `replace_toolpath_config` narrow. It is wide since R0.1 §4.3.
+//!
+//! WP5 moved arm 4 too. The dead `ProjectSession::replace_toolpath_config`
+//! became `Command::ReplaceToolpathConfig`, which the GUI inspector calls
+//! on every frame its panel is open. The row gates its invalidation on
+//! `ToolpathConfig::generation_inputs_signature`, so this arm keeps its
+//! expectation only because it edits the OPERATION, which is a generation
+//! input. `replace_toolpath_config_gates_on_the_signature.rs` owns the
+//! gate itself.
 //!
 //! ## Contract assertions, and pinned divergences
 //!
@@ -107,7 +115,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, MutationKind, ProjectSession,
+    AdoptResultArgs, Command, LoadedModel, MutationKind, ProjectSession, ReplaceToolpathConfigArgs,
     RestoreToolpathSnapshotArgs, SetToolpathParamArgs, ToolpathConfig, compute_stale_set,
 };
 
@@ -344,8 +352,14 @@ fn arm_snapshot() -> Observation {
     observe(&s, &before)
 }
 
-/// Arm 3 — a direct field write, then the public door the GUI inspector
-/// uses, `ProjectSession::invalidate_toolpath_inputs`.
+/// Arm 3 — a direct field write, then the public door
+/// `ProjectSession::invalidate_toolpath_inputs`.
+///
+/// The GUI inspector took this door until WP5; the feeds Apply funnel
+/// takes it now (N13). The arm stays raw on purpose. Pointing it at
+/// `Command::ReplaceToolpathConfig` would make the comparison below read
+/// arm 4 against arm 4, and this file's non-vacuity guard exists to stop
+/// exactly that.
 fn arm_inspector_door() -> Observation {
     let mut s = fixture(pocket());
     let before = revisions(&s);
@@ -356,8 +370,14 @@ fn arm_inspector_door() -> Observation {
     observe(&s, &before)
 }
 
-/// Arm 4 — `ProjectSession::replace_toolpath_config`, the wholesale
-/// replacement the audit records as narrow.
+/// Arm 4 — `Command::ReplaceToolpathConfig`, the wholesale replacement
+/// the audit records as narrow, and the door the GUI inspector takes.
+///
+/// WP5 retargeted this arm. The raw `replace_toolpath_config` had zero
+/// production callers and invalidated unconditionally; the row that
+/// replaced it gates on the generation-inputs signature. The arm edits
+/// the operation, which is inside that signature, so the expectation
+/// below does not move.
 fn arm_replace_config() -> Observation {
     let mut s = fixture(pocket());
     let before = revisions(&s);
@@ -368,7 +388,12 @@ fn arm_replace_config() -> Observation {
     op.set_feed_rate(EDITED_FEED_RATE);
     let mut edited = tc("upstream", op, StockSource::Fresh, tool, model);
     edited.id = id;
-    let _ = s.replace_toolpath_config(0, edited).unwrap();
+    let _ = s
+        .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+            index: 0,
+            config: Box::new(edited),
+        }))
+        .expect("index 0 exists");
     assert_feed_landed(&s);
     observe(&s, &before)
 }
@@ -396,13 +421,13 @@ fn the_setter_the_inspector_door_and_the_replacement_agree() {
     );
     assert_eq!(
         inspector.dropped, setter.dropped,
-        "invalidate_toolpath_inputs is the inspector's door onto the same \
-         chain walk. The two must not diverge."
+        "invalidate_toolpath_inputs is the feeds funnel's door onto the \
+         same chain walk. The two must not diverge."
     );
     assert_eq!(
         replacement.dropped, setter.dropped,
-        "replace_toolpath_config is WIDE since R0.1 §4.3. AUDIT.md:68 \
-         calls it narrow and is stale."
+        "Command::ReplaceToolpathConfig is WIDE on a moved generation \
+         input. AUDIT.md:68 calls the replacement narrow and is stale."
     );
 }
 
@@ -414,7 +439,7 @@ fn a_dropped_result_and_a_bumped_revision_are_the_same_event() {
         ("set_toolpath_param", arm_setter()),
         ("Command::RestoreToolpathSnapshot", arm_snapshot()),
         ("invalidate_toolpath_inputs", arm_inspector_door()),
-        ("replace_toolpath_config", arm_replace_config()),
+        ("Command::ReplaceToolpathConfig", arm_replace_config()),
     ];
     for (name, obs) in arms {
         assert_eq!(

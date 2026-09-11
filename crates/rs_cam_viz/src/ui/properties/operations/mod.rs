@@ -54,7 +54,7 @@ use crate::state::toolpath::{
 /// `FromReference(default)` and `Manual` → `FromReference(nearest)` at the top
 /// of its *draw* function, so merely rendering the Heights tab rewrote the
 /// stored config. The panel's write-back (`write_entry_config_to_session`) then
-/// saw `tc.heights` change, set `stale_since`, and auto-regeneration took the
+/// saw `heights` change, stamped `stale_since`, and auto-regeneration took the
 /// op apart. On any operation whose `default_depth_for_heights()` is 0 — the
 /// entire 3D family, which reports `DepthSemantics::None` — the promoted bottom
 /// row became `FromReference { StockTop, -0.0 }`: bottom == stock top, and the

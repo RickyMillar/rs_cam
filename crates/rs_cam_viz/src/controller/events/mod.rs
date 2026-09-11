@@ -912,7 +912,7 @@ impl<B: ComputeBackend> AppController<B> {
                 tc.operation.clone(),
                 tc.tool_id,
                 tc.operation.feeds_style().1,
-                crate::ui::properties::generation_inputs_signature(tc),
+                tc.generation_inputs_signature(),
             )
         };
         let Some(tool) = self
@@ -970,9 +970,10 @@ impl<B: ComputeBackend> AppController<B> {
         );
         // N13: the write above changed a generation input, so the core's
         // cached result is geometry from the previous parameter set. Ask
-        // the inspector's own question, and use the inspector's own door.
-        let inputs_changed =
-            crate::ui::properties::generation_inputs_signature(tc) != signature_before;
+        // core's own question — `ToolpathConfig::generation_inputs_signature`
+        // is the one definition since WP5 — and take the same public door
+        // the inspector took before its command row existed.
+        let inputs_changed = tc.generation_inputs_signature() != signature_before;
         if inputs_changed {
             let _ = self.state.session.invalidate_toolpath_inputs(idx);
         }

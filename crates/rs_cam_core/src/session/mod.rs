@@ -26,8 +26,8 @@ pub mod wizard;
 pub use builder::ProjectSessionBuilder;
 pub use command::{
     AdoptResultArgs, Command, CommandId, CommandKind, Effects, Query, QueryAnswer, Reach,
-    RestoreToolpathSnapshotArgs, SetToolpathParamArgs, Surfaces, ToolpathCycleTimeAnswer,
-    ToolpathCycleTimeArgs,
+    ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs, SetToolpathParamArgs, Surfaces,
+    ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
 pub use compute::{MutationKind, ResolvedGenInputs, StaleSet, compute_stale_set};
 pub use cycle_time::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
@@ -776,6 +776,14 @@ pub struct PlannerOrigin {
 }
 
 /// Configuration for a single toolpath within the session.
+///
+/// The record derives `Debug` and `Clone` because
+/// [`Command::ReplaceToolpathConfig`] carries one and the generated
+/// `Command` enum derives both. The GUI inspector's projection also
+/// clones the stored configuration before it applies the entry's
+/// sixteen fields, which is what keeps `id`, `boundary_inherit` and
+/// `planner_origin` alive across a panel frame.
+#[derive(Debug, Clone)]
 pub struct ToolpathConfig {
     pub id: ToolpathId,
     pub name: String,
@@ -816,6 +824,47 @@ pub struct ToolpathConfig {
     /// [`PlannerOrigin`]; `None` means the operator built it, and is what
     /// every pre-Phase-O project file loads as.
     pub planner_origin: Option<PlannerOrigin>,
+}
+
+impl ToolpathConfig {
+    /// A signature of the fields that decide this toolpath's generated
+    /// geometry.
+    ///
+    /// Two configurations with the same signature generate the same path,
+    /// so a difference across a write is exactly the condition that must
+    /// drop the cached result. Name, coolant, pre and post G-code and the
+    /// debug options are deliberately absent — editing them dirties the
+    /// project but changes no motion (R0.1 §4.3). `enabled` is absent
+    /// too: its own transition keeps the toggled operation's result for a
+    /// re-enable.
+    ///
+    /// Serialized rather than compared field by field because
+    /// [`OperationConfig`], [`HeightsConfig`] and [`DressupConfig`] are
+    /// not `PartialEq`.
+    ///
+    /// **This is the one definition.** WP5 moved it out of the GUI
+    /// inspector (`rs_cam_viz/src/ui/properties/mod.rs`), where it was a
+    /// free function with two callers. Both callers ask the question here
+    /// now: [`Command::ReplaceToolpathConfig`] gates its invalidation on
+    /// it, and the feeds Apply funnel
+    /// (`controller/events/mod.rs::apply_feeds_through_funnel`) compares
+    /// it either side of its own write before it calls
+    /// [`ProjectSession::invalidate_toolpath_inputs`]. The two routes
+    /// agree because they share this method.
+    pub fn generation_inputs_signature(&self) -> String {
+        format!(
+            "{}|{}|{}|{:?}|{:?}|{}|{}|{:?}|{:?}",
+            serde_json::to_string(&self.operation).unwrap_or_default(),
+            serde_json::to_string(&self.dressups).unwrap_or_default(),
+            serde_json::to_string(&self.heights).unwrap_or_default(),
+            self.boundary,
+            self.rest_analysis,
+            self.tool_id,
+            self.model_id,
+            self.stock_source,
+            self.face_selection,
+        )
+    }
 }
 
 /// Result of generating a single toolpath.

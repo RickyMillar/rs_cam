@@ -604,19 +604,19 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .find_toolpath_config_by_id(id)
                 .map(|(_, tc)| crate::state::job::height_context_from_session(&state.session, tc));
 
-            // Snapshot operation and heights for stale_since detection
-            let op_before = state
-                .session
-                .find_toolpath_config_by_id(id)
-                .map(|(_, tc)| serde_json::to_string(&tc.operation).unwrap_or_default());
+            // Snapshot heights and boundary for the two side effects
+            // below. WP5 deleted the operation snapshot beside them: the
+            // operation is inside the generation-inputs signature, so the
+            // command door reports it stale, and no side effect here
+            // needs to know that it was the operation that moved.
             let heights_before = state
                 .session
                 .find_toolpath_config_by_id(id)
                 .map(|(_, tc)| format!("{:?}", tc.heights));
             // P2.2: boundary source/containment/offset changes (including
-            // picking a `DerivedRestRegions` source toolpath) also affect the
-            // generated toolpath, so they need the same stale_since marking
-            // as op/heights edits below.
+            // picking a `DerivedRestRegions` source toolpath) also affect
+            // the generated toolpath. The command door stamps them stale;
+            // this snapshot drives the rest-analysis hook below.
             let boundary_before = state
                 .session
                 .find_toolpath_config_by_id(id)
@@ -727,14 +727,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // collide with the session borrows in the same argument list.
             let mut show_reach_map = state.viewport.show_reach_map;
 
-            // G-FRESHSTATE: set by the write-back below when a field that
-            // decides the generated geometry actually moved. It is the
-            // WIDER condition — the op/heights/boundary comparison under
-            // it misses dressups, the tool and model combos, the
-            // stock-source flip and the face-selection Clear, all of which
-            // used to leave the card green and request no regeneration.
-            let mut inputs_changed = false;
-
             // Build the temporary entry and its canonical session diagnostic
             // contexts together. Keeping them in one snapshot makes it
             // impossible for this production call chain to draw an entry while
@@ -777,34 +769,38 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 
                 state.viewport.show_reach_map = show_reach_map;
 
-                // Write config changes back to session
-                inputs_changed = write_entry_config_to_session(&entry, &mut state.session);
-                // Write runtime changes back to gui
+                // ORDER IS LOAD-BEARING. The runtime write-back runs
+                // FIRST, because it copies `entry.stale_since` — the
+                // value read before the draw — back onto the runtime row.
+                // The config write-back stamps the fresh value, so the
+                // other order would erase the stamp on every edited
+                // frame and leave the card green over dropped geometry.
                 write_entry_runtime_to_gui(&entry, &mut state.gui);
+                // Write config changes back to the session, through the
+                // one command door. The call stamps `stale_since` on
+                // every index the core dropped, and dirties the project,
+                // so no caller keeps a staleness model of its own.
+                let _ = write_entry_config_to_session(&entry, state);
             }
 
-            // B3a: set stale_since when parameters or heights change
+            // Two side effects need to know WHICH field moved, and
+            // `Effects::stale` cannot say. Both fields are inside the
+            // generation-inputs signature, so the command reports the
+            // toolpath stale either way; these comparisons say which of
+            // the two caused it (plan §17 ruling 4).
+            //
             // Demand-driven rest-analysis producer hook (P2 pencil-panel
             // consolidation): captured here (while `tc` is borrowed) and
             // applied below, once the session borrow above is released —
             // see the comment on the follow-up block.
             let mut auto_enable_rest_source: Option<ToolpathId> = None;
             if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id) {
-                let op_changed = op_before.as_ref().is_some_and(|b| {
-                    *b != serde_json::to_string(&tc.operation).unwrap_or_default()
-                });
                 let heights_changed = heights_before
                     .as_ref()
                     .is_some_and(|b| *b != format!("{:?}", tc.heights));
                 let boundary_changed = boundary_before
                     .as_ref()
                     .is_some_and(|b| *b != format!("{:?}", tc.boundary));
-                if inputs_changed || op_changed || heights_changed || boundary_changed {
-                    if let Some(rt) = state.gui.toolpath_rt.get_mut(&id) {
-                        rt.stale_since = Some(std::time::Instant::now());
-                    }
-                    state.gui.mark_edited();
-                }
                 if heights_changed {
                     // Trigger GPU re-upload so height plane positions update
                     events.push(AppEvent::HeightPlanesChanged);
@@ -818,7 +814,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 }
             }
             // The GUI's boundary picker (Machining Boundary section, above)
-            // writes `tc.boundary` directly via `write_entry_config_to_session`
+            // writes `tc.boundary` through `write_entry_config_to_session`
             // rather than going through `session::set_boundary_config` — the
             // MCP entry point (`app/mcp.rs::mcp_set_boundary_config`) is the
             // one caller of that setter. Run the same demand-driven producer
@@ -3700,111 +3696,137 @@ pub fn boundary_summary_line(
     format!("Boundary: {source}{suffix}")
 }
 
-/// A signature of the fields that decide a toolpath's generated geometry.
+/// Project the panel's owned entry onto the STORED toolpath config, and
+/// report the result as the configuration the session should carry.
 ///
-/// Two configs with the same signature generate the same path, so a
-/// difference across the panel's write-back is exactly the condition that
-/// must drop the cached result. Name, coolant, pre/post G-code and the
-/// debug options are deliberately absent — editing them dirties the
-/// project but changes no motion (R0.1 §4.3).
+/// The projection CLONES the stored config and applies the entry's
+/// sixteen fields onto the clone. It never builds a fresh literal.
+/// `ToolpathConfig` carries nineteen fields, and `ToolpathEntry` cannot
+/// supply three of them: `id` (the entry's own id names the row to write,
+/// not a value to write), the retained boundary-inherit flag (no widget
+/// reads or writes it, and the core field survives for project-file
+/// compatibility — G-BOUNDARYINHERIT) and `planner_origin` (the
+/// multi-tool planner owns it, and a duplicate must start hand-owned).
+/// A fresh literal clobbers all three.
 ///
-/// Serialized rather than compared field-by-field because
-/// `OperationConfig`, `HeightsConfig` and `DressupConfig` are not
-/// `PartialEq`. This is the same technique, and the same per-frame cost,
-/// as the `op_before` / `heights_before` snapshots the caller already
-/// takes.
+/// The boundary-inherit flag is named in prose here, not as the
+/// identifier. The G-BOUNDARYINHERIT source sentry scans every line under
+/// `src/ui` for that identifier and allows only a constant struct write.
 ///
-/// N13 gave it a second caller. The feeds Apply funnel
-/// (`controller/events/mod.rs::apply_feeds_through_funnel`) writes
-/// `tc.operation` directly too, so it asks the same question here and
-/// calls the same invalidation door. The two routes agree because they
-/// share this function.
-pub(crate) fn generation_inputs_signature(tc: &rs_cam_core::session::ToolpathConfig) -> String {
-    format!(
-        "{}|{}|{}|{:?}|{:?}|{}|{}|{:?}|{:?}",
-        serde_json::to_string(&tc.operation).unwrap_or_default(),
-        serde_json::to_string(&tc.dressups).unwrap_or_default(),
-        serde_json::to_string(&tc.heights).unwrap_or_default(),
-        tc.boundary,
-        tc.rest_analysis,
-        tc.tool_id,
-        tc.model_id,
-        tc.stock_source,
-        tc.face_selection,
-    )
+/// `feeds_provenance` is derived here, not in core, because both passes
+/// need the entry. The order is load-bearing and is the reason this stays
+/// viz-side.
+pub(crate) fn project_entry_onto(
+    stored: &rs_cam_core::session::ToolpathConfig,
+    entry: &ToolpathEntry,
+) -> Box<rs_cam_core::session::ToolpathConfig> {
+    let mut config = stored.clone();
+    // W2.1: stamp Manual on any feeds dimension the user hand-edited in the
+    // param widgets this frame (value moved but provenance didn't). It reads
+    // the STORED operation and the STORED provenance, which the clone above
+    // keeps whole until the field writes below run.
+    let mut new_provenance = entry.feeds_provenance.clone();
+    new_provenance.detect_manual_edits(
+        &stored.operation,
+        &entry.operation,
+        &stored.feeds_provenance,
+    );
+    // G-PILLCLAMP: a per-field ⚡ pill wrote these fields this frame and
+    // stamped the recommendation's provenance on the entry. When that
+    // stamp equals the stored one (same row, value moved) the pass above
+    // cannot tell it from a hand edit and relabels it Manual — restore
+    // the pill's stamp, because the funnel produced the value.
+    for field in &entry.pill_stamped_fields {
+        if let Some(stamp) = entry.feeds_provenance.get(*field) {
+            new_provenance.set(*field, stamp.clone());
+        }
+    }
+    config.name = entry.name.clone();
+    config.enabled = entry.enabled;
+    config.tool_id = entry.tool_id.0;
+    config.model_id = entry.model_id.0;
+    config.operation = entry.operation.clone();
+    config.dressups = entry.dressups.clone();
+    config.heights = entry.heights.clone();
+    config.boundary = entry.boundary.clone();
+    config.rest_analysis = entry.rest_analysis.clone();
+    config.coolant = entry.coolant;
+    config.pre_gcode = if entry.pre_gcode.is_empty() {
+        None
+    } else {
+        Some(entry.pre_gcode.clone())
+    };
+    config.post_gcode = if entry.post_gcode.is_empty() {
+        None
+    } else {
+        Some(entry.post_gcode.clone())
+    };
+    config.stock_source = entry.stock_source;
+    config.face_selection = entry.face_selection.clone();
+    config.debug_options = entry.debug_options;
+    config.feeds_provenance = new_provenance;
+    Box::new(config)
 }
 
-/// Write config changes from a `ToolpathEntry` back to the session's `ToolpathConfig`.
+/// Write config changes from a `ToolpathEntry` back to the session,
+/// through the one command door.
 ///
-/// G-FRESHSTATE: when a generation input actually moved, this also drops
-/// the core's cached result for the toolpath and everything downstream of
-/// it. Before that the panel wrote every field through
-/// `find_toolpath_config_by_id_mut` and no core setter ran, so the core
-/// went on holding — and export went on emitting — geometry from the
-/// previous parameter set, and the downstream `FromRemainingStock` chain
-/// was never invalidated (R0.1 §2.2 item 1).
+/// The panel holds no commit event: it rebuilds the entry, draws it, and
+/// calls this on EVERY frame it is open. So this runs every frame, and
+/// `Command::ReplaceToolpathConfig` decides what survives. The command
+/// always writes the configuration — name, coolant, the pre and post
+/// G-code and the debug options land whatever else moved — and drops the
+/// cached result plus everything downstream of it only when
+/// `ToolpathConfig::generation_inputs_signature` moved.
+///
+/// G-FRESHSTATE: before that gate existed the panel wrote every field
+/// through `find_toolpath_config_by_id_mut` and no core setter ran, so
+/// the core went on holding — and export went on emitting — geometry
+/// from the previous parameter set, and the downstream
+/// `FromRemainingStock` chain was never invalidated (R0.1 §2.2 item 1).
+///
+/// WP5 widened what the GUI stamps. It stamped the edited toolpath alone,
+/// so a downstream `FromRemainingStock` row the core had dropped stayed
+/// green on screen and the auto-regeneration sweep never queued it. The
+/// stamp now covers every index `Effects::stale` names.
+///
+/// `None` says the session carries no toolpath with the entry's id, which
+/// is the only way the command can refuse here: the index comes from a
+/// lookup in this function and nothing mutates the session between the
+/// two.
 pub(crate) fn write_entry_config_to_session(
     entry: &ToolpathEntry,
-    session: &mut rs_cam_core::session::ProjectSession,
-) -> bool {
-    let mut invalidate: Option<usize> = None;
-    if let Some((index, tc)) = session.find_toolpath_config_by_id_mut(entry.id) {
-        let signature_before = generation_inputs_signature(tc);
-        // W2.1: stamp Manual on any feeds dimension the user hand-edited in the
-        // param widgets this frame (value moved but provenance didn't). Must run
-        // before `tc.operation` / `tc.feeds_provenance` are overwritten below.
-        let mut new_provenance = entry.feeds_provenance.clone();
-        new_provenance.detect_manual_edits(&tc.operation, &entry.operation, &tc.feeds_provenance);
-        // G-PILLCLAMP: a per-field ⚡ pill wrote these fields this frame and
-        // stamped the recommendation's provenance on the entry. When that
-        // stamp equals the stored one (same row, value moved) the pass above
-        // cannot tell it from a hand edit and relabels it Manual — restore
-        // the pill's stamp, because the funnel produced the value.
-        for field in &entry.pill_stamped_fields {
-            if let Some(stamp) = entry.feeds_provenance.get(*field) {
-                new_provenance.set(*field, stamp.clone());
-            }
-        }
-        tc.name = entry.name.clone();
-        tc.enabled = entry.enabled;
-        tc.tool_id = entry.tool_id.0;
-        tc.model_id = entry.model_id.0;
-        tc.operation = entry.operation.clone();
-        tc.dressups = entry.dressups.clone();
-        tc.heights = entry.heights.clone();
-        tc.boundary = entry.boundary.clone();
-        tc.rest_analysis = entry.rest_analysis.clone();
-        tc.coolant = entry.coolant;
-        tc.pre_gcode = if entry.pre_gcode.is_empty() {
-            None
-        } else {
-            Some(entry.pre_gcode.clone())
-        };
-        tc.post_gcode = if entry.post_gcode.is_empty() {
-            None
-        } else {
-            Some(entry.post_gcode.clone())
-        };
-        tc.stock_source = entry.stock_source;
-        tc.face_selection = entry.face_selection.clone();
-        tc.debug_options = entry.debug_options;
-        tc.feeds_provenance = new_provenance;
-        if generation_inputs_signature(tc) != signature_before {
-            invalidate = Some(index);
-        }
+    state: &mut AppState,
+) -> Option<rs_cam_core::session::Effects> {
+    let (index, config) = {
+        let (index, stored) = state.session.find_toolpath_config_by_id(entry.id)?;
+        (index, project_entry_onto(stored, entry))
+    };
+    let command = rs_cam_core::session::Command::ReplaceToolpathConfig(
+        rs_cam_core::session::ReplaceToolpathConfigArgs { index, config },
+    );
+    let effects = state.session.apply(command).ok()?;
+    // An empty set is the frame the operator only LOOKED at the panel.
+    // Stamping or dirtying there would mark a healthy project edited on
+    // every frame (G-HEIGHTSTAB).
+    if !effects.stale.is_empty() {
+        crate::state::stale::stamp_stale(state, &effects.stale);
+        state.gui.mark_edited();
     }
-    // Runs once the `&mut ToolpathConfig` borrow above is released.
-    // `enabled` is not in the signature: the panel does not edit it (the
-    // card's row control does, through `set_toolpath_enabled`), and its
-    // own transition keeps the toggled op's result for a re-enable.
-    if let Some(index) = invalidate {
-        let _ = session.invalidate_toolpath_inputs(index);
-    }
-    invalidate.is_some()
+    Some(effects)
 }
 
 /// Write runtime changes from a `ToolpathEntry` back to the GUI's `ToolpathRuntime`.
-fn write_entry_runtime_to_gui(entry: &ToolpathEntry, gui: &mut crate::state::runtime::GuiState) {
+///
+/// It copies `entry.stale_since`, which several widgets stamp while they
+/// draw, so the panel MUST call it BEFORE `write_entry_config_to_session`.
+/// The config write-back stamps the fresh value for every index the core
+/// dropped; the other order would overwrite that with the value read
+/// before the draw.
+pub(crate) fn write_entry_runtime_to_gui(
+    entry: &ToolpathEntry,
+    gui: &mut crate::state::runtime::GuiState,
+) {
     if let Some(rt) = gui.toolpath_rt.get_mut(&entry.id) {
         rt.visible = entry.visible;
         rt.locked = entry.locked;

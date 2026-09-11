@@ -1344,32 +1344,6 @@ impl ProjectSession {
         })
     }
 
-    /// Replace a single toolpath configuration by its index in
-    /// `toolpath_configs`, invalidating its cached result and simulation.
-    #[instrument(skip(self, config))]
-    pub fn replace_toolpath_config(
-        &mut self,
-        index: usize,
-        config: ToolpathConfig,
-    ) -> Result<Effects, SessionError> {
-        self.try_with_effects(Some(index), move |session| {
-            let slot = session
-                .toolpath_configs
-                .get_mut(index)
-                .ok_or(SessionError::ToolpathNotFound(index))?;
-            *slot = config;
-            // R0.1 §4.3: a wholesale config replacement is an input edit
-            // like any other, so it invalidates the downstream stock
-            // chain too, not only this toolpath's own slot.
-            let enabled = session
-                .toolpath_configs
-                .get(index)
-                .is_some_and(|tc| tc.enabled);
-            session.invalidate_result_chain(index, enabled);
-            Ok(())
-        })
-    }
-
     /// Install an operation, dressup and face-selection triple on the
     /// toolpath at `index`, and drop THAT INDEX ALONE.
     ///
@@ -1559,13 +1533,22 @@ impl ProjectSession {
     /// Public door onto the chain invalidation for callers that write
     /// `ToolpathConfig` fields directly rather than through a setter.
     ///
-    /// The GUI inspector is the one such caller: its per-frame write-back
-    /// (`ui/properties/mod.rs::write_entry_config_to_session`) writes every
-    /// field of the selected toolpath through `find_toolpath_config_by_id_mut`,
-    /// so no core setter runs. Before this door existed the core kept the
-    /// PREVIOUS result and export emitted it (R0.1 §2.2 item 1), and the
-    /// downstream `FromRemainingStock` chain was never invalidated either.
-    /// Call it after writing, when a generation input actually changed.
+    /// The feeds Apply funnel is the one such caller
+    /// (`controller/events/mod.rs::apply_feeds_through_funnel`, N13). It
+    /// resolves the tool, the machine, the material and the
+    /// recommendation from GUI state, then writes `operation` and
+    /// `feeds_provenance` through `toolpath_configs_mut`, so no core
+    /// setter runs. It reads
+    /// [`ToolpathConfig::generation_inputs_signature`](super::ToolpathConfig::generation_inputs_signature)
+    /// either side of that write and calls this door when the signature
+    /// moved. Before this door existed the core kept the PREVIOUS result
+    /// and export emitted it (R0.1 §2.2 item 1), and the downstream
+    /// `FromRemainingStock` chain was never invalidated either.
+    ///
+    /// The GUI inspector was the other such caller until WP5. It takes
+    /// [`Command::ReplaceToolpathConfig`](super::Command) now, which
+    /// carries the same gate inside core. The funnel keeps this door
+    /// until §15 ruling 4 folds `ApplyFeeds` into a row of its own.
     pub fn invalidate_toolpath_inputs(&mut self, index: usize) -> Effects {
         self.with_effects(Some(index), move |session| {
             let enabled = session
@@ -1661,7 +1644,7 @@ impl ProjectSession {
 mod tests {
     use super::*;
     use crate::ids::ToolpathId;
-    use crate::session::{AdoptResultArgs, Command};
+    use crate::session::{AdoptResultArgs, Command, ReplaceToolpathConfigArgs};
     use std::sync::Arc;
 
     use crate::compute::catalog::OperationConfig;
@@ -2383,16 +2366,66 @@ mod tests {
         assert_eq!(s.tools()[new_idx].id, ToolId(11));
     }
 
+    /// Replace the configuration at index 0 through the command door.
+    fn replace(s: &mut ProjectSession, config: ToolpathConfig) -> Effects {
+        s.apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+            index: 0,
+            config: Box::new(config),
+        }))
+        .expect("index 0 exists")
+    }
+
+    /// WP5. A replacement that moves no generation input keeps the
+    /// cached result, and the four fields outside the signature land.
+    ///
+    /// The GUI inspector applies this command on every frame the panel is
+    /// open, because it holds no commit event. An ungated replacement —
+    /// which is what `replace_toolpath_config` was before WP5 — would
+    /// therefore drop the geometry on every such frame.
     #[test]
-    fn replace_toolpath_config_invalidates() {
+    fn replace_toolpath_config_outside_the_signature_keeps_the_result() {
         let mut s = make_session();
         s.add_tool(make_tool());
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
         s.results.insert(0, fake_result());
 
-        let new_tc = make_tc(s.tools()[0].id.0, 0);
-        let _ = s.replace_toolpath_config(0, new_tc).unwrap();
+        let mut edited = s.toolpath_configs()[0].clone();
+        edited.name = "renamed".to_owned();
+        edited.coolant = CoolantMode::Flood;
+        edited.pre_gcode = Some("M3 S18000".to_owned());
+        edited.post_gcode = Some("M5".to_owned());
 
+        let effects = replace(&mut s, edited);
+
+        assert!(
+            effects.stale.is_empty(),
+            "name, coolant and the pre and post G-code change no motion"
+        );
+        assert!(
+            s.results.contains_key(&0),
+            "the cached geometry still answers every input that decides it"
+        );
+        let stored = &s.toolpath_configs()[0];
+        assert_eq!(stored.name, "renamed");
+        assert_eq!(stored.coolant, CoolantMode::Flood);
+        assert_eq!(stored.pre_gcode.as_deref(), Some("M3 S18000"));
+        assert_eq!(stored.post_gcode.as_deref(), Some("M5"));
+    }
+
+    /// WP5. A replacement that moves a generation input drops the result.
+    #[test]
+    fn replace_toolpath_config_on_a_moved_signature_invalidates() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
+        s.results.insert(0, fake_result());
+
+        let mut edited = s.toolpath_configs()[0].clone();
+        edited.operation.set_feed_rate(4321.0);
+
+        let effects = replace(&mut s, edited);
+
+        assert_eq!(effects.stale, BTreeSet::from([0_usize]));
         assert!(!s.results.contains_key(&0));
     }
 

@@ -3931,6 +3931,10 @@ fn state_of<B: ComputeBackend>(controller: &AppController<B>, index: usize) -> F
 /// Drive the inspector's write-back exactly as the panel does: build the
 /// entry from the session, mutate it the way the widget would, write it
 /// back. `edit` receives the entry.
+///
+/// The stale stamp and the dirty flag live inside the write-back since
+/// WP5, so this helper adds neither. A helper that added its own would
+/// stop measuring what the panel does.
 fn panel_edit<B: ComputeBackend>(
     controller: &mut AppController<B>,
     id: ToolpathId,
@@ -3943,14 +3947,13 @@ fn panel_edit<B: ComputeBackend>(
     )
     .expect("toolpath exists");
     edit(&mut entry);
-    let changed =
-        crate::ui::properties::write_entry_config_to_session(&entry, &mut controller.state.session);
-    if changed {
-        if let Some(rt) = controller.state.gui.toolpath_rt.get_mut(&id) {
-            rt.stale_since = Some(std::time::Instant::now());
-        }
-        controller.state.gui.mark_edited();
-    }
+    // The panel's own order. The runtime write-back runs first because it
+    // copies `entry.stale_since`; the config write-back stamps the fresh
+    // value. A helper that reversed the two would stop modelling the
+    // panel, and the stale-stamp assertions below would pass over a
+    // defect the operator sees as a green card on dropped geometry.
+    crate::ui::properties::write_entry_runtime_to_gui(&entry, &mut controller.state.gui);
+    let _ = crate::ui::properties::write_entry_config_to_session(&entry, &mut controller.state);
 }
 
 /// WP5. The projection protects the three fields the inspector entry

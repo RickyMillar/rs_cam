@@ -147,21 +147,23 @@ pub struct ToolpathEntry {
     pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
     /// Per-dimension provenance of the stored feeds values (W2.1). Mirrors
     /// `ToolpathConfig::feeds_provenance`; round-trips via
-    /// `build_entry_from_session_and_gui` / `write_entry_config_to_session`.
+    /// `build_entry_from_session_and_gui` / `ui::properties::project_entry_onto`.
     pub feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
     /// Feeds fields whose value a per-field ⚡ pill wrote THIS FRAME, with the
     /// recommendation's stamp already set on `feeds_provenance` (G-PILLCLAMP,
-    /// 2026-09-10). Read by `write_entry_config_to_session`, whose
+    /// 2026-09-10). Read by `ui::properties::project_entry_onto`, whose
     /// `detect_manual_edits` pass would otherwise relabel the write `Manual`
     /// whenever the new stamp equals the stored one (same vendor row, value
     /// moved). Never persisted; the entry is rebuilt empty every frame.
     pub pill_stamped_fields: Vec<rs_cam_core::feeds::FeedsField>,
     /// Multi-tool planner provenance (Phase O). Mirrors
     /// `ToolpathConfig::planner_origin` so the legacy fallback loader can
-    /// carry it into the session; `write_entry_config_to_session`
-    /// deliberately never writes it back — the session copy is
-    /// authoritative, and a duplicate (`duplicate_from` → `from_init`)
-    /// starts hand-owned at `None` so a re-plan cannot delete the copy.
+    /// carry it into the session; `ui::properties::project_entry_onto`
+    /// deliberately never writes it back — it projects onto a CLONE of
+    /// the stored config, so the session copy survives. The session copy
+    /// is authoritative, and a duplicate (`duplicate_from` →
+    /// `from_init`) starts hand-owned at `None` so a re-plan cannot
+    /// delete the copy.
     pub planner_origin: Option<rs_cam_core::session::PlannerOrigin>,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
     pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
