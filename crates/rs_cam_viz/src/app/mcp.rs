@@ -2394,7 +2394,7 @@ impl super::RsCamApp {
         split_setups: bool,
         accept_previous_geometry: bool,
     ) -> String {
-        // Apply the requested tool-change handling to the session wizard
+        // Apply the requested tool-change handling to the GUI wizard
         // before export so `overlay_for` picks it up — the MCP equivalent
         // of the export wizard's Tool Change dropdown. Without this, MCP
         // exports always used the post default (M0 manual pause), which is
@@ -2411,11 +2411,7 @@ impl super::RsCamApp {
                     ));
                 }
             };
-            self.controller
-                .state_mut()
-                .session
-                .wizard_mut()
-                .tool_change_override = Some(mode);
+            self.controller.state_mut().gui.wizard.tool_change_override = Some(mode);
         }
         // Route through the viz-side exporter so the gate sees the viz cut
         // trace (`state.simulation.results.cut_trace`) — the async sim

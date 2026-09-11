@@ -1,5 +1,5 @@
+use crate::state::wizard::OutputLayout;
 use rs_cam_core::gcode_validator::{Severity, validate};
-use rs_cam_core::session::OutputLayout;
 use std::path::Path;
 
 use super::RsCamApp;
@@ -11,15 +11,15 @@ impl RsCamApp {
     /// success.
     pub(super) fn handle_wizard_save(&mut self) {
         let state = self.controller.state();
-        let layout = state.session.wizard().output_layout;
-        let template = state.session.wizard().filename_template.clone();
-        let allow_errors = state.session.wizard().allow_validator_errors;
+        let layout = state.gui.wizard.output_layout;
+        let template = state.gui.wizard.filename_template.clone();
+        let allow_errors = state.gui.wizard.allow_validator_errors;
         let job = if state.session.name().is_empty() {
             "untitled".to_owned()
         } else {
             slugify(state.session.name())
         };
-        let last_dir = state.session.wizard().last_save_dir.clone();
+        let last_dir = state.gui.wizard.last_save_dir.clone();
         let post_format = state.gui.post.format;
 
         match layout {
@@ -248,11 +248,7 @@ impl RsCamApp {
 
     fn remember_dir(&mut self, dir: Option<&Path>) {
         if let Some(d) = dir {
-            self.controller
-                .state_mut()
-                .session
-                .wizard_mut()
-                .last_save_dir = Some(d.to_path_buf());
+            self.controller.state_mut().gui.wizard.last_save_dir = Some(d.to_path_buf());
         }
     }
 

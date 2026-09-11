@@ -1212,6 +1212,29 @@ impl ProjectSession {
         })
     }
 
+    /// Replace the message the operator reads at a setup change.
+    ///
+    /// The door of the `SetSetupPauseMessage` command row.
+    /// [`Effects::stale`] is empty by design, on the
+    /// [`Self::set_setup_datum`] precedent: the message reaches the
+    /// EXPORT alone, beside the `M0` the post emits, so it moves no
+    /// geometry a result holds.
+    #[instrument(skip(self))]
+    pub fn set_setup_pause_message(
+        &mut self,
+        setup_index: usize,
+        message: Option<String>,
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            setup.pause_message = message;
+            Ok(())
+        })
+    }
+
     /// Replace the models in scope for a setup.
     ///
     /// The door of the `SetSetupModels` command row. An EMPTY list means

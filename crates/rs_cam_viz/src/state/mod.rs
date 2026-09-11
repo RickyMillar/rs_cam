@@ -10,6 +10,7 @@ pub mod simulation;
 pub mod stale;
 pub mod toolpath;
 pub mod viewport;
+pub mod wizard;
 
 use history::UndoHistory;
 use overlays::OverlayPanelState;
@@ -143,11 +144,11 @@ pub struct AppState {
     /// Show keyboard shortcuts reference window.
     pub show_shortcuts: bool,
     /// Show the multi-step Export Wizard. Persistent settings live on
-    /// `session.wizard()`; this flag and `wizard_active_step` are
+    /// `gui.wizard`; this flag and `wizard_active_step` are
     /// transient UI state.
     pub show_export_wizard: bool,
     /// 0-indexed currently visible wizard step. Initialised from
-    /// `session.wizard().last_step_visited` when the wizard opens so
+    /// `gui.wizard.last_step_visited` when the wizard opens so
     /// the user resumes where they left off.
     pub wizard_active_step: u8,
     /// Cached state of the per-toolpath Optimize modal. `None` when

@@ -1687,6 +1687,7 @@ impl RsCamApp {
             | CommandId::SetSetupName
             | CommandId::SetSetupDatum
             | CommandId::SetSetupModels
+            | CommandId::SetSetupPauseMessage
             | CommandId::MoveToolpathToSetup
             | CommandId::SetToolpathParam
             | CommandId::AdoptResult
@@ -2505,6 +2506,7 @@ impl RsCamApp {
             | CommandId::SetSetupName
             | CommandId::SetSetupDatum
             | CommandId::SetSetupModels
+            | CommandId::SetSetupPauseMessage
             | CommandId::SetToolpathDebugOptions
             | CommandId::ReplaceTool
             | CommandId::ReplaceFixture

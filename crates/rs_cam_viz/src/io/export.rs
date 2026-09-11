@@ -51,8 +51,8 @@ use crate::state::toolpath::{CompensationType, OperationConfig, ProfileSide};
 /// is set to the effective safe-Z (`wizard.safe_z_override` or
 /// `gui.post.safe_z`). Otherwise it stays `None` and the overlay's
 /// `apply_to_program` no-ops on cutting Z values.
-fn overlay_for(session: &ProjectSession, gui: &GuiState) -> WizardOverlay {
-    let w = session.wizard();
+fn overlay_for(gui: &GuiState) -> WizardOverlay {
+    let w = &gui.wizard;
     let dry_run_safe_z = if w.dry_run {
         Some(w.safe_z_override.unwrap_or(gui.post.safe_z))
     } else {
@@ -429,7 +429,7 @@ pub fn export_gcode_from_session_with_policy(
         post,
         &viz_load_report(session, sim),
         policy,
-        &overlay_for(session, gui),
+        &overlay_for(gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -498,7 +498,7 @@ pub fn export_combined_gcode_from_session(
         gui.post.safe_z,
         &viz_load_report(session, sim),
         gui.tool_load_overrides.as_policy(),
-        &overlay_for(session, gui),
+        &overlay_for(gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -560,7 +560,7 @@ pub fn export_single_toolpath_from_session(
         post,
         &viz_load_report(session, sim),
         gui.tool_load_overrides.as_policy(),
-        &overlay_for(session, gui),
+        &overlay_for(gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -630,7 +630,7 @@ pub fn export_setup_gcode_from_session_with_policy(
         post,
         &viz_load_report(session, sim),
         policy,
-        &overlay_for(session, gui),
+        &overlay_for(gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 

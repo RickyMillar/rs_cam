@@ -1,6 +1,7 @@
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::session::{
-    Command, Fixture, FixtureKind, KeepOutZone, SetMachineArgs, SetStockConfigArgs,
+    Command, Fixture, FixtureKind, KeepOutZone, SetMachineArgs, SetSetupPauseMessageArgs,
+    SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -450,6 +451,31 @@ impl<B: ComputeBackend> AppController<B> {
             .position(|s| s.id == setup_id.0)
         {
             let _ = self.state.session.rename_setup(idx, name);
+            self.state.gui.mark_edited();
+        }
+    }
+
+    /// Write the message the operator reads at a setup change.
+    ///
+    /// The export wizard names the setup by ID, and the command row takes
+    /// an index like every other setup row, so this door resolves the
+    /// one to the other. The row drops no result: the message reaches the
+    /// export alone, beside the `M0` the post emits.
+    pub(crate) fn set_setup_pause_message(&mut self, setup_id: usize, message: Option<String>) {
+        let Some(setup_index) = self
+            .state
+            .session
+            .list_setups()
+            .iter()
+            .position(|s| s.id == setup_id)
+        else {
+            return;
+        };
+        let command = Command::SetSetupPauseMessage(SetSetupPauseMessageArgs {
+            setup_index,
+            message,
+        });
+        if self.apply_controller_command(command, "the setup pause message") {
             self.state.gui.mark_edited();
         }
     }

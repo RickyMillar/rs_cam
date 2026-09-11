@@ -33,7 +33,7 @@ use rs_cam_core::gcode::PostFormat;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, OutputLayout, ProjectSession, ProjectSessionBuilder,
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
     ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
@@ -48,6 +48,7 @@ use rs_cam_viz::state::job::SetupId;
 use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
 use rs_cam_viz::state::toolpath::{OperationConfig, ToolpathResult};
+use rs_cam_viz::state::wizard::OutputLayout;
 
 fn temp_dir(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -179,9 +180,9 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
 /// SingleFile path: WizardSave funnels through `export_gcode_from_session`.
 #[test]
 fn wizard_single_file_save_writes_valid_gcode() {
-    let (mut session, gui, sim) = build_session();
-    session.wizard_mut().output_layout = OutputLayout::SingleFile;
-    session.wizard_mut().filename_template = "{job}.nc".to_owned();
+    let (session, mut gui, sim) = build_session();
+    gui.wizard.output_layout = OutputLayout::SingleFile;
+    gui.wizard.filename_template = "{job}.nc".to_owned();
 
     let gcode =
         export_gcode_from_session(&session, &gui, &sim).expect("single-file export succeeds");
@@ -204,9 +205,9 @@ fn wizard_single_file_save_writes_valid_gcode() {
 /// `handle_wizard_save`'s PerSetup branch.
 #[test]
 fn wizard_per_setup_save_writes_one_file_per_setup() {
-    let (mut session, gui, sim) = build_session();
-    session.wizard_mut().output_layout = OutputLayout::PerSetup;
-    session.wizard_mut().filename_template = "{job}_{setup}.nc".to_owned();
+    let (session, mut gui, sim) = build_session();
+    gui.wizard.output_layout = OutputLayout::PerSetup;
+    gui.wizard.filename_template = "{job}_{setup}.nc".to_owned();
 
     let setup_ids: Vec<SetupId> = session
         .list_setups()
@@ -241,9 +242,9 @@ fn wizard_per_setup_save_writes_one_file_per_setup() {
 /// PerToolpath path: per-toolpath helper writes one file each.
 #[test]
 fn wizard_per_toolpath_save_writes_one_file_per_toolpath() {
-    let (mut session, gui, sim) = build_session();
-    session.wizard_mut().output_layout = OutputLayout::PerToolpath;
-    session.wizard_mut().filename_template = "{job}_{toolpath}.nc".to_owned();
+    let (session, mut gui, sim) = build_session();
+    gui.wizard.output_layout = OutputLayout::PerToolpath;
+    gui.wizard.filename_template = "{job}_{toolpath}.nc".to_owned();
 
     let ids: Vec<rs_cam_core::ToolpathId> = session
         .toolpath_configs()
@@ -272,14 +273,14 @@ fn wizard_per_toolpath_save_writes_one_file_per_toolpath() {
 /// export_gcode_phases_with_overlay_checked → emitter.
 #[test]
 fn wizard_overlay_overrides_reflect_in_emitted_gcode() {
-    let (mut session, mut gui, sim) = build_session();
+    let (session, mut gui, sim) = build_session();
 
     // grblHAL preamble emits {wcs_line} + {units_word} + M3 S{rpm}, so
     // overrides on those words show up in the rendered preamble.
     gui.post.format = rs_cam_core::gcode::PostFormat::GrblHal;
 
-    session.wizard_mut().wcs_override = Some(rs_cam_core::gcode::WcsCode::G56);
-    session.wizard_mut().spindle_warmup_secs = 9;
+    gui.wizard.wcs_override = Some(rs_cam_core::gcode::WcsCode::G56);
+    gui.wizard.spindle_warmup_secs = 9;
 
     let gcode = export_gcode_from_session(&session, &gui, &sim).expect("overlay export succeeds");
 
@@ -304,8 +305,8 @@ fn wizard_overlay_overrides_reflect_in_emitted_gcode() {
 /// stays in millimeters (a silent 25.4× scale error on a real machine).
 #[test]
 fn wizard_inch_units_override_blocks_export() {
-    let (mut session, gui, sim) = build_session();
-    session.wizard_mut().units_override = Some(rs_cam_core::gcode::Units::Inch);
+    let (session, mut gui, sim) = build_session();
+    gui.wizard.units_override = Some(rs_cam_core::gcode::Units::Inch);
 
     let err = export_gcode_from_session(&session, &gui, &sim)
         .expect_err("inch override must refuse export");
@@ -316,9 +317,9 @@ fn wizard_inch_units_override_blocks_export() {
     );
 
     // Back to mm (or post default): export works again.
-    session.wizard_mut().units_override = Some(rs_cam_core::gcode::Units::Mm);
+    gui.wizard.units_override = Some(rs_cam_core::gcode::Units::Mm);
     export_gcode_from_session(&session, &gui, &sim).expect("mm override exports");
-    session.wizard_mut().units_override = None;
+    gui.wizard.units_override = None;
     export_gcode_from_session(&session, &gui, &sim).expect("post-default exports");
 }
 
@@ -332,10 +333,10 @@ fn default_wizard_state_does_not_mutate_export() {
 
     let (session, gui, sim) = build_session();
     // build_session leaves WizardState at its default — no overrides set.
-    assert!(session.wizard().wcs_override.is_none());
-    assert!(session.wizard().units_override.is_none());
-    assert!(session.wizard().safe_z_override.is_none());
-    assert_eq!(session.wizard().spindle_warmup_secs, 0);
+    assert!(gui.wizard.wcs_override.is_none());
+    assert!(gui.wizard.units_override.is_none());
+    assert!(gui.wizard.safe_z_override.is_none());
+    assert_eq!(gui.wizard.spindle_warmup_secs, 0);
 
     // Exercise the same data path the wizard's Save dispatches through.
     let with_overlay = export_gcode_from_session(&session, &gui, &sim).expect("export succeeds");
@@ -465,24 +466,26 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
     );
 }
 
-/// Wizard-state mutations are observable through the public accessor
-/// (mimics how the AppEvent handlers update settings).
+/// Wizard-state mutations are observable on `GuiState` (mimics how the
+/// AppEvent handlers update settings). WP6b moved the record out of
+/// `ProjectSession`; nothing saved it and the loader reset it on every
+/// load, so it is GUI state and not project data.
 #[test]
 fn wizard_state_mutations_round_trip() {
-    let (mut session, _gui, _sim) = build_session();
+    let (_session, mut gui, _sim) = build_session();
 
     // Mirror the input.rs handler bodies.
-    session.wizard_mut().output_layout = OutputLayout::PerToolpath;
-    session.wizard_mut().filename_template = "{toolpath}.{ext}".to_owned();
-    session.wizard_mut().wcs_override = Some(rs_cam_core::gcode::WcsCode::G55);
-    session.wizard_mut().units_override = Some(rs_cam_core::gcode::Units::Inch);
-    session.wizard_mut().safe_z_override = Some(20.0);
-    session.wizard_mut().spindle_warmup_secs = 5;
-    session.wizard_mut().dry_run = true;
-    session.wizard_mut().allow_validator_errors = true;
-    session.wizard_mut().last_step_visited = 5;
+    gui.wizard.output_layout = OutputLayout::PerToolpath;
+    gui.wizard.filename_template = "{toolpath}.{ext}".to_owned();
+    gui.wizard.wcs_override = Some(rs_cam_core::gcode::WcsCode::G55);
+    gui.wizard.units_override = Some(rs_cam_core::gcode::Units::Inch);
+    gui.wizard.safe_z_override = Some(20.0);
+    gui.wizard.spindle_warmup_secs = 5;
+    gui.wizard.dry_run = true;
+    gui.wizard.allow_validator_errors = true;
+    gui.wizard.last_step_visited = 5;
 
-    let w = session.wizard();
+    let w = &gui.wizard;
     assert_eq!(w.output_layout, OutputLayout::PerToolpath);
     assert_eq!(w.filename_template, "{toolpath}.{ext}");
     assert_eq!(w.wcs_override, Some(rs_cam_core::gcode::WcsCode::G55));
@@ -504,10 +507,10 @@ fn wizard_state_mutations_round_trip() {
 /// 12.500, and cutting moves sit exactly at 12.500.
 #[test]
 fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
-    let (mut session, gui, sim) = build_session();
+    let (session, mut gui, sim) = build_session();
 
-    session.wizard_mut().dry_run = true;
-    session.wizard_mut().safe_z_override = Some(12.5);
+    gui.wizard.dry_run = true;
+    gui.wizard.safe_z_override = Some(12.5);
 
     let gcode = export_gcode_from_session(&session, &gui, &sim).expect("dry-run export succeeds");
 

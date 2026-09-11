@@ -45,7 +45,7 @@
 //!
 //! - Wizard overlay. The core door passes `WizardOverlay::default()`
 //!   (`gcode/mod.rs:759`). The GUI door passes `overlay_for(session,
-//!   gui)` (`io/export.rs:429-435`), which reads `session.wizard()`.
+//!   gui)` (`io/export.rs:429-435`), which reads `gui.wizard`.
 //!   The fixture never touches the wizard, so `WizardState::default()`
 //!   (`session/wizard.rs:72`: `dry_run` false, every override `None`,
 //!   `spindle_warmup_secs` 0) gives the default overlay.

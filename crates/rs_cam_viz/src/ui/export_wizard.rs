@@ -1,6 +1,6 @@
 //! Multi-step Export Wizard — Phase 5 of `GCODE_EXPORT_OVERHAUL.md`.
 //!
-//! Resumable settings live on `session.wizard()`; the active step and
+//! Resumable settings live on `state.gui.wizard`; the active step and
 //! visibility flag live on `AppState`. Each step is a small `step_*`
 //! draw fn; `draw()` dispatches based on `state.wizard_active_step`.
 //!
@@ -16,11 +16,11 @@
 
 use rs_cam_core::gcode::{CoolantMode, PostDefinition, PostFormat, Units, WcsCode};
 use rs_cam_core::gcode_validator::{Finding, Severity, validate};
-use rs_cam_core::session::OutputLayout;
 
 use super::AppEvent;
 use super::readiness::{self, CycleTimeBasisExt};
 use crate::state::AppState;
+use crate::state::wizard::OutputLayout;
 use crate::ui::theme;
 use crate::ui_command::{NoArgs, UiCommand};
 
@@ -209,7 +209,7 @@ fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppE
     ui.heading("Output layout");
     ui.add_space(4.0);
 
-    let wiz = state.session.wizard();
+    let wiz = &state.gui.wizard;
     let current = wiz.output_layout;
     let mut selected = current;
 
@@ -318,7 +318,7 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     ui.add_space(4.0);
 
     let post = state.gui.post.format.definition();
-    let wiz = state.session.wizard();
+    let wiz = &state.gui.wizard;
 
     // ── WCS picker ──
     ui.label(
@@ -546,7 +546,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
             .small()
             .italics(),
         );
-        let wiz = state.session.wizard();
+        let wiz = &state.gui.wizard;
         let mut selected = wiz.tool_change_override;
         let selected_label =
             selected.map_or_else(|| "Use post default".to_owned(), |m| m.label().to_owned());
@@ -589,7 +589,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     // ── Spindle warmup ──
     ui.heading("Spindle warmup");
     ui.add_space(4.0);
-    let wiz = state.session.wizard();
+    let wiz = &state.gui.wizard;
     let mut warmup = wiz.spindle_warmup_secs;
     let resp = ui.add(
         egui::DragValue::new(&mut warmup)
@@ -846,7 +846,7 @@ fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
 
         if errors > 0 {
             ui.add_space(8.0);
-            let wiz = state.session.wizard();
+            let wiz = &state.gui.wizard;
             let mut allow = wiz.allow_validator_errors;
             let resp = ui.checkbox(
                 &mut allow,
@@ -898,7 +898,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.add_space(4.0);
 
     let session = &state.session;
-    let wiz = session.wizard();
+    let wiz = &state.gui.wizard;
     let post = state.gui.post.format;
     let post_def = post.definition();
 

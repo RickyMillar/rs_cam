@@ -1,12 +1,17 @@
 //! Resumable settings for the export wizard.
 //!
-//! Stored on `ProjectSession` so the GUI, CLI, and MCP harness can all read
-//! and update the same state. Currently in-memory only; persistence to the
-//! project TOML can be added later if it proves useful.
+//! **This is GUI state, not project data** (plan §19 ruling 5). The
+//! record lived on `ProjectSession` until WP6b. Nothing saved it and the
+//! project loader reset it on every load, so ten fields of
+//! session-lifetime view memory sat inside the core session behind a
+//! `wizard_mut` hatch. The record now lives on [`GuiState`], which is the
+//! argument every export door already takes.
+//!
+//! [`GuiState`]: crate::state::runtime::GuiState
 
 use std::path::PathBuf;
 
-use crate::gcode::{ToolChangeMode, Units, WcsCode};
+use rs_cam_core::gcode::{ToolChangeMode, Units, WcsCode};
 
 /// How emitted g-code is split across files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -31,7 +36,8 @@ impl OutputLayout {
     }
 }
 
-/// Resumable wizard settings persisted on `ProjectSession`.
+/// Resumable wizard settings, held on
+/// [`GuiState`](crate::state::runtime::GuiState).
 ///
 /// All `Option`-valued overrides default to `None`, meaning "use the post's
 /// default for this field". Concrete values come from `PostDefinition`

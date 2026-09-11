@@ -319,6 +319,15 @@ pub struct GuiState {
     /// `AppController::process_reach_overlay`, filled by the Reach compute
     /// lane, drawn by `ViewportCallback::show_reach_overlay`.
     pub reach_overlay: ReachOverlayState,
+    /// Resumable export-wizard settings.
+    ///
+    /// WP6b, plan section 19 ruling 5. The record lived on
+    /// `ProjectSession` behind a `wizard_mut` hatch. Nothing saved it and
+    /// the project loader reset it on every load, so it is GUI state and
+    /// not project data. It sits here rather than on `AppState` because
+    /// `GuiState` is the argument every export door already takes, so
+    /// `io::export::overlay_for` reads it without a new parameter.
+    pub wizard: crate::state::wizard::WizardState,
 }
 
 impl GuiState {
@@ -335,6 +344,7 @@ impl GuiState {
             mcp_highlights: HashMap::new(),
             pending_toolpath_tab: None,
             reach_overlay: ReachOverlayState::new(),
+            wizard: crate::state::wizard::WizardState::default(),
         }
     }
 

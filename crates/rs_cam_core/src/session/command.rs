@@ -210,6 +210,17 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
+            (Command, SetSetupPauseMessage, "set_setup_pause_message",
+             SetSetupPauseMessageArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool writes this; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
             (Command, MoveToolpathToSetup, "move_toolpath_to_setup",
              MoveToolpathToSetupArgs, Effects,
              Surfaces {
@@ -881,6 +892,24 @@ pub struct SetSetupModelsArgs {
     /// The models in scope for the setup. An EMPTY list means "all
     /// models"; it is not the same as a list that names every model.
     pub model_ids: Vec<crate::compute::stock_config::ModelId>,
+}
+
+/// The arguments of the `set_setup_pause_message` command.
+///
+/// The message the operator reads at the setup change. It reaches the
+/// EXPORT alone, beside the `M0` the post emits, so [`Effects::stale`] is
+/// empty by design: the write moves no geometry a result holds. An empty
+/// `Effects` here says the command changed no toolpath, not that nothing
+/// was measured.
+///
+/// The wizard names the setup by id and resolves the index itself, so the
+/// payload matches the other setup rows.
+#[derive(Debug, Clone)]
+pub struct SetSetupPauseMessageArgs {
+    /// The index of the setup to write.
+    pub setup_index: usize,
+    /// The message, or `None` to clear it.
+    pub message: Option<String>,
 }
 
 /// The arguments of the `move_toolpath_to_setup` command.
@@ -1563,6 +1592,9 @@ impl ProjectSession {
             Command::SetSetupDatum(args) => self.set_setup_datum(args.setup_index, args.datum),
             Command::SetSetupModels(args) => {
                 self.set_setup_models(args.setup_index, args.model_ids)
+            }
+            Command::SetSetupPauseMessage(args) => {
+                self.set_setup_pause_message(args.setup_index, args.message)
             }
             Command::MoveToolpathToSetup(args) => self.move_toolpath_to_setup(
                 args.toolpath_index,

@@ -47,55 +47,46 @@ impl RsCamApp {
                     let clamped = step.min(crate::ui::export_wizard::STEP_COUNT - 1);
                     let s = self.controller.state_mut();
                     s.wizard_active_step = clamped;
-                    if clamped > s.session.wizard().last_step_visited {
-                        s.session.wizard_mut().last_step_visited = clamped;
+                    if clamped > s.gui.wizard.last_step_visited {
+                        s.gui.wizard.last_step_visited = clamped;
                     }
                 }
                 AppEvent::WizardSetWcsOverride(wcs) => {
                     let s = self.controller.state_mut();
-                    s.session.wizard_mut().wcs_override = wcs;
+                    s.gui.wizard.wcs_override = wcs;
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSetUnitsOverride(units) => {
                     let s = self.controller.state_mut();
-                    s.session.wizard_mut().units_override = units;
+                    s.gui.wizard.units_override = units;
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSetSafeZOverride(safe_z) => {
                     let s = self.controller.state_mut();
-                    s.session.wizard_mut().safe_z_override = safe_z;
+                    s.gui.wizard.safe_z_override = safe_z;
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSetDryRun(dry_run) => {
                     let s = self.controller.state_mut();
-                    s.session.wizard_mut().dry_run = dry_run;
+                    s.gui.wizard.dry_run = dry_run;
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSetSpindleWarmup(secs) => {
                     let s = self.controller.state_mut();
-                    s.session.wizard_mut().spindle_warmup_secs = secs;
+                    s.gui.wizard.spindle_warmup_secs = secs;
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSetToolChangeMode(mode) => {
                     let s = self.controller.state_mut();
-                    s.session.wizard_mut().tool_change_override = mode;
+                    s.gui.wizard.tool_change_override = mode;
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSetSetupPauseMessage { setup_id, message } => {
-                    let s = self.controller.state_mut();
-                    if let Some(setup) = s
-                        .session
-                        .setups_mut()
-                        .iter_mut()
-                        .find(|setup| setup.id == setup_id)
-                    {
-                        setup.pause_message = message;
-                        s.gui.mark_edited();
-                    }
+                    self.controller.set_setup_pause_message(setup_id, message);
                 }
                 AppEvent::WizardSetAllowValidatorErrors(allow) => {
                     let s = self.controller.state_mut();
-                    s.session.wizard_mut().allow_validator_errors = allow;
+                    s.gui.wizard.allow_validator_errors = allow;
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSave => {
@@ -103,21 +94,28 @@ impl RsCamApp {
                 }
                 AppEvent::WizardSetOutputLayout(layout) => {
                     let s = self.controller.state_mut();
-                    s.session.wizard_mut().output_layout = layout;
+                    s.gui.wizard.output_layout = layout;
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSetFilenameTemplate(template) => {
                     let s = self.controller.state_mut();
-                    s.session.wizard_mut().filename_template = template;
+                    s.gui.wizard.filename_template = template;
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSetPost(format) => {
                     let s = self.controller.state_mut();
                     s.gui.post.format = format;
                     s.gui.mark_edited();
-                    let mut session_post = s.session.post_config().clone();
-                    session_post.format = format.to_token().to_owned();
-                    let _ = s.session.set_post_config(session_post);
+                    let mut post = s.session.post_config().clone();
+                    post.format = format.to_token().to_owned();
+                    let command = rs_cam_core::session::Command::SetPostConfig(
+                        rs_cam_core::session::SetPostConfigArgs {
+                            post: Box::new(post),
+                        },
+                    );
+                    if let Err(error) = s.session.apply(command) {
+                        tracing::warn!("the post format write was refused: {error}");
+                    }
                 }
                 AppEvent::ExportCombinedGcode => {
                     match crate::io::export::export_combined_gcode_from_session(
@@ -376,8 +374,8 @@ impl RsCamApp {
                         let resume = self
                             .controller
                             .state()
-                            .session
-                            .wizard()
+                            .gui
+                            .wizard
                             .last_step_visited
                             .min(crate::ui::export_wizard::STEP_COUNT - 1);
                         let s = self.controller.state_mut();

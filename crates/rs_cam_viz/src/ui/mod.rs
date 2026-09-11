@@ -132,7 +132,7 @@ pub enum AppEvent {
     /// Update the post-processor format from the wizard's Step 1 dropdown.
     WizardSetPost(crate::state::job::PostFormat),
     /// Step 2: pick how the emitted g-code is split across files.
-    WizardSetOutputLayout(rs_cam_core::session::OutputLayout),
+    WizardSetOutputLayout(crate::state::wizard::OutputLayout),
     /// Step 2: update the filename-template field. Substitutions like
     /// `{job}` / `{setup}` / `{toolpath}` are applied at save time
     /// based on the active layout.
