@@ -274,9 +274,7 @@ macro_rules! for_each_command {
             (Command, SetToolpathDebugOptions, "set_toolpath_debug_options",
              SetToolpathDebugOptionsArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "no GUI control writes this flag; the generate door writes it",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Skip(
                      "no MCP tool writes this; the wire has no such mutation",
                  ),
@@ -380,9 +378,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetPostConfig, "set_spindle_strategy", SetPostConfigArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",

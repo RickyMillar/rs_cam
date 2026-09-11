@@ -5,7 +5,10 @@ pub(crate) mod simulation;
 mod toolpath;
 mod undo;
 
-use rs_cam_core::session::{Command, RestoreToolpathSnapshotArgs};
+use rs_cam_core::session::{
+    Command, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs, SetPostConfigArgs,
+    SetToolpathDebugOptionsArgs,
+};
 
 use crate::compute::ComputeBackend;
 use crate::state::selection::Selection;
@@ -19,6 +22,52 @@ use crate::ui_command::{
 use super::AppController;
 
 impl<B: ComputeBackend> AppController<B> {
+    /// Run one command from an event arm, and stamp what it dropped.
+    ///
+    /// `subject` names what the operator was editing, so a refusal
+    /// reaches them in their own words. The method answers whether the
+    /// command was applied, so a caller can dirty the project once for a
+    /// group of them.
+    fn apply_controller_command(&mut self, command: Command, subject: &str) -> bool {
+        match self.state.session.apply(command) {
+            Ok(effects) => {
+                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+                true
+            }
+            Err(error) => {
+                self.push_notification(
+                    format!("Could not write {subject}: {error}"),
+                    crate::controller::Severity::Error,
+                );
+                false
+            }
+        }
+    }
+
+    /// Turn the generator debug capture on or off for every toolpath.
+    ///
+    /// One `SetToolpathDebugOptions` per index. The row moves no
+    /// revision: a debug trace is an OUTPUT of a generation, never an
+    /// input to one, so this drops no cached result.
+    fn set_generator_trace_capture_all(&mut self, enabled: bool) {
+        let count = self.state.session.toolpath_count();
+        for index in 0..count {
+            let Some(tc) = self.state.session.get_toolpath_config(index) else {
+                continue;
+            };
+            let mut debug_options = tc.debug_options;
+            if debug_options.enabled == enabled {
+                continue;
+            }
+            debug_options.enabled = enabled;
+            let command = Command::SetToolpathDebugOptions(SetToolpathDebugOptionsArgs {
+                index,
+                debug_options,
+            });
+            self.apply_controller_command(command, "the generator debug capture");
+        }
+    }
+
     pub fn handle_internal_event(&mut self, event: AppEvent) {
         match event {
             // --- Import / model events ---
@@ -226,7 +275,15 @@ impl<B: ComputeBackend> AppController<B> {
                 // frame). Invalidates Suggest's cached output via the
                 // existing dirty-tracking hooks.
                 if self.state.session.post_config().spindle_strategy != strategy {
-                    self.state.session.post_mut().spindle_strategy = strategy;
+                    // `SetPostConfig` replaces the WHOLE block, so a
+                    // surface that offers one field reads the current
+                    // block, writes that field and sends the result.
+                    let mut post = self.state.session.post_config().clone();
+                    post.spindle_strategy = strategy;
+                    let command = Command::SetPostConfig(SetPostConfigArgs {
+                        post: Box::new(post),
+                    });
+                    self.apply_controller_command(command, "the spindle strategy");
                     self.state.gui.post.spindle_strategy = strategy;
                     self.state.gui.mark_edited();
                 }
@@ -252,9 +309,7 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             AppEvent::SetGeneratorTraceCaptureAll(enabled) => {
-                for tc in self.state.session.toolpath_configs_mut() {
-                    tc.debug_options.enabled = enabled;
-                }
+                self.set_generator_trace_capture_all(enabled);
             }
 
             // --- Pass-through events handled elsewhere ---
@@ -912,16 +967,11 @@ impl<B: ComputeBackend> AppController<B> {
         else {
             return Err(format!("toolpath {} not found", toolpath_id.0));
         };
-        let (operation, tool_id, pass_role, signature_before) = {
+        let (operation, tool_id, pass_role) = {
             let Some(tc) = self.state.session.toolpath_configs().get(idx) else {
                 return Err(format!("toolpath {} disappeared", toolpath_id.0));
             };
-            (
-                tc.operation.clone(),
-                tc.tool_id,
-                tc.operation.feeds_style().1,
-                tc.generation_inputs_signature(),
-            )
+            (tc.operation.clone(), tc.tool_id, tc.operation.feeds_style().1)
         };
         let Some(tool) = self
             .state
@@ -960,14 +1010,20 @@ impl<B: ComputeBackend> AppController<B> {
             None => rec,
         };
 
-        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
+        // The funnel writes a DRAFT clone and applies it through the
+        // command door. `ReplaceToolpathConfig` writes the configuration
+        // unconditionally and gates its drop on
+        // `ToolpathConfig::generation_inputs_signature` — which IS the
+        // N13 rule this arm used to run by hand, in core's own words and
+        // at one site (WP5).
+        let Some(mut draft) = self.state.session.toolpath_configs().get(idx).cloned() else {
             return Err(format!("toolpath {} disappeared", toolpath_id.0));
         };
         rs_cam_core::feeds::suggest::apply(
             &rec,
             scope,
-            &mut tc.operation,
-            &mut tc.feeds_provenance,
+            &mut draft.operation,
+            &mut draft.feeds_provenance,
             rs_cam_core::feeds::suggest::ApplyContext {
                 tool: &tool,
                 machine: &machine,
@@ -976,15 +1032,16 @@ impl<B: ComputeBackend> AppController<B> {
                 suggest: rs_cam_core::feeds::suggest::SuggestContext::default(),
             },
         );
-        // N13: the write above changed a generation input, so the core's
-        // cached result is geometry from the previous parameter set. Ask
-        // core's own question — `ToolpathConfig::generation_inputs_signature`
-        // is the one definition since WP5 — and take the same public door
-        // the inspector took before its command row existed.
-        let inputs_changed = tc.generation_inputs_signature() != signature_before;
-        if inputs_changed {
-            let _ = self.state.session.invalidate_toolpath_inputs(idx);
-        }
+        let command = Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+            index: idx,
+            config: Box::new(draft),
+        });
+        let effects = self
+            .state
+            .session
+            .apply(command)
+            .map_err(|error| format!("toolpath {}: {error}", toolpath_id.0))?;
+        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
@@ -1050,15 +1107,28 @@ impl<B: ComputeBackend> AppController<B> {
         else {
             return;
         };
-        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
+        // A draft plus one `ReplaceToolpathConfig`. The dial is an
+        // `Option<f64>`, which `set_toolpath_param`'s JSON value cannot
+        // carry cleanly, and the row's signature gate drops the chain the
+        // scallop target belongs to.
+        let Some(mut draft) = self.state.session.toolpath_configs().get(idx).cloned() else {
             return;
         };
-        if let rs_cam_core::compute::catalog::OperationConfig::DropCutter(cfg) = &mut tc.operation {
+        if let rs_cam_core::compute::catalog::OperationConfig::DropCutter(cfg) =
+            &mut draft.operation
+        {
             if cfg.scallop_height == value {
                 return;
             }
             cfg.scallop_height = value;
         } else {
+            return;
+        }
+        let command = Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+            index: idx,
+            config: Box::new(draft),
+        });
+        if !self.apply_controller_command(command, "the scallop target") {
             return;
         }
         self.state.gui.mark_edited();

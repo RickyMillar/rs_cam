@@ -1,4 +1,4 @@
-use rs_cam_core::session::{Command, RestoreToolpathSnapshotArgs};
+use rs_cam_core::session::{Command, ReplaceToolArgs, RestoreToolpathSnapshotArgs};
 
 use crate::compute::ComputeBackend;
 use crate::state::history::UndoAction;
@@ -119,17 +119,15 @@ impl<B: ComputeBackend> AppController<B> {
     /// invalidated, so the sweep should pick them up rather than the operator
     /// hunting for them.
     fn apply_tool_snapshot(&mut self, tool_id: ToolId, tool: ToolConfig) {
-        if let Some(slot) = self
-            .state
-            .session
-            .tools_mut()
-            .iter_mut()
-            .find(|t| t.id == tool_id)
-        {
-            *slot = tool;
-        }
-        let affected = self.state.session.invalidate_tool(tool_id.0).stale;
-        crate::state::stale::stamp_stale(&mut self.state, &affected);
+        // `Command::ReplaceTool` writes the record and runs
+        // `invalidate_tool` in ONE mutation, so the write and the drop
+        // cannot drift apart. The row is the one the tool panel's
+        // `commit_tool_draft` takes (WP6).
+        let command = Command::ReplaceTool(ReplaceToolArgs {
+            tool_id: tool_id.0,
+            config: Box::new(tool),
+        });
+        self.apply_controller_command(command, "the tool");
         self.invalidate_simulation();
     }
 

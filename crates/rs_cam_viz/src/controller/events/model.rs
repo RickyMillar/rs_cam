@@ -1,5 +1,7 @@
 use rs_cam_core::compute::transform::FaceUp;
-use rs_cam_core::session::{Fixture, FixtureKind, KeepOutZone};
+use rs_cam_core::session::{
+    Command, Fixture, FixtureKind, KeepOutZone, SetMachineArgs, SetStockConfigArgs,
+};
 
 use crate::compute::ComputeBackend;
 use crate::state::job::{FlipAxis, ModelId, SetupId, ToolConfig};
@@ -180,10 +182,15 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn import_machine_from_library(&mut self, name: &str) {
         match rs_cam_core::machine_library::load(name) {
             Ok(profile) => {
-                *self.state.session.machine_mut() = profile;
-                let _ = self.state.session.invalidate_machine();
-                self.state.gui.mark_edited();
-                self.set_status(format!("Imported machine '{name}' (snapshot copy)"));
+                // `SetMachine` invalidates exactly as `invalidate_machine`
+                // does (§19 ruling 2), so the two calls become one.
+                let command = Command::SetMachine(SetMachineArgs {
+                    machine: Box::new(profile),
+                });
+                if self.apply_controller_command(command, "the machine profile") {
+                    self.state.gui.mark_edited();
+                    self.set_status(format!("Imported machine '{name}' (snapshot copy)"));
+                }
             }
             Err(e) => self.report_machine_library_error("Import machine failed", &e),
         }
@@ -369,35 +376,47 @@ impl<B: ComputeBackend> AppController<B> {
             None => Err(NO_PIN_TOOL_MESSAGE.to_owned()),
         };
 
+        // One DRAFT of the stock, and one `SetStockConfig`. The pin
+        // placement and the `flip_axis` cache write must stay in one
+        // block, because the cache write reads the pin list the refusal
+        // arm leaves alone. `add_alignment_pin` takes one pin at a time
+        // and dedupes, so a split here would reorder the cache write
+        // against the refusal.
         let mut refusal: Option<String> = None;
-        {
-            let stock = self.state.session.stock_mut();
-            if stock.alignment_pins.is_empty() {
-                match plan {
-                    Ok(pins) => stock.alignment_pins.extend(pins),
-                    // Refuse rather than emit a placement that hangs off
-                    // the blank or seats four ways: the operator would
-                    // find out at the flip, with the part already cut.
-                    Err(message) => refusal = Some(message),
-                }
+        let mut stock = self.state.session.stock_config().clone();
+        if stock.alignment_pins.is_empty() {
+            match plan {
+                Ok(pins) => stock.alignment_pins.extend(pins),
+                // Refuse rather than emit a placement that hangs off
+                // the blank or seats four ways: the operator would
+                // find out at the flip, with the part already cut.
+                Err(message) => refusal = Some(message),
             }
-            // `flip_axis` is a CACHE of the setup's face_up, never an
-            // independent control — a stored axis that disagrees with the
-            // setups is exactly how this shipped with a null axis beside a
-            // Bottom setup. Every validation reads `face_up` instead.
-            //
-            // It is cached ONLY once pins exist for it to describe. On a
-            // refusal it stays `None`, and that is load-bearing: the setup
-            // panel suppresses its "Add alignment pins for this flip"
-            // offer when a flip axis is set, so caching it here would
-            // leave a flipped setup with zero pins reading as configured
-            // and no affordance left to fix it.
-            stock.flip_axis = if stock.alignment_pins.is_empty() {
-                None
-            } else {
-                FlipAxis::from_face_up(flip_face)
-            };
         }
+        // `flip_axis` is a CACHE of the setup's face_up, never an
+        // independent control — a stored axis that disagrees with the
+        // setups is exactly how this shipped with a null axis beside a
+        // Bottom setup. Every validation reads `face_up` instead.
+        //
+        // It is cached ONLY once pins exist for it to describe. On a
+        // refusal it stays `None`, and that is load-bearing: the setup
+        // panel suppresses its "Add alignment pins for this flip"
+        // offer when a flip axis is set, so caching it here would
+        // leave a flipped setup with zero pins reading as configured
+        // and no affordance left to fix it.
+        stock.flip_axis = if stock.alignment_pins.is_empty() {
+            None
+        } else {
+            FlipAxis::from_face_up(flip_face)
+        };
+        // **This is a behaviour change.** The hatch wrote the pins and
+        // the cached axis and dropped nothing; the row drops every result
+        // (G-FRESHSTATE — a pin is a hole the machine cuts, and an
+        // inherited boundary follows the stock outline).
+        let command = Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(stock),
+        });
+        self.apply_controller_command(command, "the registration pins");
 
         if let Some(message) = refusal {
             self.push_notification(message, super::super::Severity::Error);
