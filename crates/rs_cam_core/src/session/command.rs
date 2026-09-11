@@ -181,9 +181,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetSetupName, "set_setup_name", SetSetupNameArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Skip(
                      "no MCP tool writes this; the wire has no such mutation",
                  ),
