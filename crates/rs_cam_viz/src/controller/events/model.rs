@@ -1,7 +1,7 @@
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::session::{
-    Command, Fixture, FixtureKind, KeepOutZone, SetMachineArgs, SetSetupPauseMessageArgs,
-    SetStockConfigArgs,
+    Command, Fixture, FixtureKind, KeepOutZone, SetMachineArgs, SetSetupNameArgs,
+    SetSetupPauseMessageArgs, SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -442,16 +442,24 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.selection = Selection::Stock;
     }
 
+    /// Write the name the operator reads for a setup.
+    ///
+    /// The setup tree names the setup by ID, and the command row takes an
+    /// index like every other setup row, so this door resolves the one to
+    /// the other. The row drops no result: the name reaches the pause
+    /// message and the setup sheet, never a generation input.
     pub(crate) fn handle_rename_setup(&mut self, setup_id: SetupId, name: String) {
-        if let Some(idx) = self
+        if let Some(setup_index) = self
             .state
             .session
             .list_setups()
             .iter()
             .position(|s| s.id == setup_id.0)
         {
-            let _ = self.state.session.rename_setup(idx, name);
-            self.state.gui.mark_edited();
+            let command = Command::SetSetupName(SetSetupNameArgs { setup_index, name });
+            if self.apply_controller_command(command, "the setup name") {
+                self.state.gui.mark_edited();
+            }
         }
     }
 

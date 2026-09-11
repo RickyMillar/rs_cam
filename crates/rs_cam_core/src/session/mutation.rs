@@ -1176,8 +1176,15 @@ impl ProjectSession {
     /// The door of the `SetSetupName` command row. [`Effects::stale`] is
     /// empty by design: the name reaches the M0 pause message and the
     /// setup sheet, never a generation input.
+    ///
+    /// Crate-private since WP16; every surface renames through
+    /// `ProjectSession::apply`.
     #[instrument(skip(self))]
-    pub fn rename_setup(&mut self, index: usize, name: String) -> Result<Effects, SessionError> {
+    pub(crate) fn rename_setup(
+        &mut self,
+        index: usize,
+        name: String,
+    ) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             let setup = session
                 .setups
