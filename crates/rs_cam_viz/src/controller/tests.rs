@@ -3144,6 +3144,120 @@ fn a_gui_simulation_reaches_the_session_so_start_sees_the_prior_stock_n12_item10
     );
 }
 
+/// WP17 (tech-debt review H1) — a save keeps the simulation.
+///
+/// `save_job_to_path` called `ProjectSession::set_post_config` on every
+/// save, with the post block the session already held, and that setter
+/// wrote `simulation = None`. `ProjectSession::start` reads the rest
+/// snapshot from that field (WP11b), so every `FromRemainingStock`
+/// operation was refused after a save, and nothing re-adopted.
+///
+/// The arm drives the real doors, in the order the operator does:
+///
+/// 1. the submit door generates the first link;
+/// 2. the GUI's own simulation publishes the snapshot;
+/// 3. the drain adopts it into the session;
+/// 4. the Save menu's own function writes the file.
+///
+/// It then asserts the session still holds the simulation, and that
+/// `start` on the rest operation succeeds.
+///
+/// Pre-fix this fails at the first assertion after the save: the session
+/// holds no simulation, and `start` reports the rest refusal.
+///
+/// The core half is
+/// `crates/rs_cam_core/tests/save_keeps_the_simulation_wp17.rs`.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_save_keeps_the_simulation_so_a_rest_op_still_starts_wp17() {
+    let mut controller = rest_chain_controller(1);
+    let ids: Vec<ToolpathId> = controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| tc.id)
+        .collect();
+    assert_eq!(
+        ids.len(),
+        2,
+        "the fixture holds one fresh-stock op and one rest op"
+    );
+
+    controller.submit_toolpath_compute(ids[0]);
+    controller.drain_compute_results();
+    assert!(
+        controller.run_simulation_with_all(),
+        "the simulation must submit, or this arm measures nothing"
+    );
+    controller.drain_compute_results();
+    assert!(
+        controller.state.session.simulation_result().is_some(),
+        "the control: the session holds a simulation BEFORE the save"
+    );
+
+    let path = temp_path("wp17_save_keeps_simulation", "toml");
+    controller
+        .save_job_to_path(&path)
+        .expect("the save writes the fixture file");
+
+    assert!(
+        controller.state.session.simulation_result().is_some(),
+        "a save keeps the simulation; the rest operations depend on it"
+    );
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let refusal = controller
+        .state
+        .session
+        .start(
+            rs_cam_core::session::Job::GenerateToolpath(
+                rs_cam_core::session::GenerateToolpathArgs { index: 1 },
+            ),
+            &cancel,
+        )
+        .err()
+        .map(|error| error.to_string());
+    assert!(
+        refusal.is_none(),
+        "the rest operation still starts after a save; got: {refusal:?}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// WP17 — the MCP `save_project` conversion writes no session state.
+///
+/// `app/mcp/commands.rs` states the contract at the top of the file: the
+/// conversion step READS the session and turns a wire request into a
+/// command. The `save_project` arm mutated instead — it called
+/// `set_post_config` — and that write is what dropped the simulation.
+///
+/// The arm reads the source of the conversion rather than the running
+/// app, because `RsCamApp` holds a window and a lane and no test builds
+/// one. It measures the discriminator alone: `state_mut()` inside the
+/// arm. The repaired arm still READS the session on both sides of the
+/// comparison it makes.
+///
+/// Pre-fix the arm contains `state_mut()`.
+#[cfg(feature = "mcp")]
+#[test]
+fn the_mcp_save_conversion_writes_no_session_state_wp17() {
+    const COMMANDS_SRC: &str = include_str!("../app/mcp/commands.rs");
+    let at = COMMANDS_SRC
+        .find("CoreRequest::SaveProject(p) => {")
+        .expect("core_command_for holds a save_project arm");
+    let tail = &COMMANDS_SRC[at..];
+    let end = tail
+        .find("\n            CoreRequest::")
+        .unwrap_or(tail.len());
+    let arm = &tail[..end];
+    assert!(
+        !arm.contains("state_mut()"),
+        "the conversion step reads; it must not write. The save_project \
+         arm reads:\n{arm}"
+    );
+}
+
 /// A/M10's rule, enforced: the loop never picks a simulation resolution for
 /// you. Omitting it on a project with rest ops is refused, with instructions.
 #[cfg(feature = "mcp")]
