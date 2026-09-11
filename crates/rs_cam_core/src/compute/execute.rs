@@ -4378,7 +4378,13 @@ pub fn apply_dressups(
         let params = crate::feedopt::FeedOptParams {
             nominal_feed_rate: nominal,
             max_feed_rate: max_rate,
-            min_feed_rate: nominal * 0.5,
+            // WP21: the ceiling is the operator's own dial and the floor is
+            // DERIVED from a second, independent dial. A nominal feed above
+            // twice the ceiling therefore puts the floor above the ceiling.
+            // The ceiling is the hard limit and the floor is a preference,
+            // so the floor takes the ceiling's value. Before WP21 the
+            // inverted pair reached `f64::clamp`, which panics on it.
+            min_feed_rate: (nominal * 0.5).min(max_rate),
             ramp_rate,
             air_cut_threshold: 0.05,
         };

@@ -31,9 +31,21 @@ use crate::toolpath_spans::AnnotatedToolpath;
 pub struct FeedOptParams {
     /// Base feed rate at full engagement (mm/min).
     pub nominal_feed_rate: f64,
-    /// Maximum allowed feed rate (mm/min). Typically 2-4× nominal.
+    /// Maximum allowed feed rate (mm/min). The operator sets this dial
+    /// (`DressupConfig::feed_max_rate`), and it is the hard ceiling: no
+    /// cutting move leaves this pass above it.
+    ///
+    /// WP21: the dial is independent of `nominal_feed_rate`, so it MAY sit
+    /// below it. The doc line here used to say "Typically 2-4× nominal",
+    /// and that assumption is exactly what broke — see `min_feed_rate`.
     pub max_feed_rate: f64,
-    /// Minimum allowed feed rate (mm/min).
+    /// Minimum allowed feed rate (mm/min). A preference, not a limit.
+    ///
+    /// The caller derives this from `nominal_feed_rate`, so a nominal feed
+    /// above twice `max_feed_rate` puts it above the ceiling. The ceiling
+    /// wins, and the caller caps the floor at the ceiling (WP21). The pass
+    /// composes `f64::max` and `f64::min` rather than calling `f64::clamp`,
+    /// which panics when the pair inverts.
     pub min_feed_rate: f64,
     /// Maximum feed rate change per mm of travel (mm/min per mm).
     /// Prevents abrupt acceleration/deceleration.
@@ -140,6 +152,15 @@ fn optimize_feed_rates_inner(
     let n_samples = 24; // circumference samples for engagement
     let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
 
+    // WP21: one read of the feed range serves both arms below, so the
+    // air-cut arm and the engaged arm cannot disagree about the ceiling.
+    // The caller caps the floor at the ceiling. This pass applies the floor
+    // FIRST and the ceiling LAST, so the ceiling still wins if a later
+    // caller hands over an inverted pair. `f64::clamp` panics on such a
+    // pair, and this workspace denies `panic`.
+    let ceiling = params.max_feed_rate;
+    let floor = params.min_feed_rate;
+
     // First pass: compute optimal feed rate for each move
     let mut feed_rates: Vec<f64> = Vec::with_capacity(toolpath.moves.len());
 
@@ -158,11 +179,10 @@ fn optimize_feed_rates_inner(
 
                 // Compute adjusted feed rate
                 let adjusted = if engagement < params.air_cut_threshold {
-                    params.max_feed_rate
+                    ceiling
                 } else {
                     let factor = rctf(engagement);
-                    (params.nominal_feed_rate * factor)
-                        .clamp(params.min_feed_rate, params.max_feed_rate)
+                    (params.nominal_feed_rate * factor).max(floor).min(ceiling)
                 };
 
                 feed_rates.push(adjusted);

@@ -180,6 +180,12 @@ fn fixture_session(depth_mm: f64) -> ProjectSession {
         ..Default::default()
     });
     let op_type = op.op_type();
+    // WP21: the feed-optimisation dressup caps the feed at 3 000 mm/min and
+    // this fixture commands 12 000. The fixture measures the chipload band,
+    // so the dial is off. The machine ceiling above is lifted for the same
+    // reason.
+    let mut dressups = DressupConfig::for_op(op_type);
+    dressups.feed_optimization = false;
     let _ = session
         .add_toolpath(
             0,
@@ -188,7 +194,7 @@ fn fixture_session(depth_mm: f64) -> ProjectSession {
                 name: "a8 deep pocket".to_owned(),
                 enabled: true,
                 operation: op,
-                dressups: DressupConfig::for_op(op_type),
+                dressups,
                 heights: HeightsConfig::default(),
                 tool_id,
                 model_id,
