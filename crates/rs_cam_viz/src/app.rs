@@ -748,6 +748,12 @@ impl RsCamApp {
             self.controller.set_pending_upload();
         }
 
+        // WP6: a properties panel applies its edit through one command
+        // and cannot reach the controller. It raises a flag instead; the
+        // work runs here, beside the two detectors above and before the
+        // upload the first flag asks for.
+        self.controller.discharge_panel_side_effects();
+
         if self.controller.take_pending_upload() {
             self.upload_gpu_data(frame);
         }

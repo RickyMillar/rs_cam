@@ -248,6 +248,27 @@ impl<B: ComputeBackend> AppController<B> {
         self.pending_upload = true;
     }
 
+    /// Run the work a properties panel raised while it drew.
+    ///
+    /// WP6. A draw site holds an [`crate::state::AppState`] and applies
+    /// its edit through one `Command`. Two things the deleted post-write
+    /// events used to do are outside that command's reach: the GPU
+    /// upload flag lives here, and the pin-drill synchronisation adds or
+    /// removes a toolpath. The panel raises a flag for each; this runs
+    /// them once per frame and clears them.
+    ///
+    /// The flags are cleared whether or not the work runs, so a raised
+    /// flag costs one pass and not a pass per frame after it.
+    pub fn discharge_panel_side_effects(&mut self) {
+        let owed = self.state.panel_side_effects.take();
+        if owed.upload {
+            self.pending_upload = true;
+        }
+        if owed.pin_drill_sync {
+            self.sync_alignment_pin_drill();
+        }
+    }
+
     pub fn collision_positions(&self) -> &[[f32; 3]] {
         &self.collision_positions
     }

@@ -201,6 +201,38 @@ pub struct AppState {
     /// because rejecting a preview has to re-open onto the same dialog
     /// (`ORCHESTRATION_PLAN.md` §3.1) rather than a fresh one.
     pub multitool_planner: Option<multitool_planner::MultitoolPlannerState>,
+    /// WP6 — work a draw site owes the frame loop after it applies a
+    /// command.
+    pub panel_side_effects: PanelSideEffects,
+}
+
+/// Work a properties panel owes the frame loop.
+///
+/// A draw site holds an [`AppState`] and nothing else. The two things
+/// below live on the controller, so a panel cannot do them itself. It
+/// raises the flag; `AppController::discharge_panel_side_effects` runs
+/// the work once per frame.
+///
+/// Both were carried by the five post-write `AppEvent`s that plan §14
+/// ruling 3 deletes. The invalidation half of those events moved into
+/// the command rows; this is the half that did NOT — it is view work and
+/// project bookkeeping, not a core rule.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PanelSideEffects {
+    /// The viewport's GPU buffers read something the panel moved — the
+    /// stock box, a fixture, a keep-out zone, or a height plane.
+    pub upload: bool,
+    /// The stock's alignment pins or flip axis moved, so the
+    /// auto-generated pin-drill operation must be created, updated or
+    /// removed.
+    pub pin_drill_sync: bool,
+}
+
+impl PanelSideEffects {
+    /// Take the flags and clear them.
+    pub fn take(&mut self) -> Self {
+        std::mem::take(self)
+    }
 }
 
 /// Persistent state for the Tool Library modal. The `catalogs` snapshot
@@ -339,6 +371,7 @@ impl AppState {
             tool_library_modal: None,
             machine_library_open: false,
             multitool_planner: None,
+            panel_side_effects: PanelSideEffects::default(),
         }
     }
 

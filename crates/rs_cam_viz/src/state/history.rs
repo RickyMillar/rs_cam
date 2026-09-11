@@ -1,8 +1,9 @@
-use super::job::{PostConfig, StockConfig, ToolConfig, ToolId};
+use super::job::{FixtureId, KeepOutId, PostConfig, SetupId, StockConfig, ToolConfig, ToolId};
 use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
 use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::feeds::FeedsProvenance;
 use rs_cam_core::machine::MachineProfile;
+use rs_cam_core::session::{Fixture, KeepOutZone, SetupData};
 
 /// A snapshot of undoable state.
 // SAFETY: ToolpathParamChange holds 2× OperationConfig + 2× DressupConfig +
@@ -75,6 +76,34 @@ pub struct UndoHistory {
     redo_stack: Vec<UndoAction>,
     /// Snapshot of stock config before current edit drag.
     pub stock_snapshot: Option<StockConfig>,
+    /// WP6 — the stock panel's scratch copy for the edit in flight.
+    ///
+    /// An immediate-mode panel used to hand the widget a `&mut` on the
+    /// session itself. The widget now writes this clone, and the panel
+    /// applies one `Command::SetStockConfig` when the edit finishes. The
+    /// clone must outlive the frame: a `DragValue` applies on release,
+    /// so a per-frame local would re-read the unchanged session and the
+    /// handle would snap back.
+    ///
+    /// `None` means NO EDIT IS IN FLIGHT. The panel drops the draft on
+    /// any frame no widget of it is dragged or focused, so a mutation
+    /// from another surface — MCP, undo — cannot be overwritten by a
+    /// draft that predates it.
+    pub stock_draft: Option<StockConfig>,
+    /// WP6 — the machine panel's scratch copy. One draft serves the
+    /// specs grid, the aggressiveness slider and the kinematics grid;
+    /// each applies its own command from it.
+    pub machine_draft: Option<MachineProfile>,
+    /// WP6 — the setup panel's scratch copy, with the setup it belongs
+    /// to. The id is part of the draft because the panel draws whichever
+    /// setup is selected.
+    pub setup_draft: Option<(SetupId, SetupData)>,
+    /// WP6 — the fixture panel's scratch copy, with the setup and the
+    /// fixture it belongs to.
+    pub fixture_draft: Option<(SetupId, FixtureId, Fixture)>,
+    /// WP6 — the keep-out panel's scratch copy, with the setup and the
+    /// zone it belongs to.
+    pub keep_out_draft: Option<(SetupId, KeepOutId, KeepOutZone)>,
     /// TOO-003 — pending draft for the selected tool. The properties panel
     /// edits this clone; it is committed to the session on an explicit Apply
     /// (or auto-committed when the user navigates away). `None` when no tool
@@ -94,6 +123,11 @@ impl UndoHistory {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             stock_snapshot: None,
+            stock_draft: None,
+            machine_draft: None,
+            setup_draft: None,
+            fixture_draft: None,
+            keep_out_draft: None,
             tool_draft: None,
             post_snapshot: None,
             machine_snapshot: None,
