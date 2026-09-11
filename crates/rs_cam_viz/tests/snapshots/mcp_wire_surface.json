@@ -1,0 +1,2393 @@
+[
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Add alignment pin parameter.",
+      "properties": {
+        "diameter": {
+          "description": "Diameter of the alignment pin in mm",
+          "format": "double",
+          "type": "number"
+        },
+        "x": {
+          "description": "X position of the alignment pin in mm",
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "description": "Y position of the alignment pin in mm",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "diameter"
+      ],
+      "title": "AddAlignmentPinParam",
+      "type": "object"
+    },
+    "name": "add_alignment_pin"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "name": {
+          "description": "Optional name for the new setup",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "AddSetupParam",
+      "type": "object"
+    },
+    "name": "add_setup"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "corner_radius": {
+          "description": "**Required for `bull_nose`** — corner radius in mm. Must be > 0\nand <= diameter / 2 (a corner radius of exactly diameter/2 is a\nball nose). Refused when omitted.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cutting_length": {
+          "description": "Usable cutting-edge length in mm. Default 25.0 — CHECK IT\nagainst your real tool: it caps depth-of-cut and drives the\ndeflection model.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "diameter": {
+          "description": "Tool diameter in mm. For `tapered_ball_nose` this is the BALL TIP\ndiameter (2 x tip radius) — the cone base is `shaft_diameter`.",
+          "format": "double",
+          "type": "number"
+        },
+        "flute_count": {
+          "description": "Flute count. Default 2.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "holder_diameter": {
+          "description": "Holder diameter in mm (holder-collision check). Default 25.0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "included_angle": {
+          "description": "**Required for `v_bit`** — the full included angle in degrees\n(a \"20 degree V-bit\" is 20.0). Must be > 0 and < 180. There is\nno honest default: the angle IS the tool, so an omitted angle is\nrefused rather than guessed.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Display name for the tool",
+          "type": "string"
+        },
+        "shaft_diameter": {
+          "description": "Cone-base / shaft diameter in mm — the cutting ENVELOPE for a\n`tapered_ball_nose` (`envelope_diameter()` takes the larger of\nthis and `diameter`). Default 6.35.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shank_diameter": {
+          "description": "Shank diameter in mm (collision + machine collet check).\nDefault 6.35.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shank_length": {
+          "description": "Shank length in mm. Default 20.0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "stickout": {
+          "description": "Tool stickout from the holder in mm — drives the deflection\nmodel. Default 45.0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "taper_half_angle": {
+          "description": "**Required for `tapered_ball_nose`** — the cone HALF angle in\ndegrees (a \"5.6 degree per side\" taper is 5.6). Must be > 0 and\n< 90. Refused when omitted, for the same reason as\n`included_angle`.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tool_number": {
+          "description": "G-code tool number for M6 output. Omit to auto-allocate the\nnext free number in the project (distinct numbers are what make\nan M6 tool change re-trigger — identical numbers silently\ncollapse the changes).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tool_type": {
+          "description": "Tool type (e.g. \"end_mill\", \"ball_nose\", \"bull_nose\", \"v_bit\", \"tapered_ball_nose\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "tool_type",
+        "diameter"
+      ],
+      "title": "AddToolParam",
+      "type": "object"
+    },
+    "name": "add_tool"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "catalog": {
+          "description": "Catalog name (file stem) as returned by `list_tool_library`,\ne.g. \"end_mills\", \"v_bits\", \"tapered_ball\".",
+          "type": "string"
+        },
+        "index": {
+          "description": "0-based index of the tool within that catalog — use the `index`\nfield from `list_tool_library` output.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "catalog",
+        "index"
+      ],
+      "title": "AddToolFromLibraryParam",
+      "type": "object"
+    },
+    "name": "add_tool_from_library"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "model_id": {
+          "description": "Model ID (project-assigned `id` field — use the `id` value\nfrom `inspect_model` results, NOT a 0-based positional index;\nIDs typically start at 1 and increment per import).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "Optional name for the toolpath",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operation_type": {
+          "description": "Operation type (e.g. \"pocket\", \"adaptive3d\", \"drop_cutter\", \"profile\")",
+          "type": "string"
+        },
+        "setup_index": {
+          "description": "Setup index (0-based) to add the toolpath into",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tool_index": {
+          "description": "Tool index (0-based) from list_tools",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "setup_index",
+        "operation_type",
+        "tool_index",
+        "model_id"
+      ],
+      "title": "AddToolpathParam",
+      "type": "object"
+    },
+    "name": "add_toolpath"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "F3.1 — add a toolpath through the GUI's own add path.",
+      "properties": {
+        "operation_type": {
+          "description": "Operation type, same vocabulary `add_toolpath` accepts (e.g.\n\"pocket\", \"scallop\", \"adaptive3d\").",
+          "type": "string"
+        },
+        "setup_index": {
+          "description": "Setup index (0-based) to add into. The GUI takes the target setup\nfrom the CURRENT SELECTION, so passing this selects that setup\nfirst, exactly as clicking the setup would. Omit to add into\nwhatever is selected now — which is what the operator's next click\nwould do, and may not be setup 0.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "operation_type"
+      ],
+      "title": "AddToolpathViaGuiParam",
+      "type": "object"
+    },
+    "name": "add_toolpath_via_gui"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`apply_feeds` — the agent-facing entry to the one application funnel\n(Checkpoint I-5, 2026-08-12).",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based), as listed by `list_toolpaths`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scope": {
+          "default": null,
+          "description": "Which dimensions to write. **Say what you mean** — the scope is the\nwhole safety vocabulary of this tool:\n\n- `\"speeds\"` — feed / plunge / RPM. \"How fast\". Does NOT change the\n  cut, so the geometry you simulated stays the geometry you cut.\n- `\"cut_geometry\"` — stepover / DOC. **CHANGES THE CUT**: the removed\n  material, the engagement, the runtime and every gate verdict move\n  with it. Re-simulate afterwards.\n- `\"both\"` — both halves in one transaction. Also changes the cut.\n\nDefaults to `\"speeds\"`, the conservative choice: an omitted scope must\nnot silently rewrite geometry. Mirrors\n`rs_cam_core::feeds::suggest::ApplyScope`; there is deliberately no\nper-field scope.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "ApplyFeedsParam",
+      "type": "object"
+    },
+    "name": "apply_feeds"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "cancel_generation"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "CollisionCheckParam",
+      "type": "object"
+    },
+    "name": "collision_check"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "accept_exceeded_tool_load": {
+          "default": false,
+          "description": "Bypass the tool-load gate for criteria that returned `Exceeds`\n(the toolpath is predicted to break or burn the tool). Default\nfalse. Set this knowingly; it is the \"I accept that this toolpath\nwill damage tooling\" override and is recorded separately from\n`accept_unmodeled_tool_load`.",
+          "type": "boolean"
+        },
+        "accept_previous_geometry": {
+          "default": false,
+          "description": "Emit the PREVIOUS generation's geometry for any operation that was\nedited after it was generated, instead of refusing. Default false.\n\nWhat is being accepted: the file will cut the geometry from before\nthe edit, which is NOT what the operation's parameters now\ndescribe. Regenerating the operation is the fix; this flag exists\nfor the case where the operator knowingly wants the earlier\nprogram. It does NOT make a missing, failed or still-generating\nresult exportable — there is no geometry to put in its place.",
+          "type": "boolean"
+        },
+        "accept_unmodeled_tool_load": {
+          "default": false,
+          "description": "Bypass the tool-load gate for criteria that returned `Unmodeled`\n(e.g. no simulation run, no vendor data). Default false.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Output file path for G-code",
+          "type": "string"
+        },
+        "split_setups": {
+          "default": false,
+          "description": "When true and the project has more than one setup, write one\nG-code file per setup instead of a single combined program. Each\nfile is self-contained and carries a header comment naming the\nsetup and its datum — `X0 Y0 = stock min corner`, identical in\nevery setup file, plus that file's own Z zero relative to the\nup-facing stock surface — with a FLIP reminder on setups after\nthe first, so a two-sided job is run as `setup1` → flip & re-zero\nZ (keeping the same XY zero) → `setup2`.\nOutput files are named `<stem>_<n>_<setup name>.<ext>` next to\n`path`. Ignored for single-setup projects.",
+          "type": "boolean"
+        },
+        "tool_change_mode": {
+          "default": null,
+          "description": "Tool-change handling for this export. One of: `\"pause\"` (manual\n`M5` + operator message + `M0` — the GRBL-family default),\n`\"m6\"` (native `M5` + `M6 T{n}` — what Fusion emits and what a\ngSender/BitSetter setup needs so each tool is probed), or\n`\"suppress\"` (replace each change with a bare `M0` pause).\nOmit to keep the project's current setting. This is the MCP\nequivalent of the export wizard's Tool Change dropdown. Note:\nfor `\"m6\"` each tool must have a distinct tool number or the\ncontroller won't re-trigger the change.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ExportParam",
+      "type": "object"
+    },
+    "name": "export_gcode"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "fixpoint": {
+          "description": "A/M11 — iterate to a fixpoint over the rest-machining chain: generate,\nsimulate, regenerate whatever was blocked only on missing upstream\nstock, repeat until nothing new generates. Defaults to `true`.\n\nAn operation whose stock source is \"remaining stock\" needs the\n*simulated* stock of the operations before it, and that snapshot only\nexists after a simulation — so it can never see stock produced earlier\nin the same pass. Without the loop, a chain of `k` such operations\nneeds `k` manual sim/generate rounds and nothing tells you `k`. The\nreply reports how many rounds it actually took.\n\nPass `false` for the old single-pass behaviour.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "simulation_resolution_mm": {
+          "description": "Cell size in mm for the simulations the fixpoint loop runs on your\nbehalf.\n\n**Required** when the loop is on and the project contains any enabled\nrest-machining operation; the call refuses rather than guessing. A\nresolution is never a neutral default: collision counts and engagement\nboth move with cell size, so a silently chosen one produces verdicts\nnobody asked for. Use the same value you intend for your verification\nsimulation — well below the finishing tool's TIP radius (e.g. 0.1 for\na 1 mm ball).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "timeout_s": {
+          "description": "Optional wait budget in seconds — see\n`GenerateToolpathParam::timeout_s`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "title": "GenerateAllParam",
+      "type": "object"
+    },
+    "name": "generate_all"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "timeout_s": {
+          "description": "Optional wait budget in seconds. If generation hasn't finished by\nthen, the call returns a `status: \"running\"` response instead of\nblocking — the generate is NOT cancelled, it keeps running in the\nbackground. Omit (or pass `None`) to wait indefinitely, matching\nprior behavior. While it runs, `generation_status` reports the\nin-flight index / stage / elapsed live, `list_toolpaths` answers from\na snapshot, and `cancel_generation` aborts it — all three are served\noff the GUI frame loop and answer within a second (A/M12).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "GenerateToolpathParam",
+      "type": "object"
+    },
+    "name": "generate_toolpath"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "generation_status"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "include_drill_samples": {
+          "description": "Optional: also include the per-peck `drill_samples` array in the\nresponse. Defaults to `false` because the stream can be verbose on\nlarge drill cycles; per-toolpath `drill_summaries` are always\nincluded regardless.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "max_drill_samples": {
+          "description": "Maximum `drill_samples` entries to return when `include_drill_samples`\nis true (default: 500).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_drill_summaries": {
+          "description": "Maximum `drill_summaries` entries to return (default: uncapped —\none row per drill toolpath).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_hotspots": {
+          "description": "Maximum hotspots to return (default: 20)",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_issues": {
+          "description": "Maximum issues to return (default: 50)",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_response_bytes": {
+          "description": "Optional: override the global response byte backstop (default:\n8388608 = 8 MiB). Sections that do not fit are OMITTED and named in\n`sections_not_computed`, and `complete` becomes false — a section\nthat did not fit is never rendered as an empty array or a zero.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_semantic_summaries": {
+          "description": "Maximum `semantic_summaries` entries to return (default: 200). The\narray is ordered by `wasted_runtime_s` descending, so the first N\nare the N worst offenders.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_span_summaries": {
+          "description": "Maximum `span_summaries` entries to return (default: 200). Order is\ntoolpath index ascending, then span_id ascending, so a cap always\ntakes the same leading entries. Narrow with `span_kind` /\n`pass_index` / `toolpath_id` rather than raising this.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_toolpath_summaries": {
+          "description": "Maximum `toolpath_summaries` entries to return (default: uncapped —\none row per toolpath that produced samples).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pass_index": {
+          "description": "Optional: only include samples/issues/hotspots whose `span_path` contains\na `DepthPass` span with this `pass_index` payload value (0-based).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "span_id": {
+          "description": "Optional: only include samples/issues/hotspots whose `span_path` contains\nthis exact span id. SpanIds come from `inspect_spans`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "span_kind": {
+          "description": "Optional: only include samples/issues/hotspots whose `span_path` contains\na span of this kind. Accepted values match `SpanKind`:\n\"operation\", \"depth_pass\", \"region\", \"entry\", \"lead_out\", \"link_bridge\",\n\"dressup_artifact\", \"geometry_refit\", \"rapid_order_barrier\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "toolpath_id": {
+          "description": "Optional: filter results to a single toolpath by its project-level\n**id** — NOT its index. Ids come from `list_toolpaths` (`id` field);\nthe cut trace is keyed by id throughout. An id that matches no\ntoolpath is refused with the list of valid ids rather than answered\nwith an empty result. (Measured on a real project 2026-08-08: the\nvalues 4/5/6 were simultaneously valid *indices* and valid *ids of\ndifferent toolpaths*, so this distinction is not academic.)",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "title": "CutTraceParam",
+      "type": "object"
+    },
+    "name": "get_cut_trace"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "get_diagnostics"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "exit_reason": {
+          "description": "Optional filter: only include spans whose exit_reason contains this\nsubstring. Useful values for AgentSearch diagnosis:\n\"loop closed\", \"idle\", \"no entry\", \"preflight skip\", \"no viable direction\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "index": {
+          "description": "Toolpath index (0-based). Must have been generated first.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_spans": {
+          "description": "Maximum span count in the response (default: 100). Set to 0 for unlimited.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_yield_ratio": {
+          "description": "Optional filter: only include spans where the `yield_ratio` counter is\nat most this value (e.g. 0.1 to see all low-yield passes). Spans without\na `yield_ratio` counter are skipped when this filter is set.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "span_kind": {
+          "description": "Optional filter. Accepts EITHER a generation-debug kind string\n(\"z_level\", \"adaptive_pass\", \"entry_search\", \"preflight\", \"pre_stamp\",\n\"widen_band\", \"waterline_cleanup\") OR a structural `SpanKind` synonym\nin snake_case (\"depth_pass\" → matches z_level/adaptive_pass/z_level_clear,\n\"entry\" → matches entry_search). Omit to include all kinds. Each\nreturned span carries a `span_kind_hint` field that maps the debug\nkind back to its structural SpanKind when one applies.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "GenDebugTraceParam",
+      "type": "object"
+    },
+    "name": "get_generation_debug_trace"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "F3.5 — read the toast stack.",
+      "properties": {
+        "include_expired": {
+          "description": "Include entries that have aged past their TTL but have not been\ncollected yet. Default `true`: a test asserting what the operator\nsaw must not lose the evidence to a slow assertion. Pass `false`\nfor only what is on screen right now.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Return at most this many, newest first. Omit for all of them.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "title": "GetNotificationsParam",
+      "type": "object"
+    },
+    "name": "get_notifications"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "operation_type": {
+          "description": "Operation type (e.g. \"pocket\", \"adaptive3d\", \"rest\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_type"
+      ],
+      "title": "OperationSchemaParam",
+      "type": "object"
+    },
+    "name": "get_operation_schema"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "get_project_diagnostics"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "IndexParam",
+      "type": "object"
+    },
+    "name": "get_suggest_rationale"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "get_tool_load_report"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "OptimizeToolpathInput",
+      "type": "object"
+    },
+    "name": "get_toolpath_diagnostics"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "IndexParam",
+      "type": "object"
+    },
+    "name": "get_toolpath_params"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "GRBL `$$` settings dump to import onto the live machine profile.",
+      "properties": {
+        "dump": {
+          "description": "The full `$$` settings dump text (`$N=value` lines). Tolerates\ngrblHAL `(description)` comments, CRLF, and unrelated `$N` lines.\nMaps `$11`→junction deviation, `$120/$121/$122`→per-axis accel,\n`$110/$111`→max feed (travel). Applying breaks any machine-library\nlink since the values are now inline.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dump"
+      ],
+      "title": "ImportMachineSettingsParam",
+      "type": "object"
+    },
+    "name": "import_machine_settings"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "path": {
+          "description": "File path to import. Supported formats: .stl, .dxf, .svg, .step/.stp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ImportModelParam",
+      "type": "object"
+    },
+    "name": "import_model"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Model ID parameter.",
+      "properties": {
+        "model_id": {
+          "description": "Model ID as returned by `inspect_model` (the opaque DB-assigned\n`id` field). NOT a 0-based positional index — IDs typically start\nat 1 and are incremented per import. To find the right ID for a\nmodel, call `inspect_model` and use the `id` field from the\nresponse.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "model_id"
+      ],
+      "title": "ModelIdParam",
+      "type": "object"
+    },
+    "name": "inspect_brep_faces"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "inspect_collisions"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "inspect_machine"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "inspect_model"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based). Must have been generated first.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "description": "Optional `SpanKind` filter (snake_case). Accepted values:\n\"operation\", \"depth_pass\", \"region\", \"entry\", \"lead_out\",\n\"link_bridge\", \"dressup_artifact\", \"geometry_refit\",\n\"rapid_order_barrier\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_spans": {
+          "description": "Hard cap on returned spans (default 50). Result includes `truncated`\nand `total_matching` when capped.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "parent_id": {
+          "description": "Optional parent span id (vec index). Restricts results to spans whose\nmove range is contained within the parent's range. Pair with `kind` to\ndrill from \"Operation 0\" → its DepthPasses → a single DepthPass's Regions.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pass_index": {
+          "description": "Optional `DepthPass` `pass_index` payload match (0-based).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "region_id": {
+          "description": "Optional `Region` `region_id` payload match.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "InspectSpansParam",
+      "type": "object"
+    },
+    "name": "inspect_spans"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "inspect_stock"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_machine_library"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_setups"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "catalog": {
+          "description": "Catalog name (file stem) from `list_tool_library`, e.g.\n\"end_mills\", \"v_bits\", \"tapered_ball\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "catalog"
+      ],
+      "title": "ListToolCatalogParam",
+      "type": "object"
+    },
+    "name": "list_tool_catalog"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_tool_library"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_toolpaths"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_tools"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Name of a machine in the per-user library to snapshot-import.",
+      "properties": {
+        "name": {
+          "description": "Library machine name (file stem) from `list_machine_library`. The\nmachine is COPIED into the project (snapshot, no live link).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "LoadMachineFromLibraryParam",
+      "type": "object"
+    },
+    "name": "load_machine_from_library"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "discard_unsaved": {
+          "default": false,
+          "description": "Throw away the open project's unsaved changes and load anyway.\nDefault false.\n\nLoading REPLACES the project in the GUI. When the open one has\nedits that are not on disk, the load is refused and the refusal\nsays what would be lost — there is no dialog to ask, the way the\nGUI asks a human. Save it first with `save_project`, or set this\nknowingly.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Path to the project TOML file",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "LoadProjectParam",
+      "type": "object"
+    },
+    "name": "load_project"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "target_setup_index": {
+          "description": "Target setup index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "toolpath_index": {
+          "description": "Toolpath index (0-based, global across all setups)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "toolpath_index",
+        "target_setup_index"
+      ],
+      "title": "MoveToolpathToSetupParam",
+      "type": "object"
+    },
+    "name": "move_toolpath_to_setup"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "IndexParam",
+      "type": "object"
+    },
+    "name": "narrate_toolpath"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "OptimizeToolpathInput",
+      "type": "object"
+    },
+    "name": "optimize_toolpath"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Phase O — the machine-readable trigger for the multi-tool island\nfinishing planner. Every dial is optional; unset means the campaign\ndefault named in that field's doc.",
+      "properties": {
+        "cell_mm": {
+          "description": "Planning-grid cell size (mm) for the residual walk. Unset =\n`rs_cam_core::session::DEFAULT_PLAN_CELL_MM` (0.4). Plan in the\n0.3-0.6 band, NEVER 0.15 — the map is O(cells) in both time and\nmemory, and 0.15 mm costs ~125 s per ladder tool on a 200 mm board.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "coarse_skips_fine_islands": {
+          "description": "When true, tier 0 SKIPS the fine tiers' owned islands instead of\nsweeping the whole board — the coarse tool leaves ground a finer\ntool will re-finish anyway. The seam still blends (fine tiers\nmachine their islands plus the overlap band), but the fine tools\nthen meet the ROUGHING pass's terraces inside their islands instead\nof a coarse-finished surface — higher load on small cutters,\nmeasurable by the load gates. Default false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "coarseness": {
+          "description": "Region coarseness. 1.0 = neutral; below 1 gives many small\nislands, above 1 a few large ones. Scales the derived merge radius\nand minimum island area together. Default 1.0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cusp_height_mm": {
+          "description": "Cusp height (mm) every tier is dialled to. Unset =\n`rs_cam_core::session::DEFAULT_PLAN_CUSP_HEIGHT_MM` (0.03). It is one\nnumber for the whole ladder on purpose: an equal cusp is what makes a\ntier seam blend instead of printing a height step.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "margin_mm": {
+          "description": "Grid padding (mm) beyond the finest tool's envelope. Unset =\n`rs_cam_core::session::DEFAULT_PLAN_MARGIN_MM` (0.5).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_regions_per_tier": {
+          "description": "Per-tier island cap. When filtering leaves more islands than this,\nthe merge radius is raised and the close re-run (bounded), and what\nmerged is reported. Default 24.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model_id": {
+          "description": "Model id the tier map is measured against. Unset = the project's\nonly model; the call REFUSES rather than picking when there is\nmore than one.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "monotone_cell_decomposition": {
+          "description": "When true, every emitted tier's SHALLOW band splits each region into\nmonotone CELLS on that region's own raster lattice, and rotates that\nlattice to the region's PCA-minor axis where its elongation clears\n3.0. The passes stay a raster and every cell shares one lattice:\nper-cell sweep directions, a cell visit order and contour-per-cell\nwere each measured and are each SLOWER. Measured on the reference\nrelief under a realistic machined-stock link ceiling: 1.155x across\nthe top three shallow regions, 1.215x on the elongated one — rig\nfigures to approach, not promises, and cell seams change the cusp\npattern, so review the rendered surface. Default true since\n2026-09-01 (C4 operator surface review passed).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "overlap_mm": {
+          "description": "Seam-blend band (mm) each finer tier's islands are grown by, into\nthe coarser tier's territory. Default 2.0. `0.0` turns it off.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "setup_index": {
+          "description": "Setup index (0-based) the emitted finishing chain belongs to.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tier_strategies": {
+          "default": null,
+          "description": "Per-tier operation choice, LADDER order (coarse → fine):\n\"unified_finish\" | \"scallop\" | \"iso_scallop\". Unset or shorter than\nthe ladder = unified_finish for the unnamed tiers (the historical\nplanner). The tier's TERRITORY is identical whichever strategy cuts\nit — regions come from the tier map; this only picks the operation.\nEvidence for the scallop/iso options:\nplanning/metrology_2026-09-02/FINDINGS.md §M7–M8.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "tolerance_mm": {
+          "description": "Residual (mm) above which a cell is handed to a finer tier. Unset =\n`rs_cam_core::session::DEFAULT_PLAN_TOLERANCE_MM` (0.05).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tool_ids": {
+          "description": "Library tool ids taking part in the ladder. Order is irrelevant —\nthe planner sorts coarse to fine on tip-sphere (cusp) radius, never\non envelope radius. Each becomes one emitted `unified_finish`\noperation carrying its tier's islands; tier 0 cuts fresh stock and\nevery later tier takes the remaining stock of the one before it.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "setup_index",
+        "tool_ids"
+      ],
+      "title": "PlanMultitoolFinishingParam",
+      "type": "object"
+    },
+    "name": "plan_multitool_finishing"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Phase U — the look-before-emit twin of [`PlanMultitoolFinishingParam`].\nEvery dial is spelled and defaulted identically, so a preview and the\nplan that follows it describe the same territory; the only extra field is\nwhere to write the SVG.",
+      "properties": {
+        "cell_mm": {
+          "description": "Planning-grid cell size (mm) for the residual walk. Unset =\n`rs_cam_core::session::DEFAULT_PLAN_CELL_MM` (0.4). Plan in the\n0.3-0.6 band, NEVER 0.15 — the map is O(cells) in both time and\nmemory, and 0.15 mm costs ~125 s per ladder tool on a 200 mm board.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "coarse_skips_fine_islands": {
+          "description": "When true, tier 0 SKIPS the fine tiers' owned islands instead of\nsweeping the whole board — spelled identically to the planner's\ndial so one dial set drives both calls. The island preview itself\ndoes not change (the dial moves tier 0's boundary, not the island\nmap), but the value is threaded through so the previewed spec IS\nthe planned spec. Default false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "coarseness": {
+          "description": "Region coarseness. 1.0 = neutral; below 1 gives many small\nislands, above 1 a few large ones. Scales the derived merge radius\nand minimum island area together. Default 1.0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cusp_height_mm": {
+          "description": "Cusp height (mm) every tier would be dialled to. Unset =\n`rs_cam_core::session::DEFAULT_PLAN_CUSP_HEIGHT_MM` (0.03). Carried\non the preview so the dial set matches the planner's exactly; it\nsizes the emitted stepover, not the tier territory.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "margin_mm": {
+          "description": "Grid padding (mm) beyond the finest tool's envelope. Unset =\n`rs_cam_core::session::DEFAULT_PLAN_MARGIN_MM` (0.5).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_regions_per_tier": {
+          "description": "Per-tier island cap. When filtering leaves more islands than this,\nthe merge radius is raised and the close re-run (bounded), and what\nmerged is reported. Default 24.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model_id": {
+          "description": "Model id the tier map is measured against. Unset = the project's\nonly model; the call REFUSES rather than picking when there is\nmore than one.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "monotone_cell_decomposition": {
+          "description": "When true, every emitted tier's shallow band splits into monotone\ncells — spelled identically to the planner's dial so one dial set\ndrives both calls. The island preview itself does not change (the\ndial moves what each tier's shallow band EMITS, not the island map),\nbut the value is threaded through so the previewed spec IS the\nplanned spec. Default true since 2026-09-01 (C4 ruling).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "overlap_mm": {
+          "description": "Seam-blend band (mm) each finer tier's islands are grown by, into\nthe coarser tier's territory. Default 2.0. `0.0` turns it off.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "setup_index": {
+          "description": "Setup index (0-based) the ladder would be planned into.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "svg_path": {
+          "description": "Absolute path ending in `.svg` to write the island preview to.\nUnset = numbers only. The parent directory must already exist —\nthe call refuses rather than creating one. Polygons only, so a\n64-island board is tens of KB.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tier_strategies": {
+          "default": null,
+          "description": "Accepted for dial parity with `plan_multitool_finishing` and\nIGNORED: a tier's strategy picks its OPERATION, not its territory,\nso the island preview is identical whichever strategies you pass.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "tolerance_mm": {
+          "description": "Residual (mm) above which a cell is handed to a finer tier. Unset =\n`rs_cam_core::session::DEFAULT_PLAN_TOLERANCE_MM` (0.05).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tool_ids": {
+          "description": "Library tool ids taking part in the ladder. Order is irrelevant —\nthe planner sorts coarse to fine on tip-sphere (cusp) radius, never\non envelope radius.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "setup_index",
+        "tool_ids"
+      ],
+      "title": "PreviewTierMapParam",
+      "type": "object"
+    },
+    "name": "preview_tier_map"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "project_summary"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "P5 — the per-tool reach map, as numbers rather than pixels.",
+      "properties": {
+        "histogram_bins": {
+          "description": "Number of gap-histogram buckets in the reply (default 8, max 64).\nThe reply never carries the raw cell grid — a board-sized map is\nover a hundred thousand cells.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "index": {
+          "description": "Toolpath index (0-based). The operation must be one a reach map\nspeaks about: a mesh operation that is not a roughing pass.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tolerance_mm": {
+          "description": "Gap (mm) above which a spot counts as unreachable. Unset = the\noperation's own declared cusp / scallop height, else the core's\n0.05 mm default. Overriding it re-walks the grid under a new memo\nkey, so probe a few values freely but expect the first of each to\ncost a build.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "ReachMapParam",
+      "type": "object"
+    },
+    "name": "reach_map"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "IndexParam",
+      "type": "object"
+    },
+    "name": "recommend_clearing_strategy"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Remove alignment pin parameter.",
+      "properties": {
+        "index": {
+          "description": "Index of the alignment pin to remove (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "RemoveAlignmentPinParam",
+      "type": "object"
+    },
+    "name": "remove_alignment_pin"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Tool index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "RemoveToolParam",
+      "type": "object"
+    },
+    "name": "remove_tool"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "RemoveToolpathParam",
+      "type": "object"
+    },
+    "name": "remove_toolpath"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "resolution": {
+          "description": "Simulation resolution in mm (default 0.5)",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "title": "SimulationParam",
+      "type": "object"
+    },
+    "name": "run_simulation"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "path": {
+          "description": "File path to save the project TOML to (required)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "SaveProjectParam",
+      "type": "object"
+    },
+    "name": "save_project"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "height": {
+          "description": "Optional window height in logical points. Same persistence note as\n`width`.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Output file path (must end in .png)",
+          "type": "string"
+        },
+        "width": {
+          "description": "Optional window width in logical points. When given, the window is\nresized before capture. The new size persists after the capture\n(it is not restored).",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ScreenshotGuiParam",
+      "type": "object"
+    },
+    "name": "screenshot_gui"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "checkpoint": {
+          "description": "Checkpoint index to render (default: last). Each toolpath produces one\ncheckpoint. Use a lower index to see intermediate states.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "height": {
+          "description": "Image height in pixels (default 800, PNG only)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "include_toolpaths": {
+          "description": "Include toolpath overlay lines (HTML only, default true)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Output file path (.png for 6-view composite, .html for interactive 3D)",
+          "type": "string"
+        },
+        "width": {
+          "description": "Image width in pixels (default 1200, PNG only)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ScreenshotSimParam",
+      "type": "object"
+    },
+    "name": "screenshot_simulation"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "height": {
+          "description": "Image height in pixels (default 800, PNG only)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "include_rapids": {
+          "description": "Include rapid moves in the rendering (default true, PNG only)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "Output file path (.png for 6-view composite, .html for interactive 3D)",
+          "type": "string"
+        },
+        "reach_overlay": {
+          "description": "Shade the MODEL surface by the per-tool reach map behind the\ntoolpath (default false, PNG only). Green = this tool forms the\nsurface inside the operation's tolerance, red = it cannot reach,\nneutral = not measured (an underside, a wall, or the eroded rim\nband). This is the explicit form of the overlay on purpose: this\ncall renders offscreen and inherits no viewport state, so the\nscreenshot asks for the overlay rather than inheriting it. (The\nlive GUI's own toggle is reachable since P6 —\n`set_ui_view(overlays: {\"reach_map\": true})` — but that switches\nthe WINDOW's overlay, which only `screenshot_gui` captures.) The\ncall refuses when the toolpath is not a finishing operation a reach\nmap speaks about, and it takes a second or two on a cold map — the\nsame memo `reach_map` fills.\n\nWhen this is on the SHADING is the subject: the model keeps its own\ncolours undimmed and the cutting moves are drawn thin and dimmed over\nit. Before F4 (2026-09-08) the moves were full width and full colour\nover a background dimmed to 0.35, and on a 200 mm board with 17 959\nmoves the top panel came back an opaque green mat — the shading only\nshowed in the bottom panel, where the moves are edge-on. Ask for a\nplain `screenshot_toolpath` when the PATH is what you need to read.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "show_stock": {
+          "description": "Show machined stock as dimmed background context (default false, PNG only).\nRequires simulation to have been run first.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "width": {
+          "description": "Image width in pixels (default 1200, PNG only)",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "path"
+      ],
+      "title": "ScreenshotToolpathParam",
+      "type": "object"
+    },
+    "name": "screenshot_toolpath"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "containment": {
+          "description": "Containment mode: \"center\", \"inside\", or \"outside\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "description": "Enable or disable boundary",
+          "type": "boolean"
+        },
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "offset": {
+          "description": "Additional offset in mm (positive = expand, negative = shrink)",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "Boundary source: \"stock\", \"model_silhouette\", or \"derived_rest_regions\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_toolpath_id": {
+          "description": "Required when `source` is \"derived_rest_regions\": the stable id\n(from `get_toolpath_params`'s `id` field, not an index) of the\ntoolpath whose pencil rest-depth result supplies the boundary.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "enabled"
+      ],
+      "title": "SetBoundaryConfigParam",
+      "type": "object"
+    },
+    "name": "set_boundary_config"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "dressup": {
+          "description": "Dressup configuration as a JSON object (fields match DressupConfig)"
+        },
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index",
+        "dressup"
+      ],
+      "title": "SetDressupConfigParam",
+      "type": "object"
+    },
+    "name": "set_dressup_config"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "key": {
+          "description": "Dressup field name (e.g. \"link_moves\", \"arc_fitting\", \"retract_strategy\")",
+          "type": "string"
+        },
+        "value": {
+          "description": "New value for the field (JSON). Pass enum values as bare JSON\nstrings — e.g. `\"ramp\"` (NOT `\"\\\"ramp\\\"\"`); pass booleans as\n`true` / `false` or `0` / `1` (server coerces); pass numbers\nas JSON numbers OR numeric strings like `\"7\"` (server coerces\nwhen the existing field is numeric).",
+          "type": [
+            "number",
+            "string",
+            "boolean",
+            "array",
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "key",
+        "value"
+      ],
+      "title": "SetDressupFieldParam",
+      "type": "object"
+    },
+    "name": "set_dressup_field"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`set_machine_kinematics` — typed write path for the accel /\njunction-deviation numbers that decide cycle time and the\nparallel-vs-spiral strategy verdict.",
+      "properties": {
+        "acceleration_mm_s2": {
+          "description": "Isotropic fallback acceleration in mm/s^2. Only used when the\nper-axis triple is absent; when all three axes are given this is\nset to their mean unless explicitly passed.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "acceleration_x_mm_s2": {
+          "description": "X-axis acceleration limit in mm/s^2 (GRBL `$120`).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "acceleration_y_mm_s2": {
+          "description": "Y-axis acceleration limit in mm/s^2 (GRBL `$121`).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "acceleration_z_mm_s2": {
+          "description": "Z-axis acceleration limit in mm/s^2 (GRBL `$122`).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "jerk_mm_s3": {
+          "description": "Optional jerk limit in mm/s^3. Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "junction_deviation_mm": {
+          "description": "GRBL junction deviation `$11` in mm (stock GRBL default 0.010).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_junction_velocity_mm_min": {
+          "description": "Optional hard cap on junction velocity in mm/min. Omit to leave\nunchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_rate_x_mm_min": {
+          "description": "X-axis maximum rate in mm/min (GRBL `$110`).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_rate_y_mm_min": {
+          "description": "Y-axis maximum rate in mm/min (GRBL `$111`).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_rate_z_mm_min": {
+          "description": "Z-axis maximum rate in mm/min (GRBL `$112`). On a typical router\nthis is far below X/Y, so it is what throttles a Z-dominant move.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "title": "SetMachineKinematicsParam",
+      "type": "object"
+    },
+    "name": "set_machine_kinematics"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "cell_mm": {
+          "description": "XY grid cell size (mm) for the rest field. Smaller = finer regions.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "enabled": {
+          "description": "Enable or disable rest analysis",
+          "type": "boolean"
+        },
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_valley_depth": {
+          "description": "Rest-depth threshold (mm): a cell counts as REST material once the\nreference floats more than this above the true surface.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "num_offset_passes": {
+          "description": "PR-7: offset passes per side that fan is permitted (the `cap`).\nUnset = the detector's own default (0, centreline only).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offset_stepover_mm": {
+          "description": "PR-7: offset stepover (mm) the ROUTING criterion assumes a downstream\npencil fan would emit (`pencil` iff `reach <= cap * stepover`). Leave\nunset to size it from the canonical reach policy for this toolpath's\nown cutter — the correct choice unless you are modelling a specific\ndownstream operation whose stepover is pinned.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reference_tool_id": {
+          "description": "Real library tool id whose geometry defines the rest reference.\n`None` = prefer the machined stock (when available), else a\nself-referenced bare-surface probe.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "region_margin_mm": {
+          "description": "Extra clearance (mm) added around detected rest regions beyond this\ntoolpath's own tool radius.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "enabled"
+      ],
+      "title": "SetRestAnalysisConfigParam",
+      "type": "object"
+    },
+    "name": "set_rest_analysis_config"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "face_up": {
+          "description": "Face orientation: \"top\", \"bottom\", \"front\", \"back\", \"left\", \"right\"",
+          "type": "string"
+        },
+        "setup_index": {
+          "description": "Setup index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "setup_index",
+        "face_up"
+      ],
+      "title": "SetSetupFaceParam",
+      "type": "object"
+    },
+    "name": "set_setup_face"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "setup_index": {
+          "description": "Setup index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "z_rotation": {
+          "description": "In-plane rotation of the stock about Z for this setup. One of\n\"0\", \"90\", \"180\", \"270\" (degrees). Note a 90-degree rotation\ndoes not map a non-square stock onto itself — for a diagonal\nalignment-pin pair on a rectangular board, 180 is usually the\nphysical flip.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "setup_index",
+        "z_rotation"
+      ],
+      "title": "SetSetupRotationParam",
+      "type": "object"
+    },
+    "name": "set_setup_rotation"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "strategy": {
+          "description": "Project-level spindle policy. Either \"match_chart\" (default —\nuse vendor LUT row's chart-published RPM verbatim) or\n\"max_speed\" (push RPM up the constant-chipload line toward\nthe spindle ceiling, scaling feed proportionally). Affects\nevery Suggest call across the project. See\n`rs_cam_core::feeds::SpindleStrategy`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy"
+      ],
+      "title": "SetSpindleStrategyParam",
+      "type": "object"
+    },
+    "name": "set_spindle_strategy"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "auto_from_model": {
+          "description": "Auto-fit the stock to the next imported model's bounding box.\n\nSetting any dimension or origin above CLEARS this flag\nautomatically (see the tool description) — pass `true` here only\nif you deliberately want the next `import_model` to overwrite\nwhat you just set. Passing `false` alone turns auto-fit off\nwithout changing any number.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "material": {
+          "description": "Stock material by name, e.g. \"White Oak\", \"Baltic Birch Plywood\",\n\"MDF\", \"Acrylic\", \"Aluminum 6061-T6\". Matched case- and\npunctuation-insensitively against the material catalog + wood\nspecies library; an unrecognised or ambiguous name is REFUSED\nwith the candidate list rather than guessed. Load-bearing: every\nfeed, chipload band and power estimate depends on it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin_x": {
+          "description": "Stock origin X in mm (the stock spans `origin_x ..= origin_x + x`).\nOmit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "origin_y": {
+          "description": "Stock origin Y in mm. Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "origin_z": {
+          "description": "Stock origin Z in mm — the BOTTOM of the stock, so the stock top\nsits at `origin_z + z`. 2D operations cut at negative Z relative\nto the model plane, so a 2D job normally wants\n`origin_z = -z` (top at Z = 0). This decides the Z frame the\nwhole job cuts in. Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "workholding_rigidity": {
+          "description": "Workholding rigidity for the feeds calculation: \"low\", \"medium\"\nor \"high\". Omit to leave unchanged.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "x": {
+          "description": "Stock width (X) in mm. Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "y": {
+          "description": "Stock depth (Y) in mm. Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "z": {
+          "description": "Stock height (Z) in mm. Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "title": "SetStockConfigParam",
+      "type": "object"
+    },
+    "name": "set_stock_config"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "description": "Either \"fresh\" or \"from_remaining_stock\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "source"
+      ],
+      "title": "SetStockSourceParam",
+      "type": "object"
+    },
+    "name": "set_stock_source"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Tool index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "param": {
+          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\", \"shank_length\",\n\"holder_diameter\".",
+          "type": "string"
+        },
+        "value": {
+          "description": "New value (numeric — `flute_count` must be a whole number).",
+          "type": [
+            "number",
+            "string",
+            "boolean",
+            "array",
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "param",
+        "value"
+      ],
+      "title": "SetToolParamInput",
+      "type": "object"
+    },
+    "name": "set_tool_param"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "enabled": {
+          "description": "`true` to enable, `false` to disable",
+          "type": "boolean"
+        },
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index",
+        "enabled"
+      ],
+      "title": "SetToolpathEnabledParam",
+      "type": "object"
+    },
+    "name": "set_toolpath_enabled"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "bottom_z": {
+          "description": "Bottom / lowest-cut reference Z (absolute). Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "clearance_z": {
+          "description": "Clearance plane Z (absolute, in the operation's emission frame —\nfor a Top setup the stock top is the high Z). Rapids travel at\nthis height; raise it above the tallest uncut feature to avoid\nrapid collisions. Omit to leave unchanged (stays Auto/current).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "feed_z": {
+          "description": "Feed (rapid-to-cut transition) plane Z (absolute). Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retract_z": {
+          "description": "Retract plane Z (absolute). Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "top_z": {
+          "description": "Stock-top reference Z (absolute). Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "SetToolpathHeightsParam",
+      "type": "object"
+    },
+    "name": "set_toolpath_heights"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "F3.8 — rebind a toolpath's input model / geometry.",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based) from `list_toolpaths`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "model_id": {
+          "description": "Project-assigned model **id** — the `id` field of an\n`inspect_model` row, NOT a 0-based positional index. Same\nconvention `add_toolpath`'s `model_id` uses.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index",
+        "model_id"
+      ],
+      "title": "SetToolpathModelParam",
+      "type": "object"
+    },
+    "name": "set_toolpath_model"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "param": {
+          "description": "Parameter name (e.g. \"feed_rate\", \"stepover\", \"depth_per_pass\", \"plunge_rate\",\nor any config-specific field like \"angle\", \"min_z\", \"passes\")",
+          "type": "string"
+        },
+        "value": {
+          "description": "New value. **Any JSON type** — a number for scalar params, a\nstring for enum-valued params, `true`/`false` for flags, and an\nARRAY for list-valued params (e.g. a drill op's `holes`:\n`[[2.5, 2.5], [237.5, 247.5]]`). Pass the array itself, not a\nstring containing one. See [`any_json_value_schema`] for why\nthis field carries an explicit type list.",
+          "type": [
+            "number",
+            "string",
+            "boolean",
+            "array",
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "param",
+        "value"
+      ],
+      "title": "SetToolpathParamInput",
+      "type": "object"
+    },
+    "name": "set_toolpath_param"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "F3.7 — rebind a toolpath's cutter.",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based) from `list_toolpaths`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tool_id": {
+          "description": "Project-assigned tool **id** — the `id` field of a `list_tools`\nrow, NOT the 0-based position in that list. This differs from\n`add_toolpath`, which takes `tool_index`. The two numbers agree\nin a project that has never had a tool removed, so read the\n`tool` object in the reply to confirm which tool you bound.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index",
+        "tool_id"
+      ],
+      "title": "SetToolpathToolParam",
+      "type": "object"
+    },
+    "name": "set_toolpath_tool"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "modal": {
+          "description": "Modal to open: \"feeds_modal\", \"optimize_modal\", \"export_wizard\",\n\"tool_library\", or \"none\" to close all modals.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "overlays": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "description": "Viewport overlays to switch on or off, as `{\"<id>\": true|false}`.\n\nThe ids are the rows of the GUI's Overlays panel — the same list the\npanel renders, so anything the operator can switch, an agent can:\n`grid`, `model`, `stock_box`, `stock_solid`, `origin_axes`, `datum`,\n`fixtures`, `keep_outs`, `alignment_pins`, `flip_axis`, `curves`,\n`orientation_gizmo`, `cutting_moves`, `rapids`, `entry_markers`,\n`height_planes`, `tool_profile_ghost`, `span_entry`,\n`span_lead_out`, `span_link_bridge`, `span_dressup`,\n`rest_heatmap`, `tier_map`, `reach_map`, `simulated_stock`,\n`collisions`, `tool_deflection`, `generator_steps`,\n`active_step_highlight`, and the colour choices\n`stock_colour_solid` / `stock_colour_deviation` /\n`stock_colour_by_height` and `move_colour_palette` /\n`move_colour_engagement` / `move_colour_advance_per_tooth`.\n\nNothing is silently dropped. The reply reports every key under\n`overlays.applied` or `overlays.refused`, and a refusal carries the\nsame reason string the panel prints beside the greyed row — for\nexample `{\"tier_map\": \"previewed on setup 2 — switch setup to see\nit\"}`. Switching a colour choice OFF is refused (switch a sibling on\ninstead), an unknown id is refused, and every id is refused in the\nReadiness workspace, which renders no viewport.\n\nOne colour source per surface: enabling one clears the others on the\nmodel, the simulated stock or the move lines. Pair with\n`screenshot_gui` to photograph what was enabled.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "properties_tab": {
+          "description": "Toolpath properties tab to activate: \"geometry\", \"feeds\",\n\"linking\", \"heights\", or \"dressup\". Takes effect the next time the\nproperties panel renders a selected toolpath.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "select": {
+          "description": "Non-toolpath properties panel to select: \"machine\" (machine setup +\nkinematics + GRBL $$ import) or \"stock\". Switches to the Setup\nworkspace so the panel is visible on the right.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "toolpath_index": {
+          "description": "Toolpath index (0-based) to select. Selecting a toolpath makes its\nproperties panel visible in the Toolpaths workspace.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "workspace": {
+          "description": "Workspace to switch to: \"setup\", \"toolpaths\", \"simulation\",\nor \"readiness\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "SetUiViewParam",
+      "type": "object"
+    },
+    "name": "set_ui_view"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "sim_jump_to_end"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Simulation jump-to-move parameter.",
+      "properties": {
+        "move_index": {
+          "description": "Move index to jump to (0-based, up to total_moves)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "move_index"
+      ],
+      "title": "SimJumpToMoveParam",
+      "type": "object"
+    },
+    "name": "sim_jump_to_move"
+  },
+  {
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "sim_jump_to_start"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Jump to the start or end of a specific toolpath in the simulation.",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "SimJumpToToolpathBoundaryParam",
+      "type": "object"
+    },
+    "name": "sim_jump_to_toolpath_end"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Jump to the start or end of a specific toolpath in the simulation.",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "SimJumpToToolpathBoundaryParam",
+      "type": "object"
+    },
+    "name": "sim_jump_to_toolpath_start"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Per-toolpath percentage-based simulation scrub parameter.",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "percent": {
+          "description": "Position within this toolpath as percentage (0.0 = start, 100.0 = end)",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "index",
+        "percent"
+      ],
+      "title": "SimScrubToolpathParam",
+      "type": "object"
+    },
+    "name": "sim_scrub_toolpath"
+  }
+]
