@@ -1473,3 +1473,24 @@ A scout measured §4 WP12 against the WP11b tree. Full brief: session scratchpad
    pre-fix: the four integration files name it and the declaration is `pub fn`.
 6. **The "one full heavy gate" precondition in §4 WP12 is replaced** by the operator's
    2026-09-11 ruling: the normal suites and lint gate.
+
+### §22 addendum — N12 item 10 and the `AdoptSimulation` ruling (2026-09-11 night)
+
+WP11b landed (`4b53576b`) with three GUI controller tests red. Cause: `ProjectSession::start`
+reads the rest snapshot from `session.simulation.prior_stocks`, but the GUI simulates on its
+own lane and adopts the result into viz state only (`controller/events/compute.rs:665,703`);
+`session.simulation` stays `None` in the GUI process, so `start` refuses every
+`FromRemainingStock` operation there. Two simulation states — **N12 item 10**, which no scout
+listed because no WP11b fixture carried a rest operation.
+
+**Ruling.** One simulation state, adopted through a command: a `Command` row
+`AdoptSimulation(AdoptSimulationArgs { result: Box<…> })` whose `apply` arm stores the
+simulation on the session exactly as `run_simulation` does (prior stocks included) and
+returns `Effects` with `stale` empty and `simulation_cleared: false`. The two GUI adoption
+sites call it after they adopt into viz state; the viz copy stays for rendering and shares
+the trace by `Arc`. The controller test that asserted the GUI never writes
+`session.simulation` flips to assert the two agree. `start` is unchanged (§22 ruling 5 holds:
+one assembly). This is the adopt step of the simulation `Job` that a later row formalises.
+A sentry drives a GUI rest chain to the point where a prior stock exists (the missing
+fixture): after a simulation adoption, `start` on a `FromRemainingStock` operation succeeds
+and its handle carries that prior stock.
