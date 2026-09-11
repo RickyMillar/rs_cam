@@ -244,7 +244,7 @@ Never delete a row; mark it `DROPPED (why)`.
 | WP11a | Publish `ResolvedGenInputs` with private fields | TODO | — |
 | WP11b | Narrow the executor; close N12 | TODO | — |
 | WP12 | Delete `ComputeRequest`'s mirrored fields | TODO | — |
-| WP13 | `UiCommand` split and the cross-surface sentry | TODO | — |
+| WP13 | `UiCommand` split and the cross-surface sentry | IN PROGRESS (classification table DRAFT 2026-09-11; no variant moved) | `WP13_CLASSIFICATION_DRAFT.md`: McpRequestKind 76 rows, AppEvent 133 rows, 9 open calls, 9 plan mismatches |
 
 ## Do these before the phases. They are defects, not refactors.
 
