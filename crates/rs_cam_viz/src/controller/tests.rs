@@ -3953,6 +3953,125 @@ fn panel_edit<B: ComputeBackend>(
     }
 }
 
+/// WP5. The projection protects the three fields the inspector entry
+/// cannot supply.
+///
+/// `ToolpathEntry` carries sixteen of the nineteen `ToolpathConfig`
+/// fields. `id`, `boundary_inherit` and `planner_origin` are not among
+/// them. `Command::ReplaceToolpathConfig` writes whatever the caller
+/// passes and protects none of the three — the core sentry
+/// `replace_toolpath_config_gates_on_the_signature.rs` pins that. So the
+/// protection has exactly one home: the projection clones the STORED
+/// configuration and applies the sixteen fields onto the clone, never a
+/// fresh literal. A fresh literal would clear `boundary_inherit`, which
+/// reaches emitted geometry (G-BOUNDARYINHERIT), and would delete the
+/// multi-tool planner's ownership stamp.
+#[test]
+fn the_projection_keeps_the_three_fields_the_entry_cannot_supply_wp5() {
+    let mut controller = sample_controller();
+    let id = controller.state.session.toolpath_configs()[0].id;
+    let origin = rs_cam_core::session::PlannerOrigin {
+        plan_id: 7,
+        tier: 1,
+        tier_count: 2,
+    };
+    {
+        let configs = controller.state.session.toolpath_configs_mut();
+        assert!(
+            configs[0].boundary_inherit,
+            "the fixture must start with boundary_inherit true, or the \
+             flip below asserts nothing"
+        );
+        configs[0].boundary_inherit = false;
+        configs[0].planner_origin = Some(origin.clone());
+    }
+
+    let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
+        id,
+        &controller.state.session,
+        &controller.state.gui,
+    )
+    .expect("toolpath exists");
+    // A widget cannot write these two, so the entry is the wrong place to
+    // read them from. Set the id to a value the session does not carry,
+    // and the projection must still answer with the stored one.
+    entry.id = ToolpathId(4242);
+    entry.name = "renamed".to_owned();
+
+    let (_, stored) = controller
+        .state
+        .session
+        .find_toolpath_config_by_id(id)
+        .expect("toolpath exists");
+    let projected = crate::ui::properties::project_entry_onto(stored, &entry);
+
+    assert_eq!(
+        projected.id, id,
+        "the projection keeps the stored id. The entry's id names the row \
+         to write, not a value to write."
+    );
+    assert!(
+        !projected.boundary_inherit,
+        "the projection keeps the stored boundary_inherit"
+    );
+    assert_eq!(
+        projected.planner_origin.as_ref(),
+        Some(&origin),
+        "the projection keeps the stored planner_origin"
+    );
+    assert_eq!(
+        projected.name, "renamed",
+        "the sixteen supplied fields still land, or this test would pass \
+         over a projection that copied the stored config and wrote nothing"
+    );
+}
+
+/// WP5. An open panel with no edit drops no result.
+///
+/// The inspector holds no commit event: it rebuilds the entry, draws it,
+/// and writes it back on every frame. WP5 makes that write-back one
+/// `Command::ReplaceToolpathConfig` per frame, so the core gate — not the
+/// panel — is what keeps a healthy card green while the operator only
+/// looks at it. An ungated replacement would drop the geometry, and the
+/// downstream chain with it, sixty times a second.
+#[test]
+fn an_open_panel_that_edits_nothing_drops_no_result_wp5() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+    assert_eq!(
+        state_of(&controller, 0),
+        FreshnessState::Current,
+        "the fixture must start Current, or the assertions below are \
+         vacuous"
+    );
+
+    // Three frames of an open panel, each one a build-draw-write cycle
+    // with no widget edit at all.
+    for _ in 0..3 {
+        panel_edit(&mut controller, id, |_| {});
+    }
+
+    assert!(
+        controller.state.session.get_result(0).is_some(),
+        "a frame that moved no generation input must keep the cached \
+         result"
+    );
+    assert_eq!(
+        state_of(&controller, 0),
+        FreshnessState::Current,
+        "the card must still read OK after looking at the panel"
+    );
+    assert!(
+        !controller.state.gui.dirty,
+        "looking at the panel must not dirty the project (G-HEIGHTSTAB)"
+    );
+    assert!(
+        controller.state.gui.toolpath_rt[&id].stale_since.is_none(),
+        "no edit, no stale stamp"
+    );
+}
+
 /// The whole point of the model: an edit through the panel leaves the card
 /// no longer able to say "OK". Pre-fix this read `Current`, because the
 /// panel wrote `tc.operation` through `find_toolpath_config_by_id_mut` and
