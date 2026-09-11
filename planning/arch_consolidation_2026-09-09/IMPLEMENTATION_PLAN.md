@@ -1502,3 +1502,67 @@ Measured at WP12's landing: `clippy::too_many_arguments` allows in `execute.rs` 
 `apply_dressups`). The corrected bar, "no `#[allow]` on a `pub` generation entry", is met:
 `pub fn execute_operation` reads 0. The 14-argument `execute_operation` has zero production
 callers (seven test callers) and is a §5 residual beside the strategy advisor's loose call.
+
+---
+
+## §24 WP14 rulings — the three ruled `Job` rows (2026-09-12)
+
+A scout measured the three arms (`wp14_brief.md`). `OptimizeToolpath` runs candidate
+generations and simulations against a `&mut ProjectSession` it takes by `std::mem::replace`
+(`events/mod.rs:585`, `:1285`, `planner.rs:176`), so it cannot pass through `start` without
+its own session. The two reads mutate nothing.
+
+1. **WP14a — `RecommendClearingStrategy` and `PreviewTierMap` become no-adopt `Job` rows.**
+   `start` captures the inputs the core fn reads (cloned configs, `Arc` geometry, the
+   simulation `Arc` where read) into a handle; `execute_recommend_clearing_strategy` /
+   `execute_preview_tier_map` run off-loop holding no session and return the answer; there is
+   no adopt step. The row's answer column names what `execute_*` returns; a generated
+   `JobAnswer` enum carries the answers (parallel to `QueryAnswer`). The MCP arms submit on the
+   lane, return `status: "running"` with the same `timeout_s` / poll shape `generate_toolpath`
+   uses, and deliver the answer through the existing oneshot when the lane completes. The
+   wire snapshot must not move: tool names and params stay; `timeout_s` is added ONLY if the
+   two tools' params already carry it — otherwise the arm blocks up to a fixed internal wait
+   and the plan records the poll shape as WP14c. `mcp_preview_tier_map`'s file write stays a
+   viz-side step after the answer arrives.
+2. **WP14b — `OptimizeToolpath` becomes a `Job` over a CLONED session.** `ProjectSession`
+   derives `Clone` (every field type does; geometry is `Arc`); `start` clones the session
+   into the handle; the optimizer runs its candidate loop on the clone off-loop; the outcome
+   is the answer (no adopt on MCP — today's arm applies nothing; the GUI modal applies the
+   chosen parameters through `RestoreToolpathSnapshot` as it does now). The three
+   `mem::replace` sites and the `new_empty()` placeholder are deleted with the move; the
+   `is_optimizing` flag stays. §1's "holds no `&mut` session" holds because the clone is the
+   job's own. The clone's cost (`SimulationResult` meshes) is measured by the verifier on the
+   P0 fixture and recorded; if it exceeds one second on that fixture the handle takes the
+   simulation by `Arc` and drops the display mesh.
+3. **Order:** WP14a now; WP14b after WP15 lands (both edit the optimizer's setter path).
+
+---
+
+## §25 WP15 rulings — public setters that bypass `apply` (2026-09-12)
+
+A scout measured review finding M4 (`wp15_brief.md`): 60 public `&mut self` setters on
+`ProjectSession` (67 minus the three doors and the five compute doors); 25 have no registry
+row, 13 of those with a production caller; 51 external production call sites (viz 42 in
+eight files, CLI 9 in three); 656 test-crate sites would break if the setters went
+`pub(crate)`. The feeds funnel already writes one `ReplaceToolpathConfig`.
+
+1. **WP15a (now): rows and production sites.** Every row-less setter with a production
+   caller gets a row (13; `Box` the large payloads); every one of the 51 production sites
+   calls `apply` with its row (the setter body stays the single source of the invalidation
+   rule — the row delegates, it never re-derives a stale set); each adopted row's `Surfaces`
+   flips to `Reached` in the same commit and the seventeen stale forward-promise `Skip`
+   reasons are restated as present facts. Setters stay `pub`. Sentry: a source scan that no
+   production file under `crates/rs_cam_viz/src` (outside `#[cfg(test)]`) or
+   `crates/rs_cam_cli/src` names `session.<setter>(` / `.session.<setter>(` for any of the 60,
+   with the `apply` / `query` / `start` doors and read-only accessors allowlisted, and a
+   non-vacuity guard; plus `command_surface_completeness` P1 for the flips.
+2. **WP15b (deferred, recorded in §5): the setters go `pub(crate)`.** It waits for a builder
+   extension (`created` on the builder; `tests/common/session.rs` first) and migrates the
+   656 test sites. Until then a test may still call a setter directly, which is a test-only
+   residual, not a surface.
+3. **The five `set_post_config` shadow-copy sites** (`gui.post` resynced before save, undo
+   and MCP save) are ledgered under WP17's fix; WP15a routes them through `SetPostConfig`.
+4. **The compute doors** (~230 external callers: `generate_toolpath`, `run_simulation`, …)
+   are the `Job` programme's second write surface (WP14 and later rows); recorded in §5, not
+   WP15's.
+5. **Order on `command.rs`:** WP16 → WP20 (prose) → WP14a (two `Job` rows) → WP15a.
