@@ -90,6 +90,21 @@ format and heavy-enabled workspace Clippy pass. Full heavy core remains
 was performed. Logs: `/tmp/rs_cam_n9_gates/`; current phase/decision status:
 `arch_consolidation_2026-09-09/STATUS.md`.
 
+## Architecture consolidation — 2026-09-11 (rulings, three fixes, the implementation plan)
+
+Work moved to `master` (operator ruling; `ui-fix-2026-09-09` fast-forwarded in).
+Landed red-first: P0-D1 coolant on the core export door (`281c4ae7`, sentry
+`09263c04`); N7 the modulation retime integrates only with a kinematics block
+(`c6af7f4b`, sentry `c1191963`); N10 `angular_step` / `point_spacing` ranged
+`greater_than(0.0)`, operator-authored (`3f8d97bb`, sentry `1634bb13`). Full heavy
+core on the Phase 0 tree: **3801 passed, 1 failed, 288 ignored**; the one is F-036b,
+red by design. Viz 618/0, CLI 31/0, MCP 29/0, fmt and clippy clean.
+
+The one-command-surface ruling is ADOPTED
+(`arch_consolidation_2026-09-09/RULING_ONE_COMMAND_SURFACE_DRAFT.md`) and its
+executable sequencing is `IMPLEMENTATION_PLAN.md` (15 work packages, two review
+rounds). Nothing of it is implemented. Q5 blocks WP7; WP1 can start.
+
 ## Recent work (2026-09-07 → 08)
 
 ### Datum belongs to the setup — export now consumes it

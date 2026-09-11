@@ -212,6 +212,16 @@ decision-blocked; N6 and N11 retain their phase assignments.
   `ParamRange::greater_than(0.0)` in the `peck_depth` shape. Operator-authored
   threshold.
 
+## Implementation plan — 2026-09-11
+
+`IMPLEMENTATION_PLAN.md` (`fe080c6d`) sequences the adopted ruling over the nine
+phases: 15 work packages, dependency order forced by types, per-package call-site
+inventory, sentries, deletions, rollback, risk register, per-phase definition of
+done, tracker protocol. Reviewed adversarially (round 1 REJECT, ten blockers,
+all applied; round 2 ACCEPT WITH CHANGES, applied). **Nothing is implemented.**
+Q5 (which test-fixture door) blocks WP7; WP1 (`SetToolpathParam` through `apply`)
+can start. Next: operator reads the plan; compact; start WP1 in a gap.
+
 ## Do these before the phases. They are defects, not refactors.
 
 The rows below retain the original audit evidence. N1/N3's current execution

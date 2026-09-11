@@ -267,7 +267,8 @@ WP3 → WP5 → WP7; WP11a → WP10 → WP11b → WP12.
   can reject a stale completion.
 - **Moves.** Every `pub fn` on `ProjectSession` that today ends in `invalidate_result_chain`
   / `drop_result` returns `Effects`. `invalidate_output_dependents` returns `(dirty,
-  dropped)`; `Effects.stale` carries `dropped`, so `set_toolpath_enabled`
+  dropped)`; `Effects.stale` carries the revision-moved set, which equals `dropped` on the
+  `invalidate_result_chain` paths (§1), so `set_toolpath_enabled`
   (`mutation.rs:327-343`) goes on reporting the downstream set only and keeps its own
   result. `insert_result` (`mutation.rs:1284`) becomes `apply(Command::AdoptResult { id,
   revision, result })`; its ONE non-test caller is
