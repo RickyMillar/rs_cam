@@ -122,7 +122,7 @@ use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::feeds::suggest::SuggestWarning;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::session::{ProjectSession, SimulationOptions};
+use rs_cam_core::session::{Command, ProjectSession, ReplaceToolpathConfigArgs, SimulationOptions};
 
 // ── Fixture constants ───────────────────────────────────────────────────
 
@@ -731,16 +731,33 @@ fn simulate(session: &mut ProjectSession, modulation: bool) {
 }
 
 /// Run one arm: write `feed` onto the measured op, regenerate it against the
-/// stock currently in `prior_stocks`, simulate, and read every stage.
+/// stock in `prior_stocks`, simulate, and read every stage.
+///
+/// **WP7 — the write is a command, so the arm re-seeds.** Every command
+/// row that moves a generation input calls `invalidate_output_dependents`,
+/// which clears `session.simulation`, and `prior_stocks` lives there. The
+/// measured op REFUSES to generate without a snapshot, so the arm
+/// simulates the rough again between the write and the regeneration. The
+/// re-seed reads index 0's cached result, which the write leaves alone —
+/// the chain walk goes downstream of index 1 — so every arm still consumes
+/// the same snapshot. `arc_fit_arms_gate_observation` asserts exactly that
+/// through `ArmRead::stamp`.
 fn run_arm(session: &mut ProjectSession, feed: f64, rpm: u32, modulation: bool) -> ArmRead {
     {
-        let tc = session
-            .toolpath_configs_mut()
-            .get_mut(1)
+        let mut config = session
+            .get_toolpath_config(1)
+            .expect("measured op present")
+            .clone();
+        config.operation.set_feed_rate(feed);
+        config.operation.set_spindle_rpm(Some(rpm));
+        let _ = session
+            .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+                index: 1,
+                config: Box::new(config),
+            }))
             .expect("measured op present");
-        tc.operation.set_feed_rate(feed);
-        tc.operation.set_spindle_rpm(Some(rpm));
     }
+    simulate(session, false);
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(1, &cancel)
@@ -851,21 +868,32 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
         session
             .generate_toolpath(0, &cancel)
             .expect("rough generates");
-        // Seed the cascade unmodulated so the snapshot the measured op reads
-        // is the same one every other test in this file measures against.
-        simulate(&mut session, false);
 
         // The measured arm: Suggest's shipped feed, simulated under options
         // that DO NOT name `adaptive_feed_modulation`. That omission is the
         // point — this arm reads the default.
+        //
+        // WP7: the write comes BEFORE the seeding simulation now. The
+        // command row clears `session.simulation`, and the seed is what
+        // puts the snapshot there. At this point the measured op carries no
+        // result, so the row drops nothing.
         {
-            let tc = session
-                .toolpath_configs_mut()
-                .get_mut(1)
+            let mut config = session
+                .get_toolpath_config(1)
+                .expect("measured op present")
+                .clone();
+            config.operation.set_feed_rate(r.shipped_feed);
+            config.operation.set_spindle_rpm(Some(r.rpm));
+            let _ = session
+                .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+                    index: 1,
+                    config: Box::new(config),
+                }))
                 .expect("measured op present");
-            tc.operation.set_feed_rate(r.shipped_feed);
-            tc.operation.set_spindle_rpm(Some(r.rpm));
         }
+        // Seed the cascade unmodulated so the snapshot the measured op reads
+        // is the same one every other test in this file measures against.
+        simulate(&mut session, false);
         session
             .generate_toolpath(1, &cancel)
             .expect("measured op generates");
@@ -953,14 +981,15 @@ fn arc_fit_arms_gate_observation() {
         let mut session = build_session(&fx);
         let r = suggest_read(&session, &fx);
 
-        // Seed the cascade: generate the rough, then simulate. The rest op
-        // REFUSES to generate before a snapshot exists (it will not fall
-        // back to fresh stock), so the simulation has to come first.
+        // Generate the rough. The rest op REFUSES to generate before a
+        // snapshot exists (it will not fall back to fresh stock), so a
+        // simulation has to come first — and since WP7 each arm seeds that
+        // snapshot itself, after its own command write clears it. A seed
+        // here would be dropped by the first arm's write.
         let cancel = AtomicBool::new(false);
         session
             .generate_toolpath(0, &cancel)
             .expect("rough generates");
-        simulate(&mut session, false);
 
         println!("\n{} [{}]", fx.label, fx.family);
 

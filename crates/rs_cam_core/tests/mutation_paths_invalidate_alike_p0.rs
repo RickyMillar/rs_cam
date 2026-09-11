@@ -13,7 +13,7 @@
 //! |---|---|---|---|
 //! | 1 | MCP and CLI setter | `set_toolpath_param` -> `ProjectSession::apply` -> `set_toolpath_param_impl` | WIDE |
 //! | 2 | GUI undo and redo | `ProjectSession::apply` -> `Command::RestoreToolpathSnapshot` | WIDE |
-//! | 3 | feeds Apply funnel | a direct field write, then `invalidate_toolpath_inputs` | WIDE |
+//! | 3 | feeds Apply funnel | a direct field write, then `invalidate_toolpath_inputs` | WIDE, in-crate since WP7 |
 //! | 4 | wholesale config replacement | `ProjectSession::apply` -> `Command::ReplaceToolpathConfig` | WIDE |
 //!
 //! A WIDE path calls `invalidate_result_chain` (`mutation.rs:236`). That
@@ -36,6 +36,15 @@
 //! `the_narrow_path_leaves_the_neighbour_result_cached`
 //! (`session/mutation.rs`) pins it instead.
 //!
+//! WP7 moved ARM 3 there for the same reason. The nine `ProjectSession`
+//! mutation hatches are `pub(crate)`, so this file — an external crate —
+//! can no longer write a field without a command, which is what arm 3
+//! measures. `session/mutation.rs` carries the arm and its two
+//! assertions: `the_setter_and_the_inspector_door_agree` and
+//! `the_inspector_door_drops_and_bumps_the_same_set`. Its fixture is the
+//! one below, rebuilt in-crate. The non-vacuity guard stays HERE and
+//! points at the arms that remain.
+//!
 //! Arm 4 also corrects the audit. `AUDIT.md:68` calls
 //! `replace_toolpath_config` narrow. It is wide since R0.1 §4.3.
 //!
@@ -51,8 +60,8 @@
 //!
 //! CONTRACT — these must stay green through Phase 1A and after it:
 //!
-//! - `the_setter_the_inspector_door_and_the_replacement_agree`: arms 1, 3
-//!   and 4 drop the same set, `{0, 1}`.
+//! - `the_setter_and_the_replacement_agree`: arms 1 and 4 drop the same
+//!   set, `{0, 1}`.
 //! - `n15_apply_reports_the_set_the_setter_dropped`: the command door's
 //!   `Effects::stale` equals the set core dropped. WP1 closed this row.
 //! - `a_dropped_result_and_a_bumped_revision_are_the_same_event`: on every
@@ -352,23 +361,14 @@ fn arm_snapshot() -> Observation {
     observe(&s, &before)
 }
 
-/// Arm 3 — a direct field write, then the public door
-/// `ProjectSession::invalidate_toolpath_inputs`.
-///
-/// The GUI inspector took this door until WP5; the feeds Apply funnel
-/// takes it now (N13). The arm stays raw on purpose. Pointing it at
-/// `Command::ReplaceToolpathConfig` would make the comparison below read
-/// arm 4 against arm 4, and this file's non-vacuity guard exists to stop
-/// exactly that.
-fn arm_inspector_door() -> Observation {
-    let mut s = fixture(pocket());
-    let before = revisions(&s);
-    let configs = s.toolpath_configs_mut();
-    configs[0].operation.set_feed_rate(EDITED_FEED_RATE);
-    let _ = s.invalidate_toolpath_inputs(0);
-    assert_feed_landed(&s);
-    observe(&s, &before)
-}
+// Arm 3 — a direct field write, then the public door
+// `ProjectSession::invalidate_toolpath_inputs` — stood here. WP7 made
+// the nine mutation hatches `pub(crate)`, so an integration test cannot
+// write a field without a command any more. The arm moved in-crate, to
+// the `#[cfg(test)]` module of `session/mutation.rs`, where it keeps
+// both its reach and its assertions:
+// `the_setter_and_the_inspector_door_agree` and
+// `the_inspector_door_drops_and_bumps_the_same_set`.
 
 /// Arm 4 — `Command::ReplaceToolpathConfig`, the wholesale replacement
 /// the audit records as narrow, and the door the GUI inspector takes.
@@ -406,11 +406,14 @@ fn the_fixture_is_live() {
     assert_fixture_is_live(&s);
 }
 
-/// CONTRACT. Three wide paths, one logical edit, one invalidated set.
+/// CONTRACT. Two wide paths, one logical edit, one invalidated set.
+///
+/// The inspector-door arm moved in-crate at WP7 and carries the third
+/// comparison there. This test keeps the two arms an integration test
+/// can still drive.
 #[test]
-fn the_setter_the_inspector_door_and_the_replacement_agree() {
+fn the_setter_and_the_replacement_agree() {
     let setter = arm_setter();
-    let inspector = arm_inspector_door();
     let replacement = arm_replace_config();
 
     assert_eq!(
@@ -418,11 +421,6 @@ fn the_setter_the_inspector_door_and_the_replacement_agree() {
         set(&[0, 1]),
         "set_toolpath_param walks the stock chain. The edited row and the \
          downstream FromRemainingStock row both go stale."
-    );
-    assert_eq!(
-        inspector.dropped, setter.dropped,
-        "invalidate_toolpath_inputs is the feeds funnel's door onto the \
-         same chain walk. The two must not diverge."
     );
     assert_eq!(
         replacement.dropped, setter.dropped,
@@ -438,7 +436,6 @@ fn a_dropped_result_and_a_bumped_revision_are_the_same_event() {
     let arms = [
         ("set_toolpath_param", arm_setter()),
         ("Command::RestoreToolpathSnapshot", arm_snapshot()),
-        ("invalidate_toolpath_inputs", arm_inspector_door()),
         ("Command::ReplaceToolpathConfig", arm_replace_config()),
     ];
     for (name, obs) in arms {

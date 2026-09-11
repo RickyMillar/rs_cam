@@ -3110,4 +3110,162 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, SessionError::ToolpathNotFound(99)));
     }
+
+    // ── Phase 0 arm 3 — the un-commanded write ───────────────────
+    //
+    // WP7 moved this arm in from
+    // `crates/rs_cam_core/tests/mutation_paths_invalidate_alike_p0.rs`.
+    // The arm's SUBJECT is a direct field write followed by the public
+    // door `ProjectSession::invalidate_toolpath_inputs` — the feeds
+    // Apply funnel's path since N13. No `Command` row expresses it,
+    // because a row is exactly what it does NOT take, and the nine
+    // mutation hatches are `pub(crate)` since WP7, so an integration
+    // test cannot reach one. In-crate keeps both the reach and the
+    // meaning. The assertions are the ones the P0 file carried.
+    //
+    // The P0 file keeps arms 1, 2 and 4, its own non-vacuity guard and
+    // every other contract.
+
+    /// The one feed value every arm writes.
+    const EDITED_FEED_RATE: f64 = 4321.0;
+
+    /// What one write path invalidated.
+    #[derive(Debug)]
+    struct Observation {
+        /// Indices whose cached result is gone after the edit.
+        dropped: BTreeSet<usize>,
+        /// Indices whose `toolpath_revision` moved.
+        bumped: BTreeSet<usize>,
+    }
+
+    fn revisions(s: &ProjectSession) -> Vec<u64> {
+        (0..s.toolpath_count())
+            .map(|i| s.toolpath_revision(i))
+            .collect()
+    }
+
+    fn observe(s: &ProjectSession, before: &[u64]) -> Observation {
+        let mut dropped = BTreeSet::new();
+        let mut bumped = BTreeSet::new();
+        for i in 0..s.toolpath_count() {
+            if s.get_result(i).is_none() {
+                dropped.insert(i);
+            }
+            if before.get(i).copied() != Some(s.toolpath_revision(i)) {
+                bumped.insert(i);
+            }
+        }
+        Observation { dropped, bumped }
+    }
+
+    fn set(indices: &[usize]) -> BTreeSet<usize> {
+        indices.iter().copied().collect()
+    }
+
+    fn assert_feed_landed(s: &ProjectSession) {
+        let feed = s.toolpath_configs()[0].operation.feed_rate();
+        assert!(
+            (feed - EDITED_FEED_RATE).abs() < 1e-9,
+            "the arm must write the feed. Otherwise it invalidates nothing \
+             for a reason this file does not measure. I read {feed}"
+        );
+    }
+
+    /// One setup, one tool, one model, two enabled toolpaths in plan
+    /// order: index 0 `Fresh`, index 1 `FromRemainingStock`. Both carry a
+    /// cached result. The P0 file's fixture, rebuilt in-crate.
+    fn chain_fixture() -> ProjectSession {
+        let mut s = make_session();
+        let _ = s.add_tool(make_tool());
+        let _ = s.add_model(crate::session::LoadedModel {
+            id: 0,
+            name: "part.svg".to_owned(),
+            mesh: None,
+            polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: std::path::PathBuf::from("part.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        });
+        let tool = s.tools()[0].id.0;
+        let model = s.models()[0].id;
+        let upstream = make_tc(tool, model);
+        let mut downstream = make_tc(tool, model);
+        downstream.operation = OperationConfig::Rest(RestConfig::default());
+        downstream.stock_source = crate::session::StockSource::FromRemainingStock;
+        let _ = s.add_toolpath(0, upstream).unwrap();
+        let _ = s.add_toolpath(0, downstream).unwrap();
+        adopt(&mut s, 0);
+        adopt(&mut s, 1);
+        assert!(
+            s.get_result(0).is_some() && s.get_result(1).is_some(),
+            "both rows need a cached result, or every reading below is \
+             vacuous"
+        );
+        s
+    }
+
+    /// Arm 1 — `ProjectSession::set_toolpath_param`, the MCP and CLI
+    /// door. Present so arm 3 has something to be equal to.
+    fn arm_setter() -> Observation {
+        let mut s = chain_fixture();
+        let before = revisions(&s);
+        let _ = s
+            .set_toolpath_param(0, "feed_rate", serde_json::json!(EDITED_FEED_RATE))
+            .expect("feed_rate is a Pocket parameter");
+        assert_feed_landed(&s);
+        observe(&s, &before)
+    }
+
+    /// Arm 3 — a direct field write, then the public door
+    /// `ProjectSession::invalidate_toolpath_inputs`.
+    ///
+    /// The arm stays raw on purpose. Pointing it at
+    /// `Command::ReplaceToolpathConfig` would make the comparison below
+    /// read arm 4 against arm 4.
+    fn arm_inspector_door() -> Observation {
+        let mut s = chain_fixture();
+        let before = revisions(&s);
+        let configs = s.toolpath_configs_mut();
+        configs[0].operation.set_feed_rate(EDITED_FEED_RATE);
+        let _ = s.invalidate_toolpath_inputs(0);
+        assert_feed_landed(&s);
+        observe(&s, &before)
+    }
+
+    /// CONTRACT. The setter and the feeds funnel's door invalidate alike.
+    #[test]
+    fn the_setter_and_the_inspector_door_agree() {
+        let setter = arm_setter();
+        let inspector = arm_inspector_door();
+
+        assert_eq!(
+            setter.dropped,
+            set(&[0, 1]),
+            "set_toolpath_param walks the stock chain. The edited row and the \
+             downstream FromRemainingStock row both go stale."
+        );
+        assert_eq!(
+            inspector.dropped, setter.dropped,
+            "invalidate_toolpath_inputs is the feeds funnel's door onto the \
+             same chain walk. The two must not diverge."
+        );
+    }
+
+    /// CONTRACT. On this arm too, a dropped result and a bumped revision
+    /// are one event.
+    #[test]
+    fn the_inspector_door_drops_and_bumps_the_same_set() {
+        let name = "invalidate_toolpath_inputs";
+        let obs = arm_inspector_door();
+        assert_eq!(
+            obs.bumped, obs.dropped,
+            "{name}: a reader that compares revisions and a reader that \
+             checks for a cached result must reach one answer"
+        );
+    }
 }

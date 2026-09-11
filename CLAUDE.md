@@ -27,6 +27,7 @@ It has four crates:
 - treat the toolpath IR as the boundary between planning and post-processing/output
 - keep import, tool modeling, operation generation, dressups, simulation, and export as distinct layers
 - prefer extending the existing core + worker + UI wiring path instead of creating parallel one-off flows
+- every surface mutates `ProjectSession` through `ProjectSession::apply(Command)`; the `*_mut` hatches are crate-private or deleted since WP7 (2026-09-12)
 
 ## Current doc map
 

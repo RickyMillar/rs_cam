@@ -2298,7 +2298,7 @@ mod tests {
 
     use rs_cam_core::mesh::make_test_flat;
     use rs_cam_core::polygon::Polygon2;
-    use rs_cam_core::session::ProjectSession;
+    use rs_cam_core::session::ProjectSessionBuilder;
 
     use super::*;
     use crate::state::job::{ModelId, ModelKind, ModelUnits, ToolConfig, ToolId, ToolType};
@@ -2483,10 +2483,12 @@ mod tests {
 
     #[test]
     fn validate_toolpath_rejects_wrong_geometry_type() {
-        let mut session = ProjectSession::new_empty();
-        let _ = session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 6.0)]);
-        // Push directly to preserve the ID we chose.
-        session.models_mut().push(session_mesh_model(2));
+        // The builder keeps the ids this fixture chose. `add_tool` and
+        // `add_model` overwrite them.
+        let session = ProjectSessionBuilder::new()
+            .tool(sample_tool(ToolId(1), ToolType::EndMill, 6.0))
+            .model(session_mesh_model(2))
+            .build();
 
         let entry = ToolpathEntry::for_operation(
             ToolpathId(3),
@@ -2532,9 +2534,10 @@ mod tests {
     /// polygon centroid.
     #[test]
     fn validate_drill_blocks_when_model_exposes_no_targets() {
-        let mut session = ProjectSession::new_empty();
-        let _ = session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
-        session.models_mut().push(session_polygon_model(2));
+        let session = ProjectSessionBuilder::new()
+            .tool(sample_tool(ToolId(1), ToolType::EndMill, 3.0))
+            .model(session_polygon_model(2))
+            .build();
 
         let errs = validate_toolpath(
             &drill_entry(2),
@@ -2561,9 +2564,10 @@ mod tests {
 
     #[test]
     fn validate_drill_passes_when_model_exposes_a_target() {
-        let mut session = ProjectSession::new_empty();
-        let _ = session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
-        session.models_mut().push(session_target_model(2));
+        let session = ProjectSessionBuilder::new()
+            .tool(sample_tool(ToolId(1), ToolType::EndMill, 3.0))
+            .model(session_target_model(2))
+            .build();
 
         let errs = validate_toolpath(
             &drill_entry(2),
@@ -2577,9 +2581,10 @@ mod tests {
 
     #[test]
     fn validate_drill_passes_on_an_explicit_pick_without_model_targets() {
-        let mut session = ProjectSession::new_empty();
-        let _ = session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
-        session.models_mut().push(session_polygon_model(2));
+        let session = ProjectSessionBuilder::new()
+            .tool(sample_tool(ToolId(1), ToolType::EndMill, 3.0))
+            .model(session_polygon_model(2))
+            .build();
 
         let mut entry = drill_entry(2);
         if let OperationConfig::Drill(cfg) = &mut entry.operation {
@@ -2594,12 +2599,11 @@ mod tests {
 
     #[test]
     fn validate_rest_requires_earlier_matching_operation() {
-        let mut session = ProjectSession::new_empty();
-        let _ = session.replace_tools(vec![
-            sample_tool(ToolId(1), ToolType::EndMill, 10.0),
-            sample_tool(ToolId(2), ToolType::EndMill, 6.0),
-        ]);
-        session.models_mut().push(session_polygon_model(4));
+        let mut session = ProjectSessionBuilder::new()
+            .tool(sample_tool(ToolId(1), ToolType::EndMill, 10.0))
+            .tool(sample_tool(ToolId(2), ToolType::EndMill, 6.0))
+            .model(session_polygon_model(4))
+            .build();
 
         // Add the rest toolpath config to the session (no prior roughing)
         let mut rest_op = OperationConfig::Rest(Default::default());
@@ -2638,12 +2642,11 @@ mod tests {
 
     #[test]
     fn validate_rest_accepts_earlier_matching_operation() {
-        let mut session = ProjectSession::new_empty();
-        let _ = session.replace_tools(vec![
-            sample_tool(ToolId(1), ToolType::EndMill, 10.0),
-            sample_tool(ToolId(2), ToolType::EndMill, 6.0),
-        ]);
-        session.models_mut().push(session_polygon_model(4));
+        let mut session = ProjectSessionBuilder::new()
+            .tool(sample_tool(ToolId(1), ToolType::EndMill, 10.0))
+            .tool(sample_tool(ToolId(2), ToolType::EndMill, 6.0))
+            .model(session_polygon_model(4))
+            .build();
 
         // Add roughing toolpath first
         let roughing_config = make_session_toolpath_config(

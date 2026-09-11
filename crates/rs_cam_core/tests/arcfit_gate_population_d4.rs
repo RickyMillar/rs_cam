@@ -650,7 +650,9 @@ fn verdict_delta_probe_on_the_committed_fixture() {
     use std::sync::atomic::AtomicBool;
 
     use rs_cam_core::ids::ToolpathId;
-    use rs_cam_core::session::{ProjectSession, SimulationOptions};
+    use rs_cam_core::session::{
+        Command, ProjectSession, ReplaceToolpathConfigArgs, SimulationOptions,
+    };
 
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("tests");
@@ -749,10 +751,30 @@ fn verdict_delta_probe_on_the_committed_fixture() {
     let ungenerated: Vec<usize> = (0..session.toolpath_configs().len())
         .filter(|i| session.get_result(*i).is_none())
         .collect();
+    // WP7: the write is a command row now. The row is
+    // `ReplaceToolpathConfig`, not `SetToolpathEnabled`, because this is
+    // an INSTRUMENT and its reading must not move. `enabled` sits outside
+    // `ToolpathConfig::generation_inputs_signature`, so the replacement
+    // arm returns before any chain walk: it drops no result and clears no
+    // simulation, exactly like the direct field write it replaces.
+    // `SetToolpathEnabled` calls `invalidate_output_dependents`, which
+    // would drop downstream `FromRemainingStock` results and could take
+    // `sim_trace_is_fresh` to false — the table below would then read
+    // `Unmodeled` on both arms for a reason that has nothing to do with
+    // arc fitting. The `sim_trace_is_fresh` line printed below is the
+    // tell either way.
     for i in &ungenerated {
-        if let Some(tc) = session.toolpath_configs_mut().get_mut(*i) {
-            tc.enabled = false;
-        }
+        let Some(stored) = session.get_toolpath_config(*i) else {
+            continue;
+        };
+        let mut config = stored.clone();
+        config.enabled = false;
+        let _ = session
+            .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+                index: *i,
+                config: Box::new(config),
+            }))
+            .expect("the index came from the toolpath list");
     }
     println!(
         "disabled {} un-generated toolpath(s): {ungenerated:?}",

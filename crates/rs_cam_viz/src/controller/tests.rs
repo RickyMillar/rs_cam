@@ -18,7 +18,8 @@ use crate::state::toolpath::{Adaptive3dConfig, OperationConfig, ToolpathId, Tool
 use crate::ui_command::{NoArgs, SimJumpToMoveArgs, UiCommand};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ReplaceToolpathConfigArgs,
+    ToolpathConfig,
 };
 
 struct ScriptedBackend {
@@ -2469,16 +2470,28 @@ fn submit_toolpath_compute_self_referential_boundary_resolves_mcp_waiter() {
 
     // Rewrite the dependent's boundary to reference itself — the
     // self-referential fail-hard precondition in `submit_toolpath_compute`.
-    let tc = controller
+    //
+    // WP7: the whole-config row, not `SetBoundaryConfig`. The boundary
+    // row runs `auto_enable_rest_analysis_for_source`, which would flip
+    // the dependent's own `rest_analysis.enabled` — a field this test
+    // does not intend to write.
+    let (index, stored) = controller
         .state
         .session
-        .toolpath_configs_mut()
-        .iter_mut()
-        .find(|tc| tc.id == dependent_id)
+        .find_toolpath_config_by_id(dependent_id)
         .expect("dependent toolpath config must exist");
-    tc.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
+    let mut config = stored.clone();
+    config.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
         source_toolpath_id: dependent_id,
     };
+    let _ = controller
+        .state
+        .session
+        .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+            index,
+            config: Box::new(config),
+        }))
+        .expect("the dependent sits at a live index");
 
     // Register a pending MCP `generate_toolpath` waiter for this toolpath,
     // mirroring what `app/mcp.rs::mcp_generate_toolpath` does before pushing
@@ -4087,14 +4100,23 @@ fn the_projection_keeps_the_three_fields_the_entry_cannot_supply_wp5() {
         tier_count: 2,
     };
     {
-        let configs = controller.state.session.toolpath_configs_mut();
+        let stored = &controller.state.session.toolpath_configs()[0];
         assert!(
-            configs[0].boundary_inherit,
+            stored.boundary_inherit,
             "the fixture must start with boundary_inherit true, or the \
              flip below asserts nothing"
         );
-        configs[0].boundary_inherit = false;
-        configs[0].planner_origin = Some(origin.clone());
+        let mut config = stored.clone();
+        config.boundary_inherit = false;
+        config.planner_origin = Some(origin.clone());
+        let _ = controller
+            .state
+            .session
+            .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+                index: 0,
+                config: Box::new(config),
+            }))
+            .expect("index 0 exists");
     }
 
     let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
@@ -4532,31 +4554,18 @@ fn toolpath_revision_bumps_on_every_input_drop() {
     );
 }
 
-/// The pre-fix reproduction, in the same run (the `air_cut_one_time_base`
-/// pattern). This is what `write_entry_config_to_session` used to do: the
-/// field reaches the session through a plain `iter_mut().find`, no core
-/// setter runs, and the core goes on holding the previous result. Kept as
-/// executable evidence that the assertions above discriminate.
-#[test]
-fn freshness_pre_fix_reproduction_a_direct_field_write_keeps_the_core_result() {
-    let mut controller = sample_controller();
-    generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
-
-    if let Some((_, tc)) = controller.state.session.find_toolpath_config_by_id_mut(id) {
-        tc.operation.set_feed_rate(1234.0);
-    }
-
-    assert!(
-        controller.state.session.get_result(0).is_some(),
-        "the defect: a direct write leaves the core result in place"
-    );
-    assert_eq!(
-        state_of(&controller, 0),
-        FreshnessState::Current,
-        "which is why the card read OK over geometry from other inputs"
-    );
-}
+// The F2.1 pre-fix reproduction stood here. It wrote
+// `tc.operation.set_feed_rate` through `find_toolpath_config_by_id_mut`
+// and asserted the core result SURVIVED, which is what made the card
+// read OK over geometry from other inputs.
+//
+// WP7 deleted it. The nine mutation hatches are `pub(crate)`, so an
+// un-commanded write from viz is a compile error and no test in this
+// crate can reproduce one. The guarantee moved from a reproduction to
+// the type system, and `crates/rs_cam_core/tests/
+// hatches_are_crate_private_wp7.rs` is the sentry that holds it. The
+// core half of the same reproduction survives in-crate, in
+// `session/mutation.rs`, where the hatch is still in reach.
 
 // ── F2.2 / G-FRESHRENDER — the surfaces draw the state F2.1 derived ──────
 //

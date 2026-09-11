@@ -85,7 +85,9 @@ use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathComputeResult};
+use rs_cam_core::session::{
+    AdoptModelGeometryArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult,
+};
 
 /// Where the drawing's one hole sits when the operator picks it.
 const HOLE_A: [f64; 2] = [20.0, 30.0];
@@ -206,12 +208,23 @@ fn session_with(model: LoadedModel, op: OperationConfig) -> ProjectSession {
 /// Replace the session's model geometry the way every GUI refresh door
 /// does since F4.4 — `LoadedModel::adopt_geometry`, the ONE field split.
 /// This is what a Reload from disk leaves behind.
+///
+/// WP7: the `AdoptModelGeometry` row is that door in core. Beside the
+/// field split it drops the results of the toolpaths bound to the model,
+/// which every arm below regenerates anyway.
 fn refresh_model(session: &mut ProjectSession, fresh: LoadedModel) {
-    let model = session
-        .models_mut()
-        .first_mut()
-        .expect("the fixture model must be in the session");
-    model.adopt_geometry(fresh);
+    let model_id = session
+        .models()
+        .first()
+        .expect("the fixture model must be in the session")
+        .id;
+    let _ = session
+        .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
+            model_id,
+            geometry: Box::new(fresh),
+            units: None,
+        }))
+        .expect("the fixture model is in the session");
 }
 
 /// The distinct XY columns one toolpath visits, to micron resolution — a

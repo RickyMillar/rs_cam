@@ -1693,49 +1693,22 @@ impl ProjectSession {
 
     // ── Mutable accessors ─────────────────────────────────────────
     //
-    // These provide raw mutable access for immediate-mode UI binding and
-    // internal bulk operations (undo, import). **Prefer named mutation
-    // methods** in `mutation.rs` for state changes that require cache
-    // invalidation. After using `stock_mut()` or `machine_mut()`, call
-    // `invalidate_stock()` / `invalidate_machine()` to clear stale caches.
-
-    /// Mutable access to stock configuration.
-    ///
-    /// Call [`invalidate_stock()`](Self::invalidate_stock) after edits to
-    /// clear stale simulation caches.
-    pub fn stock_mut(&mut self) -> &mut StockConfig {
-        &mut self.stock
-    }
-
-    /// Mutable access to machine profile.
-    ///
-    /// Call [`invalidate_machine()`](Self::invalidate_machine) after edits to
-    /// clear stale simulation caches.
-    pub fn machine_mut(&mut self) -> &mut crate::machine::MachineProfile {
-        &mut self.machine
-    }
-
-    /// Mutable access to all tools.
-    ///
-    /// Prefer [`add_tool()`](Self::add_tool), [`remove_tool()`](Self::remove_tool),
-    /// or [`replace_tools()`](Self::replace_tools). Call
-    /// [`invalidate_tool()`](Self::invalidate_tool) after in-place edits.
-    pub fn tools_mut(&mut self) -> &mut Vec<ToolConfig> {
-        &mut self.tools
-    }
-
-    /// Mutable access to all loaded models.
-    ///
-    /// Prefer [`add_model()`](Self::add_model) and
-    /// [`remove_model()`](Self::remove_model).
-    pub fn models_mut(&mut self) -> &mut Vec<LoadedModel> {
-        &mut self.models
-    }
-
-    /// Mutable access to post-processor configuration.
-    pub fn post_mut(&mut self) -> &mut ProjectPostConfig {
-        &mut self.post
-    }
+    // These provide raw mutable access for core-internal bulk operations.
+    // WP7 closed all nine: a surface outside this crate mutates a session
+    // through `ProjectSession::apply` with the matching `Command` row, or
+    // builds one with `ProjectSessionBuilder`. Three hatches keep an
+    // in-crate caller and are `pub(crate)`; the other six had no caller
+    // at all and WP7 deleted them. Prefer a named mutation method in
+    // `mutation.rs` in-crate too — a raw write runs no cache
+    // invalidation, which is the defect G-FRESHSTATE and N13 each closed
+    // one caller at a time. The sentry
+    // `crates/rs_cam_core/tests/hatches_are_crate_private_wp7.rs` holds
+    // the boundary: each of the nine names is `pub(crate)` or absent.
+    //
+    // WP7 deleted `stock_mut`, `machine_mut`, `tools_mut`, `models_mut`,
+    // `post_mut` and `find_setup_by_id_mut`. A core-internal caller that
+    // needs one writes the field directly, or adds a named mutation
+    // method that invalidates.
 
     /// Replace the project name.
     pub fn set_name(&mut self, name: String) {
@@ -1753,7 +1726,10 @@ impl ProjectSession {
     }
 
     /// Find a mutable toolpath config by its semantic ID.
-    pub fn find_toolpath_config_by_id_mut(
+    ///
+    /// Crate-private since WP7; every surface mutates through
+    /// `ProjectSession::apply`.
+    pub(crate) fn find_toolpath_config_by_id_mut(
         &mut self,
         id: ToolpathId,
     ) -> Option<(usize, &mut ToolpathConfig)> {
@@ -1798,11 +1774,6 @@ impl ProjectSession {
         self.setups.iter().enumerate().find(|(_, s)| s.id == id)
     }
 
-    /// Find a mutable setup by its semantic ID.
-    pub fn find_setup_by_id_mut(&mut self, id: usize) -> Option<(usize, &mut SetupData)> {
-        self.setups.iter_mut().enumerate().find(|(_, s)| s.id == id)
-    }
-
     /// Collect all toolpath semantic IDs.
     pub fn all_toolpath_ids(&self) -> Vec<ToolpathId> {
         self.toolpath_configs.iter().map(|tc| tc.id).collect()
@@ -1813,7 +1784,10 @@ impl ProjectSession {
     /// Prefer named mutation methods: [`set_toolpath_enabled()`](Self::set_toolpath_enabled),
     /// [`set_face_selection()`](Self::set_face_selection),
     /// [`set_dressup_config()`](Self::set_dressup_config), etc.
-    pub fn toolpath_configs_mut(&mut self) -> &mut Vec<ToolpathConfig> {
+    ///
+    /// Crate-private since WP7; every surface mutates through
+    /// `ProjectSession::apply`.
+    pub(crate) fn toolpath_configs_mut(&mut self) -> &mut Vec<ToolpathConfig> {
         &mut self.toolpath_configs
     }
 
@@ -1823,7 +1797,13 @@ impl ProjectSession {
     /// [`add_fixture()`](Self::add_fixture), [`remove_fixture()`](Self::remove_fixture),
     /// [`add_keep_out()`](Self::add_keep_out), [`remove_keep_out()`](Self::remove_keep_out),
     /// [`move_toolpath_to_setup()`](Self::move_toolpath_to_setup).
-    pub fn setups_mut(&mut self) -> &mut Vec<SetupData> {
+    ///
+    /// Crate-private since WP7; every surface mutates through
+    /// `ProjectSession::apply`.
+    // WP7: the only caller is the `#[cfg(test)]` module of
+    // `session/save.rs`, so a normal build sees the door as dead.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn setups_mut(&mut self) -> &mut Vec<SetupData> {
         &mut self.setups
     }
 

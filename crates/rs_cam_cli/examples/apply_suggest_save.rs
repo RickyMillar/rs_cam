@@ -13,7 +13,7 @@ use rs_cam_core::feeds::{
         suggest_for_operation,
     },
 };
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{Command, ProjectSession, ReplaceToolpathConfigArgs};
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -43,10 +43,18 @@ fn main() -> Result<()> {
         "id", "name", "feed", "plunge", "stepover", "dpp", "rpm"
     );
 
-    for tc in session.toolpath_configs_mut().iter_mut() {
-        if !tc.enabled {
+    // WP7: the session mutates through `ProjectSession::apply`. The loop
+    // reads one config, edits a CLONE, and writes the clone back with the
+    // whole-config row.
+    let toolpath_count = session.toolpath_count();
+    for index in 0..toolpath_count {
+        let Some(stored) = session.get_toolpath_config(index) else {
+            continue;
+        };
+        if !stored.enabled {
             continue;
         }
+        let mut tc = stored.clone();
         let Some(tool) = tools_snapshot.iter().find(|t| t.id.0 == tc.tool_id) else {
             eprintln!("skip {} (tool {} missing)", tc.id, tc.tool_id);
             continue;
@@ -114,6 +122,13 @@ fn main() -> Result<()> {
             format!("{} -> {}", fmt_opt(dpp_before), fmt_opt(dpp_after)),
             format!("{} -> {}", fmt_opt_u32(rpm_before), fmt_opt_u32(rpm_after)),
         );
+
+        let _ = session
+            .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+                index,
+                config: Box::new(tc),
+            }))
+            .map_err(|e| anyhow!("write the suggested operation back: {e}"))?;
     }
 
     session.save(&output).context("save project")?;

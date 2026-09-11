@@ -10,7 +10,10 @@
 //! and N13 both closed one caller at a time.
 //!
 //! WP7 makes the reach a compile error: each of the nine is
-//! `pub(crate) fn`. A compile error is not visible to the commanded gate,
+//! `pub(crate) fn`, or it is gone. Six had no caller left anywhere after
+//! the migration — production or test, in any crate — so WP7 deleted
+//! them; three keep an in-crate caller and are `pub(crate) fn`. A
+//! compile error is not visible to the commanded gate,
 //! because the gate never runs `cargo build -p rs_cam_viz` — a
 //! dev-target build compiles viz with its dev dependencies, and a
 //! feature door would unify into the same library. The
@@ -37,17 +40,21 @@
 //!
 //! # The three arms
 //!
-//! 1. Every hatch is declared exactly once in
-//!    `crates/rs_cam_core/src/session/`, and the declaration reads
-//!    `pub(crate) fn`.
+//! 1. Every hatch is either declared exactly once in
+//!    `crates/rs_cam_core/src/session/` as `pub(crate) fn`, or absent
+//!    from `crates/rs_cam_core/src/session/` altogether. No hatch reads
+//!    `pub fn`. All nine names must be accounted for, so a name that
+//!    neither arm reaches fails here.
 //! 2. No line outside `crates/rs_cam_core/src` names `.<hatch>(`.
 //! 3. `insert_result` is not public, and `wizard_mut` is declared
 //!    nowhere. WP3 closed the first; §19 ruling 5 deleted the second.
 //!
 //! # Red before the fix
 //!
-//! Arm 1 reads `pub fn` on all nine. Arm 2 reads eleven call sites: one
-//! production site in viz, one CLI example, nine test sites.
+//! Arm 1 reads `pub fn` on all nine. Arm 2 reads 17 lines that name a
+//! hatch: one production site in viz, one CLI example, and the rest
+//! test sites. A call split over two lines counts its continuation, so
+//! the line count runs above the 11 call sites the fix migrates.
 //!
 //! # The scanner allowlist
 //!
@@ -66,7 +73,9 @@
 
 use std::path::{Path, PathBuf};
 
-/// The nine accessors WP7 closed.
+/// The nine accessors WP7 closed. Three stay as `pub(crate) fn`
+/// (`setups_mut`, `find_toolpath_config_by_id_mut`,
+/// `toolpath_configs_mut`); WP7 deleted the other six.
 const HATCHES: &[&str] = &[
     "stock_mut",
     "machine_mut",
@@ -193,38 +202,74 @@ fn declarations(hatch: &str) -> Vec<(PathBuf, usize, String)> {
     out
 }
 
-/// ARM 1. Each hatch is declared once, and the declaration is
-/// `pub(crate) fn`.
-#[test]
-fn every_mutation_hatch_is_declared_crate_private() {
-    let mut found = 0_usize;
-    let mut public: Vec<String> = Vec::new();
-    for hatch in HATCHES {
-        let sites = declarations(hatch);
-        assert_eq!(
-            sites.len(),
-            1,
-            "`{hatch}` must be declared exactly once under \
-             src/session/. I read {} declaration(s): {:?}",
-            sites.len(),
-            sites
-        );
-        for (path, number, line) in sites {
-            found += 1;
-            if line.starts_with("pub fn ") {
-                public.push(format!("{}:{number}: {line}", path.display()));
+/// Every `pub fn <name>_mut(` declared under `src/session/`.
+///
+/// This is the IMPLEMENTATION_PLAN §7 grep, widened from `mod.rs` to the
+/// whole directory. It closes the hole the "absent" state opens: a
+/// deleted hatch that comes back under a NEW name is not in [`HATCHES`],
+/// so nothing else here would read it.
+fn public_mut_declarations() -> Vec<String> {
+    let mut out = Vec::new();
+    for path in session_sources() {
+        for (number, raw) in read(&path).lines().enumerate() {
+            if is_comment(raw) {
+                continue;
+            }
+            let trimmed = raw.trim_start();
+            let Some(rest) = trimmed.strip_prefix("pub fn ") else {
+                continue;
+            };
+            let Some(name) = rest.split('(').next() else {
+                continue;
+            };
+            if name.ends_with("_mut") {
+                out.push(format!("{}:{}: {trimmed}", path.display(), number + 1));
             }
         }
     }
+    out
+}
+
+/// ARM 1. Each hatch is declared once as `pub(crate) fn`, or it is
+/// absent from `src/session/`. Neither state lets a surface outside the
+/// crate reach a field.
+///
+/// A hatch with no caller left anywhere is deleted rather than kept
+/// behind `#[allow(dead_code)]`, so the two accepted states are
+/// "crate-private" and "gone". A name declared twice fails: the walk
+/// could then read the crate-private one and miss a public sibling.
+#[test]
+fn every_mutation_hatch_is_declared_crate_private() {
+    let mut accounted = 0_usize;
+    let mut public: Vec<String> = Vec::new();
+    for hatch in HATCHES {
+        let sites = declarations(hatch);
+        assert!(
+            sites.len() <= 1,
+            "`{hatch}` must be declared at most once under src/session/. \
+             I read {} declaration(s): {:?}",
+            sites.len(),
+            sites
+        );
+        if let Some((path, number, line)) = sites.first()
+            && line.starts_with("pub fn ")
+        {
+            public.push(format!("{}:{number}: {line}", path.display()));
+        }
+        accounted += 1;
+    }
+    public.extend(public_mut_declarations());
     assert_eq!(
-        found,
+        accounted,
         HATCHES.len(),
-        "the walk must find one declaration per hatch, or arm 1 asserts \
-         nothing. I read {found}"
+        "all {} names must be accounted for — declared crate-private or \
+         absent — or arm 1 asserts nothing. I accounted for {accounted}",
+        HATCHES.len()
     );
     assert!(
         public.is_empty(),
-        "WP7: every mutation hatch is `pub(crate) fn`. Every surface \
+        "WP7: every mutation hatch is `pub(crate) fn` or deleted, and no \
+         public `*_mut` door stands under src/session/. Every surface \
          mutates through `ProjectSession::apply`. I read {} public \
          declaration(s):\n  {}",
         public.len(),

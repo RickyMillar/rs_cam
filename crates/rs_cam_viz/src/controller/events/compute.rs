@@ -1300,10 +1300,30 @@ impl<B: ComputeBackend> AppController<B> {
         // step-by-step output, and an agent has no other way to turn it on
         // mid-call. The GUI ladder leaves the operator's own
         // "capture generator trace" toggle alone.
-        for tc in self.state.session.toolpath_configs_mut() {
-            if tc.enabled {
-                tc.debug_options.enabled = true;
+        //
+        // WP7: one `SetToolpathDebugOptions` per index, the same row
+        // `mcp_generate_toolpath` and the GUI's own capture toggle take.
+        // The row moves no revision and drops no result, because a debug
+        // trace is an OUTPUT of a generation and never an input to one.
+        let count = self.state.session.toolpath_count();
+        for index in 0..count {
+            let Some(tc) = self.state.session.get_toolpath_config(index) else {
+                continue;
+            };
+            if !tc.enabled || tc.debug_options.enabled {
+                continue;
             }
+            let mut debug_options = tc.debug_options;
+            debug_options.enabled = true;
+            let _ =
+                self.state
+                    .session
+                    .apply(rs_cam_core::session::Command::SetToolpathDebugOptions(
+                        rs_cam_core::session::SetToolpathDebugOptionsArgs {
+                            index,
+                            debug_options,
+                        },
+                    ));
         }
 
         self.start_generate_all(

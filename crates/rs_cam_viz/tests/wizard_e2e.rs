@@ -34,7 +34,7 @@ use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
     AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    ToolpathComputeResult, ToolpathConfig,
+    SetSetupPauseMessageArgs, ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -565,7 +565,8 @@ fn wizard_dry_run_clamps_cutting_moves_to_safe_z() {
 /// `(Setup change: <name>)` text in the inter-setup `M0` block of the
 /// emitted gcode. `None` (the default) keeps the existing wording.
 /// Mirrors how the Step 4.5 UI's `WizardSetSetupPauseMessage` handler
-/// mutates `setups_mut()[idx].pause_message`.
+/// writes the message: `Command::SetSetupPauseMessage`, the row WP6b
+/// gave that handler.
 #[test]
 fn wizard_setup_pause_message_lands_in_emitted_gcode() {
     use rs_cam_core::compute::transform::FaceUp;
@@ -631,10 +632,20 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
     );
 
     // Override the second setup's pause_message — same mutation the
-    // Step 4.5 AppEvent handler performs.
-    if let Some(setup) = session.setups_mut().iter_mut().find(|s| s.id == bottom_id) {
-        setup.pause_message = Some("Run Z Probe macro then Resume".to_owned());
-    }
+    // Step 4.5 AppEvent handler performs. WP6b gave that handler a row,
+    // and WP7 points this site at the same one.
+    assert_eq!(
+        session.list_setups()[bottom_idx].id,
+        bottom_id,
+        "the row names the setup by index, so the index and the id must \
+         still agree"
+    );
+    let _ = session
+        .apply(Command::SetSetupPauseMessage(SetSetupPauseMessageArgs {
+            setup_index: bottom_idx,
+            message: Some("Run Z Probe macro then Resume".to_owned()),
+        }))
+        .expect("the bottom setup sits at a live index");
 
     let override_gcode =
         export_combined_gcode_from_session(&session, &gui, &sim).expect("override export");
