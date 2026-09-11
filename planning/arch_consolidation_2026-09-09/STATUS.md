@@ -257,6 +257,10 @@ Never delete a row; mark it `DROPPED (why)`.
 | WP14 | The three ruled `Job` rows: `OptimizeToolpath`, `RecommendClearingStrategy`, `PreviewTierMap` (§14 ruling 1; review M3) | TODO (scouting 2026-09-12) | — |
 | WP15 | Public setters bypass `apply`: ~33 direct setter sites in viz and CLI; setters go `pub(crate)`; `set_face_selection` and `replace_setups_and_toolpaths` get rows (review M4) | TODO (scouting 2026-09-12) | — |
 | WP16 | `SetSetupName` row unreached: route `rename_setup` at `controller/events/model.rs` through the row (review M2) | IN PROGRESS (2026-09-12) | — |
+| WP17 | Save clears the session simulation (`set_post_config` before save) so rest ops are refused after a save (tech-debt H1) | IN PROGRESS (2026-09-12) | — |
+| WP18 | Vacuous WP12 sentry arm (H4) and lost feed-optimisation refusal coverage (H5) | IN PROGRESS (2026-09-12) | — |
+| WP19 | Stale stamping: 19 `let _ =` Effects sites in viz; merge `mcp_stamp_stale` into `stamp_stale` (H2, H3) | TODO (after WP16) | — |
+| WP20 | Prose pass: row count doc (H6), twenty stale `Skip` reasons (H7), plan §5 residual list (H9), doubled "Save failed" (H10), dead `P1_EXEMPT` (M13) | IN PROGRESS (2026-09-12) | — |
 
 ## Do these before the phases. They are defects, not refactors.
 
