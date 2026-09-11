@@ -971,7 +971,11 @@ impl<B: ComputeBackend> AppController<B> {
             let Some(tc) = self.state.session.toolpath_configs().get(idx) else {
                 return Err(format!("toolpath {} disappeared", toolpath_id.0));
             };
-            (tc.operation.clone(), tc.tool_id, tc.operation.feeds_style().1)
+            (
+                tc.operation.clone(),
+                tc.tool_id,
+                tc.operation.feeds_style().1,
+            )
         };
         let Some(tool) = self
             .state

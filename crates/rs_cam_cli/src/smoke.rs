@@ -25,7 +25,8 @@ use rs_cam_core::feeds::embedded_vendor_lut;
 use rs_cam_core::feeds::suggest::{StockContext, SuggestParamsInput, suggest_params};
 use rs_cam_core::material::{AluminumAlloy, Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
 use rs_cam_core::session::{
-    Command, ProjectSession, SetToolpathParamArgs, SimulationOptions, ToolpathConfig,
+    Command, ProjectSession, SetStockConfigArgs, SetToolpathEnabledArgs, SetToolpathParamArgs,
+    SimulationOptions, ToolpathConfig,
 };
 use rs_cam_core::tool_load::drill_gates::DrillGatesVerdict;
 use rs_cam_core::tool_load::verdict::ChipSide;
@@ -588,7 +589,7 @@ fn materialize_case_toolpath(
     let params = parse_baseline_params(&case.baseline_params);
     let mut param_warnings = Vec::new();
     for (key, value) in &params {
-        // stock_* keys are routed to session.stock_mut() up front via
+        // stock_* keys are routed to the stock command up front via
         // apply_stock_overrides; skip them here so they don't pollute
         // param_warnings with "unknown parameter" noise.
         if key.starts_with("stock_") {
@@ -674,7 +675,16 @@ fn run_single_case_inner(
     if !case.material_family.is_empty()
         && let Some(material) = material_for_family(&case.material_family)
     {
-        session.stock_mut().material = material;
+        let mut stock = session.stock_config().clone();
+        stock.material = material;
+        if let Err(error) = crate::command::apply_command(
+            &mut session,
+            Command::SetStockConfig(SetStockConfigArgs {
+                stock: Box::new(stock),
+            }),
+        ) {
+            info!(case_id = %case.case_id, "material override refused: {error}");
+        }
     }
 
     // Apply any stock_* prefixed params from the measured case's
@@ -687,8 +697,16 @@ fn run_single_case_inner(
 
     // Disable any existing toolpaths so simulation only sees what we
     // explicitly add (prior passes + measured case).
-    for tc in session.toolpath_configs_mut().iter_mut() {
-        tc.enabled = false;
+    for index in 0..session.toolpath_count() {
+        if let Err(error) = crate::command::apply_command(
+            &mut session,
+            Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+                index,
+                enabled: false,
+            }),
+        ) {
+            info!(case_id = %case.case_id, index, "disable refused: {error}");
+        }
     }
 
     // Resolve prior_passes: each id must reference a case earlier in
@@ -1081,7 +1099,7 @@ fn pick_tool(session: &ProjectSession, tool_name: &str) -> Option<usize> {
 }
 
 /// Route any `stock_*` prefixed params in `baseline_params` to
-/// `session.stock_mut()` field mutations. The toolpath operation
+/// `Command::SetStockConfig`. The toolpath operation
 /// schema rejects these as unknown params, but the test author's
 /// intent is to constrain stock geometry — pre-CLI, round-09 set
 /// stock_top_z via the project file directly.
@@ -1098,7 +1116,7 @@ fn apply_stock_overrides(session: &mut ProjectSession, baseline_params: &str, ca
         match key.as_str() {
             "stock_top_z" => match value.parse::<f64>() {
                 Ok(top_z) => {
-                    let stock = session.stock_mut();
+                    let mut stock = session.stock_config().clone();
                     let new_z = top_z - stock.origin_z;
                     if new_z <= 0.0 {
                         info!(
@@ -1111,7 +1129,17 @@ fn apply_stock_overrides(session: &mut ProjectSession, baseline_params: &str, ca
                     }
                     stock.z = new_z;
                     stock.auto_from_model = false;
-                    info!(case_id, top_z, stock_z = stock.z, "applied stock_top_z");
+                    let applied_z = stock.z;
+                    if let Err(error) = crate::command::apply_command(
+                        session,
+                        Command::SetStockConfig(SetStockConfigArgs {
+                            stock: Box::new(stock),
+                        }),
+                    ) {
+                        info!(case_id, top_z, "stock_top_z refused: {error}; ignored");
+                        continue;
+                    }
+                    info!(case_id, top_z, stock_z = applied_z, "applied stock_top_z");
                 }
                 Err(e) => {
                     info!(case_id, %value, "stock_top_z parse failed: {e}; ignored");

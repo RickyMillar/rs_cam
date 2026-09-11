@@ -21,7 +21,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    Command, LoadedModel, ProjectSession, SetToolpathParamArgs, ToolpathConfig,
+    Command, LoadedModel, ProjectSession, SetPostConfigArgs, SetToolpathParamArgs, ToolpathConfig,
 };
 
 use crate::command::apply_command;
@@ -151,10 +151,16 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
             .map_err(|e| anyhow::anyhow!("--set {key}: {e}"))?;
     }
 
-    let post = session.post_mut();
+    let mut post = session.post_config().clone();
     post.format = args.post.clone();
     post.safe_z = args.safe_z;
     post.spindle_speed = args.spindle_speed;
+    let _ = apply_command(
+        &mut session,
+        Command::SetPostConfig(SetPostConfigArgs {
+            post: Box::new(post),
+        }),
+    )?;
 
     // ── Generate + export ─────────────────────────────────────────
     let cancel = AtomicBool::new(false);

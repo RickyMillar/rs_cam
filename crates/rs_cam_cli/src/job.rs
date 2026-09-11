@@ -45,7 +45,10 @@ use rs_cam_core::{
     debug_trace::ToolpathDebugOptions,
     gcode::CoolantMode,
     semantic_trace::ToolpathTraceArtifact,
-    session::{Command, LoadedModel, ProjectSession, SetToolpathParamArgs, ToolpathConfig},
+    session::{
+        Command, LoadedModel, ProjectSession, SetPostConfigArgs, SetStockConfigArgs,
+        SetToolpathParamArgs, ToolpathConfig,
+    },
     toolpath::Toolpath,
 };
 
@@ -532,9 +535,15 @@ fn execute_op_via_session(
         let bbox = session.models().first().and_then(LoadedModel::bbox);
         if let Some(bbox) = bbox {
             let top = op.stock_top_z.unwrap_or(bbox.max.z + 5.0);
-            let stock = session.stock_mut();
+            let mut stock = session.stock_config().clone();
             stock.auto_from_model = false;
             stock.z = (top - stock.origin_z).max(0.0);
+            let _ = crate::command::apply_command(
+                &mut session,
+                Command::SetStockConfig(SetStockConfigArgs {
+                    stock: Box::new(stock),
+                }),
+            )?;
         }
     }
 
@@ -653,10 +662,16 @@ fn execute_op_via_session(
         }
     }
 
-    let post = session.post_mut();
+    let mut post = session.post_config().clone();
     post.format = job.job.post.clone();
     post.safe_z = op.safe_z.unwrap_or(job.job.safe_z);
     post.spindle_speed = op.spindle_speed.unwrap_or(job.job.spindle_speed);
+    let _ = crate::command::apply_command(
+        &mut session,
+        Command::SetPostConfig(SetPostConfigArgs {
+            post: Box::new(post),
+        }),
+    )?;
 
     // \u{2500}\u{2500} Generate \u{2500}\u{2500}
     let cancel = AtomicBool::new(false);

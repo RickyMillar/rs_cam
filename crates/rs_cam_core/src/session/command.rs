@@ -347,9 +347,7 @@ macro_rules! for_each_command {
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Command, SetStockSource, "set_stock_source", SetStockSourceArgs, Effects,
              Surfaces {
@@ -374,9 +372,7 @@ macro_rules! for_each_command {
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Command, ImportMachineSettings, "import_machine_settings",
              ImportMachineSettingsArgs, Effects,
@@ -391,9 +387,7 @@ macro_rules! for_each_command {
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Command, SetBoundaryConfig, "set_boundary_config", SetBoundaryConfigArgs, Effects,
              Surfaces {
@@ -442,9 +436,7 @@ macro_rules! for_each_command {
                      "the GUI calls the session setter directly; WP6 adopts this row",
                  ),
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Query, ToolpathCycleTime, "toolpath_cycle_time", ToolpathCycleTimeArgs,
              ToolpathCycleTimeAnswer,
@@ -473,9 +465,7 @@ macro_rules! for_each_command {
                  mcp: Reach::Skip(
                      "the MCP door edits one named parameter through set_toolpath_param",
                  ),
-                 cli: Reach::Skip(
-                     "the CLI writes a whole job file, not a live config",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Command, ReplaceTool, "replace_tool", ReplaceToolArgs, Effects,
              Surfaces {

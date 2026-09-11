@@ -10,8 +10,13 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use tracing::{debug, info, warn};
 
-use rs_cam_core::session::{ProjectSession, SimulationOptions};
+use rs_cam_core::session::{
+    Command, ProjectSession, ReplaceToolpathConfigArgs, SetMachineKinematicsArgs,
+    SetPostConfigArgs, SimulationOptions,
+};
 use rs_cam_core::simulation_cut::SimulationCutArtifact;
+
+use crate::command::apply_command;
 
 // ── JSON output types ───────────────────────────────────────────────────
 
@@ -238,14 +243,30 @@ pub fn run_project_command(
     // compare wall-clock against the integrator's prediction and
     // exercise modulation end-to-end.
     if inject_shapeoko_kinematics {
-        session.machine_mut().kinematics =
-            Some(rs_cam_core::machine_kinematics::MachineKinematics::shapeoko_xxl_stock());
+        // `SetMachineKinematics` also clears `machine_ref`: the values
+        // are inline now, so they no longer describe the named library
+        // machine. The hatch write left a stale link behind.
+        let _ = apply_command(
+            &mut session,
+            Command::SetMachineKinematics(SetMachineKinematicsArgs {
+                kinematics: Box::new(
+                    rs_cam_core::machine_kinematics::MachineKinematics::shapeoko_xxl_stock(),
+                ),
+            }),
+        )?;
         info!("Injected Shapeoko XXL stock kinematics into MachineProfile");
     }
 
     if let Some(strategy) = spindle_strategy_override {
         let prev = session.post_config().spindle_strategy;
-        session.post_mut().spindle_strategy = strategy;
+        let mut post = session.post_config().clone();
+        post.spindle_strategy = strategy;
+        let _ = apply_command(
+            &mut session,
+            Command::SetPostConfig(SetPostConfigArgs {
+                post: Box::new(post),
+            }),
+        )?;
         info!(
             previous = ?prev,
             applied = ?strategy,
@@ -735,39 +756,53 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
 
     // Pass 2 (mutable): apply + print the before→after table.
     for (idx, suggested_op, suggested_rpm, provenance) in suggestions {
-        let Some(tc) = session.toolpath_configs_mut().get_mut(idx) else {
+        // A DRAFT of the whole configuration, applied through
+        // `ReplaceToolpathConfig`. That row writes the configuration and
+        // drops the chain only when `generation_inputs_signature` moved.
+        let Some(mut draft) = session.toolpath_configs().get(idx).cloned() else {
             continue;
         };
 
         // Capture before values for the table.
-        let feed_before = tc.operation.feed_rate();
-        let plunge_before = tc.operation.plunge_rate();
-        let stepover_before = tc.operation.stepover();
-        let dpp_before = tc.operation.depth_per_pass();
-        let rpm_before = tc.operation.spindle_rpm();
+        let feed_before = draft.operation.feed_rate();
+        let plunge_before = draft.operation.plunge_rate();
+        let stepover_before = draft.operation.stepover();
+        let dpp_before = draft.operation.depth_per_pass();
+        let rpm_before = draft.operation.spindle_rpm();
 
         // Replace operation with the suggested one (feed/plunge/
         // stepover/dpp already written by apply_feeds_result_to_op).
-        tc.operation = suggested_op;
+        draft.operation = suggested_op;
         // Suggest doesn't write spindle_rpm into the operation; the
         // RPM lives in `feeds_result.rpm`. Apply it explicitly so the
         // emitted M3 line matches the calculator's recommendation.
         if suggested_rpm.is_finite() && suggested_rpm > 0.0 {
-            tc.operation
+            draft
+                .operation
                 .set_spindle_rpm(Some(suggested_rpm.round() as u32));
         }
-        tc.feeds_provenance = provenance;
+        draft.feeds_provenance = provenance;
 
-        let feed_after = tc.operation.feed_rate();
-        let plunge_after = tc.operation.plunge_rate();
-        let stepover_after = tc.operation.stepover();
-        let dpp_after = tc.operation.depth_per_pass();
-        let rpm_after = tc.operation.spindle_rpm();
+        let feed_after = draft.operation.feed_rate();
+        let plunge_after = draft.operation.plunge_rate();
+        let stepover_after = draft.operation.stepover();
+        let dpp_after = draft.operation.depth_per_pass();
+        let rpm_after = draft.operation.spindle_rpm();
+        let id = draft.id;
+        let name = draft.name.clone();
+
+        let _ = apply_command(
+            session,
+            Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+                index: idx,
+                config: Box::new(draft),
+            }),
+        )?;
 
         eprintln!(
             "{:<3} {:<32} {:>10} {:>10} {:>10} {:>10} {:>8}",
-            tc.id,
-            truncate(&tc.name, 32),
+            id,
+            truncate(&name, 32),
             format!("{:.0}→{:.0}", feed_before, feed_after),
             format!("{:.0}→{:.0}", plunge_before, plunge_after),
             format!(
@@ -778,9 +813,6 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             format!("{}→{}", fmt_opt(dpp_before, 2), fmt_opt(dpp_after, 2)),
             format!("{}→{}", fmt_opt_u32(rpm_before), fmt_opt_u32(rpm_after)),
         );
-
-        // No cache invalidation needed — apply runs before
-        // generate_all, which always computes from current configs.
     }
     eprintln!();
     Ok(())
