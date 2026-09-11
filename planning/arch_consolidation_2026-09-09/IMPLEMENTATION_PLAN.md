@@ -1217,3 +1217,53 @@ construction, and `apply` for the test sites that mutate a live session mid-test
 from `BLOCKED (Q5)` to `TODO`; it still requires WP5, WP6 and WP6b. The builder is WP7's
 first hunk, landed before any hatch goes `pub(crate)`, so the ~117 test sites migrate in the
 same commit that closes the hatches (§5 WP7: no partial commit is possible).
+
+---
+
+## §19 WP6 and WP6b pre-implementation corrections and rulings (2026-09-11)
+
+A scout measured §4 WP6 and WP6b against master `cd2b8efd`. Full brief: session scratchpad
+`wp6_wp6b_brief.md`.
+
+### Corrections
+
+- Production hatch sites are **12 / 35 / 9** (egui / other viz / CLI), not 12 / 36 / 9.
+  `insert_result` is already `pub(crate)` with zero production callers (WP3), and §15 moved
+  the `debug_options` write in `controller/events/compute.rs` to WP10. Viz production is 47.
+- **Ten producers still return no `Effects`:** `add_toolpath`, `add_model`, `remove_model`,
+  `add_tool`, `remove_tool`, `add_setup`, `remove_setup`, `rename_setup`, `set_machine`,
+  `set_feeds_provenance`. §17's "every producer" was wrong by these ten.
+- `commit_tool_draft` (`properties/mod.rs:137`) already has the scratch-plus-commit shape; it is
+  the in-repo model, not a draw site to convert.
+- `stock::draw` already takes `&mut StockConfig`; only its call site changes.
+- The 27 writes with no core setter collapse to ten new `Command` rows; three writes stay
+  hand-written compositions (the brief names them).
+
+### Rulings
+
+1. **The ten producers above return `Effects` in WP4** (§15 ruling 7 extended). The four add
+   rows set `Effects.created`.
+2. **One whole-profile `SetMachine` row, owned by WP4**, serves the MCP site and WP6's three
+   machine sites. It invalidates exactly as `invalidate_machine` does today (one core rule);
+   the GUI `MachineChanged` event is deleted per §14.
+3. **The `Surfaces` flip belongs to the package that adds the caller.** WP4 and WP5 declare
+   `cli: Skip` / `gui: Skip` where no caller exists; WP6 and WP6b flip the field to `Reached`
+   on the rows they adopt, in the same commit as the caller.
+4. **The `stale_since` helper is a free function over `AppState`** (amends §17 ruling 2), so
+   `ui/properties/mod.rs` can call it.
+5. **`WizardState` moves to viz.** Nothing saves it and the loader resets it on every load, so
+   it is GUI state, not project data. The `wizard_mut` hatch is deleted, not narrowed; the
+   eleven hatches become ten. The eleven `wizard_mut` sites migrate to the viz struct in WP6b.
+6. **Setup fields get three rows:** `SetSetupName` (moves no revision), `SetSetupDatum` (moves
+   no revision: results are setup-local; the datum reaches export only), `SetSetupModels`
+   (drops every result in the setup, like face and rotation). This closes the "setup datum is
+   GUI-only" divergence the ruling lists.
+7. **`update_stock_from_bbox` through core drops every result** (G-FRESHSTATE-correct). The
+   three `controller/io.rs` sites change behaviour; the commit names it and
+   `gen_parity_p0_tests` is re-checked.
+8. **egui emit rule:** `DragValue` and `Slider` apply on `drag_stopped()` or `lost_focus()`,
+   never per frame; checkboxes and combos apply on `changed()`. Readers inside the panel read
+   the scratch during a drag. The undo comparison takes its "before" snapshot at drag start.
+9. **`add_model` renumbers ids** (`io.rs:655`); that site waits for the WP7 builder.
+10. **Rollback per widget:** WP6 lands as one commit per draw file, not one patch, so each site
+    has a bisect point.
