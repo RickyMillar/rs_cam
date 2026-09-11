@@ -1,34 +1,45 @@
-//! The command registry, and the one door that applies a command.
+//! The command registry, and the one door that applies a command or a
+//! query.
 //!
-//! A command is a named, validated mutation of the session. One X-macro
-//! list declares every command row. A callback macro turns the rows into
-//! the payload enum [`Command`], the fieldless mirror [`CommandId`], and
-//! the per-row columns — the wire name, the kind, and the surface table.
-//! The idiom is `for_each_op!`
+//! A command is a named, validated mutation of the session. A query is a
+//! named, synchronous read. One X-macro list declares every row of both
+//! kinds. A callback macro splits the rows by kind and builds the payload
+//! enums [`Command`] and [`Query`], the fieldless mirror [`CommandId`],
+//! and the per-row columns — the wire name, the kind, the answer type, and
+//! the surface table. The idiom is `for_each_op!`
 //! (`crates/rs_cam_core/src/compute/catalog.rs:149`).
 //!
 //! [`ProjectSession::apply`] runs one command and reports [`Effects`] —
 //! the toolpath indices the command dropped, whether it cleared the
 //! simulation, and the revision of the toolpath it names. One producer
 //! answers every surface, so the MCP reply and the core drop cannot
-//! disagree.
+//! disagree. [`ProjectSession::query`] runs one query and reports one
+//! [`QueryAnswer`] variant, named after the row.
 //!
-//! WP3 adds the one construction site. Every mutation on
+//! WP3 adds the one construction site for [`Effects`]. Every mutation on
 //! [`ProjectSession`] runs its body inside
 //! [`ProjectSession::try_with_effects`], so no mutation builds an
 //! [`Effects`] of its own.
 //!
-//! The registry carries two rows, `SetToolpathParam` and `AdoptResult`.
-//! The later work packages add the rest.
+//! WP9 adds the `Query` kind and its first row, `ToolpathCycleTime`. The
+//! registry carries two `Command` rows (`SetToolpathParam`,
+//! `AdoptResult`) and one `Query` row. Later work packages add the rest,
+//! and a future `Job` kind (WP10) adds a third accumulator to the
+//! callback macro's kind split, not a rewrite of it.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
+use super::cycle_time::{self, CycleTime};
 use super::{ProjectSession, SessionError, ToolpathComputeResult};
+use crate::simulation_cut::SimulationCutTrace;
 
-/// Declares every command row once.
+/// Declares every command and query row once.
 ///
-/// The columns are: the command kind, the identifier, the wire name, the
-/// payload type, and the surface table. Edit this list, not the blocks a
+/// The columns are: the row kind (`Command` or `Query`), the identifier,
+/// the wire name, the payload type, the answer type, and the surface
+/// table. A `Command` row's answer type is always [`Effects`]; a `Query`
+/// row names its own answer struct. Edit this list, not the blocks a
 /// callback macro generates from it.
 ///
 /// The macro carries `#[macro_export]` because a sentry in `tests/`
@@ -39,8 +50,8 @@ macro_rules! for_each_command {
     ($m:ident) => {
         $m! {
             //  kind      id                wire name             payload
-            //  surfaces
-            (Command, SetToolpathParam, "set_toolpath_param", SetToolpathParamArgs,
+            //  answer    surfaces
+            (Command, SetToolpathParam, "set_toolpath_param", SetToolpathParamArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
                      "the GUI inspector writes ToolpathConfig fields directly; WP5 gives it a door",
@@ -48,7 +59,7 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
-            (Command, AdoptResult, "adopt_result", AdoptResultArgs,
+            (Command, AdoptResult, "adopt_result", AdoptResultArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Skip(
@@ -56,6 +67,17 @@ macro_rules! for_each_command {
                  ),
                  cli: Reach::Skip(
                      "the CLI generates synchronously and never adopts a completion",
+                 ),
+             }),
+            (Query, ToolpathCycleTime, "toolpath_cycle_time", ToolpathCycleTimeArgs,
+             ToolpathCycleTimeAnswer,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "get_cut_trace and narrate_toolpath report other quantities; WP4 revisits",
+                 ),
+                 cli: Reach::Skip(
+                     "the CLI project report prints the simulation total, not per-toolpath",
                  ),
              }),
         }
@@ -168,8 +190,62 @@ pub struct Effects {
     pub revision: Option<u64>,
 }
 
-macro_rules! define_command_registry {
-    ($( ($kind:ident, $id:ident, $wire:literal, $payload:ident, $surfaces:expr) ),+ $(,)?) => {
+/// The arguments of the `toolpath_cycle_time` read.
+///
+/// `trace` carries the simulation the caller measured this toolpath
+/// against. The session's own `simulation_result()` is a different,
+/// usually-empty slot: the GUI simulates off the frame loop and keeps its
+/// cut trace in its own state, so a query that read only the session's
+/// slot would answer `CuttingOnly` or nothing on every real project. The
+/// caller therefore supplies the trace it already holds, the same
+/// argument [`cycle_time::toolpath_cycle_time`] always took.
+///
+/// `cutting_distance_mm` and `nominal_feed_mm_min` feed the `CuttingOnly`
+/// fallback, which needs both and neither is on the trace. `None` means
+/// the caller has no computed result for this toolpath yet, in which case
+/// the read cannot fall back and answers [`CycleTime::NONE`].
+#[derive(Debug, Clone)]
+pub struct ToolpathCycleTimeArgs {
+    /// The index of the toolpath to read.
+    pub index: usize,
+    /// The cut trace to search for this toolpath's measured runtime.
+    pub trace: Option<Arc<SimulationCutTrace>>,
+    /// The toolpath's cutting distance, in millimetres.
+    pub cutting_distance_mm: Option<f64>,
+    /// The toolpath's nominal feed rate, in millimetres per minute.
+    pub nominal_feed_mm_min: Option<f64>,
+}
+
+/// The answer to the `toolpath_cycle_time` read.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ToolpathCycleTimeAnswer {
+    /// The toolpath's cycle time, and the basis it was measured on.
+    pub cycle_time: CycleTime,
+}
+
+/// Splits the registry's rows by kind, and emits the [`Command`] and
+/// [`Query`] payload enums plus [`QueryAnswer`].
+///
+/// GENERATED support macro for `define_command_registry!`, called with
+/// the same rows that macro receives. It walks the row list one row at a
+/// time — an incremental "tt-muncher" — sorting each row's columns into
+/// the `commands` or `queries` accumulator by matching the literal
+/// identifier `Command` or `Query` in the row's first column. The base
+/// case (no rows left) is tried first on every recursive call, so it
+/// fires the moment both accumulators hold every row and none remains.
+///
+/// A future `Job` or `UiCommand` row (WP10 and later) needs one more
+/// accumulator and one more per-row arm here — the shape does not need a
+/// rewrite to grow a third kind.
+macro_rules! split_command_rows {
+    // Base case: no rows left. Emit the two payload enums and their
+    // `id()`, from the two accumulators built by the arms below.
+    (@split
+        commands = [$( ($c_id:ident, $c_wire:literal, $c_payload:ident) ),* $(,)?],
+        queries = [
+            $( ($q_id:ident, $q_wire:literal, $q_payload:ident, $q_answer:ty) ),* $(,)?
+        ] $(,)?
+    ) => {
         /// One command and its arguments.
         ///
         /// GENERATED from the `for_each_command!` list — edit the list,
@@ -182,42 +258,123 @@ macro_rules! define_command_registry {
         #[derive(Debug, Clone)]
         pub enum Command {
             $(
-                #[doc = concat!("The `", $wire, "` command.")]
-                $id($payload),
-            )+
+                #[doc = concat!("The `", $c_wire, "` command.")]
+                $c_id($c_payload),
+            )*
         }
 
-        /// The identifier of one command, without its arguments.
+        impl Command {
+            /// The identifier of this command. GENERATED.
+            pub fn id(&self) -> CommandId {
+                match self {
+                    $(Command::$c_id(_) => CommandId::$c_id,)*
+                }
+            }
+        }
+
+        /// One read and its arguments.
+        ///
+        /// GENERATED from the `for_each_command!` list — edit the list,
+        /// not this block.
+        #[derive(Debug, Clone)]
+        pub enum Query {
+            $(
+                #[doc = concat!("The `", $q_wire, "` read.")]
+                $q_id($q_payload),
+            )*
+        }
+
+        impl Query {
+            /// The identifier of this read. GENERATED.
+            pub fn id(&self) -> CommandId {
+                match self {
+                    $(Query::$q_id(_) => CommandId::$q_id,)*
+                }
+            }
+        }
+
+        /// The answer to one [`Query`].
+        ///
+        /// GENERATED — one variant per `Query` row, named by that row's
+        /// answer column.
+        #[derive(Debug, Clone)]
+        pub enum QueryAnswer {
+            $(
+                #[doc = concat!("The answer to the `", $q_wire, "` read.")]
+                $q_id($q_answer),
+            )*
+        }
+    };
+
+    // Next row is a `Command` row: file it under `commands` and recurse.
+    (@split
+        commands = [$($commands:tt)*],
+        queries = [$($queries:tt)*],
+        (Command, $id:ident, $wire:literal, $payload:ident, $answer:ty, $surfaces:expr),
+        $($rest:tt)*
+    ) => {
+        split_command_rows! {
+            @split
+            commands = [$($commands)* ($id, $wire, $payload),],
+            queries = [$($queries)*],
+            $($rest)*
+        }
+    };
+
+    // Next row is a `Query` row: file it under `queries` and recurse.
+    (@split
+        commands = [$($commands:tt)*],
+        queries = [$($queries:tt)*],
+        (Query, $id:ident, $wire:literal, $payload:ident, $answer:ty, $surfaces:expr),
+        $($rest:tt)*
+    ) => {
+        split_command_rows! {
+            @split
+            commands = [$($commands)*],
+            queries = [$($queries)* ($id, $wire, $payload, $answer),],
+            $($rest)*
+        }
+    };
+}
+
+macro_rules! define_command_registry {
+    (
+        $( ($kind:ident, $id:ident, $wire:literal, $payload:ident, $answer:ty, $surfaces:expr) ),+
+        $(,)?
+    ) => {
+        /// The identifier of one command or read, without its arguments.
         ///
         /// The registry columns hang here. A payload enum cannot host a
-        /// `const ALL`. GENERATED from the `for_each_command!` list.
+        /// `const ALL`. GENERATED from the `for_each_command!` list, over
+        /// every row regardless of kind — `ALL` and its methods answer
+        /// for a `Command` row and a `Query` row alike.
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum CommandId {
             $(
-                #[doc = concat!("The identifier of the `", $wire, "` command.")]
+                #[doc = concat!("The identifier of the `", $wire, "` row.")]
                 $id,
             )+
         }
 
         impl CommandId {
-            /// Every command, in registry order. GENERATED.
+            /// Every row, in registry order. GENERATED.
             pub const ALL: &[CommandId] = &[$(CommandId::$id,)+];
 
-            /// The name this command carries on the wire. GENERATED.
+            /// The name this row carries on the wire. GENERATED.
             pub fn wire_name(self) -> &'static str {
                 match self {
                     $(CommandId::$id => $wire,)+
                 }
             }
 
-            /// How the session runs this command. GENERATED.
+            /// How the session runs this row. GENERATED.
             pub fn kind(self) -> CommandKind {
                 match self {
                     $(CommandId::$id => CommandKind::$kind,)+
                 }
             }
 
-            /// Which surfaces reach this command, and why one does not.
+            /// Which surfaces reach this row, and why one does not.
             /// GENERATED.
             pub fn surfaces(self) -> Surfaces {
                 match self {
@@ -226,13 +383,13 @@ macro_rules! define_command_registry {
             }
         }
 
-        impl Command {
-            /// The identifier of this command. GENERATED.
-            pub fn id(&self) -> CommandId {
-                match self {
-                    $(Command::$id(_) => CommandId::$id,)+
-                }
-            }
+        // The payload and answer enums need one row list per kind, so the
+        // kind-agnostic block above hands the same rows to the splitter.
+        split_command_rows! {
+            @split
+            commands = [],
+            queries = [],
+            $( ($kind, $id, $wire, $payload, $answer, $surfaces), )+
         }
     };
 }
@@ -276,6 +433,48 @@ impl ProjectSession {
                 self.try_with_effects(Some(index), move |session| {
                     session.insert_result(index, *result)
                 })
+            }
+        }
+    }
+
+    /// Run one read, and report its answer.
+    ///
+    /// This is the read door, alongside [`Self::apply`] for mutations. A
+    /// query changes nothing, so it takes `&self`.
+    pub fn query(&self, query: Query) -> Result<QueryAnswer, SessionError> {
+        match query {
+            Query::ToolpathCycleTime(args) => {
+                let ToolpathCycleTimeArgs {
+                    index,
+                    trace,
+                    cutting_distance_mm,
+                    nominal_feed_mm_min,
+                } = args;
+                let id = self
+                    .toolpath_configs()
+                    .get(index)
+                    .map(|tc| tc.id)
+                    .ok_or(SessionError::ToolpathNotFound(index))?;
+                // Both fields must be `Some`, or the `CuttingOnly` fallback
+                // would divide a real feed by an unmeasured distance
+                // coerced to zero — a clean-looking answer over a value
+                // that was never measured. Zeroing both instead keeps the
+                // fallback's own `nominal_feed_mm_min > 0.0` check honest:
+                // it reads no evidence and answers `CycleTime::NONE`.
+                let (cutting_distance_mm, nominal_feed_mm_min) =
+                    match (cutting_distance_mm, nominal_feed_mm_min) {
+                        (Some(distance), Some(feed)) => (distance, feed),
+                        _ => (0.0, 0.0),
+                    };
+                let cycle_time = cycle_time::toolpath_cycle_time(
+                    trace.as_deref(),
+                    id,
+                    cutting_distance_mm,
+                    nominal_feed_mm_min,
+                );
+                Ok(QueryAnswer::ToolpathCycleTime(ToolpathCycleTimeAnswer {
+                    cycle_time,
+                }))
             }
         }
     }

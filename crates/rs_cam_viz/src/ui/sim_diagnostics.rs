@@ -1193,7 +1193,7 @@ fn aggregate_stats(
     session: &ProjectSession,
     gui: &GuiState,
 ) -> (f64, f64, readiness::CycleTime) {
-    let trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+    let trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref());
     let mut total_cutting = 0.0;
     let mut total_rapid = 0.0;
     let mut cycle = readiness::CycleTime::NONE;
@@ -1206,6 +1206,7 @@ fn aggregate_stats(
             total_cutting += result.stats.cutting_distance;
             total_rapid += result.stats.rapid_distance;
             cycle.fold(readiness::toolpath_cycle_time(
+                session,
                 trace,
                 boundary.id,
                 result.stats.cutting_distance,

@@ -1,6 +1,6 @@
 use super::AppEvent;
 use crate::state::AppState;
-use crate::ui::readiness::{self, CheckStatus};
+use crate::ui::readiness::{self, CheckStatus, CycleTimeBasisExt};
 use crate::ui::theme;
 use rs_cam_core::tool_load::{ToolLoadReport, ToolpathLoadVerdict};
 

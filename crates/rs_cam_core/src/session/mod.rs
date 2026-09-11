@@ -13,6 +13,7 @@
 
 mod command;
 mod compute;
+mod cycle_time;
 mod eval_context;
 pub mod multitool;
 mod mutation;
@@ -22,10 +23,11 @@ mod save;
 pub mod wizard;
 
 pub use command::{
-    AdoptResultArgs, Command, CommandId, CommandKind, Effects, Reach, SetToolpathParamArgs,
-    Surfaces,
+    AdoptResultArgs, Command, CommandId, CommandKind, Effects, Query, QueryAnswer, Reach,
+    SetToolpathParamArgs, Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
 pub use compute::{MutationKind, ResolvedGenInputs, StaleSet, compute_stale_set};
+pub use cycle_time::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
 pub use eval_context::SetupEvalContext;
 pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, TierStrategy, equal_cusp_stepover_mm,

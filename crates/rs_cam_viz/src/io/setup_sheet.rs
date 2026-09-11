@@ -51,8 +51,10 @@ fn days_to_ymd(days_since_epoch: u64) -> (u64, u64, u64) {
 
 // ── Session-based setup sheet ────────────────────────────────────────
 
+use std::sync::Arc;
+
 use crate::state::runtime::GuiState;
-use crate::ui::readiness::{self, CycleTimeBasis};
+use crate::ui::readiness::{self, CycleTimeBasis, CycleTimeBasisExt};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutTrace;
 
@@ -67,7 +69,7 @@ use rs_cam_core::simulation_cut::SimulationCutTrace;
 pub fn generate_setup_sheet_from_session(
     session: &ProjectSession,
     gui: &GuiState,
-    trace: Option<&SimulationCutTrace>,
+    trace: Option<&Arc<SimulationCutTrace>>,
 ) -> String {
     let mut html = String::with_capacity(8192);
 
@@ -322,6 +324,7 @@ tr:nth-child(even) {{ background: #24242e; }}
             .and_then(|rt| rt.result.as_ref())
             .map(|result| {
                 let op = readiness::toolpath_cycle_time(
+                    session,
                     trace,
                     tc.id,
                     result.stats.cutting_distance,

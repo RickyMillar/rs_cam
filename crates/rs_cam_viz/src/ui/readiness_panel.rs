@@ -11,7 +11,7 @@
 use super::AppEvent;
 use crate::state::{AppState, Workspace};
 use crate::ui::components::{CountPill, FreshnessGate};
-use crate::ui::readiness::{self, CheckStatus};
+use crate::ui::readiness::{self, CheckStatus, CycleTimeBasisExt};
 use crate::ui::theme;
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {

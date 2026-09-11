@@ -19,7 +19,7 @@ use rs_cam_core::gcode_validator::{Finding, Severity, validate};
 use rs_cam_core::session::OutputLayout;
 
 use super::AppEvent;
-use super::readiness;
+use super::readiness::{self, CycleTimeBasisExt};
 use crate::state::AppState;
 use crate::ui::theme;
 

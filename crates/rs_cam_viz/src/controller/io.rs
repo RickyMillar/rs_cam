@@ -531,7 +531,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .simulation
                 .results
                 .as_ref()
-                .and_then(|r| r.cut_trace.as_deref()),
+                .and_then(|r| r.cut_trace.as_ref()),
         )
     }
 }

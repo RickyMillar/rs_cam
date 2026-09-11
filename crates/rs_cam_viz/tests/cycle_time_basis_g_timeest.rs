@@ -21,10 +21,11 @@
 //! reports which one it is.
 //!
 //! Evidence class: pure-function unit tests over
-//! [`rs_cam_viz::ui::readiness::toolpath_cycle_time`] (the single decision all
-//! four surfaces now route through) plus one integrator arithmetic check
-//! against `rs_cam_core::machine_kinematics`. No egui is rendered; the
-//! basis → rendered-string mapping is read from source at each surface.
+//! [`rs_cam_core::session::toolpath_cycle_time`] (the single decision all
+//! surfaces now route through, moved from viz to core by WP9) plus one
+//! integrator arithmetic check against `rs_cam_core::machine_kinematics`. No
+//! egui is rendered; the basis → rendered-string mapping is read from source
+//! at each surface.
 
 #![allow(
     clippy::unwrap_used,
@@ -38,13 +39,12 @@ use std::collections::BTreeMap;
 use rs_cam_core::ToolpathId;
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine_kinematics::{CycleTimeBreakdown, MachineKinematics, compute_cycle_time};
+use rs_cam_core::session::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
 use rs_cam_core::simulation_cut::{
     SimulationCutTrace, SimulationToolpathCutSummary, ToolpathKinematicRuntime,
 };
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_viz::ui::readiness::{
-    CycleTime, CycleTimeBasis, format_cycle_time, toolpath_cycle_time,
-};
+use rs_cam_viz::ui::readiness::{CycleTimeBasisExt, format_cycle_time};
 
 const TP: ToolpathId = ToolpathId(7);
 const OTHER_TP: ToolpathId = ToolpathId(9);

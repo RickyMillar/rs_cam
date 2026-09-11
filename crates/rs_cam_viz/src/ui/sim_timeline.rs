@@ -1,6 +1,6 @@
 use super::AppEvent;
 use super::components::{CountPill, FreshnessGate};
-use super::readiness;
+use super::readiness::{self, CycleTimeBasisExt};
 use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
 use crate::state::runtime::GuiState;
@@ -2018,7 +2018,7 @@ fn estimate_times(
     session: &ProjectSession,
     gui: &GuiState,
 ) -> (f64, readiness::CycleTime) {
-    let trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+    let trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref());
     let mut total = readiness::CycleTime::NONE;
     let mut elapsed_secs = 0.0;
 
@@ -2028,6 +2028,7 @@ fn estimate_times(
             && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id)
         {
             let op = readiness::toolpath_cycle_time(
+                session,
                 trace,
                 boundary.id,
                 result.stats.cutting_distance,

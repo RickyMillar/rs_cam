@@ -293,11 +293,12 @@ fn draw_toolpath_card(
     // `Copy`, so nothing borrows `state` past this line.
     let cycle = stats.map_or(readiness::CycleTime::NONE, |s| {
         readiness::toolpath_cycle_time(
+            &state.session,
             state
                 .simulation
                 .results
                 .as_ref()
-                .and_then(|r| r.cut_trace.as_deref()),
+                .and_then(|r| r.cut_trace.as_ref()),
             tp_id,
             s.cutting_distance,
             tc.operation.feed_rate(),
