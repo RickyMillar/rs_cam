@@ -242,6 +242,7 @@ Never delete a row; mark it `DROPPED (why)`.
 | WP6 | egui scratch-copy pattern, twelve draw sites | TODO | — |
 | WP6b | The 27 non-egui viz sites and the 9 CLI sites | TODO | — |
 | WP7 | The eleven hatches go `pub(crate)` | TODO (Q5 answered 2026-09-11: builder + `apply`; requires WP5, WP6, WP6b) | — |
+| WP7a | `ProjectSessionBuilder` + the 63 SETUP test sites (plan §20) | IN PROGRESS (Fable lane, 2026-09-11) | — |
 | WP8 | N14 and N6: undo, optimizer, drill picks | BLOCKED (Q2) | — |
 | WP9 | `Query` first row: cycle time | TODO | — |
 | WP10 | `Job` first row: generate one toolpath | TODO | — |
