@@ -241,7 +241,7 @@ Never delete a row; mark it `DROPPED (why)`.
 | WP8 | N14 and N6: undo, optimizer, drill picks | BLOCKED (Q2) | — |
 | WP9 | `Query` first row: cycle time | TODO | — |
 | WP10 | `Job` first row: generate one toolpath | TODO | — |
-| WP11a | Publish `ResolvedGenInputs` with private fields | TODO | — |
+| WP11a | Publish `ResolvedGenInputs` with private fields | DONE (`a9ef73d6`; sentry `181f5c13`) | Sentry `crates/rs_cam_core/tests/resolved_gen_inputs_has_one_producer.rs`, three arms: `the_bundle_is_public_and_its_fields_are_private`, `one_public_function_produces_the_bundle`, `the_bundle_is_nameable_from_another_crate`. The sentry commit alone was compile-fail red (`E0412: cannot find type ResolvedGenInputs in module rs_cam_core::session`, two sites); the two scan arms are red by inspection, because the build stops before a scan runs. Green on the fix: 3 passed / 0 failed. Suites: core `--test command_registry_completeness` 8, core `--test mutation_paths_invalidate_alike_p0` 8, viz 623, CLI 32, MCP 29 — all 0 failed. `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings` and `cargo fmt --all -- --check` both clean. No whole-core suite and no heavy gate: operator ruling 2026-09-11. |
 | WP11b | Narrow the executor; close N12 | TODO | — |
 | WP12 | Delete `ComputeRequest`'s mirrored fields | TODO | — |
 | WP13 | `UiCommand` split and the cross-surface sentry | IN PROGRESS (classification table DRAFT 2026-09-11; no variant moved) | `WP13_CLASSIFICATION_DRAFT.md`: McpRequestKind 76 rows, AppEvent 133 rows, 9 open calls, 9 plan mismatches |
