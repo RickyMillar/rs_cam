@@ -60,7 +60,8 @@ use rs_cam_core::compute::stock_config::{ModelId, ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::drill_op::OpData;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ToolpathComputeResult, ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathComputeResult,
+    ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -162,11 +163,9 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
     write(&bystander, &drawing(40.0));
 
     let mut controller = AppController::with_backend(SilentBackend);
-    controller
-        .state
-        .session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
     controller
         .import_svg_path(&under_test)
         .expect("the fixture must import");
@@ -348,11 +347,9 @@ fn a_reload_drops_the_dependent_results_control() {
 #[test]
 fn a_step_rescale_changes_nothing_and_drops_nothing() {
     let mut controller = AppController::with_backend(SilentBackend);
-    controller
-        .state
-        .session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
 
     // The path is never read: the STEP arm returns before the import.
     let record = LoadedModel {

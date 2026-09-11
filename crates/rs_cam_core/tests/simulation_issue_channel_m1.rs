@@ -441,8 +441,15 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
     // remaining stock (id 12). Everything else is cost without evidence.
     const ROUGH_ID: usize = 10;
     const PC_ID: usize = 12;
-    for tc in session.toolpath_configs_mut() {
-        tc.enabled = tc.id == ToolpathId(ROUGH_ID) || tc.id == ToolpathId(PC_ID);
+    let mut keep: Vec<(usize, bool)> = Vec::new();
+    for (index, tc) in session.toolpath_configs().iter().enumerate() {
+        let wanted = tc.id == ToolpathId(ROUGH_ID) || tc.id == ToolpathId(PC_ID);
+        keep.push((index, wanted));
+    }
+    for (index, enabled) in keep {
+        let _ = session
+            .set_toolpath_enabled(index, enabled)
+            .expect("the toolpath index comes from the session itself");
     }
 
     let cancel = AtomicBool::new(false);

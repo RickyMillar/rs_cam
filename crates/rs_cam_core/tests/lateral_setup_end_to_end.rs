@@ -79,7 +79,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType, PocketConfig};
 use rs_cam_core::compute::stock_config::{FixtureId, ModelKind, ModelUnits, StockConfig};
-use rs_cam_core::compute::transform::FaceUp;
+use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
@@ -87,7 +87,8 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    Fixture, FixtureKind, LoadedModel, ProjectSession, SessionError, ToolpathConfig,
+    DatumConfig, Fixture, FixtureKind, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    SessionError, SetupData, ToolpathConfig,
 };
 use rs_cam_core::toolpath::{Move, MoveType};
 
@@ -242,7 +243,20 @@ fn drill_op() -> OperationConfig {
 /// keep-out refusal case. Both are otherwise the identical project, so a
 /// refusal cannot be confused with a broken fixture.
 fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut session = ProjectSessionBuilder::new()
+        .setup(SetupData {
+            id: 0,
+            name: "Setup 1".to_owned(),
+            face_up: FaceUp::Front,
+            z_rotation: ZRotation::default(),
+            datum: DatumConfig::default(),
+            model_ids: Vec::new(),
+            fixtures: Vec::new(),
+            keep_out_zones: Vec::new(),
+            toolpath_indices: Vec::new(),
+            pause_message: None,
+        })
+        .build();
     let _ = session.set_stock_config(StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
@@ -262,7 +276,6 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
     }
     let drawing_id = session.add_model(drawing_model(if with_mesh { 1 } else { 0 }));
 
-    session.setups_mut()[0].face_up = FaceUp::Front;
     if with_fixture {
         let _ = session
             .add_fixture(

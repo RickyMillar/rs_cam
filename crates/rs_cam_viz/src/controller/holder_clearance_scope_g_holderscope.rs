@@ -82,7 +82,9 @@ fn two_operation_job() -> AppController<ScriptedLane> {
 
     let mut second_tool = ToolConfig::new_default(ToolId(2), ToolType::EndMill);
     second_tool.stickout += 20.0;
-    controller.state.session.tools_mut().push(second_tool);
+    let mut tools = controller.state.session.tools().to_vec();
+    tools.push(second_tool);
+    let _ = controller.state.session.replace_tools(tools);
 
     let mut second_op = toolpath(1);
     second_op.tool_id = 2;

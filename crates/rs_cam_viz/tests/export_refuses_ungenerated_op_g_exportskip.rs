@@ -38,7 +38,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -119,11 +120,10 @@ enum SecondOp {
 }
 
 fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) {
-    let mut session = ProjectSession::new_empty();
+    let mut session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
     session.set_name("g-exportskip sentry".to_owned());
-    session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
 
     let mesh = Arc::new(make_test_flat(40.0));
     session.add_model(LoadedModel {

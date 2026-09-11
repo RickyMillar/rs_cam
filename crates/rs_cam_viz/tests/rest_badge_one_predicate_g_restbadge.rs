@@ -32,7 +32,9 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{
+    AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathConfig,
+};
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::job::{ModelId, ModelKind, ModelUnits};
 use rs_cam_viz::state::rest_dependency::{RestCandidate, rest_predecessors};
@@ -112,11 +114,12 @@ fn pocket_op() -> OperationConfig {
 /// A state with two tools, two 2D models and one setup. No toolpaths yet.
 fn fresh_state() -> AppState {
     let mut state = AppState::new();
-    let mut session = ProjectSession::new_empty();
-    let _ = session.replace_tools(vec![tool(ROUGH_TOOL, 10.0), tool(REST_TOOL, 6.0)]);
-    session.models_mut().push(polygon_model(MODEL_A));
-    session.models_mut().push(polygon_model(MODEL_B));
-    state.session = session;
+    state.session = ProjectSessionBuilder::new()
+        .tool(tool(ROUGH_TOOL, 10.0))
+        .tool(tool(REST_TOOL, 6.0))
+        .model(polygon_model(MODEL_A))
+        .model(polygon_model(MODEL_B))
+        .build();
     state
 }
 

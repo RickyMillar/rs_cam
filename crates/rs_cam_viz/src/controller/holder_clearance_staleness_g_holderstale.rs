@@ -55,7 +55,7 @@ use rs_cam_core::collision::{CollisionEvent, CollisionKind, CollisionReport};
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
-use rs_cam_core::session::{LoadedModel, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 
 use crate::compute::{
     CollisionRequest, CollisionResult, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
@@ -140,11 +140,9 @@ pub(super) fn toolpath(id: usize) -> ToolpathConfig {
 /// the obstacle-edit classes have something to move.
 pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
     let mut controller = AppController::with_backend(ScriptedLane::default());
-    controller
-        .state
-        .session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
     controller.state.session.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("flat.stl"),

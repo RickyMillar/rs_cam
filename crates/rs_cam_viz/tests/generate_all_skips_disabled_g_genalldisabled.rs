@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::session::ToolpathConfig;
+use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
     GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
@@ -98,11 +98,9 @@ fn controller_with_a_disabled_op() -> (AppController<RecordingBackend>, Arc<Mute
     let backend = RecordingBackend::default();
     let log = Arc::clone(&backend.submitted);
     let mut controller = AppController::with_backend(backend);
-    controller
-        .state
-        .session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
     for (id, enabled) in [(0, true), (1, false), (2, true)] {
         controller
             .state
@@ -146,11 +144,9 @@ fn generate_all_with_nothing_enabled_tells_the_operator() {
     let backend = RecordingBackend::default();
     let log = Arc::clone(&backend.submitted);
     let mut controller = AppController::with_backend(backend);
-    controller
-        .state
-        .session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
     controller
         .state
         .session

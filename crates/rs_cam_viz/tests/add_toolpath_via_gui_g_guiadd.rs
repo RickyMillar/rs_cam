@@ -39,6 +39,7 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::session::ProjectSessionBuilder;
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
     GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
@@ -175,9 +176,10 @@ impl ComputeBackend for SilentBackend {
 /// binds `tools().first()` and never looks for a compatible one.
 fn flat_first_seed() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let tools = controller.state.session.tools_mut();
-    tools.push(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    tools.push(ToolConfig::new_default(ToolId(1), ToolType::BallNose));
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill))
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose))
+        .build();
     controller
 }
 

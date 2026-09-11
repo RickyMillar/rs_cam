@@ -61,7 +61,7 @@ use rs_cam_core::diagnostics::ids::{
     GEOM_FEED_Z_BELOW_TOP_Z, GEOM_RETRACT_Z_BELOW_FEED_Z,
 };
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::job::{ModelKind, ModelUnits};
 use rs_cam_viz::state::runtime::GuiState;
 use rs_cam_viz::ui::properties::{collect_diagnostics, toolpath_panel_snapshot};
@@ -144,22 +144,24 @@ fn pinned(reference: HeightReference, offset: f64) -> HeightMode {
 
 /// Three tools, one 2D model, an 18 mm board, one setup.
 fn session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let mut rest_tool = ToolConfig::new_default(ToolId(REST_TOOL), ToolType::EndMill);
     rest_tool.diameter = 3.0;
     let mut previous_tool = ToolConfig::new_default(ToolId(PREVIOUS_TOOL), ToolType::EndMill);
     previous_tool.diameter = 6.0;
-    let _ = session.replace_tools(vec![tool, rest_tool, previous_tool]);
-    session.models_mut().push(polygon_model(MODEL_2D));
     let stock = StockConfig {
         z: STOCK_THICKNESS_MM,
         auto_from_model: false,
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
-    session
+    ProjectSessionBuilder::new()
+        .tool(tool)
+        .tool(rest_tool)
+        .tool(previous_tool)
+        .model(polygon_model(MODEL_2D))
+        .stock(stock)
+        .build()
 }
 
 /// Add one operation and return its index.
@@ -371,11 +373,9 @@ fn a_retract_pinned_below_the_feed_plane_reaches_both_surfaces() {
 #[test]
 fn rest_without_an_enabled_previous_tool_reaches_both_surfaces() {
     let mut session = session();
-    let idx = add_operation(
-        &mut session,
-        toolpath("Rest", MODEL_2D, rest(), HeightsConfig::default()),
-    );
-    session.toolpath_configs_mut()[idx].tool_id = REST_TOOL;
+    let mut rest_config = toolpath("Rest", MODEL_2D, rest(), HeightsConfig::default());
+    rest_config.tool_id = REST_TOOL;
+    let idx = add_operation(&mut session, rest_config);
 
     let ribbon = ribbon_ids(&session, idx);
     assert!(
@@ -398,16 +398,12 @@ fn rest_without_an_enabled_previous_tool_reaches_both_surfaces() {
 #[test]
 fn rest_with_an_enabled_previous_tool_clears_the_precondition_on_both_surfaces() {
     let mut session = session();
-    let predecessor = add_operation(
-        &mut session,
-        toolpath("Rough", MODEL_2D, pocket(6.0), HeightsConfig::default()),
-    );
-    session.toolpath_configs_mut()[predecessor].tool_id = PREVIOUS_TOOL;
-    let rest = add_operation(
-        &mut session,
-        toolpath("Rest", MODEL_2D, rest(), HeightsConfig::default()),
-    );
-    session.toolpath_configs_mut()[rest].tool_id = REST_TOOL;
+    let mut rough_config = toolpath("Rough", MODEL_2D, pocket(6.0), HeightsConfig::default());
+    rough_config.tool_id = PREVIOUS_TOOL;
+    let _predecessor = add_operation(&mut session, rough_config);
+    let mut rest_config = toolpath("Rest", MODEL_2D, rest(), HeightsConfig::default());
+    rest_config.tool_id = REST_TOOL;
+    let rest = add_operation(&mut session, rest_config);
 
     let ribbon = ribbon_ids(&session, rest);
     let mcp = mcp_ids(&session, rest);

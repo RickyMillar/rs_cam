@@ -74,11 +74,12 @@ use common::session::{polygon_model, toolpath_config};
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::TraceConfig;
-use rs_cam_core::compute::transform::FaceUp;
+use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::ProjectSession;
-use rs_cam_core::session::ToolpathConfig;
+use rs_cam_core::session::{
+    DatumConfig, ProjectSession, ProjectSessionBuilder, SetupData, ToolpathConfig,
+};
 use std::sync::atomic::AtomicBool;
 
 const STOCK_X: f64 = 60.0;
@@ -441,7 +442,23 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
     // Stock top at world +7 (z = 25 over origin_z = -18), like wanaka200.
     const TOP_Z: f64 = 7.0;
     let build = |z_method: ZDatum| -> rs_cam_core::geo::P3 {
-        let mut session = ProjectSession::new_empty();
+        let mut session = ProjectSessionBuilder::new()
+            .setup(SetupData {
+                id: 0,
+                name: "Setup 1".to_owned(),
+                face_up: FaceUp::default(),
+                z_rotation: ZRotation::default(),
+                datum: DatumConfig {
+                    z_method,
+                    ..DatumConfig::default()
+                },
+                model_ids: Vec::new(),
+                fixtures: Vec::new(),
+                keep_out_zones: Vec::new(),
+                toolpath_indices: Vec::new(),
+                pause_message: None,
+            })
+            .build();
         let _ = session.set_stock_config(StockConfig {
             x: STOCK_X,
             y: STOCK_Y,
@@ -458,7 +475,6 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
         session
             .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
             .expect("add identity-setup trace");
-        session.setups_mut()[0].datum.z_method = z_method;
         rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, 0)
     };
 

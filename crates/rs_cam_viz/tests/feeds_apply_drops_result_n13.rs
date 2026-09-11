@@ -41,7 +41,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -159,10 +160,10 @@ fn toolpath(name: &str, op_type: OperationType, stock_source: StockSource) -> To
 /// `invalidate_result_chain` must reach.
 fn build_controller() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
     let session: &mut ProjectSession = &mut controller.state.session;
-    session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
     session.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),

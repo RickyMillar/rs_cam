@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::session::ToolpathConfig;
+use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
 
 use crate::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
@@ -130,11 +130,9 @@ fn toolpath(id: usize, stock_source: StockSource) -> ToolpathConfig {
 /// ladder advance a round.
 fn controller_with_a_chain() -> AppController<ScriptedLane> {
     let mut controller = AppController::with_backend(ScriptedLane::default());
-    controller
-        .state
-        .session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
     controller
         .state
         .session

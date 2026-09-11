@@ -16,7 +16,9 @@ use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{Adaptive3dConfig, OperationConfig, ToolpathId, ToolpathResult};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
-use rs_cam_core::session::{AdoptResultArgs, Command, LoadedModel, ToolpathConfig};
+use rs_cam_core::session::{
+    AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathConfig,
+};
 
 struct ScriptedBackend {
     toolpath_lane: LaneSnapshot,
@@ -253,7 +255,9 @@ fn sample_controller() -> AppController<ScriptedBackend> {
 /// result-echoing double (A/M11's fixpoint chain) get the same project.
 fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    controller.state.session.tools_mut().push(tool);
+    // Every caller hands in a controller straight from `with_backend`, so the
+    // builder replaces an empty session.
+    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
 
     let mesh = Arc::new(make_test_flat(40.0));
     controller.state.session.add_model(LoadedModel {
@@ -308,6 +312,19 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     controller.state.gui.toolpath_rt.insert(tp_id, rt);
 
     controller.state.selection = Selection::Toolpath(tp_id);
+}
+
+/// The index of the toolpath carrying `id`.
+///
+/// The core setters take an index. A test that holds an id converts it here.
+fn index_of<B: ComputeBackend>(controller: &AppController<B>, id: ToolpathId) -> usize {
+    controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .position(|tc| tc.id == id)
+        .expect("the toolpath id belongs to this session")
 }
 
 /// Append another toolpath to setup 0 of a `sample_controller()` project,
@@ -1602,7 +1619,9 @@ fn remove_tool_succeeds_when_no_toolpath_references_it() {
     // Add a second tool that is not referenced by any toolpath.
     let unreferenced_id = ToolId(99);
     let extra_tool = ToolConfig::new_default(unreferenced_id, ToolType::EndMill);
-    controller.state.session.tools_mut().push(extra_tool);
+    let mut tools = controller.state.session.tools().to_vec();
+    tools.push(extra_tool);
+    let _ = controller.state.session.replace_tools(tools);
     let tool_count_before = controller.state.session.tools().len();
 
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(unreferenced_id));
@@ -2293,6 +2312,17 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
 
     let mut controller = AppController::with_backend(CapturingBackend::default());
 
+    // 6 mm endmill matching the AS001 fixture.
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = 6.0;
+    tool.cutting_length = 25.0;
+    tool.shank_diameter = 6.35;
+    tool.shank_length = 20.0;
+    tool.stickout = 45.0;
+    tool.flute_count = 2;
+    tool.name = "End Mill 6mm".to_owned();
+    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
+
     // AS001 stock: origin_z=-12, z=12 → world stock top at Z=0.
     let stock = StockConfig {
         x: 100.0,
@@ -2308,17 +2338,6 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         ..StockConfig::default()
     };
     let _ = controller.state.session.set_stock_config(stock);
-
-    // 6 mm endmill matching the AS001 fixture.
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
-    tool.stickout = 45.0;
-    tool.flute_count = 2;
-    tool.name = "End Mill 6mm".to_owned();
-    controller.state.session.tools_mut().push(tool);
 
     // 2D polygon model (matches the SVG-driven AS001 pocket case).
     let model_id = controller.state.session.add_model(LoadedModel {
@@ -2558,15 +2577,15 @@ fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
 
     // No prior simulation has run, so `self.state.simulation` has no
     // boundaries/checkpoints — `FromRemainingStock` must fail hard.
-    if let Some(tc) = controller
+    let index = index_of(&controller, tp_id);
+    let _ = controller
         .state
         .session
-        .toolpath_configs_mut()
-        .iter_mut()
-        .find(|tc| tc.id == tp_id)
-    {
-        tc.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
-    }
+        .set_stock_source(
+            index,
+            crate::state::toolpath::StockSource::FromRemainingStock,
+        )
+        .expect("the index comes from the session");
 
     controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
     let (tx, mut rx) = tokio::sync::oneshot::channel();
@@ -2619,15 +2638,15 @@ fn blocked_rest_op_names_its_blocking_upstream_operation() {
     let blocker_id = controller.state.session.toolpath_configs()[0].id;
     let blocker_name = controller.state.session.toolpath_configs()[0].name.clone();
     let rest_id = controller.state.session.toolpath_configs()[1].id;
-    if let Some(tc) = controller
+    let rest_index = index_of(&controller, rest_id);
+    let _ = controller
         .state
         .session
-        .toolpath_configs_mut()
-        .iter_mut()
-        .find(|tc| tc.id == rest_id)
-    {
-        tc.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
-    }
+        .set_stock_source(
+            rest_index,
+            crate::state::toolpath::StockSource::FromRemainingStock,
+        )
+        .expect("the index comes from the session");
 
     // Blocker not generated: the wait is at least two rounds.
     controller.submit_toolpath_compute(rest_id);
@@ -2734,15 +2753,12 @@ fn diagnostics_separate_blocked_from_failed_and_exclude_disabled() {
         crate::state::toolpath::ComputeStatus::Error("no 3D mesh".to_owned());
     controller.state.gui.toolpath_rt_or_default(ids[3]).status =
         crate::state::toolpath::ComputeStatus::Error("stale text from when it was on".to_owned());
-    if let Some(tc) = controller
+    let off_index = index_of(&controller, ids[3]);
+    let _ = controller
         .state
         .session
-        .toolpath_configs_mut()
-        .iter_mut()
-        .find(|tc| tc.id == ids[3])
-    {
-        tc.enabled = false;
-    }
+        .set_toolpath_enabled(off_index, false)
+        .expect("the index comes from the session");
 
     let diag = controller.build_mcp_diagnostics();
     let errors = diag["runtime_errors"].as_array().expect("runtime_errors");
@@ -2907,14 +2923,15 @@ fn rest_chain_controller(depth: usize) -> AppController<RestChainBackend> {
         .iter()
         .map(|tc| tc.id)
         .collect();
-    for tc in controller
-        .state
-        .session
-        .toolpath_configs_mut()
-        .iter_mut()
-        .skip(1)
-    {
-        tc.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
+    for index in 1..controller.state.session.toolpath_count() {
+        let _ = controller
+            .state
+            .session
+            .set_stock_source(
+                index,
+                crate::state::toolpath::StockSource::FromRemainingStock,
+            )
+            .expect("the index comes from the session");
     }
     // The fixture op at index 0 starts with a cached result; clear it so the
     // run really is "from cold".
@@ -3097,15 +3114,12 @@ fn fixpoint_false_keeps_the_old_single_pass_behaviour() {
 fn a_disabled_rest_op_is_not_generated_blocked_or_failed() {
     let mut controller = rest_chain_controller(3);
     let off = controller.state.session.toolpath_configs()[3].id;
-    if let Some(tc) = controller
+    let off_index = index_of(&controller, off);
+    let _ = controller
         .state
         .session
-        .toolpath_configs_mut()
-        .iter_mut()
-        .find(|tc| tc.id == off)
-    {
-        tc.enabled = false;
-    }
+        .set_toolpath_enabled(off_index, false)
+        .expect("the index comes from the session");
 
     let (tx, mut rx) = tokio::sync::oneshot::channel();
     controller.mcp_start_generate_all(true, Some(1.0), tx, None);
@@ -3593,12 +3607,14 @@ fn a_manual_generate_with_no_edit_is_accepted_g_lateresult() {
 /// The sample project plus a two-ball ladder with distinct tip radii.
 fn planner_controller() -> AppController<ScriptedBackend> {
     let mut controller = sample_controller();
+    let mut tools = controller.state.session.tools().to_vec();
     for (raw_id, diameter) in [(2usize, 4.0f64), (3, 2.0)] {
         let mut tool = ToolConfig::new_default(ToolId(raw_id), ToolType::BallNose);
         tool.name = format!("Ball {diameter}");
         tool.diameter = diameter;
-        controller.state.session.tools_mut().push(tool);
+        tools.push(tool);
     }
+    let _ = controller.state.session.replace_tools(tools);
     controller
 }
 
@@ -4036,11 +4052,9 @@ fn freshness_state_g_freshness_every_inspector_input_stales() {
 fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
     for row in ["tool", "model"] {
         let mut controller = sample_controller();
-        controller
-            .state
-            .session
-            .tools_mut()
-            .push(ToolConfig::new_default(ToolId(2), ToolType::EndMill));
+        let mut tools = controller.state.session.tools().to_vec();
+        tools.push(ToolConfig::new_default(ToolId(2), ToolType::EndMill));
+        let _ = controller.state.session.replace_tools(tools);
         generate_all_for_test(&mut controller);
         let id = controller.state.session.toolpath_configs()[0].id;
         panel_edit(&mut controller, id, |entry| {

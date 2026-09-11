@@ -39,7 +39,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::session::{ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
     GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
@@ -102,13 +102,23 @@ fn toolpath(id: usize, op_type: OperationType) -> ToolpathConfig {
 /// `ToolType::EndMill` maps to `ToolGeometryHint::Flat` via
 /// `ToolDefinition::to_geometry_hint`.
 fn controller_with(op_type: OperationType) -> AppController<SilentBackend> {
+    controller_with_config(toolpath(0, op_type))
+}
+
+/// The same controller, with the toolpath configuration the caller tuned.
+///
+/// A test that needs one operation dial set arranges it here, before the
+/// session takes the configuration. The apply door is the subject of this
+/// file, so the arrangement must not run through it.
+fn controller_with_config(config: ToolpathConfig) -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let session: &mut ProjectSession = &mut controller.state.session;
-    session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
-    session
-        .add_toolpath(0, toolpath(0, op_type))
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
+    controller
+        .state
+        .session
+        .add_toolpath(0, config)
         .expect("add toolpath");
     controller
 }
@@ -371,11 +381,9 @@ fn per_field_apply_affordance_no_longer_exists() {
 /// the cut geometry of a refused pairing is untouchable from the modal.
 #[test]
 fn refused_pairing_with_a_geometry_dial_takes_no_write() {
-    let mut controller = controller_with(OperationType::DropCutter);
-    {
-        let tc = &mut controller.state.session.toolpath_configs_mut()[0];
-        tc.operation.set_scallop_height(0.01);
-    }
+    let mut config = toolpath(0, OperationType::DropCutter);
+    config.operation.set_scallop_height(0.01);
+    let mut controller = controller_with_config(config);
 
     let refusal = panel_recipe(&controller)
         .expect_err("flat end mill + scallop-target DropCutter must be refused");
@@ -762,12 +770,10 @@ fn project_apply_all_skips_a_refused_toolpath_and_reports_it() {
 /// new defect, not a fix), and the clamps run on top of them.
 #[test]
 fn explore_apply_takes_the_clamps_but_keeps_the_dragged_point() {
-    let mut controller = controller_with(OperationType::Pocket);
+    let mut config = toolpath(0, OperationType::Pocket);
+    config.operation.set_plunge_rate(900.0);
+    let mut controller = controller_with_config(config);
     let id = id_at(&controller, 0);
-    {
-        let tc = &mut controller.state.session.toolpath_configs_mut()[0];
-        tc.operation.set_plunge_rate(900.0);
-    }
     let before_geometry = (
         op_of(&controller).stepover(),
         op_of(&controller).depth_per_pass(),

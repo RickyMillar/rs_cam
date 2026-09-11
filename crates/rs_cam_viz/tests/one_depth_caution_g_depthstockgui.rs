@@ -49,7 +49,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::Diagnostic;
 use rs_cam_core::diagnostics::ids::GEOM_DEPTH_BEYOND_STOCK;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::job::{ModelKind, ModelUnits};
 use rs_cam_viz::state::runtime::GuiState;
 use rs_cam_viz::ui::properties::{
@@ -131,19 +131,19 @@ fn pocket(depth: f64) -> OperationConfig {
 
 /// One tool, one 2D model, one 3D model, an 18 mm board, one setup.
 fn session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
-    let _ = session.replace_tools(vec![tool]);
-    session.models_mut().push(polygon_model(MODEL_2D));
-    session.models_mut().push(mesh_model(MODEL_3D));
     let stock = StockConfig {
         z: STOCK_THICKNESS_MM,
         auto_from_model: false,
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
-    session
+    ProjectSessionBuilder::new()
+        .tool(tool)
+        .model(polygon_model(MODEL_2D))
+        .model(mesh_model(MODEL_3D))
+        .stock(stock)
+        .build()
 }
 
 /// One fixture: a name, the operation, its heights, and the model it binds.

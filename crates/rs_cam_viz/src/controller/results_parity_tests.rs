@@ -36,7 +36,7 @@ use crate::state::job::{ToolConfig, ToolId, ToolType};
 use crate::state::toolpath::{OperationConfig, ToolpathId, ToolpathResult};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::{Move, MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 
@@ -79,7 +79,7 @@ fn parity_controller() -> AppController<InertBackend> {
         drained: Vec::new(),
     });
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    controller.state.session.tools_mut().push(tool);
+    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
     controller.state.session.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("plate.svg"),

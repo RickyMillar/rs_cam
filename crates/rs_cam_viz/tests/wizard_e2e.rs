@@ -33,8 +33,8 @@ use rs_cam_core::gcode::PostFormat;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, OutputLayout, ProjectSession, ToolpathComputeResult,
-    ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, OutputLayout, ProjectSession, ProjectSessionBuilder,
+    ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -106,13 +106,11 @@ fn seed_generated_result(
 }
 
 fn build_session() -> (ProjectSession, GuiState, SimulationState) {
-    let mut session = ProjectSession::new_empty();
-    session.set_name("wizard e2e".to_owned());
-
     // Tool 1
-    session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let mut session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
+    session.set_name("wizard e2e".to_owned());
 
     // Flat mesh as a model
     let mesh = Arc::new(make_test_flat(40.0));

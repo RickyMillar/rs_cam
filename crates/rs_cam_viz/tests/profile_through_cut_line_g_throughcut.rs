@@ -30,7 +30,7 @@ use rs_cam_core::compute::config::{HeightMode, HeightReference, ReferenceOffset}
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::job::{ModelKind, ModelUnits};
 use rs_cam_viz::ui::properties::{
     ThroughCut, depth_beyond_stock, profile_through_cut, profile_through_cut_line,
@@ -144,18 +144,18 @@ fn profile(depth: f64, tab_count: usize) -> OperationConfig {
 
 /// One tool, one 2D model, 18 mm stock, one setup.
 fn build_session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
-    let _ = session.replace_tools(vec![tool]);
-    session.models_mut().push(polygon_model(MODEL_2D));
     let stock = StockConfig {
         z: STOCK_THICKNESS_MM,
         auto_from_model: false,
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
-    session
+    ProjectSessionBuilder::new()
+        .tool(tool)
+        .model(polygon_model(MODEL_2D))
+        .stock(stock)
+        .build()
 }
 
 /// The rule the params panel reads for the Profile at `idx`.

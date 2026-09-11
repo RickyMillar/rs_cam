@@ -72,7 +72,7 @@ use std::sync::{Arc, Mutex};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::fingerprint::{ToolpathFingerprint, diff_fingerprints};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::Toolpath;
 
 use crate::compute::{
@@ -146,7 +146,7 @@ fn fixture(feed_optimization: bool) -> Fixture {
         submitted: Arc::clone(&submitted),
     });
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    controller.state.session.tools_mut().push(tool);
+    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
     controller.state.session.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("plate.svg"),

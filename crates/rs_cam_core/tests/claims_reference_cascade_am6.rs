@@ -460,11 +460,9 @@ fn auto_over_fresh_stock_resolves_to_self_probe_and_says_so() {
     );
     // The only change from the cascade: the rest op reads fresh stock, so no
     // machined prior is in scope even though an upstream op exists.
-    session
-        .toolpath_configs_mut()
-        .get_mut(1)
-        .expect("rest op")
-        .stock_source = StockSource::Fresh;
+    let _ = session
+        .set_stock_source(1, StockSource::Fresh)
+        .expect("the rest op takes fresh stock");
 
     generate(&mut session, 0);
     generate(&mut session, 1);
@@ -646,11 +644,9 @@ fn pinning_machined_stock_without_a_prior_is_reported_not_swallowed() {
         },
     );
     // Fresh stock: the dial asks for a machined prior that cannot exist.
-    session
-        .toolpath_configs_mut()
-        .get_mut(1)
-        .expect("rest op")
-        .stock_source = StockSource::Fresh;
+    let _ = session
+        .set_stock_source(1, StockSource::Fresh)
+        .expect("the rest op takes fresh stock");
 
     generate(&mut session, 0);
     generate(&mut session, 1);

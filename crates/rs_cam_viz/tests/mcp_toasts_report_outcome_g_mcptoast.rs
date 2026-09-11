@@ -148,6 +148,7 @@ use std::path::Path;
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::session::ProjectSessionBuilder;
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
     GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
@@ -182,11 +183,9 @@ impl ComputeBackend for SilentBackend {
 /// did (tool 0, Ø6.35 2-flute flat end mill).
 fn controller_with_tool(tool_type: ToolType) -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    controller
-        .state
-        .session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), tool_type));
+    controller.state.session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), tool_type))
+        .build();
     controller
 }
 

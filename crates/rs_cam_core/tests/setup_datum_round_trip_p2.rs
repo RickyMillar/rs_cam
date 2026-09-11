@@ -52,7 +52,10 @@
 use std::path::PathBuf;
 
 use rs_cam_core::compute::stock_config::ModelId;
-use rs_cam_core::session::{Corner, ProjectSession, XYDatum, ZDatum};
+use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::session::{
+    Corner, DatumConfig, ProjectSession, ProjectSessionBuilder, SetupData, XYDatum, ZDatum,
+};
 
 /// A project file that already carries the datum keys. Deliberately
 /// hand-written rather than produced by the writer under test: the
@@ -203,14 +206,24 @@ fn a_datum_set_on_the_session_survives_save_and_load() {
     let dir = scratch_dir("session");
     let path = dir.join("project.toml");
 
-    let mut session = ProjectSession::new_empty();
-    {
-        let setups = session.setups_mut();
-        setups[0].datum.xy_method = XYDatum::AlignmentPins;
-        setups[0].datum.z_method = ZDatum::MachineTable;
-        setups[0].datum.notes = "Run the Z probe macro, then Resume".to_owned();
-        setups[0].model_ids = vec![ModelId(3)];
-    }
+    let session = ProjectSessionBuilder::new()
+        .setup(SetupData {
+            id: 0,
+            name: "Setup 1".to_owned(),
+            face_up: FaceUp::default(),
+            z_rotation: ZRotation::default(),
+            datum: DatumConfig {
+                xy_method: XYDatum::AlignmentPins,
+                z_method: ZDatum::MachineTable,
+                notes: "Run the Z probe macro, then Resume".to_owned(),
+            },
+            model_ids: vec![ModelId(3)],
+            fixtures: Vec::new(),
+            keep_out_zones: Vec::new(),
+            toolpath_indices: Vec::new(),
+            pause_message: None,
+        })
+        .build();
     session.save(&path).expect("save project");
 
     let reloaded = ProjectSession::load(&path).expect("reload project");

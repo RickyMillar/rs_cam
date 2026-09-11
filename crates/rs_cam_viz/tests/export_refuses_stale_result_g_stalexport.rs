@@ -40,7 +40,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -100,10 +101,9 @@ fn policy() -> rs_cam_core::gcode::ToolLoadExportPolicy {
 /// core cache and a drawable copy in the viz store, exactly as
 /// `drain_compute_results` leaves it.
 fn build_state() -> (ProjectSession, GuiState, SimulationState) {
-    let mut session = ProjectSession::new_empty();
-    session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let mut session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+        .build();
     session.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),

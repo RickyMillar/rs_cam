@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest, LaneSnapshot,
     OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
@@ -135,10 +135,9 @@ fn toolpath(id: usize, name: &str, model_id: usize, operation: OperationConfig) 
 /// one Scallop (3D, `default_auto_regen` false) through the real save
 /// path, so the file shape is whatever the loader actually accepts.
 fn write_two_op_project() -> PathBuf {
-    let mut session = ProjectSession::new_empty();
-    session
-        .tools_mut()
-        .push(ToolConfig::new_default(ToolId(1), ToolType::BallNose));
+    let mut session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose))
+        .build();
     // Two models, because the two operations need different geometry: the
     // pocket is 2.5D and wants polygons, the scallop is 3D and wants a
     // mesh. The loader re-imports both from these paths, so an operation

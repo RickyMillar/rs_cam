@@ -11,6 +11,7 @@
 //! let diag = session.diagnostics();
 //! ```
 
+mod builder;
 mod command;
 mod compute;
 mod cycle_time;
@@ -22,6 +23,7 @@ mod reach;
 mod save;
 pub mod wizard;
 
+pub use builder::ProjectSessionBuilder;
 pub use command::{
     AdoptResultArgs, Command, CommandId, CommandKind, Effects, Query, QueryAnswer, Reach,
     SetToolpathParamArgs, Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
