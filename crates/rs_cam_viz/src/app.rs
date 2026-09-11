@@ -731,7 +731,7 @@ impl RsCamApp {
         // composite key is the shape that cannot leave a new dial behind.
         //
         // The key carries the WORKSPACE as well, because
-        // `AppEvent::SwitchWorkspace` sets no pending upload of its own and
+        // `UiCommand::SwitchWorkspace` sets no pending upload of its own and
         // the fixture buffer's contents depend on the workspace's overlay
         // defaults (audit §3.3).
         let current_overlay_key = overlay_upload_key(self.controller.state());

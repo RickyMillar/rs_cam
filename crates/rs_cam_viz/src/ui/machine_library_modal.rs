@@ -10,6 +10,7 @@
 
 use super::{AppEvent, theme};
 use crate::state::AppState;
+use crate::ui_command::{NoArgs, RenameMachineInLibraryArgs, UiCommand};
 
 /// Ephemeral view state, stashed in egui temp memory.
 #[derive(Debug, Clone, Default)]
@@ -36,7 +37,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         .open(&mut still_open)
         .show(ctx, |ui| draw_content(ui, state, events));
     if !still_open {
-        events.push(AppEvent::CloseMachineLibrary);
+        events.push(AppEvent::Ui(UiCommand::CloseMachineLibrary(NoArgs)));
     }
 }
 
@@ -133,7 +134,7 @@ fn draw_list_panel(
             .add_enabled(!name.is_empty(), egui::Button::new("Save"))
             .clicked()
         {
-            events.push(AppEvent::SaveMachineToLibrary(name));
+            events.push(AppEvent::Ui(UiCommand::SaveMachineToLibrary(name)));
             view.save_name.clear();
         }
     });
@@ -213,7 +214,9 @@ fn draw_detail_panel(ui: &mut egui::Ui, view: &mut MachineLibraryView, events: &
                 )
                 .clicked()
             {
-                events.push(AppEvent::DeleteMachineFromLibrary(name.clone()));
+                events.push(AppEvent::Ui(UiCommand::DeleteMachineFromLibrary(
+                    name.clone(),
+                )));
                 view.confirm_delete = false;
                 view.selected = None;
             }
@@ -242,10 +245,12 @@ fn draw_detail_panel(ui: &mut egui::Ui, view: &mut MachineLibraryView, events: &
                 .add_enabled(!new.is_empty() && new != name, egui::Button::new("Apply"))
                 .clicked()
             {
-                events.push(AppEvent::RenameMachineInLibrary {
-                    old: name.clone(),
-                    new: new.clone(),
-                });
+                events.push(AppEvent::Ui(UiCommand::RenameMachineInLibrary(
+                    RenameMachineInLibraryArgs {
+                        old: name.clone(),
+                        new: new.clone(),
+                    },
+                )));
                 view.renaming = false;
                 view.selected = Some(new);
             }

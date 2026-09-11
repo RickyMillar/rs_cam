@@ -36,6 +36,7 @@ use crate::ui::AppEvent;
 use crate::ui::automation;
 use crate::ui::components::{PrecedenceField, ProvKind, UiExt, ValueRow, mrr_row, power_bar};
 use crate::ui::theme;
+use crate::ui_command::{NoArgs, UiCommand};
 
 /// Candidate source toolpath for a `BoundarySource::DerivedRestRegions`
 /// picker: (id, display name, whether its cached result already has
@@ -1658,7 +1659,7 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
             ui.label(egui::RichText::new("(library empty)").small().weak());
         }
         if ui.button("Manage…").clicked() {
-            events.push(AppEvent::OpenMachineLibrary);
+            events.push(AppEvent::Ui(UiCommand::OpenMachineLibrary(NoArgs)));
         }
     });
 

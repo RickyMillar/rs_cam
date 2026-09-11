@@ -47,6 +47,7 @@ use super::properties::feeds_rows;
 use super::{AppEvent, theme};
 use crate::state::AppState;
 use crate::state::{FeedsModalMode, ProjectFeedsSort};
+use crate::ui_command::{NoArgs, UiCommand};
 
 /// Top-level draw entry. Short-circuits when no modal is open.
 pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -62,7 +63,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                 // The toolpath is gone (project changed under an open
                 // modal). Pre-fix this rendered a broken shell titled
                 // "toolpath N" — caught by the 2026-06-11 capture sweep.
-                events.push(AppEvent::CloseFeedsModal);
+                events.push(AppEvent::Ui(UiCommand::CloseFeedsModal(NoArgs)));
                 return;
             };
             format!("Feeds & Speeds — {name}")
@@ -98,7 +99,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         });
 
     if !still_open {
-        events.push(AppEvent::CloseFeedsModal);
+        events.push(AppEvent::Ui(UiCommand::CloseFeedsModal(NoArgs)));
     }
 }
 
@@ -121,7 +122,9 @@ fn draw_header(ui: &mut egui::Ui, mode: FeedsModalMode, events: &mut Vec<AppEven
             .clicked()
             && !toolpath_active
         {
-            events.push(AppEvent::SetFeedsModalMode(FeedsModalMode::Toolpath));
+            events.push(AppEvent::Ui(UiCommand::SetFeedsModalMode(
+                FeedsModalMode::Toolpath,
+            )));
         }
         if ui
             .selectable_label(project_active, "All toolpaths")
@@ -129,7 +132,9 @@ fn draw_header(ui: &mut egui::Ui, mode: FeedsModalMode, events: &mut Vec<AppEven
             .clicked()
             && !project_active
         {
-            events.push(AppEvent::SetFeedsModalMode(FeedsModalMode::Project));
+            events.push(AppEvent::Ui(UiCommand::SetFeedsModalMode(
+                FeedsModalMode::Project,
+            )));
         }
     });
 }
@@ -951,7 +956,7 @@ fn draw_provenance_disclosure(
             .small_button(format!("{arrow} How is this calculated?"))
             .clicked()
         {
-            events.push(AppEvent::ToggleFeedsProvenance);
+            events.push(AppEvent::Ui(UiCommand::ToggleFeedsProvenance(NoArgs)));
         }
     });
     if !show {
@@ -1834,12 +1839,12 @@ fn draw_chart_c(
         let plot_coord = plot_response.transform.value_from_position(coord);
         let new_rpm = plot_coord.x.clamp(env.spindle_min_rpm, env.spindle_max_rpm);
         let new_feed = plot_coord.y.clamp(0.0, env.max_feed_mm_min);
-        events.push(AppEvent::SetFeedsExplore(Some(
+        events.push(AppEvent::Ui(UiCommand::SetFeedsExplore(Some(
             crate::state::NomogramExplore {
                 rpm: new_rpm,
                 feed_mm_min: new_feed,
             },
-        )));
+        ))));
     }
 
     // Phase 3 — Explore controls.
@@ -2142,7 +2147,7 @@ fn draw_explore_controls(
     ui.horizontal(|ui| {
         if !active && ui.button("⊕ Start exploring").clicked() {
             // Activate explore at the current point.
-            events.push(AppEvent::SetFeedsExplore(Some(explore)));
+            events.push(AppEvent::Ui(UiCommand::SetFeedsExplore(Some(explore))));
             return;
         }
         if active {
@@ -2226,7 +2231,7 @@ fn draw_explore_controls(
                     feed_mm_min: explore.feed_mm_min,
                     rpm: explore.rpm,
                 });
-                events.push(AppEvent::SetFeedsExplore(None));
+                events.push(AppEvent::Ui(UiCommand::SetFeedsExplore(None)));
             }
             if ui
                 .button("⟲ Reset to current")
@@ -2240,7 +2245,7 @@ fn draw_explore_controls(
                         .unwrap_or(explain.recommended.rpm),
                     feed_mm_min: current.feed_rate_mm_min.max(1.0),
                 };
-                events.push(AppEvent::SetFeedsExplore(Some(snap)));
+                events.push(AppEvent::Ui(UiCommand::SetFeedsExplore(Some(snap))));
             }
             if ui
                 .button("→ Snap to recommended")
@@ -2251,10 +2256,10 @@ fn draw_explore_controls(
                     rpm: explain.recommended.rpm,
                     feed_mm_min: explain.recommended.feed_rate_mm_min,
                 };
-                events.push(AppEvent::SetFeedsExplore(Some(snap)));
+                events.push(AppEvent::Ui(UiCommand::SetFeedsExplore(Some(snap))));
             }
             if ui.button("✕ Close explore").clicked() {
-                events.push(AppEvent::SetFeedsExplore(None));
+                events.push(AppEvent::Ui(UiCommand::SetFeedsExplore(None)));
             }
         });
         // Persist slider edits — only emit when something actually
@@ -2262,7 +2267,7 @@ fn draw_explore_controls(
         if (explore.rpm - initial.rpm).abs() > 0.5
             || (explore.feed_mm_min - initial.feed_mm_min).abs() > 0.5
         {
-            events.push(AppEvent::SetFeedsExplore(Some(explore)));
+            events.push(AppEvent::Ui(UiCommand::SetFeedsExplore(Some(explore))));
         }
     }
 }
@@ -2864,7 +2869,9 @@ fn draw_project_view(
             )
             .changed()
         {
-            events.push(AppEvent::SetFeedsProjectScatter(show_scatter));
+            events.push(AppEvent::Ui(UiCommand::SetFeedsProjectScatter(
+                show_scatter,
+            )));
         }
     });
     if modal.project_show_scatter {
@@ -2885,7 +2892,9 @@ fn draw_project_view(
             )
             .clicked()
         {
-            events.push(AppEvent::SetFeedsProjectSelectAll(!all_selected));
+            events.push(AppEvent::Ui(UiCommand::SetFeedsProjectSelectAll(
+                !all_selected,
+            )));
         }
         ui.separator();
         let mut apply_btn = ui.add_enabled(
@@ -2917,19 +2926,25 @@ fn draw_project_view(
             .selectable_label(sort == ProjectFeedsSort::Index, "Order")
             .clicked()
         {
-            events.push(AppEvent::SetFeedsProjectSort(ProjectFeedsSort::Index));
+            events.push(AppEvent::Ui(UiCommand::SetFeedsProjectSort(
+                ProjectFeedsSort::Index,
+            )));
         }
         if ui
             .selectable_label(sort == ProjectFeedsSort::Speedup, "Speedup")
             .clicked()
         {
-            events.push(AppEvent::SetFeedsProjectSort(ProjectFeedsSort::Speedup));
+            events.push(AppEvent::Ui(UiCommand::SetFeedsProjectSort(
+                ProjectFeedsSort::Speedup,
+            )));
         }
         if ui
             .selectable_label(sort == ProjectFeedsSort::Name, "Name")
             .clicked()
         {
-            events.push(AppEvent::SetFeedsProjectSort(ProjectFeedsSort::Name));
+            events.push(AppEvent::Ui(UiCommand::SetFeedsProjectSort(
+                ProjectFeedsSort::Name,
+            )));
         }
     });
 
@@ -2955,7 +2970,7 @@ fn draw_project_view(
                 for r in &rows {
                     let mut checked = modal.project_selected.contains(&r.id);
                     if ui.checkbox(&mut checked, "").changed() {
-                        events.push(AppEvent::ToggleFeedsProjectRow(r.id));
+                        events.push(AppEvent::Ui(UiCommand::ToggleFeedsProjectRow(r.id)));
                     }
                     match &r.refusal {
                         Some(why) => {

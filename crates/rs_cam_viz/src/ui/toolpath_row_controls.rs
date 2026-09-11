@@ -10,6 +10,7 @@ use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::ViewportState;
 use crate::ui::AppEvent;
 use crate::ui::theme;
+use crate::ui_command::{NoArgs, UiCommand};
 
 /// `queue_state` carries the toolpath's `enabled` flag when rendered in the
 /// toolpath-queue panel (`Some` → also render the inline Enable/Disable +
@@ -38,7 +39,7 @@ pub fn draw(
         })
         .clicked()
     {
-        events.push(AppEvent::ToggleToolpathVisibility(tp_id));
+        events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
     }
 
     // Per-toolpath cut / rapid visibility. The global viewport toggles gate
@@ -121,13 +122,13 @@ pub fn draw(
         .clicked()
     {
         if is_isolated {
-            events.push(AppEvent::ClearIsolation);
+            events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
         } else {
             // Select this toolpath first so the handler isolates the right one.
-            events.push(AppEvent::Select(
+            events.push(AppEvent::Ui(UiCommand::Select(
                 crate::state::selection::Selection::Toolpath(tp_id),
-            ));
-            events.push(AppEvent::ToggleIsolateToolpath);
+            )));
+            events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
         }
     }
 

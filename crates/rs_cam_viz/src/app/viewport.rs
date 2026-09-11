@@ -2,6 +2,7 @@ use crate::render::{LineUniforms, MeshUniforms, ViewportCallback};
 use crate::state::Workspace;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
+use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
 
 use super::RsCamApp;
 
@@ -141,7 +142,9 @@ impl RsCamApp {
             }
             self.controller
                 .events_mut()
-                .push(AppEvent::SimJumpToMove(target.move_index));
+                .push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                    move_index: target.move_index,
+                })));
             return true;
         }
 

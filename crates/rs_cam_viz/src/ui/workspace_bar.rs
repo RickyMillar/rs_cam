@@ -2,6 +2,7 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::state::Workspace;
 use crate::ui::theme;
+use crate::ui_command::UiCommand;
 
 /// Draw the workspace switcher bar. Sits below the menu bar, always visible.
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -69,7 +70,7 @@ fn workspace_tab(
 
     let response = ui.add(button);
     if response.clicked() && !is_active {
-        events.push(AppEvent::SwitchWorkspace(target));
+        events.push(AppEvent::Ui(UiCommand::SwitchWorkspace(target)));
     }
 
     // Draw active indicator line under the tab

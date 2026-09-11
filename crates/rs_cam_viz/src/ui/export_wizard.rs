@@ -22,6 +22,7 @@ use super::AppEvent;
 use super::readiness::{self, CycleTimeBasisExt};
 use crate::state::AppState;
 use crate::ui::theme;
+use crate::ui_command::{NoArgs, UiCommand};
 
 /// Total number of steps in the wizard.
 pub const STEP_COUNT: u8 = 7;
@@ -67,7 +68,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
             draw_nav(ui, state.wizard_active_step, events);
         });
     if !still_open {
-        events.push(AppEvent::CloseExportWizard);
+        events.push(AppEvent::Ui(UiCommand::CloseExportWizard(NoArgs)));
     }
 }
 
@@ -109,7 +110,7 @@ fn draw_nav(ui: &mut egui::Ui, active: u8, events: &mut Vec<AppEvent>) {
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("Cancel").clicked() {
-                events.push(AppEvent::CloseExportWizard);
+                events.push(AppEvent::Ui(UiCommand::CloseExportWizard(NoArgs)));
             }
         });
     });

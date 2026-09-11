@@ -1,6 +1,9 @@
 use crate::state::Workspace;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
+use crate::ui_command::{
+    NoArgs, SetToolLoadOverrideArgs, SimJumpToMoveArgs, SimJumpToOpStartArgs, UiCommand,
+};
 
 use super::RsCamApp;
 
@@ -37,121 +40,8 @@ impl RsCamApp {
                         Err(error) => self.controller.push_error(&error),
                     }
                 }
-                AppEvent::SetViewPreset(preset) => self.camera.set_preset(preset),
-                AppEvent::ToggleProjection => self.camera.toggle_projection(),
-                AppEvent::PreviewOrientation(face_up) => {
-                    use crate::state::job::FaceUp;
-                    match face_up {
-                        FaceUp::Top => {
-                            self.camera.pitch = std::f32::consts::FRAC_PI_2 - 0.01;
-                        }
-                        FaceUp::Bottom => {
-                            self.camera.pitch = -(std::f32::consts::FRAC_PI_2 - 0.01);
-                        }
-                        FaceUp::Front => {
-                            self.camera.yaw = 0.0;
-                            self.camera.pitch = 0.0;
-                        }
-                        FaceUp::Back => {
-                            self.camera.yaw = std::f32::consts::PI;
-                            self.camera.pitch = 0.0;
-                        }
-                        FaceUp::Left => {
-                            self.camera.yaw = std::f32::consts::FRAC_PI_2;
-                            self.camera.pitch = 0.0;
-                        }
-                        FaceUp::Right => {
-                            self.camera.yaw = -std::f32::consts::FRAC_PI_2;
-                            self.camera.pitch = 0.0;
-                        }
-                    }
-                }
-                AppEvent::ResetView => self.fit_camera_to_first_model(),
-
-                // Workspace transitions (need camera/viewport changes in app)
-                AppEvent::SwitchWorkspace(target) => {
-                    crate::ui::overlays::registry::switch_workspace(
-                        self.controller.state_mut(),
-                        target,
-                    );
-                }
-                AppEvent::SimStepBackward => {
-                    if self.controller.state().simulation.has_results() {
-                        let pb = &mut self.controller.state_mut().simulation.playback;
-                        pb.playing = false;
-                        pb.current_move = pb.current_move.saturating_sub(1);
-                        self.pending_checkpoint_load = true;
-                    }
-                }
-                AppEvent::SimJumpToStart => {
-                    if self.controller.state().simulation.has_results() {
-                        let pb = &mut self.controller.state_mut().simulation.playback;
-                        pb.playing = false;
-                        pb.current_move = 0;
-                        self.pending_checkpoint_load = true;
-                    }
-                }
-                AppEvent::SimJumpToMove(move_idx) => {
-                    if self.controller.state().simulation.has_results() {
-                        let total = self.controller.state().simulation.total_moves();
-                        let previous = self.controller.state().simulation.playback.current_move;
-                        let pb = &mut self.controller.state_mut().simulation.playback;
-                        pb.playing = false;
-                        pb.current_move = move_idx.min(total);
-                        self.pending_checkpoint_load =
-                            !pb.scrub_drag_active && pb.current_move < previous;
-                    }
-                }
-                AppEvent::SimJumpToOpStart(boundary_idx) => {
-                    if let Some(start) = self
-                        .controller
-                        .state()
-                        .simulation
-                        .boundaries()
-                        .get(boundary_idx)
-                        .map(|b| b.start_move)
-                    {
-                        let previous = self.controller.state().simulation.playback.current_move;
-                        let pb = &mut self.controller.state_mut().simulation.playback;
-                        pb.playing = false;
-                        pb.current_move = start;
-                        // Only force a checkpoint reload when jumping backward;
-                        // forward jumps stream from current state (matches the
-                        // SimJumpToMove logic). This is what makes "click TP 0
-                        // (rough) from TP 6 (finish)" the slow path that spawned
-                        // the loading-overlay UX, while clicks down the list
-                        // stay fast. During an active drag we defer checkpoint
-                        // reload until release so scrubbing doesn't block on a
-                        // full checkpoint mesh upload per pointer move.
-                        self.pending_checkpoint_load =
-                            !pb.scrub_drag_active && pb.current_move < previous;
-                    }
-                }
-
-                // Export events (need file dialogs)
-                AppEvent::ExportGcode => {
-                    let s = self.controller.state_mut();
-                    s.close_modals_for_exclusivity();
-                    s.show_preflight = true;
-                }
                 AppEvent::ExportGcodeConfirmed => {
                     self.export_gcode_with_summary();
-                }
-                AppEvent::OpenExportWizard => {
-                    let resume = self
-                        .controller
-                        .state()
-                        .session
-                        .wizard()
-                        .last_step_visited
-                        .min(crate::ui::export_wizard::STEP_COUNT - 1);
-                    let s = self.controller.state_mut();
-                    s.close_modals_for_exclusivity();
-                    s.show_export_wizard = true;
-                    s.wizard_active_step = resume;
-                }
-                AppEvent::CloseExportWizard => {
-                    self.controller.state_mut().show_export_wizard = false;
                 }
                 AppEvent::WizardSetStep(step) => {
                     let clamped = step.min(crate::ui::export_wizard::STEP_COUNT - 1);
@@ -228,17 +118,6 @@ impl RsCamApp {
                     let mut session_post = s.session.post_config().clone();
                     session_post.format = format.to_token().to_owned();
                     let _ = s.session.set_post_config(session_post);
-                }
-                AppEvent::SetToolLoadOverride {
-                    accept_unmodeled,
-                    accept_exceeded,
-                } => {
-                    let gui = &mut self.controller.state_mut().gui;
-                    gui.tool_load_overrides.accept_unmodeled = accept_unmodeled;
-                    gui.tool_load_overrides.accept_exceeded = accept_exceeded;
-                }
-                AppEvent::SetStaleExportPolicy(policy) => {
-                    self.controller.state_mut().gui.stale_export = policy;
                 }
                 AppEvent::ExportCombinedGcode => {
                     match crate::io::export::export_combined_gcode_from_session(
@@ -387,17 +266,151 @@ impl RsCamApp {
                     }
                 }
 
-                AppEvent::ShowShortcuts => {
-                    self.controller.state_mut().show_shortcuts = true;
-                }
-
-                AppEvent::Quit => {
-                    if self.controller.state().gui.dirty {
-                        self.unsaved_guard = Some(super::UnsavedGuard::Quit);
-                    } else {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                // --- View commands (WP13) ---
+                //
+                // These arms run in the application and not in the
+                // controller, because each one writes the camera, the
+                // window or a file dialog. Every other view command
+                // falls through to the controller's own `Ui` arm.
+                AppEvent::Ui(cmd) => match cmd {
+                    UiCommand::SetViewPreset(preset) => self.camera.set_preset(preset),
+                    UiCommand::ToggleProjection(NoArgs) => self.camera.toggle_projection(),
+                    UiCommand::PreviewOrientation(face_up) => {
+                        use crate::state::job::FaceUp;
+                        match face_up {
+                            FaceUp::Top => {
+                                self.camera.pitch = std::f32::consts::FRAC_PI_2 - 0.01;
+                            }
+                            FaceUp::Bottom => {
+                                self.camera.pitch = -(std::f32::consts::FRAC_PI_2 - 0.01);
+                            }
+                            FaceUp::Front => {
+                                self.camera.yaw = 0.0;
+                                self.camera.pitch = 0.0;
+                            }
+                            FaceUp::Back => {
+                                self.camera.yaw = std::f32::consts::PI;
+                                self.camera.pitch = 0.0;
+                            }
+                            FaceUp::Left => {
+                                self.camera.yaw = std::f32::consts::FRAC_PI_2;
+                                self.camera.pitch = 0.0;
+                            }
+                            FaceUp::Right => {
+                                self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+                                self.camera.pitch = 0.0;
+                            }
+                        }
                     }
-                }
+                    UiCommand::ResetView(NoArgs) => self.fit_camera_to_first_model(),
+                    // Workspace transitions (need camera/viewport changes in app)
+                    UiCommand::SwitchWorkspace(target) => {
+                        crate::ui::overlays::registry::switch_workspace(
+                            self.controller.state_mut(),
+                            target,
+                        );
+                    }
+                    UiCommand::SimStepBackward(NoArgs) => {
+                        if self.controller.state().simulation.has_results() {
+                            let pb = &mut self.controller.state_mut().simulation.playback;
+                            pb.playing = false;
+                            pb.current_move = pb.current_move.saturating_sub(1);
+                            self.pending_checkpoint_load = true;
+                        }
+                    }
+                    UiCommand::SimJumpToStart(NoArgs) => {
+                        if self.controller.state().simulation.has_results() {
+                            let pb = &mut self.controller.state_mut().simulation.playback;
+                            pb.playing = false;
+                            pb.current_move = 0;
+                            self.pending_checkpoint_load = true;
+                        }
+                    }
+                    UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index: move_idx,
+                    }) => {
+                        if self.controller.state().simulation.has_results() {
+                            let total = self.controller.state().simulation.total_moves();
+                            let previous = self.controller.state().simulation.playback.current_move;
+                            let pb = &mut self.controller.state_mut().simulation.playback;
+                            pb.playing = false;
+                            pb.current_move = move_idx.min(total);
+                            self.pending_checkpoint_load =
+                                !pb.scrub_drag_active && pb.current_move < previous;
+                        }
+                    }
+                    UiCommand::SimJumpToOpStart(SimJumpToOpStartArgs {
+                        boundary_index: boundary_idx,
+                    }) => {
+                        if let Some(start) = self
+                            .controller
+                            .state()
+                            .simulation
+                            .boundaries()
+                            .get(boundary_idx)
+                            .map(|b| b.start_move)
+                        {
+                            let previous = self.controller.state().simulation.playback.current_move;
+                            let pb = &mut self.controller.state_mut().simulation.playback;
+                            pb.playing = false;
+                            pb.current_move = start;
+                            // Only force a checkpoint reload when jumping backward;
+                            // forward jumps stream from current state (matches the
+                            // SimJumpToMove logic). This is what makes "click TP 0
+                            // (rough) from TP 6 (finish)" the slow path that spawned
+                            // the loading-overlay UX, while clicks down the list
+                            // stay fast. During an active drag we defer checkpoint
+                            // reload until release so scrubbing doesn't block on a
+                            // full checkpoint mesh upload per pointer move.
+                            self.pending_checkpoint_load =
+                                !pb.scrub_drag_active && pb.current_move < previous;
+                        }
+                    }
+                    // Export events (need file dialogs)
+                    UiCommand::ExportGcode(NoArgs) => {
+                        let s = self.controller.state_mut();
+                        s.close_modals_for_exclusivity();
+                        s.show_preflight = true;
+                    }
+                    UiCommand::OpenExportWizard(NoArgs) => {
+                        let resume = self
+                            .controller
+                            .state()
+                            .session
+                            .wizard()
+                            .last_step_visited
+                            .min(crate::ui::export_wizard::STEP_COUNT - 1);
+                        let s = self.controller.state_mut();
+                        s.close_modals_for_exclusivity();
+                        s.show_export_wizard = true;
+                        s.wizard_active_step = resume;
+                    }
+                    UiCommand::CloseExportWizard(NoArgs) => {
+                        self.controller.state_mut().show_export_wizard = false;
+                    }
+                    UiCommand::SetToolLoadOverride(SetToolLoadOverrideArgs {
+                        accept_unmodeled,
+                        accept_exceeded,
+                    }) => {
+                        let gui = &mut self.controller.state_mut().gui;
+                        gui.tool_load_overrides.accept_unmodeled = accept_unmodeled;
+                        gui.tool_load_overrides.accept_exceeded = accept_exceeded;
+                    }
+                    UiCommand::SetStaleExportPolicy(policy) => {
+                        self.controller.state_mut().gui.stale_export = policy;
+                    }
+                    UiCommand::ShowShortcuts(NoArgs) => {
+                        self.controller.state_mut().show_shortcuts = true;
+                    }
+                    UiCommand::Quit(NoArgs) => {
+                        if self.controller.state().gui.dirty {
+                            self.unsaved_guard = Some(super::UnsavedGuard::Quit);
+                        } else {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    }
+                    other => self.controller.handle_internal_event(AppEvent::Ui(other)),
+                },
 
                 // Everything else delegated to controller
                 other => self.controller.handle_internal_event(other),
@@ -446,14 +459,16 @@ impl RsCamApp {
             if i.key_pressed(egui::Key::Space) && self.controller.state().simulation.has_results() {
                 self.controller
                     .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                        Workspace::Simulation,
+                    )));
             }
 
             // I: toggle isolation mode
             if i.key_pressed(egui::Key::I) {
                 self.controller
                     .events_mut()
-                    .push(AppEvent::ToggleIsolateToolpath);
+                    .push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
             }
 
             // H: toggle visibility of selected toolpath
@@ -462,29 +477,37 @@ impl RsCamApp {
             {
                 self.controller
                     .events_mut()
-                    .push(AppEvent::ToggleToolpathVisibility(id));
+                    .push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(id)));
             }
 
             // 1-4: view presets
             if i.key_pressed(egui::Key::Num1) {
-                self.controller.events_mut().push(AppEvent::SetViewPreset(
-                    crate::render::camera::ViewPreset::Top,
-                ));
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::Ui(UiCommand::SetViewPreset(
+                        crate::render::camera::ViewPreset::Top,
+                    )));
             }
             if i.key_pressed(egui::Key::Num2) {
-                self.controller.events_mut().push(AppEvent::SetViewPreset(
-                    crate::render::camera::ViewPreset::Front,
-                ));
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::Ui(UiCommand::SetViewPreset(
+                        crate::render::camera::ViewPreset::Front,
+                    )));
             }
             if i.key_pressed(egui::Key::Num3) {
-                self.controller.events_mut().push(AppEvent::SetViewPreset(
-                    crate::render::camera::ViewPreset::Right,
-                ));
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::Ui(UiCommand::SetViewPreset(
+                        crate::render::camera::ViewPreset::Right,
+                    )));
             }
             if i.key_pressed(egui::Key::Num4) {
-                self.controller.events_mut().push(AppEvent::SetViewPreset(
-                    crate::render::camera::ViewPreset::Isometric,
-                ));
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::Ui(UiCommand::SetViewPreset(
+                        crate::render::camera::ViewPreset::Isometric,
+                    )));
             }
             self.handle_overlay_shortcuts(i);
         });
@@ -581,32 +604,42 @@ impl RsCamApp {
         ctx.input(|i| {
             // Left/Right: step back/forward
             if i.key_pressed(egui::Key::ArrowLeft) {
-                self.controller.events_mut().push(AppEvent::SimStepBackward);
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::Ui(UiCommand::SimStepBackward(NoArgs)));
             }
             if i.key_pressed(egui::Key::ArrowRight) {
-                self.controller.events_mut().push(AppEvent::SimStepForward);
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::Ui(UiCommand::SimStepForward(NoArgs)));
             }
 
             // Home/End: jump to start/end
             if i.key_pressed(egui::Key::Home) {
-                self.controller.events_mut().push(AppEvent::SimJumpToStart);
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::Ui(UiCommand::SimJumpToStart(NoArgs)));
             }
             if i.key_pressed(egui::Key::End) {
-                self.controller.events_mut().push(AppEvent::SimJumpToEnd);
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::Ui(UiCommand::SimJumpToEnd(NoArgs)));
             }
 
             // Space: play/pause
             if i.key_pressed(egui::Key::Space) {
                 self.controller
                     .events_mut()
-                    .push(AppEvent::ToggleSimPlayback);
+                    .push(AppEvent::Ui(UiCommand::ToggleSimPlayback(NoArgs)));
             }
 
             // Escape: back to toolpaths workspace
             if i.key_pressed(egui::Key::Escape) {
                 self.controller
                     .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
+                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                        Workspace::Toolpaths,
+                    )));
             }
 
             self.handle_overlay_shortcuts(i);

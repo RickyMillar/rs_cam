@@ -225,7 +225,7 @@ fn getting_started_reviews_before_it_exports() {
 /// load routes — File > Open, the `RS_CAM_JOB` startup path and MCP
 /// `load_project` — did not, so a loaded job kept the previous project's
 /// framing. This asserts each site calls `fit_camera_to_first_model`, the
-/// same routine `AppEvent::ResetView` uses, rather than inventing a second
+/// same routine `UiCommand::ResetView` uses, rather than inventing a second
 /// fit. `RsCamApp` needs an `eframe::CreationContext`, so this is read from
 /// the source.
 #[test]
@@ -266,7 +266,7 @@ fn every_project_load_route_fits_the_camera() {
 #[test]
 fn the_load_routes_reuse_the_reset_view_fit() {
     assert!(
-        INPUT_SRC.contains("AppEvent::ResetView => self.fit_camera_to_first_model()"),
+        INPUT_SRC.contains("UiCommand::ResetView(NoArgs) => self.fit_camera_to_first_model()"),
         "Reset View is the routine the load routes borrow; if it moved, say so"
     );
 }

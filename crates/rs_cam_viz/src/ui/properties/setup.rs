@@ -2,6 +2,7 @@ use super::PanelEdit;
 use crate::state::job::{FaceUp, ModelId, SetupId, ZRotation};
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
+use crate::ui_command::UiCommand;
 use rs_cam_core::session::{Corner, Fixture, FixtureKind, KeepOutZone, SetupData, XYDatum, ZDatum};
 
 fn fixture_kind_label(kind: FixtureKind) -> &'static str {
@@ -73,7 +74,7 @@ pub fn draw(
                     {
                         setup_data.face_up = face;
                         edit.commit();
-                        events.push(AppEvent::PreviewOrientation(face));
+                        events.push(AppEvent::Ui(UiCommand::PreviewOrientation(face)));
                     }
                 }
             });
@@ -314,7 +315,9 @@ pub fn draw(
         let label = format!("{} [{}]", fixture.name, fixture_kind_label(fixture.kind));
         let resp = ui.selectable_label(false, &label);
         if resp.clicked() {
-            events.push(AppEvent::Select(Selection::Fixture(setup_id, fixture.id)));
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Fixture(
+                setup_id, fixture.id,
+            ))));
         }
         resp.context_menu(|ui| {
             if ui.button("Delete").clicked() {
@@ -345,7 +348,9 @@ pub fn draw(
     for zone in &setup_data.keep_out_zones {
         let resp = ui.selectable_label(false, &zone.name);
         if resp.clicked() {
-            events.push(AppEvent::Select(Selection::KeepOut(setup_id, zone.id)));
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::KeepOut(
+                setup_id, zone.id,
+            ))));
         }
         resp.context_menu(|ui| {
             if ui.button("Delete").clicked() {

@@ -16,6 +16,11 @@ use crate::mcp_bridge::{
     CoreRequest, GuiWaker, McpReadCache, McpReadKind, McpRequest, McpRequestKind, ProgressUpdate,
     build_cancel_generation_response, build_generation_status_response,
 };
+use crate::ui_command::{
+    GetCutTraceArgs, GetNotificationsArgs, NoArgs, ScreenshotGuiArgs, ScreenshotSimulationArgs,
+    ScreenshotToolpathArgs, SetUiViewArgs, SimJumpToMoveArgs, SimJumpToToolpathEndArgs,
+    SimJumpToToolpathStartArgs, SimScrubToolpathArgs, UiCommand, UiQuery,
+};
 
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
@@ -432,7 +437,10 @@ impl EmbeddedCamServer {
         description = "Top level of the tool-library drill-down: list the reusable catalogs in the user's library (~/.config/rs_cam/tools/*.toml), each with its tool count and the tool types it contains. Cheap and small. Then dig into a catalog with `list_tool_catalog` to see its tools, and import one with `add_tool_from_library`. Does NOT require a loaded project."
     )]
     async fn list_tool_library(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::ListToolLibrary).await)
+        Self::format_result(
+            self.send_request(McpRequestKind::UiQuery(UiQuery::ListToolLibrary(NoArgs)))
+                .await,
+        )
     }
 
     #[tool(
@@ -444,7 +452,7 @@ impl EmbeddedCamServer {
         Parameters(ListToolCatalogParam { catalog }): Parameters<ListToolCatalogParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::ListToolCatalog { catalog })
+            self.send_request(McpRequestKind::UiQuery(UiQuery::ListToolCatalog(catalog)))
                 .await,
         )
     }
@@ -493,7 +501,10 @@ impl EmbeddedCamServer {
         description = "Project diagnostics. Read the `triage` block FIRST — it is the bounded, severity-ordered answer to 'what should I act on?' (safety, then actions, then capped advisories); `issue_count` beside it is a different, unbounded population. `per_toolpath` rows are the core ToolpathDiagnostic — move/cutting/rapid distances, `op_kind`, per-toolpath `collision_count` and `rapid_collision_count`, and the report-only generation-finding areas (`truncated_core_mm2` + its deprecated `standing_material_mm2` duplicate, `untouched_material_mm2`, `reached_uncut_estimate_mm2`, `unmachined_band_area_mm2`, `tip_float_points`, `max_tip_float_mm`) and the C2 shallow-band decomposition telemetry `monotone_cells` (the whole object or `null`; its `membership_fallbacks` / `empty_fallbacks` name regions that emitted the pre-C2 undivided raster) — plus the GUI lane columns `status` / `error` / `awaiting_prior_stock` / `stale`. On every finding area `null` means NOT MEASURED and 0.0 means measured and clean; never coerce one to the other. Also carries project air-cut percentages under both denominators, collision counts, and the legacy one-line `verdict`."
     )]
     async fn get_diagnostics(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::GetDiagnostics).await)
+        Self::format_result(
+            self.send_request(McpRequestKind::UiQuery(UiQuery::GetDiagnostics(NoArgs)))
+                .await,
+        )
     }
 
     #[tool(
@@ -561,23 +572,25 @@ impl EmbeddedCamServer {
         }): Parameters<CutTraceParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::GetCutTrace {
-                toolpath_id,
-                max_hotspots,
-                max_issues,
-                span_kind,
-                span_id,
-                pass_index,
-                include_drill_samples: include_drill_samples.unwrap_or(false),
-                caps: rs_cam_mcp::response::CutTraceCaps::from_params(
-                    max_span_summaries,
-                    max_semantic_summaries,
-                    max_toolpath_summaries,
-                    max_drill_summaries,
-                    max_drill_samples,
-                    max_response_bytes,
-                ),
-            })
+            self.send_request(McpRequestKind::UiQuery(UiQuery::GetCutTrace(
+                GetCutTraceArgs {
+                    toolpath_id,
+                    max_hotspots,
+                    max_issues,
+                    span_kind,
+                    span_id,
+                    pass_index,
+                    include_drill_samples: include_drill_samples.unwrap_or(false),
+                    caps: rs_cam_mcp::response::CutTraceCaps::from_params(
+                        max_span_summaries,
+                        max_semantic_summaries,
+                        max_toolpath_summaries,
+                        max_drill_summaries,
+                        max_drill_samples,
+                        max_response_bytes,
+                    ),
+                },
+            )))
             .await,
         )
     }
@@ -654,7 +667,10 @@ impl EmbeddedCamServer {
         description = "List collisions detected in the last simulation, grouped by toolpath. Returns holder/shank collisions and rapid collisions with global+local move indices, so the user can drill from the project-wide rapid_collision_count down to the specific toolpath and lift/retract that's clipping uncleared stock. Run run_simulation first."
     )]
     async fn inspect_collisions(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::InspectCollisions).await)
+        Self::format_result(
+            self.send_request(McpRequestKind::UiQuery(UiQuery::InspectCollisions(NoArgs)))
+                .await,
+        )
     }
 
     #[tool(
@@ -851,7 +867,10 @@ impl EmbeddedCamServer {
         description = "Per-toolpath tool-load report: chipload, power, deflection verdicts. Each criterion is independent (no scalar load %). Each gate uses a typed verdict: ChiploadVerdict (Within carries approach-to-min/max metrics, Exceeds carries ChipSide + ChiploadStatistic + ChipBounds), PowerVerdict (carries peak_kw + available_kw on both arms), DeflectionVerdict (carries peak_mm + DeflectionBounds with 50µm/200µm thresholds). All three states are Within/Exceeds/Unmodeled."
     )]
     async fn get_tool_load_report(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::GetToolLoadReport).await)
+        Self::format_result(
+            self.send_request(McpRequestKind::UiQuery(UiQuery::GetToolLoadReport(NoArgs)))
+                .await,
+        )
     }
 
     #[tool(
@@ -941,10 +960,12 @@ impl EmbeddedCamServer {
         }): Parameters<GetNotificationsParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::GetNotifications {
-                include_expired: include_expired.unwrap_or(true),
-                limit,
-            })
+            self.send_request(McpRequestKind::UiQuery(UiQuery::GetNotifications(
+                GetNotificationsArgs {
+                    include_expired: include_expired.unwrap_or(true),
+                    limit,
+                },
+            )))
             .await,
         )
     }
@@ -1365,8 +1386,10 @@ impl EmbeddedCamServer {
         Parameters(SimJumpToMoveParam { move_index }): Parameters<SimJumpToMoveParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SimJumpToMove { move_index })
-                .await,
+            self.send_request(McpRequestKind::Ui(UiCommand::SimJumpToMove(
+                SimJumpToMoveArgs { move_index },
+            )))
+            .await,
         )
     }
 
@@ -1375,7 +1398,10 @@ impl EmbeddedCamServer {
         description = "Jump the simulation playback to the very start (move 0). Convenience shortcut for sim_jump_to_move(0)."
     )]
     async fn sim_jump_to_start(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::SimJumpToStart).await)
+        Self::format_result(
+            self.send_request(McpRequestKind::Ui(UiCommand::SimJumpToStart(NoArgs)))
+                .await,
+        )
     }
 
     #[tool(
@@ -1383,7 +1409,10 @@ impl EmbeddedCamServer {
         description = "Jump the simulation playback to the very end (last move). Convenience shortcut for sim_jump_to_move(total_moves)."
     )]
     async fn sim_jump_to_end(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::SimJumpToEnd).await)
+        Self::format_result(
+            self.send_request(McpRequestKind::Ui(UiCommand::SimJumpToEnd(NoArgs)))
+                .await,
+        )
     }
 
     // ── Per-toolpath simulation scrubbing tools ───────────────────────
@@ -1397,8 +1426,10 @@ impl EmbeddedCamServer {
         Parameters(SimScrubToolpathParam { index, percent }): Parameters<SimScrubToolpathParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SimScrubToolpath { index, percent })
-                .await,
+            self.send_request(McpRequestKind::Ui(UiCommand::SimScrubToolpath(
+                SimScrubToolpathArgs { index, percent },
+            )))
+            .await,
         )
     }
 
@@ -1413,8 +1444,10 @@ impl EmbeddedCamServer {
         >,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SimJumpToToolpathStart { index })
-                .await,
+            self.send_request(McpRequestKind::Ui(UiCommand::SimJumpToToolpathStart(
+                SimJumpToToolpathStartArgs { index },
+            )))
+            .await,
         )
     }
 
@@ -1429,8 +1462,10 @@ impl EmbeddedCamServer {
         >,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SimJumpToToolpathEnd { index })
-                .await,
+            self.send_request(McpRequestKind::Ui(UiCommand::SimJumpToToolpathEnd(
+                SimJumpToToolpathEndArgs { index },
+            )))
+            .await,
         )
     }
 
@@ -1451,13 +1486,15 @@ impl EmbeddedCamServer {
         }): Parameters<ScreenshotSimParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::ScreenshotSimulation {
-                path,
-                width,
-                height,
-                checkpoint,
-                include_toolpaths,
-            })
+            self.send_request(McpRequestKind::Ui(UiCommand::ScreenshotSimulation(
+                ScreenshotSimulationArgs {
+                    path,
+                    width,
+                    height,
+                    checkpoint,
+                    include_toolpaths,
+                },
+            )))
             .await,
         )
     }
@@ -1479,15 +1516,17 @@ impl EmbeddedCamServer {
         }): Parameters<ScreenshotToolpathParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::ScreenshotToolpath {
-                index,
-                path,
-                width,
-                height,
-                show_stock,
-                include_rapids,
-                reach_overlay,
-            })
+            self.send_request(McpRequestKind::Ui(UiCommand::ScreenshotToolpath(
+                ScreenshotToolpathArgs {
+                    index,
+                    path,
+                    width,
+                    height,
+                    show_stock,
+                    include_rapids,
+                    reach_overlay,
+                },
+            )))
             .await,
         )
     }
@@ -1529,11 +1568,13 @@ impl EmbeddedCamServer {
         }): Parameters<ScreenshotGuiParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::ScreenshotGui {
-                path,
-                width,
-                height,
-            })
+            self.send_request(McpRequestKind::Ui(UiCommand::ScreenshotGui(
+                ScreenshotGuiArgs {
+                    path,
+                    width,
+                    height,
+                },
+            )))
             .await,
         )
     }
@@ -1554,14 +1595,14 @@ impl EmbeddedCamServer {
         }): Parameters<SetUiViewParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetUiView {
+            self.send_request(McpRequestKind::Ui(UiCommand::SetUiView(SetUiViewArgs {
                 workspace,
                 toolpath_index,
                 properties_tab,
                 select,
                 modal,
                 overlays,
-            })
+            })))
             .await,
         )
     }
@@ -1603,7 +1644,10 @@ impl EmbeddedCamServer {
         description = "List the reusable machines in the per-user machine library (~/.config/rs_cam/machines/*.toml), each with a compact spec summary (name, max feed, and kinematics: per-axis acceleration + junction deviation when set). The library uses SNAPSHOT semantics like the tool library — import one with `load_machine_from_library` to COPY it into the project. Does NOT require a loaded project."
     )]
     async fn list_machine_library(&self) -> String {
-        Self::format_result(self.send_request(McpRequestKind::ListMachineLibrary).await)
+        Self::format_result(
+            self.send_request(McpRequestKind::UiQuery(UiQuery::ListMachineLibrary(NoArgs)))
+                .await,
+        )
     }
 
     #[tool(

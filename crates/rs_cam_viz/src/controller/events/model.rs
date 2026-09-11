@@ -422,43 +422,6 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.selection = Selection::Stock;
     }
 
-    pub(crate) fn handle_remove_setup(&mut self, setup_id: SetupId) {
-        let setups = self.state.session.list_setups();
-        if setups.len() > 1 {
-            // Find index for removal
-            if let Some(idx) = setups.iter().position(|s| s.id == setup_id.0) {
-                // First remove all toolpaths belonging to this setup
-                let tp_indices: Vec<usize> = setups
-                    .get(idx)
-                    .map(|s| s.toolpath_indices.clone())
-                    .unwrap_or_default();
-                // Remove in reverse order to preserve indices
-                let mut sorted_indices = tp_indices;
-                sorted_indices.sort_unstable();
-                sorted_indices.reverse();
-                for tp_idx in sorted_indices {
-                    let _ = self.state.session.remove_toolpath(tp_idx);
-                }
-                // Now remove the setup
-                let _ = self.state.session.remove_setup(idx);
-            }
-            match self.state.selection {
-                Selection::Setup(id) if id == setup_id => {
-                    self.state.selection = Selection::None;
-                }
-                Selection::Fixture(id, _) if id == setup_id => {
-                    self.state.selection = Selection::None;
-                }
-                Selection::KeepOut(id, _) if id == setup_id => {
-                    self.state.selection = Selection::None;
-                }
-                _ => {}
-            }
-            self.pending_upload = true;
-            self.state.gui.mark_edited();
-        }
-    }
-
     pub(crate) fn handle_rename_setup(&mut self, setup_id: SetupId, name: String) {
         if let Some(idx) = self
             .state

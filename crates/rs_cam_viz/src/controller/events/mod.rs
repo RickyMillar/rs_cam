@@ -10,6 +10,11 @@ use rs_cam_core::session::{Command, RestoreToolpathSnapshotArgs};
 use crate::compute::ComputeBackend;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
+use crate::ui_command::{
+    DeleteLibraryToolArgs, MoveLibraryToolArgs, NoArgs, RenameMachineInLibraryArgs,
+    RenameToolCatalogArgs, SetToolLoadOverrideArgs, SimJumpToMoveArgs, SimJumpToOpEndArgs,
+    SimJumpToOpStartArgs, UiCommand, UpdateLibraryToolArgs,
+};
 
 use super::AppController;
 
@@ -51,49 +56,14 @@ impl<B: ComputeBackend> AppController<B> {
                     self.push_error(&error);
                 }
             }
-
-            // --- Tree / selection events ---
-            AppEvent::Select(ref selection) => self.handle_select(selection),
             AppEvent::AddTool(tool_type) => self.handle_add_tool(tool_type),
             AppEvent::AddToolFromLibrary(tool) => self.handle_add_tool_from_library(*tool),
             AppEvent::DuplicateTool(tool_id) => self.handle_duplicate_tool(tool_id),
             AppEvent::RemoveTool(tool_id) => self.handle_remove_tool(tool_id),
-
-            // --- Tool Library modal ---
-            AppEvent::OpenToolLibrary => self.open_tool_library(),
-            AppEvent::CloseToolLibrary => self.state.tool_library_modal = None,
-            AppEvent::DeleteLibraryTool { catalog, index } => {
-                self.delete_library_tool(&catalog, index);
-            }
-            AppEvent::UpdateLibraryTool {
-                catalog,
-                index,
-                tool,
-            } => self.update_library_tool(&catalog, index, *tool),
-            AppEvent::MoveLibraryTool { from, index, to } => {
-                self.move_library_tool(&from, index, &to);
-            }
-            AppEvent::CreateToolCatalog(name) => self.create_tool_catalog(&name),
-            AppEvent::DeleteToolCatalog(name) => self.delete_tool_catalog(&name),
-            AppEvent::RenameToolCatalog { old, new } => self.rename_tool_catalog(&old, &new),
-            AppEvent::DedupeToolCatalog(name) => self.dedupe_tool_catalog(&name),
-
-            // --- Machine Library modal (snapshot model) ---
-            AppEvent::OpenMachineLibrary => {
-                self.state.close_modals_for_exclusivity();
-                self.state.machine_library_open = true;
-            }
-            AppEvent::CloseMachineLibrary => self.state.machine_library_open = false,
             AppEvent::ImportMachineFromLibrary(name) => self.import_machine_from_library(&name),
-            AppEvent::SaveMachineToLibrary(name) => self.save_machine_to_library(&name),
-            AppEvent::DeleteMachineFromLibrary(name) => self.delete_machine_from_library(&name),
-            AppEvent::RenameMachineInLibrary { old, new } => {
-                self.rename_machine_in_library(&old, &new);
-            }
 
             AppEvent::AddSetup => self.handle_add_setup(),
             AppEvent::SetupTwoSided => self.handle_setup_two_sided(),
-            AppEvent::RemoveSetup(setup_id) => self.handle_remove_setup(setup_id),
             AppEvent::RenameSetup(setup_id, name) => self.handle_rename_setup(setup_id, name),
             AppEvent::AddFixture(setup_id) => self.handle_add_fixture(setup_id),
             AppEvent::RemoveFixture(setup_id, fixture_id) => {
@@ -128,45 +98,15 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::RemoveToolpath(tp_id) => self.handle_remove_toolpath(tp_id),
             AppEvent::GenerateToolpath(tp_id) => self.submit_toolpath_compute(tp_id),
             AppEvent::GenerateAll => self.handle_generate_all(),
-            AppEvent::ToggleToolpathVisibility(tp_id) => {
-                if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
-                    rt.visible = !rt.visible;
-                    self.pending_upload = true;
-                }
-            }
-            AppEvent::ToggleIsolateToolpath => self.handle_toggle_isolate_toolpath(),
-            AppEvent::ClearIsolation => {
-                self.state.viewport.isolate_toolpath = None;
-                self.pending_upload = true;
-            }
-            AppEvent::InspectToolpathInSimulation(tp_id) => {
-                self.handle_inspect_toolpath_in_simulation(tp_id);
-            }
 
             // --- Simulation events ---
             AppEvent::RunSimulation => {
                 let _submitted = self.run_simulation_with_all();
             }
             AppEvent::RunSimulationWith(ids) => self.run_simulation_with_ids(&ids),
-            AppEvent::ToggleSimPlayback => {
-                self.state.simulation.playback.playing = !self.state.simulation.playback.playing;
-            }
-            AppEvent::ResetSimulation => self.handle_reset_simulation(),
-            AppEvent::SimJumpToMove(move_idx) => self.handle_sim_jump_to_move(move_idx),
-            AppEvent::SimStepForward => self.handle_sim_step_forward(),
-            AppEvent::SimStepBackward => self.handle_sim_step_backward(),
-            AppEvent::SimJumpToStart => self.handle_sim_jump_to_start(),
-            AppEvent::SimJumpToEnd => self.handle_sim_jump_to_end(),
-            AppEvent::SimJumpToOpStart(idx) => self.handle_sim_jump_to_op_start(idx),
-            AppEvent::SimJumpToOpEnd(idx) => self.handle_sim_jump_to_op_end(idx),
 
             // --- Compute / check events ---
             AppEvent::RunCollisionCheck => self.request_collision_check(),
-            AppEvent::CancelCompute => self.compute.cancel_all(),
-            AppEvent::CancelToolpathGeneration => {
-                self.compute
-                    .cancel_lane(crate::compute::ComputeLane::Toolpath);
-            }
 
             // --- Face selection ---
             AppEvent::ToggleFaceSelection {
@@ -247,18 +187,6 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::OpenOptimizeModal(toolpath_id) => {
                 self.open_optimize_modal(toolpath_id);
             }
-            AppEvent::CloseOptimizeModal => {
-                // If a worker is still running, cancel it. The result
-                // will arrive on the next drain; the drain handler
-                // sees the modal is None and discards the outcome but
-                // still restores the session — `is_optimizing` flips
-                // back to false there.
-                if self.state.is_optimizing {
-                    self.compute
-                        .cancel_lane(crate::compute::ComputeLane::Optimize);
-                }
-                self.state.optimize_modal = None;
-            }
             AppEvent::ApplyOptimizeCandidate {
                 toolpath_id,
                 candidate_index,
@@ -277,27 +205,8 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::OpenOptimizeProject => {
                 self.open_optimize_project();
             }
-            AppEvent::CloseOptimizeProject => {
-                if self.state.is_optimizing {
-                    self.compute
-                        .cancel_lane(crate::compute::ComputeLane::Optimize);
-                }
-                self.state.optimize_project = None;
-            }
-            AppEvent::ToggleOptimizeProjectRow(idx) => {
-                if let Some(view) = self.state.optimize_project.as_mut()
-                    && let Some(slot) = view.row_selected.get_mut(idx)
-                {
-                    *slot = !*slot;
-                }
-            }
             AppEvent::ApplyOptimizeProject => {
                 self.apply_optimize_project();
-            }
-
-            // --- Multi-tool finishing planner (Phase U) ---
-            AppEvent::OpenMultitoolPlanner => {
-                self.open_multitool_planner();
             }
             AppEvent::PreviewMultitoolPlan => {
                 self.request_multitool_preview();
@@ -305,21 +214,10 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ApplyMultitoolPlan => {
                 self.apply_multitool_planner();
             }
-            AppEvent::CloseMultitoolPlanner => {
-                self.close_multitool_planner();
-            }
 
             // --- Feeds & Speeds modal (redesigned Feeds tab) ---
             AppEvent::OpenFeedsModal(toolpath_id) => {
                 self.open_feeds_modal(toolpath_id);
-            }
-            AppEvent::CloseFeedsModal => {
-                self.state.feeds_modal = None;
-            }
-            AppEvent::SetFeedsModalMode(mode) => {
-                if let Some(modal) = self.state.feeds_modal.as_mut() {
-                    modal.mode = mode;
-                }
             }
             AppEvent::SetSpindleStrategy(strategy) => {
                 // Project-level setting; updates both the session
@@ -331,11 +229,6 @@ impl<B: ComputeBackend> AppController<B> {
                     self.state.session.post_mut().spindle_strategy = strategy;
                     self.state.gui.post.spindle_strategy = strategy;
                     self.state.gui.mark_edited();
-                }
-            }
-            AppEvent::ToggleFeedsProvenance => {
-                if let Some(modal) = self.state.feeds_modal.as_mut() {
-                    modal.show_provenance = !modal.show_provenance;
                 }
             }
             AppEvent::ApplyFeedsAll(toolpath_id) => {
@@ -354,46 +247,8 @@ impl<B: ComputeBackend> AppController<B> {
             } => {
                 self.apply_feeds_explore(toolpath_id, feed_mm_min, rpm);
             }
-            AppEvent::SetFeedsProjectSort(sort) => {
-                if let Some(modal) = self.state.feeds_modal.as_mut() {
-                    modal.project_sort = sort;
-                }
-            }
-            AppEvent::SetFeedsExplore(explore) => {
-                if let Some(modal) = self.state.feeds_modal.as_mut() {
-                    modal.explore = explore;
-                }
-            }
-            AppEvent::ToggleFeedsProjectRow(id) => {
-                if let Some(modal) = self.state.feeds_modal.as_mut()
-                    && !modal.project_selected.insert(id)
-                {
-                    modal.project_selected.remove(&id);
-                }
-            }
             AppEvent::ApplyFeedsProjectSelected => {
                 self.apply_feeds_project_selected();
-            }
-            AppEvent::SetFeedsProjectScatter(show) => {
-                if let Some(modal) = self.state.feeds_modal.as_mut() {
-                    modal.project_show_scatter = show;
-                }
-            }
-            AppEvent::SetFeedsProjectSelectAll(select_all) => {
-                if let Some(modal) = self.state.feeds_modal.as_mut() {
-                    if select_all {
-                        modal.project_selected = self
-                            .state
-                            .session
-                            .toolpath_configs()
-                            .iter()
-                            .filter(|tc| tc.enabled)
-                            .map(|tc| tc.id)
-                            .collect();
-                    } else {
-                        modal.project_selected.clear();
-                    }
-                }
             }
 
             AppEvent::SetGeneratorTraceCaptureAll(enabled) => {
@@ -403,24 +258,13 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             // --- Pass-through events handled elsewhere ---
-            AppEvent::ExportGcode
-            | AppEvent::ExportCombinedGcode
+            AppEvent::ExportCombinedGcode
             | AppEvent::ExportSetupGcode(_)
             | AppEvent::ExportGcodeConfirmed
             | AppEvent::ExportSetupSheet
             | AppEvent::ExportSvgPreview
             | AppEvent::SaveJob
             | AppEvent::OpenJob
-            | AppEvent::SetViewPreset(_)
-            | AppEvent::ToggleProjection
-            | AppEvent::PreviewOrientation(_)
-            | AppEvent::ResetView
-            | AppEvent::SwitchWorkspace(_)
-            | AppEvent::ShowShortcuts
-            | AppEvent::SetToolLoadOverride { .. }
-            | AppEvent::SetStaleExportPolicy(_)
-            | AppEvent::OpenExportWizard
-            | AppEvent::CloseExportWizard
             | AppEvent::WizardSetStep(_)
             | AppEvent::WizardSetPost(_)
             | AppEvent::WizardSetOutputLayout(_)
@@ -433,8 +277,192 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::WizardSetToolChangeMode(_)
             | AppEvent::WizardSetSetupPauseMessage { .. }
             | AppEvent::WizardSetAllowValidatorErrors(_)
-            | AppEvent::WizardSave
-            | AppEvent::Quit => {}
+            | AppEvent::WizardSave => {}
+
+            // --- View commands (WP13) ---
+            //
+            // Every arm here writes the VIEW and never `ProjectSession`.
+            // `crates/rs_cam_viz/tests/command_surface_completeness.rs`
+            // measures that, with two named exemptions.
+            AppEvent::Ui(cmd) => match cmd {
+                // --- Tree / selection events ---
+                UiCommand::Select(ref selection) => self.handle_select(selection),
+                // --- Tool Library modal ---
+                UiCommand::OpenToolLibrary(NoArgs) => self.open_tool_library(),
+                UiCommand::CloseToolLibrary(NoArgs) => self.state.tool_library_modal = None,
+                UiCommand::DeleteLibraryTool(DeleteLibraryToolArgs { catalog, index }) => {
+                    self.delete_library_tool(&catalog, index);
+                }
+                UiCommand::UpdateLibraryTool(UpdateLibraryToolArgs {
+                    catalog,
+                    index,
+                    tool,
+                }) => self.update_library_tool(&catalog, index, *tool),
+                UiCommand::MoveLibraryTool(MoveLibraryToolArgs { from, index, to }) => {
+                    self.move_library_tool(&from, index, &to);
+                }
+                UiCommand::CreateToolCatalog(name) => self.create_tool_catalog(&name),
+                UiCommand::DeleteToolCatalog(name) => self.delete_tool_catalog(&name),
+                UiCommand::RenameToolCatalog(RenameToolCatalogArgs { old, new }) => {
+                    self.rename_tool_catalog(&old, &new);
+                }
+                UiCommand::DedupeToolCatalog(name) => self.dedupe_tool_catalog(&name),
+                // --- Machine Library modal (snapshot model) ---
+                UiCommand::OpenMachineLibrary(NoArgs) => {
+                    self.state.close_modals_for_exclusivity();
+                    self.state.machine_library_open = true;
+                }
+                UiCommand::CloseMachineLibrary(NoArgs) => self.state.machine_library_open = false,
+                UiCommand::SaveMachineToLibrary(name) => self.save_machine_to_library(&name),
+                UiCommand::DeleteMachineFromLibrary(name) => {
+                    self.delete_machine_from_library(&name);
+                }
+                UiCommand::RenameMachineInLibrary(RenameMachineInLibraryArgs { old, new }) => {
+                    self.rename_machine_in_library(&old, &new);
+                }
+                UiCommand::ToggleToolpathVisibility(tp_id) => {
+                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
+                        rt.visible = !rt.visible;
+                        self.pending_upload = true;
+                    }
+                }
+                UiCommand::ToggleIsolateToolpath(NoArgs) => self.handle_toggle_isolate_toolpath(),
+                UiCommand::ClearIsolation(NoArgs) => {
+                    self.state.viewport.isolate_toolpath = None;
+                    self.pending_upload = true;
+                }
+                UiCommand::InspectToolpathInSimulation(tp_id) => {
+                    self.handle_inspect_toolpath_in_simulation(tp_id);
+                }
+                UiCommand::ToggleSimPlayback(NoArgs) => {
+                    self.state.simulation.playback.playing =
+                        !self.state.simulation.playback.playing;
+                }
+                UiCommand::ResetSimulation(NoArgs) => self.handle_reset_simulation(),
+                UiCommand::SimJumpToMove(SimJumpToMoveArgs { move_index }) => {
+                    self.handle_sim_jump_to_move(move_index);
+                }
+                UiCommand::SimStepForward(NoArgs) => self.handle_sim_step_forward(),
+                UiCommand::SimStepBackward(NoArgs) => self.handle_sim_step_backward(),
+                UiCommand::SimJumpToStart(NoArgs) => self.handle_sim_jump_to_start(),
+                UiCommand::SimJumpToEnd(NoArgs) => self.handle_sim_jump_to_end(),
+                UiCommand::SimJumpToOpStart(SimJumpToOpStartArgs { boundary_index }) => {
+                    self.handle_sim_jump_to_op_start(boundary_index);
+                }
+                UiCommand::SimJumpToOpEnd(SimJumpToOpEndArgs { boundary_index }) => {
+                    self.handle_sim_jump_to_op_end(boundary_index);
+                }
+                UiCommand::CancelCompute(NoArgs) => self.compute.cancel_all(),
+                UiCommand::CancelToolpathGeneration(NoArgs) => {
+                    self.compute
+                        .cancel_lane(crate::compute::ComputeLane::Toolpath);
+                }
+                UiCommand::CloseOptimizeModal(NoArgs) => {
+                    // If a worker is still running, cancel it. The result
+                    // will arrive on the next drain; the drain handler
+                    // sees the modal is None and discards the outcome but
+                    // still restores the session — `is_optimizing` flips
+                    // back to false there.
+                    if self.state.is_optimizing {
+                        self.compute
+                            .cancel_lane(crate::compute::ComputeLane::Optimize);
+                    }
+                    self.state.optimize_modal = None;
+                }
+                UiCommand::CloseOptimizeProject(NoArgs) => {
+                    if self.state.is_optimizing {
+                        self.compute
+                            .cancel_lane(crate::compute::ComputeLane::Optimize);
+                    }
+                    self.state.optimize_project = None;
+                }
+                UiCommand::ToggleOptimizeProjectRow(idx) => {
+                    if let Some(view) = self.state.optimize_project.as_mut()
+                        && let Some(slot) = view.row_selected.get_mut(idx)
+                    {
+                        *slot = !*slot;
+                    }
+                }
+                // --- Multi-tool finishing planner (Phase U) ---
+                UiCommand::OpenMultitoolPlanner(NoArgs) => {
+                    self.open_multitool_planner();
+                }
+                UiCommand::CloseMultitoolPlanner(NoArgs) => {
+                    self.close_multitool_planner();
+                }
+                UiCommand::CloseFeedsModal(NoArgs) => {
+                    self.state.feeds_modal = None;
+                }
+                UiCommand::SetFeedsModalMode(mode) => {
+                    if let Some(modal) = self.state.feeds_modal.as_mut() {
+                        modal.mode = mode;
+                    }
+                }
+                UiCommand::ToggleFeedsProvenance(NoArgs) => {
+                    if let Some(modal) = self.state.feeds_modal.as_mut() {
+                        modal.show_provenance = !modal.show_provenance;
+                    }
+                }
+                UiCommand::SetFeedsProjectSort(sort) => {
+                    if let Some(modal) = self.state.feeds_modal.as_mut() {
+                        modal.project_sort = sort;
+                    }
+                }
+                UiCommand::SetFeedsExplore(explore) => {
+                    if let Some(modal) = self.state.feeds_modal.as_mut() {
+                        modal.explore = explore;
+                    }
+                }
+                UiCommand::ToggleFeedsProjectRow(id) => {
+                    if let Some(modal) = self.state.feeds_modal.as_mut()
+                        && !modal.project_selected.insert(id)
+                    {
+                        modal.project_selected.remove(&id);
+                    }
+                }
+                UiCommand::SetFeedsProjectScatter(show) => {
+                    if let Some(modal) = self.state.feeds_modal.as_mut() {
+                        modal.project_show_scatter = show;
+                    }
+                }
+                UiCommand::SetFeedsProjectSelectAll(select_all) => {
+                    if let Some(modal) = self.state.feeds_modal.as_mut() {
+                        if select_all {
+                            modal.project_selected = self
+                                .state
+                                .session
+                                .toolpath_configs()
+                                .iter()
+                                .filter(|tc| tc.enabled)
+                                .map(|tc| tc.id)
+                                .collect();
+                        } else {
+                            modal.project_selected.clear();
+                        }
+                    }
+                }
+                UiCommand::ExportGcode(NoArgs) => {}
+                UiCommand::SetViewPreset(_) => {}
+                UiCommand::ToggleProjection(NoArgs) => {}
+                UiCommand::PreviewOrientation(_) => {}
+                UiCommand::ResetView(NoArgs) => {}
+                UiCommand::SwitchWorkspace(_) => {}
+                UiCommand::ShowShortcuts(NoArgs) => {}
+                UiCommand::SetToolLoadOverride(SetToolLoadOverrideArgs { .. }) => {}
+                UiCommand::SetStaleExportPolicy(_) => {}
+                UiCommand::OpenExportWizard(NoArgs) => {}
+                UiCommand::CloseExportWizard(NoArgs) => {}
+                UiCommand::Quit(NoArgs) => {}
+                // Handled on the MCP request path alone: no GUI control
+                // emits one, and no keyboard route reaches one.
+                UiCommand::SimScrubToolpath(_)
+                | UiCommand::SimJumpToToolpathStart(_)
+                | UiCommand::SimJumpToToolpathEnd(_)
+                | UiCommand::ScreenshotSimulation(_)
+                | UiCommand::ScreenshotToolpath(_)
+                | UiCommand::ScreenshotGui(_)
+                | UiCommand::SetUiView(_) => {}
+            },
         }
     }
 

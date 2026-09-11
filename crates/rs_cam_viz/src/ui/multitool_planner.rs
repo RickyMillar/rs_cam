@@ -43,6 +43,7 @@ use crate::state::multitool_planner::{
     MAX_PLAN_CELL_MM, MIN_PLAN_CELL_MM, MultitoolPlannerState, MultitoolPreviewStatus,
     PREVIEW_DEBOUNCE,
 };
+use crate::ui_command::{NoArgs, UiCommand};
 
 /// Draw the planner dialog if it is open.
 pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent>) {
@@ -66,7 +67,7 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent
         });
 
     if !still_open {
-        events.push(AppEvent::CloseMultitoolPlanner);
+        events.push(AppEvent::Ui(UiCommand::CloseMultitoolPlanner(NoArgs)));
     }
 
     // Debounced re-preview. An island-only dial re-cuts the SAME memoised map,
@@ -827,7 +828,7 @@ fn draw_actions(
 
         let close_btn = ui.button("Close");
         if close_btn.clicked() {
-            events.push(AppEvent::CloseMultitoolPlanner);
+            events.push(AppEvent::Ui(UiCommand::CloseMultitoolPlanner(NoArgs)));
         }
         close_btn.on_hover_text(
             "Leaves the project untouched. Your ladder and dials are kept for next time.",

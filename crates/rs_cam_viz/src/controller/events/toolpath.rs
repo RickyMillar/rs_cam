@@ -3,6 +3,7 @@ use crate::state::Workspace;
 use crate::state::selection::Selection;
 use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
+use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
 
 use super::super::AppController;
 
@@ -449,8 +450,9 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn handle_inspect_toolpath_in_simulation(&mut self, tp_id: ToolpathId) {
-        self.events
-            .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+        self.events.push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+            Workspace::Simulation,
+        )));
         if let Some(boundary) = self
             .state
             .simulation
@@ -459,7 +461,9 @@ impl<B: ComputeBackend> AppController<B> {
             .find(|boundary| boundary.id == tp_id)
         {
             self.events
-                .push(AppEvent::SimJumpToMove(boundary.start_move));
+                .push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                    move_index: boundary.start_move,
+                })));
         } else {
             let has_result = self
                 .state

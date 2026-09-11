@@ -18,6 +18,10 @@
 use super::{AppEvent, theme};
 use crate::state::AppState;
 use crate::state::job::{ToolConfig, ToolType};
+use crate::ui_command::{
+    DeleteLibraryToolArgs, MoveLibraryToolArgs, NoArgs, RenameToolCatalogArgs, UiCommand,
+    UpdateLibraryToolArgs,
+};
 
 /// All ephemeral view state for the modal, stashed in egui temp memory.
 #[derive(Debug, Clone, Default)]
@@ -51,7 +55,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         .show(ctx, |ui| draw_content(ui, modal, events));
 
     if !still_open {
-        events.push(AppEvent::CloseToolLibrary);
+        events.push(AppEvent::Ui(UiCommand::CloseToolLibrary(NoArgs)));
     }
 }
 
@@ -144,7 +148,7 @@ fn draw_catalog_panel(
             .add_enabled(!name.is_empty(), egui::Button::new("Create"))
             .clicked()
         {
-            events.push(AppEvent::CreateToolCatalog(name));
+            events.push(AppEvent::Ui(UiCommand::CreateToolCatalog(name)));
             view.new_catalog_name.clear();
         }
     });
@@ -191,10 +195,12 @@ fn draw_catalog_panel(
                 .add_enabled(can_rename, egui::Button::new("Rename"))
                 .clicked()
             {
-                events.push(AppEvent::RenameToolCatalog {
-                    old: cat.clone(),
-                    new: new_name,
-                });
+                events.push(AppEvent::Ui(UiCommand::RenameToolCatalog(
+                    RenameToolCatalogArgs {
+                        old: cat.clone(),
+                        new: new_name,
+                    },
+                )));
             }
         });
         ui.horizontal(|ui| {
@@ -203,14 +209,14 @@ fn draw_catalog_panel(
                 .on_hover_text("Remove duplicate tools (same geometry), keeping the first.")
                 .clicked()
             {
-                events.push(AppEvent::DedupeToolCatalog(cat.clone()));
+                events.push(AppEvent::Ui(UiCommand::DedupeToolCatalog(cat.clone())));
             }
             if view.confirm_delete_catalog {
                 if ui
                     .button(egui::RichText::new("Confirm delete catalog").color(theme::ERROR))
                     .clicked()
                 {
-                    events.push(AppEvent::DeleteToolCatalog(cat.clone()));
+                    events.push(AppEvent::Ui(UiCommand::DeleteToolCatalog(cat.clone())));
                     view.selected_catalog = None;
                     view.selected_index = None;
                     view.confirm_delete_catalog = false;
@@ -386,10 +392,12 @@ fn draw_detail_panel(
                     .button(egui::RichText::new("Confirm delete").color(theme::ERROR))
                     .clicked()
                 {
-                    events.push(AppEvent::DeleteLibraryTool {
-                        catalog: cat.clone(),
-                        index: idx,
-                    });
+                    events.push(AppEvent::Ui(UiCommand::DeleteLibraryTool(
+                        DeleteLibraryToolArgs {
+                            catalog: cat.clone(),
+                            index: idx,
+                        },
+                    )));
                     view.selected_index = None;
                     view.confirm_delete_tool = false;
                 }
@@ -428,11 +436,13 @@ fn draw_detail_panel(
                     .add_enabled(can_move, egui::Button::new("Move"))
                     .clicked()
                 {
-                    events.push(AppEvent::MoveLibraryTool {
-                        from: cat.clone(),
-                        index: idx,
-                        to: view.move_target.clone(),
-                    });
+                    events.push(AppEvent::Ui(UiCommand::MoveLibraryTool(
+                        MoveLibraryToolArgs {
+                            from: cat.clone(),
+                            index: idx,
+                            to: view.move_target.clone(),
+                        },
+                    )));
                     view.selected_index = None;
                     view.move_target.clear();
                 }
@@ -535,11 +545,13 @@ fn draw_edit_form(
     });
 
     if save {
-        events.push(AppEvent::UpdateLibraryTool {
-            catalog: cat.to_owned(),
-            index: idx,
-            tool: Box::new(draft.clone()),
-        });
+        events.push(AppEvent::Ui(UiCommand::UpdateLibraryTool(
+            UpdateLibraryToolArgs {
+                catalog: cat.to_owned(),
+                index: idx,
+                tool: Box::new(draft.clone()),
+            },
+        )));
         view.editing = false;
         view.draft = None;
     } else if cancel {

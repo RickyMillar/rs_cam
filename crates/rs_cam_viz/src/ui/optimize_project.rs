@@ -19,6 +19,7 @@ use super::components::FreshnessGate;
 use super::optimize_modal::narrative_prose;
 use super::{AppEvent, theme};
 use crate::state::{AppState, OptimizeProjectState, OptimizeProjectStatus};
+use crate::ui_command::{NoArgs, UiCommand};
 
 /// Draw the Optimize-project rollup if `state.optimize_project` is set.
 pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -37,7 +38,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         });
 
     if !still_open {
-        events.push(AppEvent::CloseOptimizeProject);
+        events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
     }
 }
 
@@ -87,7 +88,7 @@ fn draw_loading(ui: &mut egui::Ui, events: &mut Vec<AppEvent>) {
     );
     ui.add_space(8.0);
     if ui.button("Cancel").clicked() {
-        events.push(AppEvent::CloseOptimizeProject);
+        events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
     }
 }
 
@@ -101,7 +102,7 @@ fn draw_failed(ui: &mut egui::Ui, msg: &str, events: &mut Vec<AppEvent>) {
     ui.label(egui::RichText::new(msg).small());
     ui.add_space(8.0);
     if ui.button("Close").clicked() {
-        events.push(AppEvent::CloseOptimizeProject);
+        events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
     }
 }
 
@@ -129,7 +130,7 @@ fn draw_ready(
         );
         ui.add_space(8.0);
         if ui.button("Close").clicked() {
-            events.push(AppEvent::CloseOptimizeProject);
+            events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
         }
         return;
     }
@@ -231,7 +232,7 @@ fn draw_ready(
             events.push(AppEvent::ApplyOptimizeProject);
         }
         if ui.button("Close").clicked() {
-            events.push(AppEvent::CloseOptimizeProject);
+            events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
         }
     });
 }
@@ -364,7 +365,7 @@ fn draw_apply_now_row(
     let mut checked = row_selected.get(row_idx).copied().unwrap_or(false);
     let response = ui.add(egui::Checkbox::new(&mut checked, ""));
     if response.clicked() {
-        events.push(AppEvent::ToggleOptimizeProjectRow(row_idx));
+        events.push(AppEvent::Ui(UiCommand::ToggleOptimizeProjectRow(row_idx)));
     }
     ui.label(egui::RichText::new(name).small());
     if let (Some(b), Some(rec)) = (outcome.candidates.first(), outcome.first_safe()) {
@@ -574,7 +575,7 @@ fn draw_reconciling(
 
     ui.add_space(8.0);
     if ui.button("Close").clicked() {
-        events.push(AppEvent::CloseOptimizeProject);
+        events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
     }
 }
 
@@ -600,7 +601,7 @@ fn draw_reconciled(
 
     ui.add_space(8.0);
     if ui.button("Close").clicked() {
-        events.push(AppEvent::CloseOptimizeProject);
+        events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
     }
 }
 

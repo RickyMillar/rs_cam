@@ -15,6 +15,7 @@ use crate::state::job::{SetupId, ToolConfig, ToolId, ToolType};
 use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{Adaptive3dConfig, OperationConfig, ToolpathId, ToolpathResult};
+use crate::ui_command::{NoArgs, SimJumpToMoveArgs, UiCommand};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::{
     AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathConfig,
@@ -143,20 +144,23 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
         prior_stocks: std::collections::HashMap::new(),
     });
 
-    controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
-        ToolpathId(0),
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(
+        UiCommand::InspectToolpathInSimulation(ToolpathId(0)),
     ));
     let events = controller.drain_events();
 
     assert!(events.iter().any(|event| matches!(
         event,
-        crate::ui::AppEvent::SwitchWorkspace(crate::state::Workspace::Simulation)
+        crate::ui::AppEvent::Ui(UiCommand::SwitchWorkspace(
+            crate::state::Workspace::Simulation
+        ))
     )));
-    assert!(
-        events
-            .iter()
-            .any(|event| matches!(event, crate::ui::AppEvent::SimJumpToMove(4)))
-    );
+    assert!(events.iter().any(|event| matches!(
+        event,
+        crate::ui::AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+            move_index: 4
+        },))
+    )));
     assert!(
         controller
             .state
@@ -171,14 +175,16 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
 fn inspect_toolpath_in_simulation_queues_targeted_run_when_results_missing() {
     let mut controller = sample_controller();
 
-    controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
-        ToolpathId(0),
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(
+        UiCommand::InspectToolpathInSimulation(ToolpathId(0)),
     ));
     let events = controller.drain_events();
 
     assert!(events.iter().any(|event| matches!(
         event,
-        crate::ui::AppEvent::SwitchWorkspace(crate::state::Workspace::Simulation)
+        crate::ui::AppEvent::Ui(UiCommand::SwitchWorkspace(
+            crate::state::Workspace::Simulation
+        ))
     )));
     assert!(events.iter().any(|event| matches!(
         event,
@@ -769,7 +775,7 @@ fn reset_simulation_clears_results_and_checks() {
 
     assert!(controller.state.simulation.has_results());
 
-    controller.handle_internal_event(crate::ui::AppEvent::ResetSimulation);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
 
     assert!(
         !controller.state.simulation.has_results(),
@@ -830,7 +836,7 @@ fn playback_defaults_after_reset() {
     controller.state.simulation.playback.playing = true;
     controller.state.simulation.playback.speed = 9999.0;
 
-    controller.handle_internal_event(crate::ui::AppEvent::ResetSimulation);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
 
     assert_eq!(controller.state.simulation.playback.current_move, 0);
     assert!(!controller.state.simulation.playback.playing);
@@ -1026,15 +1032,15 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
 // ---------------------------------------------------------------------------
 // MCP `cancel_generation`: cancel must target only the toolpath lane
 // (leaving Analysis/Optimize untouched, unlike the GUI's "cancel
-// everything" `AppEvent::CancelCompute`), and a cancelled generation must
+// everything" `UiCommand::CancelCompute`), and a cancelled generation must
 // resolve any pending MCP `generate_toolpath` waiter instead of leaving it
 // hanging — mirroring the fail-hard-at-submit fix immediately above, but
 // for the cancel-in-flight path instead of the reject-before-submit path.
 // ---------------------------------------------------------------------------
 
-/// `AppEvent::CancelToolpathGeneration` (issued by MCP's `cancel_generation`
+/// `UiCommand::CancelToolpathGeneration` (issued by MCP's `cancel_generation`
 /// tool) must cancel only `ComputeLane::Toolpath`. Reusing the GUI's
-/// existing `AppEvent::CancelCompute` (which cancels Toolpath + Analysis +
+/// existing `UiCommand::CancelCompute` (which cancels Toolpath + Analysis +
 /// Optimize) would abort an unrelated in-flight simulation or optimize run
 /// just because an agent wanted to abort a runaway generate.
 #[test]
@@ -1044,7 +1050,9 @@ fn cancel_toolpath_generation_event_only_cancels_toolpath_lane() {
     controller.compute.analysis_lane.state = LaneState::Running;
     controller.compute.optimize_lane.state = LaneState::Running;
 
-    controller.handle_internal_event(crate::ui::AppEvent::CancelToolpathGeneration);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(
+        UiCommand::CancelToolpathGeneration(NoArgs),
+    ));
 
     assert_eq!(
         controller.compute.toolpath_lane.state,
@@ -1717,20 +1725,23 @@ fn add_setup_and_remove_setup_lifecycle() {
     let new_setup_id = SetupId(controller.state.session.list_setups()[1].id);
     assert_ne!(original_setup_id, new_setup_id);
 
-    // Remove the second setup
-    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(new_setup_id));
+    // Remove the second setup through the SESSION door. WP13 deleted
+    // `AppEvent::RemoveSetup`: no control emitted it, no MCP tool named
+    // it and no registry row declared it, so no operator path reached
+    // the handler that used to stand here.
+    let effects = controller
+        .state
+        .session
+        .remove_setup(1)
+        .expect("the second setup holds no toolpath");
+    assert!(
+        !effects.simulation_cleared,
+        "a setup removal clears no simulation the project never ran"
+    );
     assert_eq!(controller.state.session.list_setups().len(), 1);
     assert_eq!(
         SetupId(controller.state.session.list_setups()[0].id),
         original_setup_id
-    );
-
-    // Min 1 setup enforced: try to remove the last one
-    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(original_setup_id));
-    assert_eq!(
-        controller.state.session.list_setups().len(),
-        1,
-        "Cannot remove the last setup — minimum 1 enforced"
     );
 }
 
@@ -1817,7 +1828,7 @@ fn reset_simulation_cancels_analysis_lane() {
         prior_stocks: std::collections::HashMap::new(),
     });
 
-    controller.handle_internal_event(crate::ui::AppEvent::ResetSimulation);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
 
     assert_eq!(
         controller.compute.analysis_lane.state,
@@ -1897,39 +1908,6 @@ fn delete_selected_tool_clears_selection() {
 }
 
 #[test]
-fn delete_setup_containing_selected_fixture_clears_selection() {
-    let mut controller = AppController::with_backend(ScriptedBackend::new());
-
-    // Add a second setup so we can delete it (min 1 enforced)
-    controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    assert_eq!(controller.state.session.list_setups().len(), 2);
-    let second_setup_id = SetupId(controller.state.session.list_setups()[1].id);
-
-    // Add a fixture to the second setup
-    controller.handle_internal_event(crate::ui::AppEvent::AddFixture(second_setup_id));
-    let fixture_id = controller.state.session.list_setups()[1].fixtures[0].id;
-
-    // Select the fixture
-    controller.handle_internal_event(crate::ui::AppEvent::Select(Selection::Fixture(
-        second_setup_id,
-        fixture_id,
-    )));
-    assert_eq!(
-        controller.state.selection,
-        Selection::Fixture(second_setup_id, fixture_id)
-    );
-
-    // Remove the setup containing the fixture
-    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(second_setup_id));
-
-    assert_eq!(
-        controller.state.selection,
-        Selection::None,
-        "Selection should be cleared when setup containing selected fixture is deleted"
-    );
-}
-
-#[test]
 fn delete_selected_toolpath_clears_selection() {
     let mut controller = sample_controller();
     let tp_id = ToolpathId(0);
@@ -1967,38 +1945,6 @@ fn delete_unselected_toolpath_preserves_selection() {
         controller.state.selection,
         Selection::Toolpath(ToolpathId(0)),
         "Selection should be preserved when a different toolpath is deleted"
-    );
-}
-
-#[test]
-fn delete_setup_with_selected_keep_out_clears_selection() {
-    let mut controller = AppController::with_backend(ScriptedBackend::new());
-
-    // Add a second setup
-    controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    let second_setup_id = SetupId(controller.state.session.list_setups()[1].id);
-
-    // Add a keep-out zone to the second setup
-    controller.handle_internal_event(crate::ui::AppEvent::AddKeepOut(second_setup_id));
-    let keep_out_id = controller.state.session.list_setups()[1].keep_out_zones[0].id;
-
-    // Select the keep-out
-    controller.handle_internal_event(crate::ui::AppEvent::Select(Selection::KeepOut(
-        second_setup_id,
-        keep_out_id,
-    )));
-    assert_eq!(
-        controller.state.selection,
-        Selection::KeepOut(second_setup_id, keep_out_id)
-    );
-
-    // Remove the setup
-    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(second_setup_id));
-
-    assert_eq!(
-        controller.state.selection,
-        Selection::None,
-        "Selection should be cleared when setup containing selected keep-out is deleted"
     );
 }
 
@@ -3672,7 +3618,9 @@ fn opening_the_planner_emits_nothing_and_pre_ticks_nothing() {
     let mut controller = planner_controller();
     let before = project_fingerprint(&controller);
 
-    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::OpenMultitoolPlanner(
+        NoArgs,
+    )));
 
     let planner = controller
         .state
@@ -3704,7 +3652,9 @@ fn opening_the_planner_emits_nothing_and_pre_ticks_nothing() {
 #[test]
 fn the_dialogs_dials_reach_the_submitted_spec() {
     let mut controller = planner_controller();
-    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::OpenMultitoolPlanner(
+        NoArgs,
+    )));
     tick_ball_tools(&mut controller);
     {
         let planner = controller.state.multitool_planner.as_mut().expect("open");
@@ -3766,7 +3716,9 @@ fn the_dialogs_dials_reach_the_submitted_spec() {
 fn vetoing_the_planner_leaves_the_project_alone_and_drops_the_overlay() {
     let mut controller = planner_controller();
     let before = project_fingerprint(&controller);
-    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::OpenMultitoolPlanner(
+        NoArgs,
+    )));
     tick_ball_tools(&mut controller);
     controller
         .state
@@ -3776,7 +3728,9 @@ fn vetoing_the_planner_leaves_the_project_alone_and_drops_the_overlay() {
         .coarseness = 6.5;
     controller.state.viewport.show_tier_preview = true;
 
-    controller.handle_internal_event(crate::ui::AppEvent::CloseMultitoolPlanner);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::CloseMultitoolPlanner(
+        NoArgs,
+    )));
 
     assert!(!controller.state.viewport.show_tier_preview);
     assert_eq!(project_fingerprint(&controller), before);
@@ -3790,7 +3744,9 @@ fn vetoing_the_planner_leaves_the_project_alone_and_drops_the_overlay() {
     assert_eq!(planner.selected_tool_ids().len(), 2, "ticks survive");
 
     // Re-opening resumes the same dialog rather than a fresh one.
-    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::OpenMultitoolPlanner(
+        NoArgs,
+    )));
     let planner = controller.state.multitool_planner.as_ref().expect("open");
     assert!(planner.open);
     assert!((planner.coarseness - 6.5).abs() < 1e-12);
@@ -3802,7 +3758,9 @@ fn vetoing_the_planner_leaves_the_project_alone_and_drops_the_overlay() {
 #[test]
 fn applying_without_a_preview_plans_nothing() {
     let mut controller = planner_controller();
-    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::OpenMultitoolPlanner(
+        NoArgs,
+    )));
     tick_ball_tools(&mut controller);
     let before = project_fingerprint(&controller);
 
@@ -3824,7 +3782,9 @@ fn applying_without_a_preview_plans_nothing() {
 #[test]
 fn a_one_tool_ladder_never_reaches_the_worker() {
     let mut controller = planner_controller();
-    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    controller.handle_internal_event(crate::ui::AppEvent::Ui(UiCommand::OpenMultitoolPlanner(
+        NoArgs,
+    )));
     if let Some(row) = controller
         .state
         .multitool_planner

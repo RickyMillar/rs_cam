@@ -5,6 +5,7 @@ use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::{ActiveSemanticItem, SimulationState};
+use crate::ui_command::{NoArgs, SimJumpToMoveArgs, UiCommand};
 use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutSample;
@@ -183,7 +184,9 @@ fn draw_verdict_hud(
                     .hover("Toolpaths exceeding a modeled load limit.");
                 if let Some(move_idx) = first_exceed_move.filter(|_| bad > 0) {
                     if ui.add(exceeds_pill.actionable()).clicked() {
-                        events.push(AppEvent::SimJumpToMove(move_idx));
+                        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                            move_index: move_idx,
+                        })));
                     }
                 } else {
                     // Self-hide at zero like the Inspector copy (V4) — the
@@ -211,7 +214,9 @@ fn draw_verdict_hud(
                     .hover("Rapid/holder collisions detected during simulation.");
                 if let Some(move_idx) = first_collision_move.filter(|_| collision_count > 0) {
                     if ui.add(collisions_pill.actionable()).clicked() {
-                        events.push(AppEvent::SimJumpToMove(move_idx));
+                        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                            move_index: move_idx,
+                        })));
                     }
                 } else {
                     ui.add(collisions_pill);
@@ -616,7 +621,9 @@ fn draw_signal_spine(
         // per-toolpath gate detail is in the diagnostics panel's own
         // sections, which no click selects — see the `analytics_tab` note at
         // the head of this file's HUD.
-        events.push(AppEvent::SimJumpToMove(global_move));
+        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+            move_index: global_move,
+        })));
     }
 }
 
@@ -970,12 +977,16 @@ fn draw_signal_track(
                     } else if let Some((global_move, _)) =
                         nearest_in_groups(pointer.x, &group_points)
                     {
-                        events.push(AppEvent::SimJumpToMove(global_move));
+                        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                            move_index: global_move,
+                        })));
                     }
                 } else if dragged
                     && let Some((global_move, _)) = nearest_in_groups(pointer.x, &group_points)
                 {
-                    events.push(AppEvent::SimJumpToMove(global_move));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index: global_move,
+                    })));
                 }
             }
         });
@@ -1075,7 +1086,7 @@ fn draw_transport_and_scrubber(
             .on_hover_text("Step back (Left arrow)")
             .clicked()
         {
-            events.push(AppEvent::SimStepBackward);
+            events.push(AppEvent::Ui(UiCommand::SimStepBackward(NoArgs)));
         }
         let play_label = if sim.playback.playing {
             "❚❚"
@@ -1092,14 +1103,14 @@ fn draw_transport_and_scrubber(
             .on_hover_text(play_tip)
             .clicked()
         {
-            events.push(AppEvent::ToggleSimPlayback);
+            events.push(AppEvent::Ui(UiCommand::ToggleSimPlayback(NoArgs)));
         }
         if ui
             .add(egui::Button::new("►").min_size(btn_size))
             .on_hover_text("Step forward (Right arrow)")
             .clicked()
         {
-            events.push(AppEvent::SimStepForward);
+            events.push(AppEvent::Ui(UiCommand::SimStepForward(NoArgs)));
         }
 
         // Pass-jump buttons removed — the span ribbon below the boundary
@@ -1449,7 +1460,9 @@ fn draw_boundary_timeline(
         {
             sim.playback.current_move = target;
             sim.playback.playing = false;
-            events.push(AppEvent::SimJumpToMove(target));
+            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                move_index: target,
+            })));
         } else {
             let frac = ((pos.x - rect.min.x) / total_width).clamp(0.0, 1.0);
             sim.playback.current_move = (frac * total_moves) as usize;
@@ -1748,7 +1761,9 @@ fn paint_span_subband(
         } else {
             Some(sid)
         };
-        events.push(AppEvent::SimJumpToMove(jump_move));
+        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+            move_index: jump_move,
+        })));
     }
 }
 
@@ -2186,7 +2201,9 @@ fn paint_semantic_subband(
                 sim.debug.focused_hotspot = None;
                 sim.clear_pinned_semantic_item();
                 let _ = annotation_index;
-                events.push(AppEvent::SimJumpToMove(target.move_index));
+                events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                    move_index: target.move_index,
+                })));
                 return;
             }
         }
@@ -2214,7 +2231,9 @@ fn paint_semantic_subband(
                 }
                 sim.debug.focused_issue_index = None;
                 sim.debug.focused_hotspot = None;
-                events.push(AppEvent::SimJumpToMove(target.move_index));
+                events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                    move_index: target.move_index,
+                })));
                 return;
             }
         }
@@ -2247,7 +2266,9 @@ fn paint_semantic_subband(
             if let Some(target) =
                 sim.trace_target_for_item(gui, max_feed, boundary.id, item.id, false)
             {
-                events.push(AppEvent::SimJumpToMove(target.move_index));
+                events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                    move_index: target.move_index,
+                })));
             }
             return;
         }
@@ -2257,6 +2278,8 @@ fn paint_semantic_subband(
         sim.clear_pinned_semantic_item();
         sim.debug.focused_issue_index = None;
         sim.debug.focused_hotspot = None;
-        events.push(AppEvent::SimJumpToMove(global_move));
+        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+            move_index: global_move,
+        })));
     }
 }

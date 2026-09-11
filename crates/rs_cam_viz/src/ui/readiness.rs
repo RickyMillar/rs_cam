@@ -403,7 +403,9 @@ pub fn toolpath_cycle_time(
     });
     match session.query(query) {
         Ok(QueryAnswer::ToolpathCycleTime(answer)) => answer.cycle_time,
-        Err(_) => CycleTime::NONE,
+        // WP13 added a second `Query` row. A different answer to this
+        // read is not a measurement, so it reads NOT MEASURED.
+        Ok(_) | Err(_) => CycleTime::NONE,
     }
 }
 

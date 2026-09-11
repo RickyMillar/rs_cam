@@ -14,6 +14,7 @@ pub use rs_cam_mcp::response::CutTraceCaps;
 use rs_cam_core::session::CommandId;
 
 use crate::state::toolpath::ToolpathId;
+use crate::ui_command::{UiCommand, UiQuery};
 
 /// The no-argument, cheap-to-render read payloads the GUI main thread
 /// republishes once per frame so the MCP server thread can answer them while
@@ -446,15 +447,6 @@ pub enum McpRequestKind {
     ProjectSummary,
     ListToolpaths,
     ListTools,
-    /// Top level of the tool-library drill-down: list catalog names with
-    /// tool counts and the tool types each contains. Independent of the
-    /// loaded project. Dig into one with `ListToolCatalog`.
-    ListToolLibrary,
-    /// Drill into one catalog: compact tool rows with a 0-based `index`
-    /// for `AddToolFromLibrary`.
-    ListToolCatalog {
-        catalog: String,
-    },
     ListSetups,
     GetToolpathParams {
         index: usize,
@@ -462,8 +454,6 @@ pub enum McpRequestKind {
     GetOperationSchema {
         operation_type: String,
     },
-    GetDiagnostics,
-    GetToolLoadReport,
     /// PR-3: unified diagnostic list for a single toolpath. Returns
     /// the deduped [`rs_cam_core::diagnostics::Diagnostic`] vector
     /// (post-supersession) for the toolpath at the given index.
@@ -478,25 +468,6 @@ pub enum McpRequestKind {
     /// 3D op); the GUI thread is blocked for the duration.
     OptimizeToolpath {
         index: usize,
-    },
-    GetCutTrace {
-        /// Project-level toolpath **id** (not index) — the key the cut
-        /// trace itself is stored under. An unmatched id is refused.
-        toolpath_id: Option<usize>,
-        max_hotspots: Option<usize>,
-        max_issues: Option<usize>,
-        /// Optional `SpanKind` filter (snake_case, e.g. "depth_pass").
-        span_kind: Option<String>,
-        /// Optional exact `SpanId` (vec index) match.
-        span_id: Option<u32>,
-        /// Optional `DepthPass` `pass_index` payload match.
-        pass_index: Option<u32>,
-        /// When true, include the per-peck `drill_samples` array in the
-        /// response (defaults to false; verbose).
-        include_drill_samples: bool,
-        /// Checkpoint L per-array caps. `None` takes the ruled default
-        /// (`rs_cam_mcp::response`); an explicit `usize::MAX` is uncapped.
-        caps: CutTraceCaps,
     },
     GetGenerationDebugTrace {
         index: usize,
@@ -530,11 +501,6 @@ pub enum McpRequestKind {
     InspectBrepFaces {
         model_id: usize,
     },
-    /// Per-toolpath listing of rapid + holder collisions: which moves they
-    /// happen at, what XYZ position, and the local move index within the
-    /// toolpath. Localizes the project-wide `rapid_collision_count` from
-    /// run_simulation. Run simulation first.
-    InspectCollisions,
     /// Dump the structural spans (Operation, DepthPass, Region, Entry, LeadOut,
     /// LinkBridge, DressupArtifact, RapidOrderBarrier) of a generated toolpath.
     /// Lets agents inspect toolpath anatomy without parsing the raw move list.
@@ -585,11 +551,6 @@ pub enum McpRequestKind {
     AddToolpathViaGui {
         operation_type: String,
         setup_index: Option<usize>,
-    },
-    /// F3.5 — read the toast stack. Read-only: it removes nothing.
-    GetNotifications {
-        include_expired: bool,
-        limit: Option<usize>,
     },
     /// Phase O — plan a multi-tool island finishing chain. Emits k enabled
     /// `unified_finish` ops, coarse to fine, each carrying its tier's islands
@@ -643,82 +604,28 @@ pub enum McpRequestKind {
         index: usize,
     },
 
-    // ── Simulation scrubbing ───────────────────────────────────────────
-    SimJumpToMove {
-        move_index: usize,
-    },
-    SimJumpToStart,
-    SimJumpToEnd,
-    SimScrubToolpath {
-        index: usize,
-        percent: f64,
-    },
-    SimJumpToToolpathStart {
-        index: usize,
-    },
-    SimJumpToToolpathEnd {
-        index: usize,
-    },
-
-    // ── Screenshots ──────────────────────────────────────────────────
-    ScreenshotSimulation {
-        path: String,
-        width: Option<u32>,
-        height: Option<u32>,
-        checkpoint: Option<usize>,
-        include_toolpaths: Option<bool>,
-    },
-    ScreenshotToolpath {
-        index: usize,
-        path: String,
-        width: Option<u32>,
-        height: Option<u32>,
-        show_stock: Option<bool>,
-        include_rapids: Option<bool>,
-        /// P5 — shade the model surface by the per-tool reach map behind
-        /// the toolpath. Answered on the frame loop like the tier-map
-        /// preview, and like it this one can do real work: a cold map is a
-        /// full-grid drop-cutter walk, a second or two on a board-sized
-        /// terrain, free once the memo is warm.
-        reach_overlay: Option<bool>,
-    },
+    // ── Measurements over the model ──────────────────────────────────
     /// P5 — the per-tool reach map for one finishing toolpath, as
     /// numbers: an area-weighted unreachable percentage, the worst gap, a
     /// gap histogram and the grid the answer was taken on. Modifies
-    /// nothing. Same cost note as `ScreenshotToolpath`'s `reach_overlay`.
+    /// nothing. A cold map is a full-grid drop-cutter walk, a second or
+    /// two on a board-sized terrain, free once the memo is warm.
     ReachMap {
         spec: rs_cam_mcp::server::ReachMapParam,
     },
-    /// Capture the full application window (all panels) to a PNG. The
-    /// response is deferred: the GUI issues
-    /// `ViewportCommand::Screenshot` and completes the response 1-2
-    /// frames later when `egui::Event::Screenshot` arrives.
-    ScreenshotGui {
-        path: String,
-        /// Optional window resize (logical points) applied before capture.
-        /// The new size persists after the capture.
-        width: Option<f32>,
-        height: Option<f32>,
-    },
 
-    // ── UI navigation ────────────────────────────────────────────────
-    /// Drive the GUI to a specific view state (workspace, toolpath
-    /// selection, properties tab, modal) so `ScreenshotGui` can capture
-    /// any UI surface. Fields are applied in declaration order.
-    SetUiView {
-        workspace: Option<String>,
-        toolpath_index: Option<usize>,
-        properties_tab: Option<String>,
-        select: Option<String>,
-        modal: Option<String>,
-        /// Viewport overlays to switch, by registry id (P6). Applied AFTER
-        /// the workspace, because a workspace carries overlay defaults that
-        /// would otherwise land on top of these writes.
-        overlays: Option<std::collections::BTreeMap<String, bool>>,
-    },
-    /// List the reusable machines in the per-user machine library, each
-    /// with a compact spec summary. No project required.
-    ListMachineLibrary,
+    // ── View commands and view reads (WP13) ──────────────────────────
+    //
+    // Scrubbing, screenshots and UI navigation wrote the VIEW and never
+    // `ProjectSession`, and five reads answered from the view's own
+    // simulation slot or from the per-user library files. All eighteen
+    // are rows of the view registry now
+    // (`crates/rs_cam_viz/src/ui_command.rs`), and they travel in these
+    // two wrappers rather than as variants of their own.
+    /// One view command, as the wire sent it.
+    Ui(UiCommand),
+    /// One view read, as the wire sent it.
+    UiQuery(UiQuery),
 }
 
 /// One MCP mutation, as the wire sent it (WP4).

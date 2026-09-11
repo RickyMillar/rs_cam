@@ -3,6 +3,7 @@ use crate::state::AppState;
 use crate::state::job::{FaceUp, ModelId, SetupId};
 use crate::state::selection::Selection;
 use crate::ui::theme;
+use crate::ui_command::UiCommand;
 use rs_cam_core::session::SetupData;
 use rs_cam_core::session::XYDatum;
 
@@ -37,7 +38,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             .selectable_label(selected, "Edit stock dimensions")
             .clicked()
         {
-            events.push(AppEvent::Select(Selection::Stock));
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Stock)));
         }
     });
 
@@ -64,7 +65,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             .selectable_label(selected, "Edit machine & kinematics")
             .clicked()
         {
-            events.push(AppEvent::Select(Selection::Machine));
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Machine)));
         }
     });
 
@@ -105,7 +106,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 let selected = state.selection == Selection::Model(mid);
                 let response = ui.selectable_label(selected, &model.name);
                 if response.clicked() {
-                    events.push(AppEvent::Select(Selection::Model(mid)));
+                    events.push(AppEvent::Ui(UiCommand::Select(Selection::Model(mid))));
                 }
                 response.context_menu(|ui| {
                     if ui.button("Reload from disk").clicked() {
@@ -258,7 +259,7 @@ fn draw_setup_card(
         .interact(egui::Sense::click());
 
     if card_response.clicked() {
-        events.push(AppEvent::Select(Selection::Setup(setup_id)));
+        events.push(AppEvent::Ui(UiCommand::Select(Selection::Setup(setup_id))));
     }
 
     // Update border color on hover

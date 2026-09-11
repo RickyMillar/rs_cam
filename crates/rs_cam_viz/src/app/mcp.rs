@@ -7,7 +7,7 @@ pub(crate) mod commands;
 use std::path::Path;
 
 use rs_cam_core::compute::config::ComputeStatus;
-use rs_cam_core::session::MutationKind;
+use rs_cam_core::session::{GetOperationSchemaArgs, MutationKind, Query, QueryAnswer};
 
 use crate::controller::Severity;
 use crate::mcp_bridge::{
@@ -17,6 +17,12 @@ use crate::mcp_bridge::{
 use crate::state::Workspace;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
+use crate::ui_command::{
+    GetCutTraceArgs, GetNotificationsArgs, NoArgs, Reach, ScreenshotGuiArgs,
+    ScreenshotSimulationArgs, ScreenshotToolpathArgs, SetUiViewArgs, SimJumpToMoveArgs,
+    SimJumpToToolpathEndArgs, SimJumpToToolpathStartArgs, SimScrubToolpathArgs, UiCommand, UiQuery,
+    UiQueryAnswer,
+};
 
 use commands::CorePlan;
 
@@ -235,14 +241,6 @@ impl super::RsCamApp {
                 let resp = self.mcp_list_tools();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
-            McpRequestKind::ListToolLibrary => {
-                let resp = self.mcp_list_tool_library();
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
-            McpRequestKind::ListToolCatalog { catalog } => {
-                let resp = self.mcp_list_tool_catalog(&catalog);
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
             McpRequestKind::ListSetups => {
                 let resp = self.mcp_list_setups();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -253,32 +251,6 @@ impl super::RsCamApp {
             }
             McpRequestKind::GetOperationSchema { operation_type } => {
                 let resp = self.mcp_get_operation_schema(&operation_type);
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
-            McpRequestKind::GetDiagnostics => {
-                let resp = self.mcp_get_diagnostics();
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
-            McpRequestKind::GetCutTrace {
-                toolpath_id,
-                max_hotspots,
-                max_issues,
-                span_kind,
-                span_id,
-                pass_index,
-                include_drill_samples,
-                caps,
-            } => {
-                let resp = self.mcp_get_cut_trace(
-                    toolpath_id,
-                    max_hotspots,
-                    max_issues,
-                    span_kind.as_deref(),
-                    span_id,
-                    pass_index,
-                    include_drill_samples,
-                    caps,
-                );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::GetGenerationDebugTrace {
@@ -323,10 +295,6 @@ impl super::RsCamApp {
             }
             McpRequestKind::InspectBrepFaces { model_id } => {
                 let resp = self.mcp_inspect_brep_faces(model_id);
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
-            McpRequestKind::InspectCollisions => {
-                let resp = self.mcp_inspect_collisions();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::InspectSpans {
@@ -418,10 +386,6 @@ impl super::RsCamApp {
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
-            McpRequestKind::GetToolLoadReport => {
-                let resp = self.mcp_get_tool_load_report();
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
             McpRequestKind::GetToolpathDiagnostics { index } => {
                 let resp = self.mcp_get_toolpath_diagnostics(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -448,15 +412,10 @@ impl super::RsCamApp {
                 // reports the toasts the GUI path pushed instead.
                 self.controller
                     .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
+                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                        Workspace::Toolpaths,
+                    )));
                 let resp = self.mcp_add_toolpath_via_gui(&operation_type, setup_index);
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
-            McpRequestKind::GetNotifications {
-                include_expired,
-                limit,
-            } => {
-                let resp = self.mcp_get_notifications(include_expired, limit);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::PlanMultitoolFinishing { spec } => {
@@ -488,7 +447,9 @@ impl super::RsCamApp {
                 );
                 self.controller
                     .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
+                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                        Workspace::Toolpaths,
+                    )));
                 self.mcp_send_progress(&progress_tx, "Generating toolpath...", 0.0, Some(1.0));
                 self.mcp_generate_toolpath(index, response_tx);
             }
@@ -507,7 +468,9 @@ impl super::RsCamApp {
                     .push_notification("MCP: Running simulation...".to_owned(), Severity::Info);
                 self.controller
                     .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
+                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                        Workspace::Simulation,
+                    )));
                 self.mcp_send_progress(&progress_tx, "Starting simulation...", 0.0, Some(1.0));
                 self.mcp_run_simulation(resolution, response_tx);
             }
@@ -516,126 +479,214 @@ impl super::RsCamApp {
                 self.mcp_collision_check(index, response_tx);
             }
 
-            // ── Simulation scrubbing operations ─────────────────────
-            McpRequestKind::SimJumpToMove { move_index } => {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
-                let resp = self.mcp_sim_jump_to_move(move_index);
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
-            McpRequestKind::SimJumpToStart => {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
-                let resp = self.mcp_sim_jump_to_start();
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
-            McpRequestKind::SimJumpToEnd => {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
-                let resp = self.mcp_sim_jump_to_end();
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
-            McpRequestKind::SimScrubToolpath { index, percent } => {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
-                let resp = self.mcp_sim_scrub_toolpath(index, percent);
-                let _ = response_tx.send(McpResponse { result: resp });
-            }
-            McpRequestKind::SimJumpToToolpathStart { index } => {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
-                let resp = self.mcp_sim_scrub_toolpath(index, 0.0);
-                let _ = response_tx.send(McpResponse { result: resp });
-            }
-            McpRequestKind::SimJumpToToolpathEnd { index } => {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Simulation));
-                let resp = self.mcp_sim_scrub_toolpath(index, 100.0);
-                let _ = response_tx.send(McpResponse { result: resp });
-            }
-
-            // ── Screenshot operations ────────────────────────────────
-            McpRequestKind::ScreenshotSimulation {
-                path,
-                width,
-                height,
-                checkpoint,
-                include_toolpaths,
-            } => {
-                let resp = self.mcp_screenshot_simulation(
-                    &path,
-                    width,
-                    height,
-                    checkpoint,
-                    include_toolpaths,
-                );
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
-            McpRequestKind::ScreenshotToolpath {
-                index,
-                path,
-                width,
-                height,
-                show_stock,
-                include_rapids,
-                reach_overlay,
-            } => {
-                let resp = self.mcp_screenshot_toolpath(
-                    index,
-                    &path,
-                    ScreenshotToolpathOptions {
-                        width,
-                        height,
-                        show_stock,
-                        include_rapids,
-                        reach_overlay,
-                    },
-                );
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
-            }
+            // ── Measurements over the model ─────────────────────────
             McpRequestKind::ReachMap { spec } => {
                 let resp = self.mcp_reach_map(&spec);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
-            McpRequestKind::ScreenshotGui {
-                path,
-                width,
-                height,
-            } => {
-                // Deferred response: the handler stores response_tx in the
-                // pending slot and the capture completes 1-2 frames later.
-                self.mcp_screenshot_gui(ctx, &path, width, height, response_tx);
+
+            // ── View reads (WP13) ───────────────────────────────────
+            //
+            // One arm for all eight rows. `ui_query` takes `&self`, so a
+            // read cannot write the session.
+            McpRequestKind::UiQuery(query) => {
+                let resp = self.ui_query(query).into_json();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
 
-            // ── UI navigation ────────────────────────────────────────
-            McpRequestKind::SetUiView {
-                workspace,
-                toolpath_index,
-                properties_tab,
-                select,
-                modal,
-                overlays,
-            } => {
-                let resp = self.mcp_set_ui_view(
-                    workspace.as_deref(),
+            // ── View commands (WP13) ────────────────────────────────
+            //
+            // Scrubbing, screenshots and UI navigation. Each arm keeps the
+            // body it had as a variant of its own.
+            McpRequestKind::Ui(command) => match command {
+                UiCommand::SimJumpToMove(SimJumpToMoveArgs { move_index }) => {
+                    self.mcp_show_simulation_workspace();
+                    let resp = self.mcp_sim_jump_to_move(move_index);
+                    let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                }
+                UiCommand::SimJumpToStart(NoArgs) => {
+                    self.mcp_show_simulation_workspace();
+                    let resp = self.mcp_sim_jump_to_start();
+                    let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                }
+                UiCommand::SimJumpToEnd(NoArgs) => {
+                    self.mcp_show_simulation_workspace();
+                    let resp = self.mcp_sim_jump_to_end();
+                    let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                }
+                UiCommand::SimScrubToolpath(SimScrubToolpathArgs { index, percent }) => {
+                    self.mcp_show_simulation_workspace();
+                    let resp = self.mcp_sim_scrub_toolpath(index, percent);
+                    let _ = response_tx.send(McpResponse { result: resp });
+                }
+                UiCommand::SimJumpToToolpathStart(SimJumpToToolpathStartArgs { index }) => {
+                    self.mcp_show_simulation_workspace();
+                    let resp = self.mcp_sim_scrub_toolpath(index, 0.0);
+                    let _ = response_tx.send(McpResponse { result: resp });
+                }
+                UiCommand::SimJumpToToolpathEnd(SimJumpToToolpathEndArgs { index }) => {
+                    self.mcp_show_simulation_workspace();
+                    let resp = self.mcp_sim_scrub_toolpath(index, 100.0);
+                    let _ = response_tx.send(McpResponse { result: resp });
+                }
+                UiCommand::ScreenshotSimulation(ScreenshotSimulationArgs {
+                    path,
+                    width,
+                    height,
+                    checkpoint,
+                    include_toolpaths,
+                }) => {
+                    let resp = self.mcp_screenshot_simulation(
+                        &path,
+                        width,
+                        height,
+                        checkpoint,
+                        include_toolpaths,
+                    );
+                    let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                }
+                UiCommand::ScreenshotToolpath(ScreenshotToolpathArgs {
+                    index,
+                    path,
+                    width,
+                    height,
+                    show_stock,
+                    include_rapids,
+                    reach_overlay,
+                }) => {
+                    let resp = self.mcp_screenshot_toolpath(
+                        index,
+                        &path,
+                        ScreenshotToolpathOptions {
+                            width,
+                            height,
+                            show_stock,
+                            include_rapids,
+                            reach_overlay,
+                        },
+                    );
+                    let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                }
+                UiCommand::ScreenshotGui(ScreenshotGuiArgs {
+                    path,
+                    width,
+                    height,
+                }) => {
+                    // Deferred response: the handler stores response_tx in
+                    // the pending slot and the capture completes 1-2 frames
+                    // later.
+                    self.mcp_screenshot_gui(ctx, &path, width, height, response_tx);
+                }
+                UiCommand::SetUiView(SetUiViewArgs {
+                    workspace,
                     toolpath_index,
-                    properties_tab.as_deref(),
-                    select.as_deref(),
-                    modal.as_deref(),
-                    overlays.as_ref(),
-                );
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                    properties_tab,
+                    select,
+                    modal,
+                    overlays,
+                }) => {
+                    let resp = self.mcp_set_ui_view(
+                        workspace.as_deref(),
+                        toolpath_index,
+                        properties_tab.as_deref(),
+                        select.as_deref(),
+                        modal.as_deref(),
+                        overlays.as_ref(),
+                    );
+                    let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                }
+                // The view registry holds 62 view commands. The other 52
+                // carry no MCP tool, and the row says which surface does
+                // reach each one.
+                other => {
+                    let reason = match other.id().surfaces().mcp {
+                        Reach::Reached => "the row declares a tool, and this dispatch has no arm",
+                        Reach::Skip(reason) => reason,
+                    };
+                    let resp = mutation_error_json(
+                        &format!(
+                            "the {} view command is not on the wire: {reason}",
+                            other.id().wire_name(),
+                        ),
+                        None,
+                    );
+                    let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                }
+            },
+        }
+    }
+
+    /// Move the view to the simulation workspace.
+    ///
+    /// Six scrubbing rows did this inline, each pushing the same event.
+    /// The push is the whole body, so one name carries it.
+    fn mcp_show_simulation_workspace(&mut self) {
+        self.controller
+            .events_mut()
+            .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                Workspace::Simulation,
+            )));
+    }
+
+    /// Run one view read, and report its answer (WP13 ruling 4).
+    ///
+    /// This is the read door of the view registry, beside
+    /// [`ProjectSession::apply`](rs_cam_core::session::ProjectSession::apply)
+    /// and
+    /// [`ProjectSession::query`](rs_cam_core::session::ProjectSession::query)
+    /// for the core registry. It takes `&self`, so a view read cannot
+    /// write the session and cannot write the view.
+    ///
+    /// **The receiver is the application, not `AppState`.** Two of the
+    /// eight rows read state `AppState` does not hold: `get_notifications`
+    /// reads the toast stack and `get_diagnostics` reads the controller's
+    /// own triage builder. Both hang on the controller, one level above
+    /// `AppState`, so a door on `AppState` could answer neither.
+    fn ui_query(&self, query: UiQuery) -> UiQueryAnswer {
+        match query {
+            UiQuery::ListToolLibrary(NoArgs) => {
+                UiQueryAnswer::ListToolLibrary(self.mcp_list_tool_library())
             }
-            McpRequestKind::ListMachineLibrary => {
-                let resp = self.mcp_list_machine_library();
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            UiQuery::ListToolCatalog(catalog) => {
+                UiQueryAnswer::ListToolCatalog(self.mcp_list_tool_catalog(&catalog))
             }
+            UiQuery::ListMachineLibrary(NoArgs) => {
+                UiQueryAnswer::ListMachineLibrary(self.mcp_list_machine_library())
+            }
+            UiQuery::GetDiagnostics(NoArgs) => {
+                UiQueryAnswer::GetDiagnostics(self.mcp_get_diagnostics())
+            }
+            UiQuery::GetToolLoadReport(NoArgs) => {
+                UiQueryAnswer::GetToolLoadReport(self.mcp_get_tool_load_report())
+            }
+            UiQuery::InspectCollisions(NoArgs) => {
+                UiQueryAnswer::InspectCollisions(self.mcp_inspect_collisions())
+            }
+            UiQuery::GetNotifications(GetNotificationsArgs {
+                include_expired,
+                limit,
+            }) => {
+                UiQueryAnswer::GetNotifications(self.mcp_get_notifications(include_expired, limit))
+            }
+            UiQuery::GetCutTrace(GetCutTraceArgs {
+                toolpath_id,
+                max_hotspots,
+                max_issues,
+                span_kind,
+                span_id,
+                pass_index,
+                include_drill_samples,
+                caps,
+            }) => UiQueryAnswer::GetCutTrace(self.mcp_get_cut_trace(
+                toolpath_id,
+                max_hotspots,
+                max_issues,
+                span_kind.as_deref(),
+                span_id,
+                pass_index,
+                include_drill_samples,
+                caps,
+            )),
         }
     }
 
@@ -924,9 +975,22 @@ impl super::RsCamApp {
         })
     }
 
+    /// Report the parameter schema of one operation kind.
+    ///
+    /// WP13 ruling 3: this is a core `Query` row, not a view read. The
+    /// answer comes from the operation CATALOG, so the read never touches
+    /// the view — and it takes the core read door like any other query.
     fn mcp_get_operation_schema(&self, operation_type: &str) -> String {
-        match rs_cam_core::session::ProjectSession::operation_schema(operation_type) {
-            Ok(schema) => json_str(serde_json::to_value(schema).unwrap_or_default()),
+        let query = Query::GetOperationSchema(GetOperationSchemaArgs {
+            operation_type: operation_type.to_owned(),
+        });
+        match self.controller.state().session.query(query) {
+            Ok(QueryAnswer::GetOperationSchema(answer)) => {
+                json_str(serde_json::to_value(answer.schema).unwrap_or_default())
+            }
+            Ok(other) => json_str(serde_json::json!({
+                "error": format!("the get_operation_schema read answered {other:?}"),
+            })),
             Err(e) => json_str(serde_json::json!({ "error": e.to_string() })),
         }
     }
@@ -2639,7 +2703,9 @@ impl super::RsCamApp {
             .map(|tc| tc.id);
         self.controller
             .events_mut()
-            .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
+            .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                Workspace::Toolpaths,
+            )));
         if let Some(tp_id) = tp_id {
             self.controller.state_mut().selection = Selection::Toolpath(tp_id);
         }
@@ -4011,7 +4077,7 @@ impl super::RsCamApp {
         // later in this frame — so an `overlays` request in the same call
         // would be written first and then clobbered by the arriving
         // defaults, and every precondition below would have answered about
-        // the OLD workspace. `AppEvent::SwitchWorkspace`'s handler calls the
+        // the OLD workspace. `UiCommand::SwitchWorkspace`'s handler calls the
         // same function, so this is the identical mutation, in the right
         // order.
         let mut workspace_applied: Option<&'static str> = None;
@@ -4128,11 +4194,11 @@ impl super::RsCamApp {
             match m {
                 "none" => {
                     let events = self.controller.events_mut();
-                    events.push(AppEvent::CloseFeedsModal);
-                    events.push(AppEvent::CloseOptimizeModal);
-                    events.push(AppEvent::CloseOptimizeProject);
-                    events.push(AppEvent::CloseExportWizard);
-                    events.push(AppEvent::CloseToolLibrary);
+                    events.push(AppEvent::Ui(UiCommand::CloseFeedsModal(NoArgs)));
+                    events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
+                    events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
+                    events.push(AppEvent::Ui(UiCommand::CloseExportWizard(NoArgs)));
+                    events.push(AppEvent::Ui(UiCommand::CloseToolLibrary(NoArgs)));
                     let state = self.controller.state_mut();
                     state.show_preflight = false;
                     state.show_shortcuts = false;
@@ -4156,10 +4222,12 @@ impl super::RsCamApp {
                 "export_wizard" => {
                     self.controller
                         .events_mut()
-                        .push(AppEvent::OpenExportWizard);
+                        .push(AppEvent::Ui(UiCommand::OpenExportWizard(NoArgs)));
                 }
                 "tool_library" => {
-                    self.controller.events_mut().push(AppEvent::OpenToolLibrary);
+                    self.controller
+                        .events_mut()
+                        .push(AppEvent::Ui(UiCommand::OpenToolLibrary(NoArgs)));
                 }
                 other => {
                     return json_str(serde_json::json!({
@@ -4235,7 +4303,9 @@ impl super::RsCamApp {
         }
         self.controller
             .events_mut()
-            .push(AppEvent::SimJumpToMove(move_index));
+            .push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                move_index,
+            })));
         self.mcp_sim_playback_state(move_index)
     }
 
@@ -4246,7 +4316,9 @@ impl super::RsCamApp {
                 serde_json::json!({"error": "No simulation result. Run run_simulation first."}),
             );
         }
-        self.controller.events_mut().push(AppEvent::SimJumpToStart);
+        self.controller
+            .events_mut()
+            .push(AppEvent::Ui(UiCommand::SimJumpToStart(NoArgs)));
         self.mcp_sim_playback_state(0)
     }
 
@@ -4258,7 +4330,9 @@ impl super::RsCamApp {
             );
         }
         let total = sim.total_moves();
-        self.controller.events_mut().push(AppEvent::SimJumpToEnd);
+        self.controller
+            .events_mut()
+            .push(AppEvent::Ui(UiCommand::SimJumpToEnd(NoArgs)));
         self.mcp_sim_playback_state(total)
     }
 
@@ -4287,7 +4361,9 @@ impl super::RsCamApp {
 
         self.controller
             .events_mut()
-            .push(AppEvent::SimJumpToMove(move_index));
+            .push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                move_index,
+            })));
 
         Ok(json_str(serde_json::json!({
             "move_index": move_index,

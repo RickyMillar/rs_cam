@@ -61,6 +61,7 @@ use crate::state::Workspace;
 use crate::state::runtime::GuiState;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
+use crate::ui_command::UiCommand;
 
 use super::RestAnalysisDials;
 
@@ -188,12 +189,12 @@ impl RsCamApp {
             | CoreRequest::LoadMachineFromLibrary(_) => {
                 self.controller
                     .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Setup)));
             }
             CoreRequest::SetStockConfig(_) => {
                 self.controller
                     .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Setup)));
                 // Record highlight for stock dimensions.
                 let key = "stock_dimensions".to_owned();
                 self.controller
@@ -205,7 +206,9 @@ impl RsCamApp {
             CoreRequest::AddToolpath(_) => {
                 self.controller
                     .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
+                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                        Workspace::Toolpaths,
+                    )));
             }
             CoreRequest::SetToolpathParam(p) => {
                 // Record highlight for the changed parameter and select
@@ -219,7 +222,9 @@ impl RsCamApp {
                     .map(|tc| tc.id);
                 self.controller
                     .events_mut()
-                    .push(AppEvent::SwitchWorkspace(Workspace::Toolpaths));
+                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                        Workspace::Toolpaths,
+                    )));
                 if let Some(tp_id) = tp_id {
                     let key = format!("toolpath_{tp_id}_{}", p.param);
                     self.controller
@@ -1707,6 +1712,7 @@ impl RsCamApp {
             | CommandId::ReplaceFixture
             | CommandId::ReplaceKeepOut
             | CommandId::ToolpathCycleTime
+            | CommandId::GetOperationSchema
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath => {
@@ -2495,6 +2501,7 @@ impl RsCamApp {
             | CommandId::ReplaceFixture
             | CommandId::ReplaceKeepOut
             | CommandId::ToolpathCycleTime
+            | CommandId::GetOperationSchema
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath => CoreReply::quiet(mutation_error_json(

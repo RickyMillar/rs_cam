@@ -44,7 +44,7 @@ pub struct OverlayPanelState {
     /// they displaced.
     ///
     /// This generalises the ad-hoc three-flag save/restore that
-    /// `AppEvent::SwitchWorkspace` carried before P6 (audit §3.4 asked for
+    /// `UiCommand::SwitchWorkspace` carried before P6 (audit §3.4 asked for
     /// exactly that: generalise the existing mechanism, do not add a second
     /// one beside it). Entering a workspace restores whatever the previous
     /// workspace displaced, then saves and overwrites only the flags that

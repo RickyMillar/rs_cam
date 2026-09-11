@@ -11,6 +11,7 @@ use crate::state::selection::Selection;
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::ui::theme;
+use crate::ui_command::{NoArgs, UiCommand};
 use rs_cam_core::compute::config::ToolpathStats;
 
 /// Minimal snapshot of a `ToolpathConfig` with just the fields the card reads.
@@ -193,7 +194,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .on_hover_text("Browse, edit, and organise the reusable tool catalogs.")
                 .clicked()
             {
-                events.push(AppEvent::OpenToolLibrary);
+                events.push(AppEvent::Ui(UiCommand::OpenToolLibrary(NoArgs)));
             }
             ui.add_space(4.0);
             if state.session.tools().is_empty() {
@@ -207,7 +208,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 let selected = state.selection == Selection::Tool(tool.id);
                 let response = ui.selectable_label(selected, tool.summary());
                 if response.clicked() {
-                    events.push(AppEvent::Select(Selection::Tool(tool.id)));
+                    events.push(AppEvent::Ui(UiCommand::Select(Selection::Tool(tool.id))));
                 }
                 response.context_menu(|ui| {
                     if ui.button("Duplicate").clicked() {
@@ -366,7 +367,7 @@ fn draw_toolpath_card(
                 egui::Sense::click(),
             );
             if card_resp.clicked() {
-                events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
+                events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(tp_id))));
             }
 
             // Row 1: drag grip + swatch + status + name
@@ -474,7 +475,7 @@ fn draw_toolpath_card(
                             .on_hover_text("Inspect in Simulation")
                             .clicked()
                     {
-                        events.push(AppEvent::InspectToolpathInSimulation(tp_id));
+                        events.push(AppEvent::Ui(UiCommand::InspectToolpathInSimulation(tp_id)));
                     }
 
                     // Quick generate button. F2.2: driven by freshness, not
@@ -584,7 +585,7 @@ fn draw_toolpath_card(
                     ui.close();
                 }
                 if has_result && ui.button("Inspect in Simulation").clicked() {
-                    events.push(AppEvent::InspectToolpathInSimulation(tp_id));
+                    events.push(AppEvent::Ui(UiCommand::InspectToolpathInSimulation(tp_id)));
                     ui.close();
                 }
                 let is_isolated = state.viewport.isolate_toolpath == Some(tp_id);
@@ -595,16 +596,16 @@ fn draw_toolpath_card(
                 };
                 if ui.button(iso_label).clicked() {
                     if is_isolated {
-                        events.push(AppEvent::ClearIsolation);
+                        events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
                     } else {
-                        events.push(AppEvent::Select(Selection::Toolpath(tp_id)));
-                        events.push(AppEvent::ToggleIsolateToolpath);
+                        events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(tp_id))));
+                        events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
                     }
                     ui.close();
                 }
                 let vis_label = if visible { "Hide" } else { "Show" };
                 if ui.button(vis_label).clicked() {
-                    events.push(AppEvent::ToggleToolpathVisibility(tp_id));
+                    events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
                     ui.close();
                 }
                 let en_label = if tc.enabled { "Disable" } else { "Enable" };
@@ -760,7 +761,7 @@ fn add_op_menu_item(
             .on_hover_text(spec.description)
             .clicked()
         {
-            events.push(AppEvent::Select(Selection::Setup(setup_id)));
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Setup(setup_id))));
             events.push(AppEvent::AddToolpath(op));
             ui.close();
         }

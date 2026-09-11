@@ -2,6 +2,7 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::state::job::SetupId;
 use crate::state::selection::Selection;
+use crate::ui_command::{NoArgs, UiCommand};
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let ctx = ui.ctx().clone();
@@ -19,12 +20,12 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             events.push(AppEvent::SaveJob);
         }
         if modifiers.ctrl && modifiers.shift && i.key_pressed(egui::Key::E) {
-            events.push(AppEvent::OpenExportWizard);
+            events.push(AppEvent::Ui(UiCommand::OpenExportWizard(NoArgs)));
         }
         // Power-user escape hatch: Ctrl+Alt+E skips the wizard and jumps
         // straight to the legacy direct-export pre-flight + file dialog.
         if modifiers.ctrl && modifiers.alt && i.key_pressed(egui::Key::E) {
-            events.push(AppEvent::ExportGcode);
+            events.push(AppEvent::Ui(UiCommand::ExportGcode(NoArgs)));
         }
         if modifiers.ctrl && !modifiers.shift && i.key_pressed(egui::Key::O) {
             events.push(AppEvent::OpenJob);
@@ -88,7 +89,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     .clicked()
                 {
                     ui.close();
-                    events.push(AppEvent::OpenExportWizard);
+                    events.push(AppEvent::Ui(UiCommand::OpenExportWizard(NoArgs)));
                 }
                 ui.menu_button("Direct export (skip wizard)", |ui| {
                     if ui
@@ -96,7 +97,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         .clicked()
                     {
                         ui.close();
-                        events.push(AppEvent::ExportGcode);
+                        events.push(AppEvent::Ui(UiCommand::ExportGcode(NoArgs)));
                     }
                     if state.session.list_setups().len() > 1 {
                         if ui.button("Combined (M0 pauses)").clicked() {
@@ -123,7 +124,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 }
                 ui.separator();
                 if ui.button("Quit").clicked() {
-                    events.push(AppEvent::Quit);
+                    events.push(AppEvent::Ui(UiCommand::Quit(NoArgs)));
                 }
             });
 
@@ -198,14 +199,14 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     .clicked()
                 {
                     ui.close();
-                    events.push(AppEvent::OpenMultitoolPlanner);
+                    events.push(AppEvent::Ui(UiCommand::OpenMultitoolPlanner(NoArgs)));
                 }
             });
 
             ui.menu_button("Tools", |ui| {
                 if ui.button("Tool Library…").clicked() {
                     ui.close();
-                    events.push(AppEvent::OpenToolLibrary);
+                    events.push(AppEvent::Ui(UiCommand::OpenToolLibrary(NoArgs)));
                 }
             });
 
@@ -218,7 +219,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 for target in crate::state::Workspace::ALL {
                     if ui.button(target.label()).clicked() {
                         ui.close();
-                        events.push(AppEvent::SwitchWorkspace(target));
+                        events.push(AppEvent::Ui(UiCommand::SwitchWorkspace(target)));
                     }
                 }
             });
@@ -230,7 +231,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 }
                 if ui.button("Reset Simulation").clicked() {
                     ui.close();
-                    events.push(AppEvent::ResetSimulation);
+                    events.push(AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
                 }
                 ui.separator();
                 if ui.button("Check Holder Clearance").clicked() {
@@ -242,39 +243,39 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.menu_button("View", |ui| {
                 if ui.button("Reset View").clicked() {
                     ui.close();
-                    events.push(AppEvent::ResetView);
+                    events.push(AppEvent::Ui(UiCommand::ResetView(NoArgs)));
                 }
                 ui.separator();
                 if ui.button("Top").clicked() {
                     ui.close();
-                    events.push(AppEvent::SetViewPreset(
+                    events.push(AppEvent::Ui(UiCommand::SetViewPreset(
                         crate::render::camera::ViewPreset::Top,
-                    ));
+                    )));
                 }
                 if ui.button("Front").clicked() {
                     ui.close();
-                    events.push(AppEvent::SetViewPreset(
+                    events.push(AppEvent::Ui(UiCommand::SetViewPreset(
                         crate::render::camera::ViewPreset::Front,
-                    ));
+                    )));
                 }
                 if ui.button("Right").clicked() {
                     ui.close();
-                    events.push(AppEvent::SetViewPreset(
+                    events.push(AppEvent::Ui(UiCommand::SetViewPreset(
                         crate::render::camera::ViewPreset::Right,
-                    ));
+                    )));
                 }
                 if ui.button("Isometric").clicked() {
                     ui.close();
-                    events.push(AppEvent::SetViewPreset(
+                    events.push(AppEvent::Ui(UiCommand::SetViewPreset(
                         crate::render::camera::ViewPreset::Isometric,
-                    ));
+                    )));
                 }
             });
 
             ui.menu_button("Help", |ui| {
                 if ui.button("Keyboard Shortcuts...").clicked() {
                     ui.close();
-                    events.push(AppEvent::ShowShortcuts);
+                    events.push(AppEvent::Ui(UiCommand::ShowShortcuts(NoArgs)));
                 }
             });
         });

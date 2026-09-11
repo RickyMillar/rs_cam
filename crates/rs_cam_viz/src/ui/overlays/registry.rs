@@ -1351,7 +1351,7 @@ pub fn apply_overlays(state: &mut AppState, requested: &BTreeMap<String, bool>) 
 /// order.
 ///
 /// **Call this synchronously, never through the event queue, when overlay
-/// writes follow in the same call.** `AppEvent::SwitchWorkspace` lands later
+/// writes follow in the same call.** `UiCommand::SwitchWorkspace` lands later
 /// in the frame, so an MCP request that pushed the event and then wrote
 /// overlays would have its writes clobbered by the arriving defaults, and
 /// every precondition it evaluated would have answered about the OLD
@@ -1368,7 +1368,7 @@ pub fn switch_workspace(state: &mut AppState, target: Workspace) {
 /// workspace displaced first.
 ///
 /// This generalises the ad-hoc three-flag save/restore that
-/// `AppEvent::SwitchWorkspace` used to carry (audit §3.4). Two properties
+/// `UiCommand::SwitchWorkspace` used to carry (audit §3.4). Two properties
 /// matter. A row the target workspace names no default for is untouched, so
 /// an operator override survives a round trip through a workspace that does
 /// not care about it. And the write goes through [`set_overlay`], so a

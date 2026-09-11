@@ -2,6 +2,7 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::ui::readiness::{self, CheckStatus, CycleTimeBasisExt};
 use crate::ui::theme;
+use crate::ui_command::{SetToolLoadOverrideArgs, UiCommand};
 use rs_cam_core::tool_load::{ToolLoadReport, ToolpathLoadVerdict};
 
 /// Draw the pre-flight checklist modal. Returns true if still open.
@@ -27,9 +28,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 "Operations",
                 &format!("{computed_count}/{enabled_count} computed"),
                 "Toolpaths",
-                Some(AppEvent::SwitchWorkspace(
+                Some(AppEvent::Ui(UiCommand::SwitchWorkspace(
                     crate::state::Workspace::Toolpaths,
-                )),
+                ))),
                 events,
                 &mut still_open,
             );
@@ -62,9 +63,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                     label,
                     &blocker.message,
                     "Toolpaths",
-                    Some(AppEvent::SwitchWorkspace(
+                    Some(AppEvent::Ui(UiCommand::SwitchWorkspace(
                         crate::state::Workspace::Toolpaths,
-                    )),
+                    ))),
                     events,
                     &mut still_open,
                 );
@@ -91,9 +92,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 "Simulation",
                 sim_detail,
                 "Simulation",
-                Some(AppEvent::SwitchWorkspace(
+                Some(AppEvent::Ui(UiCommand::SwitchWorkspace(
                     crate::state::Workspace::Simulation,
-                )),
+                ))),
                 events,
                 &mut still_open,
             );
@@ -113,9 +114,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 "Rapid collisions",
                 &rapid_detail,
                 "Simulation",
-                Some(AppEvent::SwitchWorkspace(
+                Some(AppEvent::Ui(UiCommand::SwitchWorkspace(
                     crate::state::Workspace::Simulation,
-                )),
+                ))),
                 events,
                 &mut still_open,
             );
@@ -422,11 +423,11 @@ fn draw_stale_export_acceptance(ui: &mut egui::Ui, state: &AppState, events: &mu
                 )
                 .changed()
             {
-                events.push(AppEvent::SetStaleExportPolicy(if accepted {
+                events.push(AppEvent::Ui(UiCommand::SetStaleExportPolicy(if accepted {
                     StaleResultPolicy::AcceptPreviousGeometry
                 } else {
                     StaleResultPolicy::Refuse
-                }));
+                })));
             }
         });
 }
@@ -498,10 +499,12 @@ fn draw_tool_load_overrides(
                 }
             }
             if changed {
-                events.push(AppEvent::SetToolLoadOverride {
-                    accept_unmodeled: overrides.accept_unmodeled,
-                    accept_exceeded: overrides.accept_exceeded,
-                });
+                events.push(AppEvent::Ui(UiCommand::SetToolLoadOverride(
+                    SetToolLoadOverrideArgs {
+                        accept_unmodeled: overrides.accept_unmodeled,
+                        accept_exceeded: overrides.accept_exceeded,
+                    },
+                )));
             }
         });
 }

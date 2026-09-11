@@ -28,12 +28,9 @@ pub mod toolpath_row_controls;
 pub mod viewport_overlay;
 pub mod workspace_bar;
 
-use crate::render::camera::ViewPreset;
-use crate::state::Workspace;
-use crate::state::job::{
-    FaceUp, FixtureId, KeepOutId, ModelId, SetupId, ToolConfig, ToolId, ToolType,
-};
+use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId, ToolConfig, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};
+use crate::ui_command::UiCommand;
 use rs_cam_core::enriched_mesh::FaceGroupId;
 use std::path::PathBuf;
 
@@ -70,7 +67,6 @@ pub enum AppEvent {
     /// model keeps naming it, which is the whole point — the geometry moved,
     /// the operations did not.
     RelinkModel(ModelId, std::path::PathBuf),
-    ExportGcode,
     ExportCombinedGcode,
     ExportSetupGcode(SetupId),
     ExportSetupSheet,
@@ -81,14 +77,6 @@ pub enum AppEvent {
     /// `debug_options.enabled` across the whole project).
     SetGeneratorTraceCaptureAll(bool),
 
-    // Selection / view
-    Select(crate::state::selection::Selection),
-    SetViewPreset(ViewPreset),
-    ToggleProjection,
-    ClearIsolation,
-    PreviewOrientation(FaceUp),
-    ResetView,
-
     // Tools
     AddTool(ToolType),
     /// Add a fully-specified tool copied from a library catalog. The
@@ -97,64 +85,13 @@ pub enum AppEvent {
     DuplicateTool(ToolId),
     RemoveTool(ToolId),
 
-    // Tool Library modal
-    /// Open the Tool Library management modal. Loads a snapshot of every
-    /// catalog in the per-user library dir into `tool_library_modal`.
-    OpenToolLibrary,
-    /// Close the Tool Library modal.
-    CloseToolLibrary,
-    /// Delete the tool at `index` in catalog `catalog`, then refresh the
-    /// modal snapshot.
-    DeleteLibraryTool {
-        catalog: String,
-        index: usize,
-    },
-    /// Replace the tool at `index` in catalog `catalog` with an edited
-    /// copy, then refresh the snapshot.
-    UpdateLibraryTool {
-        catalog: String,
-        index: usize,
-        tool: Box<ToolConfig>,
-    },
-    /// Move the tool at `index` from catalog `from` to catalog `to`.
-    MoveLibraryTool {
-        from: String,
-        index: usize,
-        to: String,
-    },
-    /// Create a new empty catalog.
-    CreateToolCatalog(String),
-    /// Delete a whole catalog file.
-    DeleteToolCatalog(String),
-    /// Rename a catalog file.
-    RenameToolCatalog {
-        old: String,
-        new: String,
-    },
-    /// De-duplicate the tools in a catalog (keep first of each geometry).
-    DedupeToolCatalog(String),
-
     // Machine Library modal (snapshot model — mirrors the tool library)
-    /// Open the Machine Library management modal.
-    OpenMachineLibrary,
-    /// Close the Machine Library modal.
-    CloseMachineLibrary,
     /// Import the named library machine into the project as a snapshot
     /// copy (no live link), making it the inline machine.
     ImportMachineFromLibrary(String),
-    /// Save the project's current machine into the library under `name`.
-    SaveMachineToLibrary(String),
-    /// Delete the named machine file from the library.
-    DeleteMachineFromLibrary(String),
-    /// Rename a machine file in the library.
-    RenameMachineInLibrary {
-        old: String,
-        new: String,
-    },
 
     // Setups
     AddSetup,
-    RemoveSetup(SetupId),
     RenameSetup(SetupId, String),
     /// One-click two-sided setup: create flipped Setup 2, set flip axis, auto-place pins.
     SetupTwoSided,
@@ -183,33 +120,13 @@ pub enum AppEvent {
     ToggleToolpathEnabled(ToolpathId),
     GenerateToolpath(ToolpathId),
     GenerateAll,
-    ToggleToolpathVisibility(ToolpathId),
-    ToggleIsolateToolpath,
-    InspectToolpathInSimulation(ToolpathId),
 
     // Simulation
     RunSimulation,
     RunSimulationWith(Vec<ToolpathId>),
-    ResetSimulation,
-    ToggleSimPlayback,
-
-    // Workspace navigation
-    SwitchWorkspace(Workspace),
-    SimStepForward,
-    SimStepBackward,
-    SimJumpToStart,
-    SimJumpToEnd,
-    SimJumpToMove(usize),
-    SimJumpToOpStart(usize),
-    SimJumpToOpEnd(usize),
 
     // Pre-flight / Export
     ExportGcodeConfirmed,
-    /// Open the multi-step Export Wizard at the user's last-visited step.
-    OpenExportWizard,
-    /// Close the wizard. Persistent settings on `session.wizard()` are
-    /// preserved; only the transient modal state goes away.
-    CloseExportWizard,
     /// Switch the visible wizard step. Bounds-checked in the handler.
     WizardSetStep(u8),
     /// Update the post-processor format from the wizard's Step 1 dropdown.
@@ -253,19 +170,6 @@ pub enum AppEvent {
     /// Pops a file/directory picker, writes the file(s), pushes a
     /// notification, and closes the wizard on success.
     WizardSave,
-    /// Set the tool-load export-gate override flags. The two flags are
-    /// independent — `accept_unmodeled` only bypasses `Unmodeled` verdicts,
-    /// `accept_exceeded` only bypasses `Exceeds` verdicts.
-    SetToolLoadOverride {
-        accept_unmodeled: bool,
-        accept_exceeded: bool,
-    },
-    /// G-STALEXPORT: accept, or stop accepting, the PREVIOUS geometry for
-    /// operations edited since they were generated. Deliberately a
-    /// separate decision from the tool-load overrides — those accept a
-    /// predicted consequence of cutting the emitted geometry, this
-    /// accepts emitting different geometry from the one on screen.
-    SetStaleExportPolicy(crate::state::runtime::StaleResultPolicy),
 
     // Optimize (U2 of OPTIMIZER_UX_PLAN.md)
     /// Open the Optimize modal for a specific toolpath. Triggers
@@ -273,8 +177,6 @@ pub enum AppEvent {
     /// `AppState::optimize_modal`. Long-running — the GUI freezes
     /// until U3's worker-thread integration lands.
     OpenOptimizeModal(ToolpathId),
-    /// Close the Optimize modal.
-    CloseOptimizeModal,
     /// Apply a candidate from the Optimize modal. Carries the candidate
     /// index into `OptimizeOutcome::Ranked(..)` so the controller can
     /// look up the params + delta from the cached outcome rather than
@@ -303,11 +205,6 @@ pub enum AppEvent {
     /// card plus three machinist charts; it re-derives the underlying
     /// `FeedsExplain` from session state every frame.
     OpenFeedsModal(ToolpathId),
-    /// Close the Feeds & Speeds modal.
-    CloseFeedsModal,
-    /// Toggle between single-toolpath and project-rollup mode within
-    /// the Feeds & Speeds modal.
-    SetFeedsModalMode(crate::state::FeedsModalMode),
     /// Set the project-level spindle policy (chart-fidelity vs
     /// max-speed). Persists into `ProjectPostConfig.spindle_strategy`.
     /// All Suggest calls and the Feeds modal use the new policy on the
@@ -335,8 +232,6 @@ pub enum AppEvent {
     /// Apply the Feeds recommendation across every selected toolpath
     /// in project-rollup mode.
     ApplyFeedsProject,
-    /// Toggle the "How is this calculated?" provenance disclosure.
-    ToggleFeedsProvenance,
     /// Apply a custom (feed, rpm) pair from the Chart C drag-to-explore
     /// interaction. Routed only when the user releases the drag inside
     /// the chart bounds and confirms.
@@ -345,20 +240,8 @@ pub enum AppEvent {
         feed_mm_min: f64,
         rpm: f64,
     },
-    /// Change the sort order in the Feeds modal's project-rollup table.
-    SetFeedsProjectSort(crate::state::ProjectFeedsSort),
-    /// Set the drag-to-explore overlay point on the feed-RPM nomogram.
-    /// `None` clears the overlay (reverts the chart marker back to the
-    /// current/recommended pair).
-    SetFeedsExplore(Option<crate::state::NomogramExplore>),
-    /// Toggle a row in the Feeds project-view selection.
-    ToggleFeedsProjectRow(ToolpathId),
     /// Apply Feeds recommendations to every selected (checked) toolpath.
     ApplyFeedsProjectSelected,
-    /// Set the project-view scatter overlay visibility.
-    SetFeedsProjectScatter(bool),
-    /// Select / deselect every project-view row in one click.
-    SetFeedsProjectSelectAll(bool),
 
     // Optimize project (U3 of OPTIMIZER_UX_PLAN.md)
     /// Open the project-level Optimize rollup. Submits an
@@ -366,21 +249,12 @@ pub enum AppEvent {
     /// every enabled toolpath. The view opens in `Loading` state
     /// immediately; the rollup populates when the worker returns.
     OpenOptimizeProject,
-    /// Close the rollup view. Cancels the worker lane if it's still
-    /// running and discards any in-flight result.
-    CloseOptimizeProject,
-    /// Toggle the row checkbox for batch Apply. The controller flips
-    /// the bool at the given index in `optimize_project.row_selected`.
-    ToggleOptimizeProjectRow(usize),
     /// Apply every row whose checkbox is currently true. Each
     /// applied candidate is the first-safe recommendation from that
     /// row's outcome. Routes through `Command::RestoreToolpathSnapshot`.
     ApplyOptimizeProject,
 
     // Multi-tool finishing planner (Phase U of the multi-tool plan)
-    /// Open the planner dialog, snapshotting the drawer's tools. Cheap —
-    /// nothing is computed until Preview.
-    OpenMultitoolPlanner,
     /// Run `preview_multitool_plan` on the Optimize worker lane. The
     /// session moves into the request and comes back on the result, the
     /// same shape `OpenOptimizeProject` uses.
@@ -389,21 +263,9 @@ pub enum AppEvent {
     /// only on a Ready preview: applying something the operator has not
     /// been shown is the thing the veto exists to prevent.
     ApplyMultitoolPlan,
-    /// Veto. Closes the dialog, drops the overlay, cancels an in-flight
-    /// walk — and leaves the project untouched. The dials and the held
-    /// preview survive so re-opening resumes rather than restarts.
-    CloseMultitoolPlanner,
 
     // Collision
     RunCollisionCheck,
-
-    // Compute
-    CancelCompute,
-    /// Cancel only the toolpath-generation lane (`ComputeLane::Toolpath`),
-    /// leaving Analysis/Optimize untouched. Used by MCP's
-    /// `cancel_generation` tool so aborting a runaway generate doesn't
-    /// also interrupt an unrelated in-flight simulation or optimize run.
-    CancelToolpathGeneration,
 
     // Face selection
     ToggleFaceSelection {
@@ -429,8 +291,14 @@ pub enum AppEvent {
     Undo,
     Redo,
 
-    // Help
-    ShowShortcuts,
-
-    Quit,
+    // View
+    /// One row of the view registry
+    /// ([`for_each_ui_command!`](crate::for_each_ui_command)).
+    ///
+    /// WP13 moved 55 variants here. A view command writes the VIEW —
+    /// the camera, a modal, the playback index, a per-user library file
+    /// — and never `ProjectSession`. It keeps travelling on this
+    /// channel because a view write and a session write arrive from the
+    /// same draw pass and must stay in order.
+    Ui(UiCommand),
 }

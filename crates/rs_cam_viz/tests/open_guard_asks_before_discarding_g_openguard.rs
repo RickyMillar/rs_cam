@@ -42,14 +42,18 @@ const MCP_SRC: &str = include_str!("../src/app/mcp.rs");
 
 /// The body of the `AppEvent::OpenJob` arm, from its `=>` to the arm that
 /// follows it.
+///
+/// WP13 moved the arm that used to follow this one — `ShowShortcuts` — into
+/// the view registry, so the end marker is the view dispatch block that now
+/// sits next.
 fn open_job_arm() -> &'static str {
     let start = INPUT_SRC
         .find("AppEvent::OpenJob =>")
         .expect("the OpenJob dispatch arm still exists");
     let rest = &INPUT_SRC[start..];
     let end = rest
-        .find("AppEvent::ShowShortcuts")
-        .expect("the arm after OpenJob still exists");
+        .find("AppEvent::Ui(cmd) => match cmd {")
+        .expect("the view dispatch block after OpenJob still exists");
     &rest[..end]
 }
 

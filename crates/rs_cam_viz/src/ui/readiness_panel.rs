@@ -13,6 +13,7 @@ use crate::state::{AppState, Workspace};
 use crate::ui::components::{CountPill, FreshnessGate};
 use crate::ui::readiness::{self, CheckStatus, CycleTimeBasisExt};
 use crate::ui::theme;
+use crate::ui_command::{NoArgs, UiCommand};
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let sim = &state.simulation;
@@ -60,8 +61,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 ops_status,
                 "Operations",
                 &ops_detail,
-                (ops_status != CheckStatus::Pass)
-                    .then_some(("Toolpaths", AppEvent::SwitchWorkspace(Workspace::Toolpaths))),
+                (ops_status != CheckStatus::Pass).then_some((
+                    "Toolpaths",
+                    AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Toolpaths)),
+                )),
                 events,
             );
 
@@ -95,7 +98,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 &rapid_detail,
                 (rapid_status == CheckStatus::Fail).then_some((
                     "Simulation",
-                    AppEvent::SwitchWorkspace(Workspace::Simulation),
+                    AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Simulation)),
                 )),
                 events,
             );
@@ -207,7 +210,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 .on_hover_text("Open the export readiness gate")
                 .clicked()
             {
-                events.push(AppEvent::ExportGcode);
+                events.push(AppEvent::Ui(UiCommand::ExportGcode(NoArgs)));
             }
             if !sim.has_results() && ui.button("Run simulation").clicked() {
                 events.push(AppEvent::RunSimulation);

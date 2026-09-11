@@ -20,6 +20,7 @@ use super::components::{FreshnessGate, UiExt};
 use super::{AppEvent, theme};
 use crate::state::AppState;
 use crate::state::{OptimizeModalState, OptimizeRunStatus};
+use crate::ui_command::{NoArgs, UiCommand};
 
 /// Draw the Optimize modal if `state.optimize_modal` is set.
 pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -54,7 +55,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         });
 
     if !still_open {
-        events.push(AppEvent::CloseOptimizeModal);
+        events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
     }
 }
 
@@ -82,7 +83,7 @@ fn draw_status(
             // U3 wires Cancel through the worker thread. For U2,
             // closing the modal stops the (non-existent) worker too.
             if ui.button("Cancel").clicked() {
-                events.push(AppEvent::CloseOptimizeModal);
+                events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
             }
         }
         OptimizeRunStatus::Failed(msg) => {
@@ -95,7 +96,7 @@ fn draw_status(
             ui.label(egui::RichText::new(msg).small());
             ui.add_space(8.0);
             if ui.button("Close").clicked() {
-                events.push(AppEvent::CloseOptimizeModal);
+                events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
             }
         }
         OptimizeRunStatus::Ready(outcome) => {
@@ -285,7 +286,7 @@ fn draw_outcome(
     if trailing_close {
         ui.add_space(8.0);
         if ui.button("Close").clicked() {
-            events.push(AppEvent::CloseOptimizeModal);
+            events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
         }
     }
 }
@@ -563,7 +564,7 @@ fn draw_attempted(ui: &mut egui::Ui, candidates: &[OptimizeCandidate], events: &
         );
         ui.add_space(8.0);
         if ui.button("Close").clicked() {
-            events.push(AppEvent::CloseOptimizeModal);
+            events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
         }
         return;
     }
@@ -594,7 +595,7 @@ fn draw_attempted(ui: &mut egui::Ui, candidates: &[OptimizeCandidate], events: &
 
     ui.add_space(8.0);
     if ui.button("Close").clicked() {
-        events.push(AppEvent::CloseOptimizeModal);
+        events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
     }
 }
 
@@ -726,7 +727,7 @@ fn draw_ranked(
         );
         ui.add_space(8.0);
         if ui.button("Close").clicked() {
-            events.push(AppEvent::CloseOptimizeModal);
+            events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
         }
         return;
     }
@@ -771,7 +772,7 @@ fn draw_ranked(
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         if ui.button("Close").clicked() {
-            events.push(AppEvent::CloseOptimizeModal);
+            events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
         }
     });
 }

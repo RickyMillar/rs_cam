@@ -15,6 +15,7 @@ pub mod present_mode;
 pub mod render;
 pub mod state;
 pub mod ui;
+pub mod ui_command;
 
 /// A wakeup for the GUI event loop that survives a parked frame loop.
 ///

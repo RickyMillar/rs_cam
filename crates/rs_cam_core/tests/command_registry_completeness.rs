@@ -216,6 +216,7 @@ fn query_answer_has_one_variant_per_query_row() {
     });
     match answer {
         QueryAnswer::ToolpathCycleTime(_) => {}
+        QueryAnswer::GetOperationSchema(_) => {}
     }
 }
 

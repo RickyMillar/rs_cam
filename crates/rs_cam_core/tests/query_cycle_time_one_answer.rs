@@ -264,7 +264,10 @@ fn assert_query_matches_oracle(
             nominal_feed_mm_min,
         }))
         .expect("index 0 names a toolpath");
-    let QueryAnswer::ToolpathCycleTime(ToolpathCycleTimeAnswer { cycle_time }) = answer;
+    // WP13 added a second `Query` row, so this pattern is refutable now.
+    let QueryAnswer::ToolpathCycleTime(ToolpathCycleTimeAnswer { cycle_time }) = answer else {
+        panic!("the toolpath_cycle_time read answers its own variant");
+    };
     assert_eq!(
         cycle_time, expected,
         "the Query and the frozen oracle must answer the same CycleTime"

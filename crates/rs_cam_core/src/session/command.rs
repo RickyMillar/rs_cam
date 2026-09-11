@@ -51,6 +51,16 @@
 //! material and a recommendation from view state; `plan_multitool_
 //! finishing`, whose outcome IS the reply; and `export_gcode`, whose
 //! pre-flight gate reads the view's own simulation slot.
+//!
+//! WP13 adds the fifth kind, `UiQuery`, and the `GetOperationSchema`
+//! row. No row here declares `UiCommand` or `UiQuery`: both kinds belong
+//! to the view registry `for_each_ui_command!`
+//! (`crates/rs_cam_viz/src/ui_command.rs`), which reuses this module's
+//! [`CommandKind`], [`Reach`] and [`Surfaces`] so the two registries
+//! speak one language. Core cannot name a view payload type, so a view
+//! row cannot live here. `GetOperationSchema` is the exception that
+//! proves the rule: the MCP arm read the operation CATALOG and never
+//! the view, so ruling 3 makes it a core `Query`.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -60,7 +70,7 @@ use super::cycle_time::{self, CycleTime};
 use super::{
     GenerateToolpathHandle, ProjectSession, SessionError, ToolpathComputeResult, ToolpathConfig,
 };
-use crate::compute::catalog::OperationConfig;
+use crate::compute::catalog::{OperationConfig, OperationSchema};
 use crate::compute::config::DressupConfig;
 use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::FeedsProvenance;
@@ -480,6 +490,17 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
+            (Query, GetOperationSchema, "get_operation_schema", GetOperationSchemaArgs,
+             GetOperationSchemaAnswer,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI inspector draws the catalog directly; no panel asks for a schema",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no schema tool",
+                 ),
+             }),
             (Job, GenerateToolpath, "generate_toolpath", GenerateToolpathArgs,
              GenerateToolpathHandle,
              Surfaces {
@@ -502,6 +523,8 @@ pub enum CommandKind {
     Job,
     /// A view command. It never enters the core session.
     UiCommand,
+    /// A view read. It never enters the core session.
+    UiQuery,
 }
 
 /// Whether one surface reaches a command.
@@ -1165,6 +1188,24 @@ pub struct ToolpathCycleTimeAnswer {
     pub cycle_time: CycleTime,
 }
 
+/// The arguments of the `get_operation_schema` read.
+#[derive(Debug, Clone)]
+pub struct GetOperationSchemaArgs {
+    /// The operation kind, in the `kind_str` spelling the catalog uses.
+    pub operation_type: String,
+}
+
+/// The answer to the `get_operation_schema` read.
+///
+/// WP13 ruling 3 makes this a core `Query` and not a `UiQuery`: the read
+/// takes the operation catalog and never the view. It reads no session
+/// field either, so the arm calls the associated function.
+#[derive(Debug, Clone)]
+pub struct GetOperationSchemaAnswer {
+    /// Every parameter the operation declares, with its type and range.
+    pub schema: OperationSchema,
+}
+
 /// Splits the registry's rows by kind, and emits the [`Command`],
 /// [`Query`] and [`Job`] payload enums plus [`QueryAnswer`] and
 /// [`JobHandle`].
@@ -1636,6 +1677,13 @@ impl ProjectSession {
                 );
                 Ok(QueryAnswer::ToolpathCycleTime(ToolpathCycleTimeAnswer {
                     cycle_time,
+                }))
+            }
+            Query::GetOperationSchema(args) => {
+                let GetOperationSchemaArgs { operation_type } = args;
+                let schema = Self::operation_schema(&operation_type)?;
+                Ok(QueryAnswer::GetOperationSchema(GetOperationSchemaAnswer {
+                    schema,
                 }))
             }
         }

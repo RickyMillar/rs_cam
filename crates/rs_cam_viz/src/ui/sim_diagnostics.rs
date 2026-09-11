@@ -8,6 +8,7 @@ use crate::state::runtime::GuiState;
 use crate::state::simulation::{SimulationIssueKind, SimulationState};
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
+use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool_load::drill_gates::{DrillGateOutcome, DrillGateSeverity};
 use rs_cam_core::tool_load::verdict::{
@@ -260,7 +261,9 @@ fn draw_focused_hotspot_card(
             );
             ui.horizontal(|ui| {
                 if ui.small_button("Jump").clicked() {
-                    events.push(AppEvent::SimJumpToMove(global_start));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(
+                        SimJumpToMoveArgs { move_index: global_start },
+                    )));
                 }
                 if ui.small_button("Optimize this op").clicked() {
                     events.push(AppEvent::OpenOptimizeModal(toolpath_id));
@@ -307,15 +310,21 @@ fn draw_focused_issue_card(
                 if ui.small_button("◀ Prev").clicked()
                     && let Some(target) = sim.focus_issue_delta(gui, max_feed, -1)
                 {
-                    events.push(AppEvent::SimJumpToMove(target.move_index));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index: target.move_index,
+                    })));
                 }
                 if ui.small_button("Next ▶").clicked()
                     && let Some(target) = sim.focus_issue_delta(gui, max_feed, 1)
                 {
-                    events.push(AppEvent::SimJumpToMove(target.move_index));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index: target.move_index,
+                    })));
                 }
                 if ui.small_button("Jump").clicked() {
-                    events.push(AppEvent::SimJumpToMove(issue.move_index));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index: issue.move_index,
+                    })));
                 }
                 if let Some(toolpath_id) = issue.toolpath_id
                     && ui.small_button("Optimize this op").clicked()
@@ -759,7 +768,11 @@ fn draw_project_section(
                                 .on_hover_text("Click to focus and jump to this hotspot.");
                             if resp.clicked() {
                                 sim.debug.focused_hotspot = Some((tp_id, *h_idx));
-                                events.push(AppEvent::SimJumpToMove(global_start));
+                                events.push(AppEvent::Ui(UiCommand::SimJumpToMove(
+                                    SimJumpToMoveArgs {
+                                        move_index: global_start,
+                                    },
+                                )));
                             }
                         }
                         if hotspot_snapshot.len() > TOP_N {
@@ -832,7 +845,9 @@ fn draw_toolpath_section(
                     events.push(AppEvent::OpenOptimizeModal(boundary_id));
                 }
                 if ui.small_button("Jump to start").clicked() {
-                    events.push(AppEvent::SimJumpToMove(boundary_start));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index: boundary_start,
+                    })));
                 }
             });
         });
@@ -1571,7 +1586,9 @@ fn draw_span_body(
             .on_hover_text("Click to focus and jump to start move.");
         if resp.clicked() {
             sim.debug.focused_hotspot = Some((tp_id, *h_idx));
-            events.push(AppEvent::SimJumpToMove(global_start));
+            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                move_index: global_start,
+            })));
         }
     }
     if in_scope_hotspots.len() > MAX_ROWS {
@@ -1601,7 +1618,9 @@ fn draw_span_body(
             )
             .on_hover_text("Click to jump to issue.");
         if resp.clicked() {
-            events.push(AppEvent::SimJumpToMove(move_idx));
+            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                move_index: move_idx,
+            })));
         }
     }
     if in_scope_issues.len() > MAX_ROWS {

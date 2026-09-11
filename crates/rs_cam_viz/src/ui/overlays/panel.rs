@@ -12,6 +12,7 @@
 use crate::state::AppState;
 use crate::ui::AppEvent;
 use crate::ui::theme;
+use crate::ui_command::{NoArgs, UiCommand};
 
 use super::registry::{self, Legend, OverlayAction, OverlayGroup, OverlayRow, OverlaySurface};
 
@@ -270,7 +271,9 @@ fn run_action(state: &mut AppState, events: &mut Vec<AppEvent>, action: OverlayA
     match action {
         OverlayAction::RunSimulation => events.push(AppEvent::RunSimulation),
         OverlayAction::RunCollisionCheck => events.push(AppEvent::RunCollisionCheck),
-        OverlayAction::OpenPlanner => events.push(AppEvent::OpenMultitoolPlanner),
+        OverlayAction::OpenPlanner => {
+            events.push(AppEvent::Ui(UiCommand::OpenMultitoolPlanner(NoArgs)));
+        }
         OverlayAction::GenerateAll => events.push(AppEvent::GenerateAll),
         OverlayAction::RecordGeneratorTrace => {
             events.push(AppEvent::SetGeneratorTraceCaptureAll(true));

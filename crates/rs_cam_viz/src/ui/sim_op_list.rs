@@ -7,6 +7,7 @@ use crate::state::simulation::{SimulationIssue, SimulationIssueKind, SimulationS
 use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::ViewportState;
 use crate::ui::theme;
+use crate::ui_command::{SimJumpToMoveArgs, SimJumpToOpStartArgs, UiCommand};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool_load::verdict::{
     Confidence, CriterionKind, LoadState, ToolpathLoadVerdict, UnmodeledReason,
@@ -170,9 +171,9 @@ pub fn draw(
                     );
                     ui.add_space(8.0);
                     if ui.button("Go to Toolpaths").clicked() {
-                        events.push(AppEvent::SwitchWorkspace(
+                        events.push(AppEvent::Ui(UiCommand::SwitchWorkspace(
                             crate::state::Workspace::Toolpaths,
-                        ));
+                        )));
                     }
                 }
             });
@@ -299,7 +300,9 @@ pub fn draw(
                     .on_hover_text("Click to jump playback to this toolpath's start.")
                     .clicked()
                 {
-                    events.push(AppEvent::SimJumpToOpStart(i));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToOpStart(
+                        SimJumpToOpStartArgs { boundary_index: i },
+                    )));
                 }
             });
 
@@ -657,9 +660,9 @@ pub fn draw(
             let response = ui.selectable_label(is_active, text);
             if response.clicked() {
                 sim.clear_pinned_semantic_item();
-                events.push(AppEvent::SimJumpToMove(
-                    boundary.start_move + span.start_move,
-                ));
+                events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                    move_index: boundary.start_move + span.start_move,
+                })));
             }
 
             if ui
@@ -667,7 +670,9 @@ pub fn draw(
                 .on_hover_text("Jump to span end")
                 .clicked()
             {
-                events.push(AppEvent::SimJumpToMove(boundary.start_move + span.end_move));
+                events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                    move_index: boundary.start_move + span.end_move,
+                })));
             }
             ui.label(
                 egui::RichText::new(format!("{}..{}", span.start_move, span.end_move))
@@ -847,7 +852,9 @@ pub fn draw(
             if response.clicked() {
                 sim.pin_semantic_item(boundary.id, item.id);
                 if let Some(move_start) = item.move_start {
-                    events.push(AppEvent::SimJumpToMove(boundary.start_move + move_start));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index: boundary.start_move + move_start,
+                    })));
                 }
             }
 
@@ -857,7 +864,9 @@ pub fn draw(
                     .on_hover_text("Jump to semantic item end")
                     .clicked()
                 {
-                    events.push(AppEvent::SimJumpToMove(boundary.start_move + move_end));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index: boundary.start_move + move_end,
+                    })));
                 }
                 ui.label(
                     egui::RichText::new(format!("{move_start}-{move_end}"))

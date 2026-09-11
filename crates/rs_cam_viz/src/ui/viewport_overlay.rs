@@ -24,6 +24,7 @@ use crate::state::{AppState, Workspace};
 use crate::ui::automation;
 use crate::ui::overlays::panel;
 use crate::ui::theme;
+use crate::ui_command::{NoArgs, UiCommand};
 
 pub fn draw(
     ui: &mut egui::Ui,
@@ -46,24 +47,26 @@ pub fn draw(
         // ── View dropdown: presets + reset ──────────────────────
         ui.menu_button("View ▼", |ui| {
             if ui.button("Top").clicked() {
-                events.push(AppEvent::SetViewPreset(ViewPreset::Top));
+                events.push(AppEvent::Ui(UiCommand::SetViewPreset(ViewPreset::Top)));
                 ui.close();
             }
             if ui.button("Front").clicked() {
-                events.push(AppEvent::SetViewPreset(ViewPreset::Front));
+                events.push(AppEvent::Ui(UiCommand::SetViewPreset(ViewPreset::Front)));
                 ui.close();
             }
             if ui.button("Right").clicked() {
-                events.push(AppEvent::SetViewPreset(ViewPreset::Right));
+                events.push(AppEvent::Ui(UiCommand::SetViewPreset(ViewPreset::Right)));
                 ui.close();
             }
             if ui.button("Iso").clicked() {
-                events.push(AppEvent::SetViewPreset(ViewPreset::Isometric));
+                events.push(AppEvent::Ui(UiCommand::SetViewPreset(
+                    ViewPreset::Isometric,
+                )));
                 ui.close();
             }
             ui.separator();
             if ui.button("Reset view").clicked() {
-                events.push(AppEvent::ResetView);
+                events.push(AppEvent::Ui(UiCommand::ResetView(NoArgs)));
                 ui.close();
             }
         });
@@ -82,7 +85,7 @@ pub fn draw(
                 .clicked()
             {
                 if !matches!(projection, ProjectionMode::Perspective) {
-                    events.push(AppEvent::ToggleProjection);
+                    events.push(AppEvent::Ui(UiCommand::ToggleProjection(NoArgs)));
                 }
                 ui.close();
             }
@@ -94,7 +97,7 @@ pub fn draw(
                 .clicked()
             {
                 if !matches!(projection, ProjectionMode::Orthographic) {
-                    events.push(AppEvent::ToggleProjection);
+                    events.push(AppEvent::Ui(UiCommand::ToggleProjection(NoArgs)));
                 }
                 ui.close();
             }
@@ -127,14 +130,14 @@ pub fn draw(
                 .on_hover_text("Clear isolation (show all toolpaths)")
                 .clicked()
             {
-                events.push(AppEvent::ClearIsolation);
+                events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
             }
         } else if ui
             .small_button("Isolate")
             .on_hover_text("Show only the selected toolpath (shortcut: I)")
             .clicked()
         {
-            events.push(AppEvent::ToggleIsolateToolpath);
+            events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
         }
 
         // ── Compute activity indicator (right side) ─────────────
@@ -154,7 +157,7 @@ pub fn draw(
             let cancel_resp = ui.small_button("Cancel All");
             automation::record(ui, "overlay_cancel_all", &cancel_resp, "Cancel All");
             if cancel_resp.clicked() {
-                events.push(AppEvent::CancelCompute);
+                events.push(AppEvent::Ui(UiCommand::CancelCompute(NoArgs)));
             }
         }
 
@@ -171,7 +174,7 @@ pub fn draw(
                 }
                 Workspace::Simulation => {
                     if ui.small_button("Reset").clicked() {
-                        events.push(AppEvent::ResetSimulation);
+                        events.push(AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
                     }
                     if ui.small_button("Re-run").clicked() {
                         events.push(AppEvent::RunSimulation);

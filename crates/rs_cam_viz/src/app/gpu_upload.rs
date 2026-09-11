@@ -600,7 +600,7 @@ impl RsCamApp {
             // Every one of these five is therefore an UPLOAD-time flag, and
             // upload-time flags need a trigger. `overlay_upload_key` in
             // `app.rs` is that trigger, and it carries the workspace too —
-            // `AppEvent::SwitchWorkspace` never set `pending_upload` itself
+            // `UiCommand::SwitchWorkspace` never set `pending_upload` itself
             // (audit §3.3, "a future edit that removes the incidental
             // trigger would expose the gap silently").
             let mut boxes = Vec::new();
