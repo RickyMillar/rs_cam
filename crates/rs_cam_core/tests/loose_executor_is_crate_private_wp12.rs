@@ -22,21 +22,41 @@
 //! * (b) Every `execute_operation*` declaration in `compute/execute.rs`
 //!   reads `pub(crate) fn`, and no line there reads `pub fn
 //!   execute_operation`.
-//! * (c) No live line under `crates/rs_cam_viz/src/compute` names
-//!   `session/compute.rs`. WP11b deleted the mirrored input assembly, so a
-//!   viz file that still describes itself against that file describes a
-//!   shape the tree no longer has.
+//! * (c) No line under `crates/rs_cam_viz/src` names `session/compute.rs`
+//!   except the two the allowlist names. WP11b deleted the mirrored input
+//!   assembly, so a viz file that still describes itself against that file
+//!   describes a shape the tree no longer has. **Comment lines are
+//!   included**, and that is the whole arm: a file path appears in Rust
+//!   only inside a comment.
 //!
 //! # Red before the fix
 //!
 //! Arm (a) fails: four integration files call the loose entry. Arm (b)
 //! fails: all three declarations read `pub fn`.
 //!
+//! Arm (c) was VACUOUS and passed (tech-debt review H4). It skipped comment
+//! lines, so it could match nothing: the occurrence it was written for was a
+//! `//!` line, and the fix commit's own red output recorded the arm as `ok`
+//! on the pre-fix tree. WP18 makes it read every line and allow the two
+//! legitimate cross-references by name. Its red is an injected `//` line
+//! that names the module from a viz file; the verifier ran that experiment.
+//!
+//! WP18 also WIDENED the arm's population, and the reason is worth stating.
+//! The ruling asks for an allowlist of the surviving legitimate references.
+//! Both of them (`app/mcp.rs`, `ui/properties/mod.rs`) live OUTSIDE
+//! `crates/rs_cam_viz/src/compute`, so a scan of that directory alone can
+//! never see them and the staleness check below could never pass. The arm
+//! therefore reads all of `crates/rs_cam_viz/src`, which covers the
+//! `compute` directory the finding named and holds the allowlist to
+//! account.
+//!
 //! # Non-vacuity
 //!
 //! A source scan that reads no file passes and looks healthy. Each arm
 //! asserts that its population is not empty, and arm (b) asserts that it
-//! found all three declarations by name.
+//! found all three declarations by name. Arm (c) asserts that every
+//! allowlist entry still matches a line: an entry that no longer describes
+//! the tree is an allowance nothing checks.
 
 #![allow(
     clippy::unwrap_used,
@@ -238,19 +258,69 @@ fn the_three_generation_entries_are_crate_private() {
     );
 }
 
-// ── (c) no viz compute source mirrors `session/compute.rs` ──────────
+// ── (c) no viz source mirrors `session/compute.rs` ──────────────────
 
-/// No live line under `crates/rs_cam_viz/src/compute` names
-/// `session/compute.rs`.
+/// The module a viz file must not describe itself against.
+const CORE_GENERATION_MODULE: &str = "session/compute.rs";
+
+/// One legitimate cross-reference to core's generation module.
+///
+/// A line passes only when an entry matches BOTH halves: `path_marker`
+/// against the file's path, and `line_marker` against the line itself. The
+/// path half is a fragment, not a full name, so a file that moves into a
+/// directory of its own keeps its allowance.
+struct AllowedReference {
+    /// A fragment of the file's path.
+    path_marker: &'static str,
+    /// A fragment of the line, chosen to name the reference's PURPOSE.
+    line_marker: &'static str,
+    /// Why this reference is legitimate.
+    why: &'static str,
+}
+
+/// Every line under `crates/rs_cam_viz/src` that may name core's generation
+/// module. Both entries cite core's BEHAVIOUR to explain the viz side;
+/// neither describes a mirrored input assembly.
+const ALLOWED_REFERENCES: &[AllowedReference] = &[
+    AllowedReference {
+        path_marker: "app/mcp",
+        line_marker: "SessionError::ToolNotFound",
+        why: "B7 divergence 3: the GUI narration's doc comment cites core's \
+              sibling narration, which refuses an unresolved tool id rather \
+              than narrating with another tool's geometry",
+    },
+    AllowedReference {
+        path_marker: "ui/properties/mod.rs",
+        line_marker: "one generation uses",
+        why: "UX-R03-009 (G-BOUNDARYINHERIT): the boundary panel names the \
+              stored source generation reads, because the core door clones \
+              `tc.boundary` unconditionally",
+    },
+];
+
+/// The allowlist entry that allows this line, if any.
+fn allowance_for(path: &Path, line: &str) -> Option<usize> {
+    let shown = path.display().to_string();
+    ALLOWED_REFERENCES.iter().position(|allowed| {
+        shown.contains(allowed.path_marker) && line.contains(allowed.line_marker)
+    })
+}
+
+/// No viz line names `session/compute.rs` outside the allowlist.
 ///
 /// The GUI worker runs core's `Job` steps since WP11b. A viz file that
 /// describes itself against core's generation module describes a mirror that
-/// no longer exists. The two legitimate cross-references live outside this
-/// directory (`ui/properties/mod.rs`, `app/mcp.rs`) and are untouched.
+/// no longer exists.
+///
+/// H4: this arm used to skip comment lines. A file path appears in Rust only
+/// inside a comment, so the arm could match nothing and passed on the very
+/// tree it was written to refuse. It reads every line now, and the two
+/// surviving cross-references are named above with the reason each one
+/// stands. An entry that stops matching fails this arm: a stale allowance is
+/// an exemption nothing checks.
 #[test]
-fn no_viz_compute_source_mirrors_the_core_generation_module() {
-    let viz_src = crates_root().join("rs_cam_viz").join("src");
-    let root = viz_src.join("compute");
+fn viz_names_the_core_generation_module_only_where_the_allowlist_says() {
+    let root = crates_root().join("rs_cam_viz").join("src");
     assert!(
         root.is_dir(),
         "{} is not a directory; retarget this test",
@@ -260,29 +330,49 @@ fn no_viz_compute_source_mirrors_the_core_generation_module() {
     rust_sources_under(&root, &mut files);
     files.sort();
     assert!(
-        !files.is_empty(),
-        "the viz compute scan read no file; an empty population passes and \
-         looks healthy"
+        files.len() > 20,
+        "the viz scan read only {} files; an empty or tiny population passes \
+         and looks healthy",
+        files.len()
+    );
+    assert!(
+        files
+            .iter()
+            .any(|path| path.display().to_string().contains("/compute/")),
+        "the scan must cover `crates/rs_cam_viz/src/compute`, the directory \
+         H4 names; no scanned path sits under it"
     );
 
     let mut hits: Vec<String> = Vec::new();
+    let mut matched = vec![false; ALLOWED_REFERENCES.len()];
     for path in &files {
         let text = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         for (index, line) in text.lines().enumerate() {
-            if is_comment(line) {
+            if !line.contains(CORE_GENERATION_MODULE) {
                 continue;
             }
-            if line.contains("session/compute.rs") {
-                hits.push(format!("{}:{}", path.display(), index + 1));
+            match allowance_for(path, line) {
+                Some(entry) => matched[entry] = true,
+                None => hits.push(format!("{}:{}", path.display(), index + 1)),
             }
         }
     }
 
     assert!(
         hits.is_empty(),
-        "the worker runs core's Job steps; it mirrors no core module. These \
-         lines still name one: {}",
+        "the worker runs core's Job steps; it mirrors no core module. A line \
+         that names {CORE_GENERATION_MODULE} needs an entry in \
+         ALLOWED_REFERENCES saying why. These lines have none: {}",
         hits.join(", ")
     );
+    for (entry, allowed) in ALLOWED_REFERENCES.iter().enumerate() {
+        assert!(
+            matched[entry],
+            "the allowlist entry ({}, {}) matches no line any more, so it \
+             exempts nothing and hides the next mirror. Delete it, or \
+             retarget it. It was allowed because: {}",
+            allowed.path_marker, allowed.line_marker, allowed.why
+        );
+    }
 }
