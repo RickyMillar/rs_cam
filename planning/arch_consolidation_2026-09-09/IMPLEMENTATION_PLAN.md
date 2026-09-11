@@ -1371,3 +1371,56 @@ which also closes N12. Two deliberate deviations: `start` takes the cancel flag 
 and the tier-map walk need it), and `start` does not bump the revision (the old head called
 `results.remove`, which moves none; "no behaviour change" holds). G-REGEN-RACE under the
 handle model is revisited in WP11b.
+
+---
+
+## §22 WP11b pre-implementation corrections and rulings (2026-09-11)
+
+A scout measured §4 WP11b against master with WP10 landed. Full brief: session scratchpad
+`wp11b_brief.md`. All seven N12 items map to lines; an eighth divergence exists.
+
+### Corrections
+
+- **N12 item 8 (new):** the viz worker falls back to `vec![stock_rect()]` when a boundary
+  yields no region (`worker/execute/mod.rs:729-733`); core refuses (`compute.rs:526-533`).
+- Item 6 is five request builders, not four; item 2 also overrides the declared
+  `BoundarySource`; WP12's "13 remain viz's" is stale — about 25 of 27 `ComputeRequest`
+  fields die.
+- The narrowed executor cannot live in `compute/execute.rs` (private fields of
+  `ResolvedGenInputs`, non-descendant module) and the proposed name `execute_operation` is
+  taken. Two executor arguments come from neither `inputs` nor `context`: the debug and
+  semantic trace contexts.
+- `ResolvedHeights` does not collapse into one type: the diagnostics type carries the stock
+  top and bottom and no pins.
+- The lane's cancel flag is set by `submit_toolpath` and cleared only by the worker; a handle
+  that borrowed it would cancel the wrong job.
+
+### Rulings
+
+1. **Observer parameter.** `execute_job(handle, observer: &GenObserver, cancel)` where
+   `GenObserver` is a core struct of optional sinks: the debug-options gate, the per-dressup
+   item contexts, the phase sink and the artifact path. The WP10 fn-pointer sentry is updated
+   to the new type; "holds no session" still holds.
+2. **The spatial index is built off-loop.** `ResolvedGenInputs.spatial_index` becomes a
+   shared lazy cell (`Arc<OnceLock<SpatialIndex>>`) handed out by a session-owned memo keyed
+   by model id and revision (the GUI's per-lane G8 memo moves into core). `start` never builds
+   it; `execute_job` forces it once; later submits share the built value. No import-time
+   warming in WP11b.
+3. **Per-submit cancel.** `start` receives a fresh `Arc<AtomicBool>` per submit, stored on the
+   handle; the lane maps "cancel this job" onto that flag.
+4. **The narrowed fn is `session::compute::execute_generation(inputs, ctx, observer,
+   cancel)`** beside `execute_job`; the 21-argument fn becomes a private wrapper kept only for
+   the in-module strategy advisor until WP12 deletes it. Its `#[allow(too_many_arguments)]`
+   stays until then.
+5. **Core wins every divergence.** Items 1, 2, 3, 6, 7, 8: the worker adopts core's assembly
+   by calling `start` / `execute_job`. Items 4 and 5: core is right; nothing moves. The
+   feed-optimiser input: core gains the stock read it lacked, no new field.
+6. **Submit-time refusals move to the frame loop** (`start`); the viz duplicates of the rest
+   and boundary preconditions are deleted.
+7. **`ComputeRequest` slims to `{ handle, viz_extras }`** in WP11b; WP12 deletes the dead
+   fields and the three `RecordingBackend` builders follow.
+8. **Sentries:** `gen_parity_p0_tests` item 3 flips AND a behavioural core sentry for item 3 is
+   added (the flip alone is true by construction); a source scan asserts the worker never
+   names `execute_operation_annotated*`; the WP10 sentry's fn pointer takes the observer.
+9. **Order:** after WP4 lands (`SetToolpathDebugOptions` closes the last MCP hatch in
+   `mcp_generate_toolpath`). Items 1 and 2 land together.
