@@ -1359,3 +1359,15 @@ brief: session scratchpad `wp13_moves_brief.md`.
 10. **Order:** WP13's moves start after WP4 lands. The optimizer rows (`CloseOptimizeModal` /
     `CloseOptimizeProject`) are exempt from property 3 until WP10's Job shape retires their
     `std::mem::replace`; the sentry lists them as a named exemption with the WP that removes it.
+
+### §16 addendum — WP10 lands core-only (2026-09-11)
+
+`execute_job` reads a handle whose `inputs` and `context` are private and produced only by
+`start`. The viz worker builds its own tool definition, spatial index and boundary regions
+(N12) and cannot name `ResolvedGenInputs`, so it cannot switch its generate step alone. WP10
+therefore lands core and CLI only: `start` / `execute_job` / `AdoptResult`, with
+`generate_toolpath` running the three steps inline. The worker and drain switch is WP11b,
+which also closes N12. Two deliberate deviations: `start` takes the cancel flag (the resolver
+and the tier-map walk need it), and `start` does not bump the revision (the old head called
+`results.remove`, which moves none; "no behaviour change" holds). G-REGEN-RACE under the
+handle model is revisited in WP11b.
