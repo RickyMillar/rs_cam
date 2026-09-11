@@ -1267,3 +1267,45 @@ A scout measured §4 WP6 and WP6b against master `cd2b8efd`. Full brief: session
 9. **`add_model` renumbers ids** (`io.rs:655`); that site waits for the WP7 builder.
 10. **Rollback per widget:** WP6 lands as one commit per draw file, not one patch, so each site
     has a bisect point.
+
+---
+
+## §20 WP7 pre-implementation corrections and rulings; WP7a split (2026-09-11)
+
+A scout measured §4 WP7 against master `cd2b8efd`. Full brief: session scratchpad
+`wp7_brief.md`.
+
+### Corrections
+
+- **Ten hatches, not eleven**: `insert_result` is `pub(crate)` since WP3. With §19 ruling 5
+  (`wizard_mut` deleted, `WizardState` moves to viz) the final count is **nine**.
+- **Test sites: 83 calls in 26 files** (51 viz `tests/`, 22 viz in-crate, 11 core `tests/`),
+  not ≈117. **63 are SETUP** (fixture construction), **20 are LIVE**.
+- Viz production is 53, not 48: `models_mut` has 10 production sites, not 4.
+- `controller/tests.rs` holds 2 LIVE sites, not 12; the LIVE mass is `wizard_e2e.rs` (12).
+- "P0 flip: none" is false: two tests write a field WITHOUT a command by design
+  (`mutation_paths_invalidate_alike_p0.rs` arm 3, viz `controller/tests.rs:4273`).
+- Two CLI comment lines match the §7 grep.
+- WP4 is a prerequisite of WP7 (through WP6 and WP6b); §3's table omits it.
+
+### Rulings
+
+1. **WP7a — the builder lands early, as its own package.** `pub struct ProjectSessionBuilder`
+   in `rs_cam_core::session` with `stock`, `machine`, `tool`, `model`, `post`, `setup`,
+   `toolpath`, `result(index, r)` and `build()`. **Id preservation is a contract** stated in
+   its doc: the builder writes the given `ToolConfig` / `LoadedModel` ids and never renumbers,
+   and it never runs `update_from_bbox`. WP7a migrates the 63 SETUP sites while the hatches are
+   still `pub`, and ships a sentry that a two-tool fixture keeps its ids and order. WP7a needs
+   no registry row and starts now.
+2. **No `SetExportWizard` row.** §19 ruling 5 moves `WizardState` to viz; the eleven wizard
+   test sites write the viz struct (in-crate) or go through the export wizard's own viz door.
+3. **The two un-commandable reproductions:** the core arm moves into a `#[cfg(test)]` module
+   inside `session/mutation.rs` (in-crate keeps the hatch reach and the arm's meaning); the viz
+   one is deleted, because after WP7 an un-commanded write from viz is a compile error and the
+   WP7 sentry is the guarantee.
+4. **The remaining LIVE sites** use `apply` with WP4 / WP5 / WP8 rows; the four field writes
+   without a row (`pause_message`, setup fixture geometry, `adopt_geometry`) get rows in WP6b.
+5. **WP7 (final) is one commit** after WP4, WP5, WP6, WP6b and WP7a: nine hatches to
+   `pub(crate)`, the 20 LIVE sites, the two reproductions, the sentry (a source scan: each hatch
+   declared `pub(crate)`; `rg` of `.<hatch>(` outside `crates/rs_cam_core/src` is 0, comments
+   excluded). The evidence row carries `cargo build -p rs_cam_viz` and the sentry.
