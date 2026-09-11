@@ -273,9 +273,12 @@ impl super::RsCamApp {
                 let resp = self.mcp_narrate_toolpath(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            // WP14a: a `Job` submit, not a synchronous read. The arm starts
+            // the job on the frame loop and stores the oneshot; the drain
+            // answers it. The wire is unchanged — the CLIENT still waits as
+            // long as it did, and the FRAME LOOP no longer does.
             McpRequestKind::RecommendClearingStrategy { index } => {
-                let resp = self.mcp_recommend_clearing_strategy(index);
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                self.mcp_recommend_clearing_strategy(index, response_tx);
             }
             McpRequestKind::GetSuggestRationale { index } => {
                 let resp = self.mcp_get_suggest_rationale(index);
@@ -431,9 +434,9 @@ impl super::RsCamApp {
                 let resp = self.mcp_plan_multitool_finishing(&spec);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            // WP14a: a `Job` submit. See the RecommendClearingStrategy arm.
             McpRequestKind::PreviewTierMap { spec } => {
-                let resp = self.mcp_preview_tier_map(&spec);
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                self.mcp_preview_tier_map(&spec, response_tx);
             }
             McpRequestKind::ApplyFeeds { index, scope } => {
                 let resp = self.mcp_apply_feeds(index, &scope);
@@ -1285,36 +1288,46 @@ impl super::RsCamApp {
     /// speed margin. Heavy (plans one toolpath per candidate) and runs
     /// synchronously, so the GUI is unresponsive while it computes. Does not
     /// mutate the project.
-    fn mcp_recommend_clearing_strategy(&self, index: usize) -> String {
-        let cancel = std::sync::atomic::AtomicBool::new(false);
-        let state = self.controller.state();
-        match state.session.recommend_clearing_strategy(index, &cancel) {
-            Ok(Some(rec)) => json_str(serde_json::json!({
-                "chosen": format!("{:?}", rec.chosen),
-                "regime": format!("{:?}", rec.regime),
-                "reason": rec.reason,
-                "time_ratio_vs_runner_up": rec.time_ratio_vs_runner_up,
-                "ranked": rec
-                    .ranked
-                    .iter()
-                    .map(|r| {
-                        serde_json::json!({
-                            "strategy": format!("{:?}", r.strategy),
-                            "wall_clock_s": r.wall_clock_s,
-                            "regime": format!("{:?}", r.regime),
-                        })
-                    })
-                    .collect::<Vec<_>>(),
-            })),
-            Ok(None) => json_str(serde_json::json!({
-                "error": format!(
-                    "Toolpath {index} is not an Adaptive3d op (or no candidate planned a usable path); the strategy advisor only applies to 3D adaptive roughing"
-                ),
-            })),
-            Err(e) => json_str(serde_json::json!({
-                "error": format!("{e}"),
-            })),
-        }
+    /// Start the strategy advisor as a `Job`, and hold the caller's
+    /// oneshot until the lane answers (WP14a).
+    ///
+    /// Step (i) runs here, on the frame loop: it resolves the generation
+    /// inputs and captures every other session read, so a refusal still
+    /// appears at submit time with core's own wording. Step (ii) — the
+    /// candidate planning, simulation and modulation, which is tens of
+    /// seconds — runs on the `Job` lane holding no session, so the GUI
+    /// stays usable.
+    fn mcp_recommend_clearing_strategy(
+        &mut self,
+        index: usize,
+        response_tx: tokio::sync::oneshot::Sender<McpResponse>,
+    ) {
+        // §22 ruling 3: a FRESH flag per submit. The lane maps "cancel this
+        // job" onto it.
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started = self.controller.state_mut().session.start(
+            rs_cam_core::session::Job::RecommendClearingStrategy(
+                rs_cam_core::session::RecommendClearingStrategyArgs { index },
+            ),
+            &cancel,
+        );
+        let handle = match started {
+            Ok(handle) => handle,
+            Err(e) => {
+                let _ = response_tx.send(McpResponse {
+                    result: Ok(json_str(serde_json::json!({
+                        "error": format!("{e}"),
+                    }))),
+                });
+                return;
+            }
+        };
+        self.controller.submit_mcp_job(
+            handle,
+            cancel,
+            crate::mcp_bridge::McpJobRender::StrategyRecommendation { index },
+            response_tx,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3135,7 +3148,22 @@ impl super::RsCamApp {
     /// Nothing is emitted, no parameter moves, no result is invalidated — the
     /// reply says `modified: false` and that is a statement about this
     /// function, not a hope. It takes `&self` so that stays true by type.
-    fn mcp_preview_tier_map(&self, spec: &rs_cam_mcp::server::PreviewTierMapParam) -> String {
+    /// Start the tier-map preview as a `Job`, and hold the caller's
+    /// oneshot until the lane answers (WP14a).
+    ///
+    /// Step (i) runs here, on the frame loop: it resolves the dials, checks
+    /// the SVG destination and captures the ladder and the geometry, so
+    /// every refusal still appears at submit time. Step (ii) — the
+    /// full-grid residual walk, tens of seconds per ladder tool — runs on
+    /// the `Job` lane holding no session.
+    ///
+    /// The SVG write is NOT part of the job. It is a viz-side step the
+    /// drain takes after the answer arrives.
+    fn mcp_preview_tier_map(
+        &mut self,
+        spec: &rs_cam_mcp::server::PreviewTierMapParam,
+        response_tx: tokio::sync::oneshot::Sender<McpResponse>,
+    ) {
         let plan_spec = match self.multitool_plan_spec(
             spec.setup_index,
             spec.model_id,
@@ -3165,7 +3193,10 @@ impl super::RsCamApp {
             },
         ) {
             Ok(plan_spec) => plan_spec,
-            Err(message) => return Self::mcp_preview_error(&message),
+            Err(message) => {
+                Self::send_preview_error(response_tx, &message);
+                return;
+            }
         };
 
         // Checked BEFORE the walk: a residual map is tens of seconds of work,
@@ -3174,119 +3205,45 @@ impl super::RsCamApp {
         if let Some(path) = spec.svg_path.as_deref()
             && let Err(message) = Self::validate_svg_out_path(path)
         {
-            return Self::mcp_preview_error(&message);
+            Self::send_preview_error(response_tx, &message);
+            return;
         }
 
-        // Fresh flag, never armed: `generation_status` / `cancel_generation`
-        // drive the generate lane, and this call is not on it.
-        let cancel = std::sync::atomic::AtomicBool::new(false);
-        let preview = match self
-            .controller
-            .state()
-            .session
-            .preview_multitool_plan(&plan_spec, &cancel)
-        {
-            Ok(preview) => preview,
-            Err(e) => return Self::mcp_preview_error(&e.to_string()),
-        };
-
-        // Hoisted: the counter walks every label, and calling it per tier
-        // would re-walk a 445 k-cell map once per rung.
-        let cells_per_tier = preview.map.tier_cell_counts();
-        let ladder: Vec<serde_json::Value> = (0..preview.map.tier_count)
-            .map(|k| {
-                serde_json::json!({
-                    "tier": k,
-                    "tool_id": preview.tool_ids.get(k),
-                    "tool_name": preview.tool_names.get(k),
-                    "cusp_radius_mm": preview.cusp_radii_mm.get(k),
-                    "map_cells": cells_per_tier.get(k),
-                })
-            })
-            .collect();
-
-        let per_tier: Vec<serde_json::Value> = preview
-            .islands
-            .per_tier
-            .iter()
-            .map(|set| {
-                let k = usize::from(set.tier);
-                serde_json::json!({
-                    "tier": set.tier,
-                    "tool_id": preview.tool_ids.get(k),
-                    "tool_name": preview.tool_names.get(k),
-                    "cusp_radius_mm": preview.cusp_radii_mm.get(k),
-                    "islands": set.islands,
-                    "raw_island_count": set.raw_island_count,
-                    "owned_area_mm2": set.owned_area_mm2,
-                    // G-OVERLAPFILL: what the tool SWEEPS, against what the
-                    // tier owns. The band reaches into the coarser tier by
-                    // design; the ratio is how far.
-                    "machining_area_mm2": set.machining_area_mm2,
-                    "machining_to_owned_ratio": set.machining_to_owned_ratio(),
-                    "overlap_mm": set.overlap_mm,
-                    "owned_hole_count": set.owned_hole_count,
-                    "machining_hole_count": set.machining_hole_count,
-                    "net_holes_closed_by_band": set.net_holes_closed_by_band(),
-                    "median_owned_hole_area_mm2": set.median_owned_hole_area_mm2,
-                    "cap": {
-                        "acted": set.cap.acted(),
-                        "total_before_cap": set.cap.islands_after_min_area,
-                        "kept": set.cap.kept,
-                        "final_close_radius_mm": set.cap.final_close_radius_mm,
-                        // A raise WELDS a dendritic network into slabs, and
-                        // `owned_area_mm2` then measures the slabs: 2 261 ->
-                        // 17 812 mm2 on wanaka at tolerance 0.146.
-                        "close_raises": set.cap.close_raises,
-                        "first_close_radius_mm": set.cap.first_close_radius_mm,
-                    },
-                })
-            })
-            .collect();
-
-        // Only the tiers over the bound, rendered. An empty list is the
-        // healthy reading, not a missing measurement.
-        let band_advisories: Vec<String> = preview
-            .islands
-            .band_advisories()
-            .map(|a| a.to_string())
-            .collect();
-
-        let svg_written = match spec.svg_path.as_deref() {
-            None => None,
-            Some(path) => {
-                let svg =
-                    rs_cam_core::tier_islands::tier_islands_to_svg(&preview.map, &preview.islands);
-                if let Err(e) = std::fs::write(path, &svg) {
-                    return Self::mcp_preview_error(&format!("could not write {path}: {e}"));
-                }
-                Some(path.to_owned())
+        let setup_index = plan_spec.setup_index;
+        let model_id = plan_spec.model_id;
+        // §22 ruling 3: a FRESH flag per submit. The walk polls it at grid-row
+        // granularity, so Cancel is honest for the whole of it.
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started = self.controller.state_mut().session.start(
+            rs_cam_core::session::Job::PreviewTierMap(rs_cam_core::session::PreviewTierMapArgs {
+                spec: Box::new(plan_spec),
+            }),
+            &cancel,
+        );
+        let handle = match started {
+            Ok(handle) => handle,
+            Err(e) => {
+                Self::send_preview_error(response_tx, &e.to_string());
+                return;
             }
         };
-
-        json_str(serde_json::json!({
-            "ok": true,
-            // Plan-time preview: this handler takes `&self`.
-            "modified": false,
-            "setup_index": plan_spec.setup_index,
-            "model_id": plan_spec.model_id,
-            "ladder": ladder,
-            "per_tier": per_tier,
-            "band_advisories": band_advisories,
-            "total_owned_area_mm2": preview.islands.total_owned_area_mm2(),
-            "total_machining_area_mm2": preview.islands.total_machining_area_mm2(),
-            "map": {
-                "cell_mm": preview.map.cell_mm,
-                "nx": preview.map.nx,
-                "ny": preview.map.ny,
-                "tier_count": preview.map.tier_count,
-                "unassigned_cells": preview.map.unassigned_cells(),
+        self.controller.submit_mcp_job(
+            handle,
+            cancel,
+            crate::mcp_bridge::McpJobRender::TierMapPreview {
+                setup_index,
+                model_id,
+                svg_path: spec.svg_path.clone(),
             },
-            "svg_written": svg_written,
-            "note": "Plan-time preview — nothing was generated and the project was not \
-                     modified. `plan_multitool_finishing` emits the op chain; `generate_all` \
-                     runs it.",
-        }))
+            response_tx,
+        );
+    }
+
+    /// Answer a `preview_tier_map` refusal on the caller's own oneshot.
+    fn send_preview_error(response_tx: tokio::sync::oneshot::Sender<McpResponse>, message: &str) {
+        let _ = response_tx.send(McpResponse {
+            result: Ok(Self::mcp_preview_error(message)),
+        });
     }
 
     /// Refuse an SVG destination rather than creating a directory tree the

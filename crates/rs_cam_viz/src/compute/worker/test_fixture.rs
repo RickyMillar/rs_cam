@@ -298,10 +298,13 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
             Job::GenerateToolpath(GenerateToolpathArgs { index }),
             &cancel,
         )
-        .unwrap_or_else(|error| panic!("the fixture must submit: {error}"));
+        .unwrap_or_else(|error| panic!("the fixture must submit: {error}"))
+    else {
+        panic!("the generate_toolpath row answers its own handle variant");
+    };
 
     ComputeRequest {
-        handle,
+        handle: *handle,
         viz: VizExtras {
             toolpath_id: id,
             cancel,

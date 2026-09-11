@@ -307,7 +307,19 @@ impl<B: ComputeBackend> AppController<B> {
             ),
             &cancel,
         ) {
-            Ok(rs_cam_core::session::JobHandle::GenerateToolpath(handle)) => handle,
+            Ok(rs_cam_core::session::JobHandle::GenerateToolpath(handle)) => *handle,
+            // `start` answers the handle of the row it was handed, so this
+            // arm cannot happen. It is spelled out rather than wildcarded
+            // so a new `Job` row stops this submit compiling.
+            Ok(other) => {
+                let message = format!(
+                    "the generate submit received the {} row's handle",
+                    other.id().wire_name()
+                );
+                tracing::error!("{message}");
+                self.fail_toolpath_submit(tp_id, message);
+                return;
+            }
             Err(error) => {
                 // Every rest and boundary precondition refuses HERE now,
                 // with core's own wording. The viz copies of those checks
@@ -987,7 +999,75 @@ impl<B: ComputeBackend> AppController<B> {
                 ComputeMessage::Reach(result) => {
                     self.handle_reach_map_result(*result);
                 }
+                ComputeMessage::Job(result) => {
+                    self.handle_job_result(*result);
+                }
             }
+        }
+    }
+
+    /// Submit one core `Job` row's work step, and hold the MCP caller's
+    /// oneshot until it answers (WP14a).
+    ///
+    /// The handle already holds every input, so the session stays here and
+    /// stays usable: this is what stops the two slow reads blocking the
+    /// frame loop.
+    #[cfg(feature = "mcp")]
+    pub(crate) fn submit_mcp_job(
+        &mut self,
+        handle: rs_cam_core::session::JobHandle,
+        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        render: crate::mcp_bridge::McpJobRender,
+        response_tx: tokio::sync::oneshot::Sender<crate::mcp_bridge::McpResponse>,
+    ) {
+        let id = crate::compute::JobRequestId(self.next_job_request_id);
+        self.next_job_request_id = self.next_job_request_id.saturating_add(1);
+        let Some(pending) = self.pending_mcp.as_mut() else {
+            let _ = response_tx.send(crate::mcp_bridge::McpResponse {
+                result: Err("MCP compute tracking not initialized".to_owned()),
+            });
+            return;
+        };
+        pending.jobs.insert(
+            id,
+            crate::mcp_bridge::PendingMcpJob {
+                sender: response_tx,
+                render,
+            },
+        );
+        self.compute
+            .submit_job(crate::compute::JobRequest { id, handle, cancel });
+    }
+
+    /// Deliver one finished `Job` answer to whoever asked for it.
+    ///
+    /// There is no adopt step. Both rows that ride this lane are READS, so
+    /// the answer goes to the requester and the session is untouched.
+    fn handle_job_result(&mut self, result: crate::compute::JobResult) {
+        // Destructured here, above the feature gate: the answer is consumed
+        // by value, which is what the gate's `needless_pass_by_value` rule
+        // asks of a parameter this method takes by value.
+        let crate::compute::JobResult { id, answer } = result;
+        #[cfg(feature = "mcp")]
+        {
+            let Some(pending) = self.pending_mcp.as_mut() else {
+                return;
+            };
+            let Some(job) = pending.jobs.remove(&id) else {
+                // A `Job` the GUI started for itself, or an answer whose
+                // caller went away. Neither is an error.
+                return;
+            };
+            let reply = crate::mcp_bridge::render_job_answer(&job.render, &answer);
+            let _ = job
+                .sender
+                .send(crate::mcp_bridge::McpResponse { result: Ok(reply) });
+        }
+        #[cfg(not(feature = "mcp"))]
+        {
+            // No MCP surface in this build, so nothing is waiting on a job.
+            let _ = id;
+            drop(answer);
         }
     }
 

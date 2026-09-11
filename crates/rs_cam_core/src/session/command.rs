@@ -54,6 +54,16 @@
 //! finishing`, whose outcome IS the reply; and `export_gcode`, whose
 //! pre-flight gate reads the view's own simulation slot.
 //!
+//! WP14a adds the second and third `Job` rows,
+//! `recommend_clearing_strategy` and `preview_tier_map`. Both are READS:
+//! they capture, run off the frame loop and adopt NOTHING, so a `Job` is
+//! two steps here and not three. The package also made the answer column
+//! uniform: a `Job` row now names what its `execute_*` function returns,
+//! the generated [`JobAnswer`] carries those answers, and [`JobHandle`]
+//! is the one hand-written block — a handle is named `<Id>Handle` by
+//! convention, and `macro_rules!` cannot build an identifier by
+//! concatenation.
+//!
 //! WP13 adds the fifth kind, `UiQuery`, and the `GetOperationSchema`
 //! row. No row here declares `UiCommand` or `UiQuery`: both kinds belong
 //! to the view registry `for_each_ui_command!`
@@ -70,7 +80,9 @@ use std::sync::atomic::AtomicBool;
 
 use super::cycle_time::{self, CycleTime};
 use super::{
-    GenerateToolpathHandle, ProjectSession, SessionError, ToolpathComputeResult, ToolpathConfig,
+    GenerateToolpathHandle, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle,
+    ProjectSession, RecommendClearingStrategyHandle, SessionError, ToolpathComputeResult,
+    ToolpathConfig,
 };
 use crate::compute::catalog::{OperationConfig, OperationSchema};
 use crate::compute::config::DressupConfig;
@@ -78,15 +90,16 @@ use crate::compute::simulate::SimulationResult;
 use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::FeedsProvenance;
 use crate::simulation_cut::SimulationCutTrace;
+use crate::strategy_advisor::StrategyRecommendation;
 
 /// Declares every command, query and job row once.
 ///
 /// The columns are: the row kind (`Command`, `Query` or `Job`), the
 /// identifier, the wire name, the payload type, the answer type, and the
 /// surface table. A `Command` row's answer type is always [`Effects`]; a
-/// `Query` row names its own answer struct; a `Job` row names the HANDLE
-/// its three steps share. Edit this list, not the blocks a callback
-/// macro generates from it.
+/// `Query` row names its own answer struct; a `Job` row names what its
+/// `execute_*` function returns. Edit this list, not the blocks a
+/// callback macro generates from it.
 ///
 /// The macro carries `#[macro_export]` because a sentry in `tests/`
 /// counts the rows with its own callback. `for_each_op!` needs no export:
@@ -510,7 +523,7 @@ macro_rules! for_each_command {
                  ),
              }),
             (Job, GenerateToolpath, "generate_toolpath", GenerateToolpathArgs,
-             GenerateToolpathHandle,
+             ToolpathComputeResult,
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Reached,
@@ -524,6 +537,29 @@ macro_rules! for_each_command {
                  ),
                  cli: Reach::Skip(
                      "the CLI simulates through run_simulation, which stores the result itself",
+                 ),
+             }),
+            (Job, RecommendClearingStrategy, "recommend_clearing_strategy",
+             RecommendClearingStrategyArgs,
+             Option<StrategyRecommendation>,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI panel asks the advisor; the verdict surfaces on the MCP wire only",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no strategy advisor command",
+                 ),
+             }),
+            (Job, PreviewTierMap, "preview_tier_map", PreviewTierMapArgs,
+             MultitoolPreview,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the planner dialog lends the session to the Optimize lane; WP14b moves it",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no planner preview command",
                  ),
              }),
         }
@@ -736,6 +772,30 @@ pub struct ReplaceToolpathConfigArgs {
 pub struct GenerateToolpathArgs {
     /// The index of the toolpath to generate.
     pub index: usize,
+}
+
+/// The arguments of the `recommend_clearing_strategy` job.
+///
+/// The payload names the toolpath and nothing else. The candidate set,
+/// the machine and the material all come from the session at step (i).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecommendClearingStrategyArgs {
+    /// The index of the toolpath to advise on. The advisor answers for an
+    /// `Adaptive3d` operation and reports `None` for every other one.
+    pub index: usize,
+}
+
+/// The arguments of the `preview_tier_map` job.
+///
+/// The spec is BOXED. Every other payload in this registry is a handful
+/// of scalars, and a plan spec carries three vectors and eleven dials;
+/// inline it would set the size of [`Job`] on its own, which
+/// `clippy::large_enum_variant` denies.
+#[derive(Debug, Clone)]
+pub struct PreviewTierMapArgs {
+    /// The ladder and the dials to preview. Nothing here is derived from
+    /// the session; every field is an operator dial.
+    pub spec: Box<MultitoolPlanSpec>,
 }
 
 /// What a command changed.
@@ -1342,7 +1402,7 @@ macro_rules! split_command_rows {
             $( ($q_id:ident, $q_wire:literal, $q_payload:ident, $q_answer:ty) ),* $(,)?
         ],
         jobs = [
-            $( ($j_id:ident, $j_wire:literal, $j_payload:ident, $j_handle:ty) ),* $(,)?
+            $( ($j_id:ident, $j_wire:literal, $j_payload:ident, $j_answer:ty) ),* $(,)?
         ] $(,)?
     ) => {
         /// One command and its arguments.
@@ -1431,22 +1491,36 @@ macro_rules! split_command_rows {
             }
         }
 
-        /// What [`ProjectSession::start`] captured for one [`Job`].
+        /// The answer to one [`Job`].
         ///
         /// GENERATED — one variant per `Job` row, named by that row's
-        /// answer column. The handle is the whole input of step (ii),
-        /// so step (ii) needs no session.
+        /// answer column. The answer column names exactly what the row's
+        /// `execute_*` function returns, so the registry sees the shape
+        /// of every job's answer the way [`QueryAnswer`] shows the shape
+        /// of every read's.
         ///
-        /// The enum derives nothing. A handle owns a
-        /// [`ResolvedGenInputs`](super::ResolvedGenInputs), which
-        /// publishes neither equality nor a clone: a resolution is the
-        /// evidence of one submit, and a copy of it would be a second
-        /// assembly of the same inputs.
-        pub enum JobHandle {
+        /// **Every variant boxes its payload, by rule.** A job answers
+        /// with a whole computed toolpath or a whole tier map, and
+        /// `clippy::large_enum_variant` is denied workspace-wide. Boxing
+        /// every variant means the enum's size never depends on what the
+        /// largest answer carries, so adding a row can never make this a
+        /// size trap. `execute_*` returns the bare type; the caller that
+        /// delivers the answer boxes it here.
+        #[derive(Debug, Clone)]
+        pub enum JobAnswer {
             $(
-                #[doc = concat!("What the `", $j_wire, "` job captured.")]
-                $j_id($j_handle),
+                #[doc = concat!("The answer to the `", $j_wire, "` job.")]
+                $j_id(Box<$j_answer>),
             )*
+        }
+
+        impl JobAnswer {
+            /// The identifier of the job this answers. GENERATED.
+            pub fn id(&self) -> CommandId {
+                match self {
+                    $(JobAnswer::$j_id(_) => CommandId::$j_id,)*
+                }
+            }
         }
     };
 
@@ -1560,6 +1634,52 @@ macro_rules! define_command_registry {
     };
 }
 for_each_command!(define_command_registry);
+
+/// What [`ProjectSession::start`] captured for one [`Job`].
+///
+/// The handle is the whole input of step (ii), so step (ii) needs no
+/// session.
+///
+/// **Hand-written, not generated, and the one block here that is.** The
+/// registry's answer column names what `execute_*` RETURNS, which is what
+/// [`JobAnswer`] is built from; a handle is a different type, named
+/// `<Id>Handle` by convention, and `macro_rules!` cannot build an
+/// identifier by concatenation. The convention is held by the compiler
+/// rather than by the macro: [`ProjectSession::start`] matches
+/// exhaustively over [`Job`], so a row added with no variant here does not
+/// compile.
+///
+/// The enum derives nothing. A handle owns a
+/// [`ResolvedGenInputs`](super::ResolvedGenInputs), which publishes
+/// neither equality nor a clone: a resolution is the evidence of one
+/// submit, and a copy of it would be a second assembly of the same
+/// inputs.
+///
+/// **Every variant boxes its handle, by the same rule [`JobAnswer`]
+/// follows.** A handle owns a whole resolution and a whole machine,
+/// stock and setup snapshot, and the three rows' handles are of very
+/// different sizes; `clippy::large_enum_variant` is denied workspace-wide.
+/// Boxing every variant means the enum's size never depends on which row
+/// captured the most.
+pub enum JobHandle {
+    /// What the `generate_toolpath` job captured.
+    GenerateToolpath(Box<GenerateToolpathHandle>),
+    /// What the `recommend_clearing_strategy` job captured.
+    RecommendClearingStrategy(Box<RecommendClearingStrategyHandle>),
+    /// What the `preview_tier_map` job captured.
+    PreviewTierMap(Box<PreviewTierMapHandle>),
+}
+
+impl JobHandle {
+    /// The identifier of the job this handle belongs to.
+    pub fn id(&self) -> CommandId {
+        match self {
+            JobHandle::GenerateToolpath(_) => CommandId::GenerateToolpath,
+            JobHandle::RecommendClearingStrategy(_) => CommandId::RecommendClearingStrategy,
+            JobHandle::PreviewTierMap(_) => CommandId::PreviewTierMap,
+        }
+    }
+}
 
 impl ProjectSession {
     /// Apply one command, and report what it changed.
@@ -1843,11 +1963,24 @@ impl ProjectSession {
     /// boundary walks a full-grid tier map. A `start` that resolved that
     /// map under a flag of its own would make Cancel a lie for the whole
     /// of it.
+    /// Two of the three rows are READS. `recommend_clearing_strategy` and
+    /// `preview_tier_map` mutate nothing, so their step (i) drops no
+    /// result and moves no revision, and they carry no step (iii): the
+    /// answer goes to the caller and the session is untouched. `&mut self`
+    /// is the door's signature, not a claim that every row writes.
     pub fn start(&mut self, job: Job, cancel: &AtomicBool) -> Result<JobHandle, SessionError> {
         match job {
             Job::GenerateToolpath(args) => {
                 let handle = self.start_generate_toolpath(args.index, cancel)?;
-                Ok(JobHandle::GenerateToolpath(handle))
+                Ok(JobHandle::GenerateToolpath(Box::new(handle)))
+            }
+            Job::RecommendClearingStrategy(args) => {
+                let handle = self.capture_recommend_clearing_strategy(args.index, cancel)?;
+                Ok(JobHandle::RecommendClearingStrategy(Box::new(handle)))
+            }
+            Job::PreviewTierMap(args) => {
+                let handle = self.capture_preview_tier_map(&args.spec)?;
+                Ok(JobHandle::PreviewTierMap(Box::new(handle)))
             }
         }
     }

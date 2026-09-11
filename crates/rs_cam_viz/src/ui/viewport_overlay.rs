@@ -30,7 +30,7 @@ pub fn draw(
     ui: &mut egui::Ui,
     state: &mut AppState,
     projection: ProjectionMode,
-    lanes: &[LaneSnapshot; 4],
+    lanes: &[LaneSnapshot; 5],
     events: &mut Vec<AppEvent>,
 ) {
     let workspace = state.workspace;

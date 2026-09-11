@@ -27,7 +27,8 @@ pub use command::{
     AddAlignmentPinArgs, AddModelArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs,
     AdoptModelGeometryArgs, AdoptResultArgs, AdoptSimulationArgs, Command, CommandId, CommandKind,
     Effects, GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
-    ImportMachineSettingsArgs, Job, JobHandle, MoveToolpathToSetupArgs, Query, QueryAnswer, Reach,
+    ImportMachineSettingsArgs, Job, JobAnswer, JobHandle, MoveToolpathToSetupArgs,
+    PreviewTierMapArgs, Query, QueryAnswer, Reach, RecommendClearingStrategyArgs,
     RemoveAlignmentPinArgs, RemoveToolArgs, RemoveToolpathArgs, ReplaceFixtureArgs,
     ReplaceKeepOutArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
     SaveProjectArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
@@ -39,13 +40,15 @@ pub use command::{
     ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
 pub use compute::{
-    GenContext, GenObserver, GenerateToolpathHandle, MutationKind, ResolvedGenInputs, StaleSet,
-    compute_stale_set, execute_generation, execute_job,
+    GenContext, GenObserver, GenerateToolpathHandle, MutationKind, RecommendClearingStrategyHandle,
+    ResolvedGenInputs, StaleSet, compute_stale_set, execute_generation, execute_job,
+    execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
 pub use eval_context::SetupEvalContext;
 pub use multitool::{
-    MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, TierStrategy, equal_cusp_stepover_mm,
+    MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,
+    equal_cusp_stepover_mm, execute_preview_tier_map,
 };
 
 // Re-export all public project_file types so external crates see no path change.

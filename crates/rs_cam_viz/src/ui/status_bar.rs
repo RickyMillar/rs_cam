@@ -8,7 +8,7 @@ pub fn draw(
     ui: &mut egui::Ui,
     state: &AppState,
     collision_count: usize,
-    lanes: &[LaneSnapshot; 4],
+    lanes: &[LaneSnapshot; 5],
 ) {
     ui.horizontal(|ui| {
         let model_count = state.session.models().len();
@@ -51,6 +51,7 @@ pub fn draw(
                 ComputeLane::Analysis => "Analysis compute lane",
                 ComputeLane::Optimize => "Optimize compute lane",
                 ComputeLane::Reach => "Reach map compute lane",
+                ComputeLane::Job => "Job compute lane",
             };
             let response = ui
                 .label(egui::RichText::new(&label).color(match lane.state {
@@ -67,6 +68,7 @@ pub fn draw(
                     ComputeLane::Analysis => "status_lane_analysis",
                     ComputeLane::Optimize => "status_lane_optimize",
                     ComputeLane::Reach => "status_lane_reach",
+                    ComputeLane::Job => "status_lane_job",
                 },
                 &response,
                 &label,
@@ -118,6 +120,7 @@ fn lane_chip_label(lane: &LaneSnapshot) -> String {
         ComputeLane::Analysis => "AN",
         ComputeLane::Optimize => "OPT",
         ComputeLane::Reach => "RCH",
+        ComputeLane::Job => "JOB",
     };
     let state = match lane.state {
         LaneState::Idle => "idle",

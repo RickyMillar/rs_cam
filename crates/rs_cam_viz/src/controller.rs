@@ -139,6 +139,13 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// watches this checkbox, and the operator can flip it on a frame where
     /// no other input lands.
     reach_overlay_shown: bool,
+    /// WP14a — the next [`crate::compute::JobRequestId`] this controller
+    /// hands out.
+    ///
+    /// Monotonic, and it never reuses an id: two `preview_tier_map` calls
+    /// can be in flight at once, and a key that recurred would deliver one
+    /// caller's answer to the other.
+    next_job_request_id: u64,
     /// Pending MCP compute operations awaiting async results.
     /// `Some` when MCP mode is enabled, `None` otherwise.
     #[cfg(feature = "mcp")]
@@ -172,6 +179,7 @@ impl<B: ComputeBackend> AppController<B> {
             superseded_toolpaths: std::collections::HashSet::new(),
             generate_all: None,
             reach_overlay_shown: true,
+            next_job_request_id: 0,
             #[cfg(feature = "mcp")]
             pending_mcp: None,
         }
@@ -277,7 +285,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.compute.lane_snapshot(lane)
     }
 
-    pub fn lane_snapshots(&self) -> [LaneSnapshot; 4] {
+    pub fn lane_snapshots(&self) -> [LaneSnapshot; 5] {
         self.compute.lane_snapshots()
     }
 

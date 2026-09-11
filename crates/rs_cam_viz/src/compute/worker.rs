@@ -44,7 +44,7 @@ use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
 use super::{
     CancelOutcome, ComputeBackend, ComputeError, ComputeLane, ComputeMessage, GenerationControl,
-    LaneControl, LaneSnapshot, LaneState, ToolpathSubmitOutcome,
+    JobRequestId, LaneControl, LaneSnapshot, LaneState, ToolpathSubmitOutcome,
 };
 use crate::state::job::ToolConfig;
 use crate::state::toolpath::{ToolpathId, ToolpathResult};
@@ -416,6 +416,33 @@ pub struct ReachResult {
     pub colors: Arc<Vec<[f32; 3]>>,
 }
 
+/// One core `Job` row's work step, on its way to the [`ComputeLane::Job`]
+/// lane.
+///
+/// Carries no session. `ProjectSession::start` captured everything the
+/// work reads into the handle on the frame loop, so this crosses the
+/// thread boundary with no session borrow — the same property
+/// [`ReachRequest`] has, and the reason the two rows that ride this lane
+/// leave the GUI usable while they run.
+pub struct JobRequest {
+    /// Identifies this submit. The drain routes the answer by it.
+    pub id: JobRequestId,
+    /// What `ProjectSession::start` captured.
+    pub handle: rs_cam_core::session::JobHandle,
+    /// The cancel flag of THIS submit, per §22 ruling 3. NOT the lane's
+    /// flag: a flag borrowed from the lane can already read `true` on the
+    /// frame loop, and the work polls its own.
+    pub cancel: Arc<AtomicBool>,
+}
+
+/// A finished `Job` work step.
+pub struct JobResult {
+    /// The submit this answers.
+    pub id: JobRequestId,
+    /// The answer, or why there is none.
+    pub answer: Result<rs_cam_core::session::JobAnswer, ComputeError>,
+}
+
 struct LaneInner<Request> {
     queue: VecDeque<Request>,
     state: LaneState,
@@ -553,11 +580,14 @@ pub struct ThreadedComputeBackend {
     /// P5 — the reach-map overlay's own lane. See [`ComputeLane::Reach`] for
     /// why it is not a third `AnalysisRequest` variant.
     reach_lane: Arc<LaneQueue<ReachRequest>>,
+    /// WP14a — the `Job` lane. See [`ComputeLane::Job`].
+    job_lane: Arc<LaneQueue<JobRequest>>,
     result_rx: mpsc::Receiver<ComputeMessage>,
     toolpath_handle: Option<std::thread::JoinHandle<()>>,
     analysis_handle: Option<std::thread::JoinHandle<()>>,
     optimize_handle: Option<std::thread::JoinHandle<()>>,
     reach_handle: Option<std::thread::JoinHandle<()>>,
+    job_handle: Option<std::thread::JoinHandle<()>>,
     /// S5 — the analysis lane's simulation prefix memo. Shared so the GUI
     /// thread can drop the snapshot at a known point (`clear_sim_prefix_cache`)
     /// without waiting behind whatever is queued on the lane. The lane
@@ -572,6 +602,7 @@ impl ThreadedComputeBackend {
         let analysis_lane = LaneQueue::new(ComputeLane::Analysis);
         let optimize_lane = LaneQueue::new(ComputeLane::Optimize);
         let reach_lane = LaneQueue::new(ComputeLane::Reach);
+        let job_lane = LaneQueue::new(ComputeLane::Job);
         let (result_tx, result_rx) = mpsc::sync_channel::<ComputeMessage>(64);
         let sim_prefix_cache = Arc::new(Mutex::new(
             rs_cam_core::compute::sim_prefix::SimPrefixCache::new(),
@@ -584,18 +615,21 @@ impl ThreadedComputeBackend {
             Arc::clone(&sim_prefix_cache),
         );
         let optimize_handle = spawn_optimize_lane(Arc::clone(&optimize_lane), result_tx.clone());
-        let reach_handle = spawn_reach_lane(Arc::clone(&reach_lane), result_tx);
+        let reach_handle = spawn_reach_lane(Arc::clone(&reach_lane), result_tx.clone());
+        let job_handle = spawn_job_lane(Arc::clone(&job_lane), result_tx);
 
         Self {
             toolpath_lane,
             analysis_lane,
             optimize_lane,
             reach_lane,
+            job_lane,
             result_rx,
             toolpath_handle: Some(toolpath_handle),
             analysis_handle: Some(analysis_handle),
             optimize_handle: Some(optimize_handle),
             reach_handle: Some(reach_handle),
+            job_handle: Some(job_handle),
             sim_prefix_cache,
         }
     }
@@ -607,10 +641,12 @@ impl Drop for ThreadedComputeBackend {
         self.analysis_lane.shutdown.store(true, Ordering::SeqCst);
         self.optimize_lane.shutdown.store(true, Ordering::SeqCst);
         self.reach_lane.shutdown.store(true, Ordering::SeqCst);
+        self.job_lane.shutdown.store(true, Ordering::SeqCst);
         self.toolpath_lane.wake.notify_all();
         self.analysis_lane.wake.notify_all();
         self.optimize_lane.wake.notify_all();
         self.reach_lane.wake.notify_all();
+        self.job_lane.wake.notify_all();
         if let Some(h) = self.toolpath_handle.take() {
             let _ = h.join();
         }
@@ -621,6 +657,9 @@ impl Drop for ThreadedComputeBackend {
             let _ = h.join();
         }
         if let Some(h) = self.reach_handle.take() {
+            let _ = h.join();
+        }
+        if let Some(h) = self.job_handle.take() {
             let _ = h.join();
         }
     }
@@ -711,6 +750,24 @@ impl ComputeBackend for ThreadedComputeBackend {
     /// Latest selection wins — the same rule the Optimize lane keeps, and for
     /// the same reason: only one answer is ever on screen, so an older walk
     /// has nothing left to produce.
+    fn submit_job(&mut self, request: JobRequest) {
+        let mut inner = self
+            .job_lane
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        // FIFO, and a submit supersedes nothing. Two previews at different
+        // dial sets are two different questions, and each has a caller
+        // waiting on its own answer.
+        inner.queue.push_back(request);
+        if inner.started_at.is_none() {
+            inner.state = LaneState::Queued;
+            inner.current_job = inner.queue.front().map(job_label);
+            inner.current_phase = None;
+        }
+        self.job_lane.wake.notify_one();
+    }
+
     fn submit_reach_map(&mut self, request: ReachRequest) {
         let mut inner = self
             .reach_lane
@@ -780,6 +837,21 @@ impl ComputeBackend for ThreadedComputeBackend {
                     inner.state = LaneState::Cancelling;
                 }
             }
+            ComputeLane::Job => {
+                let mut inner = self
+                    .job_lane
+                    .inner
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if inner.started_at.is_some() {
+                    self.job_lane.cancel.store(true, Ordering::SeqCst);
+                    // §22 ruling 3: the running job polls its own flag.
+                    if let Some(active) = inner.active_cancel.as_ref() {
+                        active.store(true, Ordering::SeqCst);
+                    }
+                    inner.state = LaneState::Cancelling;
+                }
+            }
         }
     }
 
@@ -797,6 +869,7 @@ impl ComputeBackend for ThreadedComputeBackend {
             ComputeLane::Analysis => self.analysis_lane.snapshot(),
             ComputeLane::Optimize => self.optimize_lane.snapshot(),
             ComputeLane::Reach => self.reach_lane.snapshot(),
+            ComputeLane::Job => self.job_lane.snapshot(),
         }
     }
 
@@ -858,6 +931,22 @@ fn optimize_job_label(request: &OptimizeRequest) -> String {
 
 fn reach_job_label(request: &ReachRequest) -> String {
     format!("Reach map (toolpath #{})", request.toolpath_id.0)
+}
+
+/// The status-bar label of one `Job` submit.
+fn job_label(request: &JobRequest) -> String {
+    use rs_cam_core::session::JobHandle;
+    match &request.handle {
+        JobHandle::GenerateToolpath(handle) => {
+            format!("Generate toolpath #{}", handle.index)
+        }
+        JobHandle::RecommendClearingStrategy(handle) => {
+            format!("Strategy advisor ({})", handle.toolpath_name())
+        }
+        JobHandle::PreviewTierMap(handle) => {
+            format!("Tier map preview ({} tools)", handle.tool_count())
+        }
+    }
 }
 
 /// Bridge that lets the optimizer's `ProgressReporter` updates land
@@ -1265,6 +1354,122 @@ fn spawn_optimize_lane(
             let _ = result_tx.send(ComputeMessage::Optimize(Box::new(result)));
         }
     })
+}
+
+/// The `Job` lane's worker thread (WP14a).
+///
+/// It pops one [`JobRequest`], runs its work step and sends the answer
+/// back. Every step is a free function over a handle, so this thread holds
+/// no session and the GUI stays usable while the job runs.
+///
+/// **A panic reports an error rather than nothing.** The reach lane can
+/// drop a panicked walk silently, because an overlay that never arrives
+/// leaves the plain model on screen. A job has a caller waiting on a
+/// oneshot, and a dropped answer would hang it.
+fn spawn_job_lane(
+    lane: Arc<LaneQueue<JobRequest>>,
+    result_tx: mpsc::SyncSender<ComputeMessage>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        loop {
+            let request = {
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                while inner.queue.is_empty() {
+                    if lane.shutdown.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    inner.state = LaneState::Idle;
+                    inner.current_job = None;
+                    inner.current_phase = None;
+                    inner.started_at = None;
+                    inner.active_toolpath_id = None;
+                    inner.active_toolpath_index = None;
+                    inner.active_cancel = None;
+                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
+                }
+                if lane.shutdown.load(Ordering::SeqCst) {
+                    return;
+                }
+                // SAFETY: loop condition guarantees queue is non-empty
+                #[allow(clippy::expect_used)]
+                let request = inner.queue.pop_front().expect("queue checked");
+                lane.cancel.store(false, Ordering::SeqCst);
+                inner.state = LaneState::Running;
+                inner.current_job = Some(job_label(&request));
+                inner.current_phase = None;
+                inner.started_at = Some(Instant::now());
+                // `active_toolpath_id` is deliberately NOT set, for the
+                // reason `ComputeLane::Reach` states: MCP `generation_status`
+                // reads it as the op being GENERATED.
+                inner.active_cancel = Some(Arc::clone(&request.cancel));
+                request
+            };
+
+            if lane.shutdown.load(Ordering::SeqCst) {
+                return;
+            }
+
+            let id = request.id;
+            let answer = match std::panic::catch_unwind(AssertUnwindSafe(|| run_job(&request))) {
+                Ok(answer) => answer,
+                Err(panic_payload) => {
+                    let msg = panic_message(&panic_payload);
+                    tracing::error!("rs_cam crashed due to internal error (job worker): {msg}");
+                    Err(ComputeError::Message(format!("the job panicked: {msg}")))
+                }
+            };
+            // A cancelled job reports `Cancelled` whatever the step said:
+            // core carries no cancel variant, so the flag is the evidence.
+            let answer =
+                if request.cancel.load(Ordering::SeqCst) || lane.cancel.load(Ordering::SeqCst) {
+                    Err(ComputeError::Cancelled)
+                } else {
+                    answer
+                };
+
+            {
+                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
+                inner.started_at = None;
+                inner.current_phase = None;
+                inner.active_cancel = None;
+                if inner.queue.is_empty() {
+                    inner.state = LaneState::Idle;
+                    inner.current_job = None;
+                } else {
+                    inner.state = LaneState::Queued;
+                    inner.current_job = inner.queue.front().map(job_label);
+                }
+            }
+
+            let _ = result_tx.send(ComputeMessage::Job(Box::new(JobResult { id, answer })));
+        }
+    })
+}
+
+/// Run one `Job` row's work step.
+///
+/// Every arm is a free function over the row's own handle, so this holds
+/// no session. `generate_toolpath` is the exception and it is not an
+/// exception to that rule: it runs on the toolpath lane, which reports
+/// its own result type, so this lane refuses it rather than producing a
+/// second answer for it.
+fn run_job(request: &JobRequest) -> Result<rs_cam_core::session::JobAnswer, ComputeError> {
+    use rs_cam_core::session::{JobAnswer, JobHandle};
+    match &request.handle {
+        JobHandle::GenerateToolpath(_) => Err(ComputeError::Message(
+            "generate_toolpath runs on the toolpath lane, which reports its own result".to_owned(),
+        )),
+        JobHandle::RecommendClearingStrategy(handle) => {
+            rs_cam_core::session::execute_recommend_clearing_strategy(handle, &request.cancel)
+                .map(|answer| JobAnswer::RecommendClearingStrategy(Box::new(answer)))
+                .map_err(|error| ComputeError::Message(error.to_string()))
+        }
+        JobHandle::PreviewTierMap(handle) => {
+            rs_cam_core::session::execute_preview_tier_map(handle, &request.cancel)
+                .map(|answer| JobAnswer::PreviewTierMap(Box::new(answer)))
+                .map_err(|error| ComputeError::Message(error.to_string()))
+        }
+    }
 }
 
 /// The reach-map overlay's worker (P5).

@@ -12,6 +12,7 @@ use serde::Serialize;
 pub use rs_cam_mcp::response::CutTraceCaps;
 
 use rs_cam_core::session::CommandId;
+use rs_cam_mcp::server::json_str;
 
 use crate::state::toolpath::ToolpathId;
 use crate::ui_command::{UiCommand, UiQuery};
@@ -1009,10 +1010,238 @@ pub struct GuiBanner {
 }
 
 /// Tracks pending MCP compute operations awaiting async results.
+/// One in-flight `Job` submit an MCP caller is waiting on (WP14a).
+pub struct PendingMcpJob {
+    /// Where the answer goes when the lane completes.
+    pub sender: tokio::sync::oneshot::Sender<McpResponse>,
+    /// What the reply has to say beyond the answer itself.
+    pub render: McpJobRender,
+}
+
+/// The per-row reply context a `Job` answer needs.
+///
+/// The answer is the core's own type. Everything else the wire reply
+/// carries — the index the caller named, the setup and model the preview
+/// was taken in, the file it asked for — is the REQUEST's, so it is held
+/// here from submit time rather than re-read at drain time off a session
+/// the operator may have edited meanwhile.
+pub enum McpJobRender {
+    /// The `recommend_clearing_strategy` reply.
+    StrategyRecommendation {
+        /// The toolpath index the caller named.
+        index: usize,
+    },
+    /// The `preview_tier_map` reply.
+    TierMapPreview {
+        /// The setup the ladder was previewed in.
+        setup_index: usize,
+        /// The model the tier map was measured against.
+        model_id: usize,
+        /// Where to write the island SVG, if the caller asked for one.
+        /// The path was validated at submit time.
+        svg_path: Option<String>,
+    },
+}
+
+/// Render one `Job` answer as the wire reply its row publishes.
+///
+/// **The file write lives here, not in core.** `execute_preview_tier_map`
+/// answers with a preview; writing an SVG is the requester's step, taken
+/// after the answer arrives.
+pub fn render_job_answer(
+    render: &McpJobRender,
+    answer: &Result<rs_cam_core::session::JobAnswer, crate::compute::ComputeError>,
+) -> String {
+    use rs_cam_core::session::JobAnswer;
+
+    match (render, answer) {
+        (
+            McpJobRender::StrategyRecommendation { index },
+            Ok(JobAnswer::RecommendClearingStrategy(rec)),
+        ) => render_strategy_recommendation(*index, (**rec).as_ref()),
+        (McpJobRender::StrategyRecommendation { .. }, Err(error)) => {
+            json_str(serde_json::json!({ "error": error.to_string() }))
+        }
+        (
+            McpJobRender::TierMapPreview {
+                setup_index,
+                model_id,
+                svg_path,
+            },
+            Ok(JobAnswer::PreviewTierMap(preview)),
+        ) => render_tier_map_preview(preview, *setup_index, *model_id, svg_path.as_deref()),
+        (McpJobRender::TierMapPreview { .. }, Err(error)) => preview_error(&error.to_string()),
+        // The lane answers the row it was handed, so a render context and
+        // an answer that name different rows cannot meet here. The arm
+        // REPORTS the mismatch rather than picking one of the two.
+        (McpJobRender::StrategyRecommendation { .. }, Ok(other))
+        | (McpJobRender::TierMapPreview { .. }, Ok(other)) => json_str(serde_json::json!({
+            "error": format!(
+                "the reply context and the answer name different rows; the answer is the \
+                 {} row's",
+                other.id().wire_name()
+            ),
+        })),
+    }
+}
+
+/// The `recommend_clearing_strategy` reply.
+fn render_strategy_recommendation(
+    index: usize,
+    rec: Option<&rs_cam_core::strategy_advisor::StrategyRecommendation>,
+) -> String {
+    let Some(rec) = rec else {
+        return json_str(serde_json::json!({
+            "error": format!(
+                "Toolpath {index} is not an Adaptive3d op (or no candidate planned a usable path); the strategy advisor only applies to 3D adaptive roughing"
+            ),
+        }));
+    };
+    json_str(serde_json::json!({
+        "chosen": format!("{:?}", rec.chosen),
+        "regime": format!("{:?}", rec.regime),
+        "reason": rec.reason,
+        "time_ratio_vs_runner_up": rec.time_ratio_vs_runner_up,
+        "ranked": rec
+            .ranked
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "strategy": format!("{:?}", r.strategy),
+                    "wall_clock_s": r.wall_clock_s,
+                    "regime": format!("{:?}", r.regime),
+                })
+            })
+            .collect::<Vec<_>>(),
+    }))
+}
+
+/// The `preview_tier_map` refusal shape.
+fn preview_error(message: &str) -> String {
+    json_str(serde_json::json!({
+        "ok": false,
+        "modified": false,
+        "error": format!("preview_tier_map: {message}"),
+    }))
+}
+
+/// The `preview_tier_map` reply, and the SVG the caller asked for.
+fn render_tier_map_preview(
+    preview: &rs_cam_core::session::MultitoolPreview,
+    setup_index: usize,
+    model_id: usize,
+    svg_path: Option<&str>,
+) -> String {
+    // Hoisted: the counter walks every label, and calling it per tier
+    // would re-walk a 445 k-cell map once per rung.
+    let cells_per_tier = preview.map.tier_cell_counts();
+    let ladder: Vec<serde_json::Value> = (0..preview.map.tier_count)
+        .map(|k| {
+            serde_json::json!({
+                "tier": k,
+                "tool_id": preview.tool_ids.get(k),
+                "tool_name": preview.tool_names.get(k),
+                "cusp_radius_mm": preview.cusp_radii_mm.get(k),
+                "map_cells": cells_per_tier.get(k),
+            })
+        })
+        .collect();
+
+    let per_tier: Vec<serde_json::Value> = preview
+        .islands
+        .per_tier
+        .iter()
+        .map(|set| {
+            let k = usize::from(set.tier);
+            serde_json::json!({
+                "tier": set.tier,
+                "tool_id": preview.tool_ids.get(k),
+                "tool_name": preview.tool_names.get(k),
+                "cusp_radius_mm": preview.cusp_radii_mm.get(k),
+                "islands": set.islands,
+                "raw_island_count": set.raw_island_count,
+                "owned_area_mm2": set.owned_area_mm2,
+                // G-OVERLAPFILL: what the tool SWEEPS, against what the
+                // tier owns. The band reaches into the coarser tier by
+                // design; the ratio is how far.
+                "machining_area_mm2": set.machining_area_mm2,
+                "machining_to_owned_ratio": set.machining_to_owned_ratio(),
+                "overlap_mm": set.overlap_mm,
+                "owned_hole_count": set.owned_hole_count,
+                "machining_hole_count": set.machining_hole_count,
+                "net_holes_closed_by_band": set.net_holes_closed_by_band(),
+                "median_owned_hole_area_mm2": set.median_owned_hole_area_mm2,
+                "cap": {
+                    "acted": set.cap.acted(),
+                    "total_before_cap": set.cap.islands_after_min_area,
+                    "kept": set.cap.kept,
+                    "final_close_radius_mm": set.cap.final_close_radius_mm,
+                    // A raise WELDS a dendritic network into slabs, and
+                    // `owned_area_mm2` then measures the slabs: 2 261 ->
+                    // 17 812 mm2 on wanaka at tolerance 0.146.
+                    "close_raises": set.cap.close_raises,
+                    "first_close_radius_mm": set.cap.first_close_radius_mm,
+                },
+            })
+        })
+        .collect();
+
+    // Only the tiers over the bound, rendered. An empty list is the
+    // healthy reading, not a missing measurement.
+    let band_advisories: Vec<String> = preview
+        .islands
+        .band_advisories()
+        .map(|a| a.to_string())
+        .collect();
+
+    let svg_written = match svg_path {
+        None => None,
+        Some(path) => {
+            let svg =
+                rs_cam_core::tier_islands::tier_islands_to_svg(&preview.map, &preview.islands);
+            if let Err(e) = std::fs::write(path, &svg) {
+                return preview_error(&format!("could not write {path}: {e}"));
+            }
+            Some(path.to_owned())
+        }
+    };
+
+    json_str(serde_json::json!({
+        "ok": true,
+        // Plan-time preview: the job writes no session state.
+        "modified": false,
+        "setup_index": setup_index,
+        "model_id": model_id,
+        "ladder": ladder,
+        "per_tier": per_tier,
+        "band_advisories": band_advisories,
+        "total_owned_area_mm2": preview.islands.total_owned_area_mm2(),
+        "total_machining_area_mm2": preview.islands.total_machining_area_mm2(),
+        "map": {
+            "cell_mm": preview.map.cell_mm,
+            "nx": preview.map.nx,
+            "ny": preview.map.ny,
+            "tier_count": preview.map.tier_count,
+            "unassigned_cells": preview.map.unassigned_cells(),
+        },
+        "svg_written": svg_written,
+        "note": "Plan-time preview — nothing was generated and the project was not \
+                 modified. `plan_multitool_finishing` emits the op chain; `generate_all` \
+                 runs it.",
+    }))
+}
+
 #[derive(Default)]
 pub struct PendingMcpCompute {
     /// Toolpath ID -> oneshot sender for when that toolpath finishes.
     pub toolpath: HashMap<ToolpathId, tokio::sync::oneshot::Sender<McpResponse>>,
+    /// WP14a — the `Job` lane's in-flight submits, keyed by the submit id.
+    ///
+    /// A map and not an `Option`, because two jobs can be in flight at
+    /// once: a `preview_tier_map` at one dial set and another at a second
+    /// are two questions with two callers, and one slot would drop one of
+    /// them.
+    pub jobs: HashMap<crate::compute::JobRequestId, PendingMcpJob>,
     /// Oneshot sender for when the simulation finishes.
     pub simulation: Option<tokio::sync::oneshot::Sender<McpResponse>>,
     /// Oneshot sender for when collision check finishes.
@@ -1039,6 +1268,7 @@ impl PendingMcpCompute {
     /// `AppController::awaiting_deferred_completions`, which sums both.
     pub fn awaiting_gui(&self) -> u64 {
         let count = self.toolpath.len()
+            + self.jobs.len()
             + usize::from(self.simulation.is_some())
             + usize::from(self.collision.is_some())
             + usize::from(self.gui_screenshot.is_some());

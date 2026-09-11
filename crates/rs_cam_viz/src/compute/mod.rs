@@ -6,10 +6,20 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub use worker::{
-    CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, OptimizeRequest,
-    OptimizeResult, OptimizeResultKind, ReachRequest, ReachResult, SetupSimGroup, SetupSimToolpath,
-    SetupTransformInfo, SimulationRequest, SimulationResult, ThreadedComputeBackend, VizExtras,
+    CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, JobRequest, JobResult,
+    OptimizeRequest, OptimizeResult, OptimizeResultKind, ReachRequest, ReachResult, SetupSimGroup,
+    SetupSimToolpath, SetupTransformInfo, SimulationRequest, SimulationResult,
+    ThreadedComputeBackend, VizExtras,
 };
+
+/// Identifies one [`JobRequest`] submit, so the drain routes its answer
+/// back to the caller that asked.
+///
+/// A counter, not the row id: two `preview_tier_map` calls can be in
+/// flight at once, and a key that named the ROW would let the second
+/// answer be delivered to the first caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct JobRequestId(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComputeLane {
@@ -20,6 +30,19 @@ pub enum ComputeLane {
     /// session is returned attached to the result so the main thread
     /// can swap it back.
     Optimize,
+    /// Worker for a core `Job` row's work step (WP14a).
+    ///
+    /// **Its own lane, and it carries no session.** The two rows that ride
+    /// it today — `recommend_clearing_strategy` and `preview_tier_map` —
+    /// are READS whose step (ii) is a free function over a handle, so the
+    /// session stays on the main thread and stays usable while the job
+    /// runs. That is what separates this lane from `Optimize`, whose every
+    /// request owns the session for the duration.
+    ///
+    /// The queue is FIFO and a submit supersedes nothing. Two previews at
+    /// different dial sets are two different questions, and dropping the
+    /// first would answer neither.
+    Job,
     /// Worker for the per-tool reach-map overlay (P5).
     ///
     /// **Its own lane, not a fourth `AnalysisRequest` variant.** The Analysis
@@ -247,6 +270,9 @@ pub enum ComputeMessage {
     /// Reach lane completion (P5). Boxed for the same reason the toolpath
     /// variant is: the payload carries a whole per-vertex colour vector.
     Reach(Box<ReachResult>),
+    /// `Job` lane completion (WP14a). Boxed: a `JobAnswer` carries a whole
+    /// tier map on one of its arms.
+    Job(Box<JobResult>),
 }
 
 pub trait ComputeBackend: Send {
@@ -261,6 +287,14 @@ pub trait ComputeBackend: Send {
     /// `ProjectSession`; the worker returns it on the [`ComputeMessage::Optimize`]
     /// reply so the main thread can put it back on `AppState::session`.
     fn submit_optimize(&mut self, request: OptimizeRequest);
+
+    /// Submit one core `Job` row's work step to the [`ComputeLane::Job`]
+    /// lane.
+    ///
+    /// Defaulted to a no-op for the same reason [`Self::submit_reach_map`]
+    /// is: a scripted test backend runs no lane, and an answer that never
+    /// arrives leaves the caller's oneshot dropped rather than wrong.
+    fn submit_job(&mut self, _request: JobRequest) {}
 
     /// Submit a reach-map walk for the viewport overlay (P5).
     ///
@@ -293,6 +327,7 @@ pub trait ComputeBackend: Send {
         self.cancel_lane(ComputeLane::Analysis);
         self.cancel_lane(ComputeLane::Optimize);
         self.cancel_lane(ComputeLane::Reach);
+        self.cancel_lane(ComputeLane::Job);
     }
 
     /// Every lane, in declaration order.
@@ -301,12 +336,13 @@ pub trait ComputeBackend: Send {
     /// `RsCamApp::needs_pump_tick` and the repaint arm both fold over this
     /// array, so a lane missing from it can run to completion while the
     /// event loop is parked and its result waits for an unrelated wake-up.
-    fn lane_snapshots(&self) -> [LaneSnapshot; 4] {
+    fn lane_snapshots(&self) -> [LaneSnapshot; 5] {
         [
             self.lane_snapshot(ComputeLane::Toolpath),
             self.lane_snapshot(ComputeLane::Analysis),
             self.lane_snapshot(ComputeLane::Optimize),
             self.lane_snapshot(ComputeLane::Reach),
+            self.lane_snapshot(ComputeLane::Job),
         ]
     }
 }

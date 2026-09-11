@@ -1652,214 +1652,821 @@ impl ProjectSession {
         index: usize,
         cancel: &AtomicBool,
     ) -> Result<Option<crate::strategy_advisor::StrategyRecommendation>, SessionError> {
-        use crate::strategy_advisor::{StrategyCandidate, recommend_strategy};
-
-        let resolved = self.resolve_generation_inputs(index, cancel)?;
-        // Only Adaptive3d carries a clearing strategy.
-        if !matches!(
-            resolved.operation,
-            crate::compute::OperationConfig::Adaptive3d(_)
-        ) {
-            return Ok(None);
-        }
-
-        let machine = self.machine();
-        let material = &self.stock_config().material;
-        let workholding = self.stock_config().workholding_rigidity;
-
-        // Plan each candidate at its load-limited params. Collect OWNED
-        // toolpaths so the `StrategyCandidate` borrows outlive the ranking.
-        let mut planned: Vec<(
-            ClearingStrategy,
-            crate::toolpath::Toolpath,
-            crate::strategy_advisor::LoadRegime,
-        )> = Vec::new();
-        for &strategy in ADVISOR_CANDIDATE_STRATEGIES.iter() {
-            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                break;
-            }
-            // Override the clearing strategy on a clone of the resolved op.
-            let mut op = resolved.operation.clone();
-            if let crate::compute::OperationConfig::Adaptive3d(ref mut cfg) = op {
-                cfg.clearing_strategy = strategy;
-            }
-            // Back the params off to the load limit via Suggest.
-            let suggested = crate::feeds::suggest::suggest_for_operation(
-                crate::feeds::suggest::SuggestForOperationInput {
-                    operation: &op,
-                    tool: &resolved.tool,
-                    machine,
-                    material,
-                    workholding,
-                    lut: crate::feeds::embedded_vendor_lut(),
-                    spindle_strategy: crate::feeds::SpindleStrategy::default(),
-                    context: crate::feeds::suggest::SuggestContext::default(),
-                },
-            );
-            let (op_loadlimited, regime) = match suggested {
-                Ok(s) => {
-                    let regime = regime_from_suggest_warnings(&s.warnings);
-                    (s.operation, regime)
-                }
-                // Suggest refused (e.g. a material without primary-source Kc).
-                // Still worth timing at the raw params; regime is unknown.
-                Err(_) => (op, crate::strategy_advisor::LoadRegime::Unconstrained),
-            };
-            // Plan the clearing toolpath — no recorders / dressups / persist;
-            // the raw path is what we time.
-            //
-            // WP12 / §23 ruling 3: this is the named §5 residual. It plans a
-            // DIFFERENT operation (`op_loadlimited`) than the bundle carries,
-            // so `execute_generation` cannot serve it, and the loose entry
-            // stays `pub(crate)` for it until the advisor becomes a Query or
-            // a Job row.
-            let result = crate::compute::execute::execute_operation_annotated(
-                &op_loadlimited,
-                resolved.mesh.as_deref(),
-                resolved.spatial_index(),
-                resolved.polygons.as_deref().map(|v| v.as_slice()),
-                &resolved.tool_def,
-                &resolved.tool,
-                &resolved.heights,
-                &resolved.cutting_levels,
-                &resolved.emission_stock_bbox,
-                resolved.prev_tool_radius,
-                // Strategy-timing path plans clearing ops only, never pencil.
-                None,
-                None,
-                cancel,
-                None,
-                None,
-                resolved.pre_boundary.as_ref(),
-            );
-            if let Ok(annotated) = result {
-                let annotated_arc = Arc::new(annotated);
-                // Compare OPTIMIZED candidates: simulate the path, run F-039
-                // modulation, and time the MODULATED toolpath so the spiral's
-                // flatter, lighter engagement (which modulation can exploit
-                // harder than the parallel path's corner spikes) shows up in
-                // wall-clock. The regime label falls out of the per-move
-                // binding constraint of the optimized path. Falls back to the
-                // raw path + Suggest-warning regime when the machine carries
-                // no kinematics or the candidate can't be simulated/modulated.
-                let (toolpath, regime) = match self.optimized_candidate(
-                    index,
-                    &annotated_arc,
-                    &resolved.tool,
-                    &op_loadlimited,
-                    cancel,
-                ) {
-                    Some(opt) => opt,
-                    None => (annotated_arc.toolpath.clone(), regime),
-                };
-                planned.push((strategy, toolpath, regime));
-            }
-        }
-
-        let candidates: Vec<StrategyCandidate<'_>> = planned
-            .iter()
-            .map(|(strategy, toolpath, regime)| StrategyCandidate {
-                strategy: *strategy,
-                toolpath,
-                regime: *regime,
-                geometry_forced: false,
-            })
-            .collect();
-
-        Ok(recommend_strategy(&candidates, machine))
+        let handle = self.capture_recommend_clearing_strategy(index, cancel)?;
+        execute_recommend_clearing_strategy(&handle, cancel)
     }
 
-    /// Strategy-advisor companion to
-    /// [`recommend_clearing_strategy`](Self::recommend_clearing_strategy):
-    /// turn a raw candidate path into the *optimized* path the user would
-    /// actually run, plus its binding [`LoadRegime`]. Simulates the candidate
-    /// in isolation to capture per-move engagement, then routes it through the
-    /// shared F-039 core
-    /// ([`modulate_annotated_against_trace`](Self::modulate_annotated_against_trace))
-    /// so the timed path carries modulated feeds. Returns `None` (caller times
-    /// the raw path with the Suggest-warning regime) when the machine has no
-    /// kinematics block, the candidate can't be simulated, no chipload band is
-    /// available, or modulation refuses.
-    fn optimized_candidate(
+    /// Capture the `recommend_clearing_strategy` job — step (i).
+    ///
+    /// It resolves the generation inputs once and copies every other
+    /// session read the ranking makes: the machine, the stock, the post
+    /// dials, the setup frame and the toolpath's own identity, name,
+    /// enabled flag, stored operation and bound cutter. The last two are
+    /// the STORED pair, not the load-limited clone the advisor plans —
+    /// the chipload envelope resolver reads the stored operation, and
+    /// capturing the clone instead would change which vendor row the
+    /// modulator's band comes from.
+    ///
+    /// It takes `&self` and writes nothing.
+    ///
+    /// # Errors
+    ///
+    /// Everything [`Self::resolve_generation_inputs`] refuses, plus
+    /// [`SessionError::ToolpathNotFound`] when `index` names no toolpath.
+    pub(crate) fn capture_recommend_clearing_strategy(
         &self,
         index: usize,
-        annotated: &Arc<crate::toolpath_spans::AnnotatedToolpath>,
-        tool_cfg: &ToolConfig,
-        operation: &crate::compute::OperationConfig,
         cancel: &AtomicBool,
-    ) -> Option<(
-        crate::toolpath::Toolpath,
-        crate::strategy_advisor::LoadRegime,
-    )> {
-        // Modulate against the SAME kinematics + feed envelope
-        // [`recommend_strategy`](crate::strategy_advisor::recommend_strategy)
-        // times the candidate with, so the optimized feeds are clamped to the
-        // exact ceilings they're then timed against. `effective_kinematics`
-        // (never `None` — falls back to the generic-wood-router profile) is
-        // also why the advisor can optimize machines that carry no explicit
-        // kinematics block, unlike the production post-sim pass.
-        let kinematics = self.machine.effective_kinematics();
-        let max_feed = self.machine.max_feed_mm_min.max(1.0);
-        let rapid_feed = max_feed;
-
-        let cut_trace = self.simulate_candidate_isolated(
+    ) -> Result<RecommendClearingStrategyHandle, SessionError> {
+        let inputs = self.resolve_generation_inputs(index, cancel)?;
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        let setup = self.find_setup_for_toolpath_index(index);
+        let context = AdvisorContext {
+            machine: self.machine.clone(),
+            post: self.post.clone(),
+            stock: self.stock.clone(),
+            toolpath_id: tc.id,
+            toolpath_name: tc.name.clone(),
+            toolpath_enabled: tc.enabled,
+            stored_operation: tc.operation.clone(),
+            stored_tool: self.get_tool(ToolId(tc.tool_id)).cloned(),
+            stock_bbox: self.stock_bbox(),
+            setup_ctx: super::SetupEvalContext::build_for_setup(self, setup),
+        };
+        Ok(RecommendClearingStrategyHandle {
             index,
-            Arc::clone(annotated),
-            tool_cfg,
-            operation,
-            cancel,
-        )?;
-        let toolpath_id = self.toolpath_configs.get(index)?.id;
-        let band_range = crate::tool_load::chipload_envelopes_for_session(self, Some(&cut_trace))
-            .get(&toolpath_id)
-            .cloned()?;
-        let band = crate::feed_modulation::ChiploadBand::new(band_range.start, band_range.end)?;
-        // ConstrainedMax @ aggressiveness 1.0 — the "bomber feeds" operating
-        // point and the `SimulationOptions` default, so the advisor times the
-        // same path the user gets after a default sim.
-        let strategy = crate::feed_modulation::ModulationStrategy::ConstrainedMax;
-        let aggressiveness = 1.0;
+            inputs,
+            context,
+        })
+    }
+}
 
-        let (modulated, outcome) = self.modulate_annotated_against_trace(
-            annotated.as_ref(),
-            operation,
-            tool_cfg,
-            toolpath_id,
-            &cut_trace,
-            band,
-            kinematics,
-            max_feed,
-            rapid_feed,
-            strategy,
-            aggressiveness,
-        )?;
-        let regime = outcome
-            .build_summary(operation.feed_rate(), aggressiveness, strategy)
-            .map(|s| regime_from_binding(&s))
-            .unwrap_or(crate::strategy_advisor::LoadRegime::Unconstrained);
-        Some((modulated, regime))
+/// Every session read the strategy advisor makes, captured once.
+///
+/// The advisor reaches the session in four places beyond the resolved
+/// generation inputs: the ranking's machine and material, the candidate
+/// simulation's stock frame and post dials, the chipload envelope's
+/// material and stored toolpath, and the modulator's machine and default
+/// spindle speed. This struct is all four, so step (ii) holds none of them
+/// by reference.
+struct AdvisorContext {
+    /// The machine the candidates are timed and modulated against.
+    machine: crate::machine::MachineProfile,
+    /// The post dials the candidate simulation reads: the default spindle
+    /// speed and the rapid-feed pair.
+    post: super::ProjectPostConfig,
+    /// The stock. The ranking reads its material and its workholding
+    /// rigidity; the chipload envelope reads the material again.
+    stock: crate::compute::StockConfig,
+    /// The simulator-side id of the toolpath the advisor advises on.
+    toolpath_id: ToolpathId,
+    /// The toolpath's name, for the candidate simulation entry.
+    toolpath_name: String,
+    /// Whether the toolpath is enabled. The chipload envelope resolver
+    /// skips a disabled toolpath, so the advisor then times the RAW path.
+    toolpath_enabled: bool,
+    /// The toolpath's STORED operation — what the chipload envelope
+    /// resolver reads.
+    stored_operation: crate::compute::OperationConfig,
+    /// The cutter the toolpath is bound to. `None` when the toolpath names
+    /// no tool in the project; the advisor then times the raw path.
+    stored_tool: Option<ToolConfig>,
+    /// The world-frame stock bounding box.
+    stock_bbox: BoundingBox3,
+    /// The setup frame the candidate simulation runs in.
+    setup_ctx: super::SetupEvalContext,
+}
+
+/// What [`ProjectSession::start`] captured for one
+/// `recommend_clearing_strategy` job.
+///
+/// The handle is the whole input of step (ii), so
+/// [`execute_recommend_clearing_strategy`] reads no session and runs off
+/// the frame loop.
+///
+/// `index` is public because a caller labels the job with it. `inputs` and
+/// `context` stay private, so no caller outside this module builds a
+/// handle: a handle is the evidence of one submit.
+pub struct RecommendClearingStrategyHandle {
+    /// The index of the toolpath this job advises on.
+    pub index: usize,
+    /// Every per-generation input, resolved once by
+    /// [`ProjectSession::resolve_generation_inputs`]. Every candidate
+    /// plans off this ONE resolution, so only the strategy varies.
+    inputs: ResolvedGenInputs,
+    /// Every other session read the ranking makes.
+    context: AdvisorContext,
+}
+
+impl RecommendClearingStrategyHandle {
+    /// The toolpath's name, as the submit step read it.
+    #[must_use]
+    pub fn toolpath_name(&self) -> &str {
+        &self.context.toolpath_name
     }
 
-    /// Shared `SimulationRequest` assembly for [`run_simulation`](Self::run_simulation)
-    /// and [`simulate_candidate_isolated`](Self::simulate_candidate_isolated) (S.12
-    /// dedup). Both build the request off an already-assembled `groups` +
-    /// `resolution` pair through the identical stock-frame / rapid-feed-ternary /
-    /// kinematics-map shape; only these knobs differ between the two callers:
+    /// Whether the operation carries a clearing strategy at all.
     ///
-    /// - `metrics_enabled` / `capture_arc_engagement`: `run_simulation` mirrors
-    ///   `SimulationOptions::metrics_enabled` into both fields (a single toggle
-    ///   the production path exposes). `simulate_candidate_isolated` force-enables
-    ///   both unconditionally — the strategy advisor's modulator needs per-move
-    ///   engagement on every candidate regardless of the session's default sim
-    ///   options.
-    /// - `model_mesh`: `run_simulation` supplies the translated model mesh so the
-    ///   simulator can compute sim-vs-model deviation; `simulate_candidate_isolated`
-    ///   passes `None` — a throwaway candidate path is scored on engagement/feed,
-    ///   not surface deviation.
-    /// - `use_predicted_feed_in_gates`: `run_simulation` mirrors
-    ///   `SimulationOptions::use_predicted_feed_in_gates`; the isolated path
-    ///   force-disables it, since it evaluates candidates *before* any
-    ///   feed-modulation pass exists to populate a predicted-feed map.
+    /// Only `Adaptive3d` does. A caller that wants to know before it pays
+    /// for the ranking reads this; [`execute_recommend_clearing_strategy`]
+    /// answers `Ok(None)` for every other operation.
+    #[must_use]
+    pub fn has_clearing_strategy(&self) -> bool {
+        matches!(
+            self.inputs.operation,
+            crate::compute::OperationConfig::Adaptive3d(_)
+        )
+    }
+}
+
+/// Rank the clearing strategies from a handle — step (ii) of the
+/// `recommend_clearing_strategy` job.
+///
+/// **This function holds no session.** It is a free function over
+/// `&`[`RecommendClearingStrategyHandle`], so it coerces to a plain `fn`
+/// pointer and cannot capture a `&ProjectSession`. That is what lets a
+/// caller run it off the frame loop while the session stays usable.
+///
+/// For each candidate [`ClearingStrategy`] it (1) runs Suggest to back the
+/// params off to the deflection / power limits, (2) plans the clearing
+/// toolpath off the handle's single shared resolution, (3) simulates and
+/// modulates that candidate, and (4) ranks them through
+/// [`crate::strategy_advisor::recommend_strategy`], which times each path
+/// through the accel-aware integrator.
+///
+/// Returns `Ok(None)` when the operation is not an `Adaptive3d` op or no
+/// candidate plans a usable path. The job writes nothing; there is no step
+/// (iii).
+///
+/// `cancel` stops the loop between candidates and reaches the generator
+/// and the candidate simulation.
+///
+/// # Errors
+///
+/// None today. The result type is a `Result` because the row's answer
+/// column names it and the ranking may grow a refusal.
+pub fn execute_recommend_clearing_strategy(
+    handle: &RecommendClearingStrategyHandle,
+    cancel: &AtomicBool,
+) -> Result<Option<crate::strategy_advisor::StrategyRecommendation>, SessionError> {
+    use crate::strategy_advisor::{StrategyCandidate, recommend_strategy};
+
+    let resolved = &handle.inputs;
+    let context = &handle.context;
+    // Only Adaptive3d carries a clearing strategy.
+    if !handle.has_clearing_strategy() {
+        return Ok(None);
+    }
+
+    let machine = &context.machine;
+    let material = &context.stock.material;
+    let workholding = context.stock.workholding_rigidity;
+
+    // Plan each candidate at its load-limited params. Collect OWNED
+    // toolpaths so the `StrategyCandidate` borrows outlive the ranking.
+    let mut planned: Vec<(
+        ClearingStrategy,
+        crate::toolpath::Toolpath,
+        crate::strategy_advisor::LoadRegime,
+    )> = Vec::new();
+    for &strategy in ADVISOR_CANDIDATE_STRATEGIES.iter() {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        // Override the clearing strategy on a clone of the resolved op.
+        let mut op = resolved.operation.clone();
+        if let crate::compute::OperationConfig::Adaptive3d(ref mut cfg) = op {
+            cfg.clearing_strategy = strategy;
+        }
+        // Back the params off to the load limit via Suggest.
+        let suggested = crate::feeds::suggest::suggest_for_operation(
+            crate::feeds::suggest::SuggestForOperationInput {
+                operation: &op,
+                tool: &resolved.tool,
+                machine,
+                material,
+                workholding,
+                lut: crate::feeds::embedded_vendor_lut(),
+                spindle_strategy: crate::feeds::SpindleStrategy::default(),
+                context: crate::feeds::suggest::SuggestContext::default(),
+            },
+        );
+        let (op_loadlimited, regime) = match suggested {
+            Ok(s) => {
+                let regime = regime_from_suggest_warnings(&s.warnings);
+                (s.operation, regime)
+            }
+            // Suggest refused (e.g. a material without primary-source Kc).
+            // Still worth timing at the raw params; regime is unknown.
+            Err(_) => (op, crate::strategy_advisor::LoadRegime::Unconstrained),
+        };
+        // Plan the clearing toolpath — no recorders / dressups / persist;
+        // the raw path is what we time.
+        //
+        // WP12 / §23 ruling 3: this is the named §5 residual. It plans a
+        // DIFFERENT operation (`op_loadlimited`) than the bundle carries,
+        // so `execute_generation` cannot serve it, and the loose entry
+        // stays `pub(crate)` for it. WP14a made the advisor a `Job` row and
+        // the residual MOVED here, into a free function; it did not close.
+        let result = crate::compute::execute::execute_operation_annotated(
+            &op_loadlimited,
+            resolved.mesh.as_deref(),
+            resolved.spatial_index(),
+            resolved.polygons.as_deref().map(|v| v.as_slice()),
+            &resolved.tool_def,
+            &resolved.tool,
+            &resolved.heights,
+            &resolved.cutting_levels,
+            &resolved.emission_stock_bbox,
+            resolved.prev_tool_radius,
+            // Strategy-timing path plans clearing ops only, never pencil.
+            None,
+            None,
+            cancel,
+            None,
+            None,
+            resolved.pre_boundary.as_ref(),
+        );
+        if let Ok(annotated) = result {
+            let annotated_arc = Arc::new(annotated);
+            // Compare OPTIMIZED candidates: simulate the path, run F-039
+            // modulation, and time the MODULATED toolpath so the spiral's
+            // flatter, lighter engagement (which modulation can exploit
+            // harder than the parallel path's corner spikes) shows up in
+            // wall-clock. The regime label falls out of the per-move
+            // binding constraint of the optimized path. Falls back to the
+            // raw path + Suggest-warning regime when the machine carries
+            // no kinematics or the candidate can't be simulated/modulated.
+            let (toolpath, regime) = match optimized_candidate(
+                context,
+                &annotated_arc,
+                &resolved.tool,
+                &op_loadlimited,
+                cancel,
+            ) {
+                Some(opt) => opt,
+                None => (annotated_arc.toolpath.clone(), regime),
+            };
+            planned.push((strategy, toolpath, regime));
+        }
+    }
+
+    let candidates: Vec<StrategyCandidate<'_>> = planned
+        .iter()
+        .map(|(strategy, toolpath, regime)| StrategyCandidate {
+            strategy: *strategy,
+            toolpath,
+            regime: *regime,
+            geometry_forced: false,
+        })
+        .collect();
+
+    Ok(recommend_strategy(&candidates, machine))
+}
+
+/// Strategy-advisor companion to
+/// [`execute_recommend_clearing_strategy`]: turn a raw candidate path into
+/// the *optimized* path the user would actually run, plus its binding
+/// [`LoadRegime`](crate::strategy_advisor::LoadRegime). It simulates the
+/// candidate in isolation to capture per-move engagement, then routes it
+/// through the shared F-039 core
+/// (`modulate_annotated_against_trace`) so the timed path carries
+/// modulated feeds. Returns `None` (the caller times the raw path with the
+/// Suggest-warning regime) when the machine has no kinematics block, the
+/// candidate can't be simulated, no chipload band is available, or
+/// modulation refuses.
+///
+/// A free function over the captured [`AdvisorContext`]. It holds no
+/// session, and it reaches the chipload envelope through
+/// [`crate::tool_load::chipload_envelope_for_toolpath`] — the per-toolpath
+/// half of the session-wide resolver, which the gate and the viewport read
+/// through the same function.
+fn optimized_candidate(
+    context: &AdvisorContext,
+    annotated: &Arc<crate::toolpath_spans::AnnotatedToolpath>,
+    tool_cfg: &ToolConfig,
+    operation: &crate::compute::OperationConfig,
+    cancel: &AtomicBool,
+) -> Option<(
+    crate::toolpath::Toolpath,
+    crate::strategy_advisor::LoadRegime,
+)> {
+    // Modulate against the SAME kinematics + feed envelope
+    // [`recommend_strategy`](crate::strategy_advisor::recommend_strategy)
+    // times the candidate with, so the optimized feeds are clamped to the
+    // exact ceilings they're then timed against. `effective_kinematics`
+    // (never `None` — falls back to the generic-wood-router profile) is
+    // also why the advisor can optimize machines that carry no explicit
+    // kinematics block, unlike the production post-sim pass.
+    let kinematics = context.machine.effective_kinematics();
+    let max_feed = context.machine.max_feed_mm_min.max(1.0);
+    let rapid_feed = max_feed;
+
+    let cut_trace =
+        simulate_candidate_isolated(context, Arc::clone(annotated), tool_cfg, operation, cancel)?;
+    let toolpath_id = context.toolpath_id;
+    // The envelope resolver skips a disabled toolpath, and it reads the
+    // STORED operation and the STORED cutter — never the load-limited clone
+    // this candidate plans. Both facts ride on the handle, so the band the
+    // advisor modulates against is the band the post-sim gate reads.
+    if !context.toolpath_enabled {
+        return None;
+    }
+    let band_range = crate::tool_load::chipload_envelope_for_toolpath(
+        &context.stock.material,
+        context.stored_tool.as_ref()?,
+        &context.stored_operation,
+        toolpath_id,
+        Some(&cut_trace),
+    )?;
+    let band = crate::feed_modulation::ChiploadBand::new(band_range.start, band_range.end)?;
+    // ConstrainedMax @ aggressiveness 1.0 — the "bomber feeds" operating
+    // point and the `SimulationOptions` default, so the advisor times the
+    // same path the user gets after a default sim.
+    let strategy = crate::feed_modulation::ModulationStrategy::ConstrainedMax;
+    let aggressiveness = 1.0;
+
+    let (modulated, outcome) = modulate_annotated_against_trace(
+        &FeedContext {
+            material: &context.stock.material,
+            machine: &context.machine,
+            default_spindle_rpm: context.post.spindle_speed,
+        },
+        annotated.as_ref(),
+        operation,
+        tool_cfg,
+        toolpath_id,
+        &cut_trace,
+        band,
+        kinematics,
+        max_feed,
+        rapid_feed,
+        strategy,
+        aggressiveness,
+    )?;
+    let regime = outcome
+        .build_summary(operation.feed_rate(), aggressiveness, strategy)
+        .map(|s| regime_from_binding(&s))
+        .unwrap_or(crate::strategy_advisor::LoadRegime::Unconstrained);
+    Some((modulated, regime))
+}
+
+/// The three session records the F-039 modulation core reads.
+///
+/// A struct rather than three positional arguments: the caller list is
+/// already at the `too_many_arguments` ceiling, and two of the three are
+/// borrowed records a positional signature lets a caller swap.
+struct FeedContext<'a> {
+    /// The stock material. It supplies Kc and the affine force
+    /// coefficients.
+    material: &'a crate::material::Material,
+    /// The machine. It supplies the available power at the spindle speed.
+    machine: &'a crate::machine::MachineProfile,
+    /// The post's spindle speed, used when the operation carries none.
+    default_spindle_rpm: u32,
+}
+
+/// Modulate ONE toolpath's per-move feeds against a simulation cut
+/// trace, returning the modulated [`Toolpath`] and the raw
+/// [`ModulationOutcome`] (per-move binding map + summary inputs).
+///
+/// This is the shared F-039 core consumed by two callers:
+/// [`ProjectSession::apply_adaptive_feed_modulation`] (the production
+/// post-sim pass, which stamps the result back onto the session's results)
+/// and [`optimized_candidate`] (the strategy advisor, which times the
+/// *modulated* path so it compares optimized candidates rather than raw
+/// Suggest-feed ones). The session-side caller takes the method of the
+/// same name, which reads the three records off `self` and delegates
+/// here; the advisor reads them off its handle. One body, two doors.
+/// Keeping the engagement aggregation + `ModulationContext` build in
+/// one place is the anti-drift discipline of the unified load model
+/// (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §5) — the deflection
+/// cap, power cap, and chipload band are derived here once.
+///
+/// Returns `None` when the op carries no usable RPM, has no moves, or
+/// the modulator refuses (e.g. an empty engagement vector).
+#[allow(clippy::too_many_arguments)]
+fn modulate_annotated_against_trace(
+    context: &FeedContext<'_>,
+    annotated: &crate::toolpath_spans::AnnotatedToolpath,
+    operation: &crate::compute::OperationConfig,
+    tool_cfg: &ToolConfig,
+    toolpath_id: ToolpathId,
+    cut_trace: &crate::simulation_cut::SimulationCutTrace,
+    band: crate::feed_modulation::ChiploadBand,
+    kinematics: crate::machine_kinematics::MachineKinematics,
+    max_feed: f64,
+    rapid_feed: f64,
+    strategy: crate::feed_modulation::ModulationStrategy,
+    aggressiveness: f64,
+) -> Option<(
+    crate::toolpath::Toolpath,
+    crate::feed_modulation::ModulationOutcome,
+)> {
+    use crate::feed_modulation::{
+        DeflectionLimitInputs, ModulationContext, PerMoveEngagement, PowerLimitInputs,
+        adaptive_feed_modulate,
+    };
+
+    let flute_count = tool_cfg.flute_count.max(1);
+    let spindle_rpm = operation
+        .spindle_rpm()
+        .unwrap_or(context.default_spindle_rpm);
+    if spindle_rpm == 0 {
+        return None;
+    }
+    let move_count = annotated.toolpath.moves.len();
+    if move_count == 0 {
+        return None;
+    }
+
+    // Stage 4 — planner-predicted engagement for the constructive
+    // contour-spiral, in two layers:
+    //
+    //  (a) Per-move: the spiral's own leading-arc engagement (α/2π)
+    //      computed on its clean 2D material grid, carried
+    //      positionally on the AnnotatedToolpath and looked up by
+    //      cut-move target. RDP simplification keeps a subset of the
+    //      emitted points verbatim, so kept cut moves hit exactly.
+    //  (b) Uniform fallback: the op's target engagement
+    //      (stepover/diameter via the F1 leading-arc → radial-WOC
+    //      bridge), used for cut moves whose position isn't in the
+    //      sampler (arc-fit / lead-in points) and for the 2D
+    //      Adaptive spiral op, which carries no 3D sampler.
+    //
+    // The dexel simulator's cylinder-side `radial_woc_fraction`
+    // reads ~10× low for adaptive ops (CLAUDE.md), so modulation on
+    // the sim scalar alone never lets the flat-load spiral run
+    // faster. Per move we take `max(sim, planner)` so any genuine
+    // spike the simulator *does* resolve still wins — never feeding
+    // above the higher of the two estimates. Gated strictly to the
+    // ContourSpiral strategy: the Agent / AgentSearch path has real
+    // ~2.5× target engagement spikes that a planner floor would
+    // dangerously over-feed. See
+    // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4".
+    let is_contour_spiral = matches!(
+        operation,
+        crate::compute::OperationConfig::Adaptive3d(c)
+            if matches!(
+                c.clearing_strategy,
+                crate::compute::operation_configs::ClearingStrategy::ContourSpiral
+            )
+    ) || matches!(
+        operation,
+        crate::compute::OperationConfig::Adaptive(c)
+            if matches!(c.path_strategy, crate::adaptive::PathStrategy2d::ContourSpiral)
+    );
+    let planner_uniform_woc: Option<f64> = if is_contour_spiral {
+        let stepover = match operation {
+            crate::compute::OperationConfig::Adaptive3d(c) => Some(c.stepover),
+            crate::compute::OperationConfig::Adaptive(c) => Some(c.stepover),
+            _ => None,
+        };
+        stepover.and_then(|s| {
+            let r = tool_cfg.diameter * 0.5;
+            (r > 0.0 && s > 0.0).then(|| {
+                let f = crate::adaptive_shared::target_engagement_fraction(s, r);
+                crate::adaptive_shared::radial_woc_fraction_from_leading_arc(f)
+            })
+        })
+    } else {
+        None
+    };
+    // Position key for the per-move planner-engagement lookup
+    // (0.001 mm grid — far finer than the cut-point spacing).
+    let pos_key = |p: &crate::geo::P3| -> (i64, i64, i64) {
+        (
+            (p.x * 1000.0).round() as i64,
+            (p.y * 1000.0).round() as i64,
+            (p.z * 1000.0).round() as i64,
+        )
+    };
+    let planner_map: std::collections::HashMap<(i64, i64, i64), f64> =
+        if is_contour_spiral && !annotated.planner_engagement.is_empty() {
+            annotated
+                .planner_engagement
+                .iter()
+                .map(|(p, f)| (pos_key(p), *f))
+                .collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+
+    // Aggregate per-move engagement (time-weighted mean over the
+    // move's samples). Samples filter on `is_cutting` so air-cut
+    // and rapid moves stay at default `(0.0, 0.0)` engagement —
+    // the modulator skips them via its own `should_skip` /
+    // zero-engagement short-circuits.
+    let mut radial_num = vec![0.0_f64; move_count];
+    let mut axial_num = vec![0.0_f64; move_count];
+    let mut weight_sum = vec![0.0_f64; move_count];
+    for sample in &cut_trace.samples {
+        if sample.toolpath_id != toolpath_id {
+            continue;
+        }
+        if !sample.is_cutting {
+            continue;
+        }
+        if sample.move_index >= move_count {
+            continue;
+        }
+        let w = sample.segment_time_s.max(0.0);
+        if w <= 0.0 {
+            continue;
+        }
+        #[allow(clippy::indexing_slicing)]
+        // SAFETY: move_index < move_count checked above.
+        {
+            radial_num[sample.move_index] += sample.engagement.radial_woc_fraction.max(0.0) * w;
+            // C2: an unmeasured axial fraction contributes nothing but
+            // still carries its time weight — byte-identical to the
+            // pre-C2 `0.0` sentinel, and now visibly a choice. The
+            // modulator's own `PerMoveEngagement` keeps a plain f64:
+            // there, `0.0` legitimately means "air" (see its doc).
+            axial_num[sample.move_index] +=
+                sample.engagement.axial_doc_fraction.unwrap_or(0.0).max(0.0) * w;
+            weight_sum[sample.move_index] += w;
+        }
+    }
+    let engagements: Vec<PerMoveEngagement> = (0..move_count)
+        .map(|i| {
+            #[allow(clippy::indexing_slicing)]
+            // SAFETY: i < move_count by construction.
+            let w = weight_sum[i];
+            if w <= 0.0 {
+                return PerMoveEngagement::default();
+            }
+            #[allow(clippy::indexing_slicing)]
+            // SAFETY: i < move_count by construction.
+            let sim_radial = radial_num[i] / w;
+            #[allow(clippy::indexing_slicing)]
+            // SAFETY: i < move_count by construction.
+            let axial = axial_num[i] / w;
+            // Apply the planner engagement on lateral clearing /
+            // finishing cuts only — entry helix, ramp, and linking
+            // moves are not the spiral's flat-load wraps, so they
+            // keep the sim-measured reading. Per-move sampler first,
+            // uniform target floor as fallback; `max` with sim keeps
+            // any genuine spike the simulator resolves.
+            let m = annotated.toolpath.moves.get(i);
+            let radial = if matches!(
+                m.map(|m| m.intent),
+                Some(crate::toolpath::MoveIntent::ClearingCut)
+                    | Some(crate::toolpath::MoveIntent::FinishingCut)
+            ) {
+                let planner_woc = m
+                    .and_then(|m| planner_map.get(&pos_key(&m.target)).copied())
+                    .map(crate::adaptive_shared::radial_woc_fraction_from_leading_arc)
+                    .or(planner_uniform_woc);
+                match planner_woc {
+                    Some(pw) => sim_radial.max(pw),
+                    None => sim_radial,
+                }
+            } else {
+                sim_radial
+            };
+            PerMoveEngagement {
+                radial_woc_fraction: radial,
+                axial_doc_fraction: axial,
+            }
+        })
+        .collect();
+
+    // F-039 — wire optional deflection + power constraint
+    // inputs. Material + tool data is enough to recover Kc,
+    // stickout, engagement diameter, and Young's modulus; the
+    // machine's `power_at_rpm × safety_factor` gives the
+    // available power.
+    let material = context.material;
+    // Materials without a primary-source Kc disable both the
+    // deflection and power constraints in the constrained-max
+    // solver; the solver falls through to chipload + machine +
+    // kinematics caps. See `Material::kc_n_per_mm2`.
+    let kc_opt = material.kc_n_per_mm2();
+    let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+    // Use the per-toolpath max axial DOC from the cut trace
+    // as the deflection / power reference; falls back to
+    // diameter when unavailable (no cutting samples → no
+    // constraint active).
+    let max_axial = cut_trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
+        .map(|s| s.axial_engagement_mm.max(0.0))
+        .fold(0.0_f64, f64::max);
+    let nominal_axial = if max_axial > 0.0 { max_axial } else { 0.0 };
+    let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
+    let stickout = tool_def.stickout.max(0.0);
+    let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
+    // Feed-aware deflection cap: the optimizer solves its feed cap
+    // from the SAME affine force model (Ks/F_edge) and integrated
+    // beam compliance the post-sim deflection gate uses, so the two
+    // agree on a cut. Compliance is δ-per-newton at the toolpath's
+    // peak axial DOC; deflection is linear in force so one scalar
+    // suffices.
+    let deflection_inputs = match crate::feeds::force::affine_coefficients(material) {
+        Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
+            let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
+            if compliance.is_finite() && compliance > 0.0 {
+                Some(DeflectionLimitInputs {
+                    ks_n_per_mm2: ks,
+                    f_edge_n_per_mm: f_edge,
+                    compliance_mm_per_n: compliance,
+                    max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
+                })
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    let machine_profile = context.machine;
+    let available_kw =
+        machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
+    let power_inputs = match kc_opt {
+        Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
+            // S2-9 (2026-05-31): pass raw Kc; the solver applies
+            // GRAIN_ANISOTROPY_FACTOR internally so this site
+            // doesn't re-encode the multiplier literal.
+            kc_n_per_mm2: kc,
+            engagement_diameter_mm: engagement_dia,
+            available_kw,
+        }),
+        _ => None,
+    };
+
+    let ctx = ModulationContext {
+        spindle_rpm: spindle_rpm as f64,
+        flute_count,
+        max_feed_mm_min: max_feed,
+        rapid_feed_mm_min: rapid_feed,
+        chipload_band: band,
+        kinematics: &kinematics,
+        strategy,
+        aggressiveness,
+        deflection_inputs,
+        power_inputs,
+        nominal_axial_doc_mm: nominal_axial,
+        // Phase 3 (2026-09-07) — the operation's OWN plunge rate, the
+        // ceiling the geometric guard applies to a vertical-dominant
+        // move whose generator emitted it without a plunge tag.
+        plunge_rate_mm_min: operation.plunge_rate(),
+    };
+
+    let mut modulated_toolpath = annotated.toolpath.clone();
+    let outcome = adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx).ok()?;
+    Some((modulated_toolpath, outcome))
+}
+
+/// The two session records a [`SimulationRequest`] assembly reads.
+///
+/// A struct rather than two positional arguments: both are borrowed
+/// records and a positional signature is how two adjacent references get
+/// swapped.
+struct SimRequestContext<'a> {
+    machine: &'a crate::machine::MachineProfile,
+    post: &'a super::ProjectPostConfig,
+}
+
+/// Build one [`SimulationRequest`] from an already-assembled `groups` +
+/// `resolution` pair.
+///
+/// Both callers — [`ProjectSession::run_simulation`] and
+/// `simulate_candidate_isolated` — go through the identical stock-frame /
+/// rapid-feed-ternary / kinematics-map shape (S.12 dedup); only these knobs
+/// differ:
+///
+/// - `metric_options`: `run_simulation` mirrors
+///   `SimulationOptions::metrics_enabled` into both fields (a single toggle
+///   the production path exposes). `simulate_candidate_isolated`
+///   force-enables both unconditionally — the strategy advisor's modulator
+///   needs per-move engagement on every candidate regardless of the
+///   session's default sim options.
+/// - `model_mesh`: `run_simulation` supplies the translated model mesh so
+///   the simulator can compute sim-vs-model deviation;
+///   `simulate_candidate_isolated` passes `None` — a throwaway candidate
+///   path is scored on engagement and feed, not surface deviation.
+/// - `use_predicted_feed_in_gates`: `run_simulation` mirrors
+///   `SimulationOptions::use_predicted_feed_in_gates`; the isolated path
+///   force-disables it, since it evaluates candidates *before* any
+///   feed-modulation pass exists to populate a predicted-feed map.
+fn build_sim_request(
+    context: &SimRequestContext<'_>,
+    groups: Vec<SimGroupEntry>,
+    stock_bbox: BoundingBox3,
+    resolution: f64,
+    metric_options: SimulationMetricOptions,
+    model_mesh: Option<Arc<TriangleMesh>>,
+    use_predicted_feed_in_gates: bool,
+) -> SimulationRequest {
+    let machine = context.machine;
+    let post = context.post;
+    SimulationRequest {
+        groups,
+        stock_bbox,
+        stock_top_z: stock_bbox.max.z,
+        resolution,
+        metric_options,
+        spindle_rpm: post.spindle_speed,
+        rapid_feed_mm_min: if post.high_feedrate_mode {
+            post.high_feedrate
+        } else {
+            machine.max_feed_mm_min.max(1.0)
+        },
+        model_mesh,
+        kinematics: machine
+            .kinematics
+            .map(|kin| crate::compute::simulate::KinematicsContext {
+                kinematics: kin,
+                max_feed_mm_min: machine.max_feed_mm_min.max(1.0),
+                use_predicted_feed_in_gates,
+            }),
+    }
+}
+
+/// Simulate a single throwaway toolpath in isolation (one setup group, one
+/// entry) and return its cut trace, with arc-engagement capture on so the
+/// per-move engagement the modulator needs is present.
+///
+/// The strategy advisor evaluates candidate strategies that are not (yet)
+/// persisted in `ProjectSession::results`. It holds no session, so every
+/// read rides on the captured [`AdvisorContext`]: the toolpath's own id and
+/// name, the stock frame, the setup frame and the post dials.
+fn simulate_candidate_isolated(
+    context: &AdvisorContext,
+    annotated: Arc<crate::toolpath_spans::AnnotatedToolpath>,
+    tool_cfg: &ToolConfig,
+    operation: &crate::compute::OperationConfig,
+    cancel: &AtomicBool,
+) -> Option<Arc<crate::simulation_cut::SimulationCutTrace>> {
+    if annotated.toolpath.moves.len() < 2 {
+        return None;
+    }
+    let stock_bbox = context.stock_bbox;
+    let setup_ctx = &context.setup_ctx;
+    let direction = match setup_ctx.face_up {
+        FaceUp::Bottom => StockCutDirection::FromBottom,
+        _ => StockCutDirection::FromTop,
+    };
+
+    let entry = SimToolpathEntry {
+        id: context.toolpath_id,
+        name: context.toolpath_name.clone(),
+        annotated,
+        tool: build_cutter(tool_cfg),
+        flute_count: tool_cfg.flute_count,
+        tool_summary: tool_cfg.summary(),
+        semantic_trace: None,
+        spindle_rpm: operation.spindle_rpm(),
+        metrics_not_applicable: false,
+        drill_op: None,
+        operation_config_hash: crate::compute::simulate::hash_operation_config(operation),
+    };
+    let local_stock_bbox = setup_ctx.sim_local_stock_bbox();
+    let groups = vec![SimGroupEntry {
+        toolpaths: vec![entry],
+        direction,
+        local_stock_bbox,
+        // The handle OWNS its setup context and the job reads it by
+        // reference, so the transform is cloned rather than moved.
+        // `SetupTransformInfo` is `Clone` and not `Copy`.
+        local_to_global: setup_ctx.local_to_global.clone(),
+        phantom_prior_stock: None,
+    }];
+    let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
+    // Deviation (model_mesh) is not needed for engagement capture; both
+    // metrics flags force-on (modulator needs arc engagement regardless
+    // of session defaults); predicted-feed gates force-off (no modulation
+    // pass has run yet to populate a predicted-feed map). See
+    // `build_sim_request`'s doc comment for the full rationale.
+    let request = build_sim_request(
+        &SimRequestContext {
+            machine: &context.machine,
+            post: &context.post,
+        },
+        groups,
+        stock_bbox,
+        resolution,
+        SimulationMetricOptions {
+            enabled: true,
+            capture_arc_engagement: true,
+        },
+        None,
+        false,
+    );
+    run_simulation(&request, cancel).ok()?.cut_trace
+}
+
+impl ProjectSession {
+    /// Shared `SimulationRequest` assembly for [`run_simulation`](Self::run_simulation)
+    /// and `simulate_candidate_isolated` (S.12 dedup).
+    ///
+    /// The session half is the two records the assembly reads. Everything
+    /// else is the free `build_sim_request`, so the strategy
+    /// advisor's candidate simulation builds its request holding no session.
     fn build_sim_request(
         &self,
         groups: Vec<SimGroupEntry>,
@@ -1869,95 +2476,18 @@ impl ProjectSession {
         model_mesh: Option<Arc<TriangleMesh>>,
         use_predicted_feed_in_gates: bool,
     ) -> SimulationRequest {
-        SimulationRequest {
+        build_sim_request(
+            &SimRequestContext {
+                machine: &self.machine,
+                post: &self.post,
+            },
             groups,
             stock_bbox,
-            stock_top_z: stock_bbox.max.z,
             resolution,
             metric_options,
-            spindle_rpm: self.post.spindle_speed,
-            rapid_feed_mm_min: if self.post.high_feedrate_mode {
-                self.post.high_feedrate
-            } else {
-                self.machine.max_feed_mm_min.max(1.0)
-            },
             model_mesh,
-            kinematics: self.machine.kinematics.map(|kin| {
-                crate::compute::simulate::KinematicsContext {
-                    kinematics: kin,
-                    max_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
-                    use_predicted_feed_in_gates,
-                }
-            }),
-        }
-    }
-
-    /// Simulate a single throwaway toolpath in isolation (one setup group,
-    /// one entry) and return its cut trace, with arc-engagement capture on so
-    /// the per-move engagement the modulator needs is present. Used by the
-    /// strategy advisor to evaluate candidate strategies that are not (yet)
-    /// persisted in `self.results`; shares its `SimulationRequest` assembly
-    /// with [`run_simulation`](Self::run_simulation) via
-    /// [`build_sim_request`](Self::build_sim_request) for the single-path case.
-    fn simulate_candidate_isolated(
-        &self,
-        index: usize,
-        annotated: Arc<crate::toolpath_spans::AnnotatedToolpath>,
-        tool_cfg: &ToolConfig,
-        operation: &crate::compute::OperationConfig,
-        cancel: &AtomicBool,
-    ) -> Option<Arc<crate::simulation_cut::SimulationCutTrace>> {
-        let tc = self.toolpath_configs.get(index)?;
-        if annotated.toolpath.moves.len() < 2 {
-            return None;
-        }
-        let stock_bbox = self.stock_bbox();
-        let setup = self.find_setup_for_toolpath_index(index);
-        let setup_ctx = super::SetupEvalContext::build_for_setup(self, setup);
-        let direction = match setup_ctx.face_up {
-            FaceUp::Bottom => StockCutDirection::FromBottom,
-            _ => StockCutDirection::FromTop,
-        };
-
-        let entry = SimToolpathEntry {
-            id: tc.id,
-            name: tc.name.clone(),
-            annotated,
-            tool: build_cutter(tool_cfg),
-            flute_count: tool_cfg.flute_count,
-            tool_summary: tool_cfg.summary(),
-            semantic_trace: None,
-            spindle_rpm: operation.spindle_rpm(),
-            metrics_not_applicable: false,
-            drill_op: None,
-            operation_config_hash: crate::compute::simulate::hash_operation_config(operation),
-        };
-        let local_stock_bbox = setup_ctx.sim_local_stock_bbox();
-        let groups = vec![SimGroupEntry {
-            toolpaths: vec![entry],
-            direction,
-            local_stock_bbox,
-            local_to_global: setup_ctx.local_to_global,
-            phantom_prior_stock: None,
-        }];
-        let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
-        // Deviation (model_mesh) is not needed for engagement capture; both
-        // metrics flags force-on (modulator needs arc engagement regardless
-        // of session defaults); predicted-feed gates force-off (no modulation
-        // pass has run yet to populate a predicted-feed map). See
-        // `build_sim_request`'s doc comment for the full rationale.
-        let request = self.build_sim_request(
-            groups,
-            stock_bbox,
-            resolution,
-            SimulationMetricOptions {
-                enabled: true,
-                capture_arc_engagement: true,
-            },
-            None,
-            false,
-        );
-        run_simulation(&request, cancel).ok()?.cut_trace
+            use_predicted_feed_in_gates,
+        )
     }
 
     /// Resolve every per-generation input from session state for toolpath
@@ -2699,13 +3229,19 @@ impl ProjectSession {
         index: usize,
         cancel: &AtomicBool,
     ) -> Result<&ToolpathComputeResult, SessionError> {
-        // The registry declares one `Job` row, so this pattern is
-        // irrefutable today. A second row stops it compiling, which is
-        // the forcing function that keeps this door honest.
+        // `start` answers the handle of the row it was handed, so the
+        // other arm cannot happen. It is spelled out rather than wildcarded
+        // because that is what makes a new `Job` row stop this door from
+        // compiling until someone reads it.
         let JobHandle::GenerateToolpath(handle) = self.start(
             Job::GenerateToolpath(GenerateToolpathArgs { index }),
             cancel,
-        )?;
+        )?
+        else {
+            return Err(SessionError::OperationFailed(
+                "the generate_toolpath job answered another row's handle".to_owned(),
+            ));
+        };
         // The core door reports to nothing and records no per-dressup
         // item, which is what it did before the observer existed.
         let result = execute_job(&handle, &GenObserver::none(), cancel)?;
@@ -3490,23 +4026,12 @@ impl ProjectSession {
     }
 
     /// Modulate ONE toolpath's per-move feeds against a simulation cut
-    /// trace, returning the modulated [`Toolpath`] and the raw
-    /// [`ModulationOutcome`] (per-move binding map + summary inputs).
+    /// trace, reading the material, the machine and the default spindle
+    /// speed off the session.
     ///
-    /// This is the shared F-039 core consumed by two callers:
-    /// [`apply_adaptive_feed_modulation`](Self::apply_adaptive_feed_modulation)
-    /// (the production post-sim pass, which stamps the result back onto
-    /// `self.results`) and
-    /// [`recommend_clearing_strategy`](Self::recommend_clearing_strategy)
-    /// (the strategy advisor, which times the *modulated* path so it
-    /// compares optimized candidates rather than raw Suggest-feed ones).
-    /// Keeping the engagement aggregation + `ModulationContext` build in
-    /// one place is the anti-drift discipline of the unified load model
-    /// (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §5) — the deflection
-    /// cap, power cap, and chipload band are derived here once.
-    ///
-    /// Returns `None` when the op carries no usable RPM, has no moves, or
-    /// the modulator refuses (e.g. an empty engagement vector).
+    /// The session door onto the free `modulate_annotated_against_trace`,
+    /// which holds the body. The strategy advisor takes that
+    /// function directly with the records its handle captured.
     #[allow(clippy::too_many_arguments)]
     fn modulate_annotated_against_trace(
         &self,
@@ -3525,257 +4050,24 @@ impl ProjectSession {
         crate::toolpath::Toolpath,
         crate::feed_modulation::ModulationOutcome,
     )> {
-        use crate::feed_modulation::{
-            DeflectionLimitInputs, ModulationContext, PerMoveEngagement, PowerLimitInputs,
-            adaptive_feed_modulate,
-        };
-
-        let flute_count = tool_cfg.flute_count.max(1);
-        let spindle_rpm = operation.spindle_rpm().unwrap_or(self.post.spindle_speed);
-        if spindle_rpm == 0 {
-            return None;
-        }
-        let move_count = annotated.toolpath.moves.len();
-        if move_count == 0 {
-            return None;
-        }
-
-        // Stage 4 — planner-predicted engagement for the constructive
-        // contour-spiral, in two layers:
-        //
-        //  (a) Per-move: the spiral's own leading-arc engagement (α/2π)
-        //      computed on its clean 2D material grid, carried
-        //      positionally on the AnnotatedToolpath and looked up by
-        //      cut-move target. RDP simplification keeps a subset of the
-        //      emitted points verbatim, so kept cut moves hit exactly.
-        //  (b) Uniform fallback: the op's target engagement
-        //      (stepover/diameter via the F1 leading-arc → radial-WOC
-        //      bridge), used for cut moves whose position isn't in the
-        //      sampler (arc-fit / lead-in points) and for the 2D
-        //      Adaptive spiral op, which carries no 3D sampler.
-        //
-        // The dexel simulator's cylinder-side `radial_woc_fraction`
-        // reads ~10× low for adaptive ops (CLAUDE.md), so modulation on
-        // the sim scalar alone never lets the flat-load spiral run
-        // faster. Per move we take `max(sim, planner)` so any genuine
-        // spike the simulator *does* resolve still wins — never feeding
-        // above the higher of the two estimates. Gated strictly to the
-        // ContourSpiral strategy: the Agent / AgentSearch path has real
-        // ~2.5× target engagement spikes that a planner floor would
-        // dangerously over-feed. See
-        // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4".
-        let is_contour_spiral = matches!(
+        modulate_annotated_against_trace(
+            &FeedContext {
+                material: &self.stock.material,
+                machine: &self.machine,
+                default_spindle_rpm: self.post.spindle_speed,
+            },
+            annotated,
             operation,
-            crate::compute::OperationConfig::Adaptive3d(c)
-                if matches!(
-                    c.clearing_strategy,
-                    crate::compute::operation_configs::ClearingStrategy::ContourSpiral
-                )
-        ) || matches!(
-            operation,
-            crate::compute::OperationConfig::Adaptive(c)
-                if matches!(c.path_strategy, crate::adaptive::PathStrategy2d::ContourSpiral)
-        );
-        let planner_uniform_woc: Option<f64> = if is_contour_spiral {
-            let stepover = match operation {
-                crate::compute::OperationConfig::Adaptive3d(c) => Some(c.stepover),
-                crate::compute::OperationConfig::Adaptive(c) => Some(c.stepover),
-                _ => None,
-            };
-            stepover.and_then(|s| {
-                let r = tool_cfg.diameter * 0.5;
-                (r > 0.0 && s > 0.0).then(|| {
-                    let f = crate::adaptive_shared::target_engagement_fraction(s, r);
-                    crate::adaptive_shared::radial_woc_fraction_from_leading_arc(f)
-                })
-            })
-        } else {
-            None
-        };
-        // Position key for the per-move planner-engagement lookup
-        // (0.001 mm grid — far finer than the cut-point spacing).
-        let pos_key = |p: &crate::geo::P3| -> (i64, i64, i64) {
-            (
-                (p.x * 1000.0).round() as i64,
-                (p.y * 1000.0).round() as i64,
-                (p.z * 1000.0).round() as i64,
-            )
-        };
-        let planner_map: std::collections::HashMap<(i64, i64, i64), f64> =
-            if is_contour_spiral && !annotated.planner_engagement.is_empty() {
-                annotated
-                    .planner_engagement
-                    .iter()
-                    .map(|(p, f)| (pos_key(p), *f))
-                    .collect()
-            } else {
-                std::collections::HashMap::new()
-            };
-
-        // Aggregate per-move engagement (time-weighted mean over the
-        // move's samples). Samples filter on `is_cutting` so air-cut
-        // and rapid moves stay at default `(0.0, 0.0)` engagement —
-        // the modulator skips them via its own `should_skip` /
-        // zero-engagement short-circuits.
-        let mut radial_num = vec![0.0_f64; move_count];
-        let mut axial_num = vec![0.0_f64; move_count];
-        let mut weight_sum = vec![0.0_f64; move_count];
-        for sample in &cut_trace.samples {
-            if sample.toolpath_id != toolpath_id {
-                continue;
-            }
-            if !sample.is_cutting {
-                continue;
-            }
-            if sample.move_index >= move_count {
-                continue;
-            }
-            let w = sample.segment_time_s.max(0.0);
-            if w <= 0.0 {
-                continue;
-            }
-            #[allow(clippy::indexing_slicing)]
-            // SAFETY: move_index < move_count checked above.
-            {
-                radial_num[sample.move_index] += sample.engagement.radial_woc_fraction.max(0.0) * w;
-                // C2: an unmeasured axial fraction contributes nothing but
-                // still carries its time weight — byte-identical to the
-                // pre-C2 `0.0` sentinel, and now visibly a choice. The
-                // modulator's own `PerMoveEngagement` keeps a plain f64:
-                // there, `0.0` legitimately means "air" (see its doc).
-                axial_num[sample.move_index] +=
-                    sample.engagement.axial_doc_fraction.unwrap_or(0.0).max(0.0) * w;
-                weight_sum[sample.move_index] += w;
-            }
-        }
-        let engagements: Vec<PerMoveEngagement> = (0..move_count)
-            .map(|i| {
-                #[allow(clippy::indexing_slicing)]
-                // SAFETY: i < move_count by construction.
-                let w = weight_sum[i];
-                if w <= 0.0 {
-                    return PerMoveEngagement::default();
-                }
-                #[allow(clippy::indexing_slicing)]
-                // SAFETY: i < move_count by construction.
-                let sim_radial = radial_num[i] / w;
-                #[allow(clippy::indexing_slicing)]
-                // SAFETY: i < move_count by construction.
-                let axial = axial_num[i] / w;
-                // Apply the planner engagement on lateral clearing /
-                // finishing cuts only — entry helix, ramp, and linking
-                // moves are not the spiral's flat-load wraps, so they
-                // keep the sim-measured reading. Per-move sampler first,
-                // uniform target floor as fallback; `max` with sim keeps
-                // any genuine spike the simulator resolves.
-                let m = annotated.toolpath.moves.get(i);
-                let radial = if matches!(
-                    m.map(|m| m.intent),
-                    Some(crate::toolpath::MoveIntent::ClearingCut)
-                        | Some(crate::toolpath::MoveIntent::FinishingCut)
-                ) {
-                    let planner_woc = m
-                        .and_then(|m| planner_map.get(&pos_key(&m.target)).copied())
-                        .map(crate::adaptive_shared::radial_woc_fraction_from_leading_arc)
-                        .or(planner_uniform_woc);
-                    match planner_woc {
-                        Some(pw) => sim_radial.max(pw),
-                        None => sim_radial,
-                    }
-                } else {
-                    sim_radial
-                };
-                PerMoveEngagement {
-                    radial_woc_fraction: radial,
-                    axial_doc_fraction: axial,
-                }
-            })
-            .collect();
-
-        // F-039 — wire optional deflection + power constraint
-        // inputs. Material + tool data is enough to recover Kc,
-        // stickout, engagement diameter, and Young's modulus; the
-        // machine's `power_at_rpm × safety_factor` gives the
-        // available power.
-        let material = &self.stock.material;
-        // Materials without a primary-source Kc disable both the
-        // deflection and power constraints in the constrained-max
-        // solver; the solver falls through to chipload + machine +
-        // kinematics caps. See `Material::kc_n_per_mm2`.
-        let kc_opt = material.kc_n_per_mm2();
-        let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
-        // Use the per-toolpath max axial DOC from the cut trace
-        // as the deflection / power reference; falls back to
-        // diameter when unavailable (no cutting samples → no
-        // constraint active).
-        let max_axial = cut_trace
-            .samples
-            .iter()
-            .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
-            .map(|s| s.axial_engagement_mm.max(0.0))
-            .fold(0.0_f64, f64::max);
-        let nominal_axial = if max_axial > 0.0 { max_axial } else { 0.0 };
-        let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
-        let stickout = tool_def.stickout.max(0.0);
-        let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
-        // Feed-aware deflection cap: the optimizer solves its feed cap
-        // from the SAME affine force model (Ks/F_edge) and integrated
-        // beam compliance the post-sim deflection gate uses, so the two
-        // agree on a cut. Compliance is δ-per-newton at the toolpath's
-        // peak axial DOC; deflection is linear in force so one scalar
-        // suffices.
-        let deflection_inputs = match crate::feeds::force::affine_coefficients(material) {
-            Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
-                let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
-                if compliance.is_finite() && compliance > 0.0 {
-                    Some(DeflectionLimitInputs {
-                        ks_n_per_mm2: ks,
-                        f_edge_n_per_mm: f_edge,
-                        compliance_mm_per_n: compliance,
-                        max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
-                    })
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
-        let machine_profile = &self.machine;
-        let available_kw =
-            machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
-        let power_inputs = match kc_opt {
-            Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
-                // S2-9 (2026-05-31): pass raw Kc; the solver applies
-                // GRAIN_ANISOTROPY_FACTOR internally so this site
-                // doesn't re-encode the multiplier literal.
-                kc_n_per_mm2: kc,
-                engagement_diameter_mm: engagement_dia,
-                available_kw,
-            }),
-            _ => None,
-        };
-
-        let ctx = ModulationContext {
-            spindle_rpm: spindle_rpm as f64,
-            flute_count,
-            max_feed_mm_min: max_feed,
-            rapid_feed_mm_min: rapid_feed,
-            chipload_band: band,
-            kinematics: &kinematics,
+            tool_cfg,
+            toolpath_id,
+            cut_trace,
+            band,
+            kinematics,
+            max_feed,
+            rapid_feed,
             strategy,
             aggressiveness,
-            deflection_inputs,
-            power_inputs,
-            nominal_axial_doc_mm: nominal_axial,
-            // Phase 3 (2026-09-07) — the operation's OWN plunge rate, the
-            // ceiling the geometric guard applies to a vertical-dominant
-            // move whose generator emitted it without a plunge tag.
-            plunge_rate_mm_min: operation.plunge_rate(),
-        };
-
-        let mut modulated_toolpath = annotated.toolpath.clone();
-        let outcome = adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx).ok()?;
-        Some((modulated_toolpath, outcome))
+        )
     }
 
     /// F-039 — apply the adaptive feed-modulation post-pass to an
@@ -7246,15 +7538,19 @@ mod tests {
             .map(cut_move_feed)
             .collect();
 
-        let (modulated, regime) = session
-            .optimized_candidate(
-                0,
-                &annotated_arc,
-                &resolved.tool,
-                &resolved.operation,
-                &cancel,
-            )
-            .expect("advisor optimizes the candidate (effective_kinematics is always Some)");
+        // WP14a moved the optimizer behind the captured `AdvisorContext`, so
+        // the test reads the same context the job's step (ii) reads.
+        let handle = session
+            .capture_recommend_clearing_strategy(0, &cancel)
+            .expect("capture the advisor job for the adaptive3d op");
+        let (modulated, regime) = optimized_candidate(
+            &handle.context,
+            &annotated_arc,
+            &resolved.tool,
+            &resolved.operation,
+            &cancel,
+        )
+        .expect("advisor optimizes the candidate (effective_kinematics is always Some)");
 
         // Geometry is untouched; only feeds change.
         assert_eq!(

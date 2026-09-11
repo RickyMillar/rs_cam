@@ -142,7 +142,10 @@ fn run_three_steps(session: &mut ProjectSession, index: usize) {
             Job::GenerateToolpath(GenerateToolpathArgs { index }),
             &cancel,
         )
-        .expect("step (i) captures the generation inputs");
+        .expect("step (i) captures the generation inputs")
+    else {
+        panic!("the generate_toolpath row answers its own handle variant");
+    };
     let result = execute_job(&handle, &GenObserver::none(), &cancel)
         .expect("step (ii) generates the toolpath");
     let _ = session
@@ -224,7 +227,10 @@ fn an_edit_after_start_refuses_the_handles_result() {
             Job::GenerateToolpath(GenerateToolpathArgs { index: 0 }),
             &cancel,
         )
-        .expect("step (i) captures the generation inputs");
+        .expect("step (i) captures the generation inputs")
+    else {
+        panic!("the generate_toolpath row answers its own handle variant");
+    };
     let captured = handle.revision;
 
     let _ = session
@@ -284,7 +290,10 @@ fn execute_job_holds_no_session() {
             Job::GenerateToolpath(GenerateToolpathArgs { index: 0 }),
             &cancel,
         )
-        .expect("step (i) captures the generation inputs");
+        .expect("step (i) captures the generation inputs")
+    else {
+        panic!("the generate_toolpath row answers its own handle variant");
+    };
     drop(session);
 
     let result = step_two(&handle, &GenObserver::none(), &cancel);

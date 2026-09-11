@@ -567,34 +567,38 @@ impl ProjectSession {
         spec: &MultitoolPlanSpec,
         cancel: &AtomicBool,
     ) -> Result<MultitoolPreview, SessionError> {
+        let handle = self.capture_preview_tier_map(spec)?;
+        execute_preview_tier_map(&handle, cancel)
+    }
+
+    /// Capture the `preview_tier_map` job — step (i).
+    ///
+    /// It validates the spec, resolves the setup-frame mesh and its index,
+    /// and resolves the ladder's tools. Every refusal a ladder can raise
+    /// therefore appears at SUBMIT time, before the grid walk is paid for.
+    ///
+    /// It takes `&self` and writes nothing. The preview is the operator's
+    /// veto surface, and a veto that cost something would not be a veto.
+    ///
+    /// # Errors
+    ///
+    /// Everything `validate_multitool_spec` refuses, plus
+    /// [`SessionError::InvalidParam`] when a ladder tool id names no tool
+    /// in the project.
+    pub(crate) fn capture_preview_tier_map(
+        &self,
+        spec: &MultitoolPlanSpec,
+    ) -> Result<PreviewTierMapHandle, SessionError> {
         self.validate_multitool_spec(spec)?;
         let (mesh, index) = self.plan_geometry(spec.model_id, spec.setup_index);
-        let recipe = PlannedTierRecipe {
-            tool_ids: &spec.tool_ids,
-            // Ignored: `require_fine_tier` is false, so no tier is selected.
-            tier: 0,
-            cell_mm: spec.cell_mm,
-            tolerance_mm: spec.tolerance_mm,
-            margin_mm: spec.margin_mm,
-            treatment: spec.treatment,
-            islands: spec.islands,
-        };
-        let resolved = self.resolve_tier_plan(
-            "multi-tool preview",
-            TierPlanGeometry {
-                mesh: mesh.as_ref(),
-                index: index.as_ref(),
-            },
-            &recipe,
-            false,
-            cancel,
-        )?;
-        Ok(MultitoolPreview {
-            map: resolved.map.as_ref().clone(),
-            islands: resolved.islands,
-            cusp_radii_mm: resolved.cusp_radii_mm,
-            tool_names: resolved.tools.iter().map(|t| t.name.clone()).collect(),
-            tool_ids: resolved.tools.iter().map(|t| t.id.0).collect(),
+        let tools = self
+            .resolve_ladder_tools(&spec.tool_ids)
+            .map_err(|e| annotate(PREVIEW_OP_NAME, &e))?;
+        Ok(PreviewTierMapHandle {
+            mesh,
+            index,
+            tools,
+            spec: spec.clone(),
         })
     }
 
@@ -1031,64 +1035,10 @@ impl ProjectSession {
         require_fine_tier: bool,
         cancel: &AtomicBool,
     ) -> Result<TierPlanResolution, SessionError> {
-        let (Some(mesh), Some(index)) = (geometry.mesh, geometry.index) else {
-            return Err(SessionError::MissingGeometry(format!(
-                "'{op_name}' needs a planned tier's islands, but its model carries no 3D \
-                 mesh. The tier map is a drop-cutter residual over a surface."
-            )));
-        };
-
         let tools = self
             .resolve_ladder_tools(recipe.tool_ids)
             .map_err(|e| annotate(op_name, &e))?;
-        let cutters: Vec<ToolDefinition> = tools.iter().map(build_cutter).collect();
-        let refs: Vec<&dyn MillingCutter> =
-            cutters.iter().map(|c| c as &dyn MillingCutter).collect();
-        let ladder = TierLadder::new(&refs).map_err(|e| {
-            SessionError::InvalidParam(format!(
-                "'{op_name}': the ladder stored on its boundary is not usable — {e}"
-            ))
-        })?;
-        if require_fine_tier && (usize::from(recipe.tier) >= ladder.len() || recipe.tier == 0) {
-            return Err(SessionError::InvalidParam(format!(
-                "'{op_name}' is bounded to tier {} of a {}-tier ladder. Tier 0 is the coarse \
-                 tool's complement and carries no islands; anything at or above the ladder \
-                 length does not exist.",
-                recipe.tier,
-                ladder.len()
-            )));
-        }
-
-        let params = TierMapParams {
-            cell_mm: recipe.cell_mm,
-            tolerance_mm: recipe.tolerance_mm,
-            margin_mm: recipe.margin_mm,
-            treatment: recipe.treatment,
-        };
-        let map = crate::tier_map_cache::cached_tier_map(
-            mesh,
-            index.as_ref(),
-            &ladder,
-            &params,
-            &(|| cancel.load(std::sync::atomic::Ordering::SeqCst)),
-        )
-        .map_err(|e| {
-            SessionError::OperationFailed(format!("'{op_name}': tier map could not be built — {e}"))
-        })?;
-
-        let cusp_radii_mm: Vec<f64> = cutters.iter().map(MillingCutter::cusp_radius_mm).collect();
-        let islands = extract_tier_islands(&map, &recipe.islands, &cusp_radii_mm).map_err(|e| {
-            SessionError::OperationFailed(format!(
-                "'{op_name}': tier islands could not be extracted — {e}"
-            ))
-        })?;
-
-        Ok(TierPlanResolution {
-            map,
-            islands,
-            cusp_radii_mm,
-            tools,
-        })
+        resolve_tier_plan_with_tools(op_name, geometry, tools, recipe, require_fine_tier, cancel)
     }
 
     /// Resolve one tier's machining polygons for
@@ -1210,6 +1160,171 @@ impl ProjectSession {
             .map(|set| set.machining.as_slice().to_vec())
             .unwrap_or_default())
     }
+}
+
+/// Ladder → memoised tier map → per-tier islands, over an ALREADY resolved
+/// ladder.
+///
+/// The session half of `ProjectSession::resolve_tier_plan` is the tool
+/// lookup alone. Everything below it reads the ladder, the geometry and the
+/// recipe, so it is a free function and the `preview_tier_map` job's step
+/// (ii) calls it holding no session.
+fn resolve_tier_plan_with_tools(
+    op_name: &str,
+    geometry: TierPlanGeometry<'_>,
+    tools: Vec<ToolConfig>,
+    recipe: &PlannedTierRecipe<'_>,
+    require_fine_tier: bool,
+    cancel: &AtomicBool,
+) -> Result<TierPlanResolution, SessionError> {
+    let (Some(mesh), Some(index)) = (geometry.mesh, geometry.index) else {
+        return Err(SessionError::MissingGeometry(format!(
+            "'{op_name}' needs a planned tier's islands, but its model carries no 3D \
+             mesh. The tier map is a drop-cutter residual over a surface."
+        )));
+    };
+
+    let cutters: Vec<ToolDefinition> = tools.iter().map(build_cutter).collect();
+    let refs: Vec<&dyn MillingCutter> = cutters.iter().map(|c| c as &dyn MillingCutter).collect();
+    let ladder = TierLadder::new(&refs).map_err(|e| {
+        SessionError::InvalidParam(format!(
+            "'{op_name}': the ladder stored on its boundary is not usable — {e}"
+        ))
+    })?;
+    if require_fine_tier && (usize::from(recipe.tier) >= ladder.len() || recipe.tier == 0) {
+        return Err(SessionError::InvalidParam(format!(
+            "'{op_name}' is bounded to tier {} of a {}-tier ladder. Tier 0 is the coarse \
+             tool's complement and carries no islands; anything at or above the ladder \
+             length does not exist.",
+            recipe.tier,
+            ladder.len()
+        )));
+    }
+
+    let params = TierMapParams {
+        cell_mm: recipe.cell_mm,
+        tolerance_mm: recipe.tolerance_mm,
+        margin_mm: recipe.margin_mm,
+        treatment: recipe.treatment,
+    };
+    let map = crate::tier_map_cache::cached_tier_map(
+        mesh,
+        index.as_ref(),
+        &ladder,
+        &params,
+        &(|| cancel.load(std::sync::atomic::Ordering::SeqCst)),
+    )
+    .map_err(|e| {
+        SessionError::OperationFailed(format!("'{op_name}': tier map could not be built — {e}"))
+    })?;
+
+    let cusp_radii_mm: Vec<f64> = cutters.iter().map(MillingCutter::cusp_radius_mm).collect();
+    let islands = extract_tier_islands(&map, &recipe.islands, &cusp_radii_mm).map_err(|e| {
+        SessionError::OperationFailed(format!(
+            "'{op_name}': tier islands could not be extracted — {e}"
+        ))
+    })?;
+
+    Ok(TierPlanResolution {
+        map,
+        islands,
+        cusp_radii_mm,
+        tools,
+    })
+}
+
+/// The name every tier-map preview refusal carries, on both doors.
+const PREVIEW_OP_NAME: &str = "multi-tool preview";
+
+/// What [`ProjectSession::start`] captured for one `preview_tier_map` job.
+///
+/// The handle is the whole input of step (ii). It owns the ladder, the
+/// setup-frame mesh and its spatial index, so
+/// [`execute_preview_tier_map`] reads no session and runs off the frame
+/// loop.
+///
+/// The mesh and the index ride as `Arc`s taken from the geometry memo, not
+/// as copies. The tier-map memo keys on mesh IDENTITY, so a handle that
+/// carried a private copy would miss the cache on every later generate —
+/// the exact property `plan_mesh` exists to hold.
+///
+/// Every field is private. A handle is the evidence of one submit, so no
+/// caller outside this module builds one.
+pub struct PreviewTierMapHandle {
+    /// The model's mesh in the setup's emission frame. `None` when the
+    /// model carries no 3D mesh; step (ii) then refuses.
+    mesh: Option<Arc<TriangleMesh>>,
+    /// The spatial index over that mesh.
+    index: Option<Arc<SpatialIndex>>,
+    /// The ladder's tools, coarse → fine, as `resolve_ladder_tools`
+    /// ordered them at capture. Nothing below re-sorts them.
+    tools: Vec<ToolConfig>,
+    /// The dials the operator previewed.
+    spec: MultitoolPlanSpec,
+}
+
+impl PreviewTierMapHandle {
+    /// How many tools take part in the ladder.
+    #[must_use]
+    pub fn tool_count(&self) -> usize {
+        self.tools.len()
+    }
+}
+
+/// Walk the tier map from a handle — step (ii) of the `preview_tier_map`
+/// job.
+///
+/// **This function holds no session.** It is a free function over
+/// `&`[`PreviewTierMapHandle`], so it coerces to a plain `fn` pointer and
+/// cannot capture a `&ProjectSession`. That is what lets a caller run it
+/// off the frame loop while the session stays usable.
+///
+/// The walk is the expensive step: a full-grid drop-cutter residual, about
+/// 8 s at 0.6 mm and 31 s at 0.3 mm per ladder tool on the reference board.
+/// `cancel` reaches it at grid-row granularity.
+///
+/// The job writes nothing. The preview is a read, so there is no step
+/// (iii): the answer goes to the caller and the session is untouched.
+///
+/// # Errors
+///
+/// [`SessionError::MissingGeometry`] when the model carried no mesh,
+/// [`SessionError::InvalidParam`] when the ladder is not usable, and
+/// [`SessionError::OperationFailed`] when the walk is cancelled or the
+/// island extraction refuses.
+pub fn execute_preview_tier_map(
+    handle: &PreviewTierMapHandle,
+    cancel: &AtomicBool,
+) -> Result<MultitoolPreview, SessionError> {
+    let spec = &handle.spec;
+    let recipe = PlannedTierRecipe {
+        tool_ids: &spec.tool_ids,
+        // Ignored: `require_fine_tier` is false, so no tier is selected.
+        tier: 0,
+        cell_mm: spec.cell_mm,
+        tolerance_mm: spec.tolerance_mm,
+        margin_mm: spec.margin_mm,
+        treatment: spec.treatment,
+        islands: spec.islands,
+    };
+    let resolved = resolve_tier_plan_with_tools(
+        PREVIEW_OP_NAME,
+        TierPlanGeometry {
+            mesh: handle.mesh.as_ref(),
+            index: handle.index.as_ref(),
+        },
+        handle.tools.clone(),
+        &recipe,
+        false,
+        cancel,
+    )?;
+    Ok(MultitoolPreview {
+        map: resolved.map.as_ref().clone(),
+        islands: resolved.islands,
+        cusp_radii_mm: resolved.cusp_radii_mm,
+        tool_names: resolved.tools.iter().map(|t| t.name.clone()).collect(),
+        tool_ids: resolved.tools.iter().map(|t| t.id.0).collect(),
+    })
 }
 
 /// Prefix a resolver error with the op it belongs to. A boundary failure that

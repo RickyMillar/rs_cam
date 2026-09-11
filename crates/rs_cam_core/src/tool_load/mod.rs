@@ -256,15 +256,8 @@ pub fn chipload_envelopes_for_session(
     session: &crate::session::ProjectSession,
     sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
 ) -> std::collections::HashMap<ToolpathId, std::ops::Range<f64>> {
-    use crate::feeds::vendor_normalize::op_family_to_lut;
-    use crate::tool::MillingCutter;
-
     let mut out = std::collections::HashMap::new();
     let material = &session.stock_config().material;
-    if matches!(material, Material::Custom { .. }) {
-        return out;
-    }
-
     for tc in session.toolpath_configs() {
         if !tc.enabled {
             continue;
@@ -273,65 +266,93 @@ pub fn chipload_envelopes_for_session(
         else {
             continue;
         };
-        let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
-        let spec = tc.operation.spec();
-        let lut_op_family = op_family_to_lut(spec.feeds_family);
-        let lut_pass_role = match spec.feeds_pass_role {
-            crate::feeds::PassRole::Roughing => LutPassRole::Roughing,
-            crate::feeds::PassRole::SemiFinish => LutPassRole::SemiFinish,
-            crate::feeds::PassRole::Finish => LutPassRole::Finish,
-        };
-        // Peak axial DOC over the same sample population the gate
-        // measures: steady-state only. F3.4 — pre-fix this folded over
-        // every cutting sample, so a phantom transit reading (the F2
-        // class) inflated the engaged-diameter lookup and the viewport
-        // colors could disagree with the export verdict.
-        let axial_doc = sim_trace
-            .map(|t| {
-                t.samples
-                    .iter()
-                    .filter(|s| {
-                        s.toolpath_id == tc.id
-                            && s.is_cutting
-                            && locality::is_steady_state_for_gate(s, None)
-                    })
-                    .map(|s| s.axial_doc_mm.max(0.0))
-                    .fold(0.0_f64, f64::max)
-            })
-            .unwrap_or(0.0);
-        // F3.4 — same canonical resolver as the gate / optimizer.
-        let Some(matched) = chipload::matched_chip_envelope(
-            &tool_def,
-            material,
-            tc.operation.op_type(),
-            lut_op_family,
-            lut_pass_role,
-            tool_def.lookup_diameter_at(axial_doc),
-        ) else {
-            continue;
-        };
-        // Keep envelope rows where both bounds exist and are sane,
-        // DOC-derated exactly like the gate's trip bounds so the
-        // operator-facing colors agree with the export verdict. Both
-        // bounds are required here — the `Range<f64>` this function
-        // returns can't express a one-sided band — via the shared
-        // `geometry::derate_chipload_bounds` helper (S.8, single home
-        // for this wrapper across Suggest and both `tool_load` gate
-        // sites; see `planning/finishing_stack_review_2026-07.md`).
-        let lookup_diameter = tool_def.lookup_diameter_at(axial_doc).max(1e-9);
-        let doc_ratio = axial_doc / lookup_diameter;
-        if let Some((lo, hi)) = crate::feeds::geometry::derate_chipload_bounds(
-            matched.chip_load_min_mm,
-            matched.chip_load_max_mm,
-            doc_ratio,
-            crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
-        )
-        .and_then(crate::feeds::geometry::DeratedChiploadBand::into_pair)
+        if let Some(band) =
+            chipload_envelope_for_toolpath(material, tool_cfg, &tc.operation, tc.id, sim_trace)
         {
-            out.insert(tc.id, lo..hi);
+            out.insert(tc.id, band);
         }
     }
     out
+}
+
+/// The DOC-derated advance-per-tooth envelope of ONE toolpath.
+///
+/// The per-toolpath half of [`chipload_envelopes_for_session`], and the
+/// only place the band is derived. It takes the toolpath's STORED
+/// operation and the cutter that toolpath is bound to, so a caller that
+/// holds no session — the strategy advisor's `Job` step (ii) — reads the
+/// same row the session-wide resolver would have written for it.
+///
+/// `None` means NOT AVAILABLE: a custom material publishes no vendor row,
+/// the resolver matched no row for this tool and pass role, or the row
+/// carries only one of the two bounds (a `Range` cannot express a
+/// one-sided band).
+pub fn chipload_envelope_for_toolpath(
+    material: &Material,
+    tool_cfg: &crate::compute::tool_config::ToolConfig,
+    operation: &crate::compute::catalog::OperationConfig,
+    toolpath_id: ToolpathId,
+    sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+) -> Option<std::ops::Range<f64>> {
+    use crate::feeds::vendor_normalize::op_family_to_lut;
+    use crate::tool::MillingCutter;
+
+    if matches!(material, Material::Custom { .. }) {
+        return None;
+    }
+    let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+    let spec = operation.spec();
+    let lut_op_family = op_family_to_lut(spec.feeds_family);
+    let lut_pass_role = match spec.feeds_pass_role {
+        crate::feeds::PassRole::Roughing => LutPassRole::Roughing,
+        crate::feeds::PassRole::SemiFinish => LutPassRole::SemiFinish,
+        crate::feeds::PassRole::Finish => LutPassRole::Finish,
+    };
+    // Peak axial DOC over the same sample population the gate
+    // measures: steady-state only. F3.4 — pre-fix this folded over
+    // every cutting sample, so a phantom transit reading (the F2
+    // class) inflated the engaged-diameter lookup and the viewport
+    // colors could disagree with the export verdict.
+    let axial_doc = sim_trace
+        .map(|t| {
+            t.samples
+                .iter()
+                .filter(|s| {
+                    s.toolpath_id == toolpath_id
+                        && s.is_cutting
+                        && locality::is_steady_state_for_gate(s, None)
+                })
+                .map(|s| s.axial_doc_mm.max(0.0))
+                .fold(0.0_f64, f64::max)
+        })
+        .unwrap_or(0.0);
+    // F3.4 — same canonical resolver as the gate / optimizer.
+    let matched = chipload::matched_chip_envelope(
+        &tool_def,
+        material,
+        operation.op_type(),
+        lut_op_family,
+        lut_pass_role,
+        tool_def.lookup_diameter_at(axial_doc),
+    )?;
+    // Keep envelope rows where both bounds exist and are sane,
+    // DOC-derated exactly like the gate's trip bounds so the
+    // operator-facing colors agree with the export verdict. Both
+    // bounds are required here — the `Range<f64>` this function
+    // returns can't express a one-sided band — via the shared
+    // `geometry::derate_chipload_bounds` helper (S.8, single home
+    // for this wrapper across Suggest and both `tool_load` gate
+    // sites; see `planning/finishing_stack_review_2026-07.md`).
+    let lookup_diameter = tool_def.lookup_diameter_at(axial_doc).max(1e-9);
+    let doc_ratio = axial_doc / lookup_diameter;
+    crate::feeds::geometry::derate_chipload_bounds(
+        matched.chip_load_min_mm,
+        matched.chip_load_max_mm,
+        doc_ratio,
+        crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
+    )
+    .and_then(crate::feeds::geometry::DeratedChiploadBand::into_pair)
+    .map(|(lo, hi)| lo..hi)
 }
 
 /// Soft fractional widenings on the chipload + power hard-gate triggers.

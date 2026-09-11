@@ -1621,3 +1621,37 @@ eight files, CLI 9 in three); 656 test-crate sites would break if the setters we
    are the `Job` programme's second write surface (WP14 and later rows); recorded in §5, not
    WP15's.
 5. **Order on `command.rs`:** WP16 → WP20 (prose) → WP14a (two `Job` rows) → WP15a.
+
+---
+
+## §26 WP14a landed (2026-09-12)
+
+1. **No `timeout_s`.** §24 ruling 1 adds it only if the two tools' param
+   structs already carry it. `IndexParam` and `PreviewTierMapParam` do not
+   (`crates/rs_cam_mcp/src/server.rs`), so the arms keep today's wait: both
+   tools call `send_request`, which waits on the oneshot without a deadline.
+   The arm now STORES that oneshot and the drain answers it, so the CLIENT
+   waits exactly as long as before and the FRAME LOOP does not wait at all.
+   The wire snapshot does not move. **The poll shape is WP14c**: adding
+   `timeout_s` + `status: "running"` to these two tools needs a WP2a pin
+   update and a `generation_status` that can see a lane other than Toolpath.
+2. **The registry's answer column is uniform.** A `Job` row names what its
+   `execute_*` returns. The generated `JobAnswer` carries those answers and
+   boxes every variant by rule; `JobHandle` is hand-written, its variants
+   named `<Id>Handle` by convention and boxed by the same rule, because
+   `macro_rules!` cannot build an identifier by concatenation. `start`'s
+   exhaustive match over `Job` is what stops a new row shipping without a
+   handle variant.
+3. **A fifth compute lane, `ComputeLane::Job`.** It carries no session, its
+   queue is FIFO, and a submit supersedes nothing. `cancel_generation` and
+   `generation_status` still wrap the Toolpath lane alone, so neither
+   reaches a job — the same residual the Optimize lane carries, recorded
+   here and not closed.
+4. **The GUI planner dialog still lends the session to the Optimize lane.**
+   `PreviewTierMap`'s `gui` column says so. WP14b moves it, with the three
+   `mem::replace` sites.
+5. **One ordering change to record.** `resolve_tier_plan` now resolves the
+   ladder's tools BEFORE it checks for a mesh, because the tool lookup is
+   the session half and the rest is a free function. A boundary that both
+   names a missing tool and has no mesh now reports the tool refusal where
+   it used to report the geometry one. Both are refusals at the same call.

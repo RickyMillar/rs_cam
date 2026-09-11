@@ -27,6 +27,7 @@ struct ScriptedBackend {
     analysis_lane: LaneSnapshot,
     optimize_lane: LaneSnapshot,
     reach_lane: LaneSnapshot,
+    job_lane: LaneSnapshot,
     drained: Vec<ComputeMessage>,
     /// G-REGEN-RACE: the one piece of real lane state the supersede rule
     /// reads. Setting it stands for "the toolpath lane is currently
@@ -50,6 +51,7 @@ impl ScriptedBackend {
             analysis_lane: LaneSnapshot::idle(ComputeLane::Analysis),
             optimize_lane: LaneSnapshot::idle(ComputeLane::Optimize),
             reach_lane: LaneSnapshot::idle(ComputeLane::Reach),
+            job_lane: LaneSnapshot::idle(ComputeLane::Job),
             drained: Vec::new(),
             active_toolpath_id: None,
             submitted: Vec::new(),
@@ -80,6 +82,7 @@ impl ComputeBackend for ScriptedBackend {
             ComputeLane::Analysis => self.analysis_lane.state = LaneState::Cancelling,
             ComputeLane::Optimize => self.optimize_lane.state = LaneState::Cancelling,
             ComputeLane::Reach => self.reach_lane.state = LaneState::Cancelling,
+            ComputeLane::Job => self.job_lane.state = LaneState::Cancelling,
         }
     }
 
@@ -93,6 +96,7 @@ impl ComputeBackend for ScriptedBackend {
             ComputeLane::Analysis => self.analysis_lane.clone(),
             ComputeLane::Optimize => self.optimize_lane.clone(),
             ComputeLane::Reach => self.reach_lane.clone(),
+            ComputeLane::Job => self.job_lane.clone(),
         }
     }
 

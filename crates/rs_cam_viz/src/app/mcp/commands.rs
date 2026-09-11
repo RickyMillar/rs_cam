@@ -1772,6 +1772,8 @@ impl RsCamApp {
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath
+            | CommandId::RecommendClearingStrategy
+            | CommandId::PreviewTierMap
             | CommandId::AdoptSimulation => {
                 CoreReply::quiet(mutation_error_json(&format!("Error: {error}"), field))
             }
@@ -2571,6 +2573,8 @@ impl RsCamApp {
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath
+            | CommandId::RecommendClearingStrategy
+            | CommandId::PreviewTierMap
             | CommandId::AdoptSimulation => CoreReply::quiet(mutation_error_json(
                 &format!(
                     "Error: '{}' is not a wire mutation; no MCP tool dispatches it.",

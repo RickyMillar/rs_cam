@@ -129,7 +129,10 @@ fn run_three_steps(session: &mut ProjectSession, index: usize) {
             Job::GenerateToolpath(GenerateToolpathArgs { index }),
             &cancel,
         )
-        .expect("step (i) captures the generation inputs");
+        .expect("step (i) captures the generation inputs")
+    else {
+        panic!("the generate_toolpath row answers its own handle variant");
+    };
     let result = execute_job(&handle, &GenObserver::none(), &cancel)
         .expect("step (ii) generates the toolpath");
     let _ = session

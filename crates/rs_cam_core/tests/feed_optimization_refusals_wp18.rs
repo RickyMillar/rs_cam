@@ -227,8 +227,11 @@ fn start_job(session: &mut ProjectSession, index: usize) -> GenerateToolpathHand
             Job::GenerateToolpath(GenerateToolpathArgs { index }),
             &cancel,
         )
-        .expect("step (i) captures the generation inputs");
-    handle
+        .expect("step (i) captures the generation inputs")
+    else {
+        panic!("the generate_toolpath row answers its own handle variant");
+    };
+    *handle
 }
 
 /// Steps (i) and (ii): capture the inputs, then generate.
