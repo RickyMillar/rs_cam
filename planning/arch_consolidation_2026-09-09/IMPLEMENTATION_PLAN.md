@@ -1207,3 +1207,13 @@ signature-GATED, two commands with opposite contracts that share only the row li
    one in-crate viz test that the projection preserves the three unsupplied fields and that an
    open panel with no edit drops no result across a frame.
 7. **`ApplyFeeds` keeps `invalidate_toolpath_inputs`**, which now reads the core signature.
+
+---
+
+## §18 Q5 answered (2026-09-11)
+
+The operator took the §9 Q5 recommendation: a `pub ProjectSessionBuilder` for setup-time
+construction, and `apply` for the test sites that mutate a live session mid-test. WP7 moves
+from `BLOCKED (Q5)` to `TODO`; it still requires WP5, WP6 and WP6b. The builder is WP7's
+first hunk, landed before any hatch goes `pub(crate)`, so the ~117 test sites migrate in the
+same commit that closes the hatches (§5 WP7: no partial commit is possible).

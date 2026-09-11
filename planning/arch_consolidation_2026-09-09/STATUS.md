@@ -197,6 +197,10 @@ decision-blocked; N6 and N11 retain their phase assignments.
 
 ## Operator rulings — 2026-09-11
 
+- **Q5 (test-fixture door) — ANSWERED 2026-09-11, "take the recommendation":** a `pub ProjectSessionBuilder` for setup-time construction plus `apply` for the live-mutation test sites (about 117 sites over three crates). WP7 is no longer blocked; it still requires WP5, WP6 and WP6b.
+- **No large test gates** (2026-09-11): verifiers run sentries, targeted suites, the small crates and lint only.
+
+
 - **Branch.** Work on `master` directly. `ui-fix-2026-09-09` was fast-forwarded
   into master at `8f14e02e`. No pull requests. This is a personal project.
 - **Architecture.** `RULING_ONE_COMMAND_SURFACE_DRAFT.md` is ADOPTED as Phase
@@ -237,7 +241,7 @@ Never delete a row; mark it `DROPPED (why)`.
 | WP5 | GUI inspector toolpath door | BLOCKED (Q1) | — |
 | WP6 | egui scratch-copy pattern, twelve draw sites | TODO | — |
 | WP6b | The 27 non-egui viz sites and the 9 CLI sites | TODO | — |
-| WP7 | The eleven hatches go `pub(crate)` | BLOCKED (Q5) | — |
+| WP7 | The eleven hatches go `pub(crate)` | TODO (Q5 answered 2026-09-11: builder + `apply`; requires WP5, WP6, WP6b) | — |
 | WP8 | N14 and N6: undo, optimizer, drill picks | BLOCKED (Q2) | — |
 | WP9 | `Query` first row: cycle time | TODO | — |
 | WP10 | `Job` first row: generate one toolpath | TODO | — |
