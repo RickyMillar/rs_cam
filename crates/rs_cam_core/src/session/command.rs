@@ -142,6 +142,16 @@ macro_rules! for_each_command {
                      "the CLI job-file loader calls the session setter directly",
                  ),
              }),
+            (Command, AdoptModelGeometry, "adopt_model_geometry", AdoptModelGeometryArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool refreshes a model in place; the wire imports a new one",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI imports each model once and never refreshes it",
+                 ),
+             }),
             (Command, AddSetup, "add_setup", AddSetupArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
@@ -786,6 +796,36 @@ pub struct RemoveAlignmentPinArgs {
 pub struct AddModelArgs {
     /// The imported model to adopt.
     pub model: Box<super::LoadedModel>,
+}
+
+/// The arguments of the `adopt_model_geometry` command.
+///
+/// The GUI holds three model-refresh doors — rescale, reload and relink.
+/// Each re-imports the file and hands the result here. The IMPORT belongs
+/// to the surface that owns the file dialogue; core adopts the geometry
+/// that import produced and drops the results that read it.
+///
+/// The payload names the model by `model_id`, and the record keeps that
+/// id and its name. Keeping the id is the point of a refresh: every
+/// `ToolpathConfig::model_id` goes on naming this model, so the
+/// operations survive it.
+///
+/// `units` of `None` means the caller overrides no unit declaration.
+/// Only the rescale door sends `Some`, because a rescale IS the
+/// declared-units change.
+///
+/// The geometry is boxed. [`Command`] is one enum, so its size is the
+/// size of its largest payload, and a [`LoadedModel`](super::LoadedModel)
+/// carries a mesh, a polygon list and an enriched mesh.
+/// `large_enum_variant` is denied.
+#[derive(Debug, Clone)]
+pub struct AdoptModelGeometryArgs {
+    /// The id of the model to refresh.
+    pub model_id: usize,
+    /// The freshly imported model whose geometry the record adopts.
+    pub geometry: Box<super::LoadedModel>,
+    /// The unit declaration to write, or `None` to keep the current one.
+    pub units: Option<crate::compute::stock_config::ModelUnits>,
 }
 
 /// The arguments of the `add_setup` command.
@@ -1507,6 +1547,9 @@ impl ProjectSession {
             }
             Command::RemoveAlignmentPin(args) => self.remove_alignment_pin(args.index),
             Command::AddModel(args) => Ok(self.add_model(*args.model)),
+            Command::AdoptModelGeometry(args) => {
+                self.adopt_model_geometry(args.model_id, *args.geometry, args.units)
+            }
             Command::AddSetup(args) => {
                 let AddSetupArgs { name, face_up } = args;
                 // One default name for every surface. The GUI used to

@@ -25,18 +25,18 @@ pub mod wizard;
 
 pub use builder::ProjectSessionBuilder;
 pub use command::{
-    AddAlignmentPinArgs, AddModelArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, AdoptResultArgs,
-    Command, CommandId, CommandKind, Effects, GenerateToolpathArgs, GetOperationSchemaAnswer,
-    GetOperationSchemaArgs, ImportMachineSettingsArgs, Job, JobHandle, MoveToolpathToSetupArgs,
-    Query, QueryAnswer, Reach, RemoveAlignmentPinArgs, RemoveToolArgs, RemoveToolpathArgs,
-    ReplaceFixtureArgs, ReplaceKeepOutArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs,
-    RestoreToolpathSnapshotArgs, SaveProjectArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
-    SetDressupFieldArgs, SetMachineArgs, SetMachineKinematicsArgs, SetPostConfigArgs,
-    SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs,
-    SetSetupNameArgs, SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs,
-    SetToolParamArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
-    SetToolpathModelArgs, SetToolpathParamArgs, SetToolpathToolArgs, Surfaces,
-    ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
+    AddAlignmentPinArgs, AddModelArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs,
+    AdoptModelGeometryArgs, AdoptResultArgs, Command, CommandId, CommandKind, Effects,
+    GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
+    ImportMachineSettingsArgs, Job, JobHandle, MoveToolpathToSetupArgs, Query, QueryAnswer, Reach,
+    RemoveAlignmentPinArgs, RemoveToolArgs, RemoveToolpathArgs, ReplaceFixtureArgs,
+    ReplaceKeepOutArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
+    SaveProjectArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
+    SetMachineArgs, SetMachineKinematicsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
+    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs, SetSetupRotationArgs,
+    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
+    SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathParamArgs,
+    SetToolpathToolArgs, Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, MutationKind, ResolvedGenInputs, StaleSet,

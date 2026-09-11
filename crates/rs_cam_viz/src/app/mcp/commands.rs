@@ -1678,6 +1678,7 @@ impl RsCamApp {
                 outcome: Some(McpOutcome::Refused(format!("Save failed: {error}"))),
             },
             CommandId::AddModel
+            | CommandId::AdoptModelGeometry
             | CommandId::AddSetup
             | CommandId::AddAlignmentPin
             | CommandId::RemoveAlignmentPin
@@ -2500,6 +2501,7 @@ impl RsCamApp {
             // through the controller. Neither is a wire MUTATION, which is
             // what this arm answers about.
             CommandId::AdoptResult
+            | CommandId::AdoptModelGeometry
             | CommandId::SetSetupName
             | CommandId::SetSetupDatum
             | CommandId::SetSetupModels

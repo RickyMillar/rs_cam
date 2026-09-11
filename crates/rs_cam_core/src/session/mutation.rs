@@ -13,7 +13,7 @@ use tracing::instrument;
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundaryConfig, BoundarySource, DressupConfig, HeightsConfig};
-use crate::compute::stock_config::{FixtureId, KeepOutId, StockConfig};
+use crate::compute::stock_config::{FixtureId, KeepOutId, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::compute::transform::FaceUp;
 use crate::enriched_mesh::FaceGroupId;
@@ -1479,17 +1479,77 @@ impl ProjectSession {
     #[instrument(skip(self))]
     pub fn invalidate_model(&mut self, model_id: usize) -> Effects {
         self.with_effects(None, move |session| {
-            let affected: Vec<usize> = session
-                .toolpath_configs
-                .iter()
-                .enumerate()
-                .filter(|(_, tc)| tc.model_id == model_id)
-                .map(|(idx, _)| idx)
-                .collect();
-            for &idx in &affected {
-                session.drop_result(idx);
+            session.drop_results_for_model(model_id);
+        })
+    }
+
+    /// Drop the cached result of every toolpath bound to one model, and
+    /// the simulation.
+    ///
+    /// The rule [`Self::invalidate_model`] and
+    /// [`Self::adopt_model_geometry`] share. The second one writes the
+    /// geometry and runs this in ONE mutation, so the two halves cannot
+    /// drift apart the way the three GUI refresh doors did
+    /// (G-RELOADTARGETS, G-RESCALESTALE).
+    fn drop_results_for_model(&mut self, model_id: usize) {
+        let affected: Vec<usize> = self
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .filter(|(_, tc)| tc.model_id == model_id)
+            .map(|(idx, _)| idx)
+            .collect();
+        for &idx in &affected {
+            self.drop_result(idx);
+        }
+        self.simulation = None;
+    }
+
+    /// Replace one model's geometry, and drop the results that read it.
+    ///
+    /// The door of the `AdoptModelGeometry` command row. The GUI holds
+    /// three model-refresh doors — rescale, reload and relink — and each
+    /// one re-imports the file itself. The import belongs to the surface
+    /// that owns the file dialogue; core adopts the geometry that import
+    /// produced and reports what the adoption dropped.
+    ///
+    /// `geometry` supplies the fields
+    /// [`LoadedModel::adopt_geometry`](super::LoadedModel::adopt_geometry)
+    /// names. The id and the name never move: keeping the id is the point
+    /// of a refresh, because every `ToolpathConfig::model_id` goes on
+    /// naming this model.
+    ///
+    /// `units` of `None` means the caller overrides no unit declaration,
+    /// and the record keeps the units it carries. Only the rescale door
+    /// sends `Some`: a rescale IS the declared-units change.
+    ///
+    /// The row refuses an id that names no model, rather than reporting
+    /// an empty [`Effects`] a reader could take for "nothing to do".
+    #[instrument(skip(self, geometry))]
+    pub fn adopt_model_geometry(
+        &mut self,
+        model_id: usize,
+        geometry: super::LoadedModel,
+        units: Option<ModelUnits>,
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let Some(model) = session.models.iter_mut().find(|m| m.id == model_id) else {
+                let known: Vec<String> = session.models.iter().map(|m| m.id.to_string()).collect();
+                return Err(SessionError::MissingGeometry(format!(
+                    "Model id {model_id} not found; project model ids: [{}]",
+                    known.join(", ")
+                )));
+            };
+            model.adopt_geometry(geometry);
+            if let Some(units) = units {
+                model.units = Some(units);
             }
-            session.simulation = None;
+            // The id did NOT change, so no signature comparison can see
+            // this. `generation_inputs_signature` carries `model_id`, and
+            // the id is what a refresh keeps. Dropping by id is therefore
+            // the only instrument that answers.
+            session.drop_results_for_model(model_id);
+            Ok(())
         })
     }
 

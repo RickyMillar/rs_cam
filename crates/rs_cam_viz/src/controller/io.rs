@@ -2,7 +2,9 @@ use std::path::Path;
 use std::time::Instant;
 
 use rs_cam_core::geo::BoundingBox3;
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{
+    AdoptModelGeometryArgs, Command, ProjectSession, ProjectSessionBuilder, SetStockConfigArgs,
+};
 
 use crate::compute::ComputeBackend;
 use crate::error::VizError;
@@ -15,14 +17,67 @@ use crate::state::simulation::SimulationState;
 use super::AppController;
 
 impl<B: ComputeBackend> AppController<B> {
+    /// Fit the stock around a bounding box, through the command door.
+    ///
+    /// **This is a behaviour change** (§19 ruling 7). The hatch call
+    /// `stock_mut().update_from_bbox(..)` wrote the stock and dropped
+    /// nothing, so every cached result survived a stock that had just
+    /// changed size. `Command::SetStockConfig` drops every result, which
+    /// is the rule every other stock edit follows (G-FRESHSTATE).
+    fn fit_stock_to_bbox(&mut self, bbox: &BoundingBox3) {
+        let mut stock = self.state.session.stock_config().clone();
+        stock.update_from_bbox(bbox);
+        let command = Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(stock),
+        });
+        match self.state.session.apply(command) {
+            Ok(effects) => crate::state::stale::stamp_stale(&mut self.state, &effects.stale),
+            Err(error) => {
+                tracing::warn!("the automatic stock fit was refused: {error}");
+            }
+        }
+    }
+
+    /// Replace one model's geometry, through the command door.
+    ///
+    /// The one door of the three refresh routes — rescale, reload and
+    /// relink. The row adopts the geometry AND drops the results bound
+    /// to the model in one mutation, so the two halves cannot drift
+    /// apart the way they did in G-RELOADTARGETS and G-RESCALESTALE.
+    ///
+    /// `rt.result` is KEPT on every stamped row, as F2.4 keeps a late
+    /// result: the geometry it holds is the previous generation's
+    /// answer, which is what the STALE chip and the dimmed viewport path
+    /// are for.
+    fn adopt_model_geometry(
+        &mut self,
+        model_id: ModelId,
+        geometry: rs_cam_core::session::LoadedModel,
+        units: Option<ModelUnits>,
+    ) -> Result<(), VizError> {
+        let command = Command::AdoptModelGeometry(AdoptModelGeometryArgs {
+            model_id: model_id.0,
+            geometry: Box::new(geometry),
+            units,
+        });
+        let effects = self
+            .state
+            .session
+            .apply(command)
+            .map_err(|error| VizError::Other(error.to_string()))?;
+        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+        Ok(())
+    }
+
     pub fn import_stl_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let model = import::import_stl(path, 0, 1.0)?; // ID reassigned by session
         let bbox = model.bbox();
         let auto_stock = self.state.session.stock_config().auto_from_model;
-        if let Some(mesh) = &model.mesh
+        let mesh_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox);
+        if let Some(mesh_bbox) = mesh_bbox
             && auto_stock
         {
-            self.state.session.stock_mut().update_from_bbox(&mesh.bbox);
+            self.fit_stock_to_bbox(&mesh_bbox);
         }
         let assigned_id = self.state.session.add_model(model).created;
         if let Some(assigned_id) = assigned_id {
@@ -61,10 +116,11 @@ impl<B: ComputeBackend> AppController<B> {
         let model = import::import_step(path, 0, 1.0)?;
         let bbox = model.bbox();
         let auto_stock = self.state.session.stock_config().auto_from_model;
-        if let Some(mesh) = &model.mesh
+        let mesh_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox);
+        if let Some(mesh_bbox) = mesh_bbox
             && auto_stock
         {
-            self.state.session.stock_mut().update_from_bbox(&mesh.bbox);
+            self.fit_stock_to_bbox(&mesh_bbox);
         }
         let assigned_id = self.state.session.add_model(model).created;
         if let Some(assigned_id) = assigned_id {
@@ -97,45 +153,37 @@ impl<B: ComputeBackend> AppController<B> {
         let new_model = import::import_model(&path, model_id.0, kind, new_units)?;
         let bbox = new_model.bbox();
         let auto_stock = self.state.session.stock_config().auto_from_model;
-        let mut stock_bbox_update: Option<rs_cam_core::geo::BoundingBox3> = None;
-        if let Some(model) = self
+
+        // G-RELOADTARGETS (F4.4): one shared field split, so this door
+        // cannot skip `drill_targets` and `layers` again. Pre-fix a
+        // rescale moved the polygons by the unit scale and left the
+        // targets where they were, so the drawn circle and the hole the
+        // machine cut sat in different places.
+        //
+        // G-RESCALESTALE (F4.7): the row drops the results of every
+        // toolpath bound to this model. A rescale moves every polygon by
+        // the unit scale — 25.4x from millimetres to inches — so every
+        // cached result answers the PREVIOUS size. This door ran no sweep
+        // at all, so the cards stayed green and export emitted those
+        // paths. The `ModelKind::Step` arm returns above, before the
+        // import, so a door that moves nothing still invalidates nothing.
+        //
+        // A rescale IS the declared-units change, so this door supplies
+        // the new units; `adopt_geometry` keeps the ones on the record.
+        self.adopt_model_geometry(model_id, new_model, Some(new_units))?;
+
+        let mesh_bbox = self
             .state
             .session
-            .models_mut()
-            .iter_mut()
+            .models()
+            .iter()
             .find(|m| m.id == model_id.0)
+            .and_then(|m| m.mesh.as_ref())
+            .map(|mesh| mesh.bbox);
+        if let Some(mesh_bbox) = mesh_bbox
+            && auto_stock
         {
-            // G-RELOADTARGETS (F4.4): one shared field split, so this door
-            // cannot skip `drill_targets` and `layers` again. Pre-fix a
-            // rescale moved the polygons by the unit scale and left the
-            // targets where they were, so the drawn circle and the hole the
-            // machine cut sat in different places.
-            model.adopt_geometry(new_model);
-            // A rescale IS the declared-units change, so this door sets the
-            // units itself — `adopt_geometry` keeps them.
-            model.units = Some(new_units);
-            if auto_stock && let Some(mesh) = &model.mesh {
-                stock_bbox_update = Some(mesh.bbox);
-            }
-        }
-        if let Some(mesh_bbox) = stock_bbox_update {
-            self.state.session.stock_mut().update_from_bbox(&mesh_bbox);
-        }
-
-        // G-RESCALESTALE (F4.7): the same sweep `reload_model` and
-        // `relink_model` run, for the same reason. A rescale moves every
-        // polygon by the unit scale — 25.4x from millimetres to inches — so
-        // every cached result answers the PREVIOUS size. This door ran no
-        // sweep at all, so the cards stayed green and export emitted those
-        // paths. The `ModelKind::Step` arm returns above, before the
-        // import, so a door that moved nothing still invalidates nothing.
-        let affected = self.state.session.invalidate_model(model_id.0).stale;
-        let now = Instant::now();
-        for index in affected {
-            if let Some(tc) = self.state.session.get_toolpath_config(index) {
-                let id = tc.id;
-                self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
-            }
+            self.fit_stock_to_bbox(&mesh_bbox);
         }
 
         self.pending_upload = true;
@@ -160,34 +208,19 @@ impl<B: ComputeBackend> AppController<B> {
 
         let reloaded = import::import_model(&path, model_id.0, kind, units)?;
 
-        if let Some(model) = self
-            .state
-            .session
-            .models_mut()
-            .iter_mut()
-            .find(|m| m.id == model_id.0)
-        {
-            // G-RELOADTARGETS (F4.4). This door used to assign five fields
-            // by hand and never `drill_targets` or `layers`, so the previous
-            // import's targets survived beside the new polygons. A drill
-            // operation reads the record at generation time, so a reloaded
-            // drawing drilled the previous version's holes. `path` and
-            // `kind` are the ones this call was given, so they do not move.
-            model.adopt_geometry(reloaded);
-        }
-
+        // G-RELOADTARGETS (F4.4). This door used to assign five fields
+        // by hand and never `drill_targets` or `layers`, so the previous
+        // import's targets survived beside the new polygons. A drill
+        // operation reads the record at generation time, so a reloaded
+        // drawing drilled the previous version's holes. `path` and `kind`
+        // are the ones this call was given, so they do not move.
+        //
         // G-FRESHSTATE: the geometry every dependent result was generated
-        // against has just been replaced. Drop those results and request
-        // their regeneration; before this the cards stayed green and
-        // export emitted paths for the previous file contents.
-        let affected = self.state.session.invalidate_model(model_id.0).stale;
-        let now = std::time::Instant::now();
-        for index in affected {
-            if let Some(tc) = self.state.session.get_toolpath_config(index) {
-                let id = tc.id;
-                self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
-            }
-        }
+        // against has just been replaced. The row drops those results and
+        // reports them, so the sweep requests their regeneration; before
+        // this the cards stayed green and export emitted paths for the
+        // previous file contents.
+        self.adopt_model_geometry(model_id, reloaded, None)?;
 
         self.pending_upload = true;
         self.state.gui.mark_edited();
@@ -256,42 +289,19 @@ impl<B: ComputeBackend> AppController<B> {
         // project door.
         let relinked = import::import_model(new_path, model_id.0, kind, units)?;
 
-        if let Some(model) = self
-            .state
-            .session
-            .models_mut()
-            .iter_mut()
-            .find(|m| m.id == model_id.0)
-        {
-            // Moved, not cloned: `relinked` is this function's own import
-            // and is dropped here. The field split this door wrote by hand
-            // is now `LoadedModel::adopt_geometry`, shared with reload and
-            // rescale (G-RELOADTARGETS, F4.4) — `path` and `kind` come from
-            // the import of `new_path`, which is what a relink wants.
-            model.adopt_geometry(relinked);
-        }
-
-        // The id did NOT change, and that is exactly why this call is
-        // required. `generation_inputs_signature` includes `model_id`, so the
-        // signature comparison that catches an operator re-pointing the Input
-        // combo sees NOTHING here — same id, same everything, different
-        // geometry. `invalidate_model` keys on the id rather than on a
+        // Moved, not cloned: `relinked` is this function's own import and
+        // is dropped here. The field split this door wrote by hand is now
+        // `LoadedModel::adopt_geometry`, shared with reload and rescale
+        // (G-RELOADTARGETS, F4.4) — `path` and `kind` come from the import
+        // of `new_path`, which is what a relink wants.
+        //
+        // The id did NOT change, and that is exactly why the row's drop is
+        // required. `generation_inputs_signature` includes `model_id`, so
+        // the signature comparison that catches an operator re-pointing the
+        // Input combo sees NOTHING here — same id, same everything,
+        // different geometry. The row keys on the id rather than on a
         // signature, which is what makes it the right instrument.
-        let affected = self.state.session.invalidate_model(model_id.0).stale;
-        let now = std::time::Instant::now();
-        for index in affected {
-            if let Some(tc) = self.state.session.get_toolpath_config(index) {
-                let id = tc.id;
-                // `rt.result` is KEPT, as `reload_model` keeps it and as F2.4
-                // keeps a late result: the geometry it holds is the previous
-                // generation's answer, which is what `EditedSince` means and
-                // what the STALE chip, the dimmed viewport path and the
-                // "old:" figures are for. Clearing it would read `NoResult` —
-                // "never generated" — which is false, and would replace a
-                // stale picture with no picture.
-                self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
-            }
-        }
+        self.adopt_model_geometry(model_id, relinked, None)?;
 
         // The repair is done, so the complaint goes with it. Pruned by the
         // model name because `load_warnings` is a `Vec<String>`; typing it is
@@ -548,12 +558,41 @@ impl<B: ComputeBackend> AppController<B> {
 
 /// Build a `ProjectSession` from a legacy-loaded `JobState`.
 fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    // The WP7a builder is the door for verbatim construction: it keeps
+    // every supplied tool id and model id, and it runs no bounding-box
+    // fit. `add_model` renumbers, which would break every stored
+    // `ToolpathConfig::model_id`, and that is why this function reached
+    // for the `models_mut` hatch before.
+    //
+    // **The id counters move.** `build()` raises `next_model_id` and
+    // `next_tool_id` above every supplied id. The hatch push raised
+    // neither, so a later import could take an id a loaded model already
+    // held.
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(job.stock.clone())
+        .post(GuiState::post_to_session(&job.post))
+        .machine(job.machine.clone());
+    for tool in &job.tools {
+        builder = builder.tool(tool.clone());
+    }
+    for m in &job.models {
+        builder = builder.model(rs_cam_core::session::LoadedModel {
+            id: m.id,
+            name: m.name.clone(),
+            mesh: m.mesh.clone(),
+            polygons: m.polygons.clone(),
+            drill_targets: std::sync::Arc::clone(&m.drill_targets),
+            layers: std::sync::Arc::clone(&m.layers),
+            path: m.path.clone(),
+            kind: m.kind,
+            units: m.units,
+            enriched_mesh: m.enriched_mesh.clone(),
+            winding_report: m.winding_report,
+            load_error: m.load_error.clone(),
+        });
+    }
+    let mut session = builder.build();
     session.set_name(job.name.clone());
-    let _ = session.set_stock_config(job.stock.clone());
-    let _ = session.set_post_config(GuiState::post_to_session(&job.post));
-    let _ = session.set_machine(job.machine.clone());
-    let _ = session.replace_tools(job.tools.clone());
 
     let mut session_setups = Vec::new();
     let mut session_tp_configs = Vec::new();
@@ -655,26 +694,6 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
             toolpath_indices: tp_indices,
             pause_message: setup.pause_message.clone(),
         });
-    }
-
-    // Models — clone core's LoadedModel into the session, preserving existing IDs.
-    for m in &job.models {
-        session
-            .models_mut()
-            .push(rs_cam_core::session::LoadedModel {
-                id: m.id,
-                name: m.name.clone(),
-                mesh: m.mesh.clone(),
-                polygons: m.polygons.clone(),
-                drill_targets: std::sync::Arc::clone(&m.drill_targets),
-                layers: std::sync::Arc::clone(&m.layers),
-                path: m.path.clone(),
-                kind: m.kind,
-                units: m.units,
-                enriched_mesh: m.enriched_mesh.clone(),
-                winding_report: m.winding_report,
-                load_error: m.load_error.clone(),
-            });
     }
 
     let _ = session.replace_setups_and_toolpaths(session_setups, session_tp_configs);
