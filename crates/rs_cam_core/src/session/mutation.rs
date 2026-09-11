@@ -1212,6 +1212,71 @@ impl ProjectSession {
         })
     }
 
+    /// Replace one fixture of a setup, keeping its position in the list.
+    ///
+    /// The door of the `ReplaceFixture` command row. The GUI fixture
+    /// panel edits every field of one fixture, so the payload is the
+    /// whole record.
+    ///
+    /// It drops the setup's results, exactly as [`Self::add_fixture`]
+    /// and [`Self::remove_fixture`] do: a fixture is a collision input
+    /// of every operation in the setup. **This is a behaviour change.**
+    /// The panel wrote the fixture in place and dropped nothing, so a
+    /// clamp could move under a cached holder-clearance verdict
+    /// (G-FRESHSTATE).
+    #[instrument(skip(self, fixture))]
+    pub fn replace_fixture(
+        &mut self,
+        setup_index: usize,
+        fixture_id: FixtureId,
+        fixture: Fixture,
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            let Some(slot) = setup.fixtures.iter_mut().find(|f| f.id == fixture_id) else {
+                return Err(SessionError::InvalidParam(format!(
+                    "setup {setup_index} carries no fixture with id {}",
+                    fixture_id.0
+                )));
+            };
+            *slot = fixture;
+            session.drop_setup_results(setup_index);
+            Ok(())
+        })
+    }
+
+    /// Replace one keep-out zone of a setup, keeping its position.
+    ///
+    /// The door of the `ReplaceKeepOut` command row, and the twin of
+    /// [`Self::replace_fixture`]. It drops the setup's results for the
+    /// same reason.
+    #[instrument(skip(self, zone))]
+    pub fn replace_keep_out(
+        &mut self,
+        setup_index: usize,
+        zone_id: KeepOutId,
+        zone: KeepOutZone,
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            let Some(slot) = setup.keep_out_zones.iter_mut().find(|z| z.id == zone_id) else {
+                return Err(SessionError::InvalidParam(format!(
+                    "setup {setup_index} carries no keep-out zone with id {}",
+                    zone_id.0
+                )));
+            };
+            *slot = zone;
+            session.drop_setup_results(setup_index);
+            Ok(())
+        })
+    }
+
     /// Add a fixture to a setup, invalidating all toolpath results in that setup.
     #[instrument(skip(self, fixture))]
     pub fn add_fixture(
@@ -1542,6 +1607,33 @@ impl ProjectSession {
             }
             session.machine_ref = None;
             session.simulation = None;
+        })
+    }
+
+    /// Replace one tool, addressed by its id.
+    ///
+    /// The door of the `ReplaceTool` command row. The GUI tool panel
+    /// edits a DRAFT clone and commits the whole draft on Apply, so the
+    /// payload is a whole [`ToolConfig`] and not one named parameter.
+    ///
+    /// It drops the result of every toolpath the tool machines, through
+    /// [`Self::drop_tool_results`] — the same rule
+    /// [`Self::set_tool_param`] and [`Self::invalidate_tool`] apply, so
+    /// the three routes cannot drop different sets. The id is the
+    /// project-assigned one, NOT a position in the tools list.
+    #[instrument(skip(self, tool))]
+    pub fn replace_tool(
+        &mut self,
+        tool_id: usize,
+        tool: ToolConfig,
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let Some(slot) = session.tools.iter_mut().find(|t| t.id == ToolId(tool_id)) else {
+                return Err(SessionError::ToolNotFound(ToolId(tool_id)));
+            };
+            *slot = tool;
+            session.drop_tool_results(tool_id);
+            Ok(())
         })
     }
 

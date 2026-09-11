@@ -466,6 +466,36 @@ macro_rules! for_each_command {
                      "the CLI writes a whole job file, not a live config",
                  ),
              }),
+            (Command, ReplaceTool, "replace_tool", ReplaceToolArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the MCP door edits one named parameter through set_tool_param",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, ReplaceFixture, "replace_fixture", ReplaceFixtureArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool writes a fixture; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, ReplaceKeepOut, "replace_keep_out", ReplaceKeepOutArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool writes a keep-out zone; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
             (Job, GenerateToolpath, "generate_toolpath", GenerateToolpathArgs,
              GenerateToolpathHandle,
              Surfaces {
@@ -845,6 +875,52 @@ pub struct SetToolParamArgs {
     pub param: String,
     /// The value to write.
     pub value: serde_json::Value,
+}
+
+/// The arguments of the `replace_tool` command.
+///
+/// The GUI tool panel edits a DRAFT clone of the tool and commits the
+/// whole draft on Apply, so the payload is a whole [`ToolConfig`] and not
+/// one named parameter. `tool_id` is the project-assigned id, NOT the
+/// tool's position in the tools list; the two agree until a tool is
+/// removed.
+///
+/// The configuration is boxed. A [`ToolConfig`] carries the whole cutter
+/// description, which is large beside the other rows' arguments.
+#[derive(Debug, Clone)]
+pub struct ReplaceToolArgs {
+    /// The id of the tool to replace.
+    pub tool_id: usize,
+    /// The configuration to install.
+    pub config: Box<crate::compute::tool_config::ToolConfig>,
+}
+
+/// The arguments of the `replace_fixture` command.
+///
+/// The GUI fixture panel edits every field of one fixture, so the
+/// payload is the whole record. `fixture_id` names which fixture of the
+/// setup it replaces; the position in the list does not move.
+#[derive(Debug, Clone)]
+pub struct ReplaceFixtureArgs {
+    /// The index of the setup that holds the fixture.
+    pub setup_index: usize,
+    /// The id of the fixture to replace.
+    pub fixture_id: crate::compute::stock_config::FixtureId,
+    /// The fixture to install.
+    pub fixture: Box<super::Fixture>,
+}
+
+/// The arguments of the `replace_keep_out` command.
+///
+/// The keep-out twin of [`ReplaceFixtureArgs`].
+#[derive(Debug, Clone)]
+pub struct ReplaceKeepOutArgs {
+    /// The index of the setup that holds the zone.
+    pub setup_index: usize,
+    /// The id of the zone to replace.
+    pub zone_id: crate::compute::stock_config::KeepOutId,
+    /// The zone to install.
+    pub zone: Box<super::KeepOutZone>,
 }
 
 /// The arguments of the `set_toolpath_tool` command.
@@ -1434,6 +1510,13 @@ impl ProjectSession {
             }
             Command::SetToolParam(args) => {
                 self.set_tool_param(args.index, &args.param, &args.value)
+            }
+            Command::ReplaceTool(args) => self.replace_tool(args.tool_id, *args.config),
+            Command::ReplaceFixture(args) => {
+                self.replace_fixture(args.setup_index, args.fixture_id, *args.fixture)
+            }
+            Command::ReplaceKeepOut(args) => {
+                self.replace_keep_out(args.setup_index, args.zone_id, *args.zone)
             }
             Command::SetToolpathTool(args) => self.set_toolpath_tool(args.index, args.tool_id),
             Command::SetToolpathModel(args) => self.set_toolpath_model(args.index, args.model_id),

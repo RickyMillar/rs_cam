@@ -1703,6 +1703,9 @@ impl RsCamApp {
             | CommandId::SetDressupConfig
             | CommandId::SetDressupField
             | CommandId::SetToolpathEnabled
+            | CommandId::ReplaceTool
+            | CommandId::ReplaceFixture
+            | CommandId::ReplaceKeepOut
             | CommandId::ToolpathCycleTime
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
@@ -2488,6 +2491,9 @@ impl RsCamApp {
             | CommandId::SetSetupDatum
             | CommandId::SetSetupModels
             | CommandId::SetToolpathDebugOptions
+            | CommandId::ReplaceTool
+            | CommandId::ReplaceFixture
+            | CommandId::ReplaceKeepOut
             | CommandId::ToolpathCycleTime
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
