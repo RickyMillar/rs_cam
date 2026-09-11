@@ -404,6 +404,16 @@ only inside a pi session transcript, and were recovered on 2026-09-10.
 
 ## Related open items
 
+- **G-FEEDOPTPLUNGE (observed 2026-09-12 by the WP18 verifier, not acted on).** The feed
+  optimisation dressup (`feedopt::optimize_feed_rates_inner`, `feedopt.rs:~164`) writes
+  `nominal * factor` onto every cutting move and reads no move's own feed, clamped to
+  `[nominal*0.5, max]`. A plunge descent that reads full engagement is therefore rewritten
+  to the cutting nominal, up to about twice its plunge rate. The P3 geometric plunge guard
+  lives in `adaptive_feed_modulate`, not in this pass. Pre-existing; needs an operator
+  decision and a sentry before any change. Evidence: `feed_optimization_refusals_wp18.rs`
+  arm (c) measured ON 72 vs OFF 114 off-commanded moves on the P0 pocket.
+
+
 `planning/ui_fix_2026-09-09/PLAN.md` §11 carries twelve follow-ons opened on
 2026-09-10, several inside these phases: F2.14 (widen the holder check),
 F4.10 / F4.11 / F4.12 (drill pick coverage), J8.1 (MCP drops a pinned Top Z),
