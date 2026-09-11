@@ -1,3 +1,4 @@
+use super::PanelEdit;
 use crate::state::job::{FaceUp, ModelId, SetupId, ZRotation};
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
@@ -25,6 +26,11 @@ const FIXTURE_KINDS: &[FixtureKind] = &[
 /// stock-level, not per-setup). `has_flip_axis` indicates whether a flip axis
 /// is configured on the stock. `all_models` lists every loaded model for the
 /// model-scoping checkboxes.
+///
+/// WP6: `setup_data` is a SCRATCH copy the caller owns, not the session's
+/// own record. The caller compares the draft against the stored setup and
+/// applies one command per field group that moved. The panel therefore
+/// pushes no `FixtureChanged` event of its own.
 #[allow(clippy::too_many_arguments)]
 pub fn draw(
     ui: &mut egui::Ui,
@@ -34,9 +40,11 @@ pub fn draw(
     has_flip_axis: bool,
     all_models: &[(ModelId, String)],
     events: &mut Vec<AppEvent>,
-) {
+) -> PanelEdit {
     ui.heading("Setup Properties");
     ui.separator();
+
+    let mut edit = PanelEdit::default();
 
     ui.horizontal(|ui| {
         ui.label("Name:");
@@ -64,7 +72,7 @@ pub fn draw(
                         .clicked()
                     {
                         setup_data.face_up = face;
-                        events.push(AppEvent::FixtureChanged);
+                        edit.commit();
                         events.push(AppEvent::PreviewOrientation(face));
                     }
                 }
@@ -78,7 +86,7 @@ pub fn draw(
                 .clicked()
             {
                 setup_data.z_rotation = rot;
-                events.push(AppEvent::FixtureChanged);
+                edit.commit();
             }
         }
     });
@@ -129,7 +137,7 @@ pub fn draw(
                         .clicked()
                     {
                         setup_data.datum.xy_method = XYDatum::CornerProbe(corner);
-                        events.push(AppEvent::FixtureChanged);
+                        edit.commit();
                     }
                 }
                 if ui
@@ -140,7 +148,7 @@ pub fn draw(
                     .clicked()
                 {
                     setup_data.datum.xy_method = XYDatum::CenterOfStock;
-                    events.push(AppEvent::FixtureChanged);
+                    edit.commit();
                 }
                 if ui
                     .selectable_label(
@@ -150,14 +158,14 @@ pub fn draw(
                     .clicked()
                 {
                     setup_data.datum.xy_method = XYDatum::AlignmentPins;
-                    events.push(AppEvent::FixtureChanged);
+                    edit.commit();
                 }
                 if ui
                     .selectable_label(setup_data.datum.xy_method == XYDatum::Manual, "Manual")
                     .clicked()
                 {
                     setup_data.datum.xy_method = XYDatum::Manual;
-                    events.push(AppEvent::FixtureChanged);
+                    edit.commit();
                 }
             });
     });
@@ -173,7 +181,7 @@ pub fn draw(
                     .clicked()
                 {
                     setup_data.datum.z_method = ZDatum::StockTop;
-                    events.push(AppEvent::FixtureChanged);
+                    edit.commit();
                 }
                 if ui
                     .selectable_label(
@@ -183,7 +191,7 @@ pub fn draw(
                     .clicked()
                 {
                     setup_data.datum.z_method = ZDatum::MachineTable;
-                    events.push(AppEvent::FixtureChanged);
+                    edit.commit();
                 }
                 if ui
                     .selectable_label(
@@ -193,37 +201,27 @@ pub fn draw(
                     .clicked()
                 {
                     setup_data.datum.z_method = ZDatum::FixedOffset(0.0);
-                    events.push(AppEvent::FixtureChanged);
+                    edit.commit();
                 }
                 if ui
                     .selectable_label(setup_data.datum.z_method == ZDatum::Manual, "Manual")
                     .clicked()
                 {
                     setup_data.datum.z_method = ZDatum::Manual;
-                    events.push(AppEvent::FixtureChanged);
+                    edit.commit();
                 }
             });
     });
     if let ZDatum::FixedOffset(ref mut z) = setup_data.datum.z_method {
         ui.horizontal(|ui| {
             ui.label("  Z Offset:");
-            if ui
-                .add(egui::DragValue::new(z).speed(0.5).suffix(" mm"))
-                .changed()
-            {
-                events.push(AppEvent::FixtureChanged);
-            }
+            edit.drag(&ui.add(egui::DragValue::new(z).speed(0.5).suffix(" mm")));
         });
     }
 
     ui.horizontal(|ui| {
         ui.label("Notes:");
-        if ui
-            .text_edit_singleline(&mut setup_data.datum.notes)
-            .changed()
-        {
-            events.push(AppEvent::FixtureChanged);
-        }
+        edit.click(&ui.text_edit_singleline(&mut setup_data.datum.notes));
     });
 
     ui.add_space(4.0);
@@ -292,7 +290,7 @@ pub fn draw(
                 // It now writes persisted project state, and an edit
                 // that does not set the dirty flag is an edit the user
                 // can lose by closing the window.
-                events.push(AppEvent::FixtureChanged);
+                edit.commit();
             }
         }
     }
@@ -359,23 +357,27 @@ pub fn draw(
     if ui.small_button("+ Add Keep-Out Zone").clicked() {
         events.push(AppEvent::AddKeepOut(setup_id));
     }
+
+    edit
 }
 
-/// Draw fixture property editor.
+/// Draw fixture property editor over a SCRATCH copy (WP6).
+///
+/// The caller applies `Command::ReplaceFixture` when the returned
+/// [`PanelEdit`] reports a finished edit.
 pub fn draw_fixture_properties(
     ui: &mut egui::Ui,
     _setup_id: SetupId,
     fixture: &mut Fixture,
-    events: &mut Vec<AppEvent>,
-) {
+) -> PanelEdit {
     ui.heading("Fixture Properties");
     ui.separator();
 
-    let mut changed = false;
+    let mut edit = PanelEdit::default();
 
     ui.horizontal(|ui| {
         ui.label("Name:");
-        changed |= ui.text_edit_singleline(&mut fixture.name).changed();
+        edit.click(&ui.text_edit_singleline(&mut fixture.name));
     });
 
     ui.horizontal(|ui| {
@@ -389,13 +391,13 @@ pub fn draw_fixture_properties(
                         .clicked()
                     {
                         fixture.kind = kind;
-                        changed = true;
+                        edit.commit();
                     }
                 }
             });
     });
 
-    changed |= ui.checkbox(&mut fixture.enabled, "Enabled").changed();
+    edit.click(&ui.checkbox(&mut fixture.enabled, "Enabled"));
 
     ui.add_space(4.0);
 
@@ -409,31 +411,25 @@ pub fn draw_fixture_properties(
         .spacing([8.0, 3.0])
         .show(ui, |ui| {
             ui.label("X:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut fixture.origin_x)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut fixture.origin_x)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
             ui.label("Y:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut fixture.origin_y)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut fixture.origin_y)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
             ui.label("Z:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut fixture.origin_z)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut fixture.origin_z)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
         });
 
@@ -449,34 +445,28 @@ pub fn draw_fixture_properties(
         .spacing([8.0, 3.0])
         .show(ui, |ui| {
             ui.label("X:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut fixture.size_x)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut fixture.size_x)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
             ui.label("Y:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut fixture.size_y)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut fixture.size_y)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
             ui.label("Z:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut fixture.size_z)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut fixture.size_z)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
         });
 
@@ -484,39 +474,37 @@ pub fn draw_fixture_properties(
 
     ui.horizontal(|ui| {
         ui.label("Clearance:");
-        changed |= ui
-            .add(
-                egui::DragValue::new(&mut fixture.clearance)
-                    .speed(0.1)
-                    .range(0.0..=100.0)
-                    .suffix(" mm"),
-            )
-            .changed();
+        edit.drag(&ui.add(
+            egui::DragValue::new(&mut fixture.clearance)
+                .speed(0.1)
+                .range(0.0..=100.0)
+                .suffix(" mm"),
+        ));
     });
 
-    if changed {
-        events.push(AppEvent::FixtureChanged);
-    }
+    edit
 }
 
-/// Draw keep-out zone property editor.
+/// Draw keep-out zone property editor over a SCRATCH copy (WP6).
+///
+/// The caller applies `Command::ReplaceKeepOut` when the returned
+/// [`PanelEdit`] reports a finished edit.
 pub fn draw_keep_out_properties(
     ui: &mut egui::Ui,
     _setup_id: SetupId,
     zone: &mut KeepOutZone,
-    events: &mut Vec<AppEvent>,
-) {
+) -> PanelEdit {
     ui.heading("Keep-Out Zone Properties");
     ui.separator();
 
-    let mut changed = false;
+    let mut edit = PanelEdit::default();
 
     ui.horizontal(|ui| {
         ui.label("Name:");
-        changed |= ui.text_edit_singleline(&mut zone.name).changed();
+        edit.click(&ui.text_edit_singleline(&mut zone.name));
     });
 
-    changed |= ui.checkbox(&mut zone.enabled, "Enabled").changed();
+    edit.click(&ui.checkbox(&mut zone.enabled, "Enabled"));
 
     ui.add_space(4.0);
 
@@ -530,22 +518,18 @@ pub fn draw_keep_out_properties(
         .spacing([8.0, 3.0])
         .show(ui, |ui| {
             ui.label("X:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut zone.origin_x)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut zone.origin_x)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
             ui.label("Y:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut zone.origin_y)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut zone.origin_y)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
         });
 
@@ -561,28 +545,22 @@ pub fn draw_keep_out_properties(
         .spacing([8.0, 3.0])
         .show(ui, |ui| {
             ui.label("X:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut zone.size_x)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut zone.size_x)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
             ui.label("Y:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut zone.size_y)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut zone.size_y)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ));
             ui.end_row();
         });
 
-    if changed {
-        events.push(AppEvent::FixtureChanged);
-    }
+    edit
 }

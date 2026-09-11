@@ -212,6 +212,125 @@ fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::StockConfig
     }
 }
 
+/// Run one command from a draw site and stamp what it dropped.
+///
+/// The shape follows `write_entry_config_to_session` (WP5): apply, stamp
+/// every index `Effects::stale` names, and report a refusal to the log
+/// rather than to a panel that has already drawn. It answers whether the
+/// command was applied, so a caller can dirty the project once for a
+/// group of them.
+fn apply_panel_command(state: &mut AppState, command: rs_cam_core::session::Command) -> bool {
+    match state.session.apply(command) {
+        Ok(effects) => {
+            crate::state::stale::stamp_stale(state, &effects.stale);
+            true
+        }
+        Err(error) => {
+            tracing::warn!("the properties panel edit was refused: {error}");
+            false
+        }
+    }
+}
+
+/// Apply the setup panel's draft, one command per field group that moved.
+///
+/// Four groups, four rows. The name is NOT one of them: the panel pushes
+/// `AppEvent::RenameSetup`, which the controller already routes through
+/// the core setter.
+///
+/// G-FRESHSTATE: `SetSetupFace`, `SetSetupRotation` and `SetSetupModels`
+/// each drop every result in the setup — the frame and the model scope
+/// decide what a generation in this setup reads. `SetSetupDatum` drops
+/// nothing by design: the datum reaches the export alone.
+fn apply_setup_draft(
+    state: &mut AppState,
+    setup_index: usize,
+    stored: &rs_cam_core::session::SetupData,
+    draft: &rs_cam_core::session::SetupData,
+) {
+    use rs_cam_core::session::{
+        Command, SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupRotationArgs,
+    };
+    let mut commands: Vec<Command> = Vec::new();
+    if draft.face_up != stored.face_up {
+        commands.push(Command::SetSetupFace(SetSetupFaceArgs {
+            setup_index,
+            face_up: draft.face_up,
+        }));
+    }
+    if draft.z_rotation != stored.z_rotation {
+        commands.push(Command::SetSetupRotation(SetSetupRotationArgs {
+            setup_index,
+            z_rotation: draft.z_rotation,
+        }));
+    }
+    if draft.datum != stored.datum {
+        commands.push(Command::SetSetupDatum(SetSetupDatumArgs {
+            setup_index,
+            datum: draft.datum.clone(),
+        }));
+    }
+    if draft.model_ids != stored.model_ids {
+        commands.push(Command::SetSetupModels(SetSetupModelsArgs {
+            setup_index,
+            model_ids: draft.model_ids.clone(),
+        }));
+    }
+    let mut applied = false;
+    for command in commands {
+        applied |= apply_panel_command(state, command);
+    }
+    if applied {
+        state.gui.mark_edited();
+        state.panel_side_effects.upload = true;
+    }
+}
+
+/// Apply the fixture panel's draft through `Command::ReplaceFixture`.
+///
+/// G-FRESHSTATE: the row drops every result in the setup, because a
+/// fixture is a collision input of every operation in it. The panel
+/// wrote the fixture in place and dropped nothing, so a clamp could move
+/// under a cached holder-clearance verdict.
+fn apply_fixture_draft(
+    state: &mut AppState,
+    setup_index: usize,
+    fixture_id: crate::state::job::FixtureId,
+    fixture: rs_cam_core::session::Fixture,
+) {
+    let command =
+        rs_cam_core::session::Command::ReplaceFixture(rs_cam_core::session::ReplaceFixtureArgs {
+            setup_index,
+            fixture_id,
+            fixture: Box::new(fixture),
+        });
+    if apply_panel_command(state, command) {
+        state.gui.mark_edited();
+        state.panel_side_effects.upload = true;
+    }
+}
+
+/// Apply the keep-out panel's draft through `Command::ReplaceKeepOut`.
+///
+/// The twin of [`apply_fixture_draft`], and it drops the same set.
+fn apply_keep_out_draft(
+    state: &mut AppState,
+    setup_index: usize,
+    zone_id: crate::state::job::KeepOutId,
+    zone: rs_cam_core::session::KeepOutZone,
+) {
+    let command =
+        rs_cam_core::session::Command::ReplaceKeepOut(rs_cam_core::session::ReplaceKeepOutArgs {
+            setup_index,
+            zone_id,
+            zone: Box::new(zone),
+        });
+    if apply_panel_command(state, command) {
+        state.gui.mark_edited();
+        state.panel_side_effects.upload = true;
+    }
+}
+
 /// What one frame of a scratch-copy panel did to its draft (WP6).
 ///
 /// An immediate-mode panel writes a CLONE of the project record and
@@ -495,64 +614,89 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter()
                 .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
                 .collect();
-            // G-FRESHSTATE: the panel writes `face_up` / `z_rotation`
-            // straight into `SetupData`, so no core setter ran and every
-            // toolpath in the setup kept a result generated in the OLD
-            // frame. Snapshot the orientation, let the panel write, then
-            // route the change through the core setter — which is
-            // idempotent in the value and drops the setup's results.
-            let mut orientation_before = None;
-            if let Some((setup_index, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0)
-            {
-                orientation_before = Some((setup_index, setup_data.face_up, setup_data.z_rotation));
-                setup::draw(
+            // WP6: the panel writes a DRAFT. The caller compares the
+            // draft against the stored setup and applies one command per
+            // field group that moved.
+            //
+            // G-FRESHSTATE: the panel used to write `face_up` /
+            // `z_rotation` straight into `SetupData`, so no core setter
+            // ran and every toolpath in the setup kept a result
+            // generated in the OLD frame. The datum and the model scope
+            // had no core door at all.
+            let stored = state
+                .session
+                .find_setup_by_id(setup_id.0)
+                .map(|(index, setup)| (index, setup.clone()));
+            if let Some((setup_index, stored)) = stored {
+                let mut draft = match state.history.setup_draft.take() {
+                    Some((id, data)) if id == setup_id => data,
+                    _ => stored.clone(),
+                };
+                let edit = setup::draw(
                     ui,
                     setup_id,
-                    setup_data,
+                    &mut draft,
                     pin_count,
                     has_flip_axis,
                     &all_models,
                     events,
                 );
-            }
-            if let Some((setup_index, face_before, rotation_before)) = orientation_before {
-                let after = state
-                    .session
-                    .list_setups()
-                    .get(setup_index)
-                    .map(|s| (s.face_up, s.z_rotation));
-                if let Some((face_after, rotation_after)) = after {
-                    if face_after != face_before {
-                        let _ = state.session.set_setup_face(setup_index, face_after);
-                        state.gui.mark_edited();
-                    }
-                    if rotation_after != rotation_before {
-                        let _ = state
-                            .session
-                            .set_setup_rotation(setup_index, rotation_after);
-                        state.gui.mark_edited();
-                    }
+                if edit.committed {
+                    apply_setup_draft(state, setup_index, &stored, &draft);
+                }
+                if edit.in_flight {
+                    state.history.setup_draft = Some((setup_id, draft));
                 }
             }
         }
         Selection::Fixture(setup_id, fixture_id) => {
-            if let Some((_, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0)
-                && let Some(fixture) = setup_data
-                    .fixtures
-                    .iter_mut()
-                    .find(|fixture| fixture.id == fixture_id)
-            {
-                setup::draw_fixture_properties(ui, setup_id, fixture, events);
+            let stored = state
+                .session
+                .find_setup_by_id(setup_id.0)
+                .and_then(|(index, setup_data)| {
+                    setup_data
+                        .fixtures
+                        .iter()
+                        .find(|fixture| fixture.id == fixture_id)
+                        .map(|fixture| (index, fixture.clone()))
+                });
+            if let Some((setup_index, stored)) = stored {
+                let mut draft = match state.history.fixture_draft.take() {
+                    Some((s_id, f_id, data)) if s_id == setup_id && f_id == fixture_id => data,
+                    _ => stored,
+                };
+                let edit = setup::draw_fixture_properties(ui, setup_id, &mut draft);
+                if edit.committed {
+                    apply_fixture_draft(state, setup_index, fixture_id, draft.clone());
+                }
+                if edit.in_flight {
+                    state.history.fixture_draft = Some((setup_id, fixture_id, draft));
+                }
             }
         }
         Selection::KeepOut(setup_id, keep_out_id) => {
-            if let Some((_, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0)
-                && let Some(zone) = setup_data
-                    .keep_out_zones
-                    .iter_mut()
-                    .find(|zone| zone.id == keep_out_id)
-            {
-                setup::draw_keep_out_properties(ui, setup_id, zone, events);
+            let stored = state
+                .session
+                .find_setup_by_id(setup_id.0)
+                .and_then(|(index, setup_data)| {
+                    setup_data
+                        .keep_out_zones
+                        .iter()
+                        .find(|zone| zone.id == keep_out_id)
+                        .map(|zone| (index, zone.clone()))
+                });
+            if let Some((setup_index, stored)) = stored {
+                let mut draft = match state.history.keep_out_draft.take() {
+                    Some((s_id, z_id, data)) if s_id == setup_id && z_id == keep_out_id => data,
+                    _ => stored,
+                };
+                let edit = setup::draw_keep_out_properties(ui, setup_id, &mut draft);
+                if edit.committed {
+                    apply_keep_out_draft(state, setup_index, keep_out_id, draft.clone());
+                }
+                if edit.in_flight {
+                    state.history.keep_out_draft = Some((setup_id, keep_out_id, draft));
+                }
             }
         }
         Selection::Face(model_id, face_id) => {

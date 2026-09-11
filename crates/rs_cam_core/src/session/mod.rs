@@ -742,6 +742,12 @@ impl DatumConfig {
 }
 
 /// A setup's orientation and toolpath indices.
+///
+/// The record derives `Debug` and `Clone` because the GUI setup panel
+/// edits a CLONE of it and applies the fields that moved through the
+/// `SetSetupFace`, `SetSetupRotation`, `SetSetupDatum` and
+/// `SetSetupModels` command rows (WP6).
+#[derive(Debug, Clone)]
 pub struct SetupData {
     pub id: usize,
     pub name: String,

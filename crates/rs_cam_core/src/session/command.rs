@@ -144,9 +144,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetSetupFace, "set_setup_face", SetSetupFaceArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -154,9 +152,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetSetupRotation, "set_setup_rotation", SetSetupRotationArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -176,9 +172,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetSetupDatum, "set_setup_datum", SetSetupDatumArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI setup panel writes SetupData::datum directly; WP6 adopts it",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Skip(
                      "no MCP tool writes this; the wire has no such mutation",
                  ),
@@ -188,9 +182,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetSetupModels, "set_setup_models", SetSetupModelsArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI setup panel writes SetupData::model_ids directly; WP6 adopts it",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Skip(
                      "no MCP tool writes this; the wire has no such mutation",
                  ),
