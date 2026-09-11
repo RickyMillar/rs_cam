@@ -29,14 +29,14 @@
 //! lists seven generation-input divergences. A fresh-stock 2D Pocket over an
 //! SVG rectangle reaches exactly ONE of them:
 //!
-//! * **N12 item 3 — the feed-optimisation stock.** The viz door BUILDS one
-//!   (`helpers.rs:41-52`, `:97`); the core door passes `None`
-//!   (`session/compute.rs:1712`). `DressupConfig::default()` carries
+//! * **N12 item 3 — the feed-optimisation stock.** The viz door BUILT one
+//!   and the core door passed `None`, so one configuration emitted two sets
+//!   of feed rates. `DressupConfig::default()` carries
 //!   `feed_optimization: true` (`core/compute/config.rs:2007`) and
 //!   `feed_optimization_unavailable_reason` (`core/compute/catalog.rs:2749`)
-//!   refuses only remaining-stock, Rest and 3D operations, so this pass is
-//!   LIVE on this fixture and the GUI door's feeds are modulated where the
-//!   session door's are not.
+//!   refuses only remaining-stock, Rest and 3D operations, so the pass is
+//!   LIVE on this fixture. WP11b closed the item: the GUI door runs core's
+//!   `start` / `execute_job` steps and the core door reads the stock.
 //!
 //! The other six stay unpinned, and the next phase must reach them with
 //! other fixtures:
@@ -59,12 +59,16 @@
 //! * **Item 7 — the open-coded single-polygon clip.** It needs an enabled
 //!   boundary. `BoundaryConfig::default()` has `enabled: false`.
 //!
-//! # Why the second test pins a divergence instead of failing
+//! # Why the second test now asserts identity
 //!
-//! Phase 3 owns the fix: one resolver feeds both doors. When the core door
-//! passes a feed-optimisation stock too, the second test inverts into full
-//! identity and the first test absorbs it. Until then the second test states
-//! the current answer, so a silent change of it fails here.
+//! Phase 3 owned the fix: one resolver feeds both doors. The second test
+//! pinned the divergence until WP11b, and inverted into full identity when
+//! the core door gained the feed-optimisation stock. The first test absorbs
+//! the claim and stays green, which is the evidence the flip is real. The
+//! behavioural half of the item — that the core door modulates at all — is
+//! measured in core, at `tests/gen_inputs_one_assembly_n12.rs`, because an
+//! identity between two routes that call one function is true by
+//! construction.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -407,34 +411,35 @@ fn the_two_doors_generate_one_geometry_with_feed_optimization_off() {
     assert_same_moves(&gui, &session, Feeds::Compare);
 }
 
-/// With the shipped default the GUI door modulates the feeds and the
-/// session door does not — N12 item 3.
+/// With the shipped default the two doors emit ONE set of feed rates —
+/// N12 item 3, closed.
 ///
-/// The geometry still agrees: `apply_dressups` runs feed optimisation LAST
+/// The geometry always agreed: `apply_dressups` runs feed optimisation LAST
 /// (step 8), after the rapid reorder, and `optimize_feed_rates` rewrites the
 /// feed rate in place — move count, order, targets, arc offsets and intents
-/// all pass through (`core/src/feedopt.rs:179-190`). So the divergence is
-/// confined to the feed rate, and this test says so on both halves.
+/// all pass through (`core/src/feedopt.rs:179-190`). So the divergence was
+/// confined to the feed rate.
 ///
-/// This test PINS CURRENT BEHAVIOUR. Phase 3 gives both doors one resolver;
-/// when the core door passes a feed-optimisation stock too, the divergence
-/// leg here becomes false, this test inverts into full identity, and the
-/// test above absorbs it. It is not a permanently red test.
+/// This test PINNED the divergence until WP11b. The GUI door now runs core's
+/// `start` / `execute_job` steps, so one resolver answers both doors and the
+/// core door reads the feed-optimisation stock it used to pass as `None`.
+/// The assertion is inverted, per the flip note this comment replaces: the
+/// feeds agree, and the test above absorbs the claim.
 #[test]
-fn with_the_shipped_default_the_gui_door_modulates_feeds_and_the_session_door_does_not() {
+fn with_the_shipped_default_the_two_doors_emit_one_set_of_feed_rates() {
     let (gui, session) = generate_through_both_doors(true);
     assert_non_vacuous(&gui, &session);
 
-    // The geometry is one answer.
-    assert_same_moves(&gui, &session, Feeds::Ignore);
+    // The geometry is one answer, and so are the feeds.
+    assert_same_moves(&gui, &session, Feeds::Compare);
 
-    // The feeds are not.
     let differing = feed_disagreement_count(&gui, &session);
-    assert!(
-        differing > 0,
-        "N12 item 3 says the GUI door's feed-optimisation stock modulates \
-         feeds the session door leaves at the commanded value, so at least \
-         one fed move must differ; every one of the {} fed moves matched",
+    assert_eq!(
+        differing,
+        0,
+        "N12 item 3 is closed: one resolver feeds both doors, so no fed \
+         move may carry a different feed rate; {differing} of the {} fed \
+         moves differ",
         cutting_move_count(&gui)
     );
 }

@@ -45,9 +45,11 @@
 //!
 //! Arm (c) is a function-pointer coercion. A `fn` pointer captures
 //! nothing, so a step (ii) that coerces to
-//! `fn(&GenerateToolpathHandle, &AtomicBool) -> Result<ToolpathComputeResult,
-//! SessionError>` cannot hold a session borrow. The coercion is the
-//! proof; the arm exists to stop the signature widening back.
+//! `fn(&GenerateToolpathHandle, &GenObserver<'_>, &AtomicBool) ->
+//! Result<ToolpathComputeResult, SessionError>` cannot hold a session
+//! borrow. The coercion is the proof; the arm exists to stop the
+//! signature widening back. WP11b added the observer argument; it carries
+//! the debug-options gate and the phase sink, and no session.
 //!
 //! Arm (d) reads the registry column: the `generate_toolpath` row
 //! declares [`CommandKind::Job`].
@@ -72,9 +74,9 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, CommandId, CommandKind, GenerateToolpathArgs, GenerateToolpathHandle,
-    Job, JobHandle, ProjectSession, SessionError, SetToolpathParamArgs, ToolpathComputeResult,
-    execute_job,
+    AdoptResultArgs, Command, CommandId, CommandKind, GenObserver, GenerateToolpathArgs,
+    GenerateToolpathHandle, Job, JobHandle, ProjectSession, SessionError, SetToolpathParamArgs,
+    ToolpathComputeResult, execute_job,
 };
 
 mod common;
@@ -141,7 +143,8 @@ fn run_three_steps(session: &mut ProjectSession, index: usize) {
             &cancel,
         )
         .expect("step (i) captures the generation inputs");
-    let result = execute_job(&handle, &cancel).expect("step (ii) generates the toolpath");
+    let result = execute_job(&handle, &GenObserver::none(), &cancel)
+        .expect("step (ii) generates the toolpath");
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -238,7 +241,8 @@ fn an_edit_after_start_refuses_the_handles_result() {
          fire and this arm measures nothing"
     );
 
-    let result = execute_job(&handle, &cancel).expect("step (ii) generates the toolpath");
+    let result = execute_job(&handle, &GenObserver::none(), &cancel)
+        .expect("step (ii) generates the toolpath");
     let outcome = session.apply(Command::AdoptResult(AdoptResultArgs {
         index: 0,
         revision: captured,
@@ -264,8 +268,12 @@ fn an_edit_after_start_refuses_the_handles_result() {
 /// this type at all.
 #[test]
 fn execute_job_holds_no_session() {
+    // WP11b added the observer. It carries the debug-options gate and the
+    // phase sink, and it holds no session either, so the claim this arm
+    // makes is unchanged.
     let step_two: fn(
         &GenerateToolpathHandle,
+        &GenObserver<'_>,
         &AtomicBool,
     ) -> Result<ToolpathComputeResult, SessionError> = execute_job;
 
@@ -279,7 +287,7 @@ fn execute_job_holds_no_session() {
         .expect("step (i) captures the generation inputs");
     drop(session);
 
-    let result = step_two(&handle, &cancel);
+    let result = step_two(&handle, &GenObserver::none(), &cancel);
     assert!(
         result.is_ok(),
         "step (ii) must generate after the session is dropped; got \
