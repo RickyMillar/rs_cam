@@ -985,3 +985,33 @@ scratchpad `wp9_brief.md`, `wp11a_brief.md`.
    function is copied into the test as the pre-fix oracle, then the test keeps the oracle
    as a frozen table). Plus the `command_registry_completeness` count moves to 3 rows.
 6. **Order:** WP9 starts after WP3 lands; both edit `command.rs`.
+
+---
+
+## §14 Operator rulings on the WP13 open calls (2026-09-11)
+
+The operator answered the nine open calls in `WP13_CLASSIFICATION_DRAFT.md` §6. WP4 may
+move variants under these rulings.
+
+1. **`OptimizeToolpath`, `RecommendClearingStrategy`, `PreviewTierMap` become `Job`** (calls
+   2, 3, 7). The optimizer takes the capture / execute / adopt shape, which retires the
+   `std::mem::replace` in `CloseOptimizeModal` / `CloseOptimizeProject`. The two slow reads
+   return a handle and stop blocking the frame loop.
+2. **A fifth kind, `UiQuery`, for viz-owned reads** (calls 1, 4, 5; the operator delegated the
+   choice to the orchestrator with "whichever results in the cleanest architecture / best
+   UX"). `UiQuery` pairs with `UiCommand`: declared in the registry with `Surfaces`, never
+   enters core. The five simulation-slot and toast reads, the three library listings and the
+   ten file-store events become `UiQuery` (reads) or `UiCommand` (writes). `CancelCompute` /
+   `CancelToolpathGeneration` are `UiCommand`. Rationale: the read / write distinction on the
+   viz side is what the cross-surface sentry checks ("no `UiCommand` row writes
+   `ProjectSession`" extends to "no `UiQuery` row writes anything"), and moving the
+   simulation slot into core first would delay WP4 by a package.
+3. **The five post-write notification events are deleted in WP6** (call 6). Once a panel write
+   returns `Effects` they have no job. **`WizardSetPost` becomes `Command::SetPostConfig`**
+   (call 8).
+4. **The four export events are `Query` rows that return the artifact; viz writes the file**
+   (call 9). Core stays pure; the file write is a viz-side step after the query.
+
+The same session ruled: **no large test gates.** Verifiers run the sentry binaries, the
+targeted suites, the small crates and the lint gate only. The full heavy gate and the
+whole-core dev loop are not run per package.
