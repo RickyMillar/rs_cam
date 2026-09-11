@@ -1424,3 +1424,52 @@ A scout measured §4 WP11b against master with WP10 landed. Full brief: session 
    names `execute_operation_annotated*`; the WP10 sentry's fn pointer takes the observer.
 9. **Order:** after WP4 lands (`SetToolpathDebugOptions` closes the last MCP hatch in
    `mcp_generate_toolpath`). Items 1 and 2 land together.
+
+---
+
+## §23 WP12 corrections and rulings after WP11b (2026-09-11 night)
+
+A scout measured §4 WP12 against the WP11b tree. Full brief: session scratchpad
+`wp12_brief.md`.
+
+### Corrections
+
+- **WP12's Moves and Deletes are spent.** WP11b deleted the 27 mirrored fields, the viz-side
+  resolution and the mirror comments; `ComputeRequest` is `{ handle, viz }`. Size L → S.
+- The 21-argument `execute_operation_annotated_with_regions` is still `pub`, and
+  `execute_generation` calls it (the wrap is inverted relative to §22 ruling 4). Callers:
+  three production (inside `execute_generation`, the in-module strategy advisor, the
+  wrapper's own inner call), 21 test sites in six files, no benches.
+- `clippy::too_many_arguments` in `execute.rs` cannot reach zero: `apply_dressups` and the
+  post-generation attach point are unrelated. Floor is 3.
+- `pub struct ResolvedHeights → 1` is refuted (§22): the two types have disjoint fields.
+- `-> ResolvedGenInputs → 1` reads 0 (the return is `Result<…>`); the WP11a sentry pins the
+  producer with the right pattern.
+- `"session/compute.rs" in viz → 0` is the wrong bar: two survivors are legitimate
+  cross-references and one is a stale narrative.
+- No external caller can reach `execute_generation` (`GenContext` and the handle are
+  unconstructible outside core), so every test migration goes through `start` + `execute_job`
+  — and `execute_job` runs the tail the loose entry never ran (dressups, clip, refusals), so a
+  migration is a behaviour change on tests that assert raw pre-dressup output.
+
+### Rulings
+
+1. **The loose entry goes `pub(crate)` in place** (shape A). No signature change, `#[allow]`
+   stays on it. `execute_generation` keeps calling it.
+2. **The four integration tests that call the loose entry move in-crate** as `#[cfg(test)]`
+   modules under `crates/rs_cam_core/src/compute/` (or `session/`), keeping their assertions
+   on raw pre-dressup output byte-identical. `project_curve_chaining` moves in-crate too and
+   sets `simulation` directly; no public setter is added.
+3. **The strategy advisor keeps its `pub(crate)` loose call** and is listed in §5 as a named
+   residual until the advisor becomes a `Query` / `Job` row.
+4. **§7 rows corrected:** `ResolvedHeights → 2`; the producer grep is
+   `-> Result<ResolvedGenInputs` → 1; the mirror bar is `rg "session/compute.rs"
+   crates/rs_cam_viz/src/compute` with comment lines excluded → 0, and the stale narrative
+   comment is rewritten; the `too_many_arguments` row becomes "no `#[allow]` on a `pub`
+   generation entry" (floor 3 in `execute.rs`).
+5. **Sentry** `crates/rs_cam_core/tests/loose_executor_is_crate_private_wp12.rs`: a source
+   scan that `execute_operation_annotated` is named nowhere outside
+   `crates/rs_cam_core/src/`, and that its declaration line reads `pub(crate) fn`. Red
+   pre-fix: the four integration files name it and the declaration is `pub fn`.
+6. **The "one full heavy gate" precondition in §4 WP12 is replaced** by the operator's
+   2026-09-11 ruling: the normal suites and lint gate.
