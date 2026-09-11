@@ -864,3 +864,72 @@ Internal consistency checks (a)-(e) passed: no dangling `Requires:` name, the §
 grep names exactly the eleven hatches, §2/§4/§10 counts agree, the four spot-checked
 dependency edges match, no duplicated heading, no joined bullet list.
 
+
+---
+
+## §12 WP3 pre-implementation corrections and rulings (2026-09-11)
+
+A read-only scout measured §4 WP3 against the WP1 tree (`6179cc2c`). The measured
+numbers replace the §4 prose where they differ. The rulings below bind the WP3 writers.
+Full inventory: session scratchpad `wp3_brief.md`.
+
+### Corrections
+
+- **Producers: 37 `pub fn`, not "every fn that ends in `invalidate_result_chain` /
+  `drop_result`".** 23 take a toolpath index, 6 take a SETUP index, 8 are bulk (stock,
+  tool, model, pins, bulk replace). Four more clear the simulation and move no revision
+  (`add_toolpath`, `invalidate_machine`, `set_post_config`, `replace_tools`). The §4 grep
+  misses `drop_all_results` (`mutation.rs:1354`), `drop_setup_results` (`:1364`) and
+  `bump_all_revisions` (`:1339`); `invalidate_all` does not exist.
+- **`Ok(()) =>` census is 32, not 33** (`app/mcp.rs` 22). Only **10** sit on a converted
+  function, all in `app/mcp.rs` (`:3745, 3804, 3882, 4093, 4643, 4763, 5193, 5230, 5263,
+  5299`). Five return-value binders break independently: `invalidate_model` at
+  `controller/io.rs:124, 175, 272`, `invalidate_tool` at `events/undo.rs:115` and
+  `ui/properties/mod.rs:148` (all bind `Vec<usize>`), and
+  `auto_enable_rest_analysis_for_source` at `ui/properties/mod.rs:826` (a `bool` inside a
+  let-chain).
+- **The contract tests are at `mutation_paths_invalidate_alike_p0.rs:343` and `:369`**,
+  not `:336-360` / `:362-379`.
+- **`crates/rs_cam_cli/src` holds zero producer call sites.** WP3's caller side is viz only.
+- **`insert_result` has one production caller and 21 test call sites in 13 files.**
+- **The stale-completion refusal already exists viz-side** at
+  `controller/events/compute.rs:922-935`; the submitted revision lives only on
+  `gui.toolpath_rt[id].submitted_revision: Option<u64>`, and its unstamped arm accepts.
+- **`drain_compute_results` is `pub(crate)`**, so the §4 sentry file under
+  `crates/rs_cam_viz/tests/` cannot call it.
+- **WP1 shipped `simulation_cleared: simulation_before && self.simulation.is_none()`**, not
+  `take().is_some()`. Same answer today; WP3 keeps the WP1 form inside the combinator.
+
+### Rulings
+
+1. **`Effects.revision` becomes `Option<u64>`.** `0` is a live initial revision, so it
+   cannot mean "no index". `Some` only when the command names ONE toolpath that still exists
+   at the SAME index after the command. `reorder_toolpath`, `move_toolpath_to_setup`,
+   `remove_toolpath`, every setup-index producer and every bulk producer report `None`.
+   `None` means NOT MEASURED. This edits WP1's struct, `command_registry_completeness.rs`
+   and the N15 arm; it is the first hunk of WP3's fix commit.
+2. **"One producer" means one CONSTRUCTION site.** `command.rs` gains one `pub(crate)`
+   combinator that snapshots every revision and the simulation, runs a closure, and builds
+   `Effects` from the diff. Every one of the 37 producers wraps its body in it and returns
+   `Result<Effects, SessionError>` (or `Effects` where it returned `()`; `Option<Effects>`
+   where it returned a "did anything change" `bool`, `None` = nothing changed). No registry
+   rows are added in WP3; the stock, machine, tool and setup rows stay WP4's.
+3. **`Effects` carries `#[must_use]`.** About nine bare-statement viz sites then need
+   `let _ =`; the writer lists them.
+4. **`AdoptResult { index, revision: u64, result }` requires the revision.** `apply` refuses
+   with a typed error when `toolpath_revision(index) != revision` and inserts nothing. The
+   drain at `compute.rs:973` reads the `submitted_revision` stamp; when it is `None` it
+   passes the CURRENT revision with a comment that this reproduces today's accept-when-
+   unstamped arm. The viz gate at `:922-935` is deleted in the same commit. Every test
+   caller of `insert_result` passes `session.toolpath_revision(i)` read before delivery.
+   Carrying the revision on the request itself is WP10's job.
+5. **Sentries.** The refusal sentry lives in CORE:
+   `crates/rs_cam_core/tests/adopt_result_rejects_stale_completion.rs`, two arms as §4
+   states, no GUI. One in-crate viz test in `controller/tests.rs` (precedent `:1119`) proves
+   the drain hands the stamp through. `mutation_paths_invalidate_alike_p0.rs:343` and `:369`
+   stay green unchanged.
+6. **The four sim-only mutations join WP3** when their return type is `()`; one that returns
+   a value keeps its return and is recorded in §5.
+7. **Two writers, one worktree, one fix commit.** The core writer lands the sentry commit
+   and the fix commit (core side; the workspace does not compile between). The viz writer
+   AMENDS that fix commit with the caller side. The verifier sees two commits.
