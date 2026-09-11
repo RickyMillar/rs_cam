@@ -222,6 +222,30 @@ all applied; round 2 ACCEPT WITH CHANGES, applied). **Nothing is implemented.**
 Q5 (which test-fixture door) blocks WP7; WP1 (`SetToolpathParam` through `apply`)
 can start. Next: operator reads the plan; compact; start WP1 in a gap.
 
+## Command surface — work packages (2026-09-11)
+
+Per `IMPLEMENTATION_PLAN.md` §8. One row per package. States: `TODO` /
+`IN PROGRESS (who)` / `BLOCKED (on what)` / `DONE (fix hash; sentry hash)`.
+Never delete a row; mark it `DROPPED (why)`.
+
+| WP | Subject | State | Evidence |
+|---|---|---|---|
+| WP1 | Row 1: `SetToolpathParam` through `apply` | IN PROGRESS (Fable lane, 2026-09-11) | — |
+| WP2a | MCP wire compatibility pin (shape, not only name) | TODO | — |
+| WP3 | `Effects` everywhere; `AdoptResult` | TODO | — |
+| WP4 | MCP Mutations section onto `McpRequestKind::Core` | TODO | — |
+| WP5 | GUI inspector toolpath door | BLOCKED (Q1) | — |
+| WP6 | egui scratch-copy pattern, twelve draw sites | TODO | — |
+| WP6b | The 27 non-egui viz sites and the 9 CLI sites | TODO | — |
+| WP7 | The eleven hatches go `pub(crate)` | BLOCKED (Q5) | — |
+| WP8 | N14 and N6: undo, optimizer, drill picks | BLOCKED (Q2) | — |
+| WP9 | `Query` first row: cycle time | TODO | — |
+| WP10 | `Job` first row: generate one toolpath | TODO | — |
+| WP11a | Publish `ResolvedGenInputs` with private fields | TODO | — |
+| WP11b | Narrow the executor; close N12 | TODO | — |
+| WP12 | Delete `ComputeRequest`'s mirrored fields | TODO | — |
+| WP13 | `UiCommand` split and the cross-surface sentry | TODO | — |
+
 ## Do these before the phases. They are defects, not refactors.
 
 The rows below retain the original audit evidence. N1/N3's current execution
