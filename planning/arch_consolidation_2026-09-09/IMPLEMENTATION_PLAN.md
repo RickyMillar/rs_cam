@@ -1494,3 +1494,11 @@ one assembly). This is the adopt step of the simulation `Job` that a later row f
 A sentry drives a GUI rest chain to the point where a prior stock exists (the missing
 fixture): after a simulation adoption, `start` on a `FromRemainingStock` operation succeeds
 and its handle carries that prior stock.
+
+### §23 addendum (2026-09-12)
+
+Measured at WP12's landing: `clippy::too_many_arguments` allows in `execute.rs` read 5, not 3
+(the three crate-private entries, `attach_generic_rest_analysis`, and the `pub`
+`apply_dressups`). The corrected bar, "no `#[allow]` on a `pub` generation entry", is met:
+`pub fn execute_operation` reads 0. The 14-argument `execute_operation` has zero production
+callers (seven test callers) and is a §5 residual beside the strategy advisor's loose call.
