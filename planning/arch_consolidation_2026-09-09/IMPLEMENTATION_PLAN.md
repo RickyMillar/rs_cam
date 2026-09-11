@@ -1015,3 +1015,121 @@ move variants under these rulings.
 The same session ruled: **no large test gates.** Verifiers run the sentry binaries, the
 targeted suites, the small crates and the lint gate only. The full heavy gate and the
 whole-core dev loop are not run per package.
+
+---
+
+## §15 WP4 pre-implementation corrections and rulings (2026-09-11)
+
+A scout measured §4 WP4 against master `b902540c` and the WP3 tree. Full brief: session
+scratchpad `wp4_brief.md` (32 rows, 8 hatch-writing rows).
+
+### Corrections
+
+- `mcp_apply_stale` has **6** call sites after WP3, not sixteen. The two `SetupChanged`
+  holdouts are convertible now (their setters return `Effects` since WP3). Only the
+  `add_toolpath_via_gui` site is a genuine holdout.
+- `compute_stale_set` cannot go `pub(crate)` while the N15 pinned-divergence test imports it.
+  WP4 deletes both together at its end, as §4 already schedules; the `pub(crate)` step is
+  dropped.
+- Three sibling unit tests remain (`compute.rs:5402, 5418, 5429`), not four.
+- `ImportMachineSettings` writes three machine fields and `SetMachineKinematics` writes two
+  plus `invalidate_machine`; one payload cannot serve both without a field set.
+- Fourteen `AppEvent` push sites over twelve rows, not five.
+- `mcp_generate_toolpath`'s `toolpath_configs_mut` write (`app/mcp.rs:~5515`) and its twin
+  in `controller/events/compute.rs:1647` belong to the `Job` rows (WP10), not WP4.
+- `set_toolpath_enabled`'s wire `stale_toolpaths` already changed in WP3.
+
+### Rulings
+
+1. **Every row gets a core `*Args` payload struct** in `session::command`; `rs_cam_mcp`'s
+   param structs convert to it viz-side (`From` impls in `app/mcp.rs`). `rs_cam_mcp` depends
+   on core, so core cannot name its types. The WP2a snapshot does not move: schema titles
+   come from the `rs_cam_mcp` structs, which stay.
+2. **A viz-side describe step, keyed by `CommandId`, builds the reply.** The delegating arm
+   calls `apply`, then `describe(id, &session, &effects)` — an exhaustive `match CommandId`
+   in viz (a new row without a describe arm does not compile). It supplies `applied`,
+   `summary`, the toast text and flag, and may return a full custom reply for the two rows
+   whose wire shape is not `MutationResult` (`SaveProject`, `LoadMachineFromLibrary`). Rows
+   that push no toast today keep pushing none.
+3. **`Effects` gains `created: Option<usize>`.** The four add rows set it to the new index
+   (`add_toolpath`, `add_tool`, `add_setup`, `add_model`); every other row leaves `None`.
+4. **Three rows stay hand-written holdouts in WP4:** `ApplyFeeds` (its funnel resolves tool,
+   machine, material and recommendation from viz state; folds into core with WP5/WP6),
+   `PlanMultitoolFinishing` (its outcome is the reply; joins WP9's answer-column shape),
+   `ExportGcode` on MCP (its pre-flight gate reads the viz simulation slot). Each keeps its
+   existing arm and is listed in §5.
+5. **`MoveToolpathToSetup` becomes a direct `Command`** and replies after the mutation.
+   Behaviour change on the wire: `stale_toolpaths` reports the real set, recorded in the
+   commit body.
+6. **`SetMachineKinematics` and `ImportMachineSettings` are two rows** with two payloads.
+7. **`set_tool_param` and `remove_tool` return `Effects`** (converted inside WP4; WP3 missed
+   them because they call no invalidator directly).
+8. **The `AppEvent` side effects move into the describe step** (it may push events), so the
+   dispatcher keeps one arm and the per-row behaviour stays.
+9. **`mcp_toasts_report_outcome_g_mcptoast.rs` first arm is retargeted, not deleted:** its
+   literal pair table becomes a scan of the describe step.
+10. **Two writers, one worktree, one fix commit** (§12 ruling 7 shape): the core writer adds
+    the `*Args` structs, the rows, the `apply` arms, `created`, and the two conversions in 7;
+    the viz writer rewrites the dispatcher, the conversions, the describe step and the tests.
+
+---
+
+## §16 WP10 pre-implementation corrections and rulings (2026-09-11)
+
+A scout measured §4 WP10 against the WP3 tree and master. Full brief: session scratchpad
+`wp10_brief.md`.
+
+### Corrections
+
+- **N12 confirmed at the source:** the viz worker (`compute/worker/execute/mod.rs`) builds
+  its own tool definition, spatial index and boundary regions and calls
+  `execute_operation_annotated_with_regions` directly; it never calls
+  `resolve_generation_inputs`. Two assemblies, one executor. WP11b closes it; WP10 must not.
+- **Step (ii) cannot be a free function today.** `generate_toolpath` reads `self.machine`
+  and `self.simulation.prior_stocks` in its head and `self` again in its tail (`:1794`,
+  `:1832`, `:2014` at the measured tree). `ResolvedGenInputs` carries none of those.
+- **`apply` cannot return a handle.** `Effects` is a struct; a `Job` needs its own door.
+- **The kind-split callback macro does not exist yet** (WP9 builds it). Three packages
+  contend on `command.rs`.
+- **Size is L, not M.** The package splits a ~500-line `&mut self` monolith.
+- `mcp_generate_toolpath`'s `toolpath_configs_mut` write of `debug_options` bumps no
+  revision; it is a `Command` in disguise.
+
+### Rulings
+
+1. **Order: WP9 → WP10.** WP9 owns the kind-split macro and the answer column; WP10 adds
+   the `Job` kind to that shape.
+2. **A separate door: `ProjectSession::start(&mut self, Job) -> Result<JobHandle,
+   SessionError>`.** Step (i). It drops the cached result (G-STICKYEMPTY stays), runs the
+   rest and boundary preconditions (a refusal still appears at submit time), resolves inputs
+   through `resolve_generation_inputs`, and captures the session reads the executor's tail
+   needs into a `GenContext` (machine snapshot, the prior stock the operation reads, the
+   result-chain facts) owned by the handle: `JobHandle { index, revision, inputs:
+   ResolvedGenInputs, context: GenContext }`. `ResolvedGenInputs` does not grow in WP10
+   (that is WP11b's target).
+3. **Step (ii) is `rs_cam_core::session::execute_job(&JobHandle, &AtomicBool) ->
+   Result<ToolpathComputeResult, SessionError>`**, a free function holding no session. It
+   returns the CORE result type; viz keeps its own trace slots as today.
+4. **Step (iii) is `apply(Command::AdoptResult { index, revision: handle.revision, .. })`.**
+   The handle carries the revision, closing §12's "WP10 carries the revision on the request".
+   A `Job` reports progress through `LaneSnapshot` only; `Effects` on adopt is empty by
+   design.
+5. **`generate_toolpath` (core) and the CLI run the three steps inline** through the same
+   three functions. The `&mut self` monolith is split, not wrapped.
+6. **`generate_all` stays a monolith in WP10.** A fixpoint over Jobs is a later row (WP10b),
+   recorded in §5.
+7. **The `debug_options` write becomes a `Command` row, `SetToolpathDebugOptions`,** added
+   in WP4 (§15); the generate arm calls it before `start`.
+8. **The viz worker keeps its own assembly in WP10** (N12 stays pinned). WP10's sentry is a
+   core test: the three steps generate the same `ToolpathComputeResult` bytes as
+   `generate_toolpath` on the P0 fixture, plus a fn-pointer coercion proving `execute_job`
+   takes no session.
+
+### WP3 landed note (2026-09-11, `25f37b74`)
+
+`Effects.stale` is the revision-moved set. On `remove_toolpath` that set is every remaining
+toolpath, because `bump_all_revisions` re-keys results without dropping them. The MCP
+`remove_toolpath` arm therefore keeps an empty `stale_toolpaths` list by ruling: a moved
+revision on removal invalidates in-flight completions, not cached results. §5 WP3 carries
+this as a non-guarantee: `stale` answers "which completions are now stale", and a caller
+that wants "which results were dropped" reads the result slots.
