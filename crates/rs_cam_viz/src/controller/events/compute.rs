@@ -4,7 +4,7 @@ use rs_cam_core::dexel_stock::TriDexelStock;
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
-use crate::state::toolpath::{ComputeStatus, OperationConfig, StockSource, ToolpathId};
+use crate::state::toolpath::{ComputeStatus, StockSource, ToolpathId};
 
 use super::super::AppController;
 
@@ -178,39 +178,45 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    /// Submit one toolpath generation to the compute lane.
+    ///
+    /// WP11b: this used to resolve every generation input itself — the
+    /// model geometry, the setup transform, the heights, the boundary
+    /// regions, the prior stock, the reference tools, the machine envelope
+    /// — and ship 27 fields to the worker. That was a second assembly of
+    /// what `ProjectSession::resolve_generation_inputs` already produces
+    /// (tracker row N12), and the two answered differently on eight counts.
+    ///
+    /// The submit now runs core's step (i), `ProjectSession::start`, ON THE
+    /// FRAME LOOP, and ships what it hands back. What stays here is what is
+    /// genuinely the GUI's: the notifications, the runtime row, and the two
+    /// refusals whose OUTCOME differs from a plain error — a missing tool,
+    /// and a rest operation still waiting on simulated stock.
     pub(crate) fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
         let Some((tp_idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
             self.fail_toolpath_submit(tp_id, "Toolpath config not found".to_owned());
             return;
         };
 
-        let tool_id_raw = tc.tool_id;
-        let model_id_raw = tc.model_id;
-        let mut operation = tc.operation.clone();
-        let dressups = tc.dressups.clone();
-        let heights_config = tc.heights.clone();
-        let stock_source = tc.stock_source;
         let toolpath_name = tc.name.clone();
-        let boundary = tc.boundary.clone();
-        let rest_analysis = tc.rest_analysis.clone();
-        let debug_options = tc.debug_options;
-        let face_selection_for_toolpath = tc.face_selection.clone();
+        let stock_source = tc.stock_source;
+        let tool_id_raw = tc.tool_id;
+        let operation = tc.operation.clone();
 
-        let Some(tool) = self
+        if !self
             .state
             .session
             .tools()
             .iter()
-            .find(|t| t.id.0 == tool_id_raw)
-            .cloned()
-        else {
+            .any(|t| t.id.0 == tool_id_raw)
+        {
             self.push_notification(
                 "Cannot generate: no tool assigned to this toolpath".into(),
                 super::super::Severity::Warning,
             );
             self.fail_toolpath_submit(tp_id, "No tool assigned to this toolpath".to_owned());
             return;
-        };
+        }
 
         // Run validation
         {
@@ -228,12 +234,12 @@ impl<B: ComputeBackend> AppController<B> {
         // The two lateral-setup preconditions (no 3D part to register the
         // face against; keep-outs a vertical work plane cannot express).
         //
-        // This door PRE-EMPTS core — it fails the submit before the worker
-        // ever builds a request — so the call is mirrored here, but the
-        // check and both message strings have exactly one owner,
-        // `ProjectSession::check_lateral_setup_support`. That is what stops
-        // the two doors drifting; the end-to-end sentry is
-        // `rs_cam_core/tests/lateral_setup_end_to_end.rs`.
+        // The resolver checks the same thing, through the same method, so
+        // this door only decides WHERE the operator reads the refusal: as a
+        // toast at submit time rather than as a lane error. The check and
+        // both message strings have exactly one owner,
+        // `ProjectSession::check_lateral_setup_support`; the end-to-end
+        // sentry is `rs_cam_core/tests/lateral_setup_end_to_end.rs`.
         //
         // Scoped so the session borrow ends before `fail_toolpath_submit`
         // takes `&mut self`.
@@ -254,219 +260,24 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
 
-        // Find the setup that contains this toolpath.
-        // F-030: every frame-derived value below (transform, stock bbox,
-        // heights, safe_z) reads from one `SetupEvalContext` so this
-        // controller path can never diverge from `session::compute::compute`.
-        let setup_data = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .find(|s| s.toolpath_indices.contains(&tp_idx));
-        let ctx = rs_cam_core::session::SetupEvalContext::build_for_setup(
-            &self.state.session,
-            setup_data,
-        );
-
-        let mut keep_out_footprints = setup_data
-            .map(|setup| {
-                let mut footprints = Vec::new();
-                for fixture in &setup.fixtures {
-                    if fixture.enabled {
-                        footprints.push(fixture.footprint());
-                    }
-                }
-                for keep_out in &setup.keep_out_zones {
-                    if keep_out.enabled {
-                        footprints.push(keep_out.footprint());
-                    }
-                }
-                footprints
-            })
-            .unwrap_or_default();
-
-        // Build a lightweight "setup" for transforms using session types
-        let transform_setup = setup_data.map(|setup| {
-            crate::state::job::Setup::new(crate::state::job::SetupId(setup.id), setup.name.clone())
-        });
-        // If there's a real setup, copy face_up and z_rotation
-        let transform_setup = match (transform_setup, setup_data) {
-            (Some(mut s), Some(sd)) => {
-                s.face_up = sd.face_up;
-                s.z_rotation = sd.z_rotation;
-                Some(s)
-            }
-            _ => None,
-        };
-
-        // F-028 viz-path follow-up + F-030: identity setups
-        // (`face_up=Top`, `z_rotation=Deg0`) skip the geometry transform so
-        // the generation pipeline emits cuts in world frame, mirroring
-        // `session::compute::compute`. The `SetupEvalContext::needs_transform()`
-        // predicate is the single source of truth — pre-F-028 the viz path
-        // took the transform branch even for identity setups, which
-        // anchored heights at `local stock_top` (12 mm for AS001) and
-        // emitted cuts at Z=10, 8, 6 while the downstream sim grid sat in
-        // world frame (Z=0 stock top), so the cutter swept through air the
-        // whole run.
-        let transform_setup = transform_setup.filter(|_| ctx.needs_transform());
-
-        if let OperationConfig::ProjectCurve(ref mut cfg) = operation {
-            // F-030: `is_z_flipped` is false for identity setups, so this
-            // collapses the previous `setup_is_z_flipped && needs_transform`.
-            cfg.setup_z_flipped = ctx.is_z_flipped();
-        }
-
-        let stock_snapshot = self.state.session.stock_config().clone();
-
-        let model = self
-            .state
-            .session
-            .models()
-            .iter()
-            .find(|m| m.id == model_id_raw);
-        let mut polygons = model.and_then(|m| m.polygons.clone());
-        // G-DRILLCENTROID: the model's drill targets ride the request
-        // untransformed, like `selected_holes` — the generator maps both
-        // into the emission frame.
-        let drill_targets = model
-            .map(|m| Arc::clone(&m.drill_targets))
-            .unwrap_or_default();
-        let mut mesh = model.and_then(|m| m.mesh.clone());
-        let enriched_mesh = model.and_then(|m| m.enriched_mesh.clone());
-        let face_selection = face_selection_for_toolpath;
-
-        // ProjectCurve: use a separate model's mesh for the 3D surface when configured.
-        if let OperationConfig::ProjectCurve(ref cfg) = operation
-            && let Some(surface_id) = cfg.surface_model_id
-        {
-            mesh = self
-                .state
-                .session
-                .models()
-                .iter()
-                .find(|m| m.id == surface_id.0)
-                .and_then(|m| m.mesh.clone());
-        }
-
-        // Derive polygons from selected BREP faces when no explicit polygons exist.
-        let mut face_top_z: Option<f64> = None;
-        if polygons.is_none()
-            && let (Some(face_ids), Some(enriched)) = (&face_selection, &enriched_mesh)
-            && !face_ids.is_empty()
-        {
-            if let Some(poly) = enriched.faces_boundary_as_polygon(face_ids) {
-                polygons = Some(Arc::new(vec![poly]));
-                let z = face_ids
-                    .iter()
-                    .filter_map(|fid| enriched.face_group(*fid))
-                    .map(|fg| fg.bbox.max.z)
-                    .fold(f64::NEG_INFINITY, f64::max);
-                if z.is_finite() {
-                    face_top_z = Some(z);
-                }
-            } else {
-                tracing::warn!(
-                    "Selected faces did not produce a boundary polygon (non-horizontal or non-planar)"
-                );
-                self.status_message = Some((
-                    "Face selection ignored: selected faces are not horizontal planes".to_owned(),
-                    std::time::Instant::now(),
-                ));
-            }
-        }
-
-        if let Some(transform_setup) = transform_setup.as_ref() {
-            // One descriptor for every geometry kind. Both polygon
-            // transforms are core's — the viz crate used to carry its own
-            // copy which re-wound OPEN paths too, reversing a river's
-            // machining direction on any mirroring setup (G-POLYTRANSFORM-DUP).
-            let info = transform_setup.transform_info(&stock_snapshot);
-            if let Some(raw_mesh) = mesh.as_ref() {
-                mesh = Some(Arc::new(crate::state::job::transform_mesh(
-                    raw_mesh,
-                    transform_setup,
-                    &stock_snapshot,
-                )));
-            }
-            if let Some(raw_polygons) = polygons.as_ref() {
-                // The model's DRAWING: consumed in the work plane of the
-                // setup that uses it (2026-08-22 work-plane rule). The
-                // footprints below take the other door — they are
-                // world-anchored hardware, not part geometry, and the two
-                // differ only on lateral setups.
-                polygons = Some(Arc::new(info.apply_to_drawing_polygons(raw_polygons)));
-            }
-            keep_out_footprints = info.apply_to_polygons(&keep_out_footprints);
-        }
-
-        let is_3d = operation.is_3d();
-        if is_3d && mesh.is_none() {
-            self.fail_toolpath_submit(tp_id, "No 3D mesh (import STL or STEP)".to_owned());
-            return;
-        }
-        if !is_3d && !operation.is_stock_based() && polygons.is_none() {
-            self.fail_toolpath_submit(
-                tp_id,
-                "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
-            );
-            return;
-        }
-
-        let prev_tool_radius = if let OperationConfig::Rest(config) = &operation {
-            config.prev_tool_id.and_then(|prev_tool_id| {
-                self.state
-                    .session
-                    .tools()
-                    .iter()
-                    .find(|t| t.id == prev_tool_id)
-                    .map(|t| t.diameter / 2.0)
-            })
-        } else {
-            None
-        };
-
-        // R1 (pencil): resolve the real reference tool config from the Pencil
-        // op's `reference_tool_id`, mirroring prev_tool_radius above. `None`
-        // (unset or not found) falls back to the nominal reference diameter.
+        // A/M11: a rest operation with no simulated snapshot is a SEQUENCING
+        // state, not a failure — `generate_all`'s fixpoint retries it, and a
+        // failure would stay failed. `start` refuses this case too, but with
+        // a plain `OperationFailed`, which the ladder would read as a
+        // failure. So this one precondition stays here, ahead of `start`,
+        // and it is the only rest/boundary check that does.
         //
-        // P2.5: non-Pencil ops with `rest_analysis` enabled resolve their
-        // reference tool the same way, from `RestAnalysisConfig::reference_tool_id`
-        // — same slot core's `resolve_generation_inputs` reuses, so both
-        // paths agree on which real tool becomes the rest reference.
-        let reference_tool_cfg = if let OperationConfig::Pencil(config) = &operation {
-            config.reference_tool_id.and_then(|ref_id| {
-                self.state
-                    .session
-                    .tools()
-                    .iter()
-                    .find(|t| t.id == ref_id)
-                    .cloned()
-            })
-        } else if rest_analysis.enabled {
-            rest_analysis.reference_tool_id.and_then(|ref_id| {
-                self.state
-                    .session
-                    .tools()
-                    .iter()
-                    .find(|t| t.id == ref_id)
-                    .cloned()
-            })
-        } else {
-            None
-        };
-
-        // Refresh pin drill holes from current stock state before submitting.
-        if let OperationConfig::AlignmentPinDrill(ref mut cfg) = operation {
-            cfg.holes = self
-                .state
-                .session
-                .stock_config()
-                .alignment_pins
-                .iter()
-                .map(|p| [p.x, p.y])
-                .collect();
+        // It now asks whether the snapshot EXISTS. It used to clone the
+        // whole dexel grid onto the request; the handle carries the session's
+        // own `Arc`.
+        if stock_source == StockSource::FromRemainingStock
+            && self.state.simulation.prior_stock_for(tp_id).is_none()
+        {
+            let block = self.prior_stock_blocker(tp_id, &toolpath_name);
+            let notice = block.message.clone();
+            self.block_toolpath_submit(tp_id, block);
+            self.push_notification(notice, super::super::Severity::Warning);
+            return;
         }
 
         // Update GUI runtime status
@@ -484,321 +295,38 @@ impl<B: ComputeBackend> AppController<B> {
         rt.semantic_trace = None;
         rt.debug_trace_path = None;
 
-        // F-030: stock bbox + safe_z come from the shared
-        // `SetupEvalContext`. `heights_stock_bbox` is world frame for
-        // identity setups (F-028 invariant) and local zero-rooted for
-        // non-identity setups; `safe_z` is floored at the local stock
-        // top per F-024.
-        let stock_bbox = ctx.heights_stock_bbox;
-        let safe_z = ctx.safe_z;
-
-        let model_bb = self
-            .state
-            .session
-            .models()
-            .iter()
-            .find(|m| m.id == model_id_raw)
-            .and_then(|m| m.mesh.as_ref().map(|mesh| mesh.bbox));
-        let (model_top_z, model_bottom_z) = match (model_bb, transform_setup.as_ref()) {
-            (Some(bb), Some(setup)) => {
-                let mut min_z = f64::INFINITY;
-                let mut max_z = f64::NEG_INFINITY;
-                for &x in &[bb.min.x, bb.max.x] {
-                    for &y in &[bb.min.y, bb.max.y] {
-                        for &z in &[bb.min.z, bb.max.z] {
-                            let local = setup.transform_point(
-                                rs_cam_core::geo::P3::new(x, y, z),
-                                &stock_snapshot,
-                            );
-                            if local.z < min_z {
-                                min_z = local.z;
-                            }
-                            if local.z > max_z {
-                                max_z = local.z;
-                            }
-                        }
-                    }
-                }
-                (Some(max_z), Some(min_z))
-            }
-            (Some(bb), None) => (Some(bb.max.z), Some(bb.min.z)),
-            _ => (None, None),
-        };
-        let height_ctx = crate::state::toolpath::HeightContext {
-            safe_z,
-            op_depth: operation.default_depth_for_heights(),
-            stock_top_z: stock_bbox.max.z,
-            stock_bottom_z: stock_bbox.min.z,
-            model_top_z,
-            model_bottom_z,
-        };
-        let mut heights = heights_config.resolve(&height_ctx);
-        if let Some(fz) = face_top_z
-            && heights_config.top_z.is_auto()
-        {
-            heights.top_z = fz;
-            if heights_config.bottom_z.is_auto() {
-                heights.bottom_z = fz - operation.default_depth_for_heights().abs();
-            }
-        }
-
-        // Rest machining: when this toolpath cuts the stock left by previous
-        // ops, seed generation with the simulated stock as it stood *before*
-        // this op. Requires a prior simulation to have produced a snapshot
-        // for this toolpath's id; if absent we FAIL HARD (do not fall back
-        // to fresh stock — a fine rest tool would clear the whole part
-        // instead of the leftover: unbounded compute and a wrong result).
-        //
-        // F.4: the snapshot is looked up directly by toolpath id via
-        // `SimulationState::prior_stock_for`, which is populated from the
-        // same `prior_stocks` map core's `generate_toolpath` gate checks
-        // (`sim.prior_stocks.get(&tc.id)` in `session/compute.rs`). This
-        // replaces a `boundaries()`-position / `checkpoints()`-lookup that
-        // could only ever find a snapshot for a toolpath that already had
-        // its OWN boundary — i.e. one that had already been generated —
-        // so an ungenerated `FromRemainingStock` toolpath could never
-        // regenerate after a fresh project load, even once its predecessor
-        // had been simulated. `prior_stocks` now also carries a phantom
-        // snapshot for the first pending toolpath in each group (see
-        // `rs_cam_core::compute::simulate::SimGroupEntry::
-        // phantom_prior_stock`), which is exactly the case this gate needs
-        // to unblock.
-        let prior_stock: Option<TriDexelStock> = if stock_source == StockSource::FromRemainingStock
-        {
-            let found = self
-                .state
-                .simulation
-                .prior_stock_for(tp_id)
-                .map(|stock| stock.as_ref().clone());
-            let Some(found) = found else {
-                // A/M11: this is a sequencing state, not a failure. It names
-                // the upstream op it is waiting for, says whether one
-                // simulation will do, and is retried (not re-failed) by
-                // `generate_all`'s fixpoint loop.
-                let block = self.prior_stock_blocker(tp_id, &toolpath_name);
-                let notice = block.message.clone();
-                self.block_toolpath_submit(tp_id, block);
-                self.push_notification(notice, super::super::Severity::Warning);
-                return;
-            };
-            Some(found)
-        } else {
-            None
-        };
-        let cutting_levels = operation.cutting_levels(heights.top_z);
-        let material = stock_snapshot.material;
-
-        // P2.2/P2.3 (rest-region boundary): resolve `DerivedRestRegions` now,
-        // while we still have full session + gui access — mirrors
-        // `prev_tool_radius` / `reference_tool_cfg` above. The worker's
-        // `ComputeRequest` is scoped to this one toolpath, so any
-        // cross-toolpath lookup has to happen here, not in the worker.
-        //
-        // Fail-hard precondition, same shape and wording as core's
-        // `ProjectSession::resolve_derived_rest_region_polys`
-        // (session/compute.rs): a toolpath whose enabled boundary
-        // references a missing / self-referential / ungenerated /
-        // regionless source toolpath refuses to generate rather than
-        // silently falling back to the stock rectangle. The previous
-        // silent fallback let a full-part toolpath through with no error
-        // before the source ever ran, and again after the source ran
-        // whenever its rest regions (genuine terrain rest analysis
-        // commonly yields many disjoint islands) didn't union down to
-        // exactly one polygon.
-        let derived_rest_regions: Option<Vec<rs_cam_core::polygon::Polygon2>> = if boundary.enabled
-            && let crate::state::toolpath::BoundarySource::DerivedRestRegions { source_toolpath_id } =
-                &boundary.source
-        {
-            let source_id = *source_toolpath_id;
-            if source_id == tp_id {
-                self.fail_toolpath_submit(
-                    tp_id,
-                    "Boundary references this toolpath's own rest regions — a toolpath \
-                     cannot use itself as the source for a derived-rest-regions \
-                     boundary. Pick a different source toolpath."
-                        .to_owned(),
-                );
+        // §22 ruling 3: a FRESH flag per submit. The lane's own flag is set
+        // by `submit_toolpath` when a resubmit supersedes the active job and
+        // is cleared only by the worker thread, so a flag borrowed from the
+        // lane can already read `true` here — and `start` polls its flag.
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handle = match self.state.session.start(
+            rs_cam_core::session::Job::GenerateToolpath(
+                rs_cam_core::session::GenerateToolpathArgs { index: tp_idx },
+            ),
+            &cancel,
+        ) {
+            Ok(rs_cam_core::session::JobHandle::GenerateToolpath(handle)) => handle,
+            Err(error) => {
+                // Every rest and boundary precondition refuses HERE now,
+                // with core's own wording. The viz copies of those checks
+                // are deleted (§22 ruling 6).
+                let message = error.to_string();
                 self.push_notification(
-                    format!(
-                        "'{toolpath_name}': boundary references its own rest regions — pick \
-                         a different source toolpath."
-                    ),
+                    format!("'{toolpath_name}': {message}"),
                     super::super::Severity::Error,
                 );
+                self.fail_toolpath_submit(tp_id, message);
                 return;
             }
-            let Some((_, source_tc)) = self.state.session.find_toolpath_config_by_id(source_id)
-            else {
-                self.fail_toolpath_submit(
-                    tp_id,
-                    format!(
-                        "Boundary references toolpath id {} for its rest regions, but no \
-                         toolpath with that id exists anymore. Pick a different source \
-                         toolpath for the boundary, or disable the boundary.",
-                        source_id.0
-                    ),
-                );
-                self.push_notification(
-                    format!(
-                        "'{toolpath_name}': rest-regions boundary source (id {}) no longer \
-                         exists — pick a different source toolpath.",
-                        source_id.0
-                    ),
-                    super::super::Severity::Error,
-                );
-                return;
-            };
-            let source_name = source_tc.name.clone();
-            let Some(source_result) = self
-                .state
-                .gui
-                .toolpath_rt
-                .get(&source_id)
-                .and_then(|rt| rt.result.as_ref())
-            else {
-                self.fail_toolpath_submit(
-                    tp_id,
-                    format!(
-                        "'{source_name}' has no generated result yet — generate \
-                         '{source_name}' first; its rest analysis produces the regions this \
-                         boundary needs.",
-                    ),
-                );
-                self.push_notification(
-                    format!(
-                        "'{toolpath_name}': rest-regions source '{source_name}' has no \
-                         generated result yet — generate it first."
-                    ),
-                    super::super::Severity::Error,
-                );
-                return;
-            };
-            match source_result.annotated.rest_regions.as_ref() {
-                Some(regions) if !regions.is_empty() => Some((**regions).clone()),
-                _ => {
-                    self.fail_toolpath_submit(
-                        tp_id,
-                        format!(
-                            "'{source_name}' produced no rest regions — it needs its Rest \
-                             Analysis switched on (any operation with a mesh attaches \
-                             regions; a pencil rest-depth detector and the Unified Finish \
-                             claims pipeline attach their own), and the analysis must have \
-                             found material above the threshold. Check the rest-analysis \
-                             settings on '{source_name}' and regenerate it.",
-                        ),
-                    );
-                    self.push_notification(
-                        format!(
-                            "'{toolpath_name}': rest-regions source '{source_name}' produced \
-                             no rest regions — check its rest-analysis settings and \
-                             regenerate it."
-                        ),
-                        super::super::Severity::Error,
-                    );
-                    return;
-                }
-            }
-        } else {
-            None
         };
-
-        // G-TIERWORKER (operator-observed 2026-08-27): the worker resolves
-        // boundary regions from this request alone, so a `PlannedTierRegions`
-        // boundary must be resolved HERE, like `DerivedRestRegions` above —
-        // this arm was missing, and a planner-emitted fine tier generated
-        // with NO boundary at all on the GUI/MCP path (a full-board R1.0
-        // re-finishing the flats, watched live by the operator) while the
-        // core session path confined correctly. Resolution goes through the
-        // session's single tier pipeline and is memoised (`tier_map_cache`):
-        // after a dialog preview — or after the first sibling tier of the
-        // same plan — this is a cache hit; only a cold first call pays the
-        // grid walk on the frame loop. `Some(vec![])` is a legitimately
-        // EMPTY tier and must stay empty (the op generates nothing), never
-        // fall back to an unconfined board.
-        let planned_tier_regions: Option<Vec<rs_cam_core::polygon::Polygon2>> = if boundary.enabled
-            && matches!(
-                boundary.source,
-                crate::state::toolpath::BoundarySource::PlannedTierRegions { .. }
-            ) {
-            let cancel = std::sync::atomic::AtomicBool::new(false);
-            match self
-                .state
-                .session
-                .planned_tier_boundary_polys(tp_id, &cancel)
-            {
-                Ok(polys) => polys,
-                Err(e) => {
-                    self.fail_toolpath_submit(
-                        tp_id,
-                        format!("Planned tier boundary could not be resolved: {e}"),
-                    );
-                    self.push_notification(
-                        format!(
-                            "'{toolpath_name}': planned tier boundary could not be resolved \
-                             — {e}"
-                        ),
-                        super::super::Severity::Error,
-                    );
-                    return;
-                }
-            }
-        } else {
-            None
-        };
-        // Mutually exclusive by construction — a boundary has ONE source —
-        // so the two resolutions share the request slot the worker reads.
-        let derived_rest_regions = derived_rest_regions.or(planned_tier_regions);
-
-        // P1 quantitative linker: mirror core's `session::compute::generate_toolpath`,
-        // which builds `LinkKinematics` from `self.machine` (see the comment there
-        // for why each accessor is used).
-        let machine = self.state.session.machine();
-        let link_kinematics = Some(rs_cam_core::machine_kinematics::LinkKinematics {
-            kinematics: machine.effective_kinematics(),
-            max_feed_mm_min: machine.cutting_feed_ceiling_mm_min().max(1.0),
-            rapid_feed_mm_min: machine.max_feed_mm_min.max(1.0),
-        });
-
-        // G-LATERESULT (F2.4): stamp the revision the lane is about to
-        // compute from, BEFORE handing it over. The comparison on arrival
-        // (`drain_compute_results`) is what tells a result that answers the
-        // current configuration from one that answers a superseded parameter
-        // set. Stamped here rather than carried on the request because the
-        // request crosses a thread boundary and this is a GUI-side bookkeeping
-        // fact, not an input to generation.
-        self.state
-            .gui
-            .toolpath_rt_or_default(tp_id)
-            .submitted_revision = Some(self.state.session.toolpath_revision(tp_idx));
 
         let submit_outcome = self.compute.submit_toolpath(ComputeRequest {
-            setup_transform: ctx.local_to_global,
-            toolpath_id: tp_id,
-            toolpath_index: tp_idx,
-            toolpath_name,
-            debug_options,
-            polygons,
-            drill_targets,
-            mesh,
-            enriched_mesh,
-            face_selection,
-            operation,
-            dressups,
-            stock_source,
-            tool,
-            safe_z,
-            prev_tool_radius,
-            reference_tool_cfg,
-            stock_bbox: Some(stock_bbox),
-            boundary,
-            keep_out_footprints,
-            heights,
-            cutting_levels,
-            prior_stock,
-            material,
-            derived_rest_regions,
-            rest_analysis,
-            link_kinematics,
+            handle,
+            viz: crate::compute::VizExtras {
+                toolpath_id: tp_id,
+                cancel,
+            },
         });
         // G-REGEN-RACE: if this submit replaced the lane's active job for
         // the same toolpath, the `Cancelled` that job is about to return is
@@ -807,6 +335,10 @@ impl<B: ComputeBackend> AppController<B> {
         // toolpath's outcome. Recorded here rather than inferred later
         // because only the lane, under its own lock, knows which submit
         // won the race.
+        //
+        // The handle's revision cannot replace this set: `start` moves no
+        // revision, so two Generate clicks with no edit between them produce
+        // two handles carrying the SAME revision.
         if matches!(
             submit_outcome,
             crate::compute::ToolpathSubmitOutcome::SupersededActive
@@ -859,6 +391,8 @@ impl<B: ComputeBackend> AppController<B> {
             match message {
                 ComputeMessage::Toolpath(result) => {
                     let tp_id = result.toolpath_id;
+                    // WP11b: read before the match below moves `result`.
+                    let reply_revision = result.revision;
                     // G-REGEN-RACE — the supersede is not an outcome.
                     //
                     // The toolpath lane's submit rule is
@@ -961,12 +495,13 @@ impl<B: ComputeBackend> AppController<B> {
                                     debug_trace: None,
                                     semantic_trace: None,
                                 };
-                                let revision = match rt.submitted_revision {
+                                // WP11b: the revision rides the REPLY,
+                                // stamped from the handle `start`
+                                // produced. `None` means a hand-built
+                                // reply in a test, and reproduces the
+                                // pre-WP3 accept-when-unstamped arm.
+                                let revision = match reply_revision {
                                     Some(submitted) => submitted,
-                                    // No stamp: this reproduces the
-                                    // pre-WP3 accept-when-unstamped arm;
-                                    // WP10 carries the revision on the
-                                    // request.
                                     None => self.state.session.toolpath_revision(tp_index),
                                 };
                                 let adopted = self.state.session.apply(

@@ -32,19 +32,6 @@ pub struct ToolpathRuntime {
     pub status: ComputeStatus,
     pub result: Option<ToolpathResult>,
     pub stale_since: Option<std::time::Instant>,
-    /// `ProjectSession::toolpath_revision` as it stood when this toolpath was
-    /// last handed to the compute lane (F2.4, G-LATERESULT).
-    ///
-    /// The lane computes from a snapshot taken at submit. If an input moves
-    /// while the job runs, the result that lands answers a question the
-    /// project no longer asks — and on a 3D manual-regen operation nothing
-    /// resubmits, so it used to be stored as the current answer and read
-    /// `Current` on every surface. Comparing this against the revision on
-    /// arrival is what turns that into `EditedSince`.
-    ///
-    /// `None` means "never submitted through this controller", which cannot
-    /// be a mismatch and is treated as agreement.
-    pub submitted_revision: Option<u64>,
     pub feeds_result: Option<FeedsResult>,
     pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
@@ -61,7 +48,6 @@ impl ToolpathRuntime {
             status: ComputeStatus::Pending,
             result: None,
             stale_since: None,
-            submitted_revision: None,
             feeds_result: None,
             debug_trace: None,
             semantic_trace: None,
@@ -74,7 +60,6 @@ impl ToolpathRuntime {
         self.status = ComputeStatus::Pending;
         self.result = None;
         self.stale_since = None;
-        self.submitted_revision = None;
         self.feeds_result = None;
         self.debug_trace = None;
         self.semantic_trace = None;

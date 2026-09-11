@@ -2492,6 +2492,13 @@ impl RsCamApp {
             // Rows the wire cannot reach. `CoreRequest` names no variant
             // for any of them, so this arm answers a request that cannot
             // be built rather than a request that can.
+            //
+            // Two of them ARE dispatched, just not from the wire.
+            // `SetToolpathDebugOptions` is applied by the
+            // `generate_toolpath` MCP arm immediately before it starts the
+            // job (WP11b), and `GenerateToolpath` is a `Job` that arm runs
+            // through the controller. Neither is a wire MUTATION, which is
+            // what this arm answers about.
             CommandId::AdoptResult
             | CommandId::SetSetupName
             | CommandId::SetSetupDatum

@@ -14,10 +14,10 @@
 //!   `apply_dressups` (`:1698`) → the boundary clip → the result cache.
 //! * The **GUI worker door**: `AppController::submit_toolpath_compute`
 //!   (`crates/rs_cam_viz/src/controller/events/compute.rs:181`) builds a
-//!   `ComputeRequest` and submits it; the worker's `run_compute`
-//!   (`crates/rs_cam_viz/src/compute/worker/execute/mod.rs:559`) →
-//!   `generate_via_core` (`:43`) → the SAME core executor (`:237`) → the viz
-//!   `apply_dressups` (`crates/rs_cam_viz/src/compute/worker/helpers.rs:24`).
+//!   `ComputeRequest` and submits it; the worker's `run_compute` →
+//!   `rs_cam_core::session::execute_job`, which is the SAME pipeline the
+//!   session door runs. Before WP11b the worker had its own
+//!   `generate_via_core` and its own `apply_dressups`.
 //!
 //! These tests drive both doors from ONE `ProjectSession` and compare the
 //! emitted motion. The module is in-crate because `run_compute` is
@@ -237,7 +237,7 @@ fn generate_through_both_doors(feed_optimization: bool) -> (Toolpath, Toolpath) 
     let cancel = AtomicBool::new(false);
 
     // Arm A, second half: the worker runs that request.
-    let gui = super::execute::run_compute(&request, &cancel)
+    let gui = super::execute::run_compute(&request)
         .result
         .expect("the GUI worker door generates a toolpath")
         .annotated
@@ -274,6 +274,9 @@ fn submit_state(controller: &AppController<RecordingBackend>, tp_id: ToolpathId)
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Feeds {
     Compare,
+    /// The item-3 flip left no caller: both doors now compare the feed rates.
+    /// The variant stays because the comparator below documents it.
+    #[allow(dead_code)]
     Ignore,
 }
 

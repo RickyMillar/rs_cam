@@ -296,6 +296,59 @@ pub fn cached_auto_index(mesh: &Arc<TriangleMesh>) -> Arc<SpatialIndex> {
     built
 }
 
+/// A shared spatial index that is not built until something asks for it.
+///
+/// WP11b moved the GUI's generation submit onto the frame loop
+/// (`ProjectSession::start`), and the index build over the reference
+/// 661 k-triangle terrain is the most expensive step generation makes. A
+/// bare [`cached_auto_index`] call inside `start` would therefore pay that
+/// build on the frame loop, on the first Generate click for a fresh mesh.
+///
+/// [`ResolvedGenInputs`](crate::session::ResolvedGenInputs) carries one of
+/// these instead. `start` constructs it and builds nothing; the executor,
+/// which runs on the worker thread, calls [`force`](Self::force).
+///
+/// The BUILD is still memoised by [`cached_auto_index`], so the cell here
+/// only stops one handle forcing twice. A second handle over the same mesh
+/// hits the per-mesh memo and shares the same `Arc<SpatialIndex>`.
+///
+/// One production caller forces on the frame loop by necessity: a
+/// `PlannedTierRegions` boundary walks the tier map inside `start`, and the
+/// tier map reads the index.
+pub struct LazyIndex {
+    mesh: Arc<TriangleMesh>,
+    cell: OnceLock<Arc<SpatialIndex>>,
+}
+
+impl LazyIndex {
+    /// The index over this mesh, built on the first call.
+    ///
+    /// Two threads racing the first call both run
+    /// [`OnceLock::get_or_init`], which serialises them; the loser drops
+    /// its answer. Both answers come from the per-mesh memo, so they are
+    /// the same object in practice.
+    #[must_use]
+    pub fn force(&self) -> &Arc<SpatialIndex> {
+        self.cell.get_or_init(|| cached_auto_index(&self.mesh))
+    }
+
+    /// Whether the index is built. A test hook: `false` means NOT BUILT
+    /// YET, never "there is no index".
+    #[must_use]
+    pub fn is_built(&self) -> bool {
+        self.cell.get().is_some()
+    }
+}
+
+/// A [`LazyIndex`] over `mesh`. Builds nothing.
+#[must_use]
+pub fn lazy_auto_index(mesh: &Arc<TriangleMesh>) -> Arc<LazyIndex> {
+    Arc::new(LazyIndex {
+        mesh: Arc::clone(mesh),
+        cell: OnceLock::new(),
+    })
+}
+
 /// [`crate::boundary::model_silhouette`] at the default resolution, computed
 /// at most once per mesh.
 #[must_use]

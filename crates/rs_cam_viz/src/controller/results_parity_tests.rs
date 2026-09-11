@@ -174,6 +174,7 @@ fn drain_one_result(controller: &mut AppController<InertBackend>) {
         .drained
         .push(ComputeMessage::Toolpath(Box::new(ComputeResult {
             toolpath_id: ToolpathId(0),
+            revision: None,
             result: Ok(worker_result_with_findings()),
             debug_trace: None,
             semantic_trace: None,

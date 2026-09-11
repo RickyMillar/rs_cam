@@ -55,7 +55,7 @@ struct RecordingBackend {
 impl ComputeBackend for RecordingBackend {
     fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {
         if let Ok(mut log) = self.submitted.lock() {
-            log.push(request.toolpath_id);
+            log.push(request.viz.toolpath_id);
         }
         ToolpathSubmitOutcome::Queued
     }

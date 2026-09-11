@@ -59,7 +59,7 @@ impl ScriptedBackend {
 
 impl ComputeBackend for ScriptedBackend {
     fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {
-        let id = request.toolpath_id;
+        let id = request.viz.toolpath_id;
         self.submitted.push(id);
         if self.active_toolpath_id == Some(id) {
             ToolpathSubmitOutcome::SupersededActive
@@ -917,6 +917,7 @@ fn toolpath_results_persist_debug_trace_metadata() {
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: ToolpathId(0),
+                revision: None,
                 result: Ok(ToolpathResult {
                     annotated: Arc::clone(&annotated),
                     stats: Default::default(),
@@ -994,6 +995,7 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: ToolpathId(0),
+                revision: None,
                 result: Err(crate::compute::ComputeError::Cancelled),
                 debug_trace: Some(Arc::clone(&trace)),
                 semantic_trace: Some(Arc::clone(&semantic_trace)),
@@ -1098,6 +1100,7 @@ fn cancelled_drain_resolves_pending_mcp_generate_toolpath_waiter() {
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: tp_id,
+                revision: None,
                 result: Err(crate::compute::ComputeError::Cancelled),
                 debug_trace: None,
                 semantic_trace: None,
@@ -1169,6 +1172,7 @@ fn drain_compute_results_repopulates_session_results() {
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: ToolpathId(0),
+                revision: None,
                 result: Ok(ToolpathResult {
                     annotated: Arc::clone(&annotated),
                     stats: Default::default(),
@@ -1198,13 +1202,17 @@ fn drain_compute_results_repopulates_session_results() {
 /// Push one successful completion for `ToolpathId(0)` onto the fake
 /// lane's queue, the way `drain_compute_results_repopulates_session_results`
 /// does.
-fn push_toolpath_completion(controller: &mut AppController<ScriptedBackend>) {
+fn push_toolpath_completion(
+    controller: &mut AppController<ScriptedBackend>,
+    revision: Option<u64>,
+) {
     controller
         .compute
         .drained
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: ToolpathId(0),
+                revision,
                 result: Ok(ToolpathResult {
                     annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
                         Toolpath::new(),
@@ -1235,11 +1243,6 @@ fn push_toolpath_completion(controller: &mut AppController<ScriptedBackend>) {
 fn drain_refuses_a_completion_whose_revision_moved() {
     let mut controller = sample_controller();
     let submitted = controller.state.session.toolpath_revision(0);
-    controller
-        .state
-        .gui
-        .toolpath_rt_or_default(ToolpathId(0))
-        .submitted_revision = Some(submitted);
 
     // The edit an operator makes while the lane runs.
     let _ = controller.state.session.invalidate_toolpath_inputs(0);
@@ -1249,7 +1252,7 @@ fn drain_refuses_a_completion_whose_revision_moved() {
         "the fixture must move the revision, or the test proves nothing"
     );
 
-    push_toolpath_completion(&mut controller);
+    push_toolpath_completion(&mut controller, Some(submitted));
     controller.drain_compute_results();
 
     assert!(
@@ -1275,13 +1278,8 @@ fn drain_adopts_a_completion_whose_revision_is_current() {
     // only ever matches the initial value.
     let _ = controller.state.session.invalidate_toolpath_inputs(0);
     let submitted = controller.state.session.toolpath_revision(0);
-    controller
-        .state
-        .gui
-        .toolpath_rt_or_default(ToolpathId(0))
-        .submitted_revision = Some(submitted);
 
-    push_toolpath_completion(&mut controller);
+    push_toolpath_completion(&mut controller, Some(submitted));
     controller.drain_compute_results();
 
     assert!(
@@ -1309,6 +1307,7 @@ fn drain_compute_results_clears_pending_apply_resim_on_success() {
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: ToolpathId(0),
+                revision: None,
                 result: Ok(ToolpathResult {
                     annotated,
                     stats: Default::default(),
@@ -1347,6 +1346,7 @@ fn drain_compute_results_keeps_pending_apply_resim_for_other_toolpath() {
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: ToolpathId(0),
+                revision: None,
                 result: Ok(ToolpathResult {
                     annotated,
                     stats: Default::default(),
@@ -1379,6 +1379,7 @@ fn drain_compute_results_skips_session_write_on_error() {
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: ToolpathId(0),
+                revision: None,
                 result: Err(crate::compute::ComputeError::Message("boom".into())),
                 debug_trace: None,
                 semantic_trace: None,
@@ -1478,6 +1479,7 @@ fn drain_compute_results_marks_derived_rest_dependents_stale() {
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: source_id,
+                revision: None,
                 result: Ok(ToolpathResult {
                     annotated: Arc::new(annotated),
                     stats: Default::default(),
@@ -2377,64 +2379,73 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         .as_ref()
         .expect("submit_toolpath_compute should have submitted a ComputeRequest");
 
-    let captured_stock_bbox = request
-        .stock_bbox
-        .as_ref()
-        .expect("ComputeRequest::stock_bbox should be Some");
+    // WP11b: the request carries the handle, whose fields are private. The
+    // handle publishes the same facts as a snapshot, which is what the
+    // debug artifact has always recorded — so the claim is unchanged and
+    // the reader is the one door.
+    let snapshot = request.handle.request_snapshot();
+    let number = |path: [&str; 2]| -> f64 {
+        snapshot[path[0]][path[1]]
+            .as_f64()
+            .unwrap_or_else(|| panic!("the snapshot must carry {path:?}: {snapshot}"))
+    };
+    let bbox_number = |corner: &str, axis: &str| -> f64 {
+        snapshot["stock_bbox"][corner][axis]
+            .as_f64()
+            .unwrap_or_else(|| panic!("the snapshot must carry stock_bbox: {snapshot}"))
+    };
 
     // The world stock top for AS001 sits at Z=0 (origin_z=-12 + stock.z=12).
+    let top_z = number(["heights", "top_z"]);
     assert!(
-        (request.heights.top_z - 0.0).abs() < 1e-9,
+        top_z.abs() < 1e-9,
         "F-028 viz-path: heights.top_z must resolve to the world stock top \
-         (Z=0 for AS001 identity setup); got {:.6}. Pre-fix this read 12.0 \
-         (the local zero-rooted stock_top), and the toolpath generator \
+         (Z=0 for AS001 identity setup); got {top_z:.6}. Pre-fix this read \
+         12.0 (the local zero-rooted stock_top), and the toolpath generator \
          emitted cuts at Z=10, 8, 6 in setup-local frame. The downstream \
          viz simulation drops `local_to_global = None` for identity setups \
          (F-024 viz-worker follow-up `0c907a6`) so the dexel grid is rebuilt \
          in world frame — and the generator's local-frame cuts at Z=10 sat \
          10 mm above the world stock top at Z=0. Round-07 MCP smoke: \
-         peak_axial=0, total_removed=0, air_cut=96 %.",
-        request.heights.top_z
+         peak_axial=0, total_removed=0, air_cut=96 %."
     );
 
     // Bottom of first pass: top_z - depth_per_pass*N or full depth.
     // With heights.top_z = 0 and depth = 6 (full pocket depth), bottom = -6.
+    let bottom_z = number(["heights", "bottom_z"]);
     assert!(
-        (request.heights.bottom_z - -6.0).abs() < 1e-9,
+        (bottom_z - -6.0).abs() < 1e-9,
         "F-028 viz-path: heights.bottom_z must resolve to top_z - depth = -6 \
-         for the AS001 pocket; got {:.6}. Pre-fix this read 6.0 \
-         (12 - 6 in local frame).",
-        request.heights.bottom_z
+         for the AS001 pocket; got {bottom_z:.6}. Pre-fix this read 6.0 \
+         (12 - 6 in local frame)."
     );
 
+    let max_z = bbox_number("max", "z");
     assert!(
-        (captured_stock_bbox.max.z - 0.0).abs() < 1e-9,
-        "F-028 viz-path: ComputeRequest.stock_bbox.max.z must equal the \
-         world stock top (Z=0 for AS001 identity setup); got {:.6}. Pre-fix \
+        max_z.abs() < 1e-9,
+        "F-028 viz-path: the emission stock bbox max.z must equal the world \
+         stock top (Z=0 for AS001 identity setup); got {max_z:.6}. Pre-fix \
          this read 12.0 — the controller built a zero-rooted local bbox \
-         even for identity setups. Downstream `generate_via_core` then \
-         constructed boundary rectangles in the local zero-rooted XY frame, \
-         compounding the frame mismatch.",
-        captured_stock_bbox.max.z
+         even for identity setups, and the worker then built boundary \
+         rectangles in that frame."
     );
 
+    let min_z = bbox_number("min", "z");
     assert!(
-        (captured_stock_bbox.min.z - -12.0).abs() < 1e-9,
-        "F-028 viz-path: ComputeRequest.stock_bbox.min.z must equal \
-         stock.origin_z (-12 for AS001 identity setup); got {:.6}. Pre-fix \
-         this read 0.0.",
-        captured_stock_bbox.min.z
+        (min_z - -12.0).abs() < 1e-9,
+        "F-028 viz-path: the emission stock bbox min.z must equal \
+         stock.origin_z (-12 for AS001 identity setup); got {min_z:.6}. \
+         Pre-fix this read 0.0."
     );
 
     // XY frame: for identity setups the bbox must respect stock.origin_x/y too.
+    let min_x = bbox_number("min", "x");
+    let min_y = bbox_number("min", "y");
     assert!(
-        (captured_stock_bbox.min.x - -10.0).abs() < 1e-9
-            && (captured_stock_bbox.min.y - -10.0).abs() < 1e-9,
-        "F-028 viz-path: ComputeRequest.stock_bbox.min.{{x,y}} must equal \
+        (min_x - -10.0).abs() < 1e-9 && (min_y - -10.0).abs() < 1e-9,
+        "F-028 viz-path: the emission stock bbox min.{{x,y}} must equal \
          stock.origin_{{x,y}} (-10, -10 for AS001 identity setup); got \
-         ({:.6}, {:.6}).",
-        captured_stock_bbox.min.x,
-        captured_stock_bbox.min.y
+         ({min_x:.6}, {min_y:.6})."
     );
 }
 
@@ -2785,7 +2796,11 @@ impl RestChainBackend {
 #[cfg(feature = "mcp")]
 impl ComputeBackend for RestChainBackend {
     fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {
-        let id = request.toolpath_id;
+        let id = request.viz.toolpath_id;
+        // The real lane stamps the revision `start` read (`worker.rs`), so the
+        // drain adopts at that revision. A fake that reports `None` adopts at
+        // the CURRENT revision and accepts a result the operator has edited past.
+        let revision = Some(request.handle.revision);
         let result = if self.poison == Some(id) {
             Err(crate::compute::ComputeError::Message(
                 "synthetic hard failure".to_owned(),
@@ -2806,6 +2821,7 @@ impl ComputeBackend for RestChainBackend {
         self.drained.push(ComputeMessage::Toolpath(Box::new(
             crate::compute::ComputeResult {
                 toolpath_id: id,
+                revision,
                 result,
                 debug_trace: None,
                 semantic_trace: None,
@@ -3137,6 +3153,11 @@ struct LaneModelBackend {
     drained: Vec<ComputeMessage>,
     /// Every toolpath id ever handed to `submit_toolpath`, in order.
     submits: Vec<ToolpathId>,
+    /// The revision each submit read, kept the way the real lane keeps it on
+    /// the handle. The completion stamps it, so the drain adopts at the
+    /// revision the submit answered and refuses a result the operator has
+    /// edited past.
+    revisions: std::collections::HashMap<ToolpathId, u64>,
 }
 
 #[cfg(feature = "mcp")]
@@ -3148,6 +3169,7 @@ impl LaneModelBackend {
             queue: std::collections::VecDeque::new(),
             drained: Vec::new(),
             submits: Vec::new(),
+            revisions: std::collections::HashMap::new(),
         }
     }
 
@@ -3180,9 +3202,11 @@ impl LaneModelBackend {
             })
         };
         self.active_cancelled = false;
+        let revision = self.revisions.get(&id).copied();
         self.drained.push(ComputeMessage::Toolpath(Box::new(
             crate::compute::ComputeResult {
                 toolpath_id: id,
+                revision,
                 result,
                 debug_trace: None,
                 semantic_trace: None,
@@ -3196,8 +3220,9 @@ impl LaneModelBackend {
 #[cfg(feature = "mcp")]
 impl ComputeBackend for LaneModelBackend {
     fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {
-        let id = request.toolpath_id;
+        let id = request.viz.toolpath_id;
         self.submits.push(id);
+        self.revisions.insert(id, request.handle.revision);
         self.queue.retain(|queued| *queued != id);
         let outcome = if self.active == Some(id) {
             self.active_cancelled = true;
@@ -3475,11 +3500,9 @@ fn a_param_edit_mid_generate_manual_arm_keeps_the_edit_g_lateresult() {
         Some(tp_id),
         "the manual generate must reach the lane"
     );
-    let submitted_revision = controller.state.gui.toolpath_rt[&tp_id].submitted_revision;
-    assert!(
-        submitted_revision.is_some(),
-        "the submit must stamp the revision it computes from"
-    );
+    // WP11b: the revision rides the HANDLE, not a GUI runtime field. The
+    // lane holding this toolpath is the evidence that a job carrying it is
+    // in flight.
 
     // While it runs, they change a parameter through the panel's own
     // write-back — the same door every inspector edit goes through.

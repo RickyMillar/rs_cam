@@ -190,6 +190,8 @@ fn a_collapsed_user_offset_reaches_the_clip_as_a_reported_pass_through() {
         &boundary,
         &stock_bbox,
         None,
+        // WP11b: the picked-face outline. This fixture picks no face.
+        None,
         &[],
         6.0,
         20.0,

@@ -55,6 +55,8 @@ fn boundary_clip_preserves_spans_when_all_moves_inside() {
         &boundary,
         &stock_bbox,
         None,
+        // WP11b: the picked-face outline. This fixture picks no face.
+        None,
         &[],
         2.0,
         20.0,
@@ -108,6 +110,8 @@ fn boundary_clip_with_no_input_spans_emits_no_spans() {
         annotated,
         &boundary,
         &stock_bbox,
+        None,
+        // WP11b: the picked-face outline. This fixture picks no face.
         None,
         &[],
         2.0,

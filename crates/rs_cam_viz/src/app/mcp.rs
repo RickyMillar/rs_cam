@@ -3432,15 +3432,21 @@ impl super::RsCamApp {
         // MCP diagnostics depend on generation debug + semantic traces; enable
         // capture before queuing compute so get_generation_debug_trace and
         // narrate_toolpath have structured planner data.
-        if let Some(tc) = self
-            .controller
-            .state_mut()
-            .session
-            .toolpath_configs_mut()
-            .get_mut(index)
-        {
-            tc.debug_options.enabled = true;
-        }
+        //
+        // WP11b (§16 ruling 7): through the COMMAND surface, not
+        // `toolpath_configs_mut()`. The write reached past every rule the
+        // surface enforces, and the submit step reads the flag off the
+        // config, so the two have to be the same door. The row moves no
+        // revision and drops no result, which is why it can run immediately
+        // before the generate.
+        let _ = self.controller.state_mut().session.apply(
+            rs_cam_core::session::Command::SetToolpathDebugOptions(
+                rs_cam_core::session::SetToolpathDebugOptionsArgs {
+                    index,
+                    debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions { enabled: true },
+                },
+            ),
+        );
 
         // Push the generate event via the controller
         self.controller

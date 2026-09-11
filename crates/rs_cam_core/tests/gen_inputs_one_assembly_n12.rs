@@ -340,6 +340,9 @@ fn one_core_function_returns_the_resolved_bundle() {
 /// compiler. The loose 21-argument entry stays for the in-module strategy
 /// advisor until WP12; what this arm pins is that the narrow one exists and
 /// that its inputs are the two unconstructible bundles.
+// The explicit argument list IS the claim, so it does not factor into a
+// type alias.
+#[allow(clippy::type_complexity)]
 #[test]
 fn the_narrowed_executor_reads_the_resolved_bundle() {
     let _narrowed: fn(

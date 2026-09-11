@@ -39,8 +39,8 @@ pub use command::{
     ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
 pub use compute::{
-    GenContext, GenerateToolpathHandle, MutationKind, ResolvedGenInputs, StaleSet,
-    compute_stale_set, execute_job,
+    GenContext, GenObserver, GenerateToolpathHandle, MutationKind, ResolvedGenInputs, StaleSet,
+    compute_stale_set, execute_generation, execute_job,
 };
 pub use cycle_time::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
 pub use eval_context::SetupEvalContext;

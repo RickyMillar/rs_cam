@@ -215,7 +215,14 @@ pub struct ResolvedGenInputs {
     tool_def: crate::tool::ToolDefinition,
     /// G8: shared with the per-mesh memo in [`crate::geom_cache`] rather than
     /// owned, so repeated toolpath resolution over one model reuses one grid.
-    spatial_index: Option<Arc<crate::mesh::SpatialIndex>>,
+    ///
+    /// WP11b: a [`LazyIndex`](crate::geom_cache::LazyIndex), not a built
+    /// index. [`ProjectSession::start`] runs on the GUI frame loop and the
+    /// grid build over a 661 k-triangle terrain is the most expensive step
+    /// generation makes, so the build waits for
+    /// [`force`](crate::geom_cache::LazyIndex::force) on the worker thread.
+    /// Read it through [`Self::spatial_index`], never by hand.
+    spatial_index: Option<Arc<crate::geom_cache::LazyIndex>>,
     cutting_levels: Vec<f64>,
     prev_tool_radius: Option<f64>,
     /// R1 (pencil): the resolved real reference tool config when the Pencil op's
@@ -241,6 +248,33 @@ pub struct ResolvedGenInputs {
     /// polygons are transformed on the way in, but `selected_holes` arrive
     /// as raw model coordinates on the operation config.
     setup_transform: Option<crate::compute::transform::SetupTransformInfo>,
+    /// N12 items 1 and 2: the XY outline of the picked BREP faces, in the
+    /// emission frame.
+    ///
+    /// A STEP model carries a mesh and an enriched mesh, never polygons, so
+    /// a picked-face 2D operation gets its geometry from here. The same
+    /// outline answers a [`BoundarySource::FaceSelection`] boundary
+    /// (`resolve_containment_polygon`).
+    ///
+    /// `None` means the toolpath picks no face, or the model exposes no
+    /// enriched mesh, or the picked faces are not horizontal planes — never
+    /// "the outline was empty".
+    ///
+    /// [`BoundarySource::FaceSelection`]: crate::compute::config::BoundarySource::FaceSelection
+    face_boundary: Option<crate::polygon::Polygon2>,
+}
+
+impl ResolvedGenInputs {
+    /// The spatial index over this generation's mesh, built on first read.
+    ///
+    /// The bundle stores a [`LazyIndex`](crate::geom_cache::LazyIndex), so
+    /// this is where the grid build happens. Call it off the frame loop.
+    /// `None` means the operation has no mesh.
+    fn spatial_index(&self) -> Option<&crate::mesh::SpatialIndex> {
+        self.spatial_index
+            .as_ref()
+            .map(|lazy| lazy.force().as_ref())
+    }
 }
 
 /// The session reads the generation TAIL makes, captured at submit time.
@@ -278,6 +312,18 @@ pub struct GenContext {
     dressups: crate::compute::config::DressupConfig,
     /// `ToolpathConfig::rest_analysis`.
     rest_analysis: crate::compute::config::RestAnalysisConfig,
+    /// `ToolpathConfig::debug_options`.
+    ///
+    /// WP11b: the generation door used to reach past the command surface
+    /// and write this flag through `toolpath_configs_mut()` (§16 ruling 7).
+    /// It is a `Command` row now, `SetToolpathDebugOptions`, so the flag
+    /// arrives here the way every other dial does — off the config the
+    /// submit step reads.
+    ///
+    /// It gates the per-dressup ITEM contexts, which are what make a
+    /// recorded trace expensive. The recorders themselves stay
+    /// unconditional, because the CLI reads both traces off every result.
+    debug_options: crate::debug_trace::ToolpathDebugOptions,
     /// The RAW operation's entry-probe stock-to-leave. `None` names a
     /// prism operation, which gets no surface probe (G-RAMPTERRAIN).
     entry_probe_leave: Option<f64>,
@@ -314,6 +360,21 @@ pub struct GenContext {
     post_clip_regions: Option<Arc<Vec<crate::polygon::Polygon2>>>,
 }
 
+impl GenContext {
+    /// The machined stock the GENERATOR is seeded with.
+    ///
+    /// `stock_source` gates it: a `Fresh` operation starts from the board
+    /// whatever snapshot the simulation left. That is a narrower question
+    /// than [`Self::prior_stock`], which the dressup air-cut filter reads
+    /// ungated.
+    fn generator_seed_stock(&self) -> Option<&crate::dexel_stock::TriDexelStock> {
+        match self.stock_source {
+            crate::session::StockSource::FromRemainingStock => self.prior_stock.as_deref(),
+            crate::session::StockSource::Fresh => None,
+        }
+    }
+}
+
 /// What [`ProjectSession::start`] captured for one `generate_toolpath`
 /// job.
 ///
@@ -343,6 +404,185 @@ pub struct GenerateToolpathHandle {
     context: GenContext,
 }
 
+impl GenerateToolpathHandle {
+    /// The toolpath's debug options, as the submit step read them.
+    ///
+    /// A caller that writes a trace artifact of its own reads this to know
+    /// whether the operator asked for one.
+    #[must_use]
+    pub fn debug_options(&self) -> crate::debug_trace::ToolpathDebugOptions {
+        self.context.debug_options
+    }
+
+    /// The operation's registry label.
+    #[must_use]
+    pub fn op_label(&self) -> &'static str {
+        self.context.op_label
+    }
+
+    /// The toolpath's name, as the submit step read it.
+    #[must_use]
+    pub fn toolpath_name(&self) -> &str {
+        &self.context.toolpath_name
+    }
+
+    /// A one-line summary of the cutter this job runs.
+    #[must_use]
+    pub fn tool_summary(&self) -> String {
+        self.inputs.tool.summary()
+    }
+
+    /// The inputs of this job, as JSON, for a debug trace artifact.
+    ///
+    /// The bundle's fields are private, so a caller outside this module
+    /// cannot assemble this itself — which is the point. It is a READ, not
+    /// a producer: nothing here builds a [`ResolvedGenInputs`].
+    ///
+    /// The field set follows the GUI worker's own artifact snapshot, so an
+    /// artifact written before WP11b and one written after name the same
+    /// things.
+    #[must_use]
+    pub fn request_snapshot(&self) -> serde_json::Value {
+        let bbox = &self.inputs.emission_stock_bbox;
+        let heights = &self.inputs.heights;
+        serde_json::json!({
+            "toolpath_name": self.context.toolpath_name,
+            "operation": &self.inputs.operation,
+            "operation_label": self.context.op_label,
+            "dressups": &self.context.dressups,
+            "stock_source": &self.context.stock_source,
+            "tool": &self.inputs.tool,
+            "heights": {
+                "clearance_z": heights.clearance_z,
+                "retract_z": heights.retract_z,
+                "feed_z": heights.feed_z,
+                "top_z": heights.top_z,
+                "bottom_z": heights.bottom_z,
+            },
+            "stock_bbox": {
+                "min": { "x": bbox.min.x, "y": bbox.min.y, "z": bbox.min.z },
+                "max": { "x": bbox.max.x, "y": bbox.max.y, "z": bbox.max.z },
+            },
+            "boundary_enabled": self.inputs.boundary_config.enabled,
+            "boundary_containment": format!("{:?}", self.inputs.boundary_config.containment),
+            "keep_out_count": self.inputs.keep_out_footprints.len(),
+            "debug_options": &self.context.debug_options,
+        })
+    }
+}
+
+/// What one generation reports about itself while it runs.
+///
+/// [`execute_job`] holds no session, so every surface a generation used to
+/// write to from inside the GUI worker arrives here instead. Each field is
+/// optional and each default is "report nothing", so the CLI and the core
+/// session pass [`GenObserver::none()`] and pay for nothing.
+///
+/// WP11b, `IMPLEMENTATION_PLAN.md` §22 ruling 1. Two deviations from that
+/// ruling's list, both deliberate:
+///
+/// * the **debug-options gate** is read off the handle
+///   ([`GenerateToolpathHandle::debug_options`]) rather than set here,
+///   because the flag belongs to the toolpath's config and WP4 gave it a
+///   `Command` row. A caller that wants the GUI's behaviour copies it in
+///   with [`Self::with_debug_options`].
+/// * the **artifact path** stays with the caller. Writing the file inside
+///   core would need a slot on
+///   [`ToolpathComputeResult`](super::ToolpathComputeResult) to hand the
+///   path back, and that type is constructed in about twenty places.
+///   [`GenerateToolpathHandle::request_snapshot`] gives the caller what it
+///   needs to write the same artifact itself.
+pub struct GenObserver<'a> {
+    /// Whether the per-dressup ITEM contexts are recorded.
+    debug_options: crate::debug_trace::ToolpathDebugOptions,
+    /// Where the generation publishes the stage it is in. The GUI lane's
+    /// `generation_status` reads the string this writes.
+    phase_sink: Option<Arc<dyn crate::debug_trace::ToolpathPhaseSink>>,
+    /// The debug span the generator records into. Filled by [`execute_job`]
+    /// for the nested call; `None` on a bare observer.
+    debug_ctx: Option<&'a crate::debug_trace::ToolpathDebugContext>,
+    /// The semantic item the generator records into. Filled by
+    /// [`execute_job`] for the nested call; `None` on a bare observer.
+    semantic_ctx: Option<&'a crate::semantic_trace::ToolpathSemanticContext>,
+}
+
+impl GenObserver<'static> {
+    /// Report nothing. The core session and the CLI pass this.
+    #[must_use]
+    pub fn none() -> Self {
+        Self {
+            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            phase_sink: None,
+            debug_ctx: None,
+            semantic_ctx: None,
+        }
+    }
+}
+
+impl<'a> GenObserver<'a> {
+    /// Record the per-dressup items when `options.enabled`.
+    #[must_use]
+    pub fn with_debug_options(mut self, options: crate::debug_trace::ToolpathDebugOptions) -> Self {
+        self.debug_options = options;
+        self
+    }
+
+    /// Publish the stage of the generation to `sink`.
+    #[must_use]
+    pub fn with_phase_sink(mut self, sink: Arc<dyn crate::debug_trace::ToolpathPhaseSink>) -> Self {
+        self.phase_sink = Some(sink);
+        self
+    }
+
+    /// The same observer, bound to one generation's trace contexts.
+    ///
+    /// [`execute_job`] owns the recorders, so it is the only caller.
+    fn bound<'b>(
+        &self,
+        debug: &'b crate::debug_trace::ToolpathDebugContext,
+        semantic: &'b crate::semantic_trace::ToolpathSemanticContext,
+    ) -> GenObserver<'b> {
+        GenObserver {
+            debug_options: self.debug_options,
+            phase_sink: self.phase_sink.as_ref().map(Arc::clone),
+            debug_ctx: Some(debug),
+            semantic_ctx: Some(semantic),
+        }
+    }
+
+    /// Name the stage the generation is in.
+    fn set_phase(&self, phase: &str) {
+        if let Some(sink) = self.phase_sink.as_ref() {
+            sink.set_phase(Some(phase.to_owned()));
+        }
+    }
+
+    /// Report that no stage is running.
+    fn clear_phase(&self) {
+        if let Some(sink) = self.phase_sink.as_ref() {
+            sink.set_phase(None);
+        }
+    }
+
+    /// Whether the dressup pipeline records one ITEM per dressup.
+    ///
+    /// This is the cost the operator opts into. The recorders run either
+    /// way; what the flag buys is a per-dressup entry under them.
+    fn records_dressup_items(&self) -> bool {
+        self.debug_options.enabled
+    }
+
+    /// The debug span the generator records into.
+    fn debug_ctx(&self) -> Option<&'a crate::debug_trace::ToolpathDebugContext> {
+        self.debug_ctx
+    }
+
+    /// The semantic item the generator records into.
+    fn semantic_ctx(&self) -> Option<&'a crate::semantic_trace::ToolpathSemanticContext> {
+        self.semantic_ctx
+    }
+}
+
 /// Generate one toolpath from a handle — step (ii) of the
 /// `generate_toolpath` job.
 ///
@@ -360,14 +600,25 @@ pub struct GenerateToolpathHandle {
 /// `apply(Command::AdoptResult { .. })`.
 ///
 /// `cancel` reaches the generator, which polls it between levels.
+///
+/// `observer` names the surfaces this generation reports to — the phase
+/// string the GUI lane shows, and whether the dressups record one item
+/// each. A caller with no such surface passes [`GenObserver::none()`].
+///
+/// An `Err` carries no cancel variant: a generator that stops on the flag
+/// reports [`SessionError::OperationFailed`] like any other refusal. A
+/// caller that owns the flag reads the flag, not the message.
 pub fn execute_job(
     handle: &GenerateToolpathHandle,
+    observer: &GenObserver<'_>,
     cancel: &AtomicBool,
 ) -> Result<ToolpathComputeResult, SessionError> {
     let inputs = &handle.inputs;
     let context = &handle.context;
 
-    // Create recorders
+    // Create recorders. Unconditional, whatever `debug_options` says: the
+    // CLI reads both traces off every result, and the cost the operator
+    // opts into is the per-dressup ITEM set below, not the recorder.
     let debug_recorder =
         ToolpathDebugRecorder::new(context.toolpath_name.clone(), context.op_label);
     let semantic_recorder =
@@ -375,51 +626,27 @@ pub fn execute_job(
     let debug_root = debug_recorder.root_context();
     let semantic_root = semantic_recorder.root_context();
 
+    observer.set_phase(context.op_label);
     let core_scope = debug_root.start_span("core_generate", context.op_label);
     let core_ctx = core_scope.context();
 
-    // Execute the operation via the shared compute::execute module (annotated variant)
     // Rest machining: when this toolpath cuts the stock previous ops left
     // (`StockSource::FromRemainingStock`), seed generation with the per-op
     // simulated snapshot so adaptive3d clears only the leftover. The same
     // snapshot is reused for dressup air-cut filtering below. The
     // "snapshot present" precondition was enforced by the submit step (a
     // FromRemainingStock op with no snapshot already returned an error), so
-    // here `as_deref()` is guaranteed `Some` — never a fresh-stock fallback.
-    let gen_initial_stock = match context.stock_source {
-        crate::session::StockSource::FromRemainingStock => context.prior_stock.as_deref(),
-        crate::session::StockSource::Fresh => None,
-    };
+    // here it is guaranteed `Some` — never a fresh-stock fallback.
+    let gen_initial_stock = context.generator_seed_stock();
 
     let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, context.op_label);
     let child_ctx = op_scope.context();
-    // P2.3: `_with_regions` threads `pre_boundary_regions` (resolved once,
-    // by the submit step, alongside `pre_boundary`) into the mesh-finish
-    // family's pre-clip via `ExecutionContext::boundary_regions`. Every
-    // other caller of the plain `execute_operation_annotated` still gets
-    // `None` through its unchanged signature.
-    let tp_result = crate::compute::execute::execute_operation_annotated_with_regions(
-        &inputs.operation,
-        inputs.mesh.as_deref(),
-        inputs.spatial_index.as_deref(),
-        inputs.polygons.as_deref().map(|v| v.as_slice()),
-        &inputs.tool_def,
-        &inputs.tool,
-        &inputs.heights,
-        &inputs.cutting_levels,
-        &inputs.emission_stock_bbox,
-        inputs.prev_tool_radius,
-        inputs.reference_tool_cfg.clone(),
-        Some(&core_ctx),
+    // WP11b: the executor reads the two bundles, never 21 loose arguments.
+    let tp_result = execute_generation(
+        inputs,
+        context,
+        &observer.bound(&core_ctx, &child_ctx),
         cancel,
-        gen_initial_stock,
-        Some(&child_ctx),
-        inputs.pre_boundary.as_ref(),
-        inputs.pre_boundary_regions.as_deref(),
-        Some(&context.rest_analysis),
-        context.link_kinematics.clone(),
-        inputs.setup_transform.as_ref(),
-        &inputs.drill_targets,
     );
 
     match tp_result {
@@ -447,6 +674,40 @@ pub fn execute_job(
             // entry-descent split alike.
             let mut channels =
                 crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
+            observer.set_phase("Apply dressups");
+            // N12 item 3: the feed-optimisation stock. The GUI worker built
+            // one and this door passed `None`, so one configuration emitted
+            // two sets of feed rates (the P0 parity test pinned it). The
+            // predicate was always core's own; only the stock was missing.
+            // Everything it reads is on the handle, so the item closes with
+            // no new field.
+            //
+            // `feed_optimization_unavailable_reason` refuses
+            // remaining-stock, Rest and 3D operations. A refusal is a
+            // report, not an error: the pass is skipped and the generation
+            // continues, which is what the GUI door did.
+            let mut feed_opt_stock = if context.dressups.feed_optimization {
+                match crate::compute::catalog::feed_optimization_unavailable_reason(
+                    &inputs.operation,
+                    context.stock_source,
+                ) {
+                    Some(reason) => {
+                        tracing::warn!(
+                            toolpath = %context.toolpath_name,
+                            "Skipping feed optimization: {reason}"
+                        );
+                        None
+                    }
+                    None => Some(crate::dexel_stock::TriDexelStock::from_bounds(
+                        &inputs.emission_stock_bbox,
+                        // The GUI worker's own cell size, moved here
+                        // unchanged (`worker/helpers.rs`).
+                        (inputs.tool.diameter / 4.0).clamp(0.25, 2.0),
+                    )),
+                }
+            } else {
+                None
+            };
             // G-RAMPTERRAIN: entry moves of SURFACE-RIDING
             // operations clip to the drop-cutter surface
             // (`entry_probe_leave` names them). Prism operations
@@ -454,7 +715,7 @@ pub fn execute_job(
             // below the model surface (FINDINGS.md amendment 1).
             let entry_surface = match (
                 inputs.mesh.as_deref(),
-                inputs.spatial_index.as_deref(),
+                inputs.spatial_index(),
                 context.entry_probe_leave,
             ) {
                 (Some(m), Some(idx), Some(leave)) => Some(crate::dressup::EntrySurfaceProbe {
@@ -469,6 +730,10 @@ pub fn execute_job(
                 }),
                 _ => None,
             };
+            let dressup_scope = observer
+                .records_dressup_items()
+                .then(|| debug_root.start_span("dressups", "Apply dressups"));
+            let dressup_debug_ctx = dressup_scope.as_ref().map(|scope| scope.context());
             let dressed = crate::compute::execute::apply_dressups(
                 annotated,
                 &context.dressups,
@@ -483,20 +748,19 @@ pub fn execute_job(
                 // false-positive rapids the fix targets.
                 inputs.emission_stock_bbox.max.z,
                 prior_stock_ref,
-                None,
+                feed_opt_stock.as_mut(),
                 // S3: the air-cut filter classifies each sample for the
-                // whole cutter, so this op's tool rides in even though
-                // feed optimisation (the other consumer) is off on this
-                // path — `feed_opt_stock` above stays `None` and keeps it
-                // off.
+                // whole cutter, so this op's tool rides in whether or not
+                // feed optimisation (the other consumer) is on.
                 Some(&inputs.tool_def as &dyn crate::tool::MillingCutter),
                 entry_surface,
                 context.transform_capabilities,
-                None,
-                None,
-                // No per-dressup ITEMS on this path (that is the GUI
-                // worker's trace), but the items recorded at generation
-                // time must still follow the moves through every step.
+                // The per-dressup ITEMS. `debug_options` gates them, so an
+                // operator who asked for a trace gets the same per-dressup
+                // entries the GUI worker used to record, and one who did
+                // not pays for none.
+                dressup_debug_ctx.as_ref(),
+                observer.records_dressup_items().then_some(&semantic_root),
                 &mut channels,
             );
             annotated = dressed;
@@ -507,6 +771,10 @@ pub fn execute_job(
             // remapped through the clip via the input→output provenance
             // map (S83) so spans_valid stays true.
             if inputs.boundary_config.enabled {
+                observer.set_phase("Clip to boundary");
+                let _boundary_scope = observer
+                    .records_dressup_items()
+                    .then(|| debug_root.start_span("boundary_clip", "Clip to boundary"));
                 let resolves_to_a_region_set = matches!(
                     inputs.boundary_config.source,
                     crate::compute::config::BoundarySource::PlannedTierRegions { .. }
@@ -549,6 +817,7 @@ pub fn execute_job(
                         &inputs.boundary_config,
                         &inputs.emission_stock_bbox,
                         inputs.mesh.as_ref(),
+                        inputs.face_boundary.as_ref(),
                         &inputs.keep_out_footprints,
                         inputs.tool_def.diameter(),
                         inputs.heights.retract_z,
@@ -659,9 +928,15 @@ pub fn execute_job(
                     // the next one.
                     let _ = debug_recorder.finish();
                     let _ = semantic_recorder.finish();
+                    observer.clear_phase();
                     return Err(SessionError::GeneratedEmpty(refusal.to_string()));
                 }
             }
+
+            observer.set_phase("Compute stats");
+            let _stats_scope = observer
+                .records_dressup_items()
+                .then(|| debug_root.start_span("final_stats", "Compute stats"));
 
             // H2.1: ONE join, shared with the GUI compute worker. This
             // used to be a struct literal that read `findings.<field>`
@@ -718,6 +993,7 @@ pub fn execute_job(
                 Some(d) => crate::drill_op::OpData::DrillOp(Arc::new(d), annotated_arc),
                 None => crate::drill_op::OpData::Toolpath(annotated_arc),
             };
+            observer.clear_phase();
             Ok(ToolpathComputeResult {
                 op_data,
                 stats,
@@ -729,9 +1005,73 @@ pub fn execute_job(
             drop(core_scope);
             let _ = debug_recorder.finish();
             let _ = semantic_recorder.finish();
+            observer.clear_phase();
             Err(SessionError::OperationFailed(e.to_string()))
         }
     }
+}
+
+/// Generate one operation's motion from the resolved bundle — the narrowed
+/// executor.
+///
+/// WP11b, `IMPLEMENTATION_PLAN.md` §22 ruling 4. The loose entry
+/// [`execute_operation_annotated_with_regions`] takes 21 arguments and
+/// builds nothing, so every caller of it assembles the inputs itself. This
+/// function takes the two bundles the submit step produced, and a caller
+/// outside this module can construct neither, so it cannot assemble a
+/// second answer.
+///
+/// `inputs` carries every per-generation input.
+/// [`ResolvedGenInputs::spatial_index`] is FORCED here, so this function
+/// runs off the frame loop. `context` carries the session reads: the
+/// machined-stock seed, the rest-analysis dials and the machine envelope.
+/// `observer` carries the trace contexts the generator records into.
+///
+/// The loose entry stays for now. Its remaining callers hold no session —
+/// the strategy advisor's plain wrapper and four integration tests — and
+/// WP12 deletes it with `ComputeRequest`'s mirrored fields.
+///
+/// [`execute_operation_annotated_with_regions`]: crate::compute::execute::execute_operation_annotated_with_regions
+pub fn execute_generation(
+    inputs: &ResolvedGenInputs,
+    context: &GenContext,
+    observer: &GenObserver<'_>,
+    cancel: &AtomicBool,
+) -> Result<
+    (
+        crate::compute::execute::GeneratedToolpath,
+        crate::compute::execute::GenerationFindings,
+    ),
+    crate::compute::execute::OperationError,
+> {
+    // P2.3: `_with_regions` threads `pre_boundary_regions` (resolved once,
+    // by the submit step, alongside `pre_boundary`) into the mesh-finish
+    // family's pre-clip via `ExecutionContext::boundary_regions`. Every
+    // other caller of the plain `execute_operation_annotated` still gets
+    // `None` through its unchanged signature.
+    crate::compute::execute::execute_operation_annotated_with_regions(
+        &inputs.operation,
+        inputs.mesh.as_deref(),
+        inputs.spatial_index(),
+        inputs.polygons.as_deref().map(|v| v.as_slice()),
+        &inputs.tool_def,
+        &inputs.tool,
+        &inputs.heights,
+        &inputs.cutting_levels,
+        &inputs.emission_stock_bbox,
+        inputs.prev_tool_radius,
+        inputs.reference_tool_cfg.clone(),
+        observer.debug_ctx(),
+        cancel,
+        context.generator_seed_stock(),
+        observer.semantic_ctx(),
+        inputs.pre_boundary.as_ref(),
+        inputs.pre_boundary_regions.as_deref(),
+        Some(&context.rest_analysis),
+        context.link_kinematics.clone(),
+        inputs.setup_transform.as_ref(),
+        &inputs.drill_targets,
+    )
 }
 
 /// Clearing strategies the advisor compares for a 3D roughing op — the two
@@ -1370,7 +1710,7 @@ impl ProjectSession {
             let result = crate::compute::execute::execute_operation_annotated(
                 &op_loadlimited,
                 resolved.mesh.as_deref(),
-                resolved.spatial_index.as_deref(),
+                resolved.spatial_index(),
                 resolved.polygons.as_deref().map(|v| v.as_slice()),
                 &resolved.tool_def,
                 &resolved.tool,
@@ -1671,6 +2011,52 @@ impl ProjectSession {
             mesh = surface.mesh.clone();
         }
 
+        // N12 items 1 and 2: the picked BREP faces.
+        //
+        // A STEP model carries a mesh and an enriched mesh, never polygons,
+        // so a 2D operation over picked faces takes its geometry from the
+        // face outline. The GUI controller derived this and the resolver
+        // did not, so the two doors disagreed about what geometry a face
+        // pick even has, and the geometry check below refused on this door.
+        //
+        // Derived BEFORE the setup transform, so the outline rides into the
+        // emission frame with every other polygon.
+        let mut face_boundary: Option<crate::polygon::Polygon2> = None;
+        let mut face_top_z: Option<f64> = None;
+        if let (Some(face_ids), Some(enriched)) = (
+            tc.face_selection.as_ref(),
+            model.and_then(|m| m.enriched_mesh.as_ref()),
+        ) && !face_ids.is_empty()
+        {
+            match enriched.faces_boundary_as_polygon(face_ids) {
+                Some(poly) => {
+                    // The face tops, in the model's own frame — the frame
+                    // the GUI controller read them in. A non-identity setup
+                    // moves the geometry and not this number; that is the
+                    // behaviour being moved, not a new one.
+                    let top = face_ids
+                        .iter()
+                        .filter_map(|fid| enriched.face_group(*fid))
+                        .map(|group| group.bbox.max.z)
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    if top.is_finite() {
+                        face_top_z = Some(top);
+                    }
+                    if polygons.is_none() {
+                        polygons = Some(Arc::new(vec![poly.clone()]));
+                    }
+                    face_boundary = Some(poly);
+                }
+                None => {
+                    tracing::warn!(
+                        toolpath = %tc.name,
+                        "Selected faces produced no boundary polygon (they are \
+                         not horizontal planes); ignoring the face pick"
+                    );
+                }
+            }
+        }
+
         // Validate geometry requirements
         if tc.operation.is_3d() && mesh.is_none() {
             return Err(SessionError::MissingGeometry(
@@ -1745,6 +2131,19 @@ impl ProjectSession {
                     z_rotation,
                 )));
             }
+            // The face outline is drawing geometry too, and it is read
+            // again by the boundary clip after generation, so it takes the
+            // same door.
+            if let Some(face) = face_boundary.as_ref() {
+                face_boundary = self
+                    .transform_drawing_polygons_to_setup(
+                        std::slice::from_ref(face),
+                        face_up,
+                        z_rotation,
+                    )
+                    .into_iter()
+                    .next();
+            }
             // Keep-out footprints are world-anchored hardware, not drawings,
             // so they keep the orthographic world→local projection.
             // (Unreachable with a non-empty list on a lateral setup —
@@ -1793,7 +2192,18 @@ impl ProjectSession {
             model_top_z: model_bbox.map(|b| b.max.z),
             model_bottom_z: model_bbox.map(|b| b.min.z),
         };
-        let heights = tc.heights.resolve(&height_ctx);
+        let mut heights = tc.heights.resolve(&height_ctx);
+        // N12 item 1: an AUTO top follows the picked faces. The GUI
+        // controller applied this override and the resolver did not. A
+        // PINNED top is the operator's own answer and stays.
+        if let Some(top) = face_top_z
+            && tc.heights.top_z.is_auto()
+        {
+            heights.top_z = top;
+            if tc.heights.bottom_z.is_auto() {
+                heights.bottom_z = top - tc.operation.default_depth_for_heights().abs();
+            }
+        }
 
         // Build tool definition
         let tool_def = build_cutter(&tool);
@@ -1804,7 +2214,13 @@ impl ProjectSession {
         // fixpoint round. `build_auto`'s cell size is a pure function of the
         // mesh, so mesh identity is the whole key; see `geom_cache`'s module
         // doc for why identity is keyed on a `Weak` and not a raw pointer.
-        let spatial_index = mesh.as_ref().map(crate::geom_cache::cached_auto_index);
+        //
+        // WP11b: this resolver runs on the GUI frame loop now, so it hands
+        // out a LAZY index and builds nothing. The executor forces it on
+        // the worker thread. The one arm below that needs a built index —
+        // a `PlannedTierRegions` boundary, which walks the tier map here —
+        // forces it explicitly and says so.
+        let spatial_index = mesh.as_ref().map(crate::geom_cache::lazy_auto_index);
 
         // Compute cutting levels from the operation config (empty for 3D ops,
         // actual depth levels for 2D ops like Profile, Pocket, Adaptive, etc.)
@@ -1872,6 +2288,21 @@ impl ProjectSession {
             // combined predicate as the previous `needs_transform && xform.is_z_flipped()`.
             cfg.setup_z_flipped = ctx.is_z_flipped();
         }
+        // N12 item 9: the alignment-pin drill's holes come from the LIVE
+        // stock, never from the stored config. The GUI controller
+        // refreshed them at submit and this resolver did not, so the two
+        // doors drilled different holes after a pin edit. Patched on the
+        // compute-time copy beside `setup_z_flipped`, for the same reason:
+        // the stored config records the operator's intent and this is a
+        // derived value.
+        if let crate::compute::OperationConfig::AlignmentPinDrill(ref mut cfg) = operation {
+            cfg.holes = self
+                .stock
+                .alignment_pins
+                .iter()
+                .map(|pin| [pin.x, pin.y])
+                .collect();
+        }
 
         // Pre-resolve the effective boundary polygon so adaptive3d can
         // pre-clip its internal stock. `apply_boundary_clip` (below) resolves
@@ -1910,10 +2341,15 @@ impl ProjectSession {
                 // continuing without it would silently run the fine tier
                 // over the whole board — the exact un-confinement the
                 // variant exists to prevent.
+                // The tier map reads a BUILT index, so this arm forces
+                // the lazy one. It is the only production caller that
+                // builds on the frame loop, and it already walks a grid
+                // there.
+                let tier_index = spatial_index.as_ref().map(|lazy| Arc::clone(lazy.force()));
                 let regions = self.resolve_planned_tier_region_polys(
                     &tc.name,
                     mesh.as_ref(),
-                    spatial_index.as_ref(),
+                    tier_index.as_ref(),
                     &super::multitool::PlannedTierRecipe {
                         tool_ids,
                         tier: *tier,
@@ -1983,6 +2419,7 @@ impl ProjectSession {
                     &boundary_config,
                     &emission_stock_bbox,
                     mesh.as_ref(),
+                    face_boundary.as_ref(),
                     &keep_out_footprints,
                 )
                 .map_err(|e| SessionError::OperationFailed(e.to_string()))?
@@ -2011,6 +2448,7 @@ impl ProjectSession {
             operation,
             pre_boundary,
             pre_boundary_regions,
+            face_boundary,
         })
     }
 
@@ -2169,10 +2607,17 @@ impl ProjectSession {
                         treatment,
                         islands,
                     } => {
+                        // The tier map reads a BUILT index; force the
+                        // lazy one here, as the resolver's own tier arm
+                        // does.
+                        let tier_index = inputs
+                            .spatial_index
+                            .as_ref()
+                            .map(|lazy| Arc::clone(lazy.force()));
                         let regions = self.resolve_planned_tier_region_polys(
                             &tc.name,
                             inputs.mesh.as_ref(),
-                            inputs.spatial_index.as_ref(),
+                            tier_index.as_ref(),
                             &super::multitool::PlannedTierRecipe {
                                 tool_ids,
                                 tier: *tier,
@@ -2208,6 +2653,7 @@ impl ProjectSession {
             stock_source: tc.stock_source,
             dressups: tc.dressups.clone(),
             rest_analysis: tc.rest_analysis.clone(),
+            debug_options: tc.debug_options,
             entry_probe_leave: tc.operation.entry_probe_leave(),
             feed_rate: tc.operation.feed_rate(),
             plunge_rate: tc.operation.plunge_rate(),
@@ -2254,7 +2700,9 @@ impl ProjectSession {
             Job::GenerateToolpath(GenerateToolpathArgs { index }),
             cancel,
         )?;
-        let result = execute_job(&handle, cancel)?;
+        // The core door reports to nothing and records no per-dressup
+        // item, which is what it did before the observer existed.
+        let result = execute_job(&handle, &GenObserver::none(), cancel)?;
         let _ = self.apply(Command::AdoptResult(AdoptResultArgs {
             index: handle.index,
             revision: handle.revision,
@@ -2351,13 +2799,24 @@ impl ProjectSession {
         boundary_config: &crate::compute::config::BoundaryConfig,
         stock_bbox: &BoundingBox3,
         mesh: Option<&Arc<crate::mesh::TriangleMesh>>,
+        // N12 item 2: the XY outline of the picked BREP faces, resolved
+        // once by `resolve_generation_inputs`. `None` means the toolpath
+        // picks no face, so a `FaceSelection` boundary takes the stock
+        // rectangle — the same fallback every other unavailable source
+        // takes.
+        //
+        // The GUI worker used to test the PICK and not the declared
+        // source, so a face pick overrode `ModelSilhouette` and `Stock`
+        // alike. The declared source decides here.
+        face_boundary: Option<&crate::polygon::Polygon2>,
         keep_out_footprints: &[crate::polygon::Polygon2],
     ) -> Result<Option<crate::polygon::Polygon2>, crate::compute::execute::OperationError> {
         use crate::boundary::{UserOffsetOutcome, apply_user_boundary_offset, subtract_keepouts};
         use crate::compute::config::BoundarySource;
 
-        let mut stock_poly = match (&boundary_config.source, mesh) {
-            (BoundarySource::ModelSilhouette, Some(m)) => {
+        let mut stock_poly = match (&boundary_config.source, mesh, face_boundary) {
+            (BoundarySource::FaceSelection, _, Some(face)) => face.clone(),
+            (BoundarySource::ModelSilhouette, Some(m), _) => {
                 // G8: memoised per mesh identity. This ran twice per toolpath
                 // (pre-boundary resolution + the post-generation enforcement
                 // clip), each time rasterising every face of the mesh.
@@ -2437,6 +2896,10 @@ impl ProjectSession {
         // re-rasterising every face on every toolpath. The mesh is an `Arc`
         // at every production call site already; identity is the memo key.
         mesh: Option<&Arc<crate::mesh::TriangleMesh>>,
+        // N12 item 2: the picked BREP faces' XY outline, for a
+        // `BoundarySource::FaceSelection` boundary. `None` means no face is
+        // picked; see `resolve_containment_polygon`.
+        face_boundary: Option<&crate::polygon::Polygon2>,
         keep_out_footprints: &[crate::polygon::Polygon2],
         tool_diameter: f64,
         safe_z: f64,
@@ -2469,6 +2932,7 @@ impl ProjectSession {
             boundary_config,
             stock_bbox,
             mesh,
+            face_boundary,
             keep_out_footprints,
         )?
         else {
@@ -6748,7 +7212,7 @@ mod tests {
         let annotated = crate::compute::execute::execute_operation_annotated(
             &resolved.operation,
             resolved.mesh.as_deref(),
-            resolved.spatial_index.as_deref(),
+            resolved.spatial_index(),
             resolved.polygons.as_deref().map(|v| v.as_slice()),
             &resolved.tool_def,
             &resolved.tool,

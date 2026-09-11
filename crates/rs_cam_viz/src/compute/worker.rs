@@ -15,6 +15,14 @@ pub mod helpers;
     clippy::panic,
     clippy::indexing_slicing
 )]
+mod test_fixture;
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests;
 
 use std::collections::{HashMap, VecDeque};
@@ -30,7 +38,6 @@ use rs_cam_core::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -40,102 +47,59 @@ use super::{
     LaneControl, LaneSnapshot, LaneState, ToolpathSubmitOutcome,
 };
 use crate::state::job::ToolConfig;
-#[cfg(test)]
-use crate::state::job::ToolType;
-use crate::state::toolpath::{
-    DressupConfig, OperationConfig, StockSource, ToolpathId, ToolpathResult,
-};
+use crate::state::toolpath::{ToolpathId, ToolpathResult};
 
+/// One generation job, on its way to the toolpath lane.
+///
+/// WP11b: the request is the core `Job` handle plus the few facts that are
+/// the GUI's own. Before it, this struct carried 27 public fields and the
+/// controller filled every one of them — a second assembly of the inputs
+/// `ProjectSession::resolve_generation_inputs` already produces (tracker row
+/// N12). The controller now calls `ProjectSession::start` on the frame loop
+/// and ships what that hands back.
+///
+/// The handle owns everything it needs, so it crosses the thread boundary
+/// with no session borrow.
 pub struct ComputeRequest {
+    /// What `ProjectSession::start` captured. The worker runs it through
+    /// `rs_cam_core::session::execute_job`.
+    pub handle: rs_cam_core::session::GenerateToolpathHandle,
+    /// The facts the lane and the drain need that the handle does not carry.
+    pub viz: VizExtras,
+}
+
+/// The GUI's own bookkeeping for one submit.
+///
+/// Everything here is a viz concern: the lane keys its queue and its
+/// snapshot by the toolpath id, and the cancel flag belongs to THIS submit.
+pub struct VizExtras {
+    /// The toolpath this job generates. The lane dedupes its queue on it,
+    /// reports it on [`LaneSnapshot`], and the drain routes the reply by it.
+    ///
+    /// The handle carries the toolpath's INDEX, which is a different
+    /// identity: an index moves when a toolpath is reordered or removed.
     pub toolpath_id: ToolpathId,
-    /// A/M12: 0-based position in `ProjectSession::toolpath_configs()` at
-    /// submit time. The lane republishes it on [`LaneSnapshot`] so
-    /// `generation_status` can name the in-flight op by the same index every
-    /// other MCP call uses. The lane itself has no session access.
-    pub toolpath_index: usize,
-    pub toolpath_name: String,
-    pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
-    /// G-DRILLPICK-FRAME: the setup's local<->global transform, `None` for
-    /// identity setups. The controller transforms mesh and polygons into the
-    /// emission frame before submitting, but `selected_holes` ride along on
-    /// the operation config as raw model coordinates, so the generator needs
-    /// the matrix itself to put drill picks in the same frame as everything
-    /// else. Mirrors `ResolvedGenInputs::setup_transform` on the core path.
-    pub setup_transform: Option<rs_cam_core::compute::transform::SetupTransformInfo>,
-    pub polygons: Option<Arc<Vec<Polygon2>>>,
-    /// G-DRILLCENTROID: the target model's drill targets (DXF points and
-    /// circle/arc centres) — the `Drill` family's hole source when nothing
-    /// is picked. The model's own `Arc`, untransformed: like
-    /// `selected_holes` these are model coordinates the generator maps into
-    /// the emission frame itself. Empty for meshes, and a `Drill`
-    /// op with no pick then refuses.
-    pub drill_targets: Arc<Vec<rs_cam_core::dxf_input::DrillTarget>>,
-    pub mesh: Option<Arc<TriangleMesh>>,
-    pub enriched_mesh: Option<Arc<rs_cam_core::enriched_mesh::EnrichedMesh>>,
-    pub face_selection: Option<Vec<rs_cam_core::enriched_mesh::FaceGroupId>>,
-    pub operation: OperationConfig,
-    pub dressups: DressupConfig,
-    pub stock_source: StockSource,
-    pub tool: ToolConfig,
-    pub safe_z: f64,
-    pub prev_tool_radius: Option<f64>,
-    /// R1 (pencil): resolved real reference tool config when the Pencil op names
-    /// one via `reference_tool_id`. Resolved in the controller (which has the
-    /// tool list), threaded to `execute_operation_annotated`. `None` = nominal.
-    pub reference_tool_cfg: Option<ToolConfig>,
-    pub stock_bbox: Option<BoundingBox3>,
-    pub boundary: crate::state::toolpath::BoundaryConfig,
-    /// Fixture and keep-out footprints to subtract from the machining boundary.
-    pub keep_out_footprints: Vec<Polygon2>,
-    pub heights: crate::state::toolpath::ResolvedHeights,
-    /// Pre-computed Z levels for depth stepping (top->bottom).
-    /// Empty for operations that don't use standard depth stepping (3D ops, etc.).
-    pub cutting_levels: Vec<f64>,
-    /// Pre-simulated remaining stock from prior toolpaths in the same setup.
-    pub prior_stock: Option<TriDexelStock>,
-    /// Workpiece material (F-016). Forwarded into the drill-op view so
-    /// `chip_welding` / `peck_adequacy` / `plunge_feed` gates evaluate
-    /// against the actual stock, not `Material::default()`.
-    pub material: rs_cam_core::material::Material,
-    /// P2.2/P2.3 (rest-region boundary): the full, un-unioned set of rest
-    /// region polygons for `BoundarySource::DerivedRestRegions`, resolved
-    /// from the source toolpath's cached result. Resolved by the
-    /// controller (which has cross-toolpath access via `gui.toolpath_rt`)
-    /// — this worker's `ComputeRequest` is scoped to a single toolpath and
-    /// has no way to look up another toolpath's result itself.
+    /// The cancel flag of this submit, per §22 ruling 3.
     ///
-    /// The controller fails the toolpath hard (see
-    /// `submit_toolpath_compute`) rather than submitting a request when
-    /// the source is missing, self-referential, ungenerated, or has no
-    /// rest regions — so a worker that receives `Some` here for THAT
-    /// source can assume the `Vec` is non-empty.
-    ///
-    /// G-TIERWORKER: a `PlannedTierRegions` boundary rides this same slot
-    /// (the controller resolves the tier's machining polygons through the
-    /// session's single tier pipeline before submitting). For that source
-    /// `Some(vec![])` is a REAL answer — a legitimately empty tier that
-    /// must confine the op to nothing — so only the `DerivedRestRegions`
-    /// non-empty assumption above applies. `None` when the boundary source
-    /// is neither variant.
-    ///
-    /// The real enforcement clip (further down in `run_compute_with_phase_tracker`)
-    /// uses every region in this set via `ProjectSession::apply_boundary_clip_multi`
-    /// — the adaptive3d pre-clip optimization in `generate_via_core` unions
-    /// them down to one polygon only when that union collapses cleanly.
-    pub derived_rest_regions: Option<Vec<Polygon2>>,
-    /// Op-agnostic rest analysis (P2.5). Mirrors `boundary` — resolved by
-    /// the controller from the toolpath's `ToolpathEntry::rest_analysis`
-    /// and threaded to `execute_operation_annotated_with_regions`.
-    pub rest_analysis: crate::state::toolpath::RestAnalysisConfig,
-    /// P1 quantitative linker — the machine envelope generators use to
-    /// cost link candidates (pencil hookup). Snapshot taken when the
-    /// request is built; `None` disables cost-based link decisions
-    /// (legacy always-link behavior).
-    pub link_kinematics: Option<rs_cam_core::machine_kinematics::LinkKinematics>,
+    /// NOT the lane's flag. `submit_toolpath` sets the lane flag when a
+    /// resubmit supersedes the active job, and only the worker thread
+    /// clears it, so a flag borrowed from the lane can already read `true`
+    /// on the frame loop — `ProjectSession::start` polls its flag and would
+    /// refuse the new job for the old job's cancel. The lane maps "cancel
+    /// this job" onto the flag of the job it is running.
+    pub cancel: Arc<AtomicBool>,
 }
 
 pub struct ComputeResult {
     pub toolpath_id: ToolpathId,
+    /// The generation-input revision `ProjectSession::start` read, carried
+    /// back so the adopt names it.
+    ///
+    /// `None` means NOT STAMPED — a hand-built reply in a test. The drain
+    /// then adopts at the toolpath's CURRENT revision, which is what it did
+    /// for an unstamped completion before WP11b. Every real submit carries
+    /// `Some`.
+    pub revision: Option<u64>,
     pub result: Result<ToolpathResult, ComputeError>,
     pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
@@ -459,9 +423,16 @@ struct LaneInner<Request> {
     current_phase: Option<String>,
     started_at: Option<Instant>,
     active_toolpath_id: Option<ToolpathId>,
-    /// A/M12 — see [`ComputeRequest::toolpath_index`]. Only the toolpath lane
-    /// ever sets it.
+    /// A/M12 — the 0-based position of the in-flight toolpath, so
+    /// `generation_status` can name the op by the same index every other MCP
+    /// call uses. Only the toolpath lane ever sets it.
     active_toolpath_index: Option<usize>,
+    /// The cancel flag of the job the lane is running (§22 ruling 3).
+    ///
+    /// "Cancel this lane" and "a resubmit supersedes the active job" both
+    /// mean the SAME job, so both set this as well as the lane flag. `None`
+    /// means the lane runs nothing.
+    active_cancel: Option<Arc<AtomicBool>>,
 }
 
 impl<Request> LaneInner<Request> {
@@ -474,6 +445,7 @@ impl<Request> LaneInner<Request> {
             started_at: None,
             active_toolpath_id: None,
             active_toolpath_index: None,
+            active_cancel: None,
         }
     }
 }
@@ -526,6 +498,10 @@ impl LaneControl for LaneQueue<ComputeRequest> {
         let was_busy = inner.started_at.is_some();
         if was_busy {
             self.cancel.store(true, Ordering::SeqCst);
+            // §22 ruling 3: the running job polls its own flag.
+            if let Some(active) = inner.active_cancel.as_ref() {
+                active.store(true, Ordering::SeqCst);
+            }
             inner.state = LaneState::Cancelling;
         }
         let snapshot = LaneSnapshot {
@@ -547,24 +523,9 @@ struct ToolpathPhaseTracker {
     lane: Arc<LaneQueue<ComputeRequest>>,
 }
 
-struct ToolpathPhaseScope {
-    tracker: ToolpathPhaseTracker,
-    previous_phase: Option<String>,
-    finished: bool,
-}
-
 impl ToolpathPhaseTracker {
     fn new(lane: Arc<LaneQueue<ComputeRequest>>) -> Self {
         Self { lane }
-    }
-
-    fn start_phase(&self, phase: impl Into<String>) -> ToolpathPhaseScope {
-        let previous_phase = self.replace_phase(Some(phase.into()));
-        ToolpathPhaseScope {
-            tracker: self.clone(),
-            previous_phase,
-            finished: false,
-        }
     }
 
     fn clear(&self) {
@@ -582,22 +543,6 @@ impl ToolpathPhaseTracker {
 impl rs_cam_core::debug_trace::ToolpathPhaseSink for ToolpathPhaseTracker {
     fn set_phase(&self, phase: Option<String>) {
         self.replace_phase(phase);
-    }
-}
-
-impl ToolpathPhaseScope {
-    fn finish_inner(&mut self) {
-        if self.finished {
-            return;
-        }
-        self.tracker.replace_phase(self.previous_phase.clone());
-        self.finished = true;
-    }
-}
-
-impl Drop for ToolpathPhaseScope {
-    fn drop(&mut self) {
-        self.finish_inner();
     }
 }
 
@@ -696,15 +641,21 @@ impl ComputeBackend for ThreadedComputeBackend {
             .unwrap_or_else(|e| e.into_inner());
         inner
             .queue
-            .retain(|queued| queued.toolpath_id != request.toolpath_id);
+            .retain(|queued| queued.viz.toolpath_id != request.viz.toolpath_id);
         // G-REGEN-RACE: decided here, under the lane lock, and reported to
         // the caller. The push below is unconditional, so `SupersededActive`
         // is a promise that a replacement request exists — which is what
         // licenses the drain to treat the resulting `Cancelled` as
         // bookkeeping rather than as the toolpath's outcome.
         let mut outcome = ToolpathSubmitOutcome::Queued;
-        if inner.active_toolpath_id == Some(request.toolpath_id) {
+        if inner.active_toolpath_id == Some(request.viz.toolpath_id) {
             self.toolpath_lane.cancel.store(true, Ordering::SeqCst);
+            // §22 ruling 3: the running job polls ITS OWN flag, so the
+            // supersede must set that one too. The lane flag stays because
+            // the worker thread reads it after the generation returns.
+            if let Some(active) = inner.active_cancel.as_ref() {
+                active.store(true, Ordering::SeqCst);
+            }
             if inner.state == LaneState::Running {
                 inner.state = LaneState::Cancelling;
             }
@@ -789,6 +740,10 @@ impl ComputeBackend for ThreadedComputeBackend {
                     .unwrap_or_else(|e| e.into_inner());
                 if inner.started_at.is_some() {
                     self.toolpath_lane.cancel.store(true, Ordering::SeqCst);
+                    // §22 ruling 3: the running job polls its own flag.
+                    if let Some(active) = inner.active_cancel.as_ref() {
+                        active.store(true, Ordering::SeqCst);
+                    }
                     inner.state = LaneState::Cancelling;
                 }
             }
@@ -872,7 +827,11 @@ impl ThreadedComputeBackend {
 }
 
 fn toolpath_job_label(request: &ComputeRequest) -> String {
-    format!("{} ({})", request.toolpath_name, request.operation.label())
+    format!(
+        "{} ({})",
+        request.handle.toolpath_name(),
+        request.handle.op_label()
+    )
 }
 
 fn analysis_job_label(request: &AnalysisRequest) -> String {
@@ -933,6 +892,7 @@ fn spawn_toolpath_lane(
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
                     inner.active_toolpath_index = None;
+                    inner.active_cancel = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {
@@ -946,8 +906,10 @@ fn spawn_toolpath_lane(
                 inner.current_job = Some(toolpath_job_label(&request));
                 inner.current_phase = None;
                 inner.started_at = Some(Instant::now());
-                inner.active_toolpath_id = Some(request.toolpath_id);
-                inner.active_toolpath_index = Some(request.toolpath_index);
+                inner.active_toolpath_id = Some(request.viz.toolpath_id);
+                inner.active_toolpath_index = Some(request.handle.index);
+                // The flag a cancel of THIS job must set.
+                inner.active_cancel = Some(Arc::clone(&request.viz.cancel));
                 request
             };
 
@@ -959,12 +921,19 @@ fn spawn_toolpath_lane(
             // in any operation does not kill the worker thread or poison mutexes
             // permanently.  On panic we log the error, reset the lane to Idle,
             // send an error result back, and continue the loop.
-            let toolpath_id = request.toolpath_id;
+            let toolpath_id = request.viz.toolpath_id;
+            let revision = Some(request.handle.revision);
             let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 let phase_tracker = ToolpathPhaseTracker::new(Arc::clone(&lane));
-                let mut outcome =
-                    execute::run_compute_with_phase(&request, &lane.cancel, &phase_tracker);
-                if lane.cancel.load(Ordering::SeqCst) && outcome.result.is_ok() {
+                let mut outcome = execute::run_compute_with_phase(&request, &phase_tracker);
+                // A cancelled generation reports `Cancelled` whatever the
+                // generator said. `execute_job` returns a plain
+                // `OperationFailed` when the flag stops it — core carries no
+                // cancel variant — so the flag is the evidence, not the
+                // message. Widened from the pre-WP11b `&& is_ok()`: the two
+                // agree, because the old path already mapped
+                // `OperationError::Cancelled` to `ComputeError::Cancelled`.
+                if lane.cancel.load(Ordering::SeqCst) {
                     outcome.result = Err(ComputeError::Cancelled);
                 }
                 phase_tracker.clear();
@@ -972,6 +941,7 @@ fn spawn_toolpath_lane(
                 {
                     let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                     inner.active_toolpath_id = None;
+                    inner.active_cancel = None;
                     inner.started_at = None;
                     inner.current_phase = None;
                     if inner.queue.is_empty() {
@@ -984,7 +954,8 @@ fn spawn_toolpath_lane(
                 }
 
                 let _ = result_tx.send(ComputeMessage::Toolpath(Box::new(ComputeResult {
-                    toolpath_id: request.toolpath_id,
+                    toolpath_id: request.viz.toolpath_id,
+                    revision,
                     result: outcome.result,
                     debug_trace: outcome.debug_trace,
                     semantic_trace: outcome.semantic_trace,
@@ -999,6 +970,7 @@ fn spawn_toolpath_lane(
                 // Reset lane state so subsequent jobs can still run.
                 let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                 inner.active_toolpath_id = None;
+                inner.active_cancel = None;
                 inner.started_at = None;
                 inner.current_phase = None;
                 if inner.queue.is_empty() {
@@ -1012,6 +984,7 @@ fn spawn_toolpath_lane(
 
                 let _ = result_tx.send(ComputeMessage::Toolpath(Box::new(ComputeResult {
                     toolpath_id,
+                    revision,
                     result: Err(ComputeError::Message(format!(
                         "Crashed due to internal error: {msg}"
                     ))),
@@ -1043,6 +1016,7 @@ fn spawn_analysis_lane(
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
                     inner.active_toolpath_index = None;
+                    inner.active_cancel = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {
@@ -1172,6 +1146,7 @@ fn spawn_optimize_lane(
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
                     inner.active_toolpath_index = None;
+                    inner.active_cancel = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {
@@ -1325,6 +1300,7 @@ fn spawn_reach_lane(
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
                     inner.active_toolpath_index = None;
+                    inner.active_cancel = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {

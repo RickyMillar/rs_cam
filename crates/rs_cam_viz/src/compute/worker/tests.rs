@@ -1,144 +1,62 @@
 use super::*;
+use crate::compute::worker::test_fixture::{
+    RequestSpec, board, request as build_request, stock_between,
+};
 use crate::compute::{ComputeBackend, ComputeLane, ComputeMessage, LaneState};
-use crate::state::toolpath::{BoundaryConfig, HeightContext, HeightsConfig, OperationType};
+use crate::state::toolpath::{DressupConfig, OperationConfig, OperationType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{make_test_flat, make_test_hemisphere};
+use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::toolpath::Toolpath;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::state::job::{ToolId, ToolType};
 
-fn sample_request(operation: OperationConfig, stock_source: StockSource) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    let heights = HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0));
-    let cutting_levels = operation.cutting_levels(heights.top_z);
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(1),
-        toolpath_index: 0,
-        toolpath_name: "Sample".to_owned(),
-        polygons: None,
-        mesh: None,
-        enriched_mesh: None,
-        face_selection: None,
-        operation,
-        dressups: DressupConfig::default(),
-        stock_source,
-        tool,
-        safe_z: 10.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(10.0, 20.0, -5.0),
-            max: P3::new(40.0, 60.0, 12.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights,
-        cutting_levels,
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
-}
+// WP11b: these fixtures state a SPEC and let `test_fixture::request` run the
+// production submit door. Two fixture facts an assertion depends on:
+//
+// * the 2D fixtures top their board at `z = 0`, which is where
+//   `HeightContext::simple` used to put `heights.top_z`. The session derives
+//   the heights from the stock, so the stock has to say it.
+// * the 3D fixtures keep their original stock bounds, with the board top
+//   ABOVE the mesh. A roughing pass over a board level with the mesh removes
+//   nothing, and the empty-generation gate refuses that.
 
-#[test]
-fn feed_optimization_uses_real_stock_bounds() {
-    let request = sample_request(
+/// A 40 x 40 mm square over a board topped at `z = 0`.
+fn pocket_spec(id: usize) -> RequestSpec {
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Pocket {id}"),
         OperationConfig::new_default(OperationType::Pocket),
-        StockSource::Fresh,
+        ToolConfig::new_default(ToolId(1), ToolType::EndMill),
     );
-
-    let stock = helpers::feed_optimization_stock(&request).unwrap();
-    assert!((stock.z_grid.origin_u - 10.0).abs() < 0.001);
-    assert!((stock.z_grid.origin_v - 20.0).abs() < 0.001);
-    assert!((stock.stock_bbox.max.z - 12.0).abs() < 0.001);
-    assert!((stock.z_grid.cell_size - 1.5875).abs() < 0.001);
+    spec.stock = board(25.0, 15.0);
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-#[test]
-fn feed_optimization_rejects_remaining_stock() {
-    let request = sample_request(
-        OperationConfig::new_default(OperationType::Pocket),
-        StockSource::FromRemainingStock,
-    );
+fn adaptive_spec(id: usize) -> RequestSpec {
+    let mut spec = pocket_spec(id);
+    spec.name = format!("Adaptive {id}");
+    spec.operation = OperationConfig::new_default(OperationType::Adaptive);
+    spec
+}
 
-    let Err(error) = helpers::feed_optimization_stock(&request) else {
-        panic!("remaining-stock feed optimization should be rejected");
+fn profile_spec(id: usize) -> RequestSpec {
+    let OperationConfig::Profile(mut cfg) = OperationConfig::new_default(OperationType::Profile)
+    else {
+        unreachable!("default op kind mismatch");
     };
-    assert_eq!(
-        error,
-        "Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows."
-    );
+    cfg.finishing_passes = 1;
+    cfg.tab_count = 2;
+    let mut spec = pocket_spec(id);
+    spec.name = format!("Profile {id}");
+    spec.operation = OperationConfig::Profile(cfg);
+    spec
 }
 
-#[test]
-fn feed_optimization_rejects_mesh_derived_operations() {
-    let request = sample_request(
-        OperationConfig::new_default(OperationType::DropCutter),
-        StockSource::Fresh,
-    );
-
-    let Err(error) = helpers::feed_optimization_stock(&request) else {
-        panic!("mesh-derived feed optimization should be rejected");
-    };
-    assert_eq!(
-        error,
-        "Phase 1 feed optimization only supports operations that start from flat stock, not mesh-derived surfaces."
-    );
-}
-
-fn quick_pocket_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    let operation = OperationConfig::new_default(OperationType::Pocket);
-    let heights = HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0));
-    let cutting_levels = operation.cutting_levels(heights.top_z);
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: id,
-        toolpath_name: format!("Pocket {id}"),
-        polygons: Some(Arc::new(vec![Polygon2::rectangle(
-            -20.0, -20.0, 20.0, 20.0,
-        )])),
-        mesh: None,
-        enriched_mesh: None,
-        face_selection: None,
-        operation,
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 10.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-25.0, -25.0, -5.0),
-            max: P3::new(25.0, 25.0, 10.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights,
-        cutting_levels,
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
-}
-
-fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
-    let mesh = make_test_flat(120.0);
+fn heavy_dropcutter_spec(id: usize) -> RequestSpec {
     let OperationConfig::DropCutter(mut cfg) =
         OperationConfig::new_default(OperationType::DropCutter)
     else {
@@ -146,44 +64,19 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
     };
     cfg.stepover = 0.25;
     cfg.min_z = -5.0;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: id,
-        toolpath_name: format!("DropCutter {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(mesh)),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::DropCutter(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 10.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-60.0, -60.0, -5.0),
-            max: P3::new(60.0, 60.0, 10.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("DropCutter {id}"),
+        OperationConfig::DropCutter(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+    )
+    .with_mesh(make_test_flat(120.0));
+    spec.stock = stock_between(P3::new(-60.0, -60.0, -5.0), P3::new(60.0, 60.0, 10.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn waterline_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    let mesh = make_test_flat(60.0);
+fn waterline_spec(id: usize) -> RequestSpec {
     let OperationConfig::Waterline(mut cfg) =
         OperationConfig::new_default(OperationType::Waterline)
     else {
@@ -191,44 +84,19 @@ fn waterline_request(id: usize) -> ComputeRequest {
     };
     cfg.z_step = 1.0;
     cfg.sampling = 1.0;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Waterline {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(mesh)),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::Waterline(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 10.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-30.0, -30.0, -5.0),
-            max: P3::new(30.0, 30.0, 10.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Waterline {id}"),
+        OperationConfig::Waterline(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::EndMill),
+    )
+    .with_mesh(make_test_flat(60.0));
+    spec.stock = stock_between(P3::new(-30.0, -30.0, -5.0), P3::new(30.0, 30.0, 10.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn adaptive3d_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    let mesh = make_test_flat(60.0);
+fn adaptive3d_spec(id: usize) -> RequestSpec {
     let OperationConfig::Adaptive3d(mut cfg) =
         OperationConfig::new_default(OperationType::Adaptive3d)
     else {
@@ -237,158 +105,65 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
     cfg.depth_per_pass = 2.0;
     cfg.detect_flat_areas = true;
     cfg.region_ordering = crate::state::toolpath::RegionOrdering::ByArea;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Adaptive3d {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(mesh)),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::Adaptive3d(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 10.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-30.0, -30.0, -5.0),
-            max: P3::new(30.0, 30.0, 10.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Adaptive3d {id}"),
+        OperationConfig::Adaptive3d(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::EndMill),
+    )
+    .with_mesh(make_test_flat(60.0));
+    spec.stock = stock_between(P3::new(-30.0, -30.0, -5.0), P3::new(30.0, 30.0, 10.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn adaptive_request(id: usize) -> ComputeRequest {
-    let mut request = quick_pocket_request(id);
-    request.toolpath_name = format!("Adaptive {id}");
-    request.operation = OperationConfig::new_default(OperationType::Adaptive);
-    request.cutting_levels = request.operation.cutting_levels(request.heights.top_z);
-    request
-}
-
-fn profile_request(id: usize) -> ComputeRequest {
-    let mut request = quick_pocket_request(id);
-    request.toolpath_name = format!("Profile {id}");
-    let OperationConfig::Profile(mut cfg) = OperationConfig::new_default(OperationType::Profile)
-    else {
-        unreachable!("default op kind mismatch");
-    };
-    cfg.finishing_passes = 1;
-    cfg.tab_count = 2;
-    request.operation = OperationConfig::Profile(cfg);
-    request.cutting_levels = request.operation.cutting_levels(request.heights.top_z);
-    request
-}
-
-fn drill_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+fn drill_spec(id: usize) -> RequestSpec {
     let OperationConfig::Drill(mut cfg) = OperationConfig::new_default(OperationType::Drill) else {
         unreachable!("default op kind mismatch");
     };
     cfg.cycle = crate::state::toolpath::DrillCycleType::Peck;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Drill {id}"),
-        polygons: Some(Arc::new(vec![
-            Polygon2::rectangle(-10.0, -10.0, -6.0, -6.0),
-            Polygon2::rectangle(6.0, 6.0, 10.0, 10.0),
-        ])),
-        // G-DRILLCENTROID: the holes are drill targets, not the two
-        // rectangles' centroids (which the generator no longer reads).
-        drill_targets: Arc::new(vec![
-            rs_cam_core::dxf_input::DrillTarget {
-                x: -8.0,
-                y: -8.0,
-                layer: "holes".to_owned(),
-                kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
-            },
-            rs_cam_core::dxf_input::DrillTarget {
-                x: 8.0,
-                y: 8.0,
-                layer: "holes".to_owned(),
-                kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
-            },
-        ]),
-        mesh: None,
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::Drill(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 10.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-20.0, -20.0, -15.0),
-            max: P3::new(20.0, 20.0, 10.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Drill {id}"),
+        OperationConfig::Drill(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::EndMill),
+    );
+    spec.polygons = Some(vec![
+        Polygon2::rectangle(-10.0, -10.0, -6.0, -6.0),
+        Polygon2::rectangle(6.0, 6.0, 10.0, 10.0),
+    ]);
+    // G-DRILLCENTROID: the holes are drill targets, not the two rectangles'
+    // centroids (which the generator no longer reads).
+    spec.drill_targets = vec![
+        rs_cam_core::dxf_input::DrillTarget {
+            x: -8.0,
+            y: -8.0,
+            layer: "holes".to_owned(),
+            kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
+        },
+        rs_cam_core::dxf_input::DrillTarget {
+            x: 8.0,
+            y: 8.0,
+            layer: "holes".to_owned(),
+            kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
+        },
+    ];
+    spec.stock = board(20.0, 25.0);
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn steep_shallow_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
-    let mesh = make_test_hemisphere(20.0, 16);
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("SteepShallow {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(mesh)),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::new_default(OperationType::SteepShallow),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 10.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-20.0, -20.0, -20.0),
-            max: P3::new(20.0, 20.0, 20.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+fn steep_shallow_spec(id: usize) -> RequestSpec {
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("SteepShallow {id}"),
+        OperationConfig::new_default(OperationType::SteepShallow),
+        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+    )
+    .with_mesh(make_test_hemisphere(20.0, 16));
+    spec.stock = stock_between(P3::new(-20.0, -20.0, -20.0), P3::new(20.0, 20.0, 20.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
 fn make_v_groove_mesh(length: f64, depth: f64, width: f64) -> TriangleMesh {
@@ -405,45 +180,20 @@ fn make_v_groove_mesh(length: f64, depth: f64, width: f64) -> TriangleMesh {
     )
 }
 
-fn pencil_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Pencil {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(make_v_groove_mesh(40.0, 6.0, 12.0))),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::new_default(OperationType::Pencil),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 10.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(0.0, -15.0, -10.0),
-            max: P3::new(40.0, 15.0, 10.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+fn pencil_spec(id: usize) -> RequestSpec {
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Pencil {id}"),
+        OperationConfig::new_default(OperationType::Pencil),
+        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+    )
+    .with_mesh(make_v_groove_mesh(40.0, 6.0, 12.0));
+    spec.stock = stock_between(P3::new(0.0, -15.0, -10.0), P3::new(40.0, 15.0, 10.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn scallop_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+fn scallop_spec(id: usize) -> RequestSpec {
     let OperationConfig::Scallop(mut cfg) = OperationConfig::new_default(OperationType::Scallop)
     else {
         unreachable!("default op kind mismatch");
@@ -451,43 +201,19 @@ fn scallop_request(id: usize) -> ComputeRequest {
     cfg.continuous = true;
     cfg.scallop_height = 0.2;
     cfg.tolerance = 0.2;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Scallop {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::Scallop(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 20.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-25.0, -25.0, -5.0),
-            max: P3::new(25.0, 25.0, 25.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(20.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Scallop {id}"),
+        OperationConfig::Scallop(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+    )
+    .with_mesh(make_test_hemisphere(20.0, 16));
+    spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn ramp_finish_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+fn ramp_finish_spec(id: usize) -> RequestSpec {
     let OperationConfig::RampFinish(mut cfg) =
         OperationConfig::new_default(OperationType::RampFinish)
     else {
@@ -496,86 +222,38 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
     cfg.max_stepdown = 2.0;
     cfg.sampling = 2.0;
     cfg.tolerance = 0.2;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Ramp finish {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::RampFinish(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 20.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-25.0, -25.0, -5.0),
-            max: P3::new(25.0, 25.0, 25.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(20.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Ramp finish {id}"),
+        OperationConfig::RampFinish(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+    )
+    .with_mesh(make_test_hemisphere(20.0, 16));
+    spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn spiral_finish_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+fn spiral_finish_spec(id: usize) -> RequestSpec {
     let OperationConfig::SpiralFinish(mut cfg) =
         OperationConfig::new_default(OperationType::SpiralFinish)
     else {
         unreachable!("default op kind mismatch");
     };
     cfg.stepover = 2.0;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Spiral finish {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::SpiralFinish(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 20.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-25.0, -25.0, -5.0),
-            max: P3::new(25.0, 25.0, 25.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(20.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Spiral finish {id}"),
+        OperationConfig::SpiralFinish(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+    )
+    .with_mesh(make_test_hemisphere(20.0, 16));
+    spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn radial_finish_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+fn radial_finish_spec(id: usize) -> RequestSpec {
     let OperationConfig::RadialFinish(mut cfg) =
         OperationConfig::new_default(OperationType::RadialFinish)
     else {
@@ -583,86 +261,38 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
     };
     cfg.angular_step = 30.0;
     cfg.point_spacing = 2.0;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Radial finish {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(make_test_flat(80.0))),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::RadialFinish(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 15.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-40.0, -40.0, -5.0),
-            max: P3::new(40.0, 40.0, 15.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(15.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Radial finish {id}"),
+        OperationConfig::RadialFinish(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+    )
+    .with_mesh(make_test_flat(80.0));
+    spec.stock = stock_between(P3::new(-40.0, -40.0, -5.0), P3::new(40.0, 40.0, 15.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn horizontal_finish_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+fn horizontal_finish_spec(id: usize) -> RequestSpec {
     let OperationConfig::HorizontalFinish(mut cfg) =
         OperationConfig::new_default(OperationType::HorizontalFinish)
     else {
         unreachable!("default op kind mismatch");
     };
     cfg.stepover = 3.0;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Horizontal finish {id}"),
-        polygons: None,
-        mesh: Some(Arc::new(make_test_flat(80.0))),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::HorizontalFinish(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 15.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-40.0, -40.0, -5.0),
-            max: P3::new(40.0, 40.0, 15.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(15.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Horizontal finish {id}"),
+        OperationConfig::HorizontalFinish(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+    )
+    .with_mesh(make_test_flat(80.0));
+    spec.stock = stock_between(P3::new(-40.0, -40.0, -5.0), P3::new(40.0, 40.0, 15.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
-fn project_curve_request(id: usize) -> ComputeRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+fn project_curve_spec(id: usize) -> RequestSpec {
     let OperationConfig::ProjectCurve(mut cfg) =
         OperationConfig::new_default(OperationType::ProjectCurve)
     else {
@@ -670,42 +300,20 @@ fn project_curve_request(id: usize) -> ComputeRequest {
     };
     cfg.depth = 0.75;
     cfg.point_spacing = 1.0;
-    ComputeRequest {
-        // Identity-setup fixtures: no local<->global transform to apply.
-        setup_transform: None,
-        drill_targets: Arc::new(Vec::new()),
-        toolpath_id: ToolpathId(id),
-        toolpath_index: 0,
-        toolpath_name: format!("Project curve {id}"),
-        polygons: Some(Arc::new(vec![
-            Polygon2::rectangle(-12.0, -12.0, 12.0, 12.0),
-            Polygon2::rectangle(-6.0, -4.0, 6.0, 4.0),
-        ])),
-        mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
-        enriched_mesh: None,
-        face_selection: None,
-        operation: OperationConfig::ProjectCurve(cfg),
-        dressups: DressupConfig::default(),
-        stock_source: StockSource::Fresh,
-        tool,
-        safe_z: 15.0,
-        prev_tool_radius: None,
-        reference_tool_cfg: None,
-        stock_bbox: Some(BoundingBox3 {
-            min: P3::new(-25.0, -25.0, -5.0),
-            max: P3::new(25.0, 25.0, 25.0),
-        }),
-        boundary: BoundaryConfig::default(),
-        keep_out_footprints: Vec::new(),
-        heights: HeightsConfig::default().resolve(&HeightContext::simple(15.0, 5.0)),
-        cutting_levels: vec![],
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
-        prior_stock: None,
-        material: rs_cam_core::material::Material::default(),
-        derived_rest_regions: None,
-        rest_analysis: Default::default(),
-        link_kinematics: None,
-    }
+    let mut spec = RequestSpec::new(
+        id,
+        &format!("Project curve {id}"),
+        OperationConfig::ProjectCurve(cfg),
+        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+    );
+    spec.mesh = Some(make_test_hemisphere(20.0, 16));
+    spec.polygons = Some(vec![
+        Polygon2::rectangle(-12.0, -12.0, 12.0, 12.0),
+        Polygon2::rectangle(-6.0, -4.0, 6.0, 4.0),
+    ]);
+    spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
+    spec.dressups = DressupConfig::default();
+    spec
 }
 
 fn long_simulation_request() -> SimulationRequest {
@@ -882,11 +490,9 @@ fn assert_toolpaths_match(left: &Toolpath, right: &Toolpath) {
 
 #[test]
 fn debug_enabled_compute_attaches_trace_and_keeps_geometry_stable() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut debug_req = quick_pocket_request(41);
-    debug_req.debug_options.enabled = true;
+    let debug_req = build_request(pocket_spec(41).with_debug_trace());
 
-    let debug_result = super::execute::run_compute(&debug_req, &cancel);
+    let debug_result = super::execute::run_compute(&debug_req);
     let debug_toolpath = debug_result.result.expect("debug compute should succeed");
     let trace = debug_toolpath
         .debug_trace
@@ -919,11 +525,15 @@ fn debug_enabled_compute_attaches_trace_and_keeps_geometry_stable() {
     assert!(payload.contains("\"semantic_trace\""));
     std::fs::remove_file(&trace_path).ok();
 
-    let plain_result = super::execute::run_compute(&quick_pocket_request(42), &cancel)
+    let plain_result = super::execute::run_compute(&build_request(pocket_spec(42)))
         .result
         .expect("plain compute should succeed");
-    assert!(plain_result.debug_trace.is_none());
-    assert!(plain_result.semantic_trace.is_none());
+    // WP11b behaviour change: `execute_job` builds both recorders on every
+    // generation, because the CLI reads both traces off every result. What
+    // `debug_options` gates is the per-dressup ITEM set and the artifact
+    // FILE, which is what an operator asks for when they tick the box.
+    assert!(plain_result.debug_trace.is_some());
+    assert!(plain_result.semantic_trace.is_some());
     assert!(plain_result.debug_trace_path.is_none());
     assert_toolpaths_match(debug_toolpath.toolpath(), plain_result.toolpath());
     assert_eq!(
@@ -938,21 +548,13 @@ fn debug_enabled_compute_attaches_trace_and_keeps_geometry_stable() {
 
 #[test]
 fn debug_trace_records_arc_fit_and_feed_optimization_phases() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = sample_request(
-        OperationConfig::new_default(OperationType::Pocket),
-        StockSource::Fresh,
-    );
-    request.toolpath_id = ToolpathId(77);
-    request.toolpath_name = "Dressup phases".to_owned();
-    request.polygons = Some(Arc::new(vec![Polygon2::rectangle(
-        -20.0, -20.0, 20.0, 20.0,
-    )]));
-    request.dressups.arc_fitting = true;
-    request.dressups.feed_optimization = true;
-    request.debug_options.enabled = true;
+    let mut spec = pocket_spec(77).with_debug_trace();
+    spec.name = "Dressup phases".to_owned();
+    spec.dressups.arc_fitting = true;
+    spec.dressups.feed_optimization = true;
+    let request = build_request(spec);
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("debug compute should succeed");
     let trace = result
@@ -975,11 +577,9 @@ fn debug_trace_records_arc_fit_and_feed_optimization_phases() {
 
 #[test]
 fn debug_trace_records_dropcutter_prepare_and_rasterize_phases() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = heavy_dropcutter_request(78);
-    request.debug_options.enabled = true;
+    let request = build_request(heavy_dropcutter_spec(78).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("dropcutter debug compute should succeed");
     let trace = result
@@ -1001,11 +601,9 @@ fn debug_trace_records_dropcutter_prepare_and_rasterize_phases() {
 
 #[test]
 fn debug_trace_records_waterline_prepare_and_slice_phases() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = waterline_request(79);
-    request.debug_options.enabled = true;
+    let request = build_request(waterline_spec(79).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("waterline debug compute should succeed");
     let trace = result
@@ -1025,11 +623,17 @@ fn debug_trace_records_waterline_prepare_and_slice_phases() {
     }
 }
 
+/// A cancelled generation reports `Cancelled` and carries NO partial trace.
+///
+/// WP11b behaviour change. The viz worker used to finish its recorders on
+/// the error path and hand back what they had. `execute_job` returns the
+/// traces WITH a result, so a refusal returns neither — `SessionError`
+/// carries no trace slot. The verdict itself is unchanged, and that is what
+/// the lane and the drain read.
 #[test]
-fn cancelled_toolpath_returns_partial_debug_trace() {
+fn cancelled_toolpath_reports_cancelled_and_no_partial_trace() {
     let mut backend = ThreadedComputeBackend::new();
-    let mut request = heavy_dropcutter_request(88);
-    request.debug_options.enabled = true;
+    let request = build_request(heavy_dropcutter_spec(88).with_debug_trace());
     backend.submit_toolpath(request);
     thread::sleep(Duration::from_millis(20));
     backend.cancel_lane(ComputeLane::Toolpath);
@@ -1054,42 +658,36 @@ fn cancelled_toolpath_returns_partial_debug_trace() {
         None => panic!("expected cancelled toolpath result"),
     };
     assert!(
-        cancelled.debug_trace.is_some(),
-        "cancelled debug run should return a partial trace"
+        cancelled.debug_trace.is_none(),
+        "a refused generation returns no trace: execute_job returns the \
+         traces with a result"
     );
     assert!(
-        cancelled.semantic_trace.is_some(),
-        "cancelled debug run should return a partial semantic trace"
+        cancelled.semantic_trace.is_none(),
+        "a refused generation returns no semantic trace either"
     );
-    let trace_path = cancelled
-        .debug_trace_path
-        .as_ref()
-        .expect("cancelled debug run should write an artifact");
     assert!(
-        trace_path.exists(),
-        "expected trace artifact at {:?}",
-        trace_path
+        cancelled.debug_trace_path.is_none(),
+        "no trace means no artifact file"
     );
-    std::fs::remove_file(trace_path).ok();
 }
 
 #[test]
 fn semantic_trace_records_entry_params_and_boundary_clip() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = quick_pocket_request(90);
-    request.debug_options.enabled = true;
-    request.boundary.enabled = true;
-    request.stock_bbox = Some(BoundingBox3 {
-        min: P3::new(-10.0, -10.0, -5.0),
-        max: P3::new(10.0, 10.0, 10.0),
-    });
-    request.dressups.entry_style = crate::state::toolpath::DressupEntryStyle::Helix;
-    request.dressups.lead_in_out = true;
-    request.dressups.link_moves = true;
-    request.dressups.arc_fitting = true;
-    request.dressups.optimize_rapid_order = true;
+    let mut spec = pocket_spec(90).with_debug_trace();
+    spec.boundary.enabled = true;
+    // A board SMALLER than the 40 x 40 polygon, so the stock-rectangle
+    // boundary really clips.
+    spec.stock = board(10.0, 15.0);
+    spec.polygons = Some(vec![Polygon2::rectangle(-20.0, -20.0, 20.0, 20.0)]);
+    spec.dressups.entry_style = crate::state::toolpath::DressupEntryStyle::Helix;
+    spec.dressups.lead_in_out = true;
+    spec.dressups.link_moves = true;
+    spec.dressups.arc_fitting = true;
+    spec.dressups.optimize_rapid_order = true;
+    let request = build_request(spec);
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("semantic debug compute should succeed");
     let semantic_trace = result
@@ -1109,13 +707,13 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
         helix
             .params
             .get(rs_cam_core::semantic_trace::SemanticKey::Radius),
-        Some(&serde_json::json!(request.dressups.helix_radius))
+        Some(&serde_json::json!(DressupConfig::default().helix_radius))
     );
     assert_eq!(
         helix
             .params
             .get(rs_cam_core::semantic_trace::SemanticKey::Pitch),
-        Some(&serde_json::json!(request.dressups.helix_pitch))
+        Some(&serde_json::json!(DressupConfig::default().helix_pitch))
     );
 
     let boundary_clip = semantic_trace
@@ -1153,22 +751,22 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
 /// `stock_rect()` whenever the union wasn't exactly one polygon).
 #[test]
 fn derived_rest_regions_boundary_clips_to_all_disjoint_regions() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = quick_pocket_request(200);
-    request.boundary.enabled = true;
-    request.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
-        source_toolpath_id: ToolpathId(999),
-    };
+    let mut spec = pocket_spec(200);
+    spec.boundary.enabled = true;
     // Two small islands near opposite corners of the -20..20 pocket, with a
     // large untouched gap between them (e.g. around the origin) that a
     // single-polygon-union fallback to the full stock/pocket rectangle
     // would have cut through.
-    request.derived_rest_regions = Some(vec![
+    // WP11b: the regions come from a SOURCE toolpath's cached result now,
+    // because that is where a `DerivedRestRegions` boundary reads them. The
+    // fixture seeds one and points the boundary at it.
+    spec.rest_source_regions = Some(vec![
         Polygon2::rectangle(-18.0, -18.0, -8.0, -8.0),
         Polygon2::rectangle(8.0, 8.0, 18.0, 18.0),
     ]);
+    let request = build_request(spec);
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("derived-rest-regions boundary compute should succeed");
 
@@ -1208,12 +806,10 @@ fn derived_rest_regions_boundary_clips_to_all_disjoint_regions() {
 /// clipped-down copy of the full-part path.
 #[test]
 fn derived_rest_regions_boundary_shrinks_generation_not_just_clips_it() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-
     // Baseline: no boundary at all — scallop covers the whole hemisphere
     // footprint (~pi * 20^2 ~= 1257 sq mm).
-    let baseline_request = scallop_request(300);
-    let baseline = super::execute::run_compute(&baseline_request, &cancel)
+    let baseline_request = build_request(scallop_spec(300));
+    let baseline = super::execute::run_compute(&baseline_request)
         .result
         .expect("baseline scallop compute should succeed");
     let baseline_moves = baseline.annotated.toolpath.moves.len();
@@ -1221,16 +817,14 @@ fn derived_rest_regions_boundary_shrinks_generation_not_just_clips_it() {
     // Bounded: two small 6x6 islands (72 sq mm total) in opposite quadrants,
     // well inside the hemisphere's footprint, with a large untouched gap
     // between them.
-    let mut bounded_request = scallop_request(301);
-    bounded_request.boundary.enabled = true;
-    bounded_request.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
-        source_toolpath_id: ToolpathId(999),
-    };
-    bounded_request.derived_rest_regions = Some(vec![
+    let mut bounded_spec = scallop_spec(301);
+    bounded_spec.boundary.enabled = true;
+    bounded_spec.rest_source_regions = Some(vec![
         Polygon2::rectangle(-15.0, -15.0, -9.0, -9.0),
         Polygon2::rectangle(9.0, 9.0, 15.0, 15.0),
     ]);
-    let bounded = super::execute::run_compute(&bounded_request, &cancel)
+    let bounded_request = build_request(bounded_spec);
+    let bounded = super::execute::run_compute(&bounded_request)
         .result
         .expect("derived-rest-regions scallop compute should succeed");
     let bounded_moves = bounded.annotated.toolpath.moves.len();
@@ -1289,10 +883,8 @@ fn derived_rest_regions_boundary_shrinks_generation_not_just_clips_it() {
 /// non-pencil op) genuinely emits a usable set, not just an empty `Some(vec![])`.
 #[test]
 fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-
-    let mut source_request = scallop_request(400);
-    source_request.rest_analysis = crate::state::toolpath::RestAnalysisConfig {
+    let mut source_spec = scallop_spec(400);
+    source_spec.rest_analysis = crate::state::toolpath::RestAnalysisConfig {
         enabled: true,
         reference_tool_id: None,
         cell_mm: 1.0,
@@ -1300,7 +892,8 @@ fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
         region_margin_mm: 0.5,
         ..Default::default()
     };
-    let source_result = super::execute::run_compute(&source_request, &cancel)
+    let source_request = build_request(source_spec);
+    let source_result = super::execute::run_compute(&source_request)
         .result
         .expect("scallop with rest_analysis enabled should succeed");
     let source_regions = std::sync::Arc::clone(
@@ -1317,15 +910,12 @@ fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
 
     // Feed those exact regions into a downstream toolpath's boundary, same
     // shape a controller would resolve from `source_result.annotated.rest_regions`.
-    let mut downstream_request = quick_pocket_request(401);
-    downstream_request.boundary.enabled = true;
-    downstream_request.boundary.source =
-        crate::state::toolpath::BoundarySource::DerivedRestRegions {
-            source_toolpath_id: ToolpathId(400),
-        };
-    downstream_request.derived_rest_regions = Some((*source_regions).clone());
+    let mut downstream_spec = pocket_spec(401);
+    downstream_spec.boundary.enabled = true;
+    downstream_spec.rest_source_regions = Some((*source_regions).clone());
+    let downstream_request = build_request(downstream_spec);
 
-    let downstream = super::execute::run_compute(&downstream_request, &cancel)
+    let downstream = super::execute::run_compute(&downstream_request)
         .result
         .expect("downstream toolpath sourcing a non-pencil rest-regions boundary should succeed");
     assert!(
@@ -1343,11 +933,9 @@ fn adaptive3d_semantic_trace_records_runtime_structure() {
     // adaptive3d with the generic span-derived `DepthLevel` items emitted by
     // `compute/annotate.rs`. Verify the trace exists and at least one
     // DepthLevel item is attached.
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = adaptive3d_request(91);
-    request.debug_options.enabled = true;
+    let request = build_request(adaptive3d_spec(91).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("adaptive3d debug compute should succeed");
     let semantic_trace = result
@@ -1380,11 +968,9 @@ fn adaptive_semantic_trace_records_runtime_structure() {
     // After Phase 3A, detailed semantic annotations (slot-clearing, cleanup,
     // passes) are no longer produced by the viz layer.  Verify the operation
     // succeeds and a top-level semantic trace is attached.
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = adaptive_request(92);
-    request.debug_options.enabled = true;
+    let request = build_request(adaptive_spec(92).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("adaptive debug compute should succeed");
     let semantic_trace = result
@@ -1405,11 +991,9 @@ fn adaptive_semantic_trace_records_runtime_structure() {
 fn profile_semantic_trace_records_depth_and_finish_structure() {
     // After Phase 3A, detailed depth-level/finish-pass annotations are no
     // longer produced.  Verify the operation succeeds with a semantic trace.
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = profile_request(93);
-    request.debug_options.enabled = true;
+    let request = build_request(profile_spec(93).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("profile debug compute should succeed");
     let semantic_trace = result
@@ -1428,11 +1012,9 @@ fn profile_semantic_trace_records_depth_and_finish_structure() {
 
 #[test]
 fn drill_semantic_trace_records_cycle_children() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = drill_request(94);
-    request.debug_options.enabled = true;
+    let request = build_request(drill_spec(94).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("drill debug compute should succeed");
     let semantic_trace = result
@@ -1458,11 +1040,9 @@ fn drill_semantic_trace_records_cycle_children() {
 
 #[test]
 fn steep_shallow_semantic_trace_splits_steep_and_shallow_regions() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = steep_shallow_request(95);
-    request.debug_options.enabled = true;
+    let request = build_request(steep_shallow_spec(95).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("steep/shallow debug compute should succeed");
     let semantic_trace = result
@@ -1481,11 +1061,9 @@ fn steep_shallow_semantic_trace_splits_steep_and_shallow_regions() {
 
 #[test]
 fn pencil_semantic_trace_records_chain_and_offset_pass_structure() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = pencil_request(96);
-    request.debug_options.enabled = true;
+    let request = build_request(pencil_spec(96).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("pencil debug compute should succeed");
     let semantic_trace = result
@@ -1504,11 +1082,9 @@ fn pencil_semantic_trace_records_chain_and_offset_pass_structure() {
 
 #[test]
 fn scallop_semantic_trace_records_band_and_ring_structure() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = scallop_request(97);
-    request.debug_options.enabled = true;
+    let request = build_request(scallop_spec(97).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("scallop debug compute should succeed");
     let semantic_trace = result
@@ -1527,11 +1103,9 @@ fn scallop_semantic_trace_records_band_and_ring_structure() {
 
 #[test]
 fn ramp_finish_semantic_trace_records_terrace_and_ramp_structure() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = ramp_finish_request(98);
-    request.debug_options.enabled = true;
+    let request = build_request(ramp_finish_spec(98).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("ramp finish debug compute should succeed");
     let semantic_trace = result
@@ -1550,11 +1124,9 @@ fn ramp_finish_semantic_trace_records_terrace_and_ramp_structure() {
 
 #[test]
 fn spiral_finish_semantic_trace_records_band_and_ring_structure() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = spiral_finish_request(99);
-    request.debug_options.enabled = true;
+    let request = build_request(spiral_finish_spec(99).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("spiral finish debug compute should succeed");
     let semantic_trace = result
@@ -1573,11 +1145,9 @@ fn spiral_finish_semantic_trace_records_band_and_ring_structure() {
 
 #[test]
 fn radial_finish_semantic_trace_records_ray_angles() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = radial_finish_request(100);
-    request.debug_options.enabled = true;
+    let request = build_request(radial_finish_spec(100).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("radial finish debug compute should succeed");
     let semantic_trace = result
@@ -1596,11 +1166,9 @@ fn radial_finish_semantic_trace_records_ray_angles() {
 
 #[test]
 fn horizontal_finish_semantic_trace_records_slice_passes() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = horizontal_finish_request(101);
-    request.debug_options.enabled = true;
+    let request = build_request(horizontal_finish_spec(101).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("horizontal finish debug compute should succeed");
     let semantic_trace = result
@@ -1619,11 +1187,9 @@ fn horizontal_finish_semantic_trace_records_slice_passes() {
 
 #[test]
 fn project_curve_semantic_trace_records_source_curve_groups() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut request = project_curve_request(102);
-    request.debug_options.enabled = true;
+    let request = build_request(project_curve_spec(102).with_debug_trace());
 
-    let result = super::execute::run_compute(&request, &cancel)
+    let result = super::execute::run_compute(&request)
         .result
         .expect("project curve debug compute should succeed");
     let semantic_trace = result
@@ -1643,7 +1209,7 @@ fn project_curve_semantic_trace_records_source_curve_groups() {
 #[test]
 fn running_lane_snapshot_reports_current_phase() {
     let mut backend = ThreadedComputeBackend::new();
-    backend.submit_toolpath(heavy_dropcutter_request(89));
+    backend.submit_toolpath(build_request(heavy_dropcutter_spec(89)));
 
     let start = Instant::now();
     let mut saw_phase = false;
@@ -1709,7 +1275,7 @@ fn toolpath_and_analysis_lanes_run_independently() {
     let mut backend = ThreadedComputeBackend::new();
     backend.submit_simulation(long_simulation_request());
     thread::sleep(Duration::from_millis(20));
-    backend.submit_toolpath(quick_pocket_request(7));
+    backend.submit_toolpath(build_request(pocket_spec(7)));
 
     let result = wait_for(&mut backend, Duration::from_secs(5), |message| {
         matches!(
@@ -1735,10 +1301,10 @@ fn toolpath_and_analysis_lanes_run_independently() {
 #[test]
 fn duplicate_queued_toolpaths_are_coalesced() {
     let mut backend = ThreadedComputeBackend::new();
-    backend.submit_toolpath(heavy_dropcutter_request(1));
+    backend.submit_toolpath(build_request(heavy_dropcutter_spec(1)));
     thread::sleep(Duration::from_millis(20));
-    backend.submit_toolpath(quick_pocket_request(2));
-    backend.submit_toolpath(quick_pocket_request(2));
+    backend.submit_toolpath(build_request(pocket_spec(2)));
+    backend.submit_toolpath(build_request(pocket_spec(2)));
 
     let snapshot = backend.lane_snapshot(ComputeLane::Toolpath);
     assert!(matches!(
@@ -1754,9 +1320,9 @@ fn duplicate_queued_toolpaths_are_coalesced() {
 #[test]
 fn resubmitting_active_toolpath_cancels_and_replaces_it() {
     let mut backend = ThreadedComputeBackend::new();
-    backend.submit_toolpath(heavy_dropcutter_request(3));
+    backend.submit_toolpath(build_request(heavy_dropcutter_spec(3)));
     thread::sleep(Duration::from_millis(20));
-    backend.submit_toolpath(quick_pocket_request(3));
+    backend.submit_toolpath(build_request(pocket_spec(3)));
 
     let snapshot = backend.lane_snapshot(ComputeLane::Toolpath);
     assert_eq!(snapshot.queue_depth, 1);
@@ -1856,7 +1422,7 @@ fn analysis_requests_replace_stale_work() {
 #[test]
 fn cancel_all_marks_both_lanes_cancelling() {
     let mut backend = ThreadedComputeBackend::new();
-    backend.submit_toolpath(heavy_dropcutter_request(4));
+    backend.submit_toolpath(build_request(heavy_dropcutter_spec(4)));
     backend.submit_simulation(long_simulation_request());
     thread::sleep(Duration::from_millis(20));
 
@@ -2693,41 +2259,38 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
 /// than production does.
 ///
 /// Under C1 the `ReconcileSet` is built unconditionally and every transform
-/// reconciles through it; only the RECORDER stays debug-gated (recording an
-/// item per planner decision on every generation is not free). This test
-/// drives that exact shape: a request with `debug_options.enabled == false`,
-/// but a recorder handed in, so the remap path is measured on the default
-/// configuration rather than on the debug one.
+/// reconciles through it. WP11b moved the pipeline into
+/// `rs_cam_core::session::execute_job`, which records ALWAYS and gates only
+/// the per-dressup ITEMS on `debug_options` — so the shape this test drives
+/// is now the shipped one directly: `debug_options.enabled == false`, a
+/// recorder present, the remap path measured on the default configuration.
 ///
 /// It also pins C1 item 4a: each per-dressup item now declares whether its
 /// move range is the moves the step actually restructured or an explicit
 /// whole-path claim, instead of every item silently binding `0..len`.
 #[test]
 fn worker_reconciles_semantic_links_with_debug_options_disabled() {
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let mut req = quick_pocket_request(77);
-    // Transforms that actually move indices: reorder, arc collapse, link
-    // bridges, ramp entries. Without these the reconcile is vacuous.
-    req.dressups.optimize_rapid_order = true;
-    req.dressups.link_moves = true;
-    req.dressups.link_max_distance = 50.0;
-    req.dressups.arc_fitting = true;
-    req.dressups.arc_tolerance = 0.05;
-    req.dressups.entry_style = crate::state::toolpath::DressupEntryStyle::Ramp;
-    assert!(
-        !req.debug_options.enabled,
-        "this test is about the DEFAULT configuration"
-    );
+    let dressed = |debug: bool| {
+        let mut spec = pocket_spec(77);
+        // Transforms that actually move indices: reorder, arc collapse,
+        // link bridges, ramp entries. Without these the reconcile is
+        // vacuous.
+        spec.dressups.optimize_rapid_order = true;
+        spec.dressups.link_moves = true;
+        spec.dressups.link_max_distance = 50.0;
+        spec.dressups.arc_fitting = true;
+        spec.dressups.arc_tolerance = 0.05;
+        spec.dressups.entry_style = crate::state::toolpath::DressupEntryStyle::Ramp;
+        spec.debug_options.enabled = debug;
+        build_request(spec)
+    };
 
-    let recorder =
-        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("Pocket 77", "Pocket");
-    let outcome = super::execute::run_compute_with_phase_tracker(
-        &req,
-        &cancel,
-        None,
-        None,
-        Some(recorder.clone()),
-    );
+    // WP11b: `execute_job` owns the recorders, so this door no longer takes
+    // one, and the semantic trace comes back on the result. The claim is
+    // unchanged: the reconcile runs with `debug_options.enabled` FALSE,
+    // which is the shipped configuration.
+    let plain = dressed(false);
+    let outcome = super::execute::run_compute_with_phase_tracker(&plain, None);
     let result = outcome.result.expect("compute should succeed");
     let move_count = result.toolpath().moves.len();
     assert!(
@@ -2735,7 +2298,10 @@ fn worker_reconciles_semantic_links_with_debug_options_disabled() {
         "non-vacuity: the fixture must cut something"
     );
 
-    let trace = recorder.finish();
+    let trace = result
+        .semantic_trace
+        .as_ref()
+        .expect("core records a semantic trace on every generation");
     assert!(
         trace.summary.move_linked_item_count > 0,
         "non-vacuity: unlinking everything would satisfy the bounds check below trivially"
@@ -2762,7 +2328,20 @@ fn worker_reconciles_semantic_links_with_debug_options_disabled() {
     }
 
     // Item 4a: per-dressup items declare the scope of their claim.
-    let dressup_items: Vec<_> = trace
+    //
+    // WP11b moved the ITEM gate onto `debug_options`, which is where the
+    // GUI worker had it (it built no recorder at all without the flag). So
+    // this half of the claim is measured on the debug configuration, and
+    // the bounds half above stays on the shipped one.
+    let traced = dressed(true);
+    let traced_result = super::execute::run_compute_with_phase_tracker(&traced, None)
+        .result
+        .expect("the debug compute should succeed");
+    let traced_trace = traced_result
+        .semantic_trace
+        .as_ref()
+        .expect("core records a semantic trace on every generation");
+    let dressup_items: Vec<_> = traced_trace
         .items
         .iter()
         .filter(|i| {
@@ -2789,6 +2368,9 @@ fn worker_reconciles_semantic_links_with_debug_options_disabled() {
             item.label
         );
     }
+    if let Some(path) = traced_result.debug_trace_path.as_ref() {
+        std::fs::remove_file(path).ok();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2807,13 +2389,7 @@ fn worker_reconciles_semantic_links_with_debug_options_disabled() {
 /// A cheap replacement request for `id` — cheap on purpose, so the test's
 /// own supersede does not leave a second heavy DropCutter running behind it.
 fn cheap_request_for(id: usize) -> ComputeRequest {
-    let mut request = sample_request(
-        OperationConfig::new_default(OperationType::Pocket),
-        StockSource::Fresh,
-    );
-    request.toolpath_id = ToolpathId(id);
-    request.toolpath_index = id;
-    request
+    build_request(pocket_spec(id))
 }
 
 #[test]
@@ -2822,7 +2398,7 @@ fn resubmitting_the_active_toolpath_reports_a_supersede() {
 
     // An idle lane has nothing to supersede.
     assert_eq!(
-        backend.submit_toolpath(heavy_dropcutter_request(91)),
+        backend.submit_toolpath(build_request(heavy_dropcutter_spec(91))),
         ToolpathSubmitOutcome::Queued,
         "the first submit onto an idle lane cannot supersede anything"
     );
@@ -2836,7 +2412,7 @@ fn resubmitting_the_active_toolpath_reports_a_supersede() {
     let deadline = Instant::now() + Duration::from_secs(30);
     let mut superseded = false;
     while Instant::now() < deadline {
-        if backend.submit_toolpath(heavy_dropcutter_request(91))
+        if backend.submit_toolpath(build_request(heavy_dropcutter_spec(91)))
             == ToolpathSubmitOutcome::SupersededActive
         {
             superseded = true;

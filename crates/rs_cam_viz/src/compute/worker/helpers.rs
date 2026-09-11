@@ -4,121 +4,15 @@ use super::{
 use serde_json::json;
 use std::path::PathBuf;
 
-use rs_cam_core::dexel_stock::TriDexelStock;
-
 // Re-export from core so existing callers (`simulation.rs`, `properties/`) keep working.
 pub use rs_cam_core::compute::build_cutter;
 
-pub(super) fn effective_safe_z(req: &ComputeRequest) -> f64 {
-    req.heights.retract_z
-}
-
-/// Apply all enabled dressup transforms to a computed toolpath.
-///
-/// Phase 4 / #44: this is now a thin wrapper around the core
-/// [`rs_cam_core::compute::execute::apply_dressups`] pipeline. The viz layer
-/// pre-builds the feed-optimization stock (which depends on GUI-only
-/// `state::toolpath` operation-availability checks) and forwards the per-step
-/// debug + semantic tracing contexts; everything else — capability gates,
-/// dressup ordering, span remapping — lives in core.
-pub(super) fn apply_dressups(
-    annotated: rs_cam_core::toolpath_spans::AnnotatedToolpath,
-    req: &ComputeRequest,
-    debug: Option<&rs_cam_core::debug_trace::ToolpathDebugContext>,
-    semantic: Option<&rs_cam_core::semantic_trace::ToolpathSemanticContext>,
-    channels: &mut rs_cam_core::transform_provenance::ReconcileSet<'_>,
-) -> rs_cam_core::toolpath_spans::AnnotatedToolpath {
-    let cfg = &req.dressups;
-    let tool = &req.tool;
-    let safe_z = effective_safe_z(req);
-    let transform_capabilities = req.operation.transform_capabilities();
-
-    // Pre-build feed-optimization stock if requested. The GUI-only
-    // availability check (`feed_optimization_stock`) must run here because
-    // core has no knowledge of `state::toolpath`. If the check fails or the
-    // stock can't be built we just don't pass one to core, which mirrors
-    // the previous "skip with warning" behavior.
-    let mut feed_opt_stock = None;
-    if cfg.feed_optimization {
-        match feed_optimization_stock(req) {
-            Ok(stock) => feed_opt_stock = Some(stock),
-            Err(reason) => {
-                tracing::warn!(
-                    "Skipping feed optimization for toolpath {}: {reason}",
-                    req.toolpath_id.0
-                );
-            }
-        }
-    }
-    // Built unconditionally since S3: the air-cut filter needs the cutter to
-    // classify a sample for the whole tool, and it runs off `prior_stock`,
-    // not off feed optimisation. Feed optimisation stays gated on
-    // `feed_opt_stock` inside core, so handing the cutter over cannot switch
-    // it on.
-    let cutter = build_cutter(tool);
-
-    // G-RAMPTERRAIN: entry moves of SURFACE-RIDING operations clip to
-    // the drop-cutter surface (`entry_probe_leave` names them; prism
-    // operations get no probe — FINDINGS.md amendment 1). The worker
-    // request carries no spatial index, so build one here — but only
-    // when an entry dressup will actually consume it.
-    let entry_leave = if cfg.entry_style == rs_cam_core::compute::config::DressupEntryStyle::None {
-        None
-    } else {
-        req.operation.entry_probe_leave()
-    };
-    let entry_mesh = entry_leave.and(req.mesh.as_deref());
-    let entry_index = entry_mesh.map(rs_cam_core::mesh::SpatialIndex::build_auto);
-    let entry_surface = entry_mesh.zip(entry_index.as_ref()).zip(entry_leave).map(
-        |((mesh, index), stock_to_leave)| rs_cam_core::dressup::EntrySurfaceProbe {
-            mesh,
-            index,
-            cutter: &cutter as &dyn rs_cam_core::tool::MillingCutter,
-            stock_to_leave,
-            off_mesh: rs_cam_core::dressup::OffMeshEntry::PlungeFallback,
-            // G-ISOCLIPENTRY — the session's twin. `prior_stock` rides this
-            // request for the air-cut filter too, so the rest predicate is
-            // read from `stock_source`, never from the snapshot's presence.
-            rest_stock: match req.stock_source {
-                crate::state::toolpath::StockSource::FromRemainingStock => req.prior_stock.as_ref(),
-                crate::state::toolpath::StockSource::Fresh => None,
-            },
-        },
-    );
-
-    rs_cam_core::compute::execute::apply_dressups(
-        annotated,
-        cfg,
-        req.operation.feed_rate(),
-        tool.envelope_diameter(),
-        safe_z,
-        req.heights.top_z,
-        req.prior_stock.as_ref(),
-        feed_opt_stock.as_mut(),
-        Some(&cutter as &dyn rs_cam_core::tool::MillingCutter),
-        entry_surface,
-        transform_capabilities,
-        debug,
-        semantic,
-        channels,
-    )
-}
-
-pub(super) fn feed_optimization_stock(req: &ComputeRequest) -> Result<TriDexelStock, &'static str> {
-    if let Some(reason) = crate::state::toolpath::feed_optimization_unavailable_reason(
-        &req.operation,
-        req.stock_source,
-    ) {
-        return Err(reason);
-    }
-
-    let bbox = req
-        .stock_bbox
-        .as_ref()
-        .ok_or("Feed optimization requires known stock bounds.")?;
-    let cell_size = (req.tool.diameter / 4.0).clamp(0.25, 2.0);
-    Ok(TriDexelStock::from_bounds(bbox, cell_size))
-}
+// WP11b: `effective_safe_z`, `apply_dressups` and `feed_optimization_stock`
+// are gone. The first read a request field that no longer exists; the other
+// two were the viz half of one generation pipeline (tracker row N12), and
+// `rs_cam_core::session::execute_job` runs both for the GUI now. The
+// feed-optimisation stock the GUI door built — and the core door did not —
+// is built inside `execute_job`, which is what closes N12 item 3.
 
 pub(super) fn run_collision_check_with_phase<F>(
     req: &CollisionRequest,
@@ -166,47 +60,23 @@ pub(super) fn simulation_metric_artifact_dir() -> PathBuf {
     workspace_root().join("target").join("simulation_metrics")
 }
 
+/// The debug artifact for one generation.
+///
+/// WP11b: the request no longer carries the operation, the dressups, the
+/// tool or the heights — the handle does, and its fields are private. The
+/// snapshot therefore comes from the handle's own reader, which names the
+/// same things this function used to read field by field.
 pub(super) fn build_trace_artifact(
     req: &ComputeRequest,
     debug_trace: Option<rs_cam_core::debug_trace::ToolpathDebugTrace>,
     semantic_trace: Option<rs_cam_core::semantic_trace::ToolpathSemanticTrace>,
 ) -> rs_cam_core::semantic_trace::ToolpathTraceArtifact {
-    let stock_bbox = req.stock_bbox.as_ref().map(|bbox| {
-        json!({
-            "min": { "x": bbox.min.x, "y": bbox.min.y, "z": bbox.min.z },
-            "max": { "x": bbox.max.x, "y": bbox.max.y, "z": bbox.max.z },
-        })
-    });
-
-    let request_snapshot = json!({
-        "toolpath_id": req.toolpath_id.0,
-        "toolpath_name": req.toolpath_name,
-        "operation": &req.operation,
-        "operation_label": req.operation.label(),
-        "dressups": &req.dressups,
-        "stock_source": &req.stock_source,
-        "tool": &req.tool,
-        "safe_z": req.safe_z,
-        "heights": {
-            "clearance_z": req.heights.clearance_z,
-            "retract_z": req.heights.retract_z,
-            "feed_z": req.heights.feed_z,
-            "top_z": req.heights.top_z,
-            "bottom_z": req.heights.bottom_z,
-        },
-        "stock_bbox": stock_bbox,
-        "boundary_enabled": req.boundary.enabled,
-        "boundary_containment": format!("{:?}", req.boundary.containment),
-        "keep_out_count": req.keep_out_footprints.len(),
-        "debug_options": &req.debug_options,
-    });
-
     rs_cam_core::semantic_trace::ToolpathTraceArtifact::new(
-        req.toolpath_id,
-        req.toolpath_name.clone(),
-        req.operation.label(),
-        req.tool.summary(),
-        request_snapshot,
+        req.viz.toolpath_id,
+        req.handle.toolpath_name().to_owned(),
+        req.handle.op_label(),
+        req.handle.tool_summary(),
+        req.handle.request_snapshot(),
         debug_trace,
         semantic_trace,
     )

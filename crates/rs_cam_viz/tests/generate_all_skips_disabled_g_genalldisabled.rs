@@ -49,7 +49,7 @@ impl ComputeBackend for RecordingBackend {
         self.submitted
             .lock()
             .expect("submission log")
-            .push(request.toolpath_id);
+            .push(request.viz.toolpath_id);
         ToolpathSubmitOutcome::Queued
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}

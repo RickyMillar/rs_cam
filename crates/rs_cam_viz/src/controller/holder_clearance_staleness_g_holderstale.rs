@@ -181,6 +181,7 @@ pub(super) fn land_a_result_for(controller: &mut AppController<ScriptedLane>, tp
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
                 toolpath_id: tp_id,
+                revision: None,
                 result: Ok(crate::state::toolpath::ToolpathResult {
                     annotated,
                     stats: Default::default(),
