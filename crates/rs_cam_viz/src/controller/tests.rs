@@ -4298,14 +4298,27 @@ fn freshness_reorder_keeps_fresh_ops_current() {
 /// R0.1 §7 Q1, operator ruling 2026-09-10: ANY stock edit — dimensions,
 /// pins, or the material alone — stales every toolpath, on both routes.
 /// The GUI route used to stale none of them.
+///
+/// WP6 moved the GUI route onto the command door. The panel edits a
+/// scratch copy and calls `ui::properties::apply_stock_draft`, which
+/// applies `Command::SetStockConfig` and stamps every index
+/// `Effects::stale` names. This drives that function, not the deleted
+/// `AppEvent::StockChanged`.
 #[test]
 fn freshness_stock_edit_stales_every_toolpath() {
     let mut controller = sample_controller();
     push_toolpath(&mut controller, "Second");
     generate_all_for_test(&mut controller);
 
-    controller.state.session.stock_mut().x = 321.0;
-    controller.handle_internal_event(crate::ui::AppEvent::StockChanged);
+    let mut draft = controller.state.session.stock_config().clone();
+    // The fixture's stock carries `auto_from_model`, and the apply funnel
+    // re-sizes such a draft around the first model BEFORE it compares. A
+    // typed dimension alone would therefore arrive back at the stored
+    // record and the funnel would apply nothing. The operator clears the
+    // checkbox to type a dimension, so the draft does the same.
+    draft.auto_from_model = false;
+    draft.x = 321.0;
+    crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
 
     for index in 0..2 {
         assert_eq!(
@@ -4316,6 +4329,14 @@ fn freshness_stock_edit_stales_every_toolpath() {
         assert!(controller.state.session.get_result(index).is_none());
     }
     assert!(controller.state.gui.dirty);
+    assert!(
+        controller.state.panel_side_effects.upload,
+        "the stock box the viewport draws moved, so the panel owes an upload"
+    );
+    assert!(
+        controller.state.panel_side_effects.pin_drill_sync,
+        "the deleted StockChanged handler always ran the pin-drill sync"
+    );
 }
 
 /// R0.1 §7 Q3, operator ruling: a machine kinematics edit stales the
@@ -4324,7 +4345,15 @@ fn freshness_stock_edit_stales_every_toolpath() {
 fn freshness_machine_kinematics_leaves_toolpaths_current() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    controller.handle_internal_event(crate::ui::AppEvent::MachineChanged);
+    let kinematics = controller.state.session.machine().effective_kinematics();
+    let _ = controller
+        .state
+        .session
+        .apply(Command::SetMachineKinematics(
+            rs_cam_core::session::SetMachineKinematicsArgs {
+                kinematics: Box::new(kinematics),
+            },
+        ));
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);
     assert!(controller.state.session.get_result(0).is_some());
     assert!(controller.state.session.simulation_result().is_none());

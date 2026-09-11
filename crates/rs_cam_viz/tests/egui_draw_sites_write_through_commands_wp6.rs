@@ -13,8 +13,8 @@
 //! `crates/rs_cam_viz/tests/ui_string_hygiene.rs:78-105`:
 //!
 //! 1. No file under `src/ui/` names one of the four hatches. The scan
-//!    strips line comments and stops at the first `#[cfg(test)]`, so a
-//!    test fixture that builds a session by hand is out of scope.
+//!    strips line comments and stops at the test MODULE, so a test
+//!    fixture that builds a session by hand is out of scope.
 //! 2. The five post-write notification events are gone from the
 //!    `AppEvent` enum (§14 ruling 3). Core invalidation through the rows
 //!    replaces them.
@@ -111,15 +111,7 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// The production lines of one file: comments stripped, and everything
-/// from the test MODULE dropped.
-///
-/// The cut-off reads `#[cfg(test)]` plus the item it gates, not the
-/// attribute alone. Two files here gate a single ITEM with it and carry
-/// production code below — `ui/properties/mod.rs:3666` gates a function
-/// and the real module sits at `:5866` — so an attribute-only cut would
-/// stop scanning two thousand production lines early and call the file
-/// clean.
+/// Whether `trimmed` opens an item of `kind`, at any visibility.
 fn starts_item(trimmed: &str, kind: &str) -> bool {
     for prefix in ["", "pub ", "pub(crate) ", "pub(super) "] {
         let head = format!("{prefix}{kind}");
@@ -130,6 +122,15 @@ fn starts_item(trimmed: &str, kind: &str) -> bool {
     false
 }
 
+/// The production lines of one file: comments stripped, and everything
+/// from the test MODULE dropped.
+///
+/// The cut-off reads `#[cfg(test)]` plus the item it gates, not the
+/// attribute alone. Two files here gate a single ITEM with it and carry
+/// production code below — `ui/properties/mod.rs:3666` gates a function
+/// and the real module sits at `:5866` — so an attribute-only cut would
+/// stop scanning two thousand production lines early and call the file
+/// clean.
 fn production_lines(source: &str) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut pending_cfg_test = false;
@@ -189,25 +190,78 @@ fn no_ui_source_names_a_session_hatch() {
     );
 }
 
-/// The hatch scan finds a hatch when one is there.
+/// The scan's reader finds a hatch on a code line, and only there.
 ///
 /// A locator that matched nothing would pass the scan above on any tree.
-/// `crates/rs_cam_core/src/session/mod.rs` publishes all four, so the
-/// needles are pinned against the file that declares them.
+/// This pins the reader against a synthetic source rather than against
+/// core's own declarations: WP7 deletes those declarations, and a test
+/// that asserts they still exist goes red the day WP7 succeeds.
 #[test]
-fn the_hatch_scan_finds_the_declarations_it_is_built_around() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../rs_cam_core/src/session/mod.rs");
-    assert!(path.is_file(), "{} no longer exists", path.display());
-    let source = read(&path);
-    for hatch in HATCHES {
-        let name = hatch.trim_start_matches('.').trim_end_matches('(');
-        let declaration = format!("pub fn {name}");
-        assert!(
-            source.contains(&declaration),
-            "the scan hunts for `{hatch}`, but core declares no `{declaration}`. \
-             The hatch was renamed and this scan now measures nothing."
-        );
-    }
+fn the_reader_finds_a_hatch_on_a_code_line_and_not_in_a_comment() {
+    let source = concat!(
+        "fn a() {\n",
+        "    let x = session.stock_mut();\n",
+        "    // session.machine_mut() in a comment is not a call\n",
+        "}\n",
+        "#[cfg(test)]\n",
+        "mod tests {\n",
+        "    let y = session.tools_mut();\n",
+        "}\n",
+    );
+    let lines = production_lines(source);
+    let code: String = lines
+        .iter()
+        .map(|(_, line)| line.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        code.contains(".stock_mut("),
+        "the reader must find a hatch on a code line"
+    );
+    assert!(
+        !code.contains(".machine_mut("),
+        "the reader must strip a line comment before matching"
+    );
+    assert!(
+        !code.contains(".tools_mut("),
+        "the reader must stop at the test module"
+    );
+}
+
+/// The `#[cfg(test)]` cut-off reads the item, not the attribute alone.
+///
+/// Two scanned files gate a single FUNCTION with the attribute and carry
+/// production code below it. An attribute-only cut would stop there and
+/// call the rest of the file clean.
+#[test]
+fn the_cut_off_passes_a_cfg_test_item_and_stops_at_a_cfg_test_module() {
+    let source = concat!(
+        "#[cfg(test)]\n",
+        "pub(crate) fn helper() {}\n",
+        "fn later() {\n",
+        "    let x = session.stock_mut();\n",
+        "}\n",
+        "#[cfg(test)]\n",
+        "#[allow(\n",
+        "    clippy::unwrap_used,\n",
+        ")]\n",
+        "mod tests {\n",
+        "    let y = session.machine_mut();\n",
+        "}\n",
+    );
+    let code: String = production_lines(source)
+        .iter()
+        .map(|(_, line)| line.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        code.contains(".stock_mut("),
+        "a cfg(test) FUNCTION must not end the scan"
+    );
+    assert!(
+        !code.contains(".machine_mut("),
+        "a cfg(test) MODULE must end the scan, multi-line attributes and all"
+    );
 }
 
 // ── scan 2: the five deleted events ──────────────────────────────

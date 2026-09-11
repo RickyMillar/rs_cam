@@ -411,25 +411,31 @@ pub fn draw_fixture_properties(
         .spacing([8.0, 3.0])
         .show(ui, |ui| {
             ui.label("X:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut fixture.origin_x)
-                    .speed(0.5)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut fixture.origin_x)
+                        .speed(0.5)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
             ui.label("Y:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut fixture.origin_y)
-                    .speed(0.5)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut fixture.origin_y)
+                        .speed(0.5)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
             ui.label("Z:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut fixture.origin_z)
-                    .speed(0.5)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut fixture.origin_z)
+                        .speed(0.5)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
         });
 
@@ -445,28 +451,34 @@ pub fn draw_fixture_properties(
         .spacing([8.0, 3.0])
         .show(ui, |ui| {
             ui.label("X:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut fixture.size_x)
-                    .speed(0.5)
-                    .range(0.1..=10000.0)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut fixture.size_x)
+                        .speed(0.5)
+                        .range(0.1..=10000.0)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
             ui.label("Y:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut fixture.size_y)
-                    .speed(0.5)
-                    .range(0.1..=10000.0)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut fixture.size_y)
+                        .speed(0.5)
+                        .range(0.1..=10000.0)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
             ui.label("Z:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut fixture.size_z)
-                    .speed(0.5)
-                    .range(0.1..=10000.0)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut fixture.size_z)
+                        .speed(0.5)
+                        .range(0.1..=10000.0)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
         });
 
@@ -474,12 +486,14 @@ pub fn draw_fixture_properties(
 
     ui.horizontal(|ui| {
         ui.label("Clearance:");
-        edit.drag(&ui.add(
-            egui::DragValue::new(&mut fixture.clearance)
-                .speed(0.1)
-                .range(0.0..=100.0)
-                .suffix(" mm"),
-        ));
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut fixture.clearance)
+                    .speed(0.1)
+                    .range(0.0..=100.0)
+                    .suffix(" mm"),
+            ),
+        );
     });
 
     edit
@@ -518,18 +532,22 @@ pub fn draw_keep_out_properties(
         .spacing([8.0, 3.0])
         .show(ui, |ui| {
             ui.label("X:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut zone.origin_x)
-                    .speed(0.5)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut zone.origin_x)
+                        .speed(0.5)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
             ui.label("Y:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut zone.origin_y)
-                    .speed(0.5)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut zone.origin_y)
+                        .speed(0.5)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
         });
 
@@ -545,20 +563,24 @@ pub fn draw_keep_out_properties(
         .spacing([8.0, 3.0])
         .show(ui, |ui| {
             ui.label("X:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut zone.size_x)
-                    .speed(0.5)
-                    .range(0.1..=10000.0)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut zone.size_x)
+                        .speed(0.5)
+                        .range(0.1..=10000.0)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
             ui.label("Y:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut zone.size_y)
-                    .speed(0.5)
-                    .range(0.1..=10000.0)
-                    .suffix(" mm"),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut zone.size_y)
+                        .speed(0.5)
+                        .range(0.1..=10000.0)
+                        .suffix(" mm"),
+                ),
+            );
             ui.end_row();
         });
 

@@ -103,11 +103,6 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::RemoveKeepOut(setup_id, keep_out_id) => {
                 self.handle_remove_keep_out(setup_id, keep_out_id);
             }
-            AppEvent::FixtureChanged => {
-                self.pending_upload = true;
-                self.state.gui.mark_edited();
-            }
-
             // --- Toolpath events ---
             AppEvent::AddToolpath(op_type) => self.handle_add_toolpath(op_type),
             AppEvent::DuplicateToolpath(tp_id) => self.handle_duplicate_toolpath(tp_id),
@@ -247,21 +242,6 @@ impl<B: ComputeBackend> AppController<B> {
             // --- Undo / redo ---
             AppEvent::Undo => self.undo(),
             AppEvent::Redo => self.redo(),
-
-            // --- Stock / machine events ---
-            AppEvent::StockChanged => self.handle_stock_changed(),
-            AppEvent::HeightPlanesChanged => {
-                // Re-upload only. The heights edit itself already dirtied
-                // the project and dropped that toolpath's result.
-                self.pending_upload = true;
-            }
-            AppEvent::StockMaterialChanged => {
-                self.state.gui.mark_edited();
-            }
-            AppEvent::MachineChanged => {
-                let _ = self.state.session.invalidate_machine();
-                self.state.gui.mark_edited();
-            }
 
             // --- Optimize modal (U2) ---
             AppEvent::OpenOptimizeModal(toolpath_id) => {

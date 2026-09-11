@@ -176,7 +176,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Import a library machine as a SNAPSHOT copy into the project's
     /// inline machine (no live link), then invalidate machine-dependent
-    /// state — mirrors `MachineChanged`.
+    /// state.
     pub(crate) fn import_machine_from_library(&mut self, name: &str) {
         match rs_cam_core::machine_library::load(name) {
             Ok(profile) => {
@@ -631,28 +631,14 @@ impl<B: ComputeBackend> AppController<B> {
 
     // ── Stock / config helpers ───────────────────────────────────────────
 
-    pub(crate) fn handle_stock_changed(&mut self) {
-        let auto_from_model = self.state.session.stock_config().auto_from_model;
-        if auto_from_model && let Some(bbox) = self.first_model_bbox() {
-            let _ = self.state.session.update_stock_from_bbox(&bbox);
-        } else {
-            // No bbox to apply, but stock fields may still have been mutated
-            // upstream — clear stale simulation just in case.
-            let _ = self.state.session.invalidate_stock();
-        }
-        // G-FRESHSTATE / R0.1 §7 Q1 (operator ruling, 2026-09-10): a stock
-        // edit stales EVERYTHING. Both core calls above dropped every
-        // toolpath result; request their regeneration so this route and
-        // the MCP one (`mcp_apply_stale(StockChanged)`) agree.
-        let now = std::time::Instant::now();
-        let ids = self.state.session.all_toolpath_ids();
-        for id in ids {
-            self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
-        }
-        self.pending_upload = true;
-        self.state.gui.mark_edited();
-        self.sync_alignment_pin_drill();
-    }
+    // WP6 deleted `handle_stock_changed` with its event. The stock panel
+    // applies `Command::SetStockConfig`, which drops every toolpath
+    // result (G-FRESHSTATE / R0.1 section 7 Q1, operator ruling
+    // 2026-09-10) and reports the set, so the panel stamps it through
+    // `state::stale::stamp_stale`. The three steps that are not a core
+    // rule moved to `ui::properties::apply_stock_draft`: the
+    // `auto_from_model` re-size, the GPU upload flag and the pin-drill
+    // synchronisation.
 
     /// Create, update, or remove the auto-generated alignment pin drill toolpath.
     pub(crate) fn sync_alignment_pin_drill(&mut self) {

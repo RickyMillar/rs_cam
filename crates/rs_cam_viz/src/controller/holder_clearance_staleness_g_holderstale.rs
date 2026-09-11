@@ -265,20 +265,38 @@ struct EditClass {
 }
 
 fn edit_stock_height(controller: &mut AppController<ScriptedLane>) {
+    // WP6: the GUI route is the stock panel's apply funnel, not the
+    // deleted `AppEvent::StockChanged`.
     let mut stock = controller.state.session.stock_config().clone();
     stock.z += 5.0;
-    let _ = controller.state.session.set_stock_config(stock);
-    controller.handle_internal_event(AppEvent::StockChanged);
+    crate::ui::properties::apply_stock_draft(&mut controller.state, stock);
 }
 
 fn edit_fixture_geometry(controller: &mut AppController<ScriptedLane>) {
-    if let Some(setup) = controller.state.session.setups_mut().first_mut()
-        && let Some(fixture) = setup.fixtures.first_mut()
-    {
+    // WP6: the GUI route is `Command::ReplaceFixture` through the
+    // fixture panel's apply funnel.
+    let found = controller
+        .state
+        .session
+        .list_setups()
+        .first()
+        .and_then(|setup| {
+            setup
+                .fixtures
+                .first()
+                .map(|fixture| (fixture.id, fixture.clone()))
+        });
+    if let Some((fixture_id, mut fixture)) = found {
+        let setup_index = 0;
         fixture.origin_z += 12.0;
         fixture.size_z += 12.0;
+        crate::ui::properties::apply_fixture_draft(
+            &mut controller.state,
+            setup_index,
+            fixture_id,
+            fixture,
+        );
     }
-    controller.handle_internal_event(AppEvent::FixtureChanged);
 }
 
 fn add_another_fixture(controller: &mut AppController<ScriptedLane>) {

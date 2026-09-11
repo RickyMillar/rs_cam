@@ -334,9 +334,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetMachine, "load_machine_from_library", SetMachineArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -345,9 +343,7 @@ macro_rules! for_each_command {
             (Command, SetMachineKinematics, "set_machine_kinematics",
              SetMachineKinematicsArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI machine panel writes machine_mut() in place; WP6 adopts it",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -356,9 +352,7 @@ macro_rules! for_each_command {
             (Command, ImportMachineSettings, "import_machine_settings",
              ImportMachineSettingsArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI machine panel writes machine_mut() in place; WP6 adopts it",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",

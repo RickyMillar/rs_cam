@@ -164,7 +164,6 @@ pub enum AppEvent {
     RemoveFixture(SetupId, FixtureId),
     AddKeepOut(SetupId),
     RemoveKeepOut(SetupId, KeepOutId),
-    FixtureChanged,
 
     // Toolpaths
     AddToolpath(OperationType),
@@ -420,17 +419,13 @@ pub enum AppEvent {
     },
 
     // Edit
-    StockChanged,
-    StockMaterialChanged,
-    /// The selected operation's heights moved, so the viewport's height
-    /// planes need re-uploading — and nothing else.
-    ///
-    /// G-FRESHSTATE: the heights write-back used to borrow `StockChanged`
-    /// for this. Once a stock edit drops every toolpath result (R0.1 §7 Q1,
-    /// operator ruling 2026-09-10), borrowing it would have staled the
-    /// whole project on any heights nudge.
-    HeightPlanesChanged,
-    MachineChanged,
+    //
+    // WP6 deleted five post-write notification events — `StockChanged`,
+    // `StockMaterialChanged`, `HeightPlanesChanged`, `MachineChanged` and
+    // `FixtureChanged` (plan section 14 ruling 3). A panel now applies
+    // one `Command`, which carries the invalidation the event used to
+    // ask for, and raises `AppState::panel_side_effects` for the view
+    // work that is not a core rule.
     Undo,
     Redo,
 

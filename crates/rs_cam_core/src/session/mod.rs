@@ -29,14 +29,13 @@ pub use command::{
     Command, CommandId, CommandKind, Effects, GenerateToolpathArgs, ImportMachineSettingsArgs, Job,
     JobHandle, MoveToolpathToSetupArgs, Query, QueryAnswer, Reach, RemoveAlignmentPinArgs,
     RemoveToolArgs, RemoveToolpathArgs, ReplaceFixtureArgs, ReplaceKeepOutArgs, ReplaceToolArgs,
-    ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
-    SaveProjectArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
-    SetMachineArgs, SetMachineKinematicsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
-    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
-    SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs,
-    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
-    SetToolpathModelArgs, SetToolpathParamArgs, SetToolpathToolArgs, Surfaces,
-    ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
+    ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs, SetBoundaryConfigArgs,
+    SetDressupConfigArgs, SetDressupFieldArgs, SetMachineArgs, SetMachineKinematicsArgs,
+    SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs,
+    SetSetupModelsArgs, SetSetupNameArgs, SetSetupRotationArgs, SetStockConfigArgs,
+    SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs,
+    SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathParamArgs, SetToolpathToolArgs,
+    Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
 pub use compute::{
     GenContext, GenerateToolpathHandle, MutationKind, ResolvedGenInputs, StaleSet,
@@ -488,7 +487,11 @@ impl FixtureKind {
 }
 
 /// A physical workholding fixture — compute-relevant fields only.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+///
+/// The record derives `PartialEq` because the GUI fixture panel edits a
+/// CLONE of it and must not apply a command for an edit that moved
+/// nothing (WP6).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Fixture {
     pub id: FixtureId,
     pub name: String,
@@ -539,7 +542,9 @@ impl Fixture {
 }
 
 /// A rectangular region the tool must avoid (XY only, full Z extent).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+///
+/// The record derives `PartialEq` for the reason [`Fixture`] does.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct KeepOutZone {
     pub id: KeepOutId,
     pub name: String,

@@ -26,6 +26,31 @@ use crate::compute::transform::ZRotation;
 use crate::geo::{BoundingBox3, P3};
 use crate::polygon::Polygon2;
 
+/// Whether a fixture edit moved something a collision check reads.
+///
+/// Every field except the NAME is an input of the holder-clearance and
+/// fixture-collision checks. The name reaches the setup sheet alone, so
+/// a rename must not drop a result (WP6).
+///
+/// It compares the whole record with the name equalised, so a field
+/// ADDED to `Fixture` later counts as a collision input until someone
+/// states otherwise. That is the safe default.
+fn fixture_collision_inputs_moved(before: &Fixture, after: &Fixture) -> bool {
+    let mut named_before = before.clone();
+    named_before.name.clone_from(&after.name);
+    named_before != *after
+}
+
+/// Whether a keep-out edit moved something a collision check reads.
+///
+/// The twin of [`fixture_collision_inputs_moved`], and it exempts the
+/// same one field.
+fn keep_out_collision_inputs_moved(before: &KeepOutZone, after: &KeepOutZone) -> bool {
+    let mut named_before = before.clone();
+    named_before.name.clone_from(&after.name);
+    named_before != *after
+}
+
 /// Compute a 3D bounding box from a slice of 2D polygons (SVG/DXF models).
 /// Z extent is zero; `update_from_bbox` preserves stock Z for 2D models.
 /// Returns `None` if all polygons are empty.
@@ -1218,12 +1243,17 @@ impl ProjectSession {
     /// panel edits every field of one fixture, so the payload is the
     /// whole record.
     ///
-    /// It drops the setup's results, exactly as [`Self::add_fixture`]
-    /// and [`Self::remove_fixture`] do: a fixture is a collision input
-    /// of every operation in the setup. **This is a behaviour change.**
-    /// The panel wrote the fixture in place and dropped nothing, so a
-    /// clamp could move under a cached holder-clearance verdict
-    /// (G-FRESHSTATE).
+    /// **The write is unconditional; the DROP is gated**, on the
+    /// `ReplaceToolpathConfig` precedent. The panel applies one command
+    /// per finished edit, and the name is not a collision input — so a
+    /// ten-character rename would otherwise drop the setup's results ten
+    /// times. Every OTHER field moves the obstacle the holder must
+    /// clear, so it drops the setup's results exactly as
+    /// [`Self::add_fixture`] and [`Self::remove_fixture`] do.
+    ///
+    /// **This is a behaviour change.** The panel wrote the fixture in
+    /// place and dropped nothing, so a clamp could move under a cached
+    /// holder-clearance verdict (G-FRESHSTATE).
     #[instrument(skip(self, fixture))]
     pub fn replace_fixture(
         &mut self,
@@ -1242,8 +1272,11 @@ impl ProjectSession {
                     fixture_id.0
                 )));
             };
+            let moved = fixture_collision_inputs_moved(slot, &fixture);
             *slot = fixture;
-            session.drop_setup_results(setup_index);
+            if moved {
+                session.drop_setup_results(setup_index);
+            }
             Ok(())
         })
     }
@@ -1251,8 +1284,9 @@ impl ProjectSession {
     /// Replace one keep-out zone of a setup, keeping its position.
     ///
     /// The door of the `ReplaceKeepOut` command row, and the twin of
-    /// [`Self::replace_fixture`]. It drops the setup's results for the
-    /// same reason.
+    /// [`Self::replace_fixture`]. It writes unconditionally and drops
+    /// the setup's results only when a field other than the name moved,
+    /// for the same reason.
     #[instrument(skip(self, zone))]
     pub fn replace_keep_out(
         &mut self,
@@ -1271,8 +1305,11 @@ impl ProjectSession {
                     zone_id.0
                 )));
             };
+            let moved = keep_out_collision_inputs_moved(slot, &zone);
             *slot = zone;
-            session.drop_setup_results(setup_index);
+            if moved {
+                session.drop_setup_results(setup_index);
+            }
             Ok(())
         })
     }

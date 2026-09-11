@@ -132,28 +132,23 @@ pub(crate) fn commit_tool_draft(
             old: committed,
             new: draft.clone(),
         });
-    if let Some(t) = state
-        .session
-        .tools_mut()
-        .iter_mut()
-        .find(|t| t.id == tool_id)
-    {
-        *t = draft;
+    // WP6: one door writes the tool and drops what it machines.
+    //
+    // G-FRESHSTATE: `Command::ReplaceTool` drops the core results of
+    // every op this tool machines, and of every planned-tier ladder that
+    // names it. The panel used to write `tools_mut()` in place and call
+    // `invalidate_tool` after it, which is the same pair of steps behind
+    // two doors — and a caller that forgot the second left the cards
+    // green while export fell back to the GUI's copy of the OLD
+    // geometry.
+    use rs_cam_core::session::{Command, ReplaceToolArgs};
+    let command = Command::ReplaceTool(ReplaceToolArgs {
+        tool_id: tool_id.0,
+        config: Box::new(draft),
+    });
+    if apply_panel_command(state, command) {
+        state.gui.mark_edited();
     }
-    // G-FRESHSTATE: `invalidate_tool` drops the core results of every op
-    // this tool machines (and of every planned-tier ladder that names it).
-    // Request their regeneration too — this route used to drop the results
-    // and mark nothing, so the cards stayed green and export fell back to
-    // the GUI's copy of the OLD geometry.
-    let affected = state.session.invalidate_tool(tool_id.0).stale;
-    let now = std::time::Instant::now();
-    for index in affected {
-        if let Some(tc) = state.session.get_toolpath_config(index) {
-            let id = tc.id;
-            state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
-        }
-    }
-    state.gui.mark_edited();
 }
 
 /// The bounding box of the first model that carries geometry.
@@ -187,18 +182,24 @@ fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> 
 ///   so one command carries the finished record.
 /// - the viewport buffers and the pin-drill operation both read what
 ///   moved. The panel raises both flags; the frame loop discharges them.
-fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::StockConfig) {
-    let mut stock = draft;
-    if stock.auto_from_model
+pub(crate) fn apply_stock_draft(state: &mut AppState, mut draft: crate::state::job::StockConfig) {
+    use rs_cam_core::session::{Command, SetStockConfigArgs};
+    if draft.auto_from_model
         && let Some(bbox) = first_model_bbox(state)
     {
-        stock.update_from_bbox(&bbox);
+        draft.update_from_bbox(&bbox);
     }
-    let command = rs_cam_core::session::Command::SetStockConfig(
-        rs_cam_core::session::SetStockConfigArgs {
-            stock: Box::new(stock),
-        },
-    );
+    // A finished edit is not the same as a CHANGED one. A `DragValue`
+    // reports `lost_focus` when the operator clicks into the field and
+    // out of it again, and this row drops every toolpath result — so an
+    // ungated apply would drop the project on a click that typed
+    // nothing. The event this replaced was gated on `changed()`.
+    if draft == *state.session.stock_config() {
+        return;
+    }
+    let command = Command::SetStockConfig(SetStockConfigArgs {
+        stock: Box::new(draft),
+    });
     match state.session.apply(command) {
         Ok(effects) => {
             crate::state::stale::stamp_stale(state, &effects.stale);
@@ -292,18 +293,18 @@ fn apply_setup_draft(
 /// fixture is a collision input of every operation in it. The panel
 /// wrote the fixture in place and dropped nothing, so a clamp could move
 /// under a cached holder-clearance verdict.
-fn apply_fixture_draft(
+pub(crate) fn apply_fixture_draft(
     state: &mut AppState,
     setup_index: usize,
     fixture_id: crate::state::job::FixtureId,
     fixture: rs_cam_core::session::Fixture,
 ) {
-    let command =
-        rs_cam_core::session::Command::ReplaceFixture(rs_cam_core::session::ReplaceFixtureArgs {
-            setup_index,
-            fixture_id,
-            fixture: Box::new(fixture),
-        });
+    use rs_cam_core::session::{Command, ReplaceFixtureArgs};
+    let command = Command::ReplaceFixture(ReplaceFixtureArgs {
+        setup_index,
+        fixture_id,
+        fixture: Box::new(fixture),
+    });
     if apply_panel_command(state, command) {
         state.gui.mark_edited();
         state.panel_side_effects.upload = true;
@@ -319,15 +320,95 @@ fn apply_keep_out_draft(
     zone_id: crate::state::job::KeepOutId,
     zone: rs_cam_core::session::KeepOutZone,
 ) {
-    let command =
-        rs_cam_core::session::Command::ReplaceKeepOut(rs_cam_core::session::ReplaceKeepOutArgs {
-            setup_index,
-            zone_id,
-            zone: Box::new(zone),
-        });
+    use rs_cam_core::session::{Command, ReplaceKeepOutArgs};
+    let command = Command::ReplaceKeepOut(ReplaceKeepOutArgs {
+        setup_index,
+        zone_id,
+        zone: Box::new(zone),
+    });
     if apply_panel_command(state, command) {
         state.gui.mark_edited();
         state.panel_side_effects.upload = true;
+    }
+}
+
+/// Whether the machine panel's own three dials moved.
+///
+/// `MachineProfile` carries no `PartialEq`, and only three of its fields
+/// are writable here: the travel rate, the shank limit and the safety
+/// factor. The kinematics block is compared separately, against its own
+/// row.
+///
+/// The comparison exists because a finished edit is not the same as a
+/// changed one: a `Slider` reports `drag_stopped` when the operator
+/// clicks the handle and lets go, and `SetMachine` clears the cached
+/// simulation.
+fn machine_panel_fields_moved(
+    draft: &rs_cam_core::machine::MachineProfile,
+    stored: &rs_cam_core::machine::MachineProfile,
+) -> bool {
+    draft.max_feed_mm_min != stored.max_feed_mm_min
+        || draft.max_shank_mm != stored.max_shank_mm
+        || draft.safety_factor != stored.safety_factor
+}
+
+/// Install a whole machine profile through `Command::SetMachine`.
+///
+/// The row clears the cached simulation: timing and feed modulation read
+/// the machine, and geometry does not. It does NOT clear `machine_ref` —
+/// a profile that arrives from the library is a snapshot of a named
+/// machine, and the link survives.
+fn apply_machine(state: &mut AppState, machine: rs_cam_core::machine::MachineProfile) {
+    use rs_cam_core::session::{Command, SetMachineArgs};
+    let command = Command::SetMachine(SetMachineArgs {
+        machine: Box::new(machine),
+    });
+    if apply_panel_command(state, command) {
+        state.gui.mark_edited();
+    }
+}
+
+/// Write the machine's kinematics block through
+/// `Command::SetMachineKinematics`.
+///
+/// `None` means the grid produced no block, which happens only before
+/// the operator touches a value. The row drops the library link: the
+/// numbers are inline now and no library entry published them.
+fn apply_machine_kinematics(
+    state: &mut AppState,
+    kinematics: Option<rs_cam_core::machine_kinematics::MachineKinematics>,
+) {
+    let Some(kinematics) = kinematics else {
+        return;
+    };
+    use rs_cam_core::session::{Command, SetMachineKinematicsArgs};
+    let command = Command::SetMachineKinematics(SetMachineKinematicsArgs {
+        kinematics: Box::new(kinematics),
+    });
+    if apply_panel_command(state, command) {
+        state.gui.mark_edited();
+    }
+}
+
+/// Write what a GRBL `$$` dump carries, through
+/// `Command::ImportMachineSettings`.
+///
+/// A dump carries one field more than the kinematics block — the travel
+/// rate — so the two rows carry two payloads (plan section 15 ruling 6).
+/// `None` means the dump published no travel rate, and the machine keeps
+/// the one it has.
+fn apply_machine_import(
+    state: &mut AppState,
+    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    max_feed_mm_min: Option<f64>,
+) {
+    use rs_cam_core::session::{Command, ImportMachineSettingsArgs};
+    let command = Command::ImportMachineSettings(ImportMachineSettingsArgs {
+        kinematics: Box::new(kinematics),
+        max_feed_mm_min,
+    });
+    if apply_panel_command(state, command) {
+        state.gui.mark_edited();
     }
 }
 
@@ -344,7 +425,7 @@ fn apply_keep_out_draft(
 /// result. A checkbox, a combo, a button and a text field apply on
 /// `changed()`, which is one event per operator action already.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct PanelEdit {
+pub struct PanelEdit {
     /// A widget wrote the draft this frame.
     pub changed: bool,
     /// An edit FINISHED this frame, so the caller applies its command.
@@ -358,14 +439,14 @@ pub(crate) struct PanelEdit {
 
 impl PanelEdit {
     /// Read a `DragValue` or a `Slider` response.
-    pub(crate) fn drag(&mut self, response: &egui::Response) {
+    pub fn drag(&mut self, response: &egui::Response) {
         self.changed |= response.changed();
         self.committed |= response.drag_stopped() || response.lost_focus();
         self.in_flight |= response.dragged() || response.has_focus();
     }
 
     /// Read a checkbox, combo, button or text-field response.
-    pub(crate) fn click(&mut self, response: &egui::Response) {
+    pub fn click(&mut self, response: &egui::Response) {
         self.changed |= response.changed();
         self.committed |= response.changed();
         self.in_flight |= response.has_focus();
@@ -373,13 +454,13 @@ impl PanelEdit {
 
     /// Record a finished edit a `Response` cannot report — a helper that
     /// answers `bool`, or a deferred structural change.
-    pub(crate) fn commit(&mut self) {
+    pub fn commit(&mut self) {
         self.changed = true;
         self.committed = true;
     }
 
     /// Fold in what a sub-panel reported.
-    pub(crate) fn merge(&mut self, other: Self) {
+    pub fn merge(&mut self, other: Self) {
         self.changed |= other.changed;
         self.committed |= other.committed;
         self.in_flight |= other.in_flight;
@@ -518,11 +599,10 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // is re-read from the session on any frame no widget of this
             // panel is dragged or focused, so an edit made on another
             // surface reaches the panel instead of being overwritten.
-            let mut draft = state
-                .history
-                .stock_draft
-                .take()
-                .unwrap_or_else(|| state.session.stock_config().clone());
+            let mut draft = match state.history.stock_draft.take() {
+                Some(draft) => draft,
+                None => state.session.stock_config().clone(),
+            };
             let edit = stock::draw(ui, &mut draft, has_flipped_setup, events);
             if edit.committed {
                 apply_stock_draft(state, draft.clone());
@@ -650,23 +730,24 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
         }
         Selection::Fixture(setup_id, fixture_id) => {
-            let stored = state
-                .session
-                .find_setup_by_id(setup_id.0)
-                .and_then(|(index, setup_data)| {
-                    setup_data
-                        .fixtures
-                        .iter()
-                        .find(|fixture| fixture.id == fixture_id)
-                        .map(|fixture| (index, fixture.clone()))
-                });
+            let stored =
+                state
+                    .session
+                    .find_setup_by_id(setup_id.0)
+                    .and_then(|(index, setup_data)| {
+                        setup_data
+                            .fixtures
+                            .iter()
+                            .find(|fixture| fixture.id == fixture_id)
+                            .map(|fixture| (index, fixture.clone()))
+                    });
             if let Some((setup_index, stored)) = stored {
                 let mut draft = match state.history.fixture_draft.take() {
                     Some((s_id, f_id, data)) if s_id == setup_id && f_id == fixture_id => data,
-                    _ => stored,
+                    _ => stored.clone(),
                 };
                 let edit = setup::draw_fixture_properties(ui, setup_id, &mut draft);
-                if edit.committed {
+                if edit.committed && draft != stored {
                     apply_fixture_draft(state, setup_index, fixture_id, draft.clone());
                 }
                 if edit.in_flight {
@@ -675,23 +756,24 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
         }
         Selection::KeepOut(setup_id, keep_out_id) => {
-            let stored = state
-                .session
-                .find_setup_by_id(setup_id.0)
-                .and_then(|(index, setup_data)| {
-                    setup_data
-                        .keep_out_zones
-                        .iter()
-                        .find(|zone| zone.id == keep_out_id)
-                        .map(|zone| (index, zone.clone()))
-                });
+            let stored =
+                state
+                    .session
+                    .find_setup_by_id(setup_id.0)
+                    .and_then(|(index, setup_data)| {
+                        setup_data
+                            .keep_out_zones
+                            .iter()
+                            .find(|zone| zone.id == keep_out_id)
+                            .map(|zone| (index, zone.clone()))
+                    });
             if let Some((setup_index, stored)) = stored {
                 let mut draft = match state.history.keep_out_draft.take() {
                     Some((s_id, z_id, data)) if s_id == setup_id && z_id == keep_out_id => data,
-                    _ => stored,
+                    _ => stored.clone(),
                 };
                 let edit = setup::draw_keep_out_properties(ui, setup_id, &mut draft);
-                if edit.committed {
+                if edit.committed && draft != stored {
                     apply_keep_out_draft(state, setup_index, keep_out_id, draft.clone());
                 }
                 if edit.in_flight {
@@ -1064,6 +1146,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // applied below, once the session borrow above is released —
             // see the comment on the follow-up block.
             let mut auto_enable_rest_source: Option<ToolpathId> = None;
+            let mut heights_moved = false;
             if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id) {
                 let heights_changed = heights_before
                     .as_ref()
@@ -1072,8 +1155,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     .as_ref()
                     .is_some_and(|b| *b != format!("{:?}", tc.boundary));
                 if heights_changed {
-                    // Trigger GPU re-upload so height plane positions update
-                    events.push(AppEvent::HeightPlanesChanged);
+                    // Re-upload only. The heights edit itself already
+                    // dirtied the project and dropped that toolpath's
+                    // result. WP6 replaced the `HeightPlanesChanged`
+                    // event with the flag the frame loop reads.
+                    heights_moved = true;
                 }
                 if boundary_changed
                     && tc.boundary.enabled
@@ -1082,6 +1168,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 {
                     auto_enable_rest_source = Some(*source_toolpath_id);
                 }
+            }
+            if heights_moved {
+                state.panel_side_effects.upload = true;
             }
             // The GUI's boundary picker (Machining Boundary section, above)
             // writes `tc.boundary` through `write_entry_config_to_session`
@@ -1550,8 +1639,7 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
                         match rs_cam_core::machine_library::load(name) {
                             Ok(profile) => {
                                 // Snapshot copy into the inline machine — no ref.
-                                *state.session.machine_mut() = profile;
-                                events.push(AppEvent::MachineChanged);
+                                apply_machine(state, profile);
                                 ui.data_mut(|d| {
                                     d.insert_temp(status_id, format!("Imported '{name}' (copy)"));
                                 });
@@ -1633,8 +1721,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
                         .clicked()
                     {
                         // Snapshot: copy the preset into the inline machine.
-                        *state.session.machine_mut() = presets[i].1.clone();
-                        events.push(AppEvent::MachineChanged);
+                        apply_machine(state, presets[i].1.clone());
                     }
                 }
             });
@@ -1646,9 +1733,14 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
 
     // Machine specs — RPM/Power stay read-only (preset/spindle-driven);
     // Max Feed (travel rate, $110-class) and Max Shank are editable.
-    let mut max_feed = state.session.machine().max_feed_mm_min;
-    let mut max_shank = state.session.machine().max_shank_mm;
-    let mut specs_changed = false;
+    // WP6: the widgets below write a DRAFT profile, not the session.
+    // The draft survives the frame, so a `DragValue` release applies one
+    // command instead of one per frame of the drag.
+    let mut draft = match state.history.machine_draft.take() {
+        Some(draft) => draft,
+        None => state.session.machine().clone(),
+    };
+    let mut edit = PanelEdit::default();
     egui::Grid::new("machine_specs")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -1669,60 +1761,62 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             ui.end_row();
 
             ui.label("Max Feed:");
-            specs_changed |= ui
-                .add(
-                    egui::DragValue::new(&mut max_feed)
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut draft.max_feed_mm_min)
                         .speed(50.0)
                         .range(100.0..=30000.0)
                         .suffix(" mm/min"),
                 )
                 .on_hover_text(
                     "Travel/rapid rate ($110-class). Cutting feeds are capped separately.",
-                )
-                .changed();
+                ),
+            );
             ui.end_row();
 
             ui.label("Max Shank:");
-            specs_changed |= ui
-                .add(
-                    egui::DragValue::new(&mut max_shank)
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut draft.max_shank_mm)
                         .speed(0.1)
                         .range(1.0..=25.0)
                         .suffix(" mm"),
-                )
-                .changed();
+                ),
+            );
             ui.end_row();
         });
-    if specs_changed {
-        let m = state.session.machine_mut();
-        m.max_feed_mm_min = max_feed;
-        m.max_shank_mm = max_shank;
-        events.push(AppEvent::MachineChanged);
-    }
 
     ui.add_space(8.0);
-    draw_machine_kinematics(ui, state, events);
+    // The kinematics grid keeps its own edit record: its row is
+    // `SetMachineKinematics`, which also drops the library link, and the
+    // whole-profile row must not be applied for it.
+    let mut kinematics_edit = PanelEdit::default();
+    draw_machine_kinematics(ui, state, &mut draft, &mut kinematics_edit);
+    if kinematics_edit.committed && draft.kinematics != state.session.machine().kinematics {
+        apply_machine_kinematics(state, draft.kinematics);
+    }
+    edit.in_flight |= kinematics_edit.in_flight;
 
     ui.add_space(8.0);
 
     // Safety factor / aggressiveness slider
     ui.horizontal(|ui| {
         ui.label("Aggressiveness:");
-        if ui
-            .add(
-                egui::Slider::new(&mut state.session.machine_mut().safety_factor, 0.60..=0.95)
+        edit.drag(
+            &ui.add(
+                egui::Slider::new(&mut draft.safety_factor, 0.60..=0.95)
                     .text("")
                     .show_value(true),
-            )
-            .changed()
-        {
-            events.push(AppEvent::MachineChanged);
-        }
+            ),
+        );
     });
+    // The label reads the DRAFT. Reading the session would leave it one
+    // release behind the handle for the whole drag (plan section 4 WP6,
+    // same-frame reader (a)).
     ui.label(
-        egui::RichText::new(if state.session.machine().safety_factor < 0.72 {
+        egui::RichText::new(if draft.safety_factor < 0.72 {
             "Conservative — safer for new setups"
-        } else if state.session.machine().safety_factor > 0.85 {
+        } else if draft.safety_factor > 0.85 {
             "Aggressive — experienced operators only"
         } else {
             "Balanced — good for most work"
@@ -1731,14 +1825,32 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
         .color(egui::Color32::from_rgb(140, 140, 150)),
     );
 
+    // One `SetMachine` for the whole profile. `set_machine` writes the
+    // profile alone, so it cannot put back a library link the kinematics
+    // row dropped — `machine_ref` is a session field, not a profile
+    // field.
+    if edit.committed && machine_panel_fields_moved(&draft, state.session.machine()) {
+        apply_machine(state, draft.clone());
+    }
+    if edit.in_flight {
+        state.history.machine_draft = Some(draft);
+    }
+
     ui.add_space(8.0);
 
-    // Workholding rigidity selector
+    // Workholding rigidity selector. WP6: the combo writes a DRAFT of
+    // the stock record, and one `SetStockConfig` lands it.
+    //
+    // BEHAVIOUR CHANGE, named: the row now drops every toolpath result,
+    // because the rigidity derates the feeds of every operation. The
+    // panel used to write `stock_mut()` in place and mark the project
+    // edited alone, so the cached results kept the previous derating
+    // (G-FRESHSTATE).
+    use rs_cam_core::feeds::WorkholdingRigidity;
+    let mut rigidity = state.session.stock_config().workholding_rigidity;
     let mut rigidity_changed = false;
     ui.horizontal(|ui| {
         ui.label("Workholding:");
-        use rs_cam_core::feeds::WorkholdingRigidity;
-        let rigidity = &mut state.session.stock_mut().workholding_rigidity;
         let label = match rigidity {
             WorkholdingRigidity::Low => "Low",
             WorkholdingRigidity::Medium => "Medium",
@@ -1748,13 +1860,13 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             .selected_text(label)
             .show_ui(ui, |ui| {
                 if ui
-                    .selectable_value(rigidity, WorkholdingRigidity::Low, "Low")
+                    .selectable_value(&mut rigidity, WorkholdingRigidity::Low, "Low")
                     .changed()
                     || ui
-                        .selectable_value(rigidity, WorkholdingRigidity::Medium, "Medium")
+                        .selectable_value(&mut rigidity, WorkholdingRigidity::Medium, "Medium")
                         .changed()
                     || ui
-                        .selectable_value(rigidity, WorkholdingRigidity::High, "High")
+                        .selectable_value(&mut rigidity, WorkholdingRigidity::High, "High")
                         .changed()
                 {
                     rigidity_changed = true;
@@ -1762,7 +1874,9 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             });
     });
     if rigidity_changed {
-        state.gui.mark_edited();
+        let mut stock = state.session.stock_config().clone();
+        stock.workholding_rigidity = rigidity;
+        apply_stock_draft(state, stock);
     }
     ui.label(
         egui::RichText::new(match state.session.stock_config().workholding_rigidity {
@@ -1786,7 +1900,12 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
 /// materializes the machine's `kinematics: Some(..)`, which opts the live
 /// sim into the acceleration-aware cycle-time model (the `None` default
 /// is the F-034 feature flag that keeps runtime byte-identical).
-fn draw_machine_kinematics(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+fn draw_machine_kinematics(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    draft: &mut rs_cam_core::machine::MachineProfile,
+    edit: &mut PanelEdit,
+) {
     ui.label(
         egui::RichText::new("Kinematics (cycle-time model)")
             .strong()
@@ -1804,7 +1923,11 @@ fn draw_machine_kinematics(ui: &mut egui::Ui, state: &mut AppState, events: &mut
         );
     }
 
-    let mut kin = state.session.machine().effective_kinematics();
+    // WP6: the block comes off the DRAFT, so a value typed on a
+    // previous frame is not re-read from the unchanged session.
+    let mut kin = draft
+        .kinematics
+        .unwrap_or_else(|| state.session.machine().effective_kinematics());
     let scalar = kin.acceleration_mm_s2.max(1.0);
     let mut axes = kin
         .acceleration_xyz_mm_s2
@@ -1814,31 +1937,38 @@ fn draw_machine_kinematics(ui: &mut egui::Ui, state: &mut AppState, events: &mut
     let mut jerk_val = kin.jerk_mm_s3.unwrap_or(500.0);
     let mut changed = false;
 
-    let accel_row = |ui: &mut egui::Ui, label: &str, v: &mut f64, hint: &str| -> bool {
+    let accel_row = |ui: &mut egui::Ui, label: &str, v: &mut f64, hint: &str| -> egui::Response {
         ui.label(label);
-        let edited = ui
+        let response = ui
             .add(
                 egui::DragValue::new(v)
                     .speed(5.0)
                     .range(10.0..=20000.0)
                     .suffix(" mm/s²"),
             )
-            .on_hover_text(hint)
-            .changed();
+            .on_hover_text(hint);
         ui.end_row();
-        edited
+        response
     };
 
     egui::Grid::new("machine_kinematics")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            changed |= accel_row(ui, "Accel X:", &mut axes[0], "GRBL $120");
-            changed |= accel_row(ui, "Accel Y:", &mut axes[1], "GRBL $121");
-            changed |= accel_row(ui, "Accel Z:", &mut axes[2], "GRBL $122");
+            for (label, index, hint) in [
+                ("Accel X:", 0_usize, "GRBL $120"),
+                ("Accel Y:", 1, "GRBL $121"),
+                ("Accel Z:", 2, "GRBL $122"),
+            ] {
+                // SAFETY: the three indices are literals into a [f64; 3]
+                #[allow(clippy::indexing_slicing)]
+                let response = accel_row(ui, label, &mut axes[index], hint);
+                changed |= response.changed();
+                edit.drag(&response);
+            }
 
             ui.label("Junction dev:");
-            changed |= ui
+            let response = ui
                 .add(
                     egui::DragValue::new(&mut delta)
                         .speed(0.001)
@@ -1846,22 +1976,25 @@ fn draw_machine_kinematics(ui: &mut egui::Ui, state: &mut AppState, events: &mut
                         .max_decimals(4)
                         .suffix(" mm"),
                 )
-                .on_hover_text("GRBL $11 — how far the cornering arc may bow from the vertex")
-                .changed();
+                .on_hover_text("GRBL $11 — how far the cornering arc may bow from the vertex");
+            changed |= response.changed();
+            edit.drag(&response);
             ui.end_row();
 
             ui.label("Jerk limit:");
             ui.horizontal(|ui| {
-                changed |= ui.checkbox(&mut jerk_enabled, "").changed();
+                let response = ui.checkbox(&mut jerk_enabled, "");
+                changed |= response.changed();
+                edit.click(&response);
                 if jerk_enabled {
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut jerk_val)
-                                .speed(10.0)
-                                .range(1.0..=100_000.0)
-                                .suffix(" mm/s³"),
-                        )
-                        .changed();
+                    let response = ui.add(
+                        egui::DragValue::new(&mut jerk_val)
+                            .speed(10.0)
+                            .range(1.0..=100_000.0)
+                            .suffix(" mm/s³"),
+                    );
+                    changed |= response.changed();
+                    edit.drag(&response);
                 } else {
                     ui.label(egui::RichText::new("off (trapezoidal)").small().weak());
                 }
@@ -1874,19 +2007,23 @@ fn draw_machine_kinematics(ui: &mut egui::Ui, state: &mut AppState, events: &mut
         kin.acceleration_mm_s2 = (axes[0] + axes[1] + axes[2]) / 3.0;
         kin.junction_deviation_mm = delta;
         kin.jerk_mm_s3 = if jerk_enabled { Some(jerk_val) } else { None };
-        state.session.machine_mut().kinematics = Some(kin);
-        events.push(AppEvent::MachineChanged);
+        draft.kinematics = Some(kin);
     }
 
     ui.add_space(4.0);
-    draw_grbl_import(ui, state, events);
+    draw_grbl_import(ui, state, draft, edit);
 }
 
 /// "Import GRBL `$$`" — paste or load a settings dump, preview the mapped
 /// values, then Apply (the confirm step; reversible via the machine undo
 /// snapshot). Applying sets kinematics + Max Feed and breaks any library
 /// link, since the values are now inline.
-fn draw_grbl_import(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+fn draw_grbl_import(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    draft: &mut rs_cam_core::machine::MachineProfile,
+    edit: &mut PanelEdit,
+) {
     let buf_id = egui::Id::new("machine_grbl_paste");
     let status_id = egui::Id::new("machine_grbl_status");
 
@@ -2005,12 +2142,17 @@ fn draw_grbl_import(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<Ap
                     // not inside `kinematics` — land them here (P1).
                     let mut kinematics = imp.kinematics;
                     kinematics.max_rate_xyz_mm_min = imp.max_rate_xyz_mm_min;
-                    let m = state.session.machine_mut();
-                    m.kinematics = Some(kinematics);
+                    // The draft follows the write, so the panel does not
+                    // put the pre-import numbers back on the next commit.
+                    draft.kinematics = Some(kinematics);
                     if let Some(mf) = max_feed {
-                        m.max_feed_mm_min = mf;
+                        draft.max_feed_mm_min = mf;
                     }
-                    events.push(AppEvent::MachineChanged);
+                    // The import is its own row: a GRBL dump carries the
+                    // travel rate as well as the block, and the row drops
+                    // the library link because the numbers are inline now.
+                    apply_machine_import(state, kinematics, max_feed);
+                    edit.changed = true;
                     ui.data_mut(|d| {
                         d.insert_temp(buf_id, String::new());
                         d.insert_temp(status_id, "Imported $$ settings".to_owned());

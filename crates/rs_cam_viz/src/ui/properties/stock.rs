@@ -81,30 +81,36 @@ pub fn draw(
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
             ui.label("X:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut stock.x)
-                    .suffix(" mm")
-                    .speed(0.5)
-                    .range(0.1..=10000.0),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut stock.x)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(0.1..=10000.0),
+                ),
+            );
             ui.end_row();
 
             ui.label("Y:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut stock.y)
-                    .suffix(" mm")
-                    .speed(0.5)
-                    .range(0.1..=10000.0),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut stock.y)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(0.1..=10000.0),
+                ),
+            );
             ui.end_row();
 
             ui.label("Z:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut stock.z)
-                    .suffix(" mm")
-                    .speed(0.5)
-                    .range(0.1..=10000.0),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut stock.z)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(0.1..=10000.0),
+                ),
+            );
             ui.end_row();
         });
 
@@ -115,27 +121,33 @@ pub fn draw(
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
             ui.label("X:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut stock.origin_x)
-                    .suffix(" mm")
-                    .speed(0.5),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut stock.origin_x)
+                        .suffix(" mm")
+                        .speed(0.5),
+                ),
+            );
             ui.end_row();
 
             ui.label("Y:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut stock.origin_y)
-                    .suffix(" mm")
-                    .speed(0.5),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut stock.origin_y)
+                        .suffix(" mm")
+                        .speed(0.5),
+                ),
+            );
             ui.end_row();
 
             ui.label("Z:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut stock.origin_z)
-                    .suffix(" mm")
-                    .speed(0.5),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut stock.origin_z)
+                        .suffix(" mm")
+                        .speed(0.5),
+                ),
+            );
             ui.end_row();
         });
 
@@ -144,12 +156,14 @@ pub fn draw(
     if stock.auto_from_model {
         ui.horizontal(|ui| {
             ui.label("Padding:");
-            edit.drag(&ui.add(
-                egui::DragValue::new(&mut stock.padding)
-                    .suffix(" mm")
-                    .speed(0.1)
-                    .range(0.0..=100.0),
-            ));
+            edit.drag(
+                &ui.add(
+                    egui::DragValue::new(&mut stock.padding)
+                        .suffix(" mm")
+                        .speed(0.1)
+                        .range(0.0..=100.0),
+                ),
+            );
         });
     }
 
@@ -291,19 +305,23 @@ fn draw_alignment_pins(
                     ui.horizontal(|ui| {
                         ui.label(format!("Pin {}:", i + 1));
                         ui.label("X");
-                        edit.drag(&ui.add(
-                            egui::DragValue::new(&mut pin.x)
-                                .suffix(" mm")
-                                .speed(0.5)
-                                .range(0.0..=stock.x),
-                        ));
+                        edit.drag(
+                            &ui.add(
+                                egui::DragValue::new(&mut pin.x)
+                                    .suffix(" mm")
+                                    .speed(0.5)
+                                    .range(0.0..=stock.x),
+                            ),
+                        );
                         ui.label("Y");
-                        edit.drag(&ui.add(
-                            egui::DragValue::new(&mut pin.y)
-                                .suffix(" mm")
-                                .speed(0.5)
-                                .range(0.0..=stock.y),
-                        ));
+                        edit.drag(
+                            &ui.add(
+                                egui::DragValue::new(&mut pin.y)
+                                    .suffix(" mm")
+                                    .speed(0.5)
+                                    .range(0.0..=stock.y),
+                            ),
+                        );
                     });
                     ui.horizontal(|ui| {
                         ui.add_space(48.0);
@@ -530,8 +548,8 @@ fn mirror_pin(pin: &AlignmentPin, axis: FlipAxis, stock_x: f64, stock_y: f64) ->
 /// dedups by Janka anchor. Per-leaf filter for the long Softwood /
 /// Hardwood lists (each has ~60+ species after dedup).
 ///
-/// Returns `true` if a selection was made this frame (caller pushes
-/// `StockMaterialChanged`).
+/// Returns `true` if a selection was made this frame (the caller records
+/// a finished edit).
 fn draw_hierarchical_material_picker(
     ui: &mut egui::Ui,
     stock: &mut crate::state::job::StockConfig,
