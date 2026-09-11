@@ -3029,6 +3029,108 @@ fn the_fixpoint_loop_terminates_on_a_genuinely_failing_op() {
     );
 }
 
+/// N12 item 10 — the GUI's own simulation reaches the SESSION.
+///
+/// `ProjectSession::start` reads the rest snapshot from
+/// `session.simulation.prior_stocks`. The GUI simulates on its own lane
+/// and adopted the answer into viz state alone, so the session held no
+/// simulation in the GUI process and `start` refused every
+/// `FromRemainingStock` operation there. Two simulation states.
+///
+/// The arm drives the real doors, in the order the operator does:
+///
+/// 1. the submit door generates the first link;
+/// 2. the GUI's own `run_simulation_with_all` publishes the snapshot;
+/// 3. the drain adopts it, into viz state AND into the session.
+///
+/// It then asserts the two hold ONE snapshot, and that `start` on the
+/// rest operation succeeds.
+///
+/// Pre-fix this fails at the `Arc::ptr_eq` assertion: the session holds
+/// no simulation at all, and `start` reports the rest refusal.
+///
+/// Programme: `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md`
+/// §22 addendum. The core half is
+/// `crates/rs_cam_core/tests/adopt_simulation_stores_prior_stocks.rs`.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_gui_simulation_reaches_the_session_so_start_sees_the_prior_stock_n12_item10() {
+    let mut controller = rest_chain_controller(1);
+    let ids: Vec<ToolpathId> = controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| tc.id)
+        .collect();
+    assert_eq!(
+        ids.len(),
+        2,
+        "the fixture holds one fresh-stock op and one rest op"
+    );
+
+    controller.submit_toolpath_compute(ids[0]);
+    controller.drain_compute_results();
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .get(&ids[0])
+            .is_some_and(|rt| rt.result.is_some()),
+        "the first link must generate, or the simulation below carves \
+         nothing and this arm measures nothing"
+    );
+
+    assert!(
+        controller.run_simulation_with_all(),
+        "the simulation must submit, or this arm measures nothing"
+    );
+    controller.drain_compute_results();
+
+    let viz_stock = controller
+        .state
+        .simulation
+        .prior_stock_for(ids[1])
+        .map(Arc::clone)
+        .expect("the GUI adopts the snapshot into viz state");
+    let session_stock = controller
+        .state
+        .session
+        .simulation_result()
+        .and_then(|simulation| simulation.prior_stocks.get(&ids[1]))
+        .map(Arc::clone);
+    assert!(
+        session_stock
+            .as_ref()
+            .is_some_and(|stock| Arc::ptr_eq(stock, &viz_stock)),
+        "the session and the viewport must hold ONE snapshot; the session \
+         holds {}",
+        if session_stock.is_some() {
+            "another"
+        } else {
+            "none"
+        }
+    );
+
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let refusal = controller
+        .state
+        .session
+        .start(
+            rs_cam_core::session::Job::GenerateToolpath(
+                rs_cam_core::session::GenerateToolpathArgs { index: 1 },
+            ),
+            &cancel,
+        )
+        .err()
+        .map(|error| error.to_string());
+    assert!(
+        refusal.is_none(),
+        "start must see the prior stock the GUI simulated; got: {refusal:?}"
+    );
+}
+
 /// A/M10's rule, enforced: the loop never picks a simulation resolution for
 /// you. Omitting it on a project with rest ops is refused, with instructions.
 #[cfg(feature = "mcp")]
