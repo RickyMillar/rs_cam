@@ -44,9 +44,11 @@
 //! The kind cost the callback macro a third accumulator and one more
 //! per-row arm, not a rewrite.
 //!
-//! WP4 adds the MCP mutation section: 32 `Command` rows, of which 28
-//! carry an MCP wire name. The registry holds 38 rows in total. Three
-//! MCP mutations stay hand-written holdouts and are NOT rows here
+//! WP4 adds the MCP mutation section: most `Command` rows carry an MCP
+//! wire name. This module states no row count. `CommandId::ALL.len()`
+//! is the count, and a count written in prose goes stale the day the
+//! next row lands. This one did, twice. Three MCP mutations stay
+//! hand-written holdouts and are NOT rows here
 //! (§15 ruling 4): `apply_feeds`, whose funnel resolves tool, machine,
 //! material and a recommendation from view state; `plan_multitool_
 //! finishing`, whose outcome IS the reply; and `export_gcode`, whose
@@ -136,7 +138,7 @@ macro_rules! for_each_command {
             (Command, AddModel, "import_model", AddModelArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -156,7 +158,7 @@ macro_rules! for_each_command {
             (Command, AddSetup, "add_setup", AddSetupArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -224,7 +226,7 @@ macro_rules! for_each_command {
              MoveToolpathToSetupArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -234,7 +236,7 @@ macro_rules! for_each_command {
             (Command, SaveProject, "save_project", SaveProjectArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI saves through its own controller door; WP6b adopts this row",
+                     "the GUI saves through its own controller door",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -254,7 +256,7 @@ macro_rules! for_each_command {
             (Command, SetToolpathTool, "set_toolpath_tool", SetToolpathToolArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI combo writes ToolpathConfig::tool_id itself; WP5 gives it a door",
+                     "the GUI inspector replaces the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -264,7 +266,7 @@ macro_rules! for_each_command {
             (Command, SetToolpathModel, "set_toolpath_model", SetToolpathModelArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI combo writes ToolpathConfig::model_id itself; WP5 gives it a door",
+                     "the GUI inspector replaces the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -274,7 +276,7 @@ macro_rules! for_each_command {
             (Command, SetToolpathHeights, "set_toolpath_heights", SetToolpathHeightsArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI inspector writes this field directly; WP5 gives it a door",
+                     "the GUI inspector replaces the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -295,7 +297,7 @@ macro_rules! for_each_command {
             (Command, AddToolpath, "add_toolpath", AddToolpathArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -305,7 +307,7 @@ macro_rules! for_each_command {
             (Command, RemoveToolpath, "remove_toolpath", RemoveToolpathArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -315,7 +317,7 @@ macro_rules! for_each_command {
             (Command, AddTool, "add_tool", AddToolArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -325,7 +327,7 @@ macro_rules! for_each_command {
             (Command, AddToolFromLibrary, "add_tool_from_library", AddToolArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -335,7 +337,7 @@ macro_rules! for_each_command {
             (Command, RemoveTool, "remove_tool", RemoveToolArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -351,7 +353,7 @@ macro_rules! for_each_command {
             (Command, SetStockSource, "set_stock_source", SetStockSourceArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -391,7 +393,7 @@ macro_rules! for_each_command {
             (Command, SetBoundaryConfig, "set_boundary_config", SetBoundaryConfigArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -402,7 +404,7 @@ macro_rules! for_each_command {
              SetRestAnalysisConfigArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI inspector writes this field directly; WP5 gives it a door",
+                     "the GUI inspector replaces the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -412,7 +414,7 @@ macro_rules! for_each_command {
             (Command, SetDressupConfig, "set_dressup_config", SetDressupConfigArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI inspector writes this field directly; WP5 gives it a door",
+                     "the GUI inspector replaces the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -422,7 +424,7 @@ macro_rules! for_each_command {
             (Command, SetDressupField, "set_dressup_field", SetDressupFieldArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI inspector writes this field directly; WP5 gives it a door",
+                     "the GUI inspector replaces the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -432,7 +434,7 @@ macro_rules! for_each_command {
             (Command, SetToolpathEnabled, "set_toolpath_enabled", SetToolpathEnabledArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
+                     "the GUI calls the session setter directly; WP15 routes it through the row",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
@@ -442,7 +444,7 @@ macro_rules! for_each_command {
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Skip(
-                     "get_cut_trace and narrate_toolpath report other quantities; WP4 revisits",
+                     "get_cut_trace and narrate_toolpath report other quantities",
                  ),
                  cli: Reach::Skip(
                      "the CLI project report prints the simulation total, not per-toolpath",

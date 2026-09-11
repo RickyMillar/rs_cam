@@ -1668,13 +1668,15 @@ impl RsCamApp {
                 ))
             }
             // A save answers in plain text, so its refusal does too. The
-            // sentence carries "Save failed" twice because the GUI door
-            // wrapped the session error in that same phrase and this
-            // surface printed the wrapper — preserved verbatim rather
-            // than quietly reworded; WP6b retires the wrapper with the
-            // door.
+            // sentence carried "Save failed" twice until WP20, because
+            // this surface printed the GUI door's wrapper text under a
+            // prefix of its own. The MCP route does not take that door:
+            // it applies `Command::SaveProject` and reports the session
+            // error, which carries no such prefix. One prefix is
+            // correct, and the reply now reads the same bytes as the
+            // outcome.
             CommandId::SaveProject => CoreReply {
-                reply: text(format!("Save failed: Save failed: {error}")),
+                reply: text(format!("Save failed: {error}")),
                 outcome: Some(McpOutcome::Refused(format!("Save failed: {error}"))),
             },
             CommandId::AddModel

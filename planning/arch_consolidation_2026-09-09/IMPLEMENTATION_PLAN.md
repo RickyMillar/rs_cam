@@ -621,6 +621,61 @@ WP3 → WP5 → WP7; WP11a → WP10 → WP11b → WP12.
   remaining viz-owned fields.
 - **WP13.** The sentry proves declaration and reach, never that a handler is right.
 
+### §5 addendum (2026-09-12): residuals
+
+§23 ruling 3, the §23 addendum and `STATUS.md` cite a residual list in §5. §5 never
+received one. The list follows. Each row names the code and the condition that retires it.
+Review H9 opened this addendum.
+
+- **Four MCP mutations stay hand-written.** `apply_feeds`
+  (`crates/rs_cam_viz/src/app/mcp.rs:3332`), `plan_multitool_finishing` (`:2921`) and
+  `export_gcode` (`:2388`) are not registry rows, per §15 ruling 4. `load_project`
+  (`:2322`) is the fourth: it replaces the whole session, so no `Effects` describes what it
+  did. One row for each retires the four.
+- **The hand-written stale set survives on two wire paths.** `StaleSet`, `MutationKind` and
+  `compute_stale_set` (`crates/rs_cam_core/src/session/compute.rs:41,46,54`) stay `pub`,
+  and `mcp_apply_stale` (`crates/rs_cam_viz/src/app/mcp.rs:2214`) stays with them. Two
+  callers need them: `add_toolpath_via_gui` (`:2848`) and `apply_feeds` (`:3375`). Neither
+  holds an `Effects` to read. The rows above retire all four names. §7 states the bar as
+  `rg "MutationKind" crates/rs_cam_viz/src` → 0. That bar is not met today, and review M1
+  asks §7 to name these two holdouts.
+- **The strategy advisor keeps its loose executor call.** `recommend_clearing_strategy`
+  (`crates/rs_cam_core/src/session/compute.rs:1650`) calls `execute_operation_annotated`
+  at `:1716`. It plans a DIFFERENT operation than the bundle carries, so
+  `execute_generation` cannot serve it (§23 ruling 3). A `Query` row or a `Job` row for the
+  advisor retires it. WP14 holds that row.
+- **The 14-argument `execute_operation` has no production caller.**
+  `crates/rs_cam_core/src/compute/execute.rs:3358`. Seven test callers keep it alive, and
+  `#[cfg_attr(not(test), allow(dead_code))]` states that. Move those callers to
+  `execute_operation_annotated` to retire the function and its `DECLARATIONS` entry (review
+  M2). §23 ruling 1 keeps it until then.
+- **Three ruled `Job` rows are not declared yet.** `OptimizeToolpath`,
+  `RecommendClearingStrategy` and `PreviewTierMap` (§14 ruling 1) still run as lane
+  submits. WP14 declares them.
+- **The optimize lane takes the session by `mem::replace`.**
+  `crates/rs_cam_viz/src/controller/events/mod.rs:585,1285` and
+  `crates/rs_cam_viz/src/controller/events/planner.rs:176` move the session into the
+  request and leave an empty placeholder. The compute drain restores it.
+  `CloseOptimizeModal` and `CloseOptimizeProject` (`events/mod.rs:415,427`) cancel the lane
+  so the drain runs and the session comes back. The `OptimizeToolpath` job row retires the
+  placeholder. WP14 holds that row, and `P3_NAMED_EXEMPTIONS` in
+  `crates/rs_cam_viz/tests/command_surface_completeness.rs` records the two names.
+- **Public typed setters stay public.** WP7 closed the nine `*_mut` field accessors. The
+  typed setters on `crates/rs_cam_core/src/session/mutation.rs` stay `pub` — review H8
+  counts about 21 — and viz and the CLI call about 33 of those sites directly. No sentry
+  covers them: WP6, WP6b and WP7 scan `*_mut` alone, which §7 scopes on purpose. WP15
+  routes the sites through the rows and narrows the setters to `pub(crate)`.
+- **The `GenerateToolpath` GUI exemption is removed, and this residual is closed.** WP11b
+  landed, and `crates/rs_cam_viz/src/controller/events/compute.rs` constructs
+  `Job::GenerateToolpath`, so `command_surface_completeness.rs` reads that row like every
+  other one. WP20 deleted `P1_EXEMPT` and its guard.
+- **Three setup rows move no revision, by design.** `SetSetupName`, `SetSetupDatum` and
+  `SetSetupPauseMessage` write a field that no generation reads (§19 ruling 6), so
+  `Effects::stale` is empty and `set_setup_pause_message`
+  (`crates/rs_cam_core/src/session/mutation.rs:1230`) passes `None` to
+  `try_with_effects`. A reader must not report that empty set as a missed invalidation.
+  Nothing retires this row.
+
 ---
 
 ## §6 Risk register

@@ -169,24 +169,22 @@ fn constructs(text: &str, kind: CommandKind, id: CommandId) -> bool {
 
 // ── P1 — a `gui` reach is a claim about a caller ──────────────────────
 
-/// WP11b removes this exemption.
+/// This scan carries no exemption.
 ///
-/// `GenerateToolpath` declares `gui: Reached` and the GUI does generate
-/// toolpaths — through `ProjectSession::generate_toolpath`, which runs
-/// the job's three steps inline (§16: WP10 landed core and CLI only).
-/// The GUI worker builds its own tool definition, spatial index and
-/// boundary regions, so it cannot name `ResolvedGenInputs` and cannot
-/// construct `Job::GenerateToolpath` yet. WP11b switches the worker and
-/// the drain, and this name goes with it.
-const P1_EXEMPT: &[CommandId] = &[CommandId::GenerateToolpath];
-
+/// `GenerateToolpath` held one until WP20. The GUI generated through
+/// `ProjectSession::generate_toolpath`, which runs the job's three steps
+/// inline, and the GUI worker could not name `ResolvedGenInputs`. WP11b
+/// switched the worker and the drain, so
+/// `crates/rs_cam_viz/src/controller/events/compute.rs` constructs
+/// `Job::GenerateToolpath` and the scan reads that row like every other
+/// one. An exemption here hides a live row, so add none.
 #[test]
 fn every_gui_reached_core_row_is_constructed_in_the_view() {
     let text = gui_source_text();
     let mut checked = 0_usize;
     let mut missing = Vec::new();
     for id in CommandId::ALL {
-        if !matches!(id.surfaces().gui, Reach::Reached) || P1_EXEMPT.contains(id) {
+        if !matches!(id.surfaces().gui, Reach::Reached) {
             continue;
         }
         checked += 1;
@@ -202,8 +200,7 @@ fn every_gui_reached_core_row_is_constructed_in_the_view() {
     );
     assert!(
         checked > 0,
-        "no core row claims a GUI reach outside the exemption, so this \
-         scan asserts nothing"
+        "no core row claims a GUI reach, so this scan asserts nothing"
     );
 }
 
