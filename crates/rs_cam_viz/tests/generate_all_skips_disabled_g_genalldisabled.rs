@@ -102,7 +102,7 @@ fn controller_with_a_disabled_op() -> (AppController<RecordingBackend>, Arc<Mute
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
     for (id, enabled) in [(0, true), (1, false), (2, true)] {
-        controller
+        let _ = controller
             .state
             .session
             .add_toolpath(0, toolpath(id, enabled))
@@ -147,7 +147,7 @@ fn generate_all_with_nothing_enabled_tells_the_operator() {
     controller.state.session = ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
-    controller
+    let _ = controller
         .state
         .session
         .add_toolpath(0, toolpath(0, false))

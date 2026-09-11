@@ -123,9 +123,15 @@ fn fed_descent_lengths(session: &mut ProjectSession, index: usize) -> Vec<f64> {
 fn drill_session(op: OperationConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock());
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(plate_model());
+    let model_id = session
+        .add_model(plate_model())
+        .created
+        .expect("add_model reports the new model id");
     let mut tc = toolpath_config("Drill", op, tool_id, model_id);
     // ISOLATE THE VARIABLE: this sentry measures the peck schedule, and it
     // reads each descent's length off the move that parked the tool. Every
@@ -138,7 +144,7 @@ fn drill_session(op: OperationConfig) -> ProjectSession {
     tc.dressups.link_moves = false;
     tc.dressups.arc_fitting = false;
     tc.dressups.segment_merge = false;
-    session.add_toolpath(0, tc).expect("add drill toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add drill toolpath");
     session
 }
 

@@ -118,10 +118,16 @@ fn accepts_depth_per_pass(op: OperationType) -> bool {
 fn all_ops_session() -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock_under(20.0, 4.0));
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
     let model = polygon_model(vec![square_polygon(2.0)], "n5_all_ops");
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
     for op in OperationType::ALL {
         let cfg = toolpath_config(
             op.label(),
@@ -129,7 +135,7 @@ fn all_ops_session() -> ProjectSession {
             tool_id,
             model_id,
         );
-        session.add_toolpath(0, cfg).expect("add one op per type");
+        let _ = session.add_toolpath(0, cfg).expect("add one op per type");
     }
     session
 }

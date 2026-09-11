@@ -69,7 +69,7 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
     // router setup). add_tool returns the vec index; we want the
     // assigned ToolId.0 for the toolpath link.
     let tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-    session.add_tool(tool);
+    let _ = session.add_tool(tool);
     let tool_id = session.tools()[0].id.0;
 
     // Add the SVG model.
@@ -87,7 +87,10 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
 
     // Add the pocket toolpath. Defaults from PocketConfig give a
     // sensible starting point; we set a finite depth bounded by stock.
@@ -118,7 +121,11 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let toolpath_index = session.add_toolpath(0, tc).expect("add_toolpath");
+    let toolpath_index = session
+        .add_toolpath(0, tc)
+        .expect("add_toolpath")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     Some((session, toolpath_index))
 }
 

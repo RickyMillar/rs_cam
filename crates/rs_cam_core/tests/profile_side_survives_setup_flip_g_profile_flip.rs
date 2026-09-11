@@ -104,12 +104,18 @@ fn generated_profile(face_up: FaceUp, side: ProfileSide) -> ProjectSession {
 
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(polygon_model(
-        vec![square_polygon(PART_HALF)],
-        "profile_square",
-    ));
+    let model_id = session
+        .add_model(polygon_model(
+            vec![square_polygon(PART_HALF)],
+            "profile_square",
+        ))
+        .created
+        .expect("add_model reports the new model id");
 
     let mut cfg = toolpath_config("Profile", op, tool_id, model_id);
     cfg.dressups.entry_style = DressupEntryStyle::None;
@@ -122,9 +128,12 @@ fn generated_profile(face_up: FaceUp, side: ProfileSide) -> ProjectSession {
     let setup = if face_up == FaceUp::Top {
         0
     } else {
-        session.add_setup("Flipped".to_owned(), face_up)
+        session
+            .add_setup("Flipped".to_owned(), face_up)
+            .created
+            .expect("add_setup reports the new setup index")
     };
-    session
+    let _ = session
         .add_toolpath(setup, cfg)
         .expect("add the profile toolpath to its setup");
 

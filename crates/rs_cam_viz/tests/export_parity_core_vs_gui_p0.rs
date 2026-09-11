@@ -273,36 +273,48 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
 
     let rough_bit = cutter(ToolType::EndMill, ROUGH_TOOL_NAME, ROUGH_TOOL_NUMBER);
     let finish_bit = cutter(ToolType::BallNose, FINISH_TOOL_NAME, FINISH_TOOL_NUMBER);
-    let rough_idx = session.add_tool(rough_bit);
-    let finish_idx = session.add_tool(finish_bit);
+    let rough_idx = session
+        .add_tool(rough_bit)
+        .created
+        .expect("add_tool reports the new tool index");
+    let finish_idx = session
+        .add_tool(finish_bit)
+        .created
+        .expect("add_tool reports the new tool index");
     let rough_tool = session.tools()[rough_idx].id.0;
     let finish_tool = session.tools()[finish_idx].id.0;
 
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        path: PathBuf::from("flat.stl"),
-        name: "Flat".to_owned(),
-        kind: Some(ModelKind::Stl),
-        mesh: Some(Arc::new(make_test_flat(40.0))),
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        enriched_mesh: None,
-        units: Some(ModelUnits::Millimeters),
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            path: PathBuf::from("flat.stl"),
+            name: "Flat".to_owned(),
+            kind: Some(ModelKind::Stl),
+            mesh: Some(Arc::new(make_test_flat(40.0))),
+            polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            enriched_mesh: None,
+            units: Some(ModelUnits::Millimeters),
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
-    let flipped = session.add_setup("Flip".to_owned(), FaceUp::Bottom);
+    let flipped = session
+        .add_setup("Flip".to_owned(), FaceUp::Bottom)
+        .created
+        .expect("add_setup reports the new setup index");
 
     let rough = toolpath_config(ROUGH_LABEL, ROUGH_RPM, rough_tool, model_id);
     let finish = toolpath_config(FINISH_LABEL, FINISH_RPM, finish_tool, model_id);
     let mut flip = toolpath_config(FLIP_LABEL, FLIP_RPM, rough_tool, model_id);
     flip.coolant = last_coolant;
 
-    session.add_toolpath(0, rough).expect("add rough");
-    session.add_toolpath(0, finish).expect("add finish");
-    session
+    let _ = session.add_toolpath(0, rough).expect("add rough");
+    let _ = session.add_toolpath(0, finish).expect("add finish");
+    let _ = session
         .add_toolpath(flipped, flip)
         .expect("add the flipped-setup toolpath");
 

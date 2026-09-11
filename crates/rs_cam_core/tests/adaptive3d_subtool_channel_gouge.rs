@@ -162,7 +162,10 @@ fn build_session() -> ProjectSession {
     };
     let _ = session.set_stock_config(stock);
 
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let mesh = heightfield_mesh(60.0, 0.5);
@@ -180,7 +183,10 @@ fn build_session() -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
 
     let adaptive3d = Adaptive3dConfig {
         trochoid_cap_mult: 1.6,
@@ -232,7 +238,7 @@ fn build_session() -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session
+    let _ = session
         .add_toolpath(0, tc)
         .expect("add adaptive3d toolpath");
 

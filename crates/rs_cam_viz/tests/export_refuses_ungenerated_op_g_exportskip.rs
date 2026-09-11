@@ -126,7 +126,7 @@ fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) 
     session.set_name("g-exportskip sentry".to_owned());
 
     let mesh = Arc::new(make_test_flat(40.0));
-    session.add_model(LoadedModel {
+    let _ = session.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -141,12 +141,12 @@ fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) 
         load_error: None,
     });
 
-    session
+    let _ = session
         .add_toolpath(0, toolpath_config(0, GENERATED_NAME, true))
         .expect("add generated toolpath");
     let second_enabled = !matches!(second, SecondOp::Disabled);
     // Both ops sit in the default setup (id 0), one after the other.
-    session
+    let _ = session
         .add_toolpath(0, toolpath_config(1, UNGENERATED_NAME, second_enabled))
         .expect("add second toolpath");
 

@@ -114,7 +114,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
 
     // Flat mesh as a model
     let mesh = Arc::new(make_test_flat(40.0));
-    session.add_model(LoadedModel {
+    let _ = session.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -153,7 +153,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tp).expect("add toolpath");
+    let _ = session.add_toolpath(0, tp).expect("add toolpath");
     let tp_id = session.toolpath_configs()[0].id;
 
     // Stub a computed result so the export pipeline has bytes to emit.
@@ -442,7 +442,7 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tp2).expect("add second toolpath");
+    let _ = session.add_toolpath(0, tp2).expect("add second toolpath");
     let tp2_id = session.toolpath_configs()[1].id;
 
     let mut path = Toolpath::new();
@@ -572,7 +572,10 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
     // build_session has 1 setup + 1 toolpath. Add a second setup with
     // its own toolpath so the multi-setup emit path runs and emits the
     // inter-setup M0.
-    let bottom_idx = session.add_setup("Bottom".to_owned(), FaceUp::Bottom);
+    let bottom_idx = session
+        .add_setup("Bottom".to_owned(), FaceUp::Bottom)
+        .created
+        .expect("add_setup reports the new setup index");
     let bottom_id = session.list_setups()[bottom_idx].id;
 
     let tp_bottom = ToolpathConfig {
@@ -596,7 +599,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    session
+    let _ = session
         .add_toolpath(bottom_idx, tp_bottom)
         .expect("add bottom toolpath");
     let bottom_tp_id = session.list_setups()[bottom_idx]
@@ -705,7 +708,10 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
 
     let top_id = SetupId(session.list_setups()[0].id);
 
-    let bottom_idx = session.add_setup("Bottom".to_owned(), FaceUp::Bottom);
+    let bottom_idx = session
+        .add_setup("Bottom".to_owned(), FaceUp::Bottom)
+        .created
+        .expect("add_setup reports the new setup index");
     let bottom_id = SetupId(session.list_setups()[bottom_idx].id);
     let tp_bottom = ToolpathConfig {
         id: rs_cam_core::ToolpathId(99),
@@ -728,7 +734,7 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    session
+    let _ = session
         .add_toolpath(bottom_idx, tp_bottom)
         .expect("add bottom toolpath");
     let bottom_tp_id = session.list_setups()[bottom_idx]

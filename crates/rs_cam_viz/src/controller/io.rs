@@ -24,8 +24,10 @@ impl<B: ComputeBackend> AppController<B> {
         {
             self.state.session.stock_mut().update_from_bbox(&mesh.bbox);
         }
-        let assigned_id = self.state.session.add_model(model);
-        self.state.selection = Selection::Model(ModelId(assigned_id));
+        let assigned_id = self.state.session.add_model(model).created;
+        if let Some(assigned_id) = assigned_id {
+            self.state.selection = Selection::Model(ModelId(assigned_id));
+        }
         self.state.gui.mark_edited();
         self.pending_upload = true;
         Ok(bbox)
@@ -34,8 +36,10 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn import_svg_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let model = import::import_svg(path, 0, 1.0)?;
         let bbox = model.bbox();
-        let assigned_id = self.state.session.add_model(model);
-        self.state.selection = Selection::Model(ModelId(assigned_id));
+        let assigned_id = self.state.session.add_model(model).created;
+        if let Some(assigned_id) = assigned_id {
+            self.state.selection = Selection::Model(ModelId(assigned_id));
+        }
         self.state.gui.mark_edited();
         self.pending_upload = true;
         Ok(bbox)
@@ -44,8 +48,10 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn import_dxf_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let model = import::import_dxf(path, 0, 1.0)?;
         let bbox = model.bbox();
-        let assigned_id = self.state.session.add_model(model);
-        self.state.selection = Selection::Model(ModelId(assigned_id));
+        let assigned_id = self.state.session.add_model(model).created;
+        if let Some(assigned_id) = assigned_id {
+            self.state.selection = Selection::Model(ModelId(assigned_id));
+        }
         self.state.gui.mark_edited();
         self.pending_upload = true;
         Ok(bbox)
@@ -60,8 +66,10 @@ impl<B: ComputeBackend> AppController<B> {
         {
             self.state.session.stock_mut().update_from_bbox(&mesh.bbox);
         }
-        let assigned_id = self.state.session.add_model(model);
-        self.state.selection = Selection::Model(ModelId(assigned_id));
+        let assigned_id = self.state.session.add_model(model).created;
+        if let Some(assigned_id) = assigned_id {
+            self.state.selection = Selection::Model(ModelId(assigned_id));
+        }
         self.state.gui.mark_edited();
         self.pending_upload = true;
         Ok(bbox)
@@ -544,7 +552,7 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
     session.set_name(job.name.clone());
     let _ = session.set_stock_config(job.stock.clone());
     let _ = session.set_post_config(GuiState::post_to_session(&job.post));
-    session.set_machine(job.machine.clone());
+    let _ = session.set_machine(job.machine.clone());
     let _ = session.replace_tools(job.tools.clone());
 
     let mut session_setups = Vec::new();
@@ -676,7 +684,7 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
 /// The model kind a file extension names, or `None` when rs_cam does not
 /// read that extension (G-MODELRELINK).
 ///
-/// Mirrors the `match` in `app::mcp::mcp_import_model`; core's
+/// Mirrors the `match` in `app::mcp::commands`' `import_model` arm; core's
 /// `project_file::infer_model_kind` is `pub(crate)` and not reachable from
 /// this crate.
 fn kind_from_extension(path: &Path) -> Option<ModelKind> {

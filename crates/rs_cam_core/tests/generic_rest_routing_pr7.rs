@@ -224,14 +224,23 @@ fn generate_with_rest_analysis(
         auto_from_model: false,
         ..StockConfig::default()
     });
-    let fine_idx = session.add_tool(finisher);
+    let fine_idx = session
+        .add_tool(finisher)
+        .created
+        .expect("add_tool reports the new tool index");
     let fine_id = session.tools()[fine_idx].id.0;
-    let ref_idx = session.add_tool(ball_tool(1, 12.0));
+    let ref_idx = session
+        .add_tool(ball_tool(1, 12.0))
+        .created
+        .expect("add_tool reports the new tool index");
     let ref_id = session.tools()[ref_idx].id;
-    let model_id = session.add_model(mesh_model(grooved_block(8.0, 50.0, 5.0, 1.0)));
+    let model_id = session
+        .add_model(mesh_model(grooved_block(8.0, 50.0, 5.0, 1.0)))
+        .created
+        .expect("add_model reports the new model id");
     let mut ra = rest_analysis;
     ra.reference_tool_id = Some(ref_id);
-    session
+    let _ = session
         .add_toolpath(0, toolpath(fine_id, model_id, ra))
         .expect("add scallop toolpath");
     let cancel = AtomicBool::new(false);

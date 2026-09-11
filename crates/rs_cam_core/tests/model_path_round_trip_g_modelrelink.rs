@@ -274,14 +274,14 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
     }
 
     let mut session = ProjectSession::new_empty();
-    session.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    session
+    let _ = session.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let _ = session
         .add_toolpath(
             0,
             toolpath(0, 0, rs_cam_core::compute::config::StockSource::Fresh),
         )
         .unwrap();
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath(
@@ -291,7 +291,7 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
             ),
         )
         .unwrap();
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath(2, 1, rs_cam_core::compute::config::StockSource::Fresh),

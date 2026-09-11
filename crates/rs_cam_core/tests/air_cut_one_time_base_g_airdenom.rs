@@ -112,23 +112,29 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
         ..StockConfig::default()
     });
 
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "as001_pocket".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![rounded_rect_with_island()])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://as001_pocket.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "as001_pocket".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![rounded_rect_with_island()])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://as001_pocket.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     let tc = ToolpathConfig {
         id: ToolpathId(0),
@@ -162,11 +168,11 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tc).expect("add pocket toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add pocket toolpath");
 
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_stock());
-    session.set_machine(machine);
+    let _ = session.set_machine(machine);
     session
 }
 

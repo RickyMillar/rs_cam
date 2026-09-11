@@ -263,10 +263,16 @@ fn stock() -> StockConfig {
 fn session_with(mesh: TriangleMesh, name: &str, op: OperationConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock());
-    let tool_idx = session.add_tool(ball_tool());
+    let tool_idx = session
+        .add_tool(ball_tool())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(mesh_model(mesh, name));
-    session
+    let model_id = session
+        .add_model(mesh_model(mesh, name))
+        .created
+        .expect("add_model reports the new model id");
+    let _ = session
         .add_toolpath(0, toolpath(op, tool_id, model_id))
         .expect("add toolpath");
     let cancel = AtomicBool::new(false);

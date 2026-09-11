@@ -276,27 +276,33 @@ fn pocket_session(depth: f64) -> ProjectSession {
         },
         ..StockConfig::default()
     });
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "board".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![Polygon2::new(vec![
-            P2::new(5.0, 5.0),
-            P2::new(75.0, 5.0),
-            P2::new(75.0, 55.0),
-            P2::new(5.0, 55.0),
-        ])])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://board.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "board".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![Polygon2::new(vec![
+                P2::new(5.0, 5.0),
+                P2::new(75.0, 5.0),
+                P2::new(75.0, 55.0),
+                P2::new(5.0, 55.0),
+            ])])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://board.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
     let tc = ToolpathConfig {
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
@@ -331,7 +337,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tc).expect("add pocket toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add pocket toolpath");
     session
 }
 

@@ -816,7 +816,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // The GUI's boundary picker (Machining Boundary section, above)
             // writes `tc.boundary` through `write_entry_config_to_session`
             // rather than going through `session::set_boundary_config` — the
-            // MCP entry point (`app/mcp.rs::mcp_set_boundary_config`) is the
+            // MCP entry point (`app/mcp/commands.rs`, the `SetBoundaryConfig`
+            // arm of the describe step) is the
             // one caller of that setter. Run the same demand-driven producer
             // hook here so picking "Rest Regions" in the GUI has the same
             // effect: the source toolpath's rest analysis turns on and its

@@ -33,50 +33,44 @@
     clippy::indexing_slicing
 )]
 
-/// The dispatch under test, read as text.
+/// The dispatch and the describe step, read as text.
 const MCP_SRC: &str = include_str!("../src/app/mcp.rs");
+const COMMANDS_SRC: &str = include_str!("../src/app/mcp/commands.rs");
 
-/// The twelve synchronous arms the review named, as (toast literal, the
-/// handler call that must come BEFORE it in the same arm).
-const OUTCOME_TOASTS: &[(&str, &str)] = &[
-    ("\"MCP: Adding setup\"", "self.mcp_add_setup("),
-    (
-        "\"MCP: Set setup {setup_index} face to",
-        "self.mcp_set_setup_face(",
-    ),
-    (
-        "\"MCP: Set setup {setup_index} Z rotation to",
-        "self.mcp_set_setup_rotation(",
-    ),
-    (
-        "\"MCP: Moving toolpath {toolpath_index} to setup",
-        "self.mcp_move_toolpath_to_setup(",
-    ),
-    ("\"MCP: Importing '{name}'\"", "self.mcp_import_model("),
-    ("\"MCP: Loaded '{name}'\"", "self.mcp_load_project("),
-    ("\"MCP: Saved project\"", "self.mcp_save_project("),
-    (
-        "\"MCP: Set {param} = {value_str} on '{tp_name}'\"",
-        "self.mcp_set_toolpath_param(",
-    ),
-    (
-        "\"MCP: Set {param} = {value_str} on '{tool_name}'\"",
-        "self.mcp_set_tool_param(",
-    ),
-    (
-        "\"MCP: Added toolpath '{display_name}'\"",
-        "self.mcp_add_toolpath(",
-    ),
-    (
-        "\"MCP: Removed toolpath {index}\"",
-        "self.mcp_remove_toolpath(",
-    ),
-    ("\"MCP: Added tool '{}'\"", "self.mcp_add_tool("),
-    (
-        "\"MCP: Imported tool from library '{catalog}' #{index}\"",
-        "self.mcp_add_tool_from_library(",
-    ),
+/// The toasts the command rows push, as literals.
+///
+/// WP4 moved these out of per-row dispatch arms and into
+/// `RsCamApp::core_toast_for` (`app/mcp/commands.rs`), which RETURNS the
+/// text rather than pushing it. The pair table this arm used to carry —
+/// (toast literal, `self.mcp_x(` handler call) — cannot survive that
+/// move: the handlers it named are gone, and the literal no longer sits
+/// in the same function as the mutation.
+///
+/// The rule it enforced survives in three halves, asserted below. The
+/// text is read off the REQUEST, so a request the CONVERSION refuses
+/// still reports its refusal. Nothing in `commands.rs` pushes a toast of
+/// its own. The one `Core` arm pushes it through `push_mcp_outcome`,
+/// after `apply`, classified against the reply.
+const REQUEST_TOASTS: &[&str] = &[
+    "\"MCP: Adding setup\"",
+    "\"MCP: Set setup {setup_index} face to '{face_up}'\"",
+    "\"MCP: Set setup {setup_index} Z rotation to '{z_rotation}'\"",
+    "\"MCP: Moving toolpath {toolpath_index} to setup {target_setup_index}\"",
+    "\"MCP: Importing '{name}'\"",
+    "\"MCP: Saved project\"",
+    "\"MCP: Set {param} = {value_str} on '{tp_name}'\"",
+    "\"MCP: Set {param} = {value_str} on '{tool_name}'\"",
+    "\"MCP: Bound tool {tool_id} to '{tp_name}'\"",
+    "\"MCP: Bound model {model_id} to '{tp_name}'\"",
+    "\"MCP: Added toolpath '{display_name}'\"",
+    "\"MCP: Removed toolpath {index}\"",
+    "\"MCP: Added tool '{name}'\"",
+    "\"MCP: Imported tool from library '{catalog}' #{index}\"",
 ];
+
+/// The one arm that still pairs a toast with a handler call: the project
+/// load, which WP4 left hand-written.
+const OUTCOME_TOASTS: &[(&str, &str)] = &[("\"MCP: Loaded '{name}'\"", "self.mcp_load_project(")];
 
 /// The asynchronous compute toasts. They announce work that a lane picks
 /// up later, so the progressive tense is the truth and they stay as bare
@@ -91,9 +85,86 @@ const PROGRESS_TOASTS: &[&str] = &[
 /// keeps a match from leaking into the next arm's handler call.
 const ARM_SPAN_CHARS: usize = 2_500;
 
-/// Every synchronous mutation toast is pushed from the handler's result,
-/// AFTER the handler ran. Pre-fix, all thirteen literals sat inside a bare
-/// `push_notification(` call issued before the handler.
+/// Every command-row toast is a value `core_toast_for` returns, and
+/// nothing in `commands.rs` pushes a toast of its own.
+///
+/// Pre-fix (2026-09-09), all thirteen literals sat inside a bare
+/// `push_notification(` call issued BEFORE the handler ran.
+#[test]
+fn every_command_row_toast_is_returned_not_pushed() {
+    let mut missing = Vec::new();
+    for literal in REQUEST_TOASTS {
+        if !COMMANDS_SRC.contains(literal) {
+            missing.push((*literal).to_owned());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "these MCP toast literals no longer appear in app/mcp/commands.rs:\n  {}",
+        missing.join("\n  ")
+    );
+    for pushed in ["push_notification(", "push_mcp_outcome("] {
+        assert!(
+            !COMMANDS_SRC.contains(pushed),
+            "app/mcp/commands.rs calls {pushed}: it must RETURN its toast \
+             so the one dispatch arm pushes it from the mutation's \
+             outcome, never announce one itself"
+        );
+    }
+    // The text comes from the REQUEST. A toast built after the mutation
+    // is silent on every conversion refusal — an unknown face, an
+    // unsupported file extension, the Suggest door declining a Scallop
+    // on a flat end mill — which is UX-R03-003 in the other direction.
+    let at = COMMANDS_SRC
+        .find("fn core_toast_for(&self, request: &CoreRequest)")
+        .expect("core_toast_for reads the toast off the request");
+    for literal in REQUEST_TOASTS {
+        let found = COMMANDS_SRC
+            .find(literal)
+            .unwrap_or_else(|| panic!("{literal} is not in app/mcp/commands.rs"));
+        assert!(
+            found > at,
+            "{literal} sits outside core_toast_for; a toast built after the \
+             mutation cannot report a refusal the conversion made"
+        );
+    }
+}
+
+/// The one `Core` arm pushes the describe step's toast AFTER the
+/// mutation, through `push_mcp_outcome`.
+#[test]
+fn the_command_arm_pushes_its_toast_after_the_mutation() {
+    let at = MCP_SRC
+        .find("McpRequestKind::Core(request) => {")
+        .expect("app/mcp.rs holds one McpRequestKind::Core arm");
+    let arm = &MCP_SRC[at..MCP_SRC.len().min(at + ARM_SPAN_CHARS)];
+    let apply_at = arm
+        .find(".session.apply(command)")
+        .expect("the Core arm applies the command");
+    let push_at = arm
+        .find("push_mcp_outcome(")
+        .expect("the Core arm pushes the toast through push_mcp_outcome");
+    assert!(
+        apply_at < push_at,
+        "the toast must be pushed after the mutation, not before it"
+    );
+    assert!(
+        arm.find("self.core_toast_for(&request)")
+            .is_some_and(|read_at| read_at < apply_at),
+        "the Core arm must read the toast text off the request BEFORE the \
+         conversion, or a refused conversion pushes nothing"
+    );
+    let before_push = &arm[..push_at];
+    let last_push = before_push.rfind("push_");
+    assert!(
+        last_push.is_none_or(|offset| before_push[offset..].starts_with("push_mcp_outcome(")),
+        "the Core arm pushes a toast by some other door before the outcome door"
+    );
+}
+
+/// The remaining hand-written arm keeps the pre-WP4 rule: its handler
+/// call sits before its toast literal, and the toast goes through
+/// `push_mcp_outcome`.
 #[test]
 fn every_synchronous_toast_is_pushed_from_the_handler_outcome() {
     let mut pre_announced = Vec::new();

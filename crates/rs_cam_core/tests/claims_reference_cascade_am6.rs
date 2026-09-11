@@ -164,9 +164,15 @@ fn unified_cfg(arm: Option<RestArm>) -> UnifiedFinishConfig {
 fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock_over(HALF, STOCK_Z));
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(mesh_model(bumpy_surface(), "bumps"));
+    let model_id = session
+        .add_model(mesh_model(bumpy_surface(), "bumps"))
+        .created
+        .expect("add_model reports the new model id");
 
     // Surface ops carry no depth dial, so an Auto `bottom_z` resolves to
     // `top_z - 0.0` and collapses every band onto the rim — both ops must pin
@@ -180,7 +186,7 @@ fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
         model_id,
     );
     finish.heights = heights.clone();
-    session.add_toolpath(0, finish).expect("add finish op");
+    let _ = session.add_toolpath(0, finish).expect("add finish op");
 
     let mut rest = toolpath_config(
         "Rest (same tool)",
@@ -193,7 +199,7 @@ fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
     // there is no machined prior for ANY reference to use — the comparison
     // would be measuring nothing.
     rest.stock_source = StockSource::FromRemainingStock;
-    session.add_toolpath(0, rest).expect("add rest op");
+    let _ = session.add_toolpath(0, rest).expect("add rest op");
 
     session
 }

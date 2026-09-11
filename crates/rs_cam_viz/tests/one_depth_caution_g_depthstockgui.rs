@@ -210,7 +210,11 @@ fn read_case(case: &Case) -> (Option<String>, Vec<Diagnostic>) {
     let mut session = session();
     let mut tc = toolpath(case.name, case.model_id, case.op.clone());
     tc.heights = case.heights.clone();
-    let idx = session.add_toolpath(0, tc).unwrap();
+    let idx = session
+        .add_toolpath(0, tc)
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
 
     let tc = &session.toolpath_configs()[idx];
     let height_ctx = session.height_context_for_toolpath(tc);

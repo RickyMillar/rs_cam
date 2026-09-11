@@ -268,13 +268,19 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
         ..StockConfig::default()
     });
 
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     if with_mesh {
-        session.add_model(part_model(0));
+        let _ = session.add_model(part_model(0));
     }
-    let drawing_id = session.add_model(drawing_model(if with_mesh { 1 } else { 0 }));
+    let drawing_id = session
+        .add_model(drawing_model(if with_mesh { 1 } else { 0 }))
+        .created
+        .expect("add_model reports the new model id");
 
     if with_fixture {
         let _ = session
@@ -297,13 +303,13 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
             .expect("add fixture");
     }
 
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config("Front pocket", pocket_op(), tool_id, drawing_id),
         )
         .expect("add pocket");
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config("Front drill", drill_op(), tool_id, drawing_id),

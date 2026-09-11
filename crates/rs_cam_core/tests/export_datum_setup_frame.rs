@@ -157,17 +157,26 @@ fn build_two_setup_session() -> ProjectSession {
         ..StockConfig::default()
     });
 
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(polygon_model(vec![square_model_polygon()], "square30"));
+    let model_id = session
+        .add_model(polygon_model(vec![square_model_polygon()], "square30"))
+        .created
+        .expect("add_model reports the new model id");
 
     // Setup 0 is the identity setup `new_empty` already created.
-    session
+    let _ = session
         .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
         .expect("add identity-setup trace");
 
-    let flipped = session.add_setup("Flip".to_owned(), FaceUp::Bottom);
-    session
+    let flipped = session
+        .add_setup("Flip".to_owned(), FaceUp::Bottom)
+        .created
+        .expect("add_setup reports the new setup index");
+    let _ = session
         .add_toolpath(flipped, trace_toolpath(FLIPPED_LABEL, tool_id, model_id))
         .expect("add flipped-setup trace");
 
@@ -415,10 +424,16 @@ fn zero_origin_stock_is_unchanged() {
         auto_from_model: false,
         ..StockConfig::default()
     });
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(polygon_model(vec![square_model_polygon()], "square30"));
-    session
+    let model_id = session
+        .add_model(polygon_model(vec![square_model_polygon()], "square30"))
+        .created
+        .expect("add_model reports the new model id");
+    let _ = session
         .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
         .expect("add identity-setup trace");
 
@@ -469,10 +484,16 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
             auto_from_model: false,
             ..StockConfig::default()
         });
-        let tool_idx = session.add_tool(make_endmill_6mm());
+        let tool_idx = session
+            .add_tool(make_endmill_6mm())
+            .created
+            .expect("add_tool reports the new tool index");
         let tool_id = session.tools()[tool_idx].id.0;
-        let model_id = session.add_model(polygon_model(vec![square_model_polygon()], "square30"));
-        session
+        let model_id = session
+            .add_model(polygon_model(vec![square_model_polygon()], "square30"))
+            .created
+            .expect("add_model reports the new model id");
+        let _ = session
             .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
             .expect("add identity-setup trace");
         rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, 0)

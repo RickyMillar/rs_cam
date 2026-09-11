@@ -98,7 +98,10 @@ fn build_as001_pocket_session() -> ProjectSession {
     };
     let _ = session.set_stock_config(stock);
 
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let polygon = rounded_rect_with_island();
@@ -116,7 +119,10 @@ fn build_as001_pocket_session() -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
 
     let pocket = PocketConfig {
         stepover: 2.0,
@@ -154,7 +160,7 @@ fn build_as001_pocket_session() -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tc).expect("add pocket toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add pocket toolpath");
 
     session
 }

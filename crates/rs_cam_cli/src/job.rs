@@ -524,7 +524,7 @@ fn execute_op_via_session(
     let units = op.scale.map(ModelUnits::Custom);
     let model = LoadedModel::from_file(0, &model_name, &op.input, None, units, job_dir)
         .map_err(|e| anyhow::anyhow!("loading input '{}': {e}", op.input.display()))?;
-    session.add_model(model);
+    let _ = session.add_model(model);
 
     // Adaptive3d stock-frame fidelity: the pre-T9 router defaulted the
     // stock top to `model_top + 5.0` when `stock_top_z` was unset.
@@ -539,7 +539,10 @@ fn execute_op_via_session(
     }
 
     // \u{2500}\u{2500} Tools \u{2500}\u{2500}
-    let tool_idx = session.add_tool(tool_config_from_def(tool_def, &op.tool));
+    let tool_idx = session
+        .add_tool(tool_config_from_def(tool_def, &op.tool))
+        .created
+        .context("add_tool reports no new tool index")?;
     let prev_tool_id = if op_type == OperationType::Rest {
         let prev_name = op
             .prev_tool
@@ -548,7 +551,12 @@ fn execute_op_via_session(
         let prev_def = job.tools.get(prev_name).context(format!(
             "Rest 'prev_tool' references unknown tool '{prev_name}'"
         ))?;
-        Some(session.add_tool(tool_config_from_def(prev_def, prev_name)))
+        Some(
+            session
+                .add_tool(tool_config_from_def(prev_def, prev_name))
+                .created
+                .context("add_tool reports no new tool index")?,
+        )
     } else {
         None
     };
@@ -614,7 +622,9 @@ fn execute_op_via_session(
                 planner_origin: None,
             },
         )
-        .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?
+        .created
+        .context("add_toolpath reports no new toolpath index")?;
 
     // \u{2500}\u{2500} Parameters: registry-validated serde round-trip \u{2500}\u{2500}
     let drop_cutter_min_z = (op_type == OperationType::DropCutter)

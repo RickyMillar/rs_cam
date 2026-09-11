@@ -387,17 +387,26 @@ fn build_session(fx: &Fixture) -> ProjectSession {
     stock.material = fx.material.clone();
     let _ = session.set_stock_config(stock);
 
-    session.set_machine(MachineProfile {
+    let _ = session.set_machine(MachineProfile {
         max_feed_mm_min: fx.max_feed_mm_min,
         max_cutting_feed_mm_min: fx.max_cutting_feed_mm_min,
         ..MachineProfile::default()
     });
 
-    let rt = session.add_tool(fx.rough_tool.clone());
+    let rt = session
+        .add_tool(fx.rough_tool.clone())
+        .created
+        .expect("add_tool reports the new tool index");
     let rough_id = session.tools()[rt].id.0;
-    let mt = session.add_tool(fx.tool.clone());
+    let mt = session
+        .add_tool(fx.tool.clone())
+        .created
+        .expect("add_tool reports the new tool index");
     let meas_id = session.tools()[mt].id.0;
-    let model_id = session.add_model(mesh_model(bumpy_surface(), "a5_bumps"));
+    let model_id = session
+        .add_model(mesh_model(bumpy_surface(), "a5_bumps"))
+        .created
+        .expect("add_model reports the new model id");
 
     let heights = pinned_heights(STOCK_Z, STOCK_Z - RELIEF);
 
@@ -408,12 +417,12 @@ fn build_session(fx: &Fixture) -> ProjectSession {
         model_id,
     );
     rough.heights = heights.clone();
-    session.add_toolpath(0, rough).expect("add rough op");
+    let _ = session.add_toolpath(0, rough).expect("add rough op");
 
     let mut measured = toolpath_config(fx.label, fx.op.clone(), meas_id, model_id);
     measured.heights = heights;
     measured.stock_source = StockSource::FromRemainingStock;
-    session.add_toolpath(0, measured).expect("add measured op");
+    let _ = session.add_toolpath(0, measured).expect("add measured op");
 
     session
 }

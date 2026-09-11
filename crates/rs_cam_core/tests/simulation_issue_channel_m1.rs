@@ -189,7 +189,7 @@ fn issue_channel_census_synthetic_2d() {
         ),
     ];
     for (i, (name, op)) in ops.iter().enumerate() {
-        session
+        let _ = session
             .add_toolpath(0, toolpath_config(i, name, op.clone(), tool_id, model_id))
             .expect("add census toolpath");
     }
@@ -324,13 +324,13 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
         ..PocketConfig::default()
     });
 
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config(0, "shallow-0.02mm", shallow, tool_id, model_id),
         )
         .expect("add shallow");
-    session
+    let _ = session
         .add_toolpath(0, toolpath_config(1, "deep-2mm", deep, tool_id, model_id))
         .expect("add deep");
 

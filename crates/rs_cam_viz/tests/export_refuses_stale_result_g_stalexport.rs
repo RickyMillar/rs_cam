@@ -104,7 +104,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
     let mut session = ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
-    session.add_model(LoadedModel {
+    let _ = session.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -141,7 +141,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
         planner_origin: None,
     };
     let id = tc.id;
-    session.add_toolpath(0, tc).expect("add toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add toolpath");
     let revision = session.toolpath_revision(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {

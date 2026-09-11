@@ -260,7 +260,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
 
     let mesh = Arc::new(make_test_flat(40.0));
-    controller.state.session.add_model(LoadedModel {
+    let _ = controller.state.session.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -296,7 +296,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    controller.state.session.add_toolpath(0, tp_config).unwrap();
+    let _ = controller.state.session.add_toolpath(0, tp_config).unwrap();
     let tp_id = controller.state.session.toolpath_configs()[0].id;
     let mut rt = ToolpathRuntime::new(true);
     rt.result = Some(ToolpathResult {
@@ -359,7 +359,7 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    controller.state.session.add_toolpath(0, cfg).unwrap();
+    let _ = controller.state.session.add_toolpath(0, cfg).unwrap();
     ToolpathId(next)
 }
 
@@ -622,10 +622,15 @@ fn controller_save_open_and_export_smoke() {
 fn simulation_results_capture_setup_boundaries() {
     let mut controller = sample_controller();
 
-    let setup_idx = controller.state.session.add_setup(
-        "Bottom Side".to_owned(),
-        rs_cam_core::compute::transform::FaceUp::default(),
-    );
+    let setup_idx = controller
+        .state
+        .session
+        .add_setup(
+            "Bottom Side".to_owned(),
+            rs_cam_core::compute::transform::FaceUp::default(),
+        )
+        .created
+        .expect("add_setup reports the new setup index");
     let tp2_config = ToolpathConfig {
         id: ToolpathId(0),
         name: "Profile".to_owned(),
@@ -651,7 +656,9 @@ fn simulation_results_capture_setup_boundaries() {
         .state
         .session
         .add_toolpath(setup_idx, tp2_config)
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let tp2_id = controller.state.session.toolpath_configs()[1].id;
 
     controller
@@ -1423,7 +1430,9 @@ fn add_derived_rest_dependent(
         .state
         .session
         .add_toolpath(0, dependent_config)
-        .expect("dependent toolpath should be added to setup 0");
+        .expect("dependent toolpath should be added to setup 0")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let dependent_id = controller.state.session.toolpath_configs()[1].id;
     controller
         .state
@@ -1545,7 +1554,9 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
         .state
         .session
         .add_toolpath(0, consumer_config)
-        .expect("consumer toolpath should be added to setup 0");
+        .expect("consumer toolpath should be added to setup 0")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
 
     let boundary = crate::state::toolpath::BoundaryConfig {
         enabled: true,
@@ -2340,20 +2351,25 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     let _ = controller.state.session.set_stock_config(stock);
 
     // 2D polygon model (matches the SVG-driven AS001 pocket case).
-    let model_id = controller.state.session.add_model(LoadedModel {
-        id: 0,
-        path: std::path::PathBuf::from("demo_pocket.svg"),
-        name: "demo_pocket".to_owned(),
-        kind: Some(ModelKind::Svg),
-        mesh: None,
-        polygons: Some(Arc::new(vec![Polygon2::rectangle(20.0, 20.0, 80.0, 80.0)])),
-        drill_targets: std::sync::Arc::new(Vec::new()),
-        layers: std::sync::Arc::new(Vec::new()),
-        enriched_mesh: None,
-        units: Some(ModelUnits::Millimeters),
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = controller
+        .state
+        .session
+        .add_model(LoadedModel {
+            id: 0,
+            path: std::path::PathBuf::from("demo_pocket.svg"),
+            name: "demo_pocket".to_owned(),
+            kind: Some(ModelKind::Svg),
+            mesh: None,
+            polygons: Some(Arc::new(vec![Polygon2::rectangle(20.0, 20.0, 80.0, 80.0)])),
+            drill_targets: std::sync::Arc::new(Vec::new()),
+            layers: std::sync::Arc::new(Vec::new()),
+            enriched_mesh: None,
+            units: Some(ModelUnits::Millimeters),
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     // AS001 pocket params: depth=6, dpp=2, stepover=2.4, feed=900, plunge=350.
     let pocket = PocketConfig {
@@ -2394,7 +2410,9 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         .state
         .session
         .add_toolpath(0, tp_config)
-        .expect("add pocket to default setup");
+        .expect("add pocket to default setup")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let tp_id = controller
         .state
         .session
@@ -3832,10 +3850,15 @@ fn a_one_tool_ladder_never_reaches_the_worker() {
 #[test]
 fn active_setup_index_follows_the_selection() {
     let mut controller = sample_controller();
-    let second = controller.state.session.add_setup(
-        "Back".to_owned(),
-        rs_cam_core::compute::transform::FaceUp::default(),
-    );
+    let second = controller
+        .state
+        .session
+        .add_setup(
+            "Back".to_owned(),
+            rs_cam_core::compute::transform::FaceUp::default(),
+        )
+        .created
+        .expect("add_setup reports the new setup index");
 
     // Nothing setup-scoped selected: the first setup's frame is displayed.
     controller.state.selection = Selection::None;

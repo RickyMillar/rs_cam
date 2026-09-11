@@ -223,8 +223,8 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// 0.
 fn fixture() -> ProjectSession {
     let mut s = ProjectSession::new_empty();
-    s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    s.add_model(empty_model("part.svg"));
+    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let _ = s.add_model(empty_model("part.svg"));
     let tool = s.tools()[0].id.0;
     let model = s.models()[0].id;
     let toolpath = tc(
@@ -234,7 +234,7 @@ fn fixture() -> ProjectSession {
         tool,
         model,
     );
-    s.add_toolpath(0, toolpath).unwrap();
+    let _ = s.add_toolpath(0, toolpath).unwrap();
     adopt(&mut s, 0);
     assert!(s.get_result(0).is_some(), "index 0 needs a cached result");
     s

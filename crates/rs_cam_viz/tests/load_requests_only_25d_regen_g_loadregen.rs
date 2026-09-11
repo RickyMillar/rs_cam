@@ -146,7 +146,7 @@ fn write_two_op_project() -> PathBuf {
         (0usize, "square.svg", ModelKind::Svg),
         (1usize, "flat_plate.stl", ModelKind::Stl),
     ] {
-        session.add_model(LoadedModel {
+        let _ = session.add_model(LoadedModel {
             id,
             path: fixtures_dir().join(file),
             name: file.to_owned(),
@@ -161,7 +161,7 @@ fn write_two_op_project() -> PathBuf {
             load_error: None,
         });
     }
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath(
@@ -172,7 +172,7 @@ fn write_two_op_project() -> PathBuf {
             ),
         )
         .expect("add pocket");
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath(

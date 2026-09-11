@@ -169,6 +169,8 @@ fn add_operation(session: &mut ProjectSession, config: ToolpathConfig) -> usize 
     session
         .add_toolpath(0, config)
         .expect("the session accepts the operation")
+        .created
+        .expect("add_toolpath reports the new toolpath index")
 }
 
 /// Add one Pocket and return its index.

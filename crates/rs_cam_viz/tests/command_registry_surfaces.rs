@@ -18,9 +18,10 @@
 //!
 //! NOT MEASURED here: whether the MCP arm behind that tool name calls
 //! `ProjectSession::apply`. `crates/rs_cam_core/tests/command_registry_completeness.rs`
-//! measures the door, and the MCP toast sentry pins the arm's name. WP4
-//! adds the `McpRequestKind::Core` wrapper that would make the link
-//! typed; WP1 deliberately does not.
+//! measures the door. WP4 added the `McpRequestKind::Core` wrapper that
+//! makes the link typed, and `mcp_core_arm_describes_every_row.rs`
+//! measures it: every `Reached` row has a `CoreRequest` variant whose
+//! `id()` names that row, and one dispatch arm applies them all.
 
 #![allow(
     clippy::unwrap_used,

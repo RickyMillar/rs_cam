@@ -425,14 +425,15 @@ mod tests {
     #[test]
     fn rule_fires_on_pre_b1_min_z_minus_50() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = DropCutterConfig::default();
         cfg.min_z = -50.0;
-        s.add_toolpath(
-            0,
-            make_tp(0, "Old Finish", OperationConfig::DropCutter(cfg), 0),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(0, "Old Finish", OperationConfig::DropCutter(cfg), 0),
+            )
+            .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
         assert_eq!(defects[0].rule_id, StaleDefaultRule::DropCutterMinZPreB1);
@@ -442,14 +443,15 @@ mod tests {
     #[test]
     fn rule_silent_on_post_b1_min_z() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = DropCutterConfig::default();
         cfg.min_z = -20.0;
-        s.add_toolpath(
-            0,
-            make_tp(0, "New Finish", OperationConfig::DropCutter(cfg), 0),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(0, "New Finish", OperationConfig::DropCutter(cfg), 0),
+            )
+            .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(defects.is_empty(), "min_z = -20 must not fire B.1 rule");
     }
@@ -459,15 +461,16 @@ mod tests {
     #[test]
     fn rule_fires_on_wanaka_tp7_pattern_750_on_1mm_tb() {
         let mut s = wood_session();
-        s.add_tool(tapered_ball(1.0));
+        let _ = s.add_tool(tapered_ball(1.0));
         let mut cfg = DropCutterConfig::default();
         cfg.plunge_rate = 750.0;
         cfg.min_z = -20.0; // disable B.1 rule
-        s.add_toolpath(
-            0,
-            make_tp(0, "3D Finish 6", OperationConfig::DropCutter(cfg), 0),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(0, "3D Finish 6", OperationConfig::DropCutter(cfg), 0),
+            )
+            .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
         assert_eq!(
@@ -481,11 +484,12 @@ mod tests {
     #[test]
     fn rule_silent_on_flat_em_at_750() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = DropCutterConfig::default();
         cfg.plunge_rate = 750.0;
         cfg.min_z = -20.0;
-        s.add_toolpath(0, make_tp(0, "Flat", OperationConfig::DropCutter(cfg), 0))
+        let _ = s
+            .add_toolpath(0, make_tp(0, "Flat", OperationConfig::DropCutter(cfg), 0))
             .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(defects.is_empty(), "flat EM should not fire plunge rule");
@@ -494,11 +498,12 @@ mod tests {
     #[test]
     fn rule_silent_on_tapered_ball_at_cap() {
         let mut s = wood_session();
-        s.add_tool(tapered_ball(1.0));
+        let _ = s.add_tool(tapered_ball(1.0));
         let mut cfg = DropCutterConfig::default();
         cfg.plunge_rate = 150.0; // at cap
         cfg.min_z = -20.0;
-        s.add_toolpath(0, make_tp(0, "TB", OperationConfig::DropCutter(cfg), 0))
+        let _ = s
+            .add_toolpath(0, make_tp(0, "TB", OperationConfig::DropCutter(cfg), 0))
             .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(defects.is_empty(), "150 mm/min on 1 mm TB is at cap");
@@ -509,14 +514,15 @@ mod tests {
     #[test]
     fn rule_fires_on_wanaka_tp1_pattern_narrow_stepover() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
         cfg.stepover = 0.7; // 0.117 D, well below 0.15 D floor (0.9)
-        s.add_toolpath(
-            0,
-            make_tp(0, "Back Rough", OperationConfig::Adaptive3d(cfg), 0),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(0, "Back Rough", OperationConfig::Adaptive3d(cfg), 0),
+            )
+            .unwrap();
         let defects = validate_stale_defaults(&s);
         let stepover_defects: Vec<_> = defects
             .iter()
@@ -529,14 +535,15 @@ mod tests {
     #[test]
     fn rule_silent_on_wide_stepover() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
         cfg.stepover = 1.2; // 0.20 D, at target
-        s.add_toolpath(
-            0,
-            make_tp(0, "Back Rough", OperationConfig::Adaptive3d(cfg), 0),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(0, "Back Rough", OperationConfig::Adaptive3d(cfg), 0),
+            )
+            .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(
             !defects
@@ -556,10 +563,11 @@ mod tests {
         // aluminum-flavoured (3.0, 2500.0) the pre-S3-13 fixture used.
         stock.material = Material::test_fixture_custom("Aluminium 6061");
         let _ = s.set_stock_config(stock);
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
         cfg.stepover = 0.7;
-        s.add_toolpath(0, make_tp(0, "Rough", OperationConfig::Adaptive3d(cfg), 0))
+        let _ = s
+            .add_toolpath(0, make_tp(0, "Rough", OperationConfig::Adaptive3d(cfg), 0))
             .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(
@@ -574,10 +582,11 @@ mod tests {
     fn rule_silent_on_pocket_op() {
         // Wood + flat tool + narrow stepover, but Pocket op (not Adaptive).
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = PocketConfig::default();
         cfg.stepover = 0.5;
-        s.add_toolpath(0, make_tp(0, "Pocket", OperationConfig::Pocket(cfg), 0))
+        let _ = s
+            .add_toolpath(0, make_tp(0, "Pocket", OperationConfig::Pocket(cfg), 0))
             .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(
@@ -593,17 +602,18 @@ mod tests {
     #[test]
     fn apply_fix_clears_drop_cutter_defect() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = DropCutterConfig::default();
         cfg.min_z = -50.0;
         let mut stock = s.stock_config().clone();
         stock.origin_z = -25.0;
         let _ = s.set_stock_config(stock);
-        s.add_toolpath(
-            0,
-            make_tp(0, "Old Finish", OperationConfig::DropCutter(cfg), 0),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(0, "Old Finish", OperationConfig::DropCutter(cfg), 0),
+            )
+            .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
         apply_stale_default_fix(&mut s, &defects[0]).unwrap();
@@ -616,27 +626,29 @@ mod tests {
     #[test]
     fn mixed_wanaka_session_detects_all_three_rules() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0)); // tool 0: 6 mm EM
-        s.add_tool(tapered_ball(1.0)); // tool 1: 1 mm TB
+        let _ = s.add_tool(flat_em(6.0)); // tool 0: 6 mm EM
+        let _ = s.add_tool(tapered_ball(1.0)); // tool 1: 1 mm TB
 
         // TP0: DropCutter with stale min_z + tapered-ball plunge defect.
         let mut tp0 = DropCutterConfig::default();
         tp0.min_z = -50.0;
         tp0.plunge_rate = 750.0;
-        s.add_toolpath(
-            0,
-            make_tp(0, "3D Finish 6", OperationConfig::DropCutter(tp0), 1),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(0, "3D Finish 6", OperationConfig::DropCutter(tp0), 1),
+            )
+            .unwrap();
 
         // TP1: Adaptive3d with narrow stepover (wood).
         let mut tp1 = Adaptive3dConfig::default();
         tp1.stepover = 0.7;
-        s.add_toolpath(
-            0,
-            make_tp(1, "Back Rough", OperationConfig::Adaptive3d(tp1), 0),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(1, "Back Rough", OperationConfig::Adaptive3d(tp1), 0),
+            )
+            .unwrap();
 
         let defects = validate_stale_defaults(&s);
         // Expect 3 defects: B.1 + Fix 2 on TP0, Fix 1 on TP1.
@@ -652,20 +664,21 @@ mod tests {
     #[test]
     fn rule_fires_on_wanaka_tp3_pattern_negative_depth_from_below() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
         cfg.depth = -2.0;
         cfg.direction = ProjectCurveDirection::FromBelow;
-        s.add_toolpath(
-            0,
-            make_tp(
+        let _ = s
+            .add_toolpath(
                 0,
-                "Rivers (back) (copy)",
-                OperationConfig::ProjectCurve(cfg),
-                0,
-            ),
-        )
-        .unwrap();
+                make_tp(
+                    0,
+                    "Rivers (back) (copy)",
+                    OperationConfig::ProjectCurve(cfg),
+                    0,
+                ),
+            )
+            .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
         assert_eq!(
@@ -684,11 +697,12 @@ mod tests {
         // The convention is "positive = into material" for both
         // directions; negative is always wrong.
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
         cfg.depth = -0.5;
         cfg.direction = ProjectCurveDirection::FromAbove;
-        s.add_toolpath(0, make_tp(0, "PC", OperationConfig::ProjectCurve(cfg), 0))
+        let _ = s
+            .add_toolpath(0, make_tp(0, "PC", OperationConfig::ProjectCurve(cfg), 0))
             .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
@@ -698,14 +712,15 @@ mod tests {
     #[test]
     fn rule_silent_on_positive_depth() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
         cfg.depth = 2.0;
-        s.add_toolpath(
-            0,
-            make_tp(0, "Good PC", OperationConfig::ProjectCurve(cfg), 0),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(0, "Good PC", OperationConfig::ProjectCurve(cfg), 0),
+            )
+            .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(
             defects.is_empty(),
@@ -718,14 +733,15 @@ mod tests {
         // Zero-depth is a legitimate "trace at surface" use case (e.g.
         // visual-only line, drag-knife style). Don't flag it.
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
         cfg.depth = 0.0;
-        s.add_toolpath(
-            0,
-            make_tp(0, "Trace PC", OperationConfig::ProjectCurve(cfg), 0),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tp(0, "Trace PC", OperationConfig::ProjectCurve(cfg), 0),
+            )
+            .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(defects.is_empty(), "depth=0 surface trace is allowed");
     }
@@ -733,10 +749,11 @@ mod tests {
     #[test]
     fn auto_fix_flips_negative_depth_sign() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
         cfg.depth = -3.5;
-        s.add_toolpath(0, make_tp(0, "PC", OperationConfig::ProjectCurve(cfg), 0))
+        let _ = s
+            .add_toolpath(0, make_tp(0, "PC", OperationConfig::ProjectCurve(cfg), 0))
             .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
@@ -753,11 +770,12 @@ mod tests {
     #[test]
     fn clean_session_produces_no_defects() {
         let mut s = wood_session();
-        s.add_tool(flat_em(6.0));
+        let _ = s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
         cfg.stepover = 1.2;
         cfg.plunge_rate = 500.0;
-        s.add_toolpath(0, make_tp(0, "Clean", OperationConfig::Adaptive3d(cfg), 0))
+        let _ = s
+            .add_toolpath(0, make_tp(0, "Clean", OperationConfig::Adaptive3d(cfg), 0))
             .unwrap();
         let defects = validate_stale_defaults(&s);
         assert!(defects.is_empty(), "clean session should be silent");

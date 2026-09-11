@@ -66,7 +66,10 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
         ],
         ..StockConfig::default()
     });
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let cfg = AlignmentPinDrillConfig {
@@ -102,7 +105,7 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tc).expect("add pin drill");
+    let _ = session.add_toolpath(0, tc).expect("add pin drill");
 
     let ctx = SetupEvalContext::build(&session, FaceUp::Top, ZRotation::Deg0);
 

@@ -761,9 +761,15 @@ fn run_cascade_arm(
 ) -> ArmResult {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock);
-    let tool_idx = session.add_tool(session_tool());
+    let tool_idx = session
+        .add_tool(session_tool())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
 
     let mut op0 = toolpath_config(
         &format!("{label} op0 (all-over)"),
@@ -772,7 +778,7 @@ fn run_cascade_arm(
         model_id,
     );
     op0.heights = heights.clone();
-    session.add_toolpath(0, op0).expect("add cascade op0");
+    let _ = session.add_toolpath(0, op0).expect("add cascade op0");
 
     let mut op1 = toolpath_config(
         &format!("{label} op1 (rest)"),
@@ -784,7 +790,7 @@ fn run_cascade_arm(
     // Without this op1 reads FRESH stock and there is no machined prior for
     // ANY claims reference to use — the cascade would not be a cascade.
     op1.stock_source = StockSource::FromRemainingStock;
-    session.add_toolpath(0, op1).expect("add cascade op1");
+    let _ = session.add_toolpath(0, op1).expect("add cascade op1");
 
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {

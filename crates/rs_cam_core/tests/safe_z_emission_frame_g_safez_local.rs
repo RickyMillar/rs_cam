@@ -88,7 +88,10 @@ fn build_session(origin_z: f64) -> ProjectSession {
     };
     let _ = session.set_stock_config(stock);
 
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let world_top = origin_z + STOCK_THICKNESS;
@@ -106,7 +109,10 @@ fn build_session(origin_z: f64) -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
 
     let adaptive = Adaptive3dConfig {
         depth_per_pass: 2.0,
@@ -135,7 +141,7 @@ fn build_session(origin_z: f64) -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session
+    let _ = session
         .add_toolpath(0, tc)
         .expect("add adaptive3d toolpath");
 

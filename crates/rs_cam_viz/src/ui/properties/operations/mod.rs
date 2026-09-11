@@ -2291,7 +2291,7 @@ pub fn collect_diagnostics(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -2607,7 +2607,11 @@ mod tests {
             cfg.prev_tool_id = Some(ToolId(1));
         }
         let rest_config = make_session_toolpath_config("Rest", 2, 4, rest_op);
-        let rest_idx = session.add_toolpath(0, rest_config).unwrap();
+        let rest_idx = session
+            .add_toolpath(0, rest_config)
+            .unwrap()
+            .created
+            .expect("add_toolpath reports the new toolpath index");
 
         // Build entry with the session-assigned ID
         // SAFETY: rest_idx bounded by add_toolpath return
@@ -2648,7 +2652,7 @@ mod tests {
             4,
             OperationConfig::Pocket(Default::default()),
         );
-        session.add_toolpath(0, roughing_config).unwrap();
+        let _ = session.add_toolpath(0, roughing_config).unwrap();
 
         // Add rest toolpath — session assigns the ID
         let mut rest_op = OperationConfig::Rest(Default::default());
@@ -2656,7 +2660,11 @@ mod tests {
             cfg.prev_tool_id = Some(ToolId(1));
         }
         let rest_config = make_session_toolpath_config("Rest", 2, 4, rest_op);
-        let rest_idx = session.add_toolpath(0, rest_config).unwrap();
+        let rest_idx = session
+            .add_toolpath(0, rest_config)
+            .unwrap()
+            .created
+            .expect("add_toolpath reports the new toolpath index");
 
         // Build entry with the session-assigned ID so validation can locate it
         // SAFETY: rest_idx bounded by add_toolpath return

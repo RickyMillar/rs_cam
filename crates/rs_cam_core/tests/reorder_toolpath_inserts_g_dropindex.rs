@@ -57,10 +57,10 @@ fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
 /// One setup holding A B C D E, each op's global index equal to its position.
 fn five_ops() -> ProjectSession {
     let mut s = ProjectSession::new_empty();
-    s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
     let tool_id = s.tools()[0].id.0;
     for name in ["A", "B", "C", "D", "E"] {
-        s.add_toolpath(0, toolpath(name, tool_id)).unwrap();
+        let _ = s.add_toolpath(0, toolpath(name, tool_id)).unwrap();
     }
     s
 }

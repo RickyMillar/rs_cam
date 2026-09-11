@@ -121,7 +121,7 @@ fn run_2d_matrix(matrix: &[(&str, OperationConfig)]) {
         .expect("ux_2d_pocket.toml must load demo_pocket.svg");
 
     for (i, (name, op)) in matrix.iter().enumerate() {
-        session
+        let _ = session
             .add_toolpath(0, toolpath_config(i, name, op.clone(), tool_id, model_id))
             .expect("add extreme toolpath");
     }
@@ -256,7 +256,7 @@ fn adaptive3d_generator_survives_search_space_floors() {
         stepover: FLOOR_MM,
         ..Adaptive3dConfig::default()
     });
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config(0, "adaptive3d@floors", op, tool.id.0, mesh_model_id),

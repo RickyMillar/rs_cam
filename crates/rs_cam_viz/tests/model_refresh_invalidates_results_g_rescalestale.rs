@@ -177,10 +177,10 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
     let id_bystander = model_id_of(&controller, &bystander);
 
     let session = &mut controller.state.session;
-    session
+    let _ = session
         .add_toolpath(0, toolpath("Under test", id_under_test.0))
         .expect("add the dependent toolpath");
-    session
+    let _ = session
         .add_toolpath(0, toolpath("Bystander", id_bystander.0))
         .expect("add the bystander toolpath");
     for index in [0usize, 1usize] {
@@ -367,8 +367,11 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
         load_error: None,
     };
     let session = &mut controller.state.session;
-    let model_id = session.add_model(record);
-    session
+    let model_id = session
+        .add_model(record)
+        .created
+        .expect("add_model reports the new model id");
+    let _ = session
         .add_toolpath(0, toolpath("On the STEP", model_id))
         .expect("add the dependent toolpath");
     let revision = session.toolpath_revision(0);

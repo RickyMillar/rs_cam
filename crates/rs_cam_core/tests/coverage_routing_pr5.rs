@@ -522,14 +522,20 @@ fn generate_pencil_through_session(route_width_factor: f64) -> ToolpathStats {
         auto_from_model: false,
         ..StockConfig::default()
     });
-    let tool_idx = session.add_tool(ToolConfig {
-        diameter: 1.0,
-        taper_half_angle: 7.0,
-        shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
-    });
+    let tool_idx = session
+        .add_tool(ToolConfig {
+            diameter: 1.0,
+            taper_half_angle: 7.0,
+            shaft_diameter: 6.0,
+            ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        })
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(mesh_model(grooved_block(2.5, 70.0, 1.2, 1.0)));
+    let model_id = session
+        .add_model(mesh_model(grooved_block(2.5, 70.0, 1.2, 1.0)))
+        .created
+        .expect("add_model reports the new model id");
     let cfg = PencilConfig {
         detector: "rest_depth".to_owned(),
         rest_cell_mm: 0.4,
@@ -539,7 +545,7 @@ fn generate_pencil_through_session(route_width_factor: f64) -> ToolpathStats {
         route_width_factor,
         ..PencilConfig::default()
     };
-    session
+    let _ = session
         .add_toolpath(0, pencil_toolpath(cfg, tool_id, model_id))
         .expect("add pencil toolpath");
     let cancel = AtomicBool::new(false);

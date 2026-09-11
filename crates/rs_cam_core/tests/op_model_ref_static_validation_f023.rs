@@ -103,8 +103,11 @@ fn pocket_op_with_unresolved_model_id_surfaces_blocking_diagnostic() {
     let mut session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    session.add_tool(tool);
-    let mid = session.add_model(polygon_model(0));
+    let _ = session.add_tool(tool);
+    let mid = session
+        .add_model(polygon_model(0))
+        .created
+        .expect("add_model reports the new model id");
     // Sanity: prove we're using a model_id the session does NOT carry.
     assert_ne!(mid, 999_usize, "test fixture must use a dangling id");
 
@@ -118,7 +121,9 @@ fn pocket_op_with_unresolved_model_id_surfaces_blocking_diagnostic() {
                 /* model_id = */ 999,
             ),
         )
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -146,8 +151,11 @@ fn pocket_op_with_resolved_model_id_emits_no_ref_diagnostic() {
     let mut session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    session.add_tool(tool);
-    let mid = session.add_model(polygon_model(0));
+    let _ = session.add_tool(tool);
+    let mid = session
+        .add_model(polygon_model(0))
+        .created
+        .expect("add_model reports the new model id");
 
     let idx = session
         .add_toolpath(
@@ -159,7 +167,9 @@ fn pocket_op_with_resolved_model_id_emits_no_ref_diagnostic() {
                 mid,
             ),
         )
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -178,7 +188,7 @@ fn face_op_with_unresolved_model_id_is_silent() {
     let mut session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    session.add_tool(tool);
+    let _ = session.add_tool(tool);
     // No models loaded at all.
 
     let idx = session
@@ -191,7 +201,9 @@ fn face_op_with_unresolved_model_id_is_silent() {
                 /* model_id = */ 999,
             ),
         )
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(

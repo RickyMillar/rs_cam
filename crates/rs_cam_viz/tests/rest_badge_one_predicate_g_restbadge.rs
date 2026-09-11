@@ -126,7 +126,12 @@ fn fresh_state() -> AppState {
 /// Add a toolpath to `setup_idx`, register a generated, fresh runtime for it,
 /// and return its id.
 fn add(state: &mut AppState, setup_idx: usize, tc: ToolpathConfig) -> ToolpathId {
-    let idx = state.session.add_toolpath(setup_idx, tc).unwrap();
+    let idx = state
+        .session
+        .add_toolpath(setup_idx, tc)
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let id = state.session.toolpath_configs()[idx].id;
     let mut rt = ToolpathRuntime::new(true);
     rt.status = ComputeStatus::Done;
@@ -331,7 +336,11 @@ fn c2_a_qualifying_predecessor_that_needs_generation_reads_stale_dep() {
 #[test]
 fn d_candidate_in_another_setup_is_no_dependency_on_both_surfaces() {
     let mut state = fresh_state();
-    let flip = state.session.add_setup("Flip".to_owned(), FaceUp::Bottom);
+    let flip = state
+        .session
+        .add_setup("Flip".to_owned(), FaceUp::Bottom)
+        .created
+        .expect("add_setup reports the new setup index");
     let _rough_other_setup = add(
         &mut state,
         0,

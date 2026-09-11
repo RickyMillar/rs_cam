@@ -287,7 +287,10 @@ fn fixture_session_2d() -> ProjectSession {
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let poly = Polygon2::new(vec![
@@ -296,20 +299,23 @@ fn fixture_session_2d() -> ProjectSession {
         P2::new(75.0, 55.0),
         P2::new(5.0, 55.0),
     ]);
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "perf_rect".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![poly])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://perf_rect.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "perf_rect".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![poly])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://perf_rect.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     let ops: Vec<(&str, OperationConfig)> = vec![
         (
@@ -359,7 +365,7 @@ fn fixture_session_2d() -> ProjectSession {
     ];
 
     for (name, op) in ops {
-        session
+        let _ = session
             .add_toolpath(0, toolpath_config(name, op, tool_id, model_id))
             .expect("add toolpath");
     }
@@ -445,29 +451,35 @@ fn fixture_session_3d() -> ProjectSession {
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "Ball Nose 6mm".to_owned();
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     // 8 divisions → 32 vertices per ring, 8 rings: 992 triangles. Small
     // enough to simulate twice per test run, curved enough that the
     // waterline contours fit arcs.
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "perf_hemisphere".to_owned(),
-        mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
-            HEMI_RADIUS_MM,
-            8,
-        ))),
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://perf_hemisphere.stl"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "perf_hemisphere".to_owned(),
+            mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
+                HEMI_RADIUS_MM,
+                8,
+            ))),
+            polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://perf_hemisphere.stl"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     let drop_cutter = OperationConfig::DropCutter(DropCutterConfig {
         stepover: 1.5,
@@ -492,7 +504,7 @@ fn fixture_session_3d() -> ProjectSession {
 
     let mut dc = toolpath_config("DropCutter", drop_cutter, tool_id, model_id);
     dc.dressups.arc_fitting = true;
-    session.add_toolpath(0, dc).expect("add drop cutter");
+    let _ = session.add_toolpath(0, dc).expect("add drop cutter");
 
     let mut wl = toolpath_config("Waterline", waterline, tool_id, model_id);
     wl.dressups.arc_fitting = true;
@@ -501,7 +513,7 @@ fn fixture_session_3d() -> ProjectSession {
         bottom_z: HeightMode::Manual(0.0),
         ..HeightsConfig::default()
     };
-    session.add_toolpath(0, wl).expect("add waterline");
+    let _ = session.add_toolpath(0, wl).expect("add waterline");
 
     session
 }

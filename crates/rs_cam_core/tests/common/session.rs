@@ -214,12 +214,18 @@ pub fn single_op_session_with(
 ) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock);
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
     let mut cfg = toolpath_config(name, op, tool_id, model_id);
     tweak(&mut cfg);
-    session
+    let _ = session
         .add_toolpath(0, cfg)
         .expect("add toolpath to a fresh session");
     session

@@ -62,7 +62,10 @@ fn build_drill_session(material: Material) -> ProjectSession {
 
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 4.0;
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let model = LoadedModel {
@@ -86,7 +89,10 @@ fn build_drill_session(material: Material) -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
 
     let drill = DrillConfig {
         depth: 15.0,
@@ -117,7 +123,7 @@ fn build_drill_session(material: Material) -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tc).unwrap();
+    let _ = session.add_toolpath(0, tc).unwrap();
 
     session
 }

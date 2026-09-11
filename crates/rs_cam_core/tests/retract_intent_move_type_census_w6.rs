@@ -289,7 +289,10 @@ fn add_tool(session: &mut ProjectSession, kind: ToolType, diameter: f64, name: &
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = name.to_owned();
-    let idx = session.add_tool(tool);
+    let idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     session.tools()[idx].id.0
 }
 
@@ -313,20 +316,23 @@ fn add_rect_polygon(session: &mut ProjectSession) -> usize {
         P2::new(75.0, 55.0),
         P2::new(5.0, 55.0),
     ]);
-    session.add_model(LoadedModel {
-        id: 0,
-        name: "w6_census_rect".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![poly])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://w6_census_rect.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    })
+    session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "w6_census_rect".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![poly])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://w6_census_rect.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id")
 }
 
 /// A flat-stock session carrying exactly one 2D / 2.5D operation.
@@ -340,7 +346,7 @@ fn flat_session(
     flat_stock(&mut session);
     let tool_id = add_tool(&mut session, tool_kind, tool_diameter, "w6 census tool");
     let model_id = add_rect_polygon(&mut session);
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config(op, profile, tool_id, model_id, HeightsConfig::default()),
@@ -367,7 +373,7 @@ fn rest_session(profile: DressupProfile) -> ProjectSession {
         angle: 0.0,
         spindle_rpm: Some(18_000),
     });
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config(op, profile, tool_id, model_id, HeightsConfig::default()),
@@ -390,23 +396,26 @@ fn hemi_stock(session: &mut ProjectSession) {
 }
 
 fn add_hemisphere(session: &mut ProjectSession, id: usize) -> usize {
-    session.add_model(LoadedModel {
-        id,
-        name: "w6_census_hemisphere".to_owned(),
-        mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
-            HEMI_RADIUS_MM,
-            8,
-        ))),
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://w6_census_hemisphere.stl"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    })
+    session
+        .add_model(LoadedModel {
+            id,
+            name: "w6_census_hemisphere".to_owned(),
+            mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
+                HEMI_RADIUS_MM,
+                8,
+            ))),
+            polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://w6_census_hemisphere.stl"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id")
 }
 
 /// A hemisphere session carrying exactly one surface operation.
@@ -429,7 +438,7 @@ fn hemi_session(
         bottom_z: HeightMode::Manual(0.0),
         ..HeightsConfig::default()
     };
-    session
+    let _ = session
         .add_toolpath(0, toolpath_config(op, profile, tool_id, model_id, heights))
         .expect("add toolpath");
     session
@@ -451,26 +460,29 @@ fn plate_session(op: OperationConfig, profile: DressupProfile) -> ProjectSession
         ..StockConfig::default()
     });
     let tool_id = add_tool(&mut session, ToolType::BallNose, 6.0, "w6 census ball");
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "w6_census_plate".to_owned(),
-        mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(PLATE_MM))),
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://w6_census_plate.stl"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "w6_census_plate".to_owned(),
+            mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(PLATE_MM))),
+            polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://w6_census_plate.stl"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
     let heights = HeightsConfig {
         top_z: HeightMode::Manual(PLATE_STOCK_Z_MM),
         bottom_z: HeightMode::Manual(0.0),
         ..HeightsConfig::default()
     };
-    session
+    let _ = session
         .add_toolpath(0, toolpath_config(op, profile, tool_id, model_id, heights))
         .expect("add toolpath");
     session
@@ -490,20 +502,23 @@ fn project_curve_session(profile: DressupProfile) -> ProjectSession {
         P2::new(2.0, -3.0),
         P2::new(6.0, 3.0),
     ]);
-    let curve_model_id = session.add_model(LoadedModel {
-        id: 1,
-        name: "w6_census_river".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![curve])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://w6_census_river.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let curve_model_id = session
+        .add_model(LoadedModel {
+            id: 1,
+            name: "w6_census_river".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![curve])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://w6_census_river.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
     let op = OperationConfig::ProjectCurve(ProjectCurveConfig {
         depth: 1.0,
         point_spacing: 0.4,
@@ -513,7 +528,7 @@ fn project_curve_session(profile: DressupProfile) -> ProjectSession {
         spindle_rpm: Some(18_000),
         ..ProjectCurveConfig::default()
     });
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config(

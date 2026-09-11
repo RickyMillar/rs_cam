@@ -137,12 +137,16 @@ fn controller_with_a_chain() -> AppController<ScriptedLane> {
         .state
         .session
         .add_toolpath(0, toolpath(0, StockSource::Fresh))
-        .expect("fresh op");
+        .expect("fresh op")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     controller
         .state
         .session
         .add_toolpath(0, toolpath(1, StockSource::FromRemainingStock))
-        .expect("rest op");
+        .expect("rest op")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     controller
 }
 

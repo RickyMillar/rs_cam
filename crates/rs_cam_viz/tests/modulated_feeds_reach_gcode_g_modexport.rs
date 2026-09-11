@@ -112,7 +112,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
     session.set_name("g-modexport sentry".to_owned());
 
     let mesh = Arc::new(make_test_flat(40.0));
-    session.add_model(LoadedModel {
+    let _ = session.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -148,7 +148,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tp).expect("add toolpath");
+    let _ = session.add_toolpath(0, tp).expect("add toolpath");
     let tp_id = session.toolpath_configs()[0].id;
 
     let revision = session.toolpath_revision(0);

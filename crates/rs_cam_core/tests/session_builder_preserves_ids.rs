@@ -250,25 +250,39 @@ fn builder_stores_the_result_and_no_revision() {
 #[test]
 fn builder_raises_the_id_counters_above_every_supplied_id() {
     let mut session = built();
-    let tool_index = session.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    // Each add reports its new row in `Effects.created`. The quantity
+    // is per row: `add_tool`, `add_toolpath` and `add_setup` report an
+    // INDEX, `add_model` reports the new model ID.
+    let tool_index = session
+        .add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill))
+        .created
+        .expect("add_tool reports the new tool index");
     let fresh_tool = session.tools()[tool_index].id.0;
     assert!(
         fresh_tool > TOOL_A,
         "a later add_tool collided: {fresh_tool}"
     );
-    let fresh_model = session.add_model(polygon_model(0, "c.svg"));
+    let fresh_model = session
+        .add_model(polygon_model(0, "c.svg"))
+        .created
+        .expect("add_model reports the new model id");
     assert!(
         fresh_model > MODEL_A,
         "a later add_model collided: {fresh_model}"
     );
     let index = session
         .add_toolpath(0, toolpath(0, "fourth", TOOL_A, MODEL_A))
-        .expect("add a toolpath to setup A");
+        .expect("add a toolpath to setup A")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     assert!(
         session.toolpath_configs()[index].id.0 > 12,
         "a later add_toolpath collided"
     );
-    let setup_index = session.add_setup("Setup C".to_owned(), FaceUp::Top);
+    let setup_index = session
+        .add_setup("Setup C".to_owned(), FaceUp::Top)
+        .created
+        .expect("add_setup reports the new setup index");
     assert!(
         session.list_setups()[setup_index].id > 9,
         "a later add_setup collided"

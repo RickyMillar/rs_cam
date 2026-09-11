@@ -210,7 +210,9 @@ fn a_pocket_deeper_than_the_stock_cautions_on_the_header_and_does_not_block() {
     let mut session = session();
     let idx = session
         .add_toolpath(0, toolpath("Pocket", MODEL_2D, pocket(25.0)))
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let snapshot = panel_snapshot(&session, idx);
 
     // Header: exactly one caution, worded with the excess.
@@ -249,7 +251,9 @@ fn a_the_rule_reads_the_excess_and_the_diagnostic_carries_its_id() {
     let mut session = session();
     let idx = session
         .add_toolpath(0, toolpath("Pocket", MODEL_2D, pocket(25.0)))
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let finding = rule(&session, idx).expect("(a) the rule fires");
     assert!(
         (finding.excess_mm - 7.0).abs() < 1e-9,
@@ -291,7 +295,9 @@ fn b_depth_equal_to_the_stock_thickness_is_not_a_caution() {
             0,
             toolpath("Pocket through", MODEL_2D, pocket(STOCK_THICKNESS_MM)),
         )
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     assert_eq!(
         rule(&session, idx),
         None,
@@ -311,7 +317,9 @@ fn b2_a_shallower_pocket_is_not_a_caution() {
     let mut session = session();
     let idx = session
         .add_toolpath(0, toolpath("Pocket", MODEL_2D, pocket(6.0)))
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     assert_eq!(rule(&session, idx), None);
 }
 
@@ -331,7 +339,11 @@ fn c_a_3d_operation_is_outside_the_rule() {
         reference: HeightReference::StockBottom,
         offset: -30.0,
     });
-    let idx = session.add_toolpath(0, tc).unwrap();
+    let idx = session
+        .add_toolpath(0, tc)
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     assert_eq!(
         rule(&session, idx),
         None,
@@ -357,7 +369,9 @@ fn c2_alignment_pin_drill_penetrates_the_spoilboard_by_design() {
                 OperationConfig::AlignmentPinDrill(Default::default()),
             ),
         )
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     assert_eq!(rule(&session, idx), None);
 }
 
@@ -375,7 +389,11 @@ fn d_a_bottom_z_pinned_below_the_stock_bottom_is_not_a_caution() {
         reference: HeightReference::StockBottom,
         offset: -3.0,
     });
-    let idx = session.add_toolpath(0, tc).unwrap();
+    let idx = session
+        .add_toolpath(0, tc)
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     assert_eq!(
         rule(&session, idx),
         None,
@@ -411,7 +429,11 @@ fn d2_a_manual_bottom_z_at_the_stock_bottom_is_not_a_caution() {
     let mut tc = toolpath("Pocket", MODEL_2D, pocket(6.0));
     let stock_bottom_z = session.stock_config().bbox().min.z;
     tc.heights.bottom_z = HeightMode::Manual(stock_bottom_z);
-    let idx = session.add_toolpath(0, tc).unwrap();
+    let idx = session
+        .add_toolpath(0, tc)
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     assert_eq!(rule(&session, idx), None);
 }
 
@@ -420,10 +442,15 @@ fn d2_a_manual_bottom_z_at_the_stock_bottom_is_not_a_caution() {
 #[test]
 fn a_flipped_setup_reads_the_same_excess() {
     let mut session = session();
-    let flip = session.add_setup("Flip".to_owned(), FaceUp::Bottom);
+    let flip = session
+        .add_setup("Flip".to_owned(), FaceUp::Bottom)
+        .created
+        .expect("add_setup reports the new setup index");
     let idx = session
         .add_toolpath(flip, toolpath("Pocket", MODEL_2D, pocket(25.0)))
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let finding = rule(&session, idx).expect("the flipped pocket fires the rule");
     assert!(
         (finding.excess_mm - 7.0).abs() < 1e-9,

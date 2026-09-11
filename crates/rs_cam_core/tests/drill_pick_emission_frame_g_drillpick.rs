@@ -150,9 +150,15 @@ const FLIPPED_PIN: usize = 3;
 fn two_setup_session() -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock());
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(polygon_model(vec![plate_polygon()], "plate"));
+    let model_id = session
+        .add_model(polygon_model(vec![plate_polygon()], "plate"))
+        .created
+        .expect("add_model reports the new model id");
 
     // ISOLATE THE VARIABLE: this sentry is about WHERE the holes are, not
     // what shape they are, so every dressup that can add or move a
@@ -167,14 +173,17 @@ fn two_setup_session() -> ProjectSession {
         tc.dressups.link_moves = false;
         tc.dressups.arc_fitting = false;
         tc.dressups.segment_merge = false;
-        session.add_toolpath(setup, tc).expect("add drill toolpath");
+        let _ = session.add_toolpath(setup, tc).expect("add drill toolpath");
     };
 
     // Setup 0 is the identity setup `new_empty` already created.
     add(&mut session, 0, "HoleTop", hole_drill_op());
     add(&mut session, 0, "PinTop", pin_drill_op());
 
-    let flipped = session.add_setup("Flip".to_owned(), FaceUp::Bottom);
+    let flipped = session
+        .add_setup("Flip".to_owned(), FaceUp::Bottom)
+        .created
+        .expect("add_setup reports the new setup index");
     add(&mut session, flipped, "HoleBottom", hole_drill_op());
     add(&mut session, flipped, "PinBottom", pin_drill_op());
 

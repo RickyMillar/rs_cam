@@ -141,7 +141,7 @@ fn step_controller() -> AppController<ScriptedBackend> {
     c.state.session = ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
-    let model_id = c.state.session.add_model(step_model());
+    let model_id = c.state.session.add_model(step_model()).created;
     // model_id is the raw usize assigned by session
     let _ = model_id;
     c
@@ -153,7 +153,7 @@ fn stl_controller() -> AppController<ScriptedBackend> {
     c.state.session = ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
-    c.state.session.add_model(stl_model());
+    let _ = c.state.session.add_model(stl_model());
     c
 }
 
@@ -204,7 +204,7 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    controller.state.session.add_toolpath(0, tp_config).unwrap();
+    let _ = controller.state.session.add_toolpath(0, tp_config).unwrap();
     let tp_id_raw = controller
         .state
         .session
@@ -516,7 +516,10 @@ fn w5_project_round_trip_preserves_step_face_selection() {
     let mut session = ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
 
     let face_id = find_horizontal_face(&enriched);
     let tp_config = ToolpathConfig {
@@ -540,7 +543,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tp_config).unwrap();
+    let _ = session.add_toolpath(0, tp_config).unwrap();
 
     // Save
     let project_path = temp_dir.join("test_project.toml");

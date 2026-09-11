@@ -157,7 +157,10 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
     tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let poly = Polygon2::new(vec![
@@ -166,23 +169,26 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
         P2::new(75.0, 55.0),
         P2::new(5.0, 55.0),
     ]);
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "tsp_intent_rect".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![poly])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://tsp_intent_rect.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "tsp_intent_rect".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![poly])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://tsp_intent_rect.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     let op_type = op.op_type();
-    session
+    let _ = session
         .add_toolpath(
             0,
             ToolpathConfig {

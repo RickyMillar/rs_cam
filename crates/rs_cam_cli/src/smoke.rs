@@ -564,7 +564,17 @@ fn materialize_case_toolpath(
     };
 
     let tp_idx = match session.add_toolpath(0, tc) {
-        Ok(i) => i,
+        Ok(effects) => match effects.created {
+            Some(i) => i,
+            None => {
+                return Err(BaselineRow::failure(
+                    &case.case_id,
+                    op_type.kind_str(),
+                    "harness_error",
+                    "add_toolpath reports no new toolpath index",
+                ));
+            }
+        },
         Err(e) => {
             return Err(BaselineRow::failure(
                 &case.case_id,

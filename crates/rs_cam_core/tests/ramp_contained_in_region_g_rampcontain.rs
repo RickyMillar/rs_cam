@@ -123,23 +123,29 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
         ..StockConfig::default()
     });
 
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "demo_pocket".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![demo_pocket_polygon()])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://demo_pocket.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "demo_pocket".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![demo_pocket_polygon()])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://demo_pocket.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     let tc = ToolpathConfig {
         id: ToolpathId(0),
@@ -176,7 +182,7 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tc).expect("add pocket toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add pocket toolpath");
     session
 }
 

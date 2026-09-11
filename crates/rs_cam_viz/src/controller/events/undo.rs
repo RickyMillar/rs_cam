@@ -40,7 +40,7 @@ impl<B: ComputeBackend> AppController<B> {
                     );
                 }
                 UndoAction::MachineChange { old, .. } => {
-                    self.state.session.set_machine(old);
+                    let _ = self.state.session.set_machine(old);
                     self.invalidate_simulation();
                 }
             }
@@ -94,7 +94,7 @@ impl<B: ComputeBackend> AppController<B> {
                     );
                 }
                 UndoAction::MachineChange { new, .. } => {
-                    self.state.session.set_machine(new);
+                    let _ = self.state.session.set_machine(new);
                     self.invalidate_simulation();
                 }
             }

@@ -85,16 +85,19 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .unwrap_or_else(|| "model".to_owned());
     let model = LoadedModel::from_file(0, &model_name, input, None, Some(units), &base_dir)
         .with_context(|| format!("loading model '{}'", input.display()))?;
-    session.add_model(model);
+    let _ = session.add_model(model);
 
     let (tool_type, diameter) = parse_tool_spec(tool_spec)?;
     let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
     tool.name = format!("{} {:.3}mm", tool_type.label(), diameter);
     tool.diameter = diameter;
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .context("add_tool reports no new tool index")?;
     for kv in &args.tool_set {
         let (key, value) = split_kv(kv)?;
-        session
+        let _ = session
             .set_tool_param(tool_idx, key, &parse_json_value(value))
             .map_err(|e| anyhow::anyhow!("--tool-set {key}: {e}"))?;
     }
@@ -130,7 +133,9 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
                 planner_origin: None,
             },
         )
-        .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?
+        .created
+        .context("add_toolpath reports no new toolpath index")?;
 
     // Registry-driven parameter application: the SAME serde round-trip
     // the GUI/MCP use, so type coercion, validation, and unknown-param

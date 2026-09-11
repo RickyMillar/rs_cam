@@ -109,7 +109,7 @@ fn run_back_rough(modulate: bool) -> f64 {
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_ricky_tuned());
     machine.max_feed_mm_min = 10_000.0;
-    session.set_machine(machine);
+    let _ = session.set_machine(machine);
 
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {

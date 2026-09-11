@@ -114,25 +114,31 @@ fn build_project(dir: &Path, post_token: &str) -> PathBuf {
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.name = "End Mill 6mm (P-1)".to_owned();
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "rect".to_owned(),
-        mesh: None,
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: model_path,
-        kind: Some(ModelKind::Svg),
-        units: Some(ModelUnits::Millimeters),
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "rect".to_owned(),
+            mesh: None,
+            polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: model_path,
+            kind: Some(ModelKind::Svg),
+            units: Some(ModelUnits::Millimeters),
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
-    session
+    let _ = session
         .add_toolpath(
             0,
             ToolpathConfig {

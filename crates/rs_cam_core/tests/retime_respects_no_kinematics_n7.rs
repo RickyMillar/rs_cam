@@ -277,22 +277,31 @@ fn build_session(kinematics: Option<MachineKinematics>) -> ProjectSession {
     };
     let _ = session.set_stock_config(stock);
 
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
-    let pocket_model_id = session.add_model(pocket_model());
-    let drill_model_id = session.add_model(drill_model());
+    let pocket_model_id = session
+        .add_model(pocket_model())
+        .created
+        .expect("add_model reports the new model id");
+    let drill_model_id = session
+        .add_model(drill_model())
+        .created
+        .expect("add_model reports the new model id");
 
-    session
+    let _ = session
         .add_toolpath(0, pocket_toolpath(tool_id, pocket_model_id))
         .expect("add pocket toolpath");
-    session
+    let _ = session
         .add_toolpath(0, drill_toolpath(tool_id, drill_model_id))
         .expect("add drill toolpath");
 
     let mut machine = session.machine().clone();
     machine.kinematics = kinematics;
-    session.set_machine(machine);
+    let _ = session.set_machine(machine);
     session
 }
 

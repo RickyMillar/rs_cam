@@ -387,8 +387,8 @@ mod restore_guard_tests {
 
     fn session_with_one_pocket() -> ProjectSession {
         let mut s = ProjectSession::new_empty();
-        s.add_tool(make_tool());
-        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        let _ = s.add_tool(make_tool());
+        let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
         s
     }
 

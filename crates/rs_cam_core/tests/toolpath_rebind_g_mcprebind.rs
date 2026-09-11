@@ -114,22 +114,23 @@ fn empty_model(name: &str) -> LoadedModel {
 /// models, one Pocket toolpath bound to tool 0 / model 0.
 fn seed() -> ProjectSession {
     let mut s = ProjectSession::new_empty();
-    s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
-    s.add_model(empty_model("first.svg"));
-    s.add_model(empty_model("second.svg"));
+    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
+    let _ = s.add_model(empty_model("first.svg"));
+    let _ = s.add_model(empty_model("second.svg"));
     let tool_a = s.tools()[0].id.0;
     let model_a = s.models()[0].id;
-    s.add_toolpath(
-        0,
-        tc(
-            "rough",
-            OperationConfig::Pocket(PocketConfig::default()),
-            tool_a,
-            model_a,
-        ),
-    )
-    .unwrap();
+    let _ = s
+        .add_toolpath(
+            0,
+            tc(
+                "rough",
+                OperationConfig::Pocket(PocketConfig::default()),
+                tool_a,
+                model_a,
+            ),
+        )
+        .unwrap();
     s
 }
 
@@ -187,7 +188,7 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
         model_a,
     );
     downstream.stock_source = StockSource::FromRemainingStock;
-    s.add_toolpath(0, downstream).unwrap();
+    let _ = s.add_toolpath(0, downstream).unwrap();
 
     // Both rows carry a result; only the upstream one is rebound.
     adopt(&mut s, 0);
@@ -284,24 +285,25 @@ fn an_out_of_range_toolpath_index_is_refused_by_both_setters() {
 #[test]
 fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_refuses() {
     let mut s = ProjectSession::new_empty();
-    s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
-    s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    s.add_model(empty_model("terrain.stl"));
+    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
+    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let _ = s.add_model(empty_model("terrain.stl"));
     let ball = s.tools()[0].id.0;
     let flat = s.tools()[1].id.0;
     let model = s.models()[0].id;
-    s.add_toolpath(
-        0,
-        tc(
-            "scallop",
-            OperationConfig::Scallop(
-                rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+    let _ = s
+        .add_toolpath(
+            0,
+            tc(
+                "scallop",
+                OperationConfig::Scallop(
+                    rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+                ),
+                ball,
+                model,
             ),
-            ball,
-            model,
-        ),
-    )
-    .unwrap();
+        )
+        .unwrap();
 
     // Scallop's registry entry requires a ball tip. The rebind still lands.
     let _ = s.set_toolpath_tool(0, flat).unwrap();
@@ -359,7 +361,7 @@ fn rebind_is_not_reachable_through_the_param_route() {
         model_a,
     );
     rest.stock_source = StockSource::Fresh;
-    s.add_toolpath(0, rest).unwrap();
+    let _ = s.add_toolpath(0, rest).unwrap();
     let _ = s
         .set_toolpath_param(1, "prev_tool_id", serde_json::json!(tool_b))
         .expect("prev_tool_id is a real Rest param");

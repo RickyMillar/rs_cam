@@ -93,11 +93,20 @@ fn spec(coarse_id: usize, fine_id: usize, model_id: usize) -> MultitoolPlanSpec 
 fn session_with_ladder() -> (ProjectSession, usize, usize, usize) {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(common::session::stock_under(HALF_MM, 6.0));
-    let coarse_idx = session.add_tool(ball_tool_config(4.0));
-    let fine_idx = session.add_tool(ball_tool_config(2.0));
+    let coarse_idx = session
+        .add_tool(ball_tool_config(4.0))
+        .created
+        .expect("add_tool reports the new tool index");
+    let fine_idx = session
+        .add_tool(ball_tool_config(2.0))
+        .created
+        .expect("add_tool reports the new tool index");
     let coarse_id = session.tools()[coarse_idx].id.0;
     let fine_id = session.tools()[fine_idx].id.0;
-    let model_id = session.add_model(common::session::mesh_model(plane_with_bowl(), "bowl"));
+    let model_id = session
+        .add_model(common::session::mesh_model(plane_with_bowl(), "bowl"))
+        .created
+        .expect("add_model reports the new model id");
     (session, coarse_id, fine_id, model_id)
 }
 
@@ -214,7 +223,7 @@ fn a_preview_leaves_the_project_byte_identical() {
         fine_id,
         model_id,
     );
-    session.add_toolpath(0, tc).unwrap();
+    let _ = session.add_toolpath(0, tc).unwrap();
 
     let before_path = temp_path("before");
     let after_path = temp_path("after");

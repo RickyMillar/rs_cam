@@ -289,11 +289,17 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
         ToolKind::EndMill => endmill(fixture.tool_d),
         ToolKind::VBit => vbit(),
     };
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(polygon_model(fixture.polys.clone(), fixture.name));
+    let model_id = session
+        .add_model(polygon_model(fixture.polys.clone(), fixture.name))
+        .created
+        .expect("add_model reports the new model id");
     let cfg = toolpath_config(fixture.name, op, tool_id, model_id);
-    session
+    let _ = session
         .add_toolpath(0, cfg)
         .expect("add toolpath to a fresh session");
     session
@@ -305,11 +311,20 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
 fn rest_session(fixture: &Fixture) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock_for(&fixture.polys));
-    let prev_idx = session.add_tool(endmill(fixture.tool_d * 2.0));
+    let prev_idx = session
+        .add_tool(endmill(fixture.tool_d * 2.0))
+        .created
+        .expect("add_tool reports the new tool index");
     let prev_id = session.tools()[prev_idx].id;
-    let cur_idx = session.add_tool(endmill(fixture.tool_d));
+    let cur_idx = session
+        .add_tool(endmill(fixture.tool_d))
+        .created
+        .expect("add_tool reports the new tool index");
     let cur_id = session.tools()[cur_idx].id.0;
-    let model_id = session.add_model(polygon_model(fixture.polys.clone(), fixture.name));
+    let model_id = session
+        .add_model(polygon_model(fixture.polys.clone(), fixture.name))
+        .created
+        .expect("add_model reports the new model id");
     let op = OperationConfig::Rest(RestConfig {
         prev_tool_id: Some(prev_id),
         stepover: fixture.tool_d * 0.4,
@@ -318,7 +333,7 @@ fn rest_session(fixture: &Fixture) -> ProjectSession {
         ..RestConfig::default()
     });
     let cfg = toolpath_config(fixture.name, op, cur_id, model_id);
-    session
+    let _ = session
         .add_toolpath(0, cfg)
         .expect("add rest toolpath to a fresh session");
     session

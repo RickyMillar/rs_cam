@@ -120,8 +120,8 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 /// file adopts results through the door under test.
 fn fixture() -> ProjectSession {
     let mut s = ProjectSession::new_empty();
-    s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    s.add_model(empty_model("part.svg"));
+    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let _ = s.add_model(empty_model("part.svg"));
     let tool = s.tools()[0].id.0;
     let model = s.models()[0].id;
     let upstream = tc(
@@ -138,8 +138,8 @@ fn fixture() -> ProjectSession {
         tool,
         model,
     );
-    s.add_toolpath(0, upstream).unwrap();
-    s.add_toolpath(0, downstream).unwrap();
+    let _ = s.add_toolpath(0, upstream).unwrap();
+    let _ = s.add_toolpath(0, downstream).unwrap();
     assert_fixture_is_live(&s);
     s
 }
@@ -344,7 +344,7 @@ fn every_producer_reports_the_dropped_set() {
     // A rebind. The chain walk drops the edited row and the row that
     // reads its remaining stock.
     let mut s = fixture();
-    s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
+    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
     let tool_b = s.tools()[1].id.0;
     adopt_at_current_revision(&mut s, 0);
     adopt_at_current_revision(&mut s, 1);

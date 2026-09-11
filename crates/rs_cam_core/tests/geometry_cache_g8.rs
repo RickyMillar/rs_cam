@@ -358,7 +358,7 @@ fn eight_toolpaths_over_one_model_build_one_index() {
             model_id,
         );
         cfg.heights = pinned_heights(0.0, -6.0);
-        session.add_toolpath(0, cfg).expect("add toolpath");
+        let _ = session.add_toolpath(0, cfg).expect("add toolpath");
     }
     assert_eq!(session.toolpath_configs().len(), N);
 

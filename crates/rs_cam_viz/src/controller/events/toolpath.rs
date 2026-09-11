@@ -163,7 +163,8 @@ impl<B: ComputeBackend> AppController<B> {
         };
 
         if let Some(setup_idx) = target_setup_idx
-            && let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc)
+            && let Ok(effects) = self.state.session.add_toolpath(setup_idx, tc)
+            && let Some(tp_idx) = effects.created
             && let Some(tc) = self.state.session.toolpath_configs().get(tp_idx)
         {
             let tp_id = tc.id;
@@ -217,7 +218,8 @@ impl<B: ComputeBackend> AppController<B> {
 
         if let Some(tc) = dup {
             if let Some(setup_idx) = setup_idx
-                && let Ok(tp_idx) = self.state.session.add_toolpath(setup_idx, tc)
+                && let Ok(effects) = self.state.session.add_toolpath(setup_idx, tc)
+                && let Some(tp_idx) = effects.created
                 && let Some(new_tc) = self.state.session.toolpath_configs().get(tp_idx)
             {
                 let new_id = new_tc.id;

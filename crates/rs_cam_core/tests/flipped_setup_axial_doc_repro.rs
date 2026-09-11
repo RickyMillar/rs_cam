@@ -86,7 +86,10 @@ fn build_flipped_pocket_session() -> ProjectSession {
     };
     let _ = session.set_stock_config(stock);
 
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let model = LoadedModel {
@@ -103,11 +106,17 @@ fn build_flipped_pocket_session() -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
 
     // The repro lever: a flipped setup (index 1). new_empty() already made
     // identity setup 0; route the pocket onto the Bottom-face setup.
-    let flipped_setup = session.add_setup("Flipped".to_owned(), FaceUp::Bottom);
+    let flipped_setup = session
+        .add_setup("Flipped".to_owned(), FaceUp::Bottom)
+        .created
+        .expect("add_setup reports the new setup index");
 
     let pocket = PocketConfig {
         stepover: 2.0,
@@ -143,7 +152,7 @@ fn build_flipped_pocket_session() -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session
+    let _ = session
         .add_toolpath(flipped_setup, tc)
         .expect("add pocket toolpath to flipped setup");
 

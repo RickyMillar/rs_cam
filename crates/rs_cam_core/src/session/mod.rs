@@ -25,9 +25,17 @@ pub mod wizard;
 
 pub use builder::ProjectSessionBuilder;
 pub use command::{
-    AdoptResultArgs, Command, CommandId, CommandKind, Effects, GenerateToolpathArgs, Job,
-    JobHandle, Query, QueryAnswer, Reach, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
-    SetToolpathParamArgs, Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
+    AddAlignmentPinArgs, AddModelArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, AdoptResultArgs,
+    Command, CommandId, CommandKind, Effects, GenerateToolpathArgs, ImportMachineSettingsArgs, Job,
+    JobHandle, MoveToolpathToSetupArgs, Query, QueryAnswer, Reach, RemoveAlignmentPinArgs,
+    RemoveToolArgs, RemoveToolpathArgs, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
+    SaveProjectArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
+    SetMachineArgs, SetMachineKinematicsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
+    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
+    SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs,
+    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
+    SetToolpathModelArgs, SetToolpathParamArgs, SetToolpathToolArgs, Surfaces,
+    ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
 pub use compute::{
     GenContext, GenerateToolpathHandle, MutationKind, ResolvedGenInputs, StaleSet,
@@ -245,6 +253,12 @@ pub(crate) enum LoadedGeometry {
 }
 
 /// A loaded model with its geometry.
+///
+/// The record derives `Debug` and `Clone` because
+/// [`Command::AddModel`] carries one and the generated `Command` enum
+/// derives both. A clone copies the `Arc` on each geometry field, not
+/// the geometry behind it.
+#[derive(Debug, Clone)]
 pub struct LoadedModel {
     pub id: usize,
     pub name: String,
@@ -781,11 +795,11 @@ pub struct PlannerOrigin {
 /// Configuration for a single toolpath within the session.
 ///
 /// The record derives `Debug` and `Clone` because
-/// [`Command::ReplaceToolpathConfig`] carries one and the generated
-/// `Command` enum derives both. The GUI inspector's projection also
-/// clones the stored configuration before it applies the entry's
-/// sixteen fields, which is what keeps `id`, `boundary_inherit` and
-/// `planner_origin` alive across a panel frame.
+/// [`Command::ReplaceToolpathConfig`] and [`Command::AddToolpath`] each
+/// carry one and the generated `Command` enum derives both. The GUI
+/// inspector's projection also clones the stored configuration before it
+/// applies the entry's sixteen fields, which is what keeps `id`,
+/// `boundary_inherit` and `planner_origin` alive across a panel frame.
 #[derive(Debug, Clone)]
 pub struct ToolpathConfig {
     pub id: ToolpathId,
@@ -2500,7 +2514,7 @@ mod tests {
     fn set_tool_param_diameter() {
         let mut session = session_with_toolpath();
 
-        session
+        let _ = session
             .set_tool_param(0, "diameter", &serde_json::json!(10.0))
             .unwrap();
 
@@ -2573,7 +2587,11 @@ mod tests {
             planner_origin: None,
         };
 
-        let idx = session.add_toolpath(0, new_tp).unwrap();
+        let idx = session
+            .add_toolpath(0, new_tp)
+            .unwrap()
+            .created
+            .expect("add_toolpath reports the new toolpath index");
         assert_eq!(idx, 1);
         assert_eq!(session.toolpath_count(), 2);
 

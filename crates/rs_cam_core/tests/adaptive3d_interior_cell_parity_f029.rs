@@ -165,7 +165,7 @@ fn build_as013_terrain_session() -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session
+    let _ = session
         .add_toolpath(0, tc)
         .expect("add adaptive3d toolpath");
 

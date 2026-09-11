@@ -183,10 +183,16 @@ fn stock() -> StockConfig {
 fn session_with(heights: HeightsConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock());
-    let tool_idx = session.add_tool(tapered_ball_tool());
+    let tool_idx = session
+        .add_tool(tapered_ball_tool())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(mesh_model(two_groove_plateau()));
-    session
+    let model_id = session
+        .add_model(mesh_model(two_groove_plateau()))
+        .created
+        .expect("add_model reports the new model id");
+    let _ = session
         .add_toolpath(0, toolpath(heights, tool_id, model_id))
         .expect("add unified-finish toolpath");
     let cancel = AtomicBool::new(false);
@@ -337,15 +343,21 @@ fn pinned_heights_machine_the_band_and_report_nothing_dropped() {
 fn an_operation_with_no_bands_reports_not_measured() {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock());
-    let tool_idx = session.add_tool(tapered_ball_tool());
+    let tool_idx = session
+        .add_tool(tapered_ball_tool())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(mesh_model(two_groove_plateau()));
+    let model_id = session
+        .add_model(mesh_model(two_groove_plateau()))
+        .created
+        .expect("add_model reports the new model id");
     let mut tc = toolpath(pinned_heights(), tool_id, model_id);
     tc.operation = OperationConfig::Waterline(
         rs_cam_core::compute::operation_configs::WaterlineConfig::default(),
     );
     tc.dressups = DressupConfig::for_op(tc.operation.op_type());
-    session.add_toolpath(0, tc).expect("add waterline toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add waterline toolpath");
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)

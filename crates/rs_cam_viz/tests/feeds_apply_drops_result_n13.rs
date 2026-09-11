@@ -164,7 +164,7 @@ fn build_controller() -> AppController<SilentBackend> {
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
     let session: &mut ProjectSession = &mut controller.state.session;
-    session.add_model(LoadedModel {
+    let _ = session.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -178,13 +178,13 @@ fn build_controller() -> AppController<SilentBackend> {
         winding_report: None,
         load_error: None,
     });
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath(LEAD_NAME, OperationType::Pocket, StockSource::default()),
         )
         .expect("add the lead toolpath");
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath(

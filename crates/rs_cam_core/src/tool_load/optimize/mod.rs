@@ -975,8 +975,9 @@ mod orchestration_skip_tests {
 
     fn session_with_op(operation: OperationConfig) -> ProjectSession {
         let mut s = ProjectSession::new_empty();
-        s.add_tool(make_tool());
-        s.add_toolpath(0, make_tc(operation, s.tools()[0].id.0))
+        let _ = s.add_tool(make_tool());
+        let _ = s
+            .add_toolpath(0, make_tc(operation, s.tools()[0].id.0))
             .unwrap();
         s
     }
@@ -1220,13 +1221,14 @@ mod orchestration_skip_tests {
         tool.cutting_length = 50.0;
         tool.tool_material = crate::compute::tool_config::ToolMaterial::Hss;
         let mut s = ProjectSession::new_empty();
-        s.add_tool(tool);
+        let _ = s.add_tool(tool);
         let tool_id = s.tools()[0].id.0;
-        s.add_toolpath(
-            0,
-            make_tc(OperationConfig::Pocket(PocketConfig::default()), tool_id),
-        )
-        .unwrap();
+        let _ = s
+            .add_toolpath(
+                0,
+                make_tc(OperationConfig::Pocket(PocketConfig::default()), tool_id),
+            )
+            .unwrap();
         let mut stock = s.stock_config().clone();
         stock.material = crate::material::Material::SolidWood {
             species: crate::material::WoodSpecies::HardMaple,
@@ -1547,19 +1549,20 @@ mod project_rollup_tests {
     /// keeping these tests fast.
     fn session_with_n_drills(names_and_enabled: &[(&str, bool)]) -> ProjectSession {
         let mut s = ProjectSession::new_empty();
-        s.add_tool(make_tool());
+        let _ = s.add_tool(make_tool());
         let tool_id = s.tools()[0].id.0;
         for (name, enabled) in names_and_enabled {
-            s.add_toolpath(
-                0,
-                make_tc(
-                    name,
-                    OperationConfig::Drill(DrillConfig::default()),
-                    tool_id,
-                    *enabled,
-                ),
-            )
-            .unwrap();
+            let _ = s
+                .add_toolpath(
+                    0,
+                    make_tc(
+                        name,
+                        OperationConfig::Drill(DrillConfig::default()),
+                        tool_id,
+                        *enabled,
+                    ),
+                )
+                .unwrap();
         }
         s
     }
@@ -1745,9 +1748,9 @@ mod project_rollup_tests {
         // (no steady-state samples for the toolpath_id in the trace).
         // Verify the walk surfaces it as a Skipped row in per_toolpath.
         let mut session = ProjectSession::new_empty();
-        session.add_tool(make_tool());
+        let _ = session.add_tool(make_tool());
         let tool_id = session.tools()[0].id.0;
-        session
+        let _ = session
             .add_toolpath(
                 0,
                 make_tc(
@@ -1759,7 +1762,7 @@ mod project_rollup_tests {
             )
             .unwrap();
         // Add an alignment-pin drill to mix in the second skip path.
-        session
+        let _ = session
             .add_toolpath(
                 0,
                 make_tc(

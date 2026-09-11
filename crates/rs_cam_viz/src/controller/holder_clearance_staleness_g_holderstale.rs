@@ -143,7 +143,7 @@ pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
     controller.state.session = ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
-    controller.state.session.add_model(LoadedModel {
+    let _ = controller.state.session.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -161,7 +161,9 @@ pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
         .state
         .session
         .add_toolpath(0, toolpath(0))
-        .expect("the fixture project takes one operation");
+        .expect("the fixture project takes one operation")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     controller.handle_internal_event(AppEvent::AddFixture(SetupId(0)));
     land_a_result_for(&mut controller, ToolpathId(0));
     controller

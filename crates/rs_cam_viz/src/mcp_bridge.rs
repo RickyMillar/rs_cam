@@ -11,6 +11,8 @@ use serde::Serialize;
 
 pub use rs_cam_mcp::response::CutTraceCaps;
 
+use rs_cam_core::session::CommandId;
+
 use crate::state::toolpath::ToolpathId;
 
 /// The no-argument, cheap-to-render read payloads the GUI main thread
@@ -553,35 +555,19 @@ pub enum McpRequestKind {
     },
 
     // ── Mutations (instant) ──────────────────────────────────────────
-    AddAlignmentPin {
-        x: f64,
-        y: f64,
-        diameter: f64,
-    },
-    RemoveAlignmentPin {
-        index: usize,
-    },
-    ImportModel {
-        path: String,
-    },
-    AddSetup {
-        name: Option<String>,
-    },
-    SetSetupFace {
-        setup_index: usize,
-        face_up: String,
-    },
-    MoveToolpathToSetup {
-        toolpath_index: usize,
-        target_setup_index: usize,
-    },
+    //
+    // WP4: every MCP mutation that is a registry `Command` row travels in
+    // `Core` and is applied through `ProjectSession::apply`. Only the
+    // compositions stay here as variants of their own — see
+    // `CoreRequest` for why the wire struct crosses the channel rather
+    // than the core payload.
+    /// One command row, as the wire sent it. The GUI thread converts,
+    /// applies and describes it in one arm.
+    Core(CoreRequest),
     LoadProject {
         path: String,
         /// G-OPENGUARD: throw away the open project's unsaved changes.
         discard_unsaved: bool,
-    },
-    SaveProject {
-        path: String,
     },
     ExportGcode {
         path: String,
@@ -592,16 +578,6 @@ pub enum McpRequestKind {
         /// G-STALEXPORT: emit an edited operation's previous geometry
         /// rather than refusing. See `ExportParam::accept_previous_geometry`.
         accept_previous_geometry: bool,
-    },
-    SetToolpathParam {
-        index: usize,
-        param: String,
-        value: serde_json::Value,
-    },
-    SetToolParam {
-        index: usize,
-        param: String,
-        value: serde_json::Value,
     },
     /// F3.1 — add a toolpath through `handle_add_toolpath`, the same
     /// `AppEvent::AddToolpath` the Add menu emits, so the GUI's own
@@ -614,101 +590,6 @@ pub enum McpRequestKind {
     GetNotifications {
         include_expired: bool,
         limit: Option<usize>,
-    },
-    /// F3.7 — rebind a toolpath's CUTTER. `tool_id` is the project-assigned
-    /// tool id (a `list_tools` row's `id`), not a positional index.
-    /// `set_toolpath_param` cannot reach this field; see
-    /// `ProjectSession::set_toolpath_tool`.
-    SetToolpathTool {
-        index: usize,
-        tool_id: usize,
-    },
-    /// F3.8 — rebind a toolpath's INPUT MODEL. `model_id` is the
-    /// project-assigned model id (an `inspect_model` row's `id`), not a
-    /// positional index.
-    SetToolpathModel {
-        index: usize,
-        model_id: usize,
-    },
-    /// Set a toolpath's clearance/retract/feed/top/bottom Z planes.
-    /// Each field is optional; `None` leaves that plane unchanged. A
-    /// `Some(v)` pins the plane to absolute Z `v` (HeightMode::Manual).
-    SetToolpathHeights {
-        index: usize,
-        clearance_z: Option<f64>,
-        retract_z: Option<f64>,
-        feed_z: Option<f64>,
-        top_z: Option<f64>,
-        bottom_z: Option<f64>,
-    },
-    AddToolpath {
-        setup_index: usize,
-        operation_type: String,
-        tool_index: usize,
-        model_id: usize,
-        name: Option<String>,
-    },
-    RemoveToolpath {
-        index: usize,
-    },
-    /// Add a tool from a full `add_tool` request. Carries the whole
-    /// param struct because the per-type geometry (V-bit included
-    /// angle, taper half angle, bull-nose corner radius) is part of the
-    /// request, not something the handler may invent.
-    AddTool {
-        spec: rs_cam_mcp::server::AddToolParam,
-    },
-    /// Import a snapshot of a catalog tool into the project. Identified
-    /// by catalog name + 0-based index from `ListToolLibrary`.
-    AddToolFromLibrary {
-        catalog: String,
-        index: usize,
-    },
-    RemoveTool {
-        index: usize,
-    },
-    /// Set a setup's in-plane Z rotation (0 / 90 / 180 / 270 degrees).
-    SetSetupRotation {
-        setup_index: usize,
-        z_rotation: String,
-    },
-    /// Set stock geometry / material / rigidity. All-optional patch —
-    /// see `rs_cam_mcp::server::SetStockConfigParam`.
-    SetStockConfig {
-        spec: rs_cam_mcp::server::SetStockConfigParam,
-    },
-    /// Write machine kinematics (per-axis accel + junction deviation)
-    /// without going through a GRBL `$$` dump.
-    SetMachineKinematics {
-        spec: rs_cam_mcp::server::SetMachineKinematicsParam,
-    },
-    SetBoundaryConfig {
-        index: usize,
-        enabled: bool,
-        source: Option<String>,
-        containment: Option<String>,
-        offset: Option<f64>,
-        /// Required when `source` is `"derived_rest_regions"` — the stable
-        /// id (`ToolpathConfig.id`, not an index) of the toolpath whose
-        /// cached REST ANALYSIS supplies the boundary polygons. Any
-        /// operation produces them when its rest analysis is enabled and the
-        /// project carries a mesh and a spatial index; the pencil
-        /// `RestDepth` arm and the UnifiedFinish claims pipeline attach
-        /// their own.
-        source_toolpath_id: Option<usize>,
-    },
-    SetRestAnalysisConfig {
-        index: usize,
-        enabled: bool,
-        reference_tool_id: Option<usize>,
-        cell_mm: Option<f64>,
-        min_valley_depth: Option<f64>,
-        region_margin_mm: Option<f64>,
-        /// PR-7 (H2.5): `None` = size the routing fan from the canonical
-        /// reach policy, which is what an operator who does not name a
-        /// downstream operation wants.
-        offset_stepover_mm: Option<f64>,
-        num_offset_passes: Option<usize>,
     },
     /// Phase O — plan a multi-tool island finishing chain. Emits k enabled
     /// `unified_finish` ops, coarse to fine, each carrying its tier's islands
@@ -725,29 +606,6 @@ pub enum McpRequestKind {
     /// less on a cache hit.
     PreviewTierMap {
         spec: rs_cam_mcp::server::PreviewTierMapParam,
-    },
-    SetDressupConfig {
-        index: usize,
-        dressup: serde_json::Value,
-    },
-    SetDressupField {
-        index: usize,
-        key: String,
-        value: serde_json::Value,
-    },
-    SetToolpathEnabled {
-        index: usize,
-        enabled: bool,
-    },
-    SetStockSource {
-        index: usize,
-        source: String,
-    },
-    /// Set the project-level spindle policy ("match_chart" or
-    /// "max_speed"). See [`rs_cam_core::feeds::SpindleStrategy`].
-    /// Mirrors the GUI's Feeds & Speeds modal radio toggle.
-    SetSpindleStrategy {
-        strategy: String,
     },
     /// Checkpoint I-5 (2026-08-12): apply the Feeds & Speeds recommendation
     /// to one toolpath through the same funnel both GUI surfaces use, with
@@ -858,19 +716,109 @@ pub enum McpRequestKind {
         /// would otherwise land on top of these writes.
         overlays: Option<std::collections::BTreeMap<String, bool>>,
     },
-    /// Import a GRBL `$$` settings dump onto the live machine profile
-    /// (headless equivalent of the GUI Machine panel's `$$` import).
-    ImportMachineSettings {
-        dump: String,
-    },
     /// List the reusable machines in the per-user machine library, each
     /// with a compact spec summary. No project required.
     ListMachineLibrary,
-    /// Snapshot-import the named library machine into the project (copies
-    /// it into the inline machine; no live link).
-    LoadMachineFromLibrary {
-        name: String,
-    },
+}
+
+/// One MCP mutation, as the wire sent it (WP4).
+///
+/// Every variant names a `Command` row in
+/// [`rs_cam_core::session::Command`] and carries the `rs_cam_mcp`
+/// parameter struct the tool declared. The GUI thread turns the
+/// parameter struct into the row's core `*Args` payload and applies it
+/// through [`rs_cam_core::session::ProjectSession::apply`], the one
+/// mutation door.
+///
+/// **Why the wire struct and not the core payload.** Twenty of these
+/// conversions read the session — the heights patch reads the current
+/// heights, the stock patch reads the current stock, the spindle policy
+/// reads the current post block, the library rows read a catalog, the
+/// import reads a file — and the MCP server thread holds no session. A
+/// conversion on that thread would also report a refusal in a different
+/// ORDER from the one the operator reads today, because every handler
+/// validates the index before it parses the value. So the wire struct
+/// crosses the channel and the conversion runs beside the session, in
+/// `RsCamApp::core_command_for`.
+///
+/// Keeping the `rs_cam_mcp` structs where they are is also what holds the
+/// WP2a wire snapshot still: a schema title is the struct's own name.
+pub enum CoreRequest {
+    AddAlignmentPin(rs_cam_mcp::server::AddAlignmentPinParam),
+    RemoveAlignmentPin(rs_cam_mcp::server::RemoveAlignmentPinParam),
+    /// Row `AddModel`. The wire name is `import_model`: the surface reads
+    /// the file, and core adopts the geometry that import produced.
+    ImportModel(rs_cam_mcp::server::ImportModelParam),
+    AddSetup(rs_cam_mcp::server::AddSetupParam),
+    SetSetupFace(rs_cam_mcp::server::SetSetupFaceParam),
+    SetSetupRotation(rs_cam_mcp::server::SetSetupRotationParam),
+    MoveToolpathToSetup(rs_cam_mcp::server::MoveToolpathToSetupParam),
+    SaveProject(rs_cam_mcp::server::SaveProjectParam),
+    SetToolpathParam(rs_cam_mcp::server::SetToolpathParamInput),
+    SetToolParam(rs_cam_mcp::server::SetToolParamInput),
+    SetToolpathTool(rs_cam_mcp::server::SetToolpathToolParam),
+    SetToolpathModel(rs_cam_mcp::server::SetToolpathModelParam),
+    SetToolpathHeights(rs_cam_mcp::server::SetToolpathHeightsParam),
+    AddToolpath(rs_cam_mcp::server::AddToolpathParam),
+    RemoveToolpath(rs_cam_mcp::server::RemoveToolpathParam),
+    AddTool(rs_cam_mcp::server::AddToolParam),
+    AddToolFromLibrary(rs_cam_mcp::server::AddToolFromLibraryParam),
+    RemoveTool(rs_cam_mcp::server::RemoveToolParam),
+    SetStockConfig(rs_cam_mcp::server::SetStockConfigParam),
+    SetStockSource(rs_cam_mcp::server::SetStockSourceParam),
+    SetMachineKinematics(rs_cam_mcp::server::SetMachineKinematicsParam),
+    /// Row `ImportMachineSettings`. The GRBL parse stays on this surface.
+    ImportMachineSettings(rs_cam_mcp::server::ImportMachineSettingsParam),
+    /// Row `SetMachine`. The library READ stays on this surface; the
+    /// payload core receives is a whole machine profile.
+    LoadMachineFromLibrary(rs_cam_mcp::server::LoadMachineFromLibraryParam),
+    /// Row `SetPostConfig`. The wire writes one field of the post block.
+    SetSpindleStrategy(rs_cam_mcp::server::SetSpindleStrategyParam),
+    SetBoundaryConfig(rs_cam_mcp::server::SetBoundaryConfigParam),
+    SetRestAnalysisConfig(rs_cam_mcp::server::SetRestAnalysisConfigParam),
+    SetDressupConfig(rs_cam_mcp::server::SetDressupConfigParam),
+    SetDressupField(rs_cam_mcp::server::SetDressupFieldParam),
+    SetToolpathEnabled(rs_cam_mcp::server::SetToolpathEnabledParam),
+}
+
+impl CoreRequest {
+    /// The registry row this request runs.
+    ///
+    /// The describe step matches on this, so a row that loses its arm
+    /// does not compile.
+    pub fn id(&self) -> CommandId {
+        match self {
+            Self::AddAlignmentPin(_) => CommandId::AddAlignmentPin,
+            Self::RemoveAlignmentPin(_) => CommandId::RemoveAlignmentPin,
+            Self::ImportModel(_) => CommandId::AddModel,
+            Self::AddSetup(_) => CommandId::AddSetup,
+            Self::SetSetupFace(_) => CommandId::SetSetupFace,
+            Self::SetSetupRotation(_) => CommandId::SetSetupRotation,
+            Self::MoveToolpathToSetup(_) => CommandId::MoveToolpathToSetup,
+            Self::SaveProject(_) => CommandId::SaveProject,
+            Self::SetToolpathParam(_) => CommandId::SetToolpathParam,
+            Self::SetToolParam(_) => CommandId::SetToolParam,
+            Self::SetToolpathTool(_) => CommandId::SetToolpathTool,
+            Self::SetToolpathModel(_) => CommandId::SetToolpathModel,
+            Self::SetToolpathHeights(_) => CommandId::SetToolpathHeights,
+            Self::AddToolpath(_) => CommandId::AddToolpath,
+            Self::RemoveToolpath(_) => CommandId::RemoveToolpath,
+            Self::AddTool(_) => CommandId::AddTool,
+            Self::AddToolFromLibrary(_) => CommandId::AddToolFromLibrary,
+            Self::RemoveTool(_) => CommandId::RemoveTool,
+            Self::SetStockConfig(_) => CommandId::SetStockConfig,
+            Self::SetStockSource(_) => CommandId::SetStockSource,
+            Self::SetMachineKinematics(_) => CommandId::SetMachineKinematics,
+            Self::ImportMachineSettings(_) => CommandId::ImportMachineSettings,
+            Self::LoadMachineFromLibrary(_) => CommandId::SetMachine,
+            Self::SetSpindleStrategy(_) => CommandId::SetPostConfig,
+            Self::SetBoundaryConfig(_) => CommandId::SetBoundaryConfig,
+            Self::SetRestAnalysisConfig(_) => CommandId::SetRestAnalysisConfig,
+            Self::SetDressupConfig(_) => CommandId::SetDressupConfig,
+            Self::SetDressupField(_) => CommandId::SetDressupField,
+            Self::SetToolpathEnabled(_) => CommandId::SetToolpathEnabled,
+        }
+    }
 }
 
 /// Render the `cancel_generation` reply from what the lane actually did.

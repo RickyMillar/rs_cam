@@ -92,7 +92,9 @@ fn two_operation_job() -> AppController<ScriptedLane> {
         .state
         .session
         .add_toolpath(0, second_op)
-        .expect("the fixture project takes a second operation");
+        .expect("the fixture project takes a second operation")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     land_a_result_for(&mut controller, ToolpathId(1));
 
     controller

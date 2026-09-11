@@ -132,17 +132,20 @@ fn fixture_session(depth_mm: f64) -> ProjectSession {
     // A machine whose feed ceiling does not bind the fixture — the point is
     // the chipload band, and a machine clamp would silently become the
     // binding constraint and make the measurement about something else.
-    session.set_machine(MachineProfile {
+    let _ = session.set_machine(MachineProfile {
         max_feed_mm_min: 24_000.0,
         max_cutting_feed_mm_min: Some(24_000.0),
         ..MachineProfile::generic_wood_router()
     });
 
-    let tool_idx = session.add_tool(ToolConfig {
-        diameter: TOOL_DIAMETER_MM,
-        cutting_length: 30.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
-    });
+    let tool_idx = session
+        .add_tool(ToolConfig {
+            diameter: TOOL_DIAMETER_MM,
+            cutting_length: 30.0,
+            ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+        })
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let square = Polygon2::new(vec![
@@ -151,20 +154,23 @@ fn fixture_session(depth_mm: f64) -> ProjectSession {
         P2::new(15.0, 15.0),
         P2::new(-15.0, 15.0),
     ]);
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "a8 retarget square".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![square])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: std::path::PathBuf::from("synthetic://a8-retarget"),
-        kind: Some(ModelKind::Svg),
-        units: Some(ModelUnits::Millimeters),
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "a8 retarget square".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![square])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: std::path::PathBuf::from("synthetic://a8-retarget"),
+            kind: Some(ModelKind::Svg),
+            units: Some(ModelUnits::Millimeters),
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     let op = OperationConfig::Pocket(PocketConfig {
         depth: depth_mm,
@@ -174,7 +180,7 @@ fn fixture_session(depth_mm: f64) -> ProjectSession {
         ..Default::default()
     });
     let op_type = op.op_type();
-    session
+    let _ = session
         .add_toolpath(
             0,
             ToolpathConfig {

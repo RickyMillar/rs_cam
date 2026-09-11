@@ -208,11 +208,20 @@ fn a_refused_generation_leaves_no_cached_result() {
 fn a_rest_operation_that_finds_nothing_still_succeeds() {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock_under(HALF, STOCK_Z));
-    let prev_idx = session.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
+    let prev_idx = session
+        .add_tool(endmill_tool_config(OVERSIZE_TOOL_D))
+        .created
+        .expect("add_tool reports the new tool index");
     let prev_id = session.tools()[prev_idx].id;
-    let cur_idx = session.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
+    let cur_idx = session
+        .add_tool(endmill_tool_config(OVERSIZE_TOOL_D))
+        .created
+        .expect("add_tool reports the new tool index");
     let cur_tool = session.tools()[cur_idx].id.0;
-    let model_id = session.add_model(polygon_model(vec![square_polygon(HALF)], "square"));
+    let model_id = session
+        .add_model(polygon_model(vec![square_polygon(HALF)], "square"))
+        .created
+        .expect("add_model reports the new model id");
     let op = OperationConfig::Rest(RestConfig {
         prev_tool_id: Some(prev_id),
         stepover: 2.0,
@@ -220,7 +229,7 @@ fn a_rest_operation_that_finds_nothing_still_succeeds() {
         depth_per_pass: 3.0,
         ..RestConfig::default()
     });
-    session
+    let _ = session
         .add_toolpath(0, toolpath_config("Rest", op, cur_tool, model_id))
         .expect("add rest toolpath");
 
@@ -252,14 +261,14 @@ fn an_empty_generation_does_not_stop_the_next_one() {
 
     // Empty it, exactly as switching a dial to a value the geometry cannot
     // satisfy does.
-    session
+    let _ = session
         .set_tool_param(0, "diameter", &serde_json::json!(OVERSIZE_TOOL_D))
         .expect("set tool diameter");
     let err = generate(&mut session, 0).expect_err("the oversize tool must be refused");
     assert!(matches!(err, SessionError::GeneratedEmpty(_)), "{err:?}");
 
     // Put it back. This is the step that used to keep returning nothing.
-    session
+    let _ = session
         .set_tool_param(0, "diameter", &serde_json::json!(FITTING_TOOL_D))
         .expect("restore tool diameter");
     generate(&mut session, 0)
@@ -292,13 +301,22 @@ fn an_empty_generation_does_not_stop_the_next_one() {
 fn an_empty_rest_pass_keeps_its_prior_stock_snapshot() {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock_under(HALF, STOCK_Z));
-    let rough_idx = session.add_tool(endmill_tool_config(FITTING_TOOL_D));
+    let rough_idx = session
+        .add_tool(endmill_tool_config(FITTING_TOOL_D))
+        .created
+        .expect("add_tool reports the new tool index");
     let rough_tool = session.tools()[rough_idx].id.0;
-    let rest_idx = session.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
+    let rest_idx = session
+        .add_tool(endmill_tool_config(OVERSIZE_TOOL_D))
+        .created
+        .expect("add_tool reports the new tool index");
     let rest_tool = session.tools()[rest_idx].id.0;
-    let model_id = session.add_model(polygon_model(vec![square_polygon(HALF)], "square"));
+    let model_id = session
+        .add_model(polygon_model(vec![square_polygon(HALF)], "square"))
+        .created
+        .expect("add_model reports the new model id");
 
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config("Rough", pocket_op(), rough_tool, model_id),
@@ -306,7 +324,7 @@ fn an_empty_rest_pass_keeps_its_prior_stock_snapshot() {
         .expect("add rough");
     let mut rest_cfg = toolpath_config("Rest pocket", pocket_op(), rest_tool, model_id);
     rest_cfg.stock_source = StockSource::FromRemainingStock;
-    session.add_toolpath(0, rest_cfg).expect("add rest pocket");
+    let _ = session.add_toolpath(0, rest_cfg).expect("add rest pocket");
 
     generate(&mut session, 0).expect("rough generates");
     assert!(cutting_moves(&session, 0) > 0, "fixture is vacuous");

@@ -66,9 +66,9 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn handle_add_tool(&mut self, tool_type: crate::state::job::ToolType) {
         let tool = ToolConfig::new_default(crate::state::job::ToolId(0), tool_type);
-        let idx = self.state.session.add_tool(tool);
+        let created = self.state.session.add_tool(tool).created;
         // The session assigned the ID — read it back.
-        if let Some(tool) = self.state.session.tools().get(idx) {
+        if let Some(tool) = created.and_then(|idx| self.state.session.tools().get(idx)) {
             self.state.selection = Selection::Tool(tool.id);
         }
         self.state.gui.mark_edited();
@@ -78,8 +78,8 @@ impl<B: ComputeBackend> AppController<B> {
         // The catalog tool's id is project-irrelevant; the session
         // reassigns it on insert. Reset to a sentinel first.
         tool.id = crate::state::job::ToolId(0);
-        let idx = self.state.session.add_tool(tool);
-        if let Some(tool) = self.state.session.tools().get(idx) {
+        let created = self.state.session.add_tool(tool).created;
+        if let Some(tool) = created.and_then(|idx| self.state.session.tools().get(idx)) {
             self.state.selection = Selection::Tool(tool.id);
         }
         self.state.gui.mark_edited();
@@ -229,8 +229,8 @@ impl<B: ComputeBackend> AppController<B> {
         {
             let mut duplicate = src.clone();
             duplicate.name = format!("{} (copy)", duplicate.name);
-            let idx = self.state.session.add_tool(duplicate);
-            if let Some(tool) = self.state.session.tools().get(idx) {
+            let created = self.state.session.add_tool(duplicate).created;
+            if let Some(tool) = created.and_then(|idx| self.state.session.tools().get(idx)) {
                 self.state.selection = Selection::Tool(tool.id);
             }
             self.state.gui.mark_edited();
@@ -246,7 +246,7 @@ impl<B: ComputeBackend> AppController<B> {
             .position(|t| t.id == tool_id);
         if let Some(idx) = index {
             match self.state.session.remove_tool(idx) {
-                Ok(()) => {
+                Ok(_effects) => {
                     if self.state.selection == Selection::Tool(tool_id) {
                         self.state.selection = Selection::None;
                     }
@@ -272,8 +272,12 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_add_setup(&mut self) {
         let next_id = self.state.session.list_setups().len() + 1;
         let name = format!("Setup {next_id}");
-        let idx = self.state.session.add_setup(name, FaceUp::default());
-        if let Some(setup) = self.state.session.list_setups().get(idx) {
+        let created = self
+            .state
+            .session
+            .add_setup(name, FaceUp::default())
+            .created;
+        if let Some(setup) = created.and_then(|idx| self.state.session.list_setups().get(idx)) {
             self.state.selection = Selection::Setup(SetupId(setup.id));
         }
         self.state.gui.mark_edited();
@@ -334,7 +338,7 @@ impl<B: ComputeBackend> AppController<B> {
         if !has_flipped {
             let next_id = self.state.session.list_setups().len() + 1;
             let name = format!("Setup {next_id}");
-            self.state.session.add_setup(name, FaceUp::Bottom);
+            let _ = self.state.session.add_setup(name, FaceUp::Bottom);
         }
 
         // Key the pins to the flip the project actually programs, not to

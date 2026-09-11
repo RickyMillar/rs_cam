@@ -176,7 +176,9 @@ fn a_full_depth_profile_with_no_tabs_reads_the_seed_line_g_throughcut() {
             0,
             toolpath("Cut out", MODEL_2D, profile(STOCK_THICKNESS_MM, 0)),
         )
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let finding = rule(&session, idx).expect("(a) depth == thickness is a through cut");
     assert_eq!(finding.message(), NO_TABS_18);
     assert!((finding.depth_mm - STOCK_THICKNESS_MM).abs() < 1e-9);
@@ -199,7 +201,9 @@ fn a_partial_depth_profile_reads_nothing_g_throughcut() {
     let mut session = build_session();
     let idx = session
         .add_toolpath(0, toolpath("Rebate", MODEL_2D, profile(6.0, 0)))
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     assert_eq!(rule(&session, idx), None);
 }
 
@@ -208,7 +212,9 @@ fn a_depth_beyond_the_board_shows_both_the_line_and_the_caution_g_throughcut() {
     let mut session = build_session();
     let idx = session
         .add_toolpath(0, toolpath("Deep", MODEL_2D, profile(25.0, 3)))
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let finding = rule(&session, idx).expect("beyond the board is a through cut");
     assert_eq!(
         finding.message(),
@@ -232,7 +238,11 @@ fn a_top_z_pinned_below_the_stock_top_counts_towards_the_through_cut_g_throughcu
         reference: HeightReference::StockTop,
         offset: -6.0,
     });
-    let idx = session.add_toolpath(0, tc).unwrap();
+    let idx = session
+        .add_toolpath(0, tc)
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let finding = rule(&session, idx).expect("pinned Top Z reaches the stock bottom");
     assert_eq!(finding.message(), NO_TABS_18);
     assert!(
@@ -245,6 +255,8 @@ fn a_top_z_pinned_below_the_stock_top_counts_towards_the_through_cut_g_throughcu
     let mut session = build_session();
     let idx = session
         .add_toolpath(0, toolpath("Rebate", MODEL_2D, profile(12.0, 0)))
-        .unwrap();
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     assert_eq!(rule(&session, idx), None);
 }

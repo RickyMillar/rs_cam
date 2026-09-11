@@ -147,7 +147,7 @@ fn fixture(feed_optimization: bool) -> Fixture {
     });
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
-    controller.state.session.add_model(LoadedModel {
+    let _ = controller.state.session.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("plate.svg"),
         name: "Plate".to_owned(),
@@ -191,7 +191,9 @@ fn fixture(feed_optimization: bool) -> Fixture {
         .state
         .session
         .add_toolpath(0, tp_config)
-        .expect("the default setup accepts a toolpath");
+        .expect("the default setup accepts a toolpath")
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     let tp_id = controller.state.session.toolpath_configs()[tp_index].id;
     Fixture {
         controller,

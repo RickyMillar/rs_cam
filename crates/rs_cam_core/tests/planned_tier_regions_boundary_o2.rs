@@ -164,11 +164,20 @@ fn a_fine_tier_op_cuts_only_inside_its_own_islands() {
 
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(common::session::stock_under(HALF_MM, 6.0));
-    let coarse_idx = session.add_tool(ball_tool_config(4.0));
-    let fine_idx = session.add_tool(ball_tool_config(2.0));
+    let coarse_idx = session
+        .add_tool(ball_tool_config(4.0))
+        .created
+        .expect("add_tool reports the new tool index");
+    let fine_idx = session
+        .add_tool(ball_tool_config(2.0))
+        .created
+        .expect("add_tool reports the new tool index");
     let coarse_id = session.tools()[coarse_idx].id.0;
     let fine_id = session.tools()[fine_idx].id.0;
-    let model_id = session.add_model(common::session::mesh_model(plane_with_bowl(), "bowl"));
+    let model_id = session
+        .add_model(common::session::mesh_model(plane_with_bowl(), "bowl"))
+        .created
+        .expect("add_model reports the new model id");
 
     // The op the planner would emit for tier 1, minus the stock chaining:
     // `Fresh` keeps this sentry about the BOUNDARY. The stock source is a
@@ -193,7 +202,11 @@ fn a_fine_tier_op_cuts_only_inside_its_own_islands() {
         containment: BoundaryContainment::Center,
         offset: 0.0,
     };
-    let index = session.add_toolpath(0, tc).unwrap();
+    let index = session
+        .add_toolpath(0, tc)
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
 
     let cancel = AtomicBool::new(false);
     session

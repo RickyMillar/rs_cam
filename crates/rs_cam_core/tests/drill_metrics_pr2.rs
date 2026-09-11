@@ -91,10 +91,13 @@ fn build_drill_session(peck_depth: f64, tool_diameter: f64) -> ProjectSession {
     };
     let _ = session.set_stock_config(stock);
 
-    let tool_idx = session.add_tool(make_drill_tool(tool_diameter));
+    let tool_idx = session
+        .add_tool(make_drill_tool(tool_diameter))
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
     let tc = make_drill_toolpath(tool_id, peck_depth);
-    session.add_toolpath(0, tc).expect("add drill toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add drill toolpath");
     session
 }
 

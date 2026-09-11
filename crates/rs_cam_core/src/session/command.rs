@@ -43,6 +43,14 @@
 //! session; `apply(Command::AdoptResult { .. })` records the answer.
 //! The kind cost the callback macro a third accumulator and one more
 //! per-row arm, not a rewrite.
+//!
+//! WP4 adds the MCP mutation section: 32 `Command` rows, of which 28
+//! carry an MCP wire name. The registry holds 38 rows in total. Three
+//! MCP mutations stay hand-written holdouts and are NOT rows here
+//! (§15 ruling 4): `apply_feeds`, whose funnel resolves tool, machine,
+//! material and a recommendation from view state; `plan_multitool_
+//! finishing`, whose outcome IS the reply; and `export_gcode`, whose
+//! pre-flight gate reads the view's own simulation slot.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -92,6 +100,339 @@ macro_rules! for_each_command {
                  ),
                  cli: Reach::Skip(
                      "the CLI generates synchronously and never adopts a completion",
+                 ),
+             }),
+            (Command, AddAlignmentPin, "add_alignment_pin", AddAlignmentPinArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control calls this setter; the pin placer writes the stock",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, RemoveAlignmentPin, "remove_alignment_pin", RemoveAlignmentPinArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control calls this setter; the pin placer writes the stock",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, AddModel, "import_model", AddModelArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the CLI job-file loader calls the session setter directly",
+                 ),
+             }),
+            (Command, AddSetup, "add_setup", AddSetupArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetSetupFace, "set_setup_face", SetSetupFaceArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetSetupRotation, "set_setup_rotation", SetSetupRotationArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetSetupName, "set_setup_name", SetSetupNameArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool writes this; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetSetupDatum, "set_setup_datum", SetSetupDatumArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI setup panel writes SetupData::datum directly; WP6 adopts it",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool writes this; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetSetupModels, "set_setup_models", SetSetupModelsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI setup panel writes SetupData::model_ids directly; WP6 adopts it",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool writes this; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, MoveToolpathToSetup, "move_toolpath_to_setup",
+             MoveToolpathToSetupArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SaveProject, "save_project", SaveProjectArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI saves through its own controller door; WP6b adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the CLI job-file loader calls the session setter directly",
+                 ),
+             }),
+            (Command, SetToolParam, "set_tool_param", SetToolParamArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI tool panel commits a whole draft config, not one parameter",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the CLI job-file loader calls the session setter directly",
+                 ),
+             }),
+            (Command, SetToolpathTool, "set_toolpath_tool", SetToolpathToolArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI combo writes ToolpathConfig::tool_id itself; WP5 gives it a door",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetToolpathModel, "set_toolpath_model", SetToolpathModelArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI combo writes ToolpathConfig::model_id itself; WP5 gives it a door",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetToolpathHeights, "set_toolpath_heights", SetToolpathHeightsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI inspector writes this field directly; WP5 gives it a door",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetToolpathDebugOptions, "set_toolpath_debug_options",
+             SetToolpathDebugOptionsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control writes this flag; the generate door writes it",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool writes this; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, AddToolpath, "add_toolpath", AddToolpathArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the CLI job-file loader calls the session setter directly",
+                 ),
+             }),
+            (Command, RemoveToolpath, "remove_toolpath", RemoveToolpathArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, AddTool, "add_tool", AddToolArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the CLI job-file loader calls the session setter directly",
+                 ),
+             }),
+            (Command, AddToolFromLibrary, "add_tool_from_library", AddToolArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, RemoveTool, "remove_tool", RemoveToolArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetStockConfig, "set_stock_config", SetStockConfigArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetStockSource, "set_stock_source", SetStockSourceArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetMachine, "load_machine_from_library", SetMachineArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetMachineKinematics, "set_machine_kinematics",
+             SetMachineKinematicsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI machine panel writes machine_mut() in place; WP6 adopts it",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, ImportMachineSettings, "import_machine_settings",
+             ImportMachineSettingsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI machine panel writes machine_mut() in place; WP6 adopts it",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetPostConfig, "set_spindle_strategy", SetPostConfigArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetBoundaryConfig, "set_boundary_config", SetBoundaryConfigArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetRestAnalysisConfig, "set_rest_analysis_config",
+             SetRestAnalysisConfigArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI inspector writes this field directly; WP5 gives it a door",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetDressupConfig, "set_dressup_config", SetDressupConfigArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI inspector writes this field directly; WP5 gives it a door",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetDressupField, "set_dressup_field", SetDressupFieldArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI inspector writes this field directly; WP5 gives it a door",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetToolpathEnabled, "set_toolpath_enabled", SetToolpathEnabledArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI calls the session setter directly; WP6 adopts this row",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
                  ),
              }),
             (Query, ToolpathCycleTime, "toolpath_cycle_time", ToolpathCycleTimeArgs,
@@ -331,6 +672,404 @@ pub struct Effects {
     /// which means NOT MEASURED. `0` cannot carry that meaning: every
     /// toolpath starts at revision `0`.
     pub revision: Option<u64>,
+    /// What an add created, or `None` when the command created nothing.
+    ///
+    /// WP4 ruling 3 (§15). Four commands append to a list, and the
+    /// caller needs the thing they appended: `AddToolpath`, `AddTool`,
+    /// `AddSetup` and `AddModel`. On a pure append [`Self::stale`] holds
+    /// the new index alone and [`Self::revision`] is `None`, so neither
+    /// field can carry the answer.
+    ///
+    /// **The four do not report one quantity.** Each reports the value
+    /// its producer reported before WP4, because that is the value every
+    /// caller already consumes:
+    ///
+    /// - `AddToolpath` — the new toolpath's INDEX in plan order;
+    /// - `AddTool` — the new tool's INDEX in the tools list;
+    /// - `AddSetup` — the new setup's INDEX in the setups list;
+    /// - `AddModel` — the new model's ID, not its index. A model is
+    ///   named by id on every other surface, and `add_model` always
+    ///   answered with `LoadedModel::id`.
+    ///
+    /// Read the row before reading the number. `None` means the command
+    /// created nothing; it never means index zero.
+    pub created: Option<usize>,
+}
+
+// ── WP4 payloads ─────────────────────────────────────────────────
+//
+// One `*Args` struct per MCP mutation row. `rs_cam_mcp` depends on this
+// crate, so core cannot name an `rs_cam_mcp` parameter struct: the
+// dependency runs one way. Each surface converts its own parameter
+// struct into the core payload at its boundary. That conversion is also
+// what keeps the WP2a wire snapshot still: a schema title comes from the
+// `rs_cam_mcp` struct, which stays where it is.
+//
+// A payload carries CORE types, never wire types. A wire string like
+// `"bottom"` becomes a `FaceUp` on the surface that parsed it, so one
+// parser answers for every surface and a refusal reaches the operator in
+// that surface's own words.
+//
+// A field that carries a large configuration struct is boxed. `Command`
+// is one enum over every row, so its size is the size of its largest
+// payload, and `large_enum_variant` is a denied lint.
+
+/// The arguments of the `add_alignment_pin` command.
+///
+/// The setter dedupes against the pins the stock already carries. A
+/// duplicate reports an empty [`Effects`], which says the call changed
+/// nothing.
+#[derive(Debug, Clone)]
+pub struct AddAlignmentPinArgs {
+    /// The pin centre X, in millimetres, in the stock-local frame.
+    pub x: f64,
+    /// The pin centre Y, in millimetres, in the stock-local frame.
+    pub y: f64,
+    /// The pin diameter, in millimetres.
+    pub diameter: f64,
+}
+
+/// The arguments of the `remove_alignment_pin` command.
+#[derive(Debug, Clone)]
+pub struct RemoveAlignmentPinArgs {
+    /// The index of the pin to remove, in the stock's own pin order.
+    pub index: usize,
+}
+
+/// The arguments of the `import_model` command.
+///
+/// The payload is a LOADED model, not a path. The import itself —
+/// reading the STL, SVG, DXF or STEP file and applying the declared
+/// units — belongs to the surface that owns the file dialogue, and core
+/// adopts the geometry that import produced.
+///
+/// `model.id` is overwritten: the session assigns the next free id.
+/// [`Effects::created`] then reports that id.
+#[derive(Debug, Clone)]
+pub struct AddModelArgs {
+    /// The imported model to adopt.
+    pub model: Box<super::LoadedModel>,
+}
+
+/// The arguments of the `add_setup` command.
+///
+/// `name` of `None` means the session names the setup itself, after the
+/// count of setups it already holds. That default lives here so the two
+/// surfaces cannot name a new setup differently.
+#[derive(Debug, Clone)]
+pub struct AddSetupArgs {
+    /// The name for the new setup, or `None` to let the session name it.
+    pub name: Option<String>,
+    /// The face of the stock that points up in the new setup.
+    pub face_up: crate::compute::transform::FaceUp,
+}
+
+/// The arguments of the `set_setup_face` command.
+#[derive(Debug, Clone)]
+pub struct SetSetupFaceArgs {
+    /// The index of the setup to write.
+    pub setup_index: usize,
+    /// The face of the stock that points up.
+    pub face_up: crate::compute::transform::FaceUp,
+}
+
+/// The arguments of the `set_setup_rotation` command.
+#[derive(Debug, Clone)]
+pub struct SetSetupRotationArgs {
+    /// The index of the setup to write.
+    pub setup_index: usize,
+    /// The rotation of the stock about the vertical axis.
+    pub z_rotation: crate::compute::transform::ZRotation,
+}
+
+/// The arguments of the `set_setup_name` command.
+#[derive(Debug, Clone)]
+pub struct SetSetupNameArgs {
+    /// The index of the setup to rename.
+    pub setup_index: usize,
+    /// The new name.
+    pub name: String,
+}
+
+/// The arguments of the `set_setup_datum` command.
+#[derive(Debug, Clone)]
+pub struct SetSetupDatumArgs {
+    /// The index of the setup to write.
+    pub setup_index: usize,
+    /// How the operator zeroes the machine for this setup.
+    pub datum: super::DatumConfig,
+}
+
+/// The arguments of the `set_setup_models` command.
+#[derive(Debug, Clone)]
+pub struct SetSetupModelsArgs {
+    /// The index of the setup to write.
+    pub setup_index: usize,
+    /// The models in scope for the setup. An EMPTY list means "all
+    /// models"; it is not the same as a list that names every model.
+    pub model_ids: Vec<crate::compute::stock_config::ModelId>,
+}
+
+/// The arguments of the `move_toolpath_to_setup` command.
+#[derive(Debug, Clone)]
+pub struct MoveToolpathToSetupArgs {
+    /// The index of the toolpath to move, in plan order.
+    pub toolpath_index: usize,
+    /// The index of the setup the toolpath lands in.
+    pub target_setup_index: usize,
+    /// The gap the toolpath lands in, counted in the TARGET setup's own
+    /// plan order. `None` appends. A drag carries the position the
+    /// operator pointed at; the MCP tool has no such argument and passes
+    /// `None`.
+    pub target_position: Option<usize>,
+}
+
+/// The arguments of the `save_project` command.
+///
+/// The command writes a file and changes no session state, so its
+/// [`Effects`] is empty. It is a `Command` and not a `Query` because the
+/// operator asks it to act, and because a refusal must reach the same
+/// door every other mutation's refusal reaches.
+#[derive(Debug, Clone)]
+pub struct SaveProjectArgs {
+    /// The path of the project file to write.
+    pub path: std::path::PathBuf,
+}
+
+/// The arguments of the `set_tool_param` command.
+#[derive(Debug, Clone)]
+pub struct SetToolParamArgs {
+    /// The index of the tool to write.
+    pub index: usize,
+    /// The name of the tool parameter.
+    pub param: String,
+    /// The value to write.
+    pub value: serde_json::Value,
+}
+
+/// The arguments of the `set_toolpath_tool` command.
+///
+/// `tool_id` is the project-assigned id of a tool, NOT its position in
+/// the tools list. The two agree until a tool is removed.
+#[derive(Debug, Clone)]
+pub struct SetToolpathToolArgs {
+    /// The index of the toolpath to rebind.
+    pub index: usize,
+    /// The id of the tool to bind.
+    pub tool_id: usize,
+}
+
+/// The arguments of the `set_toolpath_model` command.
+///
+/// `model_id` is the project-assigned id of a model, NOT its position in
+/// the models list. A rebind does NOT clear a BREP face selection: a
+/// face id belongs to the model that was bound when it was picked.
+#[derive(Debug, Clone)]
+pub struct SetToolpathModelArgs {
+    /// The index of the toolpath to rebind.
+    pub index: usize,
+    /// The id of the model to bind.
+    pub model_id: usize,
+}
+
+/// The arguments of the `set_toolpath_heights` command.
+#[derive(Debug, Clone)]
+pub struct SetToolpathHeightsArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// The whole heights block. The command replaces it; it patches no
+    /// single height.
+    pub heights: crate::compute::config::HeightsConfig,
+}
+
+/// The arguments of the `set_toolpath_debug_options` command.
+///
+/// The generate door writes this flag immediately before it runs, so the
+/// command moves no revision. A debug trace is an output of a
+/// generation, never an input to one.
+#[derive(Debug, Clone)]
+pub struct SetToolpathDebugOptionsArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// The debug options to record for the next generation.
+    pub debug_options: crate::debug_trace::ToolpathDebugOptions,
+}
+
+/// The arguments of the `add_toolpath` command.
+///
+/// `config.id` is overwritten: the session assigns the next free id.
+/// [`Effects::created`] reports the new toolpath's INDEX in plan order.
+#[derive(Debug, Clone)]
+pub struct AddToolpathArgs {
+    /// The index of the setup the toolpath joins.
+    pub setup_index: usize,
+    /// The whole toolpath configuration.
+    pub config: Box<super::ToolpathConfig>,
+}
+
+/// The arguments of the `remove_toolpath` command.
+#[derive(Debug, Clone)]
+pub struct RemoveToolpathArgs {
+    /// The index of the toolpath to remove, in plan order.
+    pub index: usize,
+}
+
+/// The arguments of the `add_tool` and `add_tool_from_library` commands.
+///
+/// Two rows share one payload. They differ on the wire, where one takes
+/// a tool the operator described and the other takes a catalog name and
+/// a row number, and the catalog READ is a surface-side step. By the
+/// time either reaches core both carry the same thing: a finished tool.
+///
+/// `tool.id` is overwritten: the session assigns the next free id.
+/// [`Effects::created`] reports the new tool's INDEX in the tools list,
+/// which is not its id.
+#[derive(Debug, Clone)]
+pub struct AddToolArgs {
+    /// The tool to add.
+    pub tool: Box<crate::compute::tool_config::ToolConfig>,
+}
+
+/// The arguments of the `remove_tool` command.
+///
+/// The command refuses while any toolpath still binds the tool.
+#[derive(Debug, Clone)]
+pub struct RemoveToolArgs {
+    /// The index of the tool to remove.
+    pub index: usize,
+}
+
+/// The arguments of the `set_stock_config` command.
+///
+/// The command replaces the WHOLE stock block, so a surface that offers
+/// per-field edits reads the current stock, writes its own fields and
+/// sends the result. Any stock edit stales EVERY toolpath
+/// (G-FRESHSTATE).
+#[derive(Debug, Clone)]
+pub struct SetStockConfigArgs {
+    /// The new stock configuration.
+    pub stock: Box<crate::compute::stock_config::StockConfig>,
+}
+
+/// The arguments of the `set_stock_source` command.
+#[derive(Debug, Clone)]
+pub struct SetStockSourceArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// Whether the operation cuts fresh stock or the stock the prior
+    /// operations leave.
+    pub source: crate::compute::config::StockSource,
+}
+
+/// The arguments of the `load_machine_from_library` command.
+///
+/// The row is `SetMachine`, not `LoadMachineFromLibrary`: the payload is
+/// a whole machine profile, and the library READ is a surface-side step
+/// (§19 ruling 2). One row therefore serves the wire tool and the GUI
+/// machine panel alike.
+///
+/// The command keeps `machine_ref`. A library profile is a snapshot of a
+/// named machine, so the caller states whether the link survives.
+#[derive(Debug, Clone)]
+pub struct SetMachineArgs {
+    /// The whole machine profile to adopt.
+    pub machine: Box<crate::machine::MachineProfile>,
+}
+
+/// The arguments of the `set_machine_kinematics` command.
+///
+/// The payload is the FINISHED block. Merging a partial per-axis triple
+/// onto the machine's current limits, and refusing a value that is not
+/// positive and finite, belong to the surface that collected the
+/// numbers: it is what reports the refusal to the operator.
+///
+/// The command clears `machine_ref`. The values are inline now, so they
+/// no longer describe the named library machine.
+#[derive(Debug, Clone)]
+pub struct SetMachineKinematicsArgs {
+    /// The kinematics block to write.
+    pub kinematics: Box<crate::machine_kinematics::MachineKinematics>,
+}
+
+/// The arguments of the `import_machine_settings` command.
+///
+/// A GRBL `$$` dump carries one field more than
+/// [`SetMachineKinematicsArgs`] — the travel rate — so the two rows
+/// carry two payloads (§15 ruling 6). The parse belongs to the surface,
+/// which also decides whether the dump was recognised at all.
+#[derive(Debug, Clone)]
+pub struct ImportMachineSettingsArgs {
+    /// The kinematics block the dump describes.
+    pub kinematics: Box<crate::machine_kinematics::MachineKinematics>,
+    /// The travel rate the dump published, in millimetres per minute.
+    /// `None` means the dump published none, and the machine keeps the
+    /// rate it has.
+    pub max_feed_mm_min: Option<f64>,
+}
+
+/// The arguments of the `set_spindle_strategy` command.
+///
+/// The row is `SetPostConfig` (§14.3 ruling 3): the payload is the whole
+/// post-processor block, and the spindle strategy is one field of it. A
+/// surface that offers the strategy alone reads the current block,
+/// writes that field and sends the result.
+#[derive(Debug, Clone)]
+pub struct SetPostConfigArgs {
+    /// The new post-processor configuration.
+    pub post: Box<super::ProjectPostConfig>,
+}
+
+/// The arguments of the `set_boundary_config` command.
+#[derive(Debug, Clone)]
+pub struct SetBoundaryConfigArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// The whole boundary block.
+    pub boundary: crate::compute::config::BoundaryConfig,
+}
+
+/// The arguments of the `set_rest_analysis_config` command.
+#[derive(Debug, Clone)]
+pub struct SetRestAnalysisConfigArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// The whole rest-analysis block.
+    pub rest_analysis: crate::compute::config::RestAnalysisConfig,
+}
+
+/// The arguments of the `set_dressup_config` command.
+#[derive(Debug, Clone)]
+pub struct SetDressupConfigArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// The whole dressup block.
+    pub dressups: Box<crate::compute::config::DressupConfig>,
+}
+
+/// The arguments of the `set_dressup_field` command.
+///
+/// This row patches ONE dressup field by name, where
+/// [`SetDressupConfigArgs`] replaces the whole block.
+#[derive(Debug, Clone)]
+pub struct SetDressupFieldArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// The name of the dressup field.
+    pub key: String,
+    /// The value to write.
+    pub value: serde_json::Value,
+}
+
+/// The arguments of the `set_toolpath_enabled` command.
+///
+/// The toggled toolpath KEEPS its own cached result, so [`Effects`]
+/// reports the downstream set alone.
+#[derive(Debug, Clone)]
+pub struct SetToolpathEnabledArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// Whether the toolpath takes part in the plan.
+    pub enabled: bool,
 }
 
 /// The arguments of the `toolpath_cycle_time` read.
@@ -649,6 +1388,85 @@ impl ProjectSession {
                     session.insert_result(index, *result)
                 })
             }
+            // ── WP4: the MCP mutation section ────────────────────
+            //
+            // Every arm delegates to the session setter that already
+            // owns the rule, and returns the `Effects` that setter
+            // reports. No arm derives a stale set of its own: that is
+            // the whole point of the move, and N15 measured what two
+            // producers cost.
+            Command::AddAlignmentPin(args) => {
+                let added = self.add_alignment_pin(args.x, args.y, args.diameter);
+                // A duplicate pin changes nothing, and "changed
+                // nothing" is an empty `Effects`, not a refusal.
+                Ok(match added {
+                    Some(effects) => effects,
+                    None => self.with_effects(None, |_| {}),
+                })
+            }
+            Command::RemoveAlignmentPin(args) => self.remove_alignment_pin(args.index),
+            Command::AddModel(args) => Ok(self.add_model(*args.model)),
+            Command::AddSetup(args) => {
+                let AddSetupArgs { name, face_up } = args;
+                // One default name for every surface. The GUI used to
+                // own this format and MCP renamed the setup afterwards
+                // through a hatch.
+                let name =
+                    name.unwrap_or_else(|| format!("Setup {}", self.list_setups().len() + 1));
+                Ok(self.add_setup(name, face_up))
+            }
+            Command::SetSetupFace(args) => self.set_setup_face(args.setup_index, args.face_up),
+            Command::SetSetupRotation(args) => {
+                self.set_setup_rotation(args.setup_index, args.z_rotation)
+            }
+            Command::SetSetupName(args) => self.rename_setup(args.setup_index, args.name),
+            Command::SetSetupDatum(args) => self.set_setup_datum(args.setup_index, args.datum),
+            Command::SetSetupModels(args) => {
+                self.set_setup_models(args.setup_index, args.model_ids)
+            }
+            Command::MoveToolpathToSetup(args) => self.move_toolpath_to_setup(
+                args.toolpath_index,
+                args.target_setup_index,
+                args.target_position,
+            ),
+            Command::SaveProject(args) => {
+                self.try_with_effects(None, move |session| session.save(&args.path))
+            }
+            Command::SetToolParam(args) => {
+                self.set_tool_param(args.index, &args.param, &args.value)
+            }
+            Command::SetToolpathTool(args) => self.set_toolpath_tool(args.index, args.tool_id),
+            Command::SetToolpathModel(args) => self.set_toolpath_model(args.index, args.model_id),
+            Command::SetToolpathHeights(args) => self.set_heights_config(args.index, args.heights),
+            Command::SetToolpathDebugOptions(args) => {
+                self.set_toolpath_debug_options(args.index, args.debug_options)
+            }
+            Command::AddToolpath(args) => self.add_toolpath(args.setup_index, *args.config),
+            Command::RemoveToolpath(args) => self.remove_toolpath(args.index),
+            Command::AddTool(args) => Ok(self.add_tool(*args.tool)),
+            Command::AddToolFromLibrary(args) => Ok(self.add_tool(*args.tool)),
+            Command::RemoveTool(args) => self.remove_tool(args.index),
+            Command::SetStockConfig(args) => Ok(self.set_stock_config(*args.stock)),
+            Command::SetStockSource(args) => self.set_stock_source(args.index, args.source),
+            Command::SetMachine(args) => Ok(self.set_machine(*args.machine)),
+            Command::SetMachineKinematics(args) => {
+                Ok(self.set_machine_kinematics(*args.kinematics))
+            }
+            Command::ImportMachineSettings(args) => {
+                Ok(self.import_machine_settings(*args.kinematics, args.max_feed_mm_min))
+            }
+            Command::SetPostConfig(args) => Ok(self.set_post_config(*args.post)),
+            Command::SetBoundaryConfig(args) => self.set_boundary_config(args.index, args.boundary),
+            Command::SetRestAnalysisConfig(args) => {
+                self.set_rest_analysis_config(args.index, args.rest_analysis)
+            }
+            Command::SetDressupConfig(args) => self.set_dressup_config(args.index, *args.dressups),
+            Command::SetDressupField(args) => {
+                self.set_dressup_field(args.index, &args.key, args.value)
+            }
+            Command::SetToolpathEnabled(args) => {
+                self.set_toolpath_enabled(args.index, args.enabled)
+            }
             Command::RestoreToolpathSnapshot(args) => {
                 let RestoreToolpathSnapshotArgs {
                     index,
@@ -805,6 +1623,11 @@ impl ProjectSession {
     ///
     /// An error from `mutate` propagates, and the method reports no
     /// effects.
+    ///
+    /// [`Effects::created`] is always `None` here. A mutation that
+    /// creates something writes the field on the answer this method
+    /// returns; the construction site itself cannot know what an
+    /// arbitrary closure appended.
     pub(crate) fn try_with_effects<E>(
         &mut self,
         index: Option<usize>,
@@ -819,6 +1642,7 @@ impl ProjectSession {
             revision: index
                 .filter(|i| *i < self.toolpath_count())
                 .map(|i| self.toolpath_revision(i)),
+            created: None,
         })
     }
 

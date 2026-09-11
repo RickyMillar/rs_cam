@@ -418,7 +418,7 @@ mod tests {
         tool.diameter = 2.0;
         tool.flute_count = 2;
         tool.stickout = 20.0;
-        s.add_tool(tool);
+        let _ = s.add_tool(tool);
 
         let path = temp_path("tool");
         s.save(&path).unwrap();
@@ -482,13 +482,13 @@ mod tests {
     #[test]
     fn toolpath_round_trip() {
         let mut s = ProjectSession::new_empty();
-        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
         let tool_id = s.tools()[0].id.0;
 
         let mut tc = make_tc(tool_id, 0);
         tc.name = "My Pocket".to_owned();
         tc.enabled = false;
-        s.add_toolpath(0, tc).unwrap();
+        let _ = s.add_toolpath(0, tc).unwrap();
 
         let path = temp_path("toolpath");
         s.save(&path).unwrap();
@@ -529,15 +529,15 @@ mod tests {
     #[test]
     fn multi_setup_round_trip() {
         let mut s = ProjectSession::new_empty();
-        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
         let tool_id = s.tools()[0].id.0;
 
-        s.add_setup("Bottom Setup".to_owned(), FaceUp::Bottom);
+        let _ = s.add_setup("Bottom Setup".to_owned(), FaceUp::Bottom);
         assert_eq!(s.list_setups().len(), 2);
 
         // One toolpath in each setup
-        s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
-        s.add_toolpath(1, make_tc(tool_id, 0)).unwrap();
+        let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let _ = s.add_toolpath(1, make_tc(tool_id, 0)).unwrap();
 
         let path = temp_path("multi_setup");
         s.save(&path).unwrap();
@@ -557,11 +557,11 @@ mod tests {
     #[test]
     fn setup_pause_message_round_trip() {
         let mut s = ProjectSession::new_empty();
-        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
         let tool_id = s.tools()[0].id.0;
-        s.add_setup("Bottom Setup".to_owned(), FaceUp::Bottom);
-        s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
-        s.add_toolpath(1, make_tc(tool_id, 0)).unwrap();
+        let _ = s.add_setup("Bottom Setup".to_owned(), FaceUp::Bottom);
+        let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let _ = s.add_toolpath(1, make_tc(tool_id, 0)).unwrap();
 
         // Default: no pause_message — must not appear in serialized TOML.
         let path_none = temp_path("pause_none");
@@ -605,7 +605,7 @@ mod tests {
     #[test]
     fn toolpath_without_spindle_rpm_round_trip() {
         let mut s = ProjectSession::new_empty();
-        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
         let tool_id = s.tools()[0].id.0;
 
         let tc = make_tc(tool_id, 0);
@@ -614,7 +614,7 @@ mod tests {
             &tc.operation,
             OperationConfig::Pocket(p) if p.spindle_rpm.is_none()
         ));
-        s.add_toolpath(0, tc).unwrap();
+        let _ = s.add_toolpath(0, tc).unwrap();
 
         let path = temp_path("spindle_rpm_unset");
         s.save(&path).unwrap();
@@ -638,14 +638,14 @@ mod tests {
     #[test]
     fn toolpath_with_spindle_rpm_round_trip() {
         let mut s = ProjectSession::new_empty();
-        s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
         let tool_id = s.tools()[0].id.0;
 
         let mut tc = make_tc(tool_id, 0);
         if let OperationConfig::Pocket(p) = &mut tc.operation {
             p.spindle_rpm = Some(12_000);
         }
-        s.add_toolpath(0, tc).unwrap();
+        let _ = s.add_toolpath(0, tc).unwrap();
 
         let path = temp_path("spindle_rpm_set");
         s.save(&path).unwrap();

@@ -272,7 +272,10 @@ fn add_tool(session: &mut ProjectSession, kind: ToolType, diameter: f64, name: &
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = name.to_owned();
-    let idx = session.add_tool(tool);
+    let idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     session.tools()[idx].id.0
 }
 
@@ -283,20 +286,23 @@ fn add_rect_polygon(session: &mut ProjectSession) -> usize {
         P2::new(75.0, 55.0),
         P2::new(5.0, 55.0),
     ]);
-    session.add_model(LoadedModel {
-        id: 0,
-        name: "w5bf4_rect".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![poly])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://w5bf4_rect.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    })
+    session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "w5bf4_rect".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![poly])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://w5bf4_rect.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id")
 }
 
 /// A flat-stock session carrying exactly one 2D / 2.5D operation.
@@ -306,7 +312,7 @@ fn flat_session(op: OperationConfig, tool_kind: ToolType, tool_diameter: f64) ->
     let tool_id = add_tool(&mut session, tool_kind, tool_diameter, "w5bf4 tool");
     let model_id = add_rect_polygon(&mut session);
     let name = format!("{:?}", op.op_type());
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config(&name, op, tool_id, model_id, HeightsConfig::default()),
@@ -329,23 +335,26 @@ fn hemi_stock(session: &mut ProjectSession) {
 }
 
 fn add_hemisphere(session: &mut ProjectSession) -> usize {
-    session.add_model(LoadedModel {
-        id: 0,
-        name: "w5bf4_hemisphere".to_owned(),
-        mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
-            HEMI_RADIUS_MM,
-            8,
-        ))),
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://w5bf4_hemisphere.stl"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    })
+    session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "w5bf4_hemisphere".to_owned(),
+            mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
+                HEMI_RADIUS_MM,
+                8,
+            ))),
+            polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://w5bf4_hemisphere.stl"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id")
 }
 
 /// A hemisphere session carrying exactly one surface operation.
@@ -366,7 +375,7 @@ fn hemi_session(op: OperationConfig, tool_kind: ToolType, tool_diameter: f64) ->
     };
     let mut tp = toolpath_config(&name, op, tool_id, model_id, heights);
     tp.dressups.arc_fitting = true;
-    session.add_toolpath(0, tp).expect("add toolpath");
+    let _ = session.add_toolpath(0, tp).expect("add toolpath");
     session
 }
 
@@ -396,27 +405,30 @@ fn plate_session(op: OperationConfig) -> ProjectSession {
         ..StockConfig::default()
     });
     let tool_id = add_tool(&mut session, ToolType::BallNose, 6.0, "w5bf4 ball");
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "w5bf4_plate".to_owned(),
-        mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(PLATE_MM))),
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://w5bf4_plate.stl"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "w5bf4_plate".to_owned(),
+            mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(PLATE_MM))),
+            polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://w5bf4_plate.stl"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
     let heights = HeightsConfig {
         top_z: HeightMode::Manual(PLATE_STOCK_Z_MM),
         bottom_z: HeightMode::Manual(0.0),
         ..HeightsConfig::default()
     };
     let name = format!("{:?}", op.op_type());
-    session
+    let _ = session
         .add_toolpath(0, toolpath_config(&name, op, tool_id, model_id, heights))
         .expect("add toolpath");
     session
@@ -441,20 +453,23 @@ fn project_curve_session(cell_note: &str) -> ProjectSession {
         P2::new(2.0, -3.0),
         P2::new(6.0, 3.0),
     ]);
-    let curve_model_id = session.add_model(LoadedModel {
-        id: 1,
-        name: "w5bf4_river".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![curve])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://w5bf4_river.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let curve_model_id = session
+        .add_model(LoadedModel {
+            id: 1,
+            name: "w5bf4_river".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![curve])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://w5bf4_river.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     let op = OperationConfig::ProjectCurve(ProjectCurveConfig {
         depth: 1.0,
@@ -467,7 +482,7 @@ fn project_curve_session(cell_note: &str) -> ProjectSession {
         spindle_rpm: Some(18_000),
         ..ProjectCurveConfig::default()
     });
-    session
+    let _ = session
         .add_toolpath(
             0,
             toolpath_config(
@@ -966,7 +981,7 @@ fn triage_action_composition_on_the_two_and_a_half_d_golden_fixture() {
             continue;
         }
         let name = format!("{:?}", op.op_type());
-        session
+        let _ = session
             .add_toolpath(
                 0,
                 toolpath_config(&name, op, tool_id, model_id, HeightsConfig::default()),

@@ -161,7 +161,7 @@ fn wanaka_front_rough_plunge_guard_ab() {
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_ricky_tuned());
     machine.max_feed_mm_min = MAX_FEED;
-    session.set_machine(machine);
+    let _ = session.set_machine(machine);
 
     let index = session
         .toolpath_configs()

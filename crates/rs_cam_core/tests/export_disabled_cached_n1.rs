@@ -51,17 +51,29 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     let mut disabled_tool = make_endmill_6mm();
     disabled_tool.name = "N1 Disabled Tool".to_owned();
     disabled_tool.tool_number = 17;
-    let disabled_tool_idx = session.add_tool(disabled_tool);
+    let disabled_tool_idx = session
+        .add_tool(disabled_tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let disabled_tool_id = session.tools()[disabled_tool_idx].id.0;
 
     let mut enabled_tool = make_endmill_6mm();
     enabled_tool.name = "N1 Enabled Tool".to_owned();
     enabled_tool.tool_number = 23;
-    let enabled_tool_idx = session.add_tool(enabled_tool);
+    let enabled_tool_idx = session
+        .add_tool(enabled_tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let enabled_tool_id = session.tools()[enabled_tool_idx].id.0;
 
-    let disabled_model_id = session.add_model(polygon_model(vec![square_at(1.0)], "n1_disabled"));
-    let enabled_model_id = session.add_model(polygon_model(vec![square_at(11.0)], "n1_enabled"));
+    let disabled_model_id = session
+        .add_model(polygon_model(vec![square_at(1.0)], "n1_disabled"))
+        .created
+        .expect("add_model reports the new model id");
+    let enabled_model_id = session
+        .add_model(polygon_model(vec![square_at(11.0)], "n1_enabled"))
+        .created
+        .expect("add_model reports the new model id");
 
     let mut disabled = toolpath_config(
         DISABLED_LABEL,
@@ -71,7 +83,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     );
     disabled.pre_gcode = Some(DISABLED_MARKER.to_owned());
     disabled.post_gcode = Some("N1_DISABLED_POST".to_owned());
-    session
+    let _ = session
         .add_toolpath(0, disabled)
         .expect("add disabled trace");
 
@@ -83,7 +95,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     );
     enabled.pre_gcode = Some(ENABLED_MARKER.to_owned());
     enabled.post_gcode = Some("N1_ENABLED_POST".to_owned());
-    session.add_toolpath(0, enabled).expect("add enabled trace");
+    let _ = session.add_toolpath(0, enabled).expect("add enabled trace");
 
     let cancel = AtomicBool::new(false);
     session

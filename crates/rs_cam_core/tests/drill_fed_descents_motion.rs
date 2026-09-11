@@ -124,7 +124,10 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "drill sentry tool".to_owned();
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let poly = Polygon2::new(vec![
@@ -133,24 +136,27 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
         P2::new(75.0, 55.0),
         P2::new(5.0, 55.0),
     ]);
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "drill_sentry_rect".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![poly])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://drill_sentry_rect.svg"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "drill_sentry_rect".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![poly])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: PathBuf::from("synthetic://drill_sentry_rect.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     let op = OperationConfig::Drill(cfg.clone());
     let dressups = DressupConfig::for_op(op.op_type());
-    session
+    let _ = session
         .add_toolpath(
             0,
             ToolpathConfig {

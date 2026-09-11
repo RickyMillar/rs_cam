@@ -198,9 +198,15 @@ fn unified_cfg(raster_stepover: f64, rest_pass: bool) -> UnifiedFinishConfig {
 fn cascade_session_with(rest_claims: bool) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock_over(HALF, STOCK_Z));
-    let tool_idx = session.add_tool(ball_tool_config(3.0));
+    let tool_idx = session
+        .add_tool(ball_tool_config(3.0))
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(mesh_model(bumpy_surface(), "bumps"));
+    let model_id = session
+        .add_model(mesh_model(bumpy_surface(), "bumps"))
+        .created
+        .expect("add_model reports the new model id");
     let heights = pinned_heights(STOCK_Z, STOCK_Z - RELIEF);
 
     let mut finish = toolpath_config(
@@ -210,7 +216,7 @@ fn cascade_session_with(rest_claims: bool) -> ProjectSession {
         model_id,
     );
     finish.heights = heights.clone();
-    session.add_toolpath(0, finish).expect("add finish op");
+    let _ = session.add_toolpath(0, finish).expect("add finish op");
 
     let mut rest = toolpath_config(
         "Rest (same tool)",
@@ -220,7 +226,7 @@ fn cascade_session_with(rest_claims: bool) -> ProjectSession {
     );
     rest.heights = heights;
     rest.stock_source = StockSource::FromRemainingStock;
-    session.add_toolpath(0, rest).expect("add rest op");
+    let _ = session.add_toolpath(0, rest).expect("add rest op");
     session
 }
 

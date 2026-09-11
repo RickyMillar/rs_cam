@@ -140,7 +140,7 @@ fn build_as004_face_session() -> ProjectSession {
     };
 
     // The fixture loads with one setup at index 0 (identity / face_up=Top).
-    session
+    let _ = session
         .add_toolpath(0, tc)
         .expect("add face toolpath to setup 0");
 
@@ -401,7 +401,7 @@ fn build_as001_pocket_session_from_file() -> ProjectSession {
         planner_origin: None,
     };
 
-    session
+    let _ = session
         .add_toolpath(0, tc)
         .expect("add pocket toolpath to setup 0");
 

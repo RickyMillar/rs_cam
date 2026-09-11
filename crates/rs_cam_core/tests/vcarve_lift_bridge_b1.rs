@@ -88,7 +88,10 @@ fn build_vcarve_session() -> ProjectSession {
     };
     let _ = session.set_stock_config(stock);
 
-    let tool_idx = session.add_tool(make_vbit_12_7mm_60deg());
+    let tool_idx = session
+        .add_tool(make_vbit_12_7mm_60deg())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let polygon = five_point_star();
@@ -106,7 +109,10 @@ fn build_vcarve_session() -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
 
     let vcarve = VCarveConfig {
         max_depth: 3.0,
@@ -141,7 +147,7 @@ fn build_vcarve_session() -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, tc).expect("add v_carve toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add v_carve toolpath");
 
     session
 }

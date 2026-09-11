@@ -212,10 +212,16 @@ fn stock() -> StockConfig {
 fn generate_through_session(tool: ToolConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock());
-    let tool_idx = session.add_tool(tool);
+    let tool_idx = session
+        .add_tool(tool)
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(mesh_model(two_groove_plateau()));
-    session
+    let model_id = session
+        .add_model(mesh_model(two_groove_plateau()))
+        .created
+        .expect("add_model reports the new model id");
+    let _ = session
         .add_toolpath(0, toolpath(unified_finish_op(), tool_id, model_id))
         .expect("add unified-finish toolpath");
     let cancel = AtomicBool::new(false);

@@ -13,7 +13,7 @@ use rmcp::{Peer, RoleServer, ServerHandler, tool, tool_router};
 
 use crate::compute::GenerationControl;
 use crate::mcp_bridge::{
-    GuiWaker, McpReadCache, McpReadKind, McpRequest, McpRequestKind, ProgressUpdate,
+    CoreRequest, GuiWaker, McpReadCache, McpReadKind, McpRequest, McpRequestKind, ProgressUpdate,
     build_cancel_generation_response, build_generation_status_response,
 };
 
@@ -693,10 +693,10 @@ impl EmbeddedCamServer {
     )]
     async fn add_alignment_pin(
         &self,
-        Parameters(AddAlignmentPinParam { x, y, diameter }): Parameters<AddAlignmentPinParam>,
+        Parameters(param): Parameters<AddAlignmentPinParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::AddAlignmentPin { x, y, diameter })
+            self.send_request(McpRequestKind::Core(CoreRequest::AddAlignmentPin(param)))
                 .await,
         )
     }
@@ -707,10 +707,10 @@ impl EmbeddedCamServer {
     )]
     async fn remove_alignment_pin(
         &self,
-        Parameters(RemoveAlignmentPinParam { index }): Parameters<RemoveAlignmentPinParam>,
+        Parameters(param): Parameters<RemoveAlignmentPinParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::RemoveAlignmentPin { index })
+            self.send_request(McpRequestKind::Core(CoreRequest::RemoveAlignmentPin(param)))
                 .await,
         )
     }
@@ -721,11 +721,12 @@ impl EmbeddedCamServer {
     )]
     async fn add_setup(
         &self,
-        Parameters(rs_cam_mcp::server::AddSetupParam { name }): Parameters<
-            rs_cam_mcp::server::AddSetupParam,
-        >,
+        Parameters(param): Parameters<rs_cam_mcp::server::AddSetupParam>,
     ) -> String {
-        Self::format_result(self.send_request(McpRequestKind::AddSetup { name }).await)
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::AddSetup(param)))
+                .await,
+        )
     }
 
     #[tool(
@@ -734,17 +735,11 @@ impl EmbeddedCamServer {
     )]
     async fn set_setup_face(
         &self,
-        Parameters(rs_cam_mcp::server::SetSetupFaceParam {
-            setup_index,
-            face_up,
-        }): Parameters<rs_cam_mcp::server::SetSetupFaceParam>,
+        Parameters(param): Parameters<rs_cam_mcp::server::SetSetupFaceParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetSetupFace {
-                setup_index,
-                face_up,
-            })
-            .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::SetSetupFace(param)))
+                .await,
         )
     }
 
@@ -754,17 +749,11 @@ impl EmbeddedCamServer {
     )]
     async fn set_setup_rotation(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(SetSetupRotationParam {
-            setup_index,
-            z_rotation,
-        }): Parameters<SetSetupRotationParam>,
+        Parameters(param): Parameters<SetSetupRotationParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetSetupRotation {
-                setup_index,
-                z_rotation,
-            })
-            .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::SetSetupRotation(param)))
+                .await,
         )
     }
 
@@ -774,16 +763,12 @@ impl EmbeddedCamServer {
     )]
     async fn move_toolpath_to_setup(
         &self,
-        Parameters(rs_cam_mcp::server::MoveToolpathToSetupParam {
-            toolpath_index,
-            target_setup_index,
-        }): Parameters<rs_cam_mcp::server::MoveToolpathToSetupParam>,
+        Parameters(param): Parameters<rs_cam_mcp::server::MoveToolpathToSetupParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::MoveToolpathToSetup {
-                toolpath_index,
-                target_setup_index,
-            })
+            self.send_request(McpRequestKind::Core(CoreRequest::MoveToolpathToSetup(
+                param,
+            )))
             .await,
         )
     }
@@ -794,12 +779,10 @@ impl EmbeddedCamServer {
     )]
     async fn import_model(
         &self,
-        Parameters(rs_cam_mcp::server::ImportModelParam { path }): Parameters<
-            rs_cam_mcp::server::ImportModelParam,
-        >,
+        Parameters(param): Parameters<rs_cam_mcp::server::ImportModelParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::ImportModel { path })
+            self.send_request(McpRequestKind::Core(CoreRequest::ImportModel(param)))
                 .await,
         )
     }
@@ -828,14 +811,9 @@ impl EmbeddedCamServer {
         name = "save_project",
         description = "Save the current project state to a TOML file."
     )]
-    async fn save_project(
-        &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(SaveProjectParam { path }): Parameters<
-            SaveProjectParam,
-        >,
-    ) -> String {
+    async fn save_project(&self, Parameters(param): Parameters<SaveProjectParam>) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SaveProject { path })
+            self.send_request(McpRequestKind::Core(CoreRequest::SaveProject(param)))
                 .await,
         )
     }
@@ -923,19 +901,11 @@ impl EmbeddedCamServer {
     )]
     async fn set_toolpath_param(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(SetToolpathParamInput {
-            index,
-            param,
-            value,
-        }): Parameters<SetToolpathParamInput>,
+        Parameters(param): Parameters<SetToolpathParamInput>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetToolpathParam {
-                index,
-                param,
-                value,
-            })
-            .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::SetToolpathParam(param)))
+                .await,
         )
     }
 
@@ -985,13 +955,10 @@ impl EmbeddedCamServer {
     )]
     async fn set_toolpath_tool(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetToolpathToolParam { index, tool_id }): Parameters<
-            SetToolpathToolParam,
-        >,
+        Parameters(param): Parameters<SetToolpathToolParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetToolpathTool { index, tool_id })
+            self.send_request(McpRequestKind::Core(CoreRequest::SetToolpathTool(param)))
                 .await,
         )
     }
@@ -1002,13 +969,10 @@ impl EmbeddedCamServer {
     )]
     async fn set_toolpath_model(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetToolpathModelParam { index, model_id }): Parameters<
-            SetToolpathModelParam,
-        >,
+        Parameters(param): Parameters<SetToolpathModelParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetToolpathModel { index, model_id })
+            self.send_request(McpRequestKind::Core(CoreRequest::SetToolpathModel(param)))
                 .await,
         )
     }
@@ -1017,21 +981,10 @@ impl EmbeddedCamServer {
         name = "set_tool_param",
         description = "Set one tool parameter. The COMPLETE accepted `param` set — anything else is refused — is: diameter, flute_count (whole number), stickout, corner_radius (bull-nose corner, mm), cutting_length, included_angle (V-bit full included angle, degrees), taper_half_angle (tapered ball nose cone HALF angle, degrees), shaft_diameter, shank_diameter, shank_length, holder_diameter. Tool NAME, tool_type and tool_number are not settable here. Invalidates all toolpaths using this tool — regenerate to apply."
     )]
-    async fn set_tool_param(
-        &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(SetToolParamInput {
-            index,
-            param,
-            value,
-        }): Parameters<SetToolParamInput>,
-    ) -> String {
+    async fn set_tool_param(&self, Parameters(param): Parameters<SetToolParamInput>) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetToolParam {
-                index,
-                param,
-                value,
-            })
-            .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::SetToolParam(param)))
+                .await,
         )
     }
 
@@ -1041,25 +994,11 @@ impl EmbeddedCamServer {
     )]
     async fn set_toolpath_heights(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(SetToolpathHeightsParam {
-            index,
-            clearance_z,
-            retract_z,
-            feed_z,
-            top_z,
-            bottom_z,
-        }): Parameters<SetToolpathHeightsParam>,
+        Parameters(param): Parameters<SetToolpathHeightsParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetToolpathHeights {
-                index,
-                clearance_z,
-                retract_z,
-                feed_z,
-                top_z,
-                bottom_z,
-            })
-            .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::SetToolpathHeights(param)))
+                .await,
         )
     }
 
@@ -1067,25 +1006,10 @@ impl EmbeddedCamServer {
         name = "add_toolpath",
         description = "Add a new toolpath with default parameters to a setup. Returns the new toolpath index. Supported operation types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill."
     )]
-    async fn add_toolpath(
-        &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(AddToolpathParam {
-            setup_index,
-            operation_type,
-            tool_index,
-            model_id,
-            name,
-        }): Parameters<AddToolpathParam>,
-    ) -> String {
+    async fn add_toolpath(&self, Parameters(param): Parameters<AddToolpathParam>) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::AddToolpath {
-                setup_index,
-                operation_type,
-                tool_index,
-                model_id,
-                name,
-            })
-            .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::AddToolpath(param)))
+                .await,
         )
     }
 
@@ -1093,12 +1017,9 @@ impl EmbeddedCamServer {
         name = "remove_toolpath",
         description = "Remove a toolpath by index. Updates setup indices automatically."
     )]
-    async fn remove_toolpath(
-        &self,
-        Parameters(RemoveToolpathParam { index }): Parameters<RemoveToolpathParam>,
-    ) -> String {
+    async fn remove_toolpath(&self, Parameters(param): Parameters<RemoveToolpathParam>) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::RemoveToolpath { index })
+            self.send_request(McpRequestKind::Core(CoreRequest::RemoveToolpath(param)))
                 .await,
         )
     }
@@ -1107,11 +1028,11 @@ impl EmbeddedCamServer {
         name = "add_tool",
         description = "Add a new tool to the project. Types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose. The geometry that DEFINES the tool for its type is REQUIRED, not defaulted — `included_angle` for v_bit (a 20-degree V-bit is 20.0), `taper_half_angle` for tapered_ball_nose (cone HALF angle), `corner_radius` for bull_nose — and the call is refused if it is missing, because guessing one silently creates a different cutter. Optional: flute_count (2), cutting_length (25 mm), shaft_diameter (6.35 — the cutting ENVELOPE of a tapered ball), shank_diameter (6.35), shank_length (20), stickout (45), holder_diameter (25), tool_number. Every value NOT supplied is listed in the reply's `defaulted` array — read it, those defaults are generic, not your tool. `tool_number` auto-allocates to the next free number in the project so M6 tool changes re-trigger; geometry belonging to another tool type is stored as zero rather than a misleading placeholder. Returns the new tool index."
     )]
-    async fn add_tool(
-        &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<AddToolParam>,
-    ) -> String {
-        Self::format_result(self.send_request(McpRequestKind::AddTool { spec }).await)
+    async fn add_tool(&self, Parameters(param): Parameters<AddToolParam>) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::AddTool(param)))
+                .await,
+        )
     }
 
     #[tool(
@@ -1120,13 +1041,10 @@ impl EmbeddedCamServer {
     )]
     async fn add_tool_from_library(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(AddToolFromLibraryParam { catalog, index }): Parameters<
-            AddToolFromLibraryParam,
-        >,
+        Parameters(param): Parameters<AddToolFromLibraryParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::AddToolFromLibrary { catalog, index })
+            self.send_request(McpRequestKind::Core(CoreRequest::AddToolFromLibrary(param)))
                 .await,
         )
     }
@@ -1135,12 +1053,9 @@ impl EmbeddedCamServer {
         name = "remove_tool",
         description = "Remove a tool by index. Fails if any toolpath still references the tool."
     )]
-    async fn remove_tool(
-        &self,
-        Parameters(RemoveToolParam { index }): Parameters<RemoveToolParam>,
-    ) -> String {
+    async fn remove_tool(&self, Parameters(param): Parameters<RemoveToolParam>) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::RemoveTool { index })
+            self.send_request(McpRequestKind::Core(CoreRequest::RemoveTool(param)))
                 .await,
         )
     }
@@ -1149,12 +1064,9 @@ impl EmbeddedCamServer {
         name = "set_stock_config",
         description = "Set stock geometry and material. Every field is optional — omit one to leave it unchanged. Dimensions x/y/z (mm); origin_x/origin_y/origin_z (mm, the stock spans origin..origin+size, so origin_z is the stock BOTTOM and a 2D job normally wants origin_z = -z to put the top at Z=0); material by name (\"White Oak\", \"Baltic Birch Plywood\", \"MDF\", \"Acrylic\", \"Aluminum 6061-T6\" — every feed, chipload band and power estimate depends on it, and an unknown or ambiguous name is refused with candidates rather than guessed); workholding_rigidity (\"low\"/\"medium\"/\"high\"). SETTING ANY DIMENSION OR ORIGIN CLEARS `auto_from_model`, and the reply says so under `auto_from_model`: otherwise the next import_model silently re-derives the stock from that model's bounding box and overwrites what you just set. Pass auto_from_model explicitly to override that. Invalidates simulation — re-run to update."
     )]
-    async fn set_stock_config(
-        &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<SetStockConfigParam>,
-    ) -> String {
+    async fn set_stock_config(&self, Parameters(param): Parameters<SetStockConfigParam>) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetStockConfig { spec })
+            self.send_request(McpRequestKind::Core(CoreRequest::SetStockConfig(param)))
                 .await,
         )
     }
@@ -1195,25 +1107,11 @@ impl EmbeddedCamServer {
     )]
     async fn set_boundary_config(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(SetBoundaryConfigParam {
-            index,
-            enabled,
-            source,
-            containment,
-            offset,
-            source_toolpath_id,
-        }): Parameters<SetBoundaryConfigParam>,
+        Parameters(param): Parameters<SetBoundaryConfigParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetBoundaryConfig {
-                index,
-                enabled,
-                source,
-                containment,
-                offset,
-                source_toolpath_id,
-            })
-            .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::SetBoundaryConfig(param)))
+                .await,
         )
     }
 
@@ -1223,28 +1121,12 @@ impl EmbeddedCamServer {
     )]
     async fn set_rest_analysis_config(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(SetRestAnalysisConfigParam {
-            index,
-            enabled,
-            reference_tool_id,
-            cell_mm,
-            min_valley_depth,
-            region_margin_mm,
-            offset_stepover_mm,
-            num_offset_passes,
-        }): Parameters<SetRestAnalysisConfigParam>,
+        Parameters(param): Parameters<SetRestAnalysisConfigParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetRestAnalysisConfig {
-                index,
-                enabled,
-                reference_tool_id,
-                cell_mm,
-                min_valley_depth,
-                region_margin_mm,
-                offset_stepover_mm,
-                num_offset_passes,
-            })
+            self.send_request(McpRequestKind::Core(CoreRequest::SetRestAnalysisConfig(
+                param,
+            )))
             .await,
         )
     }
@@ -1255,13 +1137,10 @@ impl EmbeddedCamServer {
     )]
     async fn set_dressup_config(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetDressupConfigParam { index, dressup }): Parameters<
-            SetDressupConfigParam,
-        >,
+        Parameters(param): Parameters<SetDressupConfigParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetDressupConfig { index, dressup })
+            self.send_request(McpRequestKind::Core(CoreRequest::SetDressupConfig(param)))
                 .await,
         )
     }
@@ -1272,13 +1151,10 @@ impl EmbeddedCamServer {
     )]
     async fn set_dressup_field(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetDressupFieldParam { index, key, value }): Parameters<
-            SetDressupFieldParam,
-        >,
+        Parameters(param): Parameters<SetDressupFieldParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetDressupField { index, key, value })
+            self.send_request(McpRequestKind::Core(CoreRequest::SetDressupField(param)))
                 .await,
         )
     }
@@ -1289,13 +1165,10 @@ impl EmbeddedCamServer {
     )]
     async fn set_toolpath_enabled(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetToolpathEnabledParam { index, enabled }): Parameters<
-            SetToolpathEnabledParam,
-        >,
+        Parameters(param): Parameters<SetToolpathEnabledParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetToolpathEnabled { index, enabled })
+            self.send_request(McpRequestKind::Core(CoreRequest::SetToolpathEnabled(param)))
                 .await,
         )
     }
@@ -1304,13 +1177,9 @@ impl EmbeddedCamServer {
         name = "set_stock_source",
         description = "Set stock_source for a toolpath: 'fresh' (default) or 'from_remaining_stock' (rest machining). Invalidates the toolpath result."
     )]
-    async fn set_stock_source(
-        &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetStockSourceParam { index, source }): Parameters<SetStockSourceParam>,
-    ) -> String {
+    async fn set_stock_source(&self, Parameters(param): Parameters<SetStockSourceParam>) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetStockSource { index, source })
+            self.send_request(McpRequestKind::Core(CoreRequest::SetStockSource(param)))
                 .await,
         )
     }
@@ -1321,13 +1190,10 @@ impl EmbeddedCamServer {
     )]
     async fn set_spindle_strategy(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(SetSpindleStrategyParam { strategy }): Parameters<
-            SetSpindleStrategyParam,
-        >,
+        Parameters(param): Parameters<SetSpindleStrategyParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetSpindleStrategy { strategy })
+            self.send_request(McpRequestKind::Core(CoreRequest::SetSpindleStrategy(param)))
                 .await,
         )
     }
@@ -1706,14 +1572,13 @@ impl EmbeddedCamServer {
     )]
     async fn import_machine_settings(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(ImportMachineSettingsParam { dump }): Parameters<
-            ImportMachineSettingsParam,
-        >,
+        Parameters(param): Parameters<ImportMachineSettingsParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::ImportMachineSettings { dump })
-                .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::ImportMachineSettings(
+                param,
+            )))
+            .await,
         )
     }
 
@@ -1723,13 +1588,13 @@ impl EmbeddedCamServer {
     )]
     async fn set_machine_kinematics(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<
-            SetMachineKinematicsParam,
-        >,
+        Parameters(param): Parameters<SetMachineKinematicsParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetMachineKinematics { spec })
-                .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::SetMachineKinematics(
+                param,
+            )))
+            .await,
         )
     }
 
@@ -1747,14 +1612,13 @@ impl EmbeddedCamServer {
     )]
     async fn load_machine_from_library(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(LoadMachineFromLibraryParam { name }): Parameters<
-            LoadMachineFromLibraryParam,
-        >,
+        Parameters(param): Parameters<LoadMachineFromLibraryParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::LoadMachineFromLibrary { name })
-                .await,
+            self.send_request(McpRequestKind::Core(CoreRequest::LoadMachineFromLibrary(
+                param,
+            )))
+            .await,
         )
     }
 }

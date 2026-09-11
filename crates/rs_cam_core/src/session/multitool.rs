@@ -409,7 +409,10 @@ impl ProjectSession {
                     tier_count,
                 }),
             };
-            let index = self.add_toolpath(spec.setup_index, cfg)?;
+            // The `pub(crate)` half. The public `add_toolpath` reports
+            // `Effects`, and this planner answers with its own outcome
+            // record; the two halves append the same toolpath.
+            let index = self.add_toolpath_impl(spec.setup_index, cfg)?;
             let Some(added) = self.toolpath_configs.get(index) else {
                 return Err(SessionError::ToolpathNotFound(index));
             };

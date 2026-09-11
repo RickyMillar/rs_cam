@@ -103,9 +103,12 @@ fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) ->
         kc: 10.0,
     };
     let _ = session.set_stock_config(stock);
-    session.set_machine(machine);
+    let _ = session.set_machine(machine);
 
-    let tool_idx = session.add_tool(ToolConfig::new_default(ToolId(0), tool));
+    let tool_idx = session
+        .add_tool(ToolConfig::new_default(ToolId(0), tool))
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     let square = Polygon2::new(vec![
@@ -114,20 +117,23 @@ fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) ->
         P2::new(20.0, 20.0),
         P2::new(-20.0, 20.0),
     ]);
-    let model_id = session.add_model(LoadedModel {
-        id: 0,
-        name: "a8 square".to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![square])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: std::path::PathBuf::from("synthetic://a8"),
-        kind: Some(ModelKind::Svg),
-        units: Some(ModelUnits::Millimeters),
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    });
+    let model_id = session
+        .add_model(LoadedModel {
+            id: 0,
+            name: "a8 square".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![square])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: std::path::PathBuf::from("synthetic://a8"),
+            kind: Some(ModelKind::Svg),
+            units: Some(ModelUnits::Millimeters),
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        })
+        .created
+        .expect("add_model reports the new model id");
 
     let op_type = op.op_type();
     let cfg = ToolpathConfig {
@@ -151,7 +157,7 @@ fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) ->
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    session.add_toolpath(0, cfg).expect("add toolpath");
+    let _ = session.add_toolpath(0, cfg).expect("add toolpath");
     session
 }
 

@@ -146,13 +146,13 @@ fn controller_with_chain(rest_ops: usize) -> AppController<SilentBackend> {
     controller.state.session = ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose))
         .build();
-    controller
+    let _ = controller
         .state
         .session
         .add_toolpath(0, toolpath(0, StockSource::Fresh))
         .expect("first op");
     for i in 1..=rest_ops {
-        controller
+        let _ = controller
             .state
             .session
             .add_toolpath(0, toolpath(i, StockSource::FromRemainingStock))

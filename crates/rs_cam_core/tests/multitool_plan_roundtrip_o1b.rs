@@ -92,8 +92,14 @@ fn recipe(tool_ids: Vec<usize>) -> BoundarySource {
 /// plain op carrying neither.
 fn session_with_a_planned_op() -> (ProjectSession, usize, usize) {
     let mut session = ProjectSession::new_empty();
-    let coarse = session.add_tool(ball_tool_config(4.0));
-    let fine = session.add_tool(ball_tool_config(3.0));
+    let coarse = session
+        .add_tool(ball_tool_config(4.0))
+        .created
+        .expect("add_tool reports the new tool index");
+    let fine = session
+        .add_tool(ball_tool_config(3.0))
+        .created
+        .expect("add_tool reports the new tool index");
     let (coarse_id, fine_id) = (session.tools()[coarse].id.0, session.tools()[fine].id.0);
 
     let plain = common::session::toolpath_config(
@@ -102,7 +108,7 @@ fn session_with_a_planned_op() -> (ProjectSession, usize, usize) {
         coarse_id,
         0,
     );
-    session.add_toolpath(0, plain).unwrap();
+    let _ = session.add_toolpath(0, plain).unwrap();
 
     let mut planned = common::session::toolpath_config(
         "Finish tier 1 (R1.5)",
@@ -123,7 +129,7 @@ fn session_with_a_planned_op() -> (ProjectSession, usize, usize) {
         tier: 1,
         tier_count: 2,
     });
-    session.add_toolpath(0, planned).unwrap();
+    let _ = session.add_toolpath(0, planned).unwrap();
     (session, coarse_id, fine_id)
 }
 
@@ -204,7 +210,7 @@ fn both_loader_doors_reproduce_a_planned_chain_identically() {
 #[test]
 fn a_pre_phase_o_project_loads_with_no_provenance() {
     let mut session = ProjectSession::new_empty();
-    session.add_tool(ball_tool_config(3.0));
+    let _ = session.add_tool(ball_tool_config(3.0));
     let tool_id = session.tools()[0].id.0;
     let plain = common::session::toolpath_config(
         "Hand pass",
@@ -212,7 +218,7 @@ fn a_pre_phase_o_project_loads_with_no_provenance() {
         tool_id,
         0,
     );
-    session.add_toolpath(0, plain).unwrap();
+    let _ = session.add_toolpath(0, plain).unwrap();
 
     let path = temp_path("legacy");
     session.save(&path).unwrap();

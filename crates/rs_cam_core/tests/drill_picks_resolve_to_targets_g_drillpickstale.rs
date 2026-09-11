@@ -187,13 +187,19 @@ fn pin_drill_op(picks: &[[f64; 2]]) -> OperationConfig {
 fn session_with(model: LoadedModel, op: OperationConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let _ = session.set_stock_config(stock());
-    let tool_idx = session.add_tool(make_endmill_6mm());
+    let tool_idx = session
+        .add_tool(make_endmill_6mm())
+        .created
+        .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(model);
+    let model_id = session
+        .add_model(model)
+        .created
+        .expect("add_model reports the new model id");
     let mut tc = toolpath_config("Drill", op, tool_id, model_id);
     tc.dressups.entry_style = DressupEntryStyle::None;
     tc.dressups.optimize_rapid_order = false;
-    session.add_toolpath(0, tc).expect("add drill toolpath");
+    let _ = session.add_toolpath(0, tc).expect("add drill toolpath");
     session
 }
 

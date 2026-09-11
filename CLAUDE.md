@@ -149,7 +149,7 @@ Run `/dev` for the full reference. Run `/verify` before committing.
 
 ## MCP live control (rs-cam tools)
 
-The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI in real-time. When the `rs-cam` MCP is connected, follow this workflow:
+The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI in real-time. Since WP4 every MCP mutation dispatches as one `McpRequestKind::Core(CoreRequest)` arm and is applied through `ProjectSession::apply(Command)`, and its reply's `stale_toolpaths` is that command's `Effects.stale` — the set the setter itself dropped, not a set the reply re-derives (a removal is the one exception: it re-keys every index and reports none). When the `rs-cam` MCP is connected, follow this workflow:
 
 ### Standard workflow
 

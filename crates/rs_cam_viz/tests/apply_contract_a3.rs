@@ -115,7 +115,7 @@ fn controller_with_config(config: ToolpathConfig) -> AppController<SilentBackend
     controller.state.session = ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
-    controller
+    let _ = controller
         .state
         .session
         .add_toolpath(0, config)
@@ -714,7 +714,7 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
 #[test]
 fn project_apply_all_skips_a_refused_toolpath_and_reports_it() {
     let mut controller = controller_with(OperationType::Pocket);
-    controller
+    let _ = controller
         .state
         .session
         .add_toolpath(0, toolpath(1, OperationType::Scallop))

@@ -55,13 +55,17 @@ fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
 /// global index of the op in setup 0.
 fn two_setups() -> (ProjectSession, usize) {
     let mut s = ProjectSession::new_empty();
-    s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
     let tool_id = s.tools()[0].id.0;
-    s.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
+    let _ = s.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
 
-    let travelling = s.add_toolpath(0, toolpath("Travelling", tool_id)).unwrap();
+    let travelling = s
+        .add_toolpath(0, toolpath("Travelling", tool_id))
+        .unwrap()
+        .created
+        .expect("add_toolpath reports the new toolpath index");
     for name in ["Target A", "Target B", "Target C"] {
-        s.add_toolpath(1, toolpath(name, tool_id)).unwrap();
+        let _ = s.add_toolpath(1, toolpath(name, tool_id)).unwrap();
     }
     (s, travelling)
 }
