@@ -1,7 +1,9 @@
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::session::{
-    Command, Fixture, FixtureKind, KeepOutZone, SetMachineArgs, SetSetupNameArgs,
-    SetSetupPauseMessageArgs, SetStockConfigArgs,
+    AddFixtureArgs, AddKeepOutArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command, Fixture,
+    FixtureKind, KeepOutZone, RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs,
+    RemoveToolArgs, RemoveToolpathArgs, SetAlignmentPinDrillHolesArgs, SetMachineArgs,
+    SetSetupNameArgs, SetSetupPauseMessageArgs, SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -69,7 +71,10 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn handle_add_tool(&mut self, tool_type: crate::state::job::ToolType) {
         let tool = ToolConfig::new_default(crate::state::job::ToolId(0), tool_type);
-        let created = self.state.session.add_tool(tool).created;
+        let command = Command::AddTool(AddToolArgs {
+            tool: Box::new(tool),
+        });
+        let created = self.apply_created(command);
         // The session assigned the ID — read it back.
         if let Some(tool) = created.and_then(|idx| self.state.session.tools().get(idx)) {
             self.state.selection = Selection::Tool(tool.id);
@@ -81,7 +86,10 @@ impl<B: ComputeBackend> AppController<B> {
         // The catalog tool's id is project-irrelevant; the session
         // reassigns it on insert. Reset to a sentinel first.
         tool.id = crate::state::job::ToolId(0);
-        let created = self.state.session.add_tool(tool).created;
+        let command = Command::AddToolFromLibrary(AddToolArgs {
+            tool: Box::new(tool),
+        });
+        let created = self.apply_created(command);
         if let Some(tool) = created.and_then(|idx| self.state.session.tools().get(idx)) {
             self.state.selection = Selection::Tool(tool.id);
         }
@@ -237,7 +245,10 @@ impl<B: ComputeBackend> AppController<B> {
         {
             let mut duplicate = src.clone();
             duplicate.name = format!("{} (copy)", duplicate.name);
-            let created = self.state.session.add_tool(duplicate).created;
+            let command = Command::AddTool(AddToolArgs {
+                tool: Box::new(duplicate),
+            });
+            let created = self.apply_created(command);
             if let Some(tool) = created.and_then(|idx| self.state.session.tools().get(idx)) {
                 self.state.selection = Selection::Tool(tool.id);
             }
@@ -253,8 +264,10 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .position(|t| t.id == tool_id);
         if let Some(idx) = index {
-            match self.state.session.remove_tool(idx) {
-                Ok(_effects) => {
+            let command = Command::RemoveTool(RemoveToolArgs { index: idx });
+            match self.state.session.apply(command) {
+                Ok(effects) => {
+                    crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
                     if self.state.selection == Selection::Tool(tool_id) {
                         self.state.selection = Selection::None;
                     }
@@ -280,11 +293,11 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_add_setup(&mut self) {
         let next_id = self.state.session.list_setups().len() + 1;
         let name = format!("Setup {next_id}");
-        let created = self
-            .state
-            .session
-            .add_setup(name, FaceUp::default())
-            .created;
+        let command = Command::AddSetup(AddSetupArgs {
+            name: Some(name),
+            face_up: FaceUp::default(),
+        });
+        let created = self.apply_created(command);
         if let Some(setup) = created.and_then(|idx| self.state.session.list_setups().get(idx)) {
             self.state.selection = Selection::Setup(SetupId(setup.id));
         }
@@ -346,7 +359,11 @@ impl<B: ComputeBackend> AppController<B> {
         if !has_flipped {
             let next_id = self.state.session.list_setups().len() + 1;
             let name = format!("Setup {next_id}");
-            let _ = self.state.session.add_setup(name, FaceUp::Bottom);
+            let command = Command::AddSetup(AddSetupArgs {
+                name: Some(name),
+                face_up: FaceUp::Bottom,
+            });
+            let _ = self.apply_quietly(command);
         }
 
         // Key the pins to the flip the project actually programs, not to
@@ -521,7 +538,11 @@ impl<B: ComputeBackend> AppController<B> {
                 size_z: 20.0,
                 clearance: 3.0,
             };
-            let _ = self.state.session.add_fixture(idx, fixture);
+            let command = Command::AddFixture(AddFixtureArgs {
+                setup_index: idx,
+                fixture: Box::new(fixture),
+            });
+            let _ = self.apply_quietly(command);
             self.state.selection = Selection::Fixture(setup_id, fixture_id);
             self.pending_upload = true;
             self.state.gui.mark_edited();
@@ -540,7 +561,11 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .position(|s| s.id == setup_id.0)
         {
-            let _ = self.state.session.remove_fixture(idx, fixture_id);
+            let command = Command::RemoveFixture(RemoveFixtureArgs {
+                setup_index: idx,
+                fixture_id,
+            });
+            let _ = self.apply_quietly(command);
             if self.state.selection == Selection::Fixture(setup_id, fixture_id) {
                 self.state.selection = Selection::Setup(setup_id);
             }
@@ -577,7 +602,11 @@ impl<B: ComputeBackend> AppController<B> {
                 size_x: 20.0,
                 size_y: 20.0,
             };
-            let _ = self.state.session.add_keep_out(idx, zone);
+            let command = Command::AddKeepOut(AddKeepOutArgs {
+                setup_index: idx,
+                zone: Box::new(zone),
+            });
+            let _ = self.apply_quietly(command);
             self.state.selection = Selection::KeepOut(setup_id, keep_out_id);
             self.pending_upload = true;
             self.state.gui.mark_edited();
@@ -596,7 +625,11 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .position(|s| s.id == setup_id.0)
         {
-            let _ = self.state.session.remove_keep_out(idx, keep_out_id);
+            let command = Command::RemoveKeepOut(RemoveKeepOutArgs {
+                setup_index: idx,
+                zone_id: keep_out_id,
+            });
+            let _ = self.apply_quietly(command);
             if self.state.selection == Selection::KeepOut(setup_id, keep_out_id) {
                 self.state.selection = Selection::Setup(setup_id);
             }
@@ -631,7 +664,8 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .position(|m| m.id == model_id.0)
         {
-            let _ = self.state.session.remove_model(idx);
+            let command = Command::RemoveModel(RemoveModelArgs { index: idx });
+            let _ = self.apply_quietly(command);
             let clear_selection = matches!(
                 self.state.selection,
                 Selection::Model(mid) | Selection::Face(mid, _) | Selection::Faces(mid, _)
@@ -781,12 +815,17 @@ impl<B: ComputeBackend> AppController<B> {
                     feeds_provenance,
                     planner_origin: None,
                 };
-                let _ = self.state.session.add_toolpath(setup_idx, tc);
+                let command = Command::AddToolpath(AddToolpathArgs {
+                    setup_index: setup_idx,
+                    config: Box::new(tc),
+                });
+                let _ = self.apply_quietly(command);
             }
         } else if !has_pins {
             // Remove pin drill toolpath if pins were all deleted.
             if let Some((idx, _id)) = existing {
-                let _ = self.state.session.remove_toolpath(idx);
+                let command = Command::RemoveToolpath(RemoveToolpathArgs { index: idx });
+                let _ = self.apply_quietly(command);
             }
         } else if let Some((idx, id)) = existing {
             // Pins exist and toolpath exists — update hole positions and mark stale.
@@ -798,14 +837,16 @@ impl<B: ComputeBackend> AppController<B> {
                 .iter()
                 .map(|p| [p.x, p.y])
                 .collect();
-            let _ = self
-                .state
-                .session
-                .set_alignment_pin_drill_holes(idx, new_holes);
-            // Mark stale in GUI runtime
+            let command = Command::SetAlignmentPinDrillHoles(SetAlignmentPinDrillHolesArgs {
+                index: idx,
+                holes: new_holes,
+            });
+            let _ = self.apply_quietly(command);
+            // The row stamps `stale_since` on every index it dropped.
+            // Dropping the cached geometry is a view decision, and no
+            // core answer carries it.
             if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&id) {
                 rt.result = None;
-                rt.stale_since = Some(std::time::Instant::now());
             }
         }
     }

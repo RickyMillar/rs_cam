@@ -1774,7 +1774,34 @@ impl RsCamApp {
             | CommandId::GenerateToolpath
             | CommandId::RecommendClearingStrategy
             | CommandId::PreviewTierMap
-            | CommandId::AdoptSimulation => {
+            | CommandId::AdoptSimulation
+            // WP15a rows. Every one declares `mcp: Reach::Skip`, so no
+            // wire tool builds one. The GUI dispatches thirteen of them;
+            // eleven carry no caller at all.
+            | CommandId::ReorderToolpath
+            | CommandId::RemoveModel
+            | CommandId::SetFaceSelection
+            | CommandId::SetAlignmentPinDrillHoles
+            | CommandId::SetDrillSelectedHoles
+            | CommandId::AddFixture
+            | CommandId::RemoveFixture
+            | CommandId::AddKeepOut
+            | CommandId::RemoveKeepOut
+            | CommandId::AutoEnableRestAnalysis
+            | CommandId::ForgetResult
+            | CommandId::ReplaceSetupsAndToolpaths
+            | CommandId::SetProjectName
+            | CommandId::SetToolpathOperation
+            | CommandId::RemoveSetup
+            | CommandId::InvalidateStock
+            | CommandId::InvalidateMachine
+            | CommandId::InvalidateTool
+            | CommandId::InvalidateModel
+            | CommandId::InvalidateToolpathInputs
+            | CommandId::UpdateStockFromBbox
+            | CommandId::ReplaceTools
+            | CommandId::SetFeedsProvenance
+            | CommandId::SetMachineRef => {
                 CoreReply::quiet(mutation_error_json(&format!("Error: {error}"), field))
             }
         }
@@ -2575,7 +2602,34 @@ impl RsCamApp {
             | CommandId::GenerateToolpath
             | CommandId::RecommendClearingStrategy
             | CommandId::PreviewTierMap
-            | CommandId::AdoptSimulation => CoreReply::quiet(mutation_error_json(
+            | CommandId::AdoptSimulation
+            // WP15a rows. Every one declares `mcp: Reach::Skip`, so
+            // `CoreRequest` names no variant for any of them either. The
+            // GUI dispatches thirteen of them; eleven carry no caller.
+            | CommandId::ReorderToolpath
+            | CommandId::RemoveModel
+            | CommandId::SetFaceSelection
+            | CommandId::SetAlignmentPinDrillHoles
+            | CommandId::SetDrillSelectedHoles
+            | CommandId::AddFixture
+            | CommandId::RemoveFixture
+            | CommandId::AddKeepOut
+            | CommandId::RemoveKeepOut
+            | CommandId::AutoEnableRestAnalysis
+            | CommandId::ForgetResult
+            | CommandId::ReplaceSetupsAndToolpaths
+            | CommandId::SetProjectName
+            | CommandId::SetToolpathOperation
+            | CommandId::RemoveSetup
+            | CommandId::InvalidateStock
+            | CommandId::InvalidateMachine
+            | CommandId::InvalidateTool
+            | CommandId::InvalidateModel
+            | CommandId::InvalidateToolpathInputs
+            | CommandId::UpdateStockFromBbox
+            | CommandId::ReplaceTools
+            | CommandId::SetFeedsProvenance
+            | CommandId::SetMachineRef => CoreReply::quiet(mutation_error_json(
                 &format!(
                     "Error: '{}' is not a wire mutation; no MCP tool dispatches it.",
                     id.wire_name()

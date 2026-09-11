@@ -64,6 +64,19 @@
 //! convention, and `macro_rules!` cannot build an identifier by
 //! concatenation.
 //!
+//! WP15a closes the `apply`-only write path from the registry side
+//! (§25 ruling 1). Twenty-four public `ProjectSession` setters had no
+//! row: a surface reached them, the registry never named them, and the
+//! surface table could not say which surface wrote what. Each one now
+//! carries a row whose `apply` arm DELEGATES to it. The setter stays
+//! `pub` and keeps the invalidation rule — §12 ruling 2 allows one
+//! construction site, and N15 measured what two producers cost. Eleven
+//! of the twenty-four carry no production caller at all; they take a
+//! row so the property is TOTAL, and a sentry
+//! (`tests/setters_have_rows_wp15a.rs`) reads the source and holds it.
+//! `set_toolpath_param` is the one setter outside that property: its
+//! body calls `apply`, so it is already on the door.
+//!
 //! WP13 adds the fifth kind, `UiQuery`, and the `GetOperationSchema`
 //! row. No row here declares `UiCommand` or `UiQuery`: both kinds belong
 //! to the view registry `for_each_ui_command!`
@@ -150,13 +163,9 @@ macro_rules! for_each_command {
              }),
             (Command, AddModel, "import_model", AddModelArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the CLI job-file loader calls the session setter directly",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Command, AdoptModelGeometry, "adopt_model_geometry", AdoptModelGeometryArgs, Effects,
              Surfaces {
@@ -170,9 +179,7 @@ macro_rules! for_each_command {
              }),
             (Command, AddSetup, "add_setup", AddSetupArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -238,9 +245,7 @@ macro_rules! for_each_command {
             (Command, MoveToolpathToSetup, "move_toolpath_to_setup",
              MoveToolpathToSetupArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -253,7 +258,7 @@ macro_rules! for_each_command {
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
-                     "the CLI job-file loader calls the session setter directly",
+                     "the batch CLI emits G-code and writes no project file",
                  ),
              }),
             (Command, SetToolParam, "set_tool_param", SetToolParamArgs, Effects,
@@ -262,9 +267,7 @@ macro_rules! for_each_command {
                      "the GUI tool panel commits a whole draft config, not one parameter",
                  ),
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the CLI job-file loader calls the session setter directly",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Command, SetToolpathTool, "set_toolpath_tool", SetToolpathToolArgs, Effects,
              Surfaces {
@@ -309,19 +312,13 @@ macro_rules! for_each_command {
              }),
             (Command, AddToolpath, "add_toolpath", AddToolpathArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the CLI job-file loader calls the session setter directly",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Command, RemoveToolpath, "remove_toolpath", RemoveToolpathArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -329,19 +326,13 @@ macro_rules! for_each_command {
              }),
             (Command, AddTool, "add_tool", AddToolArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the CLI job-file loader calls the session setter directly",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Command, AddToolFromLibrary, "add_tool_from_library", AddToolArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -349,9 +340,7 @@ macro_rules! for_each_command {
              }),
             (Command, RemoveTool, "remove_tool", RemoveToolArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -366,7 +355,7 @@ macro_rules! for_each_command {
             (Command, SetStockSource, "set_stock_source", SetStockSourceArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
+                     "the operation panel writes the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -406,7 +395,7 @@ macro_rules! for_each_command {
             (Command, SetBoundaryConfig, "set_boundary_config", SetBoundaryConfigArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
+                     "the boundary picker writes the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -446,9 +435,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetToolpathEnabled, "set_toolpath_enabled", SetToolpathEnabledArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP15 routes it through the row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
@@ -520,6 +507,281 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no schema tool",
+                 ),
+             }),
+            // ── WP15a: a row for every public setter ─────────────
+            //
+            // §25 ruling 1. The setter stays `pub` and keeps the
+            // invalidation rule. The row delegates to it, so the two
+            // routes cannot carry two staleness models.
+            (Command, ReorderToolpath, "reorder_toolpath", ReorderToolpathArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool re-orders the plan; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, RemoveModel, "remove_model", RemoveModelArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool removes a model; the wire imports one only",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetFaceSelection, "set_face_selection", SetFaceSelectionArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool picks BREP faces; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI picks no faces",
+                 ),
+             }),
+            (Command, SetAlignmentPinDrillHoles, "set_alignment_pin_drill_holes",
+             SetAlignmentPinDrillHolesArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool writes the pin holes; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetDrillSelectedHoles, "set_drill_selected_holes",
+             SetDrillSelectedHolesArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool picks drill holes; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, AddFixture, "add_fixture", AddFixtureArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool writes a fixture; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, RemoveFixture, "remove_fixture", RemoveFixtureArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool writes a fixture; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, AddKeepOut, "add_keep_out", AddKeepOutArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool writes a keep-out zone; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, RemoveKeepOut, "remove_keep_out", RemoveKeepOutArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool writes a keep-out zone; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, AutoEnableRestAnalysis, "auto_enable_rest_analysis",
+             AutoEnableRestAnalysisArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the MCP door writes the whole block through set_rest_analysis_config",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, ForgetResult, "forget_result", ForgetResultArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "a refusal is forgotten by the GUI drain, not by a wire tool",
+                 ),
+                 cli: Reach::Skip(
+                     "the CLI generates synchronously and forgets no completion",
+                 ),
+             }),
+            (Command, ReplaceSetupsAndToolpaths, "replace_setups_and_toolpaths",
+             ReplaceSetupsAndToolpathsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool replaces the whole plan; the wire edits one row at a time",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI builds its session once and replaces nothing",
+                 ),
+             }),
+            (Command, SetProjectName, "set_project_name", SetProjectNameArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "no MCP tool renames the project; the wire has no such mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetToolpathOperation, "set_toolpath_operation",
+             SetToolpathOperationArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control changes an operation kind in place",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool changes an operation kind; add_toolpath adds a new operation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, RemoveSetup, "remove_setup", RemoveSetupArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control removes a setup",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool removes a setup; the wire adds one only",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, InvalidateStock, "invalidate_stock", InvalidateStockArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control drops the results alone; set_stock_config writes and drops",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool drops the results alone; set_stock_config writes and drops",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, InvalidateMachine, "invalidate_machine", InvalidateMachineArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control drops the simulation alone; set_machine writes and drops",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool drops the simulation alone; set_machine writes and drops",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, InvalidateTool, "invalidate_tool", InvalidateToolArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control drops a tool's results alone; replace_tool writes and drops",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool drops a tool's results alone; set_tool_param writes and drops",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, InvalidateModel, "invalidate_model", InvalidateModelArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the three model refresh doors take adopt_model_geometry, which also drops",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool refreshes a model in place; the wire imports a new one",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI imports each model once and never refreshes it",
+                 ),
+             }),
+            (Command, InvalidateToolpathInputs, "invalidate_toolpath_inputs",
+             InvalidateToolpathInputsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the feeds Apply funnel writes one replace_toolpath_config, which drops",
+                 ),
+                 mcp: Reach::Skip(
+                     "the apply_feeds holdout takes the same funnel and writes one config row",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, UpdateStockFromBbox, "update_stock_from_bbox",
+             UpdateStockFromBboxArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control sizes the stock from a bounding box",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool sizes the stock from a bounding box",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, ReplaceTools, "replace_tools", ReplaceToolsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control replaces the whole tools list",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool replaces the whole tools list",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetFeedsProvenance, "set_feeds_provenance",
+             SetFeedsProvenanceArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the optimizer carries the stamp in restore_toolpath_snapshot since WP8",
+                 ),
+                 mcp: Reach::Skip(
+                     "no MCP tool stamps a provenance on its own",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetMachineRef, "set_machine_ref", SetMachineRefArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "no GUI control writes the library reference on its own",
+                 ),
+                 mcp: Reach::Skip(
+                     "load_machine_from_library writes the machine; nothing writes the name",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
                  ),
              }),
             (Job, GenerateToolpath, "generate_toolpath", GenerateToolpathArgs,
@@ -1377,6 +1639,297 @@ pub struct GetOperationSchemaAnswer {
     pub schema: OperationSchema,
 }
 
+// ── WP15a: the payloads of the row-less setters ─────────────────────────
+//
+// §25 ruling 1 gives every public `ProjectSession` setter a row. Each
+// payload below mirrors its setter's parameters in core types, and each
+// arm delegates to that setter. The setter keeps the invalidation rule:
+// §12 ruling 2 allows one construction site, and N15 measured what two
+// producers cost.
+
+/// The arguments of the `reorder_toolpath` command.
+///
+/// The command moves one operation inside the plan order of the setup
+/// that owns both indices. [`Effects::revision`] reads `None`: the
+/// command names two toolpaths, so no one index answers for it.
+#[derive(Debug, Clone)]
+pub struct ReorderToolpathArgs {
+    /// The index of the operation to move, in plan order.
+    pub from_index: usize,
+    /// The index the operation moves to, in plan order.
+    pub to_index: usize,
+}
+
+/// The arguments of the `remove_model` command.
+#[derive(Debug, Clone)]
+pub struct RemoveModelArgs {
+    /// The index of the model to remove.
+    pub index: usize,
+}
+
+/// The arguments of the `set_face_selection` command.
+///
+/// `face_ids` is `None` when the operation machines the whole model.
+#[derive(Debug, Clone)]
+pub struct SetFaceSelectionArgs {
+    /// The index of the toolpath the command writes.
+    pub index: usize,
+    /// The BREP faces the operation machines.
+    pub face_ids: Option<Vec<FaceGroupId>>,
+}
+
+/// The arguments of the `set_alignment_pin_drill_holes` command.
+///
+/// The command refuses a toolpath whose operation is not
+/// `AlignmentPinDrill`.
+#[derive(Debug, Clone)]
+pub struct SetAlignmentPinDrillHolesArgs {
+    /// The index of the toolpath the command writes.
+    pub index: usize,
+    /// The hole centres, in millimetres.
+    pub holes: Vec<[f64; 2]>,
+}
+
+/// The arguments of the `set_drill_selected_holes` command.
+///
+/// `selected_holes` is `None` when a `Drill` operation reverts to every
+/// polygon centroid the model carries. The command refuses a toolpath
+/// whose operation is not a drilling operation.
+#[derive(Debug, Clone)]
+pub struct SetDrillSelectedHolesArgs {
+    /// The index of the toolpath the command writes.
+    pub index: usize,
+    /// The picked hole centres, in millimetres.
+    pub selected_holes: Option<Vec<[f64; 2]>>,
+}
+
+/// The arguments of the `add_fixture` command.
+///
+/// The fixture is boxed, as [`ReplaceFixtureArgs`] boxes its own.
+#[derive(Debug, Clone)]
+pub struct AddFixtureArgs {
+    /// The index of the setup the fixture joins.
+    pub setup_index: usize,
+    /// The fixture to add.
+    pub fixture: Box<super::Fixture>,
+}
+
+/// The arguments of the `remove_fixture` command.
+#[derive(Debug, Clone)]
+pub struct RemoveFixtureArgs {
+    /// The index of the setup that holds the fixture.
+    pub setup_index: usize,
+    /// The id of the fixture to remove.
+    pub fixture_id: crate::compute::stock_config::FixtureId,
+}
+
+/// The arguments of the `add_keep_out` command.
+///
+/// The keep-out twin of [`AddFixtureArgs`].
+#[derive(Debug, Clone)]
+pub struct AddKeepOutArgs {
+    /// The index of the setup the zone joins.
+    pub setup_index: usize,
+    /// The zone to add.
+    pub zone: Box<super::KeepOutZone>,
+}
+
+/// The arguments of the `remove_keep_out` command.
+#[derive(Debug, Clone)]
+pub struct RemoveKeepOutArgs {
+    /// The index of the setup that holds the zone.
+    pub setup_index: usize,
+    /// The id of the zone to remove.
+    pub zone_id: crate::compute::stock_config::KeepOutId,
+}
+
+/// The arguments of the `auto_enable_rest_analysis` command.
+///
+/// The command names the SOURCE operation — the one whose derived rest
+/// regions a later operation consumes as a boundary. It reports an
+/// empty [`Effects`] when the source already reads rest regions, or
+/// when the source is a rest-depth pencil that attaches them itself.
+/// "Changed nothing" is an empty `Effects`, not a refusal.
+#[derive(Debug, Clone)]
+pub struct AutoEnableRestAnalysisArgs {
+    /// The id of the source toolpath.
+    pub source_id: crate::ids::ToolpathId,
+}
+
+/// The arguments of the `forget_result` command.
+///
+/// This is the `Err`-arm twin of [`AdoptResultArgs`]: a generation that
+/// refused leaves a cached result that answers a configuration which is
+/// gone, and the GUI drain forgets it here.
+///
+/// Forgetting an index that carries no result is a no-op, never an
+/// error. [`Effects::stale`] holds `index` either way, because the drop
+/// bumps the revision whether or not a result was there.
+#[derive(Debug, Clone)]
+pub struct ForgetResultArgs {
+    /// The index of the toolpath whose cached result the command drops.
+    pub index: usize,
+}
+
+/// The arguments of the `replace_setups_and_toolpaths` command.
+///
+/// The command replaces the WHOLE plan: every setup, every toolpath
+/// configuration, and the two next-id counters derived from them. It
+/// clears every cached result and bumps every revision, because the
+/// indices the results were keyed by may have moved.
+///
+/// The caller supplies setups whose `toolpath_indices` are consistent
+/// with the configuration list it supplies beside them.
+#[derive(Debug, Clone)]
+pub struct ReplaceSetupsAndToolpathsArgs {
+    /// The setups to install.
+    pub setups: Vec<super::SetupData>,
+    /// The toolpath configurations to install.
+    pub toolpath_configs: Vec<ToolpathConfig>,
+}
+
+/// The arguments of the `set_project_name` command.
+///
+/// A project name is metadata. It moves no generation input, so the
+/// command drops nothing.
+#[derive(Debug, Clone)]
+pub struct SetProjectNameArgs {
+    /// The name to install.
+    pub name: String,
+}
+
+/// The arguments of the `set_toolpath_operation` command.
+///
+/// The command replaces the operation KIND while the toolpath keeps its
+/// tool, heights, boundary, dressups and position in the machining
+/// order. The setter re-normalizes the dressups for the new kind.
+///
+/// The operation is boxed, as [`RestoreToolpathSnapshotArgs`] boxes its
+/// own: an [`OperationConfig`] runs to hundreds of bytes and
+/// `large_enum_variant` is denied.
+#[derive(Debug, Clone)]
+pub struct SetToolpathOperationArgs {
+    /// The index of the toolpath the command writes.
+    pub index: usize,
+    /// The operation to install.
+    pub operation: Box<OperationConfig>,
+}
+
+/// The arguments of the `remove_setup` command.
+///
+/// The command refuses a setup that still holds a toolpath.
+#[derive(Debug, Clone)]
+pub struct RemoveSetupArgs {
+    /// The index of the setup to remove.
+    pub index: usize,
+}
+
+/// The arguments of the `invalidate_stock` command.
+///
+/// The command drops EVERY toolpath result, not the simulation alone:
+/// heights reference the stock top and an inherited boundary follows
+/// the stock outline (G-FRESHSTATE).
+///
+/// The payload carries no field. The command names the whole stock.
+#[derive(Debug, Clone)]
+pub struct InvalidateStockArgs;
+
+/// The arguments of the `invalidate_machine` command.
+///
+/// A machine edit moves no geometry, so the command drops the
+/// simulation and no toolpath result.
+///
+/// The payload carries no field. The command names the whole machine.
+#[derive(Debug, Clone)]
+pub struct InvalidateMachineArgs;
+
+/// The arguments of the `invalidate_tool` command.
+///
+/// A toolpath depends on a tool through two doors: the cutter it binds,
+/// and a planned-tier boundary whose islands name the tool.
+/// [`Effects::stale`] reports both populations.
+#[derive(Debug, Clone)]
+pub struct InvalidateToolArgs {
+    /// The id of the tool whose dependants the command drops.
+    pub tool_id: usize,
+}
+
+/// The arguments of the `invalidate_model` command.
+///
+/// A model whose geometry moved invalidates every result generated
+/// against it. [`AdoptModelGeometryArgs`] writes the geometry and runs
+/// the same rule in ONE mutation, which is why the three GUI refresh
+/// doors take that row and not this one (G-RESCALESTALE).
+#[derive(Debug, Clone)]
+pub struct InvalidateModelArgs {
+    /// The id of the model whose dependants the command drops.
+    pub model_id: usize,
+}
+
+/// The arguments of the `invalidate_toolpath_inputs` command.
+///
+/// The command drops the toolpath's cached result and every result
+/// downstream of it, unconditionally. It compares nothing, so a caller
+/// that already knows a generation input moved takes it.
+#[derive(Debug, Clone)]
+pub struct InvalidateToolpathInputsArgs {
+    /// The index of the toolpath the command drops.
+    pub index: usize,
+}
+
+/// The arguments of the `update_stock_from_bbox` command.
+///
+/// A two-dimensional bounding box has no Z extent, and
+/// `StockConfig::update_from_bbox` then keeps the stock's own
+/// thickness. Attaching a drawing does not collapse the board (F-13).
+#[derive(Debug, Clone)]
+pub struct UpdateStockFromBboxArgs {
+    /// The bounding box the stock grows to.
+    pub bbox: crate::geo::BoundingBox3,
+}
+
+/// The arguments of the `replace_tools` command.
+///
+/// The command replaces the WHOLE tools list and the next-id counter
+/// derived from it. Tool geometry decides material removal, so the
+/// command drops the simulation.
+#[derive(Debug, Clone)]
+pub struct ReplaceToolsArgs {
+    /// The tools to install.
+    pub tools: Vec<crate::compute::tool_config::ToolConfig>,
+}
+
+/// The arguments of the `set_feeds_provenance` command.
+///
+/// The command stamps a provenance and touches neither the result cache
+/// nor the simulation.
+///
+/// **A caller that also writes the values takes
+/// [`RestoreToolpathSnapshotArgs`] instead.** The three optimizer apply
+/// paths stamped in a second call until WP8, and an undo then restored
+/// the earlier values under the later stamp.
+///
+/// The provenance is boxed, as [`RestoreToolpathSnapshotArgs`] boxes
+/// its own: it carries six slots.
+#[derive(Debug, Clone)]
+pub struct SetFeedsProvenanceArgs {
+    /// The index of the toolpath the command stamps.
+    pub index: usize,
+    /// The provenance to install.
+    pub feeds_provenance: Box<FeedsProvenance>,
+}
+
+/// The arguments of the `set_machine_ref` command.
+///
+/// The reference names a machine library file. A save persists it, and
+/// a load lets the referenced file override the inline machine. `None`
+/// clears the reference, which leaves the inline machine in charge.
+#[derive(Debug, Clone)]
+pub struct SetMachineRefArgs {
+    /// The library reference to install.
+    pub machine_ref: Option<String>,
+}
+
 /// Splits the registry's rows by kind, and emits the [`Command`],
 /// [`Query`] and [`Job`] payload enums plus [`QueryAnswer`] and
 /// [`JobHandle`].
@@ -1824,6 +2377,79 @@ impl ProjectSession {
             }
             Command::SetToolpathEnabled(args) => {
                 self.set_toolpath_enabled(args.index, args.enabled)
+            }
+            // ── WP15a: the rows of the row-less setters ───────────
+            //
+            // §25 ruling 1. Every arm below delegates to the setter
+            // that already owns the invalidation rule, exactly as the
+            // WP4 section above does. No arm copies a rule, and no arm
+            // derives a stale set of its own.
+            Command::ReorderToolpath(args) => self.reorder_toolpath(args.from_index, args.to_index),
+            Command::RemoveModel(args) => self.remove_model(args.index),
+            Command::SetFaceSelection(args) => self.set_face_selection(args.index, args.face_ids),
+            Command::SetAlignmentPinDrillHoles(args) => {
+                self.set_alignment_pin_drill_holes(args.index, args.holes)
+            }
+            Command::SetDrillSelectedHoles(args) => {
+                self.set_drill_selected_holes(args.index, args.selected_holes)
+            }
+            Command::AddFixture(args) => self.add_fixture(args.setup_index, *args.fixture),
+            Command::RemoveFixture(args) => self.remove_fixture(args.setup_index, args.fixture_id),
+            Command::AddKeepOut(args) => self.add_keep_out(args.setup_index, *args.zone),
+            Command::RemoveKeepOut(args) => self.remove_keep_out(args.setup_index, args.zone_id),
+            Command::AutoEnableRestAnalysis(args) => {
+                let enabled = self.auto_enable_rest_analysis_for_source(args.source_id);
+                // The setter reports `None` when the source already
+                // reads rest regions, or when it is a rest-depth
+                // pencil that attaches them itself. "Changed nothing"
+                // is an empty `Effects`, not a refusal — the shape
+                // `AddAlignmentPin` above uses.
+                Ok(match enabled {
+                    Some(effects) => effects,
+                    None => self.with_effects(None, |_| {}),
+                })
+            }
+            Command::ForgetResult(args) => Ok(self.remove_result(args.index)),
+            Command::ReplaceSetupsAndToolpaths(args) => {
+                let ReplaceSetupsAndToolpathsArgs {
+                    setups,
+                    toolpath_configs,
+                } = args;
+                Ok(self.replace_setups_and_toolpaths(setups, toolpath_configs))
+            }
+            Command::SetProjectName(args) => {
+                let SetProjectNameArgs { name } = args;
+                // The setter reports nothing, so the arm runs it inside
+                // the one `Effects` construction site. A name moves no
+                // generation input, so `stale` reads empty.
+                Ok(self.with_effects(None, move |session| {
+                    session.set_name(name);
+                }))
+            }
+            Command::SetToolpathOperation(args) => {
+                self.set_toolpath_operation(args.index, *args.operation)
+            }
+            Command::RemoveSetup(args) => self.remove_setup(args.index),
+            Command::InvalidateStock(_) => Ok(self.invalidate_stock()),
+            Command::InvalidateMachine(_) => Ok(self.invalidate_machine()),
+            Command::InvalidateTool(args) => Ok(self.invalidate_tool(args.tool_id)),
+            Command::InvalidateModel(args) => Ok(self.invalidate_model(args.model_id)),
+            Command::InvalidateToolpathInputs(args) => {
+                Ok(self.invalidate_toolpath_inputs(args.index))
+            }
+            Command::UpdateStockFromBbox(args) => Ok(self.update_stock_from_bbox(&args.bbox)),
+            Command::ReplaceTools(args) => Ok(self.replace_tools(args.tools)),
+            Command::SetFeedsProvenance(args) => {
+                self.set_feeds_provenance(args.index, *args.feeds_provenance)
+            }
+            Command::SetMachineRef(args) => {
+                let SetMachineRefArgs { machine_ref } = args;
+                // The setter reports nothing, so the arm runs it inside
+                // the one `Effects` construction site. The reference is
+                // save metadata and moves no generation input.
+                Ok(self.with_effects(None, move |session| {
+                    session.set_machine_ref(machine_ref);
+                }))
             }
             Command::RestoreToolpathSnapshot(args) => {
                 let RestoreToolpathSnapshotArgs {

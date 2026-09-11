@@ -21,7 +21,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    Command, LoadedModel, ProjectSession, SetPostConfigArgs, SetToolpathParamArgs, ToolpathConfig,
+    AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
+    SetPostConfigArgs, SetToolParamArgs, SetToolpathParamArgs, ToolpathConfig,
 };
 
 use crate::command::apply_command;
@@ -85,20 +86,33 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .unwrap_or_else(|| "model".to_owned());
     let model = LoadedModel::from_file(0, &model_name, input, None, Some(units), &base_dir)
         .with_context(|| format!("loading model '{}'", input.display()))?;
-    let _ = session.add_model(model);
+    let _ = apply_command(
+        &mut session,
+        Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        }),
+    )?;
 
     let (tool_type, diameter) = parse_tool_spec(tool_spec)?;
     let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
     tool.name = format!("{} {:.3}mm", tool_type.label(), diameter);
     tool.diameter = diameter;
-    let tool_idx = session
-        .add_tool(tool)
-        .created
-        .context("add_tool reports no new tool index")?;
+    let tool_idx = apply_command(
+        &mut session,
+        Command::AddTool(AddToolArgs {
+            tool: Box::new(tool),
+        }),
+    )?
+    .created
+    .context("add_tool reports no new tool index")?;
     for kv in &args.tool_set {
         let (key, value) = split_kv(kv)?;
-        let _ = session
-            .set_tool_param(tool_idx, key, &parse_json_value(value))
+        let command = Command::SetToolParam(SetToolParamArgs {
+            index: tool_idx,
+            param: key.to_owned(),
+            value: parse_json_value(value),
+        });
+        let _ = apply_command(&mut session, command)
             .map_err(|e| anyhow::anyhow!("--tool-set {key}: {e}"))?;
     }
 
@@ -108,10 +122,11 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .context("tool index out of bounds after add_tool")?
         .id
         .0;
-    let tp_index = session
-        .add_toolpath(
-            0,
-            ToolpathConfig {
+    let tp_index = apply_command(
+        &mut session,
+        Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(ToolpathConfig {
                 id: rs_cam_core::ToolpathId(0),
                 name: format!("{} (cli run)", op_type.label()),
                 enabled: true,
@@ -131,11 +146,12 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
                 debug_options: ToolpathDebugOptions::default(),
                 feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
                 planner_origin: None,
-            },
-        )
-        .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?
-        .created
-        .context("add_toolpath reports no new toolpath index")?;
+            }),
+        }),
+    )
+    .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?
+    .created
+    .context("add_toolpath reports no new toolpath index")?;
 
     // Registry-driven parameter application: the SAME serde round-trip
     // the GUI/MCP use, so type coercion, validation, and unknown-param

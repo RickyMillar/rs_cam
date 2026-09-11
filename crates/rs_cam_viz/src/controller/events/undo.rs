@@ -1,4 +1,7 @@
-use rs_cam_core::session::{Command, ReplaceToolArgs, RestoreToolpathSnapshotArgs};
+use rs_cam_core::session::{
+    Command, ReplaceToolArgs, RestoreToolpathSnapshotArgs, SetMachineArgs, SetPostConfigArgs,
+    SetStockConfigArgs,
+};
 
 use crate::compute::ComputeBackend;
 use crate::state::history::UndoAction;
@@ -11,14 +14,20 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(action) = self.state.history.undo() {
             match action {
                 UndoAction::StockChange { old, .. } => {
-                    let _ = self.state.session.set_stock_config(old);
+                    let command = Command::SetStockConfig(SetStockConfigArgs {
+                        stock: Box::new(old),
+                    });
+                    let _ = self.apply_quietly(command);
                     self.invalidate_simulation();
                 }
                 UndoAction::PostChange { old, .. } => {
                     self.state.gui.post = old;
                     let session_post =
                         crate::state::runtime::GuiState::post_to_session(&self.state.gui.post);
-                    let _ = self.state.session.set_post_config(session_post);
+                    let command = Command::SetPostConfig(SetPostConfigArgs {
+                        post: Box::new(session_post),
+                    });
+                    let _ = self.apply_quietly(command);
                 }
                 UndoAction::ToolChange { tool_id, old, .. } => {
                     self.apply_tool_snapshot(tool_id, old);
@@ -40,7 +49,10 @@ impl<B: ComputeBackend> AppController<B> {
                     );
                 }
                 UndoAction::MachineChange { old, .. } => {
-                    let _ = self.state.session.set_machine(old);
+                    let command = Command::SetMachine(SetMachineArgs {
+                        machine: Box::new(old),
+                    });
+                    let _ = self.apply_quietly(command);
                     self.invalidate_simulation();
                 }
             }
@@ -65,14 +77,20 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(action) = self.state.history.redo() {
             match action {
                 UndoAction::StockChange { new, .. } => {
-                    let _ = self.state.session.set_stock_config(new);
+                    let command = Command::SetStockConfig(SetStockConfigArgs {
+                        stock: Box::new(new),
+                    });
+                    let _ = self.apply_quietly(command);
                     self.invalidate_simulation();
                 }
                 UndoAction::PostChange { new, .. } => {
                     self.state.gui.post = new;
                     let session_post =
                         crate::state::runtime::GuiState::post_to_session(&self.state.gui.post);
-                    let _ = self.state.session.set_post_config(session_post);
+                    let command = Command::SetPostConfig(SetPostConfigArgs {
+                        post: Box::new(session_post),
+                    });
+                    let _ = self.apply_quietly(command);
                 }
                 UndoAction::ToolChange { tool_id, new, .. } => {
                     self.apply_tool_snapshot(tool_id, new);
@@ -94,7 +112,10 @@ impl<B: ComputeBackend> AppController<B> {
                     );
                 }
                 UndoAction::MachineChange { new, .. } => {
-                    let _ = self.state.session.set_machine(new);
+                    let command = Command::SetMachine(SetMachineArgs {
+                        machine: Box::new(new),
+                    });
+                    let _ = self.apply_quietly(command);
                     self.invalidate_simulation();
                 }
             }

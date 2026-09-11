@@ -25,8 +25,8 @@ use rs_cam_core::feeds::embedded_vendor_lut;
 use rs_cam_core::feeds::suggest::{StockContext, SuggestParamsInput, suggest_params};
 use rs_cam_core::material::{AluminumAlloy, Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
 use rs_cam_core::session::{
-    Command, ProjectSession, SetStockConfigArgs, SetToolpathEnabledArgs, SetToolpathParamArgs,
-    SimulationOptions, ToolpathConfig,
+    AddToolpathArgs, Command, ProjectSession, SetStockConfigArgs, SetToolpathEnabledArgs,
+    SetToolpathParamArgs, SimulationOptions, ToolpathConfig,
 };
 use rs_cam_core::tool_load::drill_gates::DrillGatesVerdict;
 use rs_cam_core::tool_load::verdict::ChipSide;
@@ -564,7 +564,11 @@ fn materialize_case_toolpath(
         planner_origin: None,
     };
 
-    let tp_idx = match session.add_toolpath(0, tc) {
+    let command = Command::AddToolpath(AddToolpathArgs {
+        setup_index: 0,
+        config: Box::new(tc),
+    });
+    let tp_idx = match crate::command::apply_command(session, command) {
         Ok(effects) => match effects.created {
             Some(i) => i,
             None => {

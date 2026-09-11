@@ -643,7 +643,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // so an unchanged write clears nothing now either.
             let session_post = crate::state::runtime::GuiState::post_to_session(&state.gui.post);
             if *state.session.post_config() != session_post {
-                let _ = state.session.set_post_config(session_post);
+                let command = rs_cam_core::session::Command::SetPostConfig(
+                    rs_cam_core::session::SetPostConfigArgs {
+                        post: Box::new(session_post),
+                    },
+                );
+                let _ = apply_panel_command(state, command);
             }
         }
         Selection::Machine => {
@@ -1188,16 +1193,21 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // next generation.
             // WP3: the setter reports `Option<Effects>`. `None` says the
             // call changed nothing, which is the old `false`.
-            if let Some(source_id) = auto_enable_rest_source
-                && state
-                    .session
-                    .auto_enable_rest_analysis_for_source(source_id)
-                    .is_some()
-            {
-                if let Some(rt) = state.gui.toolpath_rt.get_mut(&source_id) {
-                    rt.stale_since = Some(std::time::Instant::now());
+            //
+            // WP15a: the row FOLDS that `None` into an empty `Effects`,
+            // so the answer is `Ok` either way. `Effects::revision` is
+            // the discriminator — the setter names the source index on
+            // the arm that changed something, and the fold names none.
+            if let Some(source_id) = auto_enable_rest_source {
+                let command = rs_cam_core::session::Command::AutoEnableRestAnalysis(
+                    rs_cam_core::session::AutoEnableRestAnalysisArgs { source_id },
+                );
+                if let Ok(effects) = state.session.apply(command)
+                    && effects.revision.is_some()
+                {
+                    crate::state::stale::stamp_stale(state, &effects.stale);
+                    state.gui.mark_edited();
                 }
-                state.gui.mark_edited();
             }
         }
     }

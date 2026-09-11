@@ -6,8 +6,9 @@ mod toolpath;
 mod undo;
 
 use rs_cam_core::session::{
-    Command, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs, SetPostConfigArgs,
-    SetToolpathDebugOptionsArgs,
+    Command, Effects, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
+    SetDrillSelectedHolesArgs, SetFaceSelectionArgs, SetPostConfigArgs,
+    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -42,6 +43,41 @@ impl<B: ComputeBackend> AppController<B> {
                 false
             }
         }
+    }
+
+    /// Run one command from an event arm, and stamp what it dropped.
+    ///
+    /// The twin of [`Self::apply_controller_command`] for a site that
+    /// SWALLOWED its setter's answer before WP15a. Such a site showed
+    /// the operator nothing on a refusal, so this door pushes no
+    /// notification either: the routing moves the write onto
+    /// `ProjectSession::apply` and leaves the messages alone.
+    ///
+    /// The answer carries the command's own [`Effects`], so a caller
+    /// that read the setter's return — the new index in
+    /// [`Effects::created`], for example — reads it here.
+    fn apply_quietly(&mut self, command: Command) -> Option<Effects> {
+        match self.state.session.apply(command) {
+            Ok(effects) => {
+                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+                Some(effects)
+            }
+            Err(_) => None,
+        }
+    }
+
+    /// Run one command, and report the index its row created.
+    ///
+    /// The four add rows report the index core allocated in
+    /// [`Effects::created`], which is what a site read from the setter's
+    /// own answer before WP15a.
+    ///
+    /// `pub(crate)` because `controller/io.rs` is a SIBLING module, not
+    /// a child of this one, and its four import doors read the same
+    /// answer.
+    pub(crate) fn apply_created(&mut self, command: Command) -> Option<usize> {
+        self.apply_quietly(command)
+            .and_then(|effects| effects.created)
     }
 
     /// Turn the generator debug capture on or off for every toolpath.
@@ -136,7 +172,11 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ToggleToolpathEnabled(tp_id) => {
                 if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) {
                     let enabled = !tc.enabled;
-                    let _ = self.state.session.set_toolpath_enabled(idx, enabled);
+                    let command = Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+                        index: idx,
+                        enabled,
+                    });
+                    let _ = self.apply_quietly(command);
                     // G-FRESHSTATE: the flip changes what the job cuts and
                     // what every downstream rest op starts from, so the
                     // project is dirty and the simulation is stale. It
@@ -173,12 +213,15 @@ impl<B: ComputeBackend> AppController<B> {
                         faces.push(face_id);
                     }
                     let new_selection = if faces.is_empty() { None } else { Some(faces) };
-                    let _ = self.state.session.set_face_selection(idx, new_selection);
-
-                    // Mark stale in GUI runtime
-                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-                        rt.stale_since = Some(std::time::Instant::now());
-                    }
+                    // WP15a: the row stamps every index `Effects::stale`
+                    // names. The site stamped this toolpath alone, and
+                    // the setter drops the downstream stock chain with
+                    // it — the WP8 shape.
+                    let command = Command::SetFaceSelection(SetFaceSelectionArgs {
+                        index: idx,
+                        face_ids: new_selection,
+                    });
+                    let _ = self.apply_quietly(command);
                     self.state.selection = Selection::Toolpath(toolpath_id);
                     self.state.gui.mark_edited();
                     self.pending_upload = true;
@@ -215,13 +258,11 @@ impl<B: ComputeBackend> AppController<B> {
                     // N6 (WP8): the setter drops the downstream stock
                     // chain now, so the stamp follows `Effects::stale`
                     // rather than naming this toolpath alone.
-                    if let Ok(effects) = self
-                        .state
-                        .session
-                        .set_drill_selected_holes(idx, new_selection)
-                    {
-                        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-                    }
+                    let command = Command::SetDrillSelectedHoles(SetDrillSelectedHolesArgs {
+                        index: idx,
+                        selected_holes: new_selection,
+                    });
+                    let _ = self.apply_quietly(command);
                     self.state.selection = Selection::Toolpath(toolpath_id);
                     self.state.gui.mark_edited();
                     self.pending_upload = true;

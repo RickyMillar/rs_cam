@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::session::{
-    AdoptModelGeometryArgs, Command, Effects, ProjectSession, ProjectSessionBuilder,
-    SetPostConfigArgs, SetStockConfigArgs,
+    AddModelArgs, AdoptModelGeometryArgs, Command, Effects, ProjectSession, ProjectSessionBuilder,
+    ReplaceSetupsAndToolpathsArgs, SetPostConfigArgs, SetProjectNameArgs, SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -80,7 +80,10 @@ impl<B: ComputeBackend> AppController<B> {
         {
             self.fit_stock_to_bbox(&mesh_bbox);
         }
-        let assigned_id = self.state.session.add_model(model).created;
+        let command = Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        });
+        let assigned_id = self.apply_created(command);
         if let Some(assigned_id) = assigned_id {
             self.state.selection = Selection::Model(ModelId(assigned_id));
         }
@@ -92,7 +95,10 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn import_svg_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let model = import::import_svg(path, 0, 1.0)?;
         let bbox = model.bbox();
-        let assigned_id = self.state.session.add_model(model).created;
+        let command = Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        });
+        let assigned_id = self.apply_created(command);
         if let Some(assigned_id) = assigned_id {
             self.state.selection = Selection::Model(ModelId(assigned_id));
         }
@@ -104,7 +110,10 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn import_dxf_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let model = import::import_dxf(path, 0, 1.0)?;
         let bbox = model.bbox();
-        let assigned_id = self.state.session.add_model(model).created;
+        let command = Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        });
+        let assigned_id = self.apply_created(command);
         if let Some(assigned_id) = assigned_id {
             self.state.selection = Selection::Model(ModelId(assigned_id));
         }
@@ -123,7 +132,10 @@ impl<B: ComputeBackend> AppController<B> {
         {
             self.fit_stock_to_bbox(&mesh_bbox);
         }
-        let assigned_id = self.state.session.add_model(model).created;
+        let command = Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        });
+        let assigned_id = self.apply_created(command);
         if let Some(assigned_id) = assigned_id {
             self.state.selection = Selection::Model(ModelId(assigned_id));
         }
@@ -630,7 +642,9 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
         });
     }
     let mut session = builder.build();
-    session.set_name(job.name.clone());
+    let _ = session.apply(Command::SetProjectName(SetProjectNameArgs {
+        name: job.name.clone(),
+    }));
 
     let mut session_setups = Vec::new();
     let mut session_tp_configs = Vec::new();
@@ -734,7 +748,12 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
         });
     }
 
-    let _ = session.replace_setups_and_toolpaths(session_setups, session_tp_configs);
+    let _ = session.apply(Command::ReplaceSetupsAndToolpaths(
+        ReplaceSetupsAndToolpathsArgs {
+            setups: session_setups,
+            toolpath_configs: session_tp_configs,
+        },
+    ));
     session
 }
 

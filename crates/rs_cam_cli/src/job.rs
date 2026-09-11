@@ -46,8 +46,8 @@ use rs_cam_core::{
     gcode::CoolantMode,
     semantic_trace::ToolpathTraceArtifact,
     session::{
-        Command, LoadedModel, ProjectSession, SetPostConfigArgs, SetStockConfigArgs,
-        SetToolpathParamArgs, ToolpathConfig,
+        AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
+        SetPostConfigArgs, SetStockConfigArgs, SetToolpathParamArgs, ToolpathConfig,
     },
     toolpath::Toolpath,
 };
@@ -527,7 +527,12 @@ fn execute_op_via_session(
     let units = op.scale.map(ModelUnits::Custom);
     let model = LoadedModel::from_file(0, &model_name, &op.input, None, units, job_dir)
         .map_err(|e| anyhow::anyhow!("loading input '{}': {e}", op.input.display()))?;
-    let _ = session.add_model(model);
+    let _ = crate::command::apply_command(
+        &mut session,
+        Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        }),
+    )?;
 
     // Adaptive3d stock-frame fidelity: the pre-T9 router defaulted the
     // stock top to `model_top + 5.0` when `stock_top_z` was unset.
@@ -548,10 +553,14 @@ fn execute_op_via_session(
     }
 
     // \u{2500}\u{2500} Tools \u{2500}\u{2500}
-    let tool_idx = session
-        .add_tool(tool_config_from_def(tool_def, &op.tool))
-        .created
-        .context("add_tool reports no new tool index")?;
+    let tool_idx = crate::command::apply_command(
+        &mut session,
+        Command::AddTool(AddToolArgs {
+            tool: Box::new(tool_config_from_def(tool_def, &op.tool)),
+        }),
+    )?
+    .created
+    .context("add_tool reports no new tool index")?;
     let prev_tool_id = if op_type == OperationType::Rest {
         let prev_name = op
             .prev_tool
@@ -561,10 +570,14 @@ fn execute_op_via_session(
             "Rest 'prev_tool' references unknown tool '{prev_name}'"
         ))?;
         Some(
-            session
-                .add_tool(tool_config_from_def(prev_def, prev_name))
-                .created
-                .context("add_tool reports no new tool index")?,
+            crate::command::apply_command(
+                &mut session,
+                Command::AddTool(AddToolArgs {
+                    tool: Box::new(tool_config_from_def(prev_def, prev_name)),
+                }),
+            )?
+            .created
+            .context("add_tool reports no new tool index")?,
         )
     } else {
         None
@@ -606,10 +619,11 @@ fn execute_op_via_session(
         .context("tool index out of bounds after add_tool")?
         .id
         .0;
-    let tp_index = session
-        .add_toolpath(
-            0,
-            ToolpathConfig {
+    let tp_index = crate::command::apply_command(
+        &mut session,
+        Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(ToolpathConfig {
                 id: rs_cam_core::ToolpathId(0),
                 name: format!("op_{}_{}", i, op_type.kind_str()),
                 enabled: true,
@@ -629,11 +643,12 @@ fn execute_op_via_session(
                 debug_options,
                 feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
                 planner_origin: None,
-            },
-        )
-        .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?
-        .created
-        .context("add_toolpath reports no new toolpath index")?;
+            }),
+        }),
+    )
+    .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?
+    .created
+    .context("add_toolpath reports no new toolpath index")?;
 
     // \u{2500}\u{2500} Parameters: registry-validated serde round-trip \u{2500}\u{2500}
     let drop_cutter_min_z = (op_type == OperationType::DropCutter)

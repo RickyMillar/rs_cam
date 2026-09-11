@@ -1,3 +1,7 @@
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, MoveToolpathToSetupArgs, RemoveToolpathArgs, ReorderToolpathArgs,
+};
+
 use crate::compute::ComputeBackend;
 use crate::state::Workspace;
 use crate::state::selection::Selection;
@@ -163,9 +167,14 @@ impl<B: ComputeBackend> AppController<B> {
             planner_origin: None,
         };
 
-        if let Some(setup_idx) = target_setup_idx
-            && let Ok(effects) = self.state.session.add_toolpath(setup_idx, tc)
-            && let Some(tp_idx) = effects.created
+        let created = target_setup_idx.and_then(|setup_idx| {
+            let command = Command::AddToolpath(AddToolpathArgs {
+                setup_index: setup_idx,
+                config: Box::new(tc),
+            });
+            self.apply_created(command)
+        });
+        if let Some(tp_idx) = created
             && let Some(tc) = self.state.session.toolpath_configs().get(tp_idx)
         {
             let tp_id = tc.id;
@@ -218,9 +227,14 @@ impl<B: ComputeBackend> AppController<B> {
             });
 
         if let Some(tc) = dup {
-            if let Some(setup_idx) = setup_idx
-                && let Ok(effects) = self.state.session.add_toolpath(setup_idx, tc)
-                && let Some(tp_idx) = effects.created
+            let created = setup_idx.and_then(|setup_idx| {
+                let command = Command::AddToolpath(AddToolpathArgs {
+                    setup_index: setup_idx,
+                    config: Box::new(tc),
+                });
+                self.apply_created(command)
+            });
+            if let Some(tp_idx) = created
                 && let Some(new_tc) = self.state.session.toolpath_configs().get(tp_idx)
             {
                 let new_id = new_tc.id;
@@ -251,7 +265,11 @@ impl<B: ComputeBackend> AppController<B> {
             // SAFETY: local_pos - 1 is valid since local_pos > 0
             #[allow(clippy::indexing_slicing)]
             let swap_with = setup.toolpath_indices[local_pos - 1];
-            let _ = self.state.session.reorder_toolpath(tp_idx, swap_with);
+            let command = Command::ReorderToolpath(ReorderToolpathArgs {
+                from_index: tp_idx,
+                to_index: swap_with,
+            });
+            let _ = self.apply_quietly(command);
             self.state.gui.mark_edited();
         }
     }
@@ -268,7 +286,11 @@ impl<B: ComputeBackend> AppController<B> {
             && local_pos + 1 < setup.toolpath_indices.len()
             && let Some(&swap_with) = setup.toolpath_indices.get(local_pos + 1)
         {
-            let _ = self.state.session.reorder_toolpath(tp_idx, swap_with);
+            let command = Command::ReorderToolpath(ReorderToolpathArgs {
+                from_index: tp_idx,
+                to_index: swap_with,
+            });
+            let _ = self.apply_quietly(command);
             self.state.gui.mark_edited();
         }
     }
@@ -301,10 +323,11 @@ impl<B: ComputeBackend> AppController<B> {
             if let Some(&target_global_idx) = setup.toolpath_indices.get(clamped)
                 && tp_idx != target_global_idx
             {
-                let _ = self
-                    .state
-                    .session
-                    .reorder_toolpath(tp_idx, target_global_idx);
+                let command = Command::ReorderToolpath(ReorderToolpathArgs {
+                    from_index: tp_idx,
+                    to_index: target_global_idx,
+                });
+                let _ = self.apply_quietly(command);
                 self.state.gui.mark_edited();
             }
         }
@@ -330,10 +353,12 @@ impl<B: ComputeBackend> AppController<B> {
                 .iter()
                 .position(|s| s.id == setup_id.0);
             if let Some(target_setup_idx) = target_idx {
-                let _ =
-                    self.state
-                        .session
-                        .move_toolpath_to_setup(tp_idx, target_setup_idx, position);
+                let command = Command::MoveToolpathToSetup(MoveToolpathToSetupArgs {
+                    toolpath_index: tp_idx,
+                    target_setup_index: target_setup_idx,
+                    target_position: position,
+                });
+                let _ = self.apply_quietly(command);
             }
             self.pending_upload = true;
             self.state.gui.mark_edited();
@@ -342,7 +367,8 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn handle_remove_toolpath(&mut self, tp_id: ToolpathId) {
         if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
-            let _ = self.state.session.remove_toolpath(tp_idx);
+            let command = Command::RemoveToolpath(RemoveToolpathArgs { index: tp_idx });
+            let _ = self.apply_quietly(command);
             self.state.gui.toolpath_rt.remove(&tp_id);
             // Any toolpath whose `DerivedRestRegions` boundary referenced
             // this one just lost its source entirely — force a regenerate

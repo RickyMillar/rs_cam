@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::session::{AdoptSimulationArgs, Command};
+use rs_cam_core::session::{AdoptSimulationArgs, Command, ForgetResultArgs};
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
@@ -173,9 +173,15 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// Silent when there is nothing cached: "this toolpath has no result"
     /// is the state being established, not a condition to report.
+    ///
+    /// `Command::ForgetResult` is the `Err`-arm twin of the `AdoptResult`
+    /// row the `Ok` arm takes. The function holds no `AppState`, so it
+    /// stamps no `stale_since`; the caller owns the runtime row it is
+    /// already writing.
     fn forget_core_result(session: &mut rs_cam_core::session::ProjectSession, tp_id: ToolpathId) {
         if let Some((tp_index, _)) = session.find_toolpath_config_by_id(tp_id) {
-            let _ = session.remove_result(tp_index);
+            let command = Command::ForgetResult(ForgetResultArgs { index: tp_index });
+            let _ = session.apply(command);
         }
     }
 
