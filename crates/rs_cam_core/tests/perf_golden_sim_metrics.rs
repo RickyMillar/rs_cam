@@ -268,7 +268,7 @@ fn fixture_session_2d() -> ProjectSession {
 
     // 2D ops cut at negative Z (`project_2d_stock_z_frame`), so `origin_z`
     // is negative and the stock top lands on the world z = 0 plane.
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 100.0,
         y: 80.0,
         z: 12.0,
@@ -426,7 +426,7 @@ fn fixture_session_3d() -> ProjectSession {
     // The dome's base sits on z = 0 and its apex at z = HEMI_RADIUS_MM, so
     // the stock is exactly as tall as the dome and its top plane touches the
     // apex. Nothing is auto-derived: `auto_from_model` off.
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 2.0 * HEMI_STOCK_HALF_MM,
         y: 2.0 * HEMI_STOCK_HALF_MM,
         z: HEMI_RADIUS_MM,

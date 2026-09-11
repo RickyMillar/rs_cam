@@ -163,7 +163,7 @@ fn a_fine_tier_op_cuts_only_inside_its_own_islands() {
     let allowed = RegionSet::new(slack);
 
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(common::session::stock_under(HALF_MM, 6.0));
+    let _ = session.set_stock_config(common::session::stock_under(HALF_MM, 6.0));
     let coarse_idx = session.add_tool(ball_tool_config(4.0));
     let fine_idx = session.add_tool(ball_tool_config(2.0));
     let coarse_id = session.tools()[coarse_idx].id.0;

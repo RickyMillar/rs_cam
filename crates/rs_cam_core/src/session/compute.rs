@@ -31,7 +31,7 @@ use crate::tool::MillingCutter;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Command, ProjectDiagnostics, ProjectEvidence, ProjectSession, SessionError,
+    Command, Effects, ProjectDiagnostics, ProjectEvidence, ProjectSession, SessionError,
     SetToolpathParamArgs, SimulationOptions, ToolpathComputeResult, ToolpathDiagnostic, Verdict,
     VerdictEvidence, VerdictKind, VerdictSeverity,
 };
@@ -342,22 +342,21 @@ impl ProjectSession {
     /// Invalidates the cached compute result for this toolpath.
     ///
     /// Since WP1 this is a thin wrapper over [`ProjectSession::apply`].
-    /// It drops the [`Effects`](crate::session::Effects) the door
-    /// reports. A caller that needs the set of dropped indices calls
-    /// `apply` instead.
+    /// WP3 gave it the door's own answer: it reports the same
+    /// [`Effects`] the command door reports, so the two routes cannot
+    /// carry two staleness models.
     pub fn set_toolpath_param(
         &mut self,
         index: usize,
         param: &str,
         value: serde_json::Value,
-    ) -> Result<(), SessionError> {
+    ) -> Result<Effects, SessionError> {
         let command = Command::SetToolpathParam(SetToolpathParamArgs {
             index,
             param: param.to_owned(),
             value,
         });
-        self.apply(command)?;
-        Ok(())
+        self.apply(command)
     }
 
     /// The body of the `set_toolpath_param` command.
@@ -768,7 +767,7 @@ impl ProjectSession {
 
         // Invalidate cached results for all toolpaths that use this tool
         let tool_raw_id = tool.id.0;
-        self.invalidate_tool(tool_raw_id);
+        let _ = self.invalidate_tool(tool_raw_id);
 
         Ok(())
     }
@@ -4897,7 +4896,7 @@ mod tests {
     fn set_toolpath_param_feed_rate() {
         let mut s = make_session();
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "feed_rate", json!(2000.0)).unwrap();
+        let _ = s.set_toolpath_param(0, "feed_rate", json!(2000.0)).unwrap();
         // Verify via OperationParams trait
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Pocket(cfg) => assert!((cfg.feed_rate - 2000.0).abs() < 1e-9),
@@ -4909,7 +4908,8 @@ mod tests {
     fn set_toolpath_param_plunge_rate() {
         let mut s = make_session();
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "plunge_rate", json!(500.0))
+        let _ = s
+            .set_toolpath_param(0, "plunge_rate", json!(500.0))
             .unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Pocket(cfg) => assert!((cfg.plunge_rate - 500.0).abs() < 1e-9),
@@ -4921,7 +4921,7 @@ mod tests {
     fn set_toolpath_param_stepover() {
         let mut s = make_session();
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "stepover", json!(0.5)).unwrap();
+        let _ = s.set_toolpath_param(0, "stepover", json!(0.5)).unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Pocket(cfg) => assert!((cfg.stepover - 0.5).abs() < 1e-9),
             _ => panic!("expected Pocket"),
@@ -4932,7 +4932,8 @@ mod tests {
     fn set_toolpath_param_depth_per_pass() {
         let mut s = make_session();
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "depth_per_pass", json!(1.5))
+        let _ = s
+            .set_toolpath_param(0, "depth_per_pass", json!(1.5))
             .unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Pocket(cfg) => assert!((cfg.depth_per_pass - 1.5).abs() < 1e-9),
@@ -4995,7 +4996,7 @@ mod tests {
         }
 
         // The accepting side of the same boundary.
-        s.set_toolpath_param(0, "peck_depth", json!(0.5)).unwrap();
+        let _ = s.set_toolpath_param(0, "peck_depth", json!(0.5)).unwrap();
         assert!((peck(&s) - 0.5).abs() < 1e-9);
 
         // And the domain is published, so an agent can read it before
@@ -5061,13 +5062,13 @@ mod tests {
         let mut s = make_session();
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
         // Pocket default has climb=true; flip it via integer 0.
-        s.set_toolpath_param(0, "climb", json!(0)).unwrap();
+        let _ = s.set_toolpath_param(0, "climb", json!(0)).unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Pocket(cfg) => assert!(!cfg.climb),
             _ => panic!("expected Pocket"),
         }
         // Flip back with integer 1.
-        s.set_toolpath_param(0, "climb", json!(1)).unwrap();
+        let _ = s.set_toolpath_param(0, "climb", json!(1)).unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Pocket(cfg) => assert!(cfg.climb),
             _ => panic!("expected Pocket"),
@@ -5076,7 +5077,7 @@ mod tests {
         let result = s.set_toolpath_param(0, "climb", json!(42));
         assert!(matches!(result, Err(SessionError::InvalidParam(_))));
         // Actual booleans still work.
-        s.set_toolpath_param(0, "climb", json!(false)).unwrap();
+        let _ = s.set_toolpath_param(0, "climb", json!(false)).unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Pocket(cfg) => assert!(!cfg.climb),
             _ => panic!("expected Pocket"),
@@ -5099,7 +5100,8 @@ mod tests {
     fn set_toolpath_param_drill_plunge_rate_updates_feed_rate() {
         let mut s = make_session();
         s.add_toolpath(0, make_drill_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "plunge_rate", json!(250.0))
+        let _ = s
+            .set_toolpath_param(0, "plunge_rate", json!(250.0))
             .unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Drill(cfg) => assert_eq!(cfg.feed_rate, 250.0),
@@ -5111,7 +5113,7 @@ mod tests {
     fn set_toolpath_param_prev_tool_id_accepts_int() {
         let mut s = make_session();
         s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "prev_tool_id", json!(1)).unwrap();
+        let _ = s.set_toolpath_param(0, "prev_tool_id", json!(1)).unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, Some(ToolId(1))),
             _ => panic!("expected Rest"),
@@ -5122,7 +5124,7 @@ mod tests {
     fn set_toolpath_param_prev_tool_id_accepts_string() {
         let mut s = make_session();
         s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "prev_tool_id", json!("1")).unwrap();
+        let _ = s.set_toolpath_param(0, "prev_tool_id", json!("1")).unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, Some(ToolId(1))),
             _ => panic!("expected Rest"),
@@ -5133,7 +5135,7 @@ mod tests {
     fn set_toolpath_param_prev_tool_id_accepts_float_wire_number() {
         let mut s = make_session();
         s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "prev_tool_id", json!(1.0)).unwrap();
+        let _ = s.set_toolpath_param(0, "prev_tool_id", json!(1.0)).unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, Some(ToolId(1))),
             _ => panic!("expected Rest"),
@@ -5144,8 +5146,9 @@ mod tests {
     fn set_toolpath_param_prev_tool_id_accepts_null_to_clear() {
         let mut s = make_session();
         s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "prev_tool_id", json!(1)).unwrap();
-        s.set_toolpath_param(0, "prev_tool_id", serde_json::Value::Null)
+        let _ = s.set_toolpath_param(0, "prev_tool_id", json!(1)).unwrap();
+        let _ = s
+            .set_toolpath_param(0, "prev_tool_id", serde_json::Value::Null)
             .unwrap();
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, None),
@@ -5238,7 +5241,8 @@ mod tests {
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
         // Default is None.
         assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), None);
-        s.set_toolpath_param(0, "spindle_rpm", json!(15000))
+        let _ = s
+            .set_toolpath_param(0, "spindle_rpm", json!(15000))
             .unwrap();
         assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), Some(15000));
     }
@@ -5247,13 +5251,15 @@ mod tests {
     fn set_toolpath_param_spindle_rpm_null_clears() {
         let mut s = make_session();
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
-        s.set_toolpath_param(0, "spindle_rpm", json!(20_000))
+        let _ = s
+            .set_toolpath_param(0, "spindle_rpm", json!(20_000))
             .unwrap();
         assert_eq!(
             s.toolpath_configs()[0].operation.spindle_rpm(),
             Some(20_000)
         );
-        s.set_toolpath_param(0, "spindle_rpm", serde_json::Value::Null)
+        let _ = s
+            .set_toolpath_param(0, "spindle_rpm", serde_json::Value::Null)
             .unwrap();
         assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), None);
     }
@@ -5277,11 +5283,13 @@ mod tests {
         let mut s = make_session();
         s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
         // Integer-valued f64.
-        s.set_toolpath_param(0, "spindle_rpm", json!(13500.0))
+        let _ = s
+            .set_toolpath_param(0, "spindle_rpm", json!(13500.0))
             .unwrap();
         assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), Some(13500));
         // Numeric string.
-        s.set_toolpath_param(0, "spindle_rpm", json!("18000"))
+        let _ = s
+            .set_toolpath_param(0, "spindle_rpm", json!("18000"))
             .unwrap();
         assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), Some(18000));
         // Non-integer float is rejected (would lose precision).
@@ -5304,7 +5312,7 @@ mod tests {
                 semantic_trace: None,
             },
         );
-        s.set_toolpath_param(0, "feed_rate", json!(1000.0)).unwrap();
+        let _ = s.set_toolpath_param(0, "feed_rate", json!(1000.0)).unwrap();
         assert!(!s.results.contains_key(&0));
     }
 
@@ -5377,7 +5385,7 @@ mod tests {
                 feed_scale_factor: 1.5,
                 kc: 25.0,
             };
-            s.set_stock_config(stock);
+            let _ = s.set_stock_config(stock);
             let tool = s.tools()[0].clone();
             let mut tc = make_tc(tool.id.0);
             let suggested = crate::feeds::suggest::suggest_for_operation(

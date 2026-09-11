@@ -266,7 +266,7 @@ fn stock() -> StockConfig {
 /// `decompose_surface`.
 fn generate_through_session(tool: ToolConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock());
+    let _ = session.set_stock_config(stock());
     let tool_idx = session.add_tool(tool);
     let tool_id = session.tools()[tool_idx].id.0;
     let model_id = session.add_model(mesh_model(two_groove_plateau()));

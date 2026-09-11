@@ -385,7 +385,7 @@ fn build_session(fx: &Fixture) -> ProjectSession {
 
     let mut stock = stock_over(HALF, STOCK_Z);
     stock.material = fx.material.clone();
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
 
     session.set_machine(MachineProfile {
         max_feed_mm_min: fx.max_feed_mm_min,

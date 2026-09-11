@@ -32,7 +32,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathConfig};
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::job::{ModelId, ModelKind, ModelUnits};
 use rs_cam_viz::state::rest_dependency::{RestCandidate, rest_predecessors};
@@ -113,7 +113,7 @@ fn pocket_op() -> OperationConfig {
 fn fresh_state() -> AppState {
     let mut state = AppState::new();
     let mut session = ProjectSession::new_empty();
-    session.replace_tools(vec![tool(ROUGH_TOOL, 10.0), tool(REST_TOOL, 6.0)]);
+    let _ = session.replace_tools(vec![tool(ROUGH_TOOL, 10.0), tool(REST_TOOL, 6.0)]);
     session.models_mut().push(polygon_model(MODEL_A));
     session.models_mut().push(polygon_model(MODEL_B));
     state.session = session;
@@ -134,9 +134,14 @@ fn add(state: &mut AppState, setup_idx: usize, tc: ToolpathConfig) -> ToolpathId
     // not read as ready. Before F2.2 the badge asked
     // `ComputeStatus::needs_generation() || stale_since.is_some()`, so a
     // status alone was enough to model a generated predecessor here.
-    state
+    let revision = state.session.toolpath_revision(idx);
+    let _ = state
         .session
-        .insert_result(idx, generated_result())
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: idx,
+            revision,
+            result: Box::new(generated_result()),
+        }))
         .expect("index is in range");
     id
 }
@@ -252,7 +257,7 @@ fn b_disabled_candidate_above_is_no_dependency_on_both_surfaces() {
         .iter()
         .position(|tc| tc.id == rough_id)
         .unwrap();
-    state
+    let _ = state
         .session
         .set_toolpath_enabled(rough_idx, false)
         .unwrap();
@@ -308,7 +313,7 @@ fn c2_a_qualifying_predecessor_that_needs_generation_reads_stale_dep() {
         .iter()
         .position(|tc| tc.id == rough_id)
         .unwrap();
-    state.session.invalidate_toolpath_inputs(rough_idx);
+    let _ = state.session.invalidate_toolpath_inputs(rough_idx);
     state.gui.toolpath_rt.get_mut(&rough_id).unwrap().status = ComputeStatus::Pending;
     state.gui.toolpath_rt.get_mut(&rough_id).unwrap().result = None;
 

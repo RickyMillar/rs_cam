@@ -71,7 +71,7 @@ use rs_cam_core::compute::PocketConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy, export_gcode_checked};
 use rs_cam_core::geo::P3;
-use rs_cam_core::session::{ProjectSession, ToolpathComputeResult};
+use rs_cam_core::session::{AdoptResultArgs, Command, ProjectSession, ToolpathComputeResult};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
@@ -124,9 +124,14 @@ fn session_with_coolant(coolant: CoolantMode) -> ProjectSession {
         OperationConfig::Pocket(PocketConfig::default()),
         |tc| tc.coolant = coolant,
     );
-    session
-        .insert_result(0, hand_built_result())
-        .expect("insert the hand-built result");
+    let revision = session.toolpath_revision(0);
+    let _ = session
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: 0,
+            revision,
+            result: Box::new(hand_built_result()),
+        }))
+        .expect("adopt the hand-built result at the current revision");
     session
 }
 

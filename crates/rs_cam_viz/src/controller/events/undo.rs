@@ -9,14 +9,14 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(action) = self.state.history.undo() {
             match action {
                 UndoAction::StockChange { old, .. } => {
-                    self.state.session.set_stock_config(old);
+                    let _ = self.state.session.set_stock_config(old);
                     self.invalidate_simulation();
                 }
                 UndoAction::PostChange { old, .. } => {
                     self.state.gui.post = old;
                     let session_post =
                         crate::state::runtime::GuiState::post_to_session(&self.state.gui.post);
-                    self.state.session.set_post_config(session_post);
+                    let _ = self.state.session.set_post_config(session_post);
                 }
                 UndoAction::ToolChange { tool_id, old, .. } => {
                     self.apply_tool_snapshot(tool_id, old);
@@ -56,14 +56,14 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(action) = self.state.history.redo() {
             match action {
                 UndoAction::StockChange { new, .. } => {
-                    self.state.session.set_stock_config(new);
+                    let _ = self.state.session.set_stock_config(new);
                     self.invalidate_simulation();
                 }
                 UndoAction::PostChange { new, .. } => {
                     self.state.gui.post = new;
                     let session_post =
                         crate::state::runtime::GuiState::post_to_session(&self.state.gui.post);
-                    self.state.session.set_post_config(session_post);
+                    let _ = self.state.session.set_post_config(session_post);
                 }
                 UndoAction::ToolChange { tool_id, new, .. } => {
                     self.apply_tool_snapshot(tool_id, new);
@@ -112,7 +112,7 @@ impl<B: ComputeBackend> AppController<B> {
         {
             *slot = tool;
         }
-        let affected = self.state.session.invalidate_tool(tool_id.0);
+        let affected = self.state.session.invalidate_tool(tool_id.0).stale;
         let now = std::time::Instant::now();
         for index in affected {
             if let Some(tc) = self.state.session.get_toolpath_config(index) {

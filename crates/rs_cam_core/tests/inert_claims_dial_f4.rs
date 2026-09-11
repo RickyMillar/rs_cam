@@ -188,7 +188,7 @@ fn toolpath(cfg: UnifiedFinishConfig, tool_id: usize, model_id: usize) -> Toolpa
 
 fn session_with(cfg: UnifiedFinishConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock());
+    let _ = session.set_stock_config(stock());
     let tool_idx = session.add_tool(tapered_ball_tool());
     let tool_id = session.tools()[tool_idx].id.0;
     let model_id = session.add_model(mesh_model(two_groove_plateau()));

@@ -151,14 +151,14 @@ fn session() -> ProjectSession {
     rest_tool.diameter = 3.0;
     let mut previous_tool = ToolConfig::new_default(ToolId(PREVIOUS_TOOL), ToolType::EndMill);
     previous_tool.diameter = 6.0;
-    session.replace_tools(vec![tool, rest_tool, previous_tool]);
+    let _ = session.replace_tools(vec![tool, rest_tool, previous_tool]);
     session.models_mut().push(polygon_model(MODEL_2D));
     let stock = StockConfig {
         z: STOCK_THICKNESS_MM,
         auto_from_model: false,
         ..StockConfig::default()
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
     session
 }
 

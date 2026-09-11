@@ -59,7 +59,9 @@ use rs_cam_core::compute::config::ToolpathStats;
 use rs_cam_core::compute::stock_config::{ModelId, ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::drill_op::OpData;
-use rs_cam_core::session::{LoadedModel, ToolpathComputeResult, ToolpathConfig};
+use rs_cam_core::session::{
+    AdoptResultArgs, Command, LoadedModel, ToolpathComputeResult, ToolpathConfig,
+};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::compute::{
@@ -182,8 +184,16 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
     session
         .add_toolpath(0, toolpath("Bystander", id_bystander.0))
         .expect("add the bystander toolpath");
-    session.insert_result(0, stub_result()).expect("cache 0");
-    session.insert_result(1, stub_result()).expect("cache 1");
+    for index in [0usize, 1usize] {
+        let revision = session.toolpath_revision(index);
+        let _ = session
+            .apply(Command::AdoptResult(AdoptResultArgs {
+                index,
+                revision,
+                result: Box::new(stub_result()),
+            }))
+            .expect("cache the seeded result");
+    }
 
     (controller, id_under_test, under_test)
 }
@@ -364,7 +374,14 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
     session
         .add_toolpath(0, toolpath("On the STEP", model_id))
         .expect("add the dependent toolpath");
-    session.insert_result(0, stub_result()).expect("cache 0");
+    let revision = session.toolpath_revision(0);
+    let _ = session
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: 0,
+            revision,
+            result: Box::new(stub_result()),
+        }))
+        .expect("cache 0");
 
     controller
         .rescale_model(ModelId(model_id), ModelUnits::Inches)

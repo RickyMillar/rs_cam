@@ -54,7 +54,7 @@ fn dome() -> TriangleMesh {
 /// Returns the session plus `(coarse_id, fine_id, model_id)`.
 fn session_with_ladder() -> (ProjectSession, usize, usize, usize) {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(common::session::stock_over(9.0, 12.0));
+    let _ = session.set_stock_config(common::session::stock_over(9.0, 12.0));
     let coarse_idx = session.add_tool(ball_tool_config(4.0));
     let fine_idx = session.add_tool(ball_tool_config(3.0));
     let coarse_id = session.tools()[coarse_idx].id.0;

@@ -22,7 +22,8 @@ mod save;
 pub mod wizard;
 
 pub use command::{
-    Command, CommandId, CommandKind, Effects, Reach, SetToolpathParamArgs, Surfaces,
+    AdoptResultArgs, Command, CommandId, CommandKind, Effects, Reach, SetToolpathParamArgs,
+    Surfaces,
 };
 pub use compute::{MutationKind, ResolvedGenInputs, StaleSet, compute_stale_set};
 pub use eval_context::SetupEvalContext;
@@ -135,6 +136,22 @@ pub enum SessionError {
     /// owns every "an empty result is legitimate here" exemption — see that
     /// module's doc.
     GeneratedEmpty(String),
+    /// WP3 — a completion answers a superseded parameter set.
+    ///
+    /// A generation runs off the frame loop. The lane stamps the
+    /// generation-input revision it starts from, and
+    /// [`Command::AdoptResult`] carries that stamp back. When the
+    /// toolpath's revision has moved since, the computed geometry
+    /// answers inputs the project no longer holds, so the door refuses
+    /// it and inserts nothing.
+    ///
+    /// `submitted` is the revision the lane started from. `current` is
+    /// the revision the toolpath carries now.
+    StaleCompletion {
+        index: usize,
+        submitted: u64,
+        current: u64,
+    },
 }
 
 impl std::fmt::Display for SessionError {
@@ -167,6 +184,16 @@ impl std::fmt::Display for SessionError {
             // "Generated empty: " prefix would only push the toolpath name
             // further from the start of a truncated GUI badge.
             Self::GeneratedEmpty(msg) => write!(f, "{msg}"),
+            Self::StaleCompletion {
+                index,
+                submitted,
+                current,
+            } => write!(
+                f,
+                "Toolpath {index} changed while it was generating: the \
+                 result answers revision {submitted} and the toolpath is \
+                 at revision {current}. Generate it again."
+            ),
         }
     }
 }
@@ -796,6 +823,12 @@ pub struct ToolpathConfig {
 /// either remap them or set
 /// [`AnnotatedToolpath::spans_valid`](crate::toolpath_spans::AnnotatedToolpath::spans_valid)
 /// to `false` when they can't.
+///
+/// The record derives `Debug` and `Clone` because
+/// [`Command::AdoptResult`] carries one and the generated `Command` enum
+/// derives both. A clone copies the `Arc` on the annotated toolpath, not
+/// the geometry behind it.
+#[derive(Debug, Clone)]
 pub struct ToolpathComputeResult {
     pub op_data: crate::drill_op::OpData,
     pub stats: ToolpathStats,
@@ -2363,7 +2396,7 @@ mod tests {
         let mut session = session_with_toolpath();
         let original = session.toolpath_configs[0].operation.feed_rate();
 
-        session
+        let _ = session
             .set_toolpath_param(0, "feed_rate", serde_json::json!(1500.0))
             .unwrap();
 
@@ -2379,7 +2412,7 @@ mod tests {
         let mut session = session_with_toolpath();
 
         // Pocket has a config-specific "angle" parameter
-        session
+        let _ = session
             .set_toolpath_param(0, "angle", serde_json::json!(45.0))
             .unwrap();
 
@@ -2442,7 +2475,7 @@ mod tests {
             "Precondition: result cached"
         );
 
-        session
+        let _ = session
             .set_toolpath_param(0, "feed_rate", serde_json::json!(2000.0))
             .unwrap();
 
@@ -2497,7 +2530,7 @@ mod tests {
         let mut session = session_with_toolpath();
         assert_eq!(session.toolpath_count(), 1);
 
-        session.remove_toolpath(0).unwrap();
+        let _ = session.remove_toolpath(0).unwrap();
         assert_eq!(session.toolpath_count(), 0);
         assert!(session.list_toolpaths().is_empty());
 
@@ -2581,7 +2614,7 @@ mod tests {
             z: 50.0,
             ..StockConfig::default()
         };
-        session.set_stock_config(new_stock);
+        let _ = session.set_stock_config(new_stock);
 
         assert!(
             session.simulation_result().is_none(),

@@ -2484,7 +2484,7 @@ mod tests {
     #[test]
     fn validate_toolpath_rejects_wrong_geometry_type() {
         let mut session = ProjectSession::new_empty();
-        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 6.0)]);
+        let _ = session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 6.0)]);
         // Push directly to preserve the ID we chose.
         session.models_mut().push(session_mesh_model(2));
 
@@ -2533,7 +2533,7 @@ mod tests {
     #[test]
     fn validate_drill_blocks_when_model_exposes_no_targets() {
         let mut session = ProjectSession::new_empty();
-        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
+        let _ = session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
         session.models_mut().push(session_polygon_model(2));
 
         let errs = validate_toolpath(
@@ -2562,7 +2562,7 @@ mod tests {
     #[test]
     fn validate_drill_passes_when_model_exposes_a_target() {
         let mut session = ProjectSession::new_empty();
-        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
+        let _ = session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
         session.models_mut().push(session_target_model(2));
 
         let errs = validate_toolpath(
@@ -2578,7 +2578,7 @@ mod tests {
     #[test]
     fn validate_drill_passes_on_an_explicit_pick_without_model_targets() {
         let mut session = ProjectSession::new_empty();
-        session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
+        let _ = session.replace_tools(vec![sample_tool(ToolId(1), ToolType::EndMill, 3.0)]);
         session.models_mut().push(session_polygon_model(2));
 
         let mut entry = drill_entry(2);
@@ -2595,7 +2595,7 @@ mod tests {
     #[test]
     fn validate_rest_requires_earlier_matching_operation() {
         let mut session = ProjectSession::new_empty();
-        session.replace_tools(vec![
+        let _ = session.replace_tools(vec![
             sample_tool(ToolId(1), ToolType::EndMill, 10.0),
             sample_tool(ToolId(2), ToolType::EndMill, 6.0),
         ]);
@@ -2635,7 +2635,7 @@ mod tests {
     #[test]
     fn validate_rest_accepts_earlier_matching_operation() {
         let mut session = ProjectSession::new_empty();
-        session.replace_tools(vec![
+        let _ = session.replace_tools(vec![
             sample_tool(ToolId(1), ToolType::EndMill, 10.0),
             sample_tool(ToolId(2), ToolType::EndMill, 6.0),
         ]);

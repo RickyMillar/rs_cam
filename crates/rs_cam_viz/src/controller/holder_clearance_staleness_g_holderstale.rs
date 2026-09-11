@@ -267,7 +267,7 @@ struct EditClass {
 fn edit_stock_height(controller: &mut AppController<ScriptedLane>) {
     let mut stock = controller.state.session.stock_config().clone();
     stock.z += 5.0;
-    controller.state.session.set_stock_config(stock);
+    let _ = controller.state.session.set_stock_config(stock);
     controller.handle_internal_event(AppEvent::StockChanged);
 }
 

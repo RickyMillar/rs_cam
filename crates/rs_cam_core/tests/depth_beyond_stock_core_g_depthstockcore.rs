@@ -262,7 +262,7 @@ fn the_id_is_in_the_registry() {
 /// mill, one pocket at `depth`.
 fn pocket_session(depth: f64) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 100.0,
         y: 100.0,
         z: STOCK_TOP_Z - STOCK_BOTTOM_Z,

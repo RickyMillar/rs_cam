@@ -1044,7 +1044,7 @@ mod orchestration_skip_tests {
         // uses `{kc: 10.0, hardness: 1.0}` and the assertion holds
         // identically.
         stock.material = crate::material::Material::test_fixture_custom("test");
-        session.set_stock_config(stock);
+        let _ = session.set_stock_config(stock);
         let _ = StockConfig::default(); // silence unused-import false positive
 
         let trace = empty_trace();
@@ -1192,7 +1192,7 @@ mod orchestration_skip_tests {
         stock.material = crate::material::Material::SolidWood {
             species: crate::material::WoodSpecies::HardMaple,
         };
-        session.set_stock_config(stock);
+        let _ = session.set_stock_config(stock);
         let trace = trace_with_summary_and_high_force_samples();
         let cancel = AtomicBool::new(false);
         let outcome = optimize_toolpath(&mut session, &trace, 0, &cancel);
@@ -1231,7 +1231,7 @@ mod orchestration_skip_tests {
         stock.material = crate::material::Material::SolidWood {
             species: crate::material::WoodSpecies::HardMaple,
         };
-        s.set_stock_config(stock);
+        let _ = s.set_stock_config(stock);
 
         let trace = trace_with_summary_and_high_force_samples();
         let cancel = AtomicBool::new(false);

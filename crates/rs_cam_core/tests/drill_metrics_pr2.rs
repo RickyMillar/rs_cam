@@ -89,7 +89,7 @@ fn build_drill_session(peck_depth: f64, tool_diameter: f64) -> ProjectSession {
         },
         ..StockConfig::default()
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
 
     let tool_idx = session.add_tool(make_drill_tool(tool_diameter));
     let tool_id = session.tools()[tool_idx].id.0;

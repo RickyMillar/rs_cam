@@ -145,7 +145,7 @@ pub(crate) fn commit_tool_draft(
     // Request their regeneration too — this route used to drop the results
     // and mark nothing, so the cards stayed green and export fell back to
     // the GUI's copy of the OLD geometry.
-    let affected = state.session.invalidate_tool(tool_id.0);
+    let affected = state.session.invalidate_tool(tool_id.0).stale;
     let now = std::time::Instant::now();
     for index in affected {
         if let Some(tc) = state.session.get_toolpath_config(index) {
@@ -309,7 +309,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // simulation cache — we must not wipe it every idle frame.
             let session_post = crate::state::runtime::GuiState::post_to_session(&state.gui.post);
             if *state.session.post_config() != session_post {
-                state.session.set_post_config(session_post);
+                let _ = state.session.set_post_config(session_post);
             }
         }
         Selection::Machine => {
@@ -820,10 +820,13 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // effect: the source toolpath's rest analysis turns on and its
             // cached result invalidates, so it actually produces regions on
             // next generation.
+            // WP3: the setter reports `Option<Effects>`. `None` says the
+            // call changed nothing, which is the old `false`.
             if let Some(source_id) = auto_enable_rest_source
                 && state
                     .session
                     .auto_enable_rest_analysis_for_source(source_id)
+                    .is_some()
             {
                 if let Some(rt) = state.gui.toolpath_rt.get_mut(&source_id) {
                     rt.stale_since = Some(std::time::Instant::now());
@@ -3789,7 +3792,7 @@ pub(crate) fn write_entry_config_to_session(
     // card's row control does, through `set_toolpath_enabled`), and its
     // own transition keeps the toggled op's result for a re-enable.
     if let Some(index) = invalidate {
-        session.invalidate_toolpath_inputs(index);
+        let _ = session.invalidate_toolpath_inputs(index);
     }
     invalidate.is_some()
 }

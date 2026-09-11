@@ -450,7 +450,7 @@ mod tests {
             size_z: 20.0,
             clearance: 3.0,
         };
-        s.add_fixture(0, fixture).unwrap();
+        let _ = s.add_fixture(0, fixture).unwrap();
 
         let zone = KeepOutZone {
             id: crate::compute::stock_config::KeepOutId(0),
@@ -461,7 +461,7 @@ mod tests {
             size_x: 15.0,
             size_y: 25.0,
         };
-        s.add_keep_out(0, zone).unwrap();
+        let _ = s.add_keep_out(0, zone).unwrap();
 
         let path = temp_path("setup_fixture");
         s.save(&path).unwrap();
@@ -511,7 +511,7 @@ mod tests {
         stock.z = 25.0;
         stock.origin_x = -10.0;
         stock.padding = 5.0;
-        s.set_stock_config(stock);
+        let _ = s.set_stock_config(stock);
 
         let path = temp_path("stock");
         s.save(&path).unwrap();

@@ -92,7 +92,7 @@ fn spec(coarse_id: usize, fine_id: usize, model_id: usize) -> MultitoolPlanSpec 
 /// Returns `(session, coarse_id, fine_id, model_id)`.
 fn session_with_ladder() -> (ProjectSession, usize, usize, usize) {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(common::session::stock_under(HALF_MM, 6.0));
+    let _ = session.set_stock_config(common::session::stock_under(HALF_MM, 6.0));
     let coarse_idx = session.add_tool(ball_tool_config(4.0));
     let fine_idx = session.add_tool(ball_tool_config(2.0));
     let coarse_id = session.tools()[coarse_idx].id.0;

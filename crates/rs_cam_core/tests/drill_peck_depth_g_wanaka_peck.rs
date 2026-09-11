@@ -122,7 +122,7 @@ fn fed_descent_lengths(session: &mut ProjectSession, index: usize) -> Vec<f64> {
 
 fn drill_session(op: OperationConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock());
+    let _ = session.set_stock_config(stock());
     let tool_idx = session.add_tool(make_endmill_6mm());
     let tool_id = session.tools()[tool_idx].id.0;
     let model_id = session.add_model(plate_model());

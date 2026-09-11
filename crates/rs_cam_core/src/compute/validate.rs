@@ -416,7 +416,7 @@ mod tests {
         stock.material = Material::SolidWood {
             species: WoodSpecies::GenericHardwood,
         };
-        s.set_stock_config(stock);
+        let _ = s.set_stock_config(stock);
         s
     }
 
@@ -555,7 +555,7 @@ mod tests {
         // (hardness=1, kc=10) defaults work just as well as the
         // aluminum-flavoured (3.0, 2500.0) the pre-S3-13 fixture used.
         stock.material = Material::test_fixture_custom("Aluminium 6061");
-        s.set_stock_config(stock);
+        let _ = s.set_stock_config(stock);
         s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
         cfg.stepover = 0.7;
@@ -598,7 +598,7 @@ mod tests {
         cfg.min_z = -50.0;
         let mut stock = s.stock_config().clone();
         stock.origin_z = -25.0;
-        s.set_stock_config(stock);
+        let _ = s.set_stock_config(stock);
         s.add_toolpath(
             0,
             make_tp(0, "Old Finish", OperationConfig::DropCutter(cfg), 0),

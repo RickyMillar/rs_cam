@@ -47,9 +47,27 @@ use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
+use rs_cam_core::session::{
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, SessionError, ToolpathConfig,
+};
 
 // ── fixture ──────────────────────────────────────────────────────
+
+/// Deliver a computed result the way the compute lane does.
+///
+/// `insert_result` was the public door before WP3. A completion now
+/// carries the revision the lane started from, and the door refuses one
+/// that answers a superseded parameter set.
+fn adopt(s: &mut ProjectSession, index: usize) {
+    let revision = s.toolpath_revision(index);
+    let _ = s
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index,
+            revision,
+            result: Box::new(fake_result()),
+        }))
+        .expect("the fixture adopts at the current revision");
+}
 
 fn tc(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
@@ -122,14 +140,14 @@ fn set_toolpath_tool_rebinds_and_invalidates_the_cached_result() {
     let mut s = seed();
     let tool_b = s.tools()[1].id.0;
     assert_ne!(s.toolpath_configs()[0].tool_id, tool_b);
-    s.insert_result(0, fake_result()).unwrap();
+    adopt(&mut s, 0);
     assert!(
         s.get_result(0).is_some(),
         "a result must be cached before the rebind, or the invalidation \
          assertion below proves nothing"
     );
 
-    s.set_toolpath_tool(0, tool_b).unwrap();
+    let _ = s.set_toolpath_tool(0, tool_b).unwrap();
 
     assert_eq!(s.toolpath_configs()[0].tool_id, tool_b, "binding moved");
     assert!(
@@ -143,10 +161,10 @@ fn set_toolpath_model_rebinds_and_invalidates_the_cached_result() {
     let mut s = seed();
     let model_b = s.models()[1].id;
     assert_ne!(s.toolpath_configs()[0].model_id, model_b);
-    s.insert_result(0, fake_result()).unwrap();
+    adopt(&mut s, 0);
     assert!(s.get_result(0).is_some());
 
-    s.set_toolpath_model(0, model_b).unwrap();
+    let _ = s.set_toolpath_model(0, model_b).unwrap();
 
     assert_eq!(s.toolpath_configs()[0].model_id, model_b);
     assert!(s.get_result(0).is_none());
@@ -172,10 +190,10 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
     s.add_toolpath(0, downstream).unwrap();
 
     // Both rows carry a result; only the upstream one is rebound.
-    s.insert_result(0, fake_result()).unwrap();
-    s.insert_result(1, fake_result()).unwrap();
+    adopt(&mut s, 0);
+    adopt(&mut s, 1);
 
-    s.set_toolpath_tool(0, tool_b).unwrap();
+    let _ = s.set_toolpath_tool(0, tool_b).unwrap();
     assert!(s.get_result(0).is_none(), "the rebound op's own result");
     assert!(
         s.get_result(1).is_none(),
@@ -184,11 +202,11 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
     );
 
     // And the same for the model door.
-    s.set_toolpath_tool(0, tool_a).unwrap();
+    let _ = s.set_toolpath_tool(0, tool_a).unwrap();
     let model_b = s.models()[1].id;
-    s.insert_result(0, fake_result()).unwrap();
-    s.insert_result(1, fake_result()).unwrap();
-    s.set_toolpath_model(0, model_b).unwrap();
+    adopt(&mut s, 0);
+    adopt(&mut s, 1);
+    let _ = s.set_toolpath_model(0, model_b).unwrap();
     assert!(s.get_result(0).is_none());
     assert!(
         s.get_result(1).is_none(),
@@ -201,14 +219,14 @@ fn rebinding_to_the_same_id_is_a_no_op_and_keeps_the_result() {
     let mut s = seed();
     let tool_a = s.tools()[0].id.0;
     let model_a = s.models()[0].id;
-    s.insert_result(0, fake_result()).unwrap();
+    adopt(&mut s, 0);
 
-    s.set_toolpath_tool(0, tool_a).unwrap();
+    let _ = s.set_toolpath_tool(0, tool_a).unwrap();
     assert!(
         s.get_result(0).is_some(),
         "no binding moved, so nothing is stale"
     );
-    s.set_toolpath_model(0, model_a).unwrap();
+    let _ = s.set_toolpath_model(0, model_a).unwrap();
     assert!(s.get_result(0).is_some());
 }
 
@@ -286,7 +304,7 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
     .unwrap();
 
     // Scallop's registry entry requires a ball tip. The rebind still lands.
-    s.set_toolpath_tool(0, flat).unwrap();
+    let _ = s.set_toolpath_tool(0, flat).unwrap();
     assert_eq!(s.toolpath_configs()[0].tool_id, flat);
 
     // …and the registry predicate the generator reads still says no.
@@ -300,7 +318,7 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
     assert!(constraints.allows(ToolType::BallNose.cutter_kind()));
 
     // The repair route works: rebind back, and the op is generatable again.
-    s.set_toolpath_tool(0, ball).unwrap();
+    let _ = s.set_toolpath_tool(0, ball).unwrap();
     assert_eq!(s.toolpath_configs()[0].tool_id, ball);
 }
 
@@ -342,7 +360,8 @@ fn rebind_is_not_reachable_through_the_param_route() {
     );
     rest.stock_source = StockSource::Fresh;
     s.add_toolpath(0, rest).unwrap();
-    s.set_toolpath_param(1, "prev_tool_id", serde_json::json!(tool_b))
+    let _ = s
+        .set_toolpath_param(1, "prev_tool_id", serde_json::json!(tool_b))
         .expect("prev_tool_id is a real Rest param");
     assert_eq!(
         s.toolpath_configs()[1].tool_id,

@@ -227,7 +227,7 @@ impl RsCamApp {
                     s.gui.mark_edited();
                     let mut session_post = s.session.post_config().clone();
                     session_post.format = format.to_token().to_owned();
-                    s.session.set_post_config(session_post);
+                    let _ = s.session.set_post_config(session_post);
                 }
                 AppEvent::SetToolLoadOverride {
                     accept_unmodeled,

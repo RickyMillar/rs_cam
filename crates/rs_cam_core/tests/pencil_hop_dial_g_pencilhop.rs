@@ -159,12 +159,12 @@ fn the_dial_is_reachable_from_set_toolpath_param() {
          the wildcard set path never see the name"
     );
 
-    session
+    let _ = session
         .set_toolpath_param(0, "link_hop_distance_mm", serde_json::json!(0.0))
         .expect("MCP must accept the dial by name");
     assert_eq!(read_hop_cap(&session), Some(0.0));
 
-    session
+    let _ = session
         .set_toolpath_param(0, "link_hop_distance_mm", serde_json::json!(null))
         .expect("null must reset the dial");
     assert_eq!(

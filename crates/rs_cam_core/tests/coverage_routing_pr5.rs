@@ -512,7 +512,7 @@ fn pencil_toolpath(cfg: PencilConfig, tool_id: usize, model_id: usize) -> Toolpa
 
 fn generate_pencil_through_session(route_width_factor: f64) -> ToolpathStats {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 40.0,
         y: 24.0,
         z: 4.0,

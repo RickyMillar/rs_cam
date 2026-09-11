@@ -149,7 +149,7 @@ const FLIPPED_PIN: usize = 3;
 /// transform, so any coordinate difference is attributable to it.
 fn two_setup_session() -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock());
+    let _ = session.set_stock_config(stock());
     let tool_idx = session.add_tool(make_endmill_6mm());
     let tool_id = session.tools()[tool_idx].id.0;
     let model_id = session.add_model(polygon_model(vec![plate_polygon()], "plate"));

@@ -46,7 +46,7 @@ fn trace_op(spindle_rpm: u32) -> OperationConfig {
 #[test]
 fn disabled_cached_toolpath_is_absent_from_checked_export() {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_under(20.0, 4.0));
+    let _ = session.set_stock_config(stock_under(20.0, 4.0));
 
     let mut disabled_tool = make_endmill_6mm();
     disabled_tool.name = "N1 Disabled Tool".to_owned();
@@ -111,7 +111,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
         "enabled fixture must generate motion"
     );
 
-    session
+    let _ = session
         .set_toolpath_enabled(0, false)
         .expect("disable first trace");
     assert!(
@@ -147,7 +147,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     assert!(!gcode.contains("S11111"));
     assert!(!gcode.contains("X21.000"));
 
-    session
+    let _ = session
         .set_toolpath_enabled(0, true)
         .expect("re-enable first trace");
     assert!(

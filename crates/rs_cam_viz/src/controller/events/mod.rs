@@ -254,7 +254,7 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.gui.mark_edited();
             }
             AppEvent::MachineChanged => {
-                self.state.session.invalidate_machine();
+                let _ = self.state.session.invalidate_machine();
                 self.state.gui.mark_edited();
             }
 
@@ -957,7 +957,7 @@ impl<B: ComputeBackend> AppController<B> {
         let inputs_changed =
             crate::ui::properties::generation_inputs_signature(tc) != signature_before;
         if inputs_changed {
-            self.state.session.invalidate_toolpath_inputs(idx);
+            let _ = self.state.session.invalidate_toolpath_inputs(idx);
         }
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {

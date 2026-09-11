@@ -2583,11 +2583,14 @@ impl super::RsCamApp {
 
     fn mcp_add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> String {
         let before = self.mcp_diagnostic_snapshot();
+        // WP3: the door reports `Option<Effects>`. `None` says the call
+        // changed nothing, which is the old `false`.
         let added = self
             .controller
             .state_mut()
             .session
-            .add_alignment_pin(x, y, diameter);
+            .add_alignment_pin(x, y, diameter)
+            .is_some();
         let pin_count = self
             .controller
             .state()
@@ -2621,7 +2624,11 @@ impl super::RsCamApp {
             .session
             .remove_alignment_pin(index);
         match result {
-            Ok(()) => {
+            // A pin edit reaches every toolpath through the stock, and
+            // this arm reported no stale set before WP3. It still
+            // reports none: `set_stock_config`'s own MCP arm is WP4's
+            // row, and the two must move together.
+            Ok(_effects) => {
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();
                 let pin_count = self
@@ -2719,6 +2726,14 @@ impl super::RsCamApp {
     /// This is the stamping half of [`Self::mcp_apply_stale`]. An arm
     /// that reads its stale set from `Effects::stale` calls this half
     /// directly, so the two routes stamp the same way.
+    ///
+    /// WP3: the two routes do NOT report the same SET.
+    /// `compute_stale_set(MutationKind::ToolpathParamChanged)` reports
+    /// the edited index alone. `Effects::stale` reports every toolpath
+    /// whose generation-input revision moved, which is the edited
+    /// toolpath AND the downstream results the chain dropped. An arm
+    /// whose core setter reports `Effects` takes the setter's answer,
+    /// because the setter is the one that moved the revisions.
     fn mcp_stamp_stale(&mut self, stale: &[usize]) {
         let now = std::time::Instant::now();
         let ids: Vec<rs_cam_core::ToolpathId> = stale
@@ -3744,11 +3759,10 @@ impl super::RsCamApp {
             .session
             .set_toolpath_tool(index, tool_id)
         {
-            Ok(()) => {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
-                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-                    toolpath_index: index,
-                });
+                let stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 let session = &self.controller.state().session;
                 let tool = session
                     .tools()
@@ -3803,11 +3817,10 @@ impl super::RsCamApp {
             .session
             .set_toolpath_model(index, model_id)
         {
-            Ok(()) => {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
-                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-                    toolpath_index: index,
-                });
+                let stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 let session = &self.controller.state().session;
                 let model = session
                     .models()
@@ -3881,11 +3894,10 @@ impl super::RsCamApp {
             .session
             .set_heights_config(index, heights)
         {
-            Ok(()) => {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
-                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-                    toolpath_index: index,
-                });
+                let stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 self.mcp_mutation_result(
                     format!("Set toolpath {index} heights. Regenerate to apply."),
                     serde_json::json!({
@@ -4091,7 +4103,14 @@ impl super::RsCamApp {
             .map(|tc| tc.id);
 
         match self.controller.state_mut().session.remove_toolpath(index) {
-            Ok(()) => {
+            // The reply keeps its empty stale list. A removal shifts
+            // every index above the removed one, so `remove_toolpath`
+            // bumps EVERY revision and `Effects::stale` holds every
+            // remaining toolpath. That is an index-bookkeeping fact, not
+            // a claim that those results need regeneration — the removal
+            // re-keys them and keeps them. Stamping them would put STALE
+            // on every card in the project.
+            Ok(_effects) => {
                 if let Some(id) = tp_id {
                     self.controller.state_mut().gui.toolpath_rt.remove(&id);
                 }
@@ -4320,7 +4339,7 @@ impl super::RsCamApp {
         };
         stock.auto_from_model = auto_after;
 
-        self.controller.state_mut().session.set_stock_config(stock);
+        let _ = self.controller.state_mut().session.set_stock_config(stock);
         self.controller.state_mut().gui.mark_edited();
         let stale = self.mcp_apply_stale(MutationKind::StockChanged);
 
@@ -4527,7 +4546,7 @@ impl super::RsCamApp {
             // `MachineChanged` event pushed below reaches the same call one
             // frame later; doing it here makes the MCP route synchronous
             // with the GUI one instead of depending on the frame loop.
-            session.invalidate_machine();
+            let _ = session.invalidate_machine();
         }
         self.controller.state_mut().gui.mark_edited();
         self.controller.events_mut().push(AppEvent::MachineChanged);
@@ -4642,11 +4661,10 @@ impl super::RsCamApp {
             .session
             .set_boundary_config(index, boundary.clone())
         {
-            Ok(()) => {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
-                let mut stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-                    toolpath_index: index,
-                });
+                let mut stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 // P2 pencil-panel consolidation: `set_boundary_config` may
                 // have just auto-enabled rest analysis on the SOURCE
                 // toolpath (`ProjectSession::auto_enable_rest_analysis_for_source`,
@@ -4762,11 +4780,10 @@ impl super::RsCamApp {
             .session
             .set_rest_analysis_config(index, rest_analysis.clone())
         {
-            Ok(()) => {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
-                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-                    toolpath_index: index,
-                });
+                let stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 self.mcp_mutation_result(
                     format!("Rest analysis set on toolpath {index}. Regenerate to apply."),
                     serde_json::to_value(rest_analysis).unwrap_or(serde_json::Value::Null),
@@ -5192,11 +5209,10 @@ impl super::RsCamApp {
             .session
             .set_dressup_config(index, dressup_config)
         {
-            Ok(()) => {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
-                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-                    toolpath_index: index,
-                });
+                let stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 let applied = self
                     .controller
                     .state()
@@ -5229,11 +5245,10 @@ impl super::RsCamApp {
             .session
             .set_dressup_field(index, key, value)
         {
-            Ok(()) => {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
-                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-                    toolpath_index: index,
-                });
+                let stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 let applied = self
                     .controller
                     .state()
@@ -5262,15 +5277,24 @@ impl super::RsCamApp {
             .session
             .set_toolpath_enabled(index, enabled)
         {
-            Ok(()) => {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
+                // The toggle keeps its OWN result: a re-enable must not
+                // cost a regeneration. Only the results built on the
+                // stock it leaves are dropped, so `Effects::stale` is
+                // the downstream set and `index` is not in it. The arm
+                // reported a hardcoded `vec![index]` before WP3, which
+                // named the one toolpath that did NOT go stale and
+                // named none of the ones that did.
+                let stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 self.mcp_mutation_result(
                     format!(
                         "Toolpath {index} {}",
                         if enabled { "enabled" } else { "disabled" }
                     ),
                     serde_json::json!({ "index": index, "enabled": enabled }),
-                    vec![index],
+                    stale,
                     &before,
                 )
             }
@@ -5298,11 +5322,10 @@ impl super::RsCamApp {
             .session
             .set_stock_source(index, parsed)
         {
-            Ok(()) => {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
-                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-                    toolpath_index: index,
-                });
+                let stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 self.mcp_mutation_result(
                     format!(
                         "Stock source set to '{source}' on toolpath {index}. Regenerate to apply."
@@ -7723,7 +7746,7 @@ mod tests {
         // Drop the first toolpath so ids and indices diverge — the measured
         // condition on the real project, where 4/5/6 were simultaneously
         // valid indices and valid ids of DIFFERENT toolpaths.
-        state.session.remove_toolpath(0).expect("index 0 exists");
+        let _ = state.session.remove_toolpath(0).expect("index 0 exists");
         let live: Vec<usize> = (0..state.session.toolpath_count())
             .filter_map(|i| state.session.get_toolpath_config(i).map(|tc| tc.id.0))
             .collect();

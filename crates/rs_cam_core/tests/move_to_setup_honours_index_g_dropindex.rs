@@ -86,7 +86,8 @@ fn a_cross_setup_drop_lands_at_the_dropped_position() {
         (3, ["Target A", "Target B", "Target C", "Travelling"]),
     ] {
         let (mut s, travelling) = two_setups();
-        s.move_toolpath_to_setup(travelling, 1, Some(position))
+        let _ = s
+            .move_toolpath_to_setup(travelling, 1, Some(position))
             .unwrap();
 
         assert!(
@@ -106,7 +107,7 @@ fn a_cross_setup_drop_lands_at_the_dropped_position() {
 #[test]
 fn a_position_past_the_end_clamps_to_the_end() {
     let (mut s, travelling) = two_setups();
-    s.move_toolpath_to_setup(travelling, 1, Some(99)).unwrap();
+    let _ = s.move_toolpath_to_setup(travelling, 1, Some(99)).unwrap();
     assert_eq!(
         names_in_setup(&s, 1),
         ["Target A", "Target B", "Target C", "Travelling"]
@@ -118,7 +119,7 @@ fn a_position_past_the_end_clamps_to_the_end() {
 #[test]
 fn no_position_still_appends() {
     let (mut s, travelling) = two_setups();
-    s.move_toolpath_to_setup(travelling, 1, None).unwrap();
+    let _ = s.move_toolpath_to_setup(travelling, 1, None).unwrap();
     assert_eq!(
         names_in_setup(&s, 1),
         ["Target A", "Target B", "Target C", "Travelling"]

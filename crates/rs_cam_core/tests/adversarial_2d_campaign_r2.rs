@@ -284,7 +284,7 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
         other => other,
     };
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_for(&fixture.polys));
+    let _ = session.set_stock_config(stock_for(&fixture.polys));
     let tool = match kind {
         ToolKind::EndMill => endmill(fixture.tool_d),
         ToolKind::VBit => vbit(),
@@ -304,7 +304,7 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
 /// contract (`rest.rs:70`), so the sizes are not decorative.
 fn rest_session(fixture: &Fixture) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_for(&fixture.polys));
+    let _ = session.set_stock_config(stock_for(&fixture.polys));
     let prev_idx = session.add_tool(endmill(fixture.tool_d * 2.0));
     let prev_id = session.tools()[prev_idx].id;
     let cur_idx = session.add_tool(endmill(fixture.tool_d));

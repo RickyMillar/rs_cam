@@ -294,7 +294,7 @@ fn add_tool(session: &mut ProjectSession, kind: ToolType, diameter: f64, name: &
 }
 
 fn flat_stock(session: &mut ProjectSession) {
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: FLAT_X,
         y: FLAT_Y,
         z: FLAT_Z,
@@ -377,7 +377,7 @@ fn rest_session(profile: DressupProfile) -> ProjectSession {
 }
 
 fn hemi_stock(session: &mut ProjectSession) {
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 2.0 * HEMI_STOCK_HALF_MM,
         y: 2.0 * HEMI_STOCK_HALF_MM,
         z: HEMI_RADIUS_MM,
@@ -440,7 +440,7 @@ fn hemi_session(
 /// emits nothing at all).
 fn plate_session(op: OperationConfig, profile: DressupProfile) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: PLATE_MM,
         y: PLATE_MM,
         z: PLATE_STOCK_Z_MM,

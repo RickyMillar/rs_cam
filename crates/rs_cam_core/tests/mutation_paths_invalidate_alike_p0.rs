@@ -94,8 +94,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    Command, LoadedModel, MutationKind, ProjectSession, SetToolpathParamArgs, ToolpathConfig,
-    compute_stale_set,
+    AdoptResultArgs, Command, LoadedModel, MutationKind, ProjectSession, SetToolpathParamArgs,
+    ToolpathConfig, compute_stale_set,
 };
 
 /// The one feed value every arm writes.
@@ -163,6 +163,21 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
     }
 }
 
+/// Deliver a computed result the way the compute lane does.
+///
+/// `insert_result` was the public door before WP3. A completion now
+/// carries the revision the lane started from.
+fn adopt(s: &mut ProjectSession, index: usize) {
+    let revision = s.toolpath_revision(index);
+    let _ = s
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index,
+            revision,
+            result: Box::new(fake_result()),
+        }))
+        .expect("the fixture adopts at the current revision");
+}
+
 /// One setup, one tool, one model, two enabled toolpaths in plan order:
 ///
 /// - index 0, `upstream`, `StockSource::Fresh`, the operation the caller
@@ -187,8 +202,8 @@ fn fixture(upstream: OperationConfig) -> ProjectSession {
     );
     s.add_toolpath(0, upstream_tc).unwrap();
     s.add_toolpath(0, downstream_tc).unwrap();
-    s.insert_result(0, fake_result()).unwrap();
-    s.insert_result(1, fake_result()).unwrap();
+    adopt(&mut s, 0);
+    adopt(&mut s, 1);
     assert_fixture_is_live(&s);
     s
 }
@@ -280,7 +295,8 @@ fn assert_feed_landed(s: &ProjectSession) {
 fn arm_setter() -> Observation {
     let mut s = fixture(pocket());
     let before = revisions(&s);
-    s.set_toolpath_param(0, "feed_rate", serde_json::json!(EDITED_FEED_RATE))
+    let _ = s
+        .set_toolpath_param(0, "feed_rate", serde_json::json!(EDITED_FEED_RATE))
         .expect("feed_rate is a Pocket parameter");
     assert_feed_landed(&s);
     observe(&s, &before)
@@ -295,7 +311,8 @@ fn arm_snapshot() -> Observation {
     op.set_feed_rate(EDITED_FEED_RATE);
     let dressups = s.toolpath_configs()[0].dressups.clone();
     let faces = s.toolpath_configs()[0].face_selection.clone();
-    s.apply_toolpath_param_snapshot(0, op, dressups, faces)
+    let _ = s
+        .apply_toolpath_param_snapshot(0, op, dressups, faces)
         .expect("index 0 exists");
     assert_feed_landed(&s);
     observe(&s, &before)
@@ -308,7 +325,7 @@ fn arm_inspector_door() -> Observation {
     let before = revisions(&s);
     let configs = s.toolpath_configs_mut();
     configs[0].operation.set_feed_rate(EDITED_FEED_RATE);
-    s.invalidate_toolpath_inputs(0);
+    let _ = s.invalidate_toolpath_inputs(0);
     assert_feed_landed(&s);
     observe(&s, &before)
 }
@@ -325,7 +342,7 @@ fn arm_replace_config() -> Observation {
     op.set_feed_rate(EDITED_FEED_RATE);
     let mut edited = tc("upstream", op, StockSource::Fresh, tool, model);
     edited.id = id;
-    s.replace_toolpath_config(0, edited).unwrap();
+    let _ = s.replace_toolpath_config(0, edited).unwrap();
     assert_feed_landed(&s);
     observe(&s, &before)
 }
@@ -417,7 +434,8 @@ fn n14_undo_and_optimizer_apply_invalidate_one_index_today() {
 fn n6_set_drill_selected_holes_invalidates_one_index_today() {
     let mut s = fixture(OperationConfig::Drill(DrillConfig::default()));
     let before = revisions(&s);
-    s.set_drill_selected_holes(0, Some(vec![[1.0, 2.0]]))
+    let _ = s
+        .set_drill_selected_holes(0, Some(vec![[1.0, 2.0]]))
         .expect("index 0 is a Drill operation");
     let obs = observe(&s, &before);
 
@@ -439,7 +457,8 @@ fn n6_set_alignment_pin_drill_holes_invalidates_the_chain() {
     let op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
     let mut s = fixture(op);
     let before = revisions(&s);
-    s.set_alignment_pin_drill_holes(0, vec![[1.0, 2.0]])
+    let _ = s
+        .set_alignment_pin_drill_holes(0, vec![[1.0, 2.0]])
         .expect("index 0 is an AlignmentPinDrill operation");
     let obs = observe(&s, &before);
 
@@ -484,8 +503,10 @@ fn n15_apply_reports_the_set_the_setter_dropped() {
     );
     assert_eq!(
         effects.revision,
-        s.toolpath_revision(0),
-        "Effects::revision names the edited toolpath's own revision"
+        Some(s.toolpath_revision(0)),
+        "Effects::revision names the edited toolpath's own revision. \
+         It is `Some` because the command names one toolpath that still \
+         sits at that index."
     );
 }
 

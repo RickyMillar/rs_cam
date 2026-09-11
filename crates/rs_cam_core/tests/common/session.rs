@@ -213,7 +213,7 @@ pub fn single_op_session_with(
     tweak: impl FnOnce(&mut ToolpathConfig),
 ) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
     let tool_idx = session.add_tool(tool);
     let tool_id = session.tools()[tool_idx].id.0;
     let model_id = session.add_model(model);

@@ -116,7 +116,8 @@ fn set_toolpath_param_refuses_a_non_positive_angular_step() {
     }
 
     // The accepting side of the same boundary.
-    s.set_toolpath_param(0, "angular_step", json!(10.0))
+    let _ = s
+        .set_toolpath_param(0, "angular_step", json!(10.0))
         .expect("a real angular step must be accepted");
     assert!((dials(&s).0 - 10.0).abs() < 1e-12);
 }
@@ -147,7 +148,8 @@ fn set_toolpath_param_refuses_a_non_positive_point_spacing() {
         );
     }
 
-    s.set_toolpath_param(0, "point_spacing", json!(0.25))
+    let _ = s
+        .set_toolpath_param(0, "point_spacing", json!(0.25))
         .expect("a real point spacing must be accepted");
     assert!((dials(&s).1 - 0.25).abs() < 1e-12);
 }

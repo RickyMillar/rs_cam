@@ -11,7 +11,7 @@
 //!   (`crates/rs_cam_core/src/session/compute.rs:1466`) →
 //!   `resolve_generation_inputs` (`:1090`) →
 //!   `execute_operation_annotated_with_regions` (`:1624`) → the core
-//!   `apply_dressups` (`:1698`) → the boundary clip → `insert_result`.
+//!   `apply_dressups` (`:1698`) → the boundary clip → the result cache.
 //! * The **GUI worker door**: `AppController::submit_toolpath_compute`
 //!   (`crates/rs_cam_viz/src/controller/events/compute.rs:181`) builds a
 //!   `ComputeRequest` and submits it; the worker's `run_compute`

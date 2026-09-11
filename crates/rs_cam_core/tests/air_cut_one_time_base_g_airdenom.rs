@@ -98,7 +98,7 @@ fn rounded_rect_with_island() -> Polygon2 {
 /// every ceiling in scope, so the modulator lowers it.
 fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 100.0,
         y: 100.0,
         z: 12.0,

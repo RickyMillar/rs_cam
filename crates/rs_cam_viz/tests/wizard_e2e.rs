@@ -33,7 +33,8 @@ use rs_cam_core::gcode::PostFormat;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    LoadedModel, OutputLayout, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, OutputLayout, ProjectSession, ToolpathComputeResult,
+    ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -77,18 +78,20 @@ fn seed_generated_result(
         .iter()
         .position(|tc| tc.id == tp_id)
         .expect("toolpath id is in the session");
-    session
-        .insert_result(
+    let revision = session.toolpath_revision(index);
+    let _ = session
+        .apply(Command::AdoptResult(AdoptResultArgs {
             index,
-            ToolpathComputeResult {
+            revision,
+            result: Box::new(ToolpathComputeResult {
                 op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(AnnotatedToolpath::new(
                     path.clone(),
                 ))),
                 stats: Default::default(),
                 debug_trace: None,
                 semantic_trace: None,
-            },
-        )
+            }),
+        }))
         .expect("seed the core result");
     let mut rt = ToolpathRuntime::new(true);
     rt.result = Some(ToolpathResult {
@@ -691,7 +694,7 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
 
     // Stock whose min corner is NOT the world origin — the condition
     // that makes the two emission frames disagree.
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 60.0,
         y: 70.0,
         z: 12.0,

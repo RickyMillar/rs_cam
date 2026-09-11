@@ -982,7 +982,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
 
     // 2D ops cut at negative Z, so the stock hangs BELOW z = 0 and its top
     // sits at the world origin plane.
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 100.0,
         y: 80.0,
         z: 12.0,

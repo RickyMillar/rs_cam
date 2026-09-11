@@ -214,7 +214,7 @@ fn generate_with_rest_analysis(
     rest_analysis: RestAnalysisConfig,
 ) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 44.0,
         y: 28.0,
         z: 8.0,

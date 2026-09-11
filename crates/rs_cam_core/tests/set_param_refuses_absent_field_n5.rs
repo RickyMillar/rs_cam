@@ -117,7 +117,7 @@ fn accepts_depth_per_pass(op: OperationType) -> bool {
 /// this test wants: the param route is under test, not the generator.
 fn all_ops_session() -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_under(20.0, 4.0));
+    let _ = session.set_stock_config(stock_under(20.0, 4.0));
     let tool_idx = session.add_tool(make_endmill_6mm());
     let tool_id = session.tools()[tool_idx].id.0;
     let model = polygon_model(vec![square_polygon(2.0)], "n5_all_ops");
@@ -352,7 +352,7 @@ fn the_alias_setters_still_write_through_the_named_arms() {
 fn pocket_still_takes_a_stepover_and_stamps_manual_provenance() {
     let pocket = OperationConfig::new_default(OperationType::Pocket);
     let mut session = single_op("N5 pocket", pocket);
-    session
+    let _ = session
         .set_toolpath_param(0, "stepover", json!(2.75))
         .expect("Pocket carries a stepover field");
 

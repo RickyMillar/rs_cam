@@ -39,7 +39,9 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig};
+use rs_cam_core::session::{
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
@@ -140,8 +142,13 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
     };
     let id = tc.id;
     session.add_toolpath(0, tc).expect("add toolpath");
-    session
-        .insert_result(0, core_result(sample_toolpath(PREVIOUS_FEED)))
+    let revision = session.toolpath_revision(0);
+    let _ = session
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: 0,
+            revision,
+            result: Box::new(core_result(sample_toolpath(PREVIOUS_FEED))),
+        }))
         .expect("seed the core result");
 
     let mut gui = GuiState::new();
@@ -157,7 +164,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
 /// stays so the viewport can draw the old path. Reached here through the
 /// core door the GUI panel calls (`invalidate_toolpath_inputs`).
 fn edit_the_operation(session: &mut ProjectSession) {
-    session.invalidate_toolpath_inputs(0);
+    let _ = session.invalidate_toolpath_inputs(0);
     assert!(
         session.get_result(0).is_none(),
         "the edit must drop the core result — otherwise this file is not \
@@ -308,7 +315,7 @@ fn accepting_the_previous_geometry_exports_it() {
 #[test]
 fn the_acceptance_does_not_waive_a_missing_result() {
     let (mut session, mut gui, sim) = build_state();
-    session.remove_result(0);
+    let _ = session.remove_result(0);
     if let Some(rt) = gui.toolpath_rt.get_mut(&rs_cam_core::ToolpathId(0)) {
         rt.result = None;
         rt.status = ComputeStatus::Pending;
@@ -446,7 +453,7 @@ fn preflight_rows_and_the_export_refusal_share_one_text() {
 fn a_disabled_edited_operation_does_not_block() {
     let (mut session, gui, _sim) = build_state();
     edit_the_operation(&mut session);
-    session
+    let _ = session
         .set_toolpath_enabled(0, false)
         .expect("toolpath 0 exists");
 

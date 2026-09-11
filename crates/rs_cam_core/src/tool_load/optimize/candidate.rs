@@ -413,7 +413,7 @@ fn evaluate_candidate_inner(
     let toolpath_index = ctx.toolpath_index;
 
     // Apply.
-    guard.session_mut().apply_toolpath_param_snapshot(
+    let _ = guard.session_mut().apply_toolpath_param_snapshot(
         toolpath_index,
         candidate_op.clone(),
         dressups,

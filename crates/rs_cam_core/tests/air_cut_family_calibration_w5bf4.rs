@@ -251,7 +251,7 @@ fn measure(family: &'static str, mut session: ProjectSession, cell_mm: f64) -> R
 // ── Session builders ────────────────────────────────────────────────────
 
 fn flat_stock(session: &mut ProjectSession) {
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: FLAT_X,
         y: FLAT_Y,
         z: FLAT_Z,
@@ -316,7 +316,7 @@ fn flat_session(op: OperationConfig, tool_kind: ToolType, tool_diameter: f64) ->
 }
 
 fn hemi_stock(session: &mut ProjectSession) {
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 2.0 * HEMI_STOCK_HALF_MM,
         y: 2.0 * HEMI_STOCK_HALF_MM,
         z: HEMI_RADIUS_MM,
@@ -385,7 +385,7 @@ const PLATE_STOCK_Z_MM: f64 = 3.0;
 /// to take and the reading is a reading.
 fn plate_session(op: OperationConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: PLATE_MM,
         y: PLATE_MM,
         z: PLATE_STOCK_Z_MM,

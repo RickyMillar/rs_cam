@@ -168,7 +168,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// Free-standing (`&mut ProjectSession`, not `&mut self`) so it can be
     /// called while `drain_compute_results` still holds a `&mut` borrow of
     /// `self.state.gui`'s runtime row — the same field-disjoint shape the
-    /// `Ok` arm's `insert_result` call already relies on.
+    /// `Ok` arm's `AdoptResult` call already relies on.
     ///
     /// Silent when there is nothing cached: "this toolpath has no result"
     /// is the state being established, not a condition to report.
@@ -919,22 +919,13 @@ impl<B: ComputeBackend> AppController<B> {
                             // it reaches here. Nothing supersedes on a 3D
                             // manual-regen operation, which is why the row
                             // names that arm.
-                            let revision_now = self
-                                .state
-                                .session
-                                .find_toolpath_config_by_id(tp_id)
-                                .map(|(index, _)| self.state.session.toolpath_revision(index));
-                            let answers_current_inputs = match (rt.submitted_revision, revision_now)
-                            {
-                                (Some(submitted), Some(now)) => submitted == now,
-                                // Never submitted through this controller, or
-                                // the toolpath is gone. Neither is a mismatch
-                                // this guard can claim.
-                                _ => true,
-                            };
-                            if answers_current_inputs
-                                && let Some((tp_index, _)) =
-                                    self.state.session.find_toolpath_config_by_id(tp_id)
+                            //
+                            // WP3: the refusal itself lives in core, at
+                            // `Command::AdoptResult`. This door hands the
+                            // stamp over and reads the answer; it does not
+                            // compare revisions of its own any more.
+                            if let Some((tp_index, _)) =
+                                self.state.session.find_toolpath_config_by_id(tp_id)
                             {
                                 // Honour the §6.E dual-representation
                                 // invariant: drill ops carry both the
@@ -970,7 +961,38 @@ impl<B: ComputeBackend> AppController<B> {
                                     debug_trace: None,
                                     semantic_trace: None,
                                 };
-                                let _ = self.state.session.insert_result(tp_index, core_result);
+                                let revision = match rt.submitted_revision {
+                                    Some(submitted) => submitted,
+                                    // No stamp: this reproduces the
+                                    // pre-WP3 accept-when-unstamped arm;
+                                    // WP10 carries the revision on the
+                                    // request.
+                                    None => self.state.session.toolpath_revision(tp_index),
+                                };
+                                let adopted = self.state.session.apply(
+                                    rs_cam_core::session::Command::AdoptResult(
+                                        rs_cam_core::session::AdoptResultArgs {
+                                            index: tp_index,
+                                            revision,
+                                            result: Box::new(core_result),
+                                        },
+                                    ),
+                                );
+                                // The `Ok` effects are empty: a completion
+                                // records an answer, it moves no revision.
+                                // On a refusal the core slot stays empty,
+                                // which derives `EditedSince`. `rt.result`
+                                // below still keeps the geometry, so the
+                                // viewport draws it and the operator does
+                                // not lose a long 3D generation. That is
+                                // what the deleted viz gate did, and the
+                                // outcome is the same.
+                                if let Err(e) = adopted {
+                                    tracing::debug!(
+                                        toolpath = tp_index,
+                                        "compute result not adopted: {e}"
+                                    );
+                                }
                             }
                             rt.result = Some(computed);
                             // Any toolpath whose `DerivedRestRegions` boundary
@@ -991,7 +1013,7 @@ impl<B: ComputeBackend> AppController<B> {
                             rt.result = None;
                             // G-STICKYEMPTY: clear the CORE cache too, not
                             // just `rt.result`. `Ok` writes both caches
-                            // (`insert_result`, above); a failure used to
+                            // (`AdoptResult`, above); a failure used to
                             // clear only the viz one, so the previous
                             // parameter set's toolpath stayed in
                             // `session.results[idx]` — exportable,
@@ -2152,7 +2174,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// doc comment claiming `session.results` was "only populated by the
     /// standalone MCP". That stopped being true at `d706c036`, when
     /// `drain_compute_results` started writing the worker's result through
-    /// `ProjectSession::insert_result` — but the read was never moved, so ten
+    /// `ProjectSession::insert_result` (`Command::AdoptResult` since WP3) —
+    /// but the read was never moved, so ten
     /// published channels (`op_kind`, `collision_count`,
     /// `rapid_collision_count`, and the seven generation-finding areas) were
     /// absent from the agent-facing wire while the CLI's carried them. An

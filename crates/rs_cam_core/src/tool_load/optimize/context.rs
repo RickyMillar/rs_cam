@@ -410,7 +410,7 @@ mod restore_guard_tests {
             let new_op_clone = new_op.clone();
             let dressups = guard.baseline().dressups.clone();
             let face_sel = guard.baseline().face_selection.clone();
-            guard
+            let _ = guard
                 .session_mut()
                 .apply_toolpath_param_snapshot(0, new_op_clone, dressups, face_sel)
                 .unwrap();
@@ -460,7 +460,7 @@ mod restore_guard_tests {
             let face_sel = guard.baseline().face_selection.clone();
             let mut new_op = guard.baseline().operation.clone();
             new_op.set_feed_rate(9999.0);
-            guard
+            let _ = guard
                 .session_mut()
                 .apply_toolpath_param_snapshot(0, new_op, dressups, face_sel)
                 .unwrap();

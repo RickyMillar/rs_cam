@@ -163,7 +163,7 @@ fn unified_cfg(arm: Option<RestArm>) -> UnifiedFinishConfig {
 /// the stock that finish left.
 fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_over(HALF, STOCK_Z));
+    let _ = session.set_stock_config(stock_over(HALF, STOCK_Z));
     let tool_idx = session.add_tool(tool);
     let tool_id = session.tools()[tool_idx].id.0;
     let model_id = session.add_model(mesh_model(bumpy_surface(), "bumps"));

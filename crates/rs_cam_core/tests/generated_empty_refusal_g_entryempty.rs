@@ -207,7 +207,7 @@ fn a_refused_generation_leaves_no_cached_result() {
 #[test]
 fn a_rest_operation_that_finds_nothing_still_succeeds() {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_under(HALF, STOCK_Z));
+    let _ = session.set_stock_config(stock_under(HALF, STOCK_Z));
     let prev_idx = session.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
     let prev_id = session.tools()[prev_idx].id;
     let cur_idx = session.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
@@ -291,7 +291,7 @@ fn an_empty_generation_does_not_stop_the_next_one() {
 #[test]
 fn an_empty_rest_pass_keeps_its_prior_stock_snapshot() {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_under(HALF, STOCK_Z));
+    let _ = session.set_stock_config(stock_under(HALF, STOCK_Z));
     let rough_idx = session.add_tool(endmill_tool_config(FITTING_TOOL_D));
     let rough_tool = session.tools()[rough_idx].id.0;
     let rest_idx = session.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));

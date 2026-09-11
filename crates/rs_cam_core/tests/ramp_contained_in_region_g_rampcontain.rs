@@ -109,7 +109,7 @@ fn demo_pocket_polygon() -> Polygon2 {
 fn pocket_session(dressups: DressupConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
 
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 100.0,
         y: 100.0,
         z: 12.0,

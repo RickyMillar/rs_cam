@@ -37,7 +37,9 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig};
+use rs_cam_core::session::{
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
@@ -151,8 +153,13 @@ fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) 
     let first_id = session.toolpath_configs()[0].id;
     let second_id = session.toolpath_configs()[1].id;
 
-    session
-        .insert_result(0, core_result(sample_toolpath()))
+    let revision = session.toolpath_revision(0);
+    let _ = session
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: 0,
+            revision,
+            result: Box::new(core_result(sample_toolpath())),
+        }))
         .expect("insert core result for the generated op");
 
     let mut gui = GuiState::new();

@@ -103,7 +103,7 @@ fn generated_profile(face_up: FaceUp, side: ProfileSide) -> ProjectSession {
     });
 
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
+    let _ = session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
     let tool_idx = session.add_tool(make_endmill_6mm());
     let tool_id = session.tools()[tool_idx].id.0;
     let model_id = session.add_model(polygon_model(
@@ -220,7 +220,7 @@ fn profile_side_survives_a_face_up_flip() {
 #[test]
 fn flip_preserves_the_ccw_winding_convention() {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
+    let _ = session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
 
     let mut with_hole = Polygon2::with_holes(
         square_polygon(PART_HALF).exterior,
@@ -280,7 +280,7 @@ fn flip_preserves_the_ccw_winding_convention() {
 #[test]
 fn flip_leaves_open_path_direction_alone() {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
+    let _ = session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
 
     // Authored CCW so that the Bottom mirror (y -> stock_y - y) makes the
     // transformed ring CW — the one case where a re-wind is not a no-op.

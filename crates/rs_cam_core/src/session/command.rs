@@ -13,12 +13,17 @@
 //! answers every surface, so the MCP reply and the core drop cannot
 //! disagree.
 //!
-//! WP1 carries one row, `SetToolpathParam`. The later work packages add
-//! the rest.
+//! WP3 adds the one construction site. Every mutation on
+//! [`ProjectSession`] runs its body inside
+//! [`ProjectSession::try_with_effects`], so no mutation builds an
+//! [`Effects`] of its own.
+//!
+//! The registry carries two rows, `SetToolpathParam` and `AdoptResult`.
+//! The later work packages add the rest.
 
 use std::collections::BTreeSet;
 
-use super::{ProjectSession, SessionError};
+use super::{ProjectSession, SessionError, ToolpathComputeResult};
 
 /// Declares every command row once.
 ///
@@ -42,6 +47,16 @@ macro_rules! for_each_command {
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
+             }),
+            (Command, AdoptResult, "adopt_result", AdoptResultArgs,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "a completion is adopted by the GUI drain, not by a wire tool",
+                 ),
+                 cli: Reach::Skip(
+                     "the CLI generates synchronously and never adopts a completion",
+                 ),
              }),
         }
     };
@@ -94,7 +109,34 @@ pub struct SetToolpathParamArgs {
     pub value: serde_json::Value,
 }
 
+/// The arguments of the `adopt_result` command.
+///
+/// A generation runs off the frame loop, so the configuration can move
+/// while it runs. `revision` is the generation-input revision the lane
+/// started from, read with
+/// [`ProjectSession::toolpath_revision`](super::ProjectSession::toolpath_revision).
+/// [`ProjectSession::apply`] compares it against the revision the
+/// toolpath carries now and refuses a mismatch with
+/// [`SessionError::StaleCompletion`], inserting nothing.
+///
+/// `result` is boxed. A [`ToolpathComputeResult`] carries the whole
+/// annotated toolpath, its statistics and two optional traces, which is
+/// hundreds of bytes beside the other rows' arguments.
+#[derive(Debug, Clone)]
+pub struct AdoptResultArgs {
+    /// The index of the toolpath the completion answers.
+    pub index: usize,
+    /// The revision the compute lane started from.
+    pub revision: u64,
+    /// The computed result.
+    pub result: Box<ToolpathComputeResult>,
+}
+
 /// What a command changed.
+///
+/// The type carries `#[must_use]`. A caller that runs a mutation and
+/// drops the answer states that it drops it, with `let _ =`.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Effects {
     /// Every toolpath index whose generation-input revision moved.
@@ -117,7 +159,13 @@ pub struct Effects {
     /// This is [`ProjectSession::toolpath_revision`], never
     /// `next_revision`. `next_revision` is a session-global counter that
     /// any index bumps.
-    pub revision: u64,
+    ///
+    /// `Some` only when the command names ONE toolpath that still exists
+    /// at the SAME index after the command. A bulk mutation, a
+    /// setup-index mutation, a removal and a re-order all report `None`,
+    /// which means NOT MEASURED. `0` cannot carry that meaning: every
+    /// toolpath starts at revision `0`.
+    pub revision: Option<u64>,
 }
 
 macro_rules! define_command_registry {
@@ -126,7 +174,12 @@ macro_rules! define_command_registry {
         ///
         /// GENERATED from the `for_each_command!` list — edit the list,
         /// not this block.
-        #[derive(Debug, Clone, PartialEq)]
+        ///
+        /// The enum derives no `PartialEq`. `AdoptResultArgs` carries a
+        /// [`ToolpathComputeResult`], whose parts publish no equality —
+        /// a computed toolpath answers "is this the current answer?"
+        /// through its revision, not through a comparison.
+        #[derive(Debug, Clone)]
         pub enum Command {
             $(
                 #[doc = concat!("The `", $wire, "` command.")]
@@ -196,19 +249,87 @@ impl ProjectSession {
     /// index whose revision moved. It does not read the invalidation
     /// chain's own drop list.
     pub fn apply(&mut self, command: Command) -> Result<Effects, SessionError> {
-        let simulation_before = self.simulation.is_some();
-        let revisions_before = self.revision_snapshot();
         match command {
             Command::SetToolpathParam(args) => {
                 let index = args.index;
-                self.set_toolpath_param_impl(index, &args.param, args.value)?;
-                Ok(Effects {
-                    stale: self.moved_revisions(&revisions_before),
-                    simulation_cleared: simulation_before && self.simulation.is_none(),
-                    revision: self.toolpath_revision(index),
+                self.try_with_effects(Some(index), move |session| {
+                    session.set_toolpath_param_impl(index, &args.param, args.value)
+                })
+            }
+            Command::AdoptResult(args) => {
+                let AdoptResultArgs {
+                    index,
+                    revision,
+                    result,
+                } = args;
+                if index >= self.toolpath_count() {
+                    return Err(SessionError::ToolpathNotFound(index));
+                }
+                let current = self.toolpath_revision(index);
+                if current != revision {
+                    return Err(SessionError::StaleCompletion {
+                        index,
+                        submitted: revision,
+                        current,
+                    });
+                }
+                self.try_with_effects(Some(index), move |session| {
+                    session.insert_result(index, *result)
                 })
             }
         }
+    }
+
+    /// Run one mutation and report what it changed.
+    ///
+    /// **The one construction site of [`Effects`].** The method reads
+    /// every toolpath revision and the simulation before `mutate`, runs
+    /// `mutate`, and reports the difference. A mutation therefore states
+    /// what it changed by changing it, and no two mutations can carry two
+    /// staleness models.
+    ///
+    /// `index` names the ONE toolpath the mutation is about, for
+    /// [`Effects::revision`]. Pass `None` from a bulk mutation, from a
+    /// setup-index mutation, and from a mutation that moves or removes
+    /// the toolpath the index named. An index that names no toolpath
+    /// after the mutation also reports `None`.
+    ///
+    /// An error from `mutate` propagates, and the method reports no
+    /// effects.
+    pub(crate) fn try_with_effects<E>(
+        &mut self,
+        index: Option<usize>,
+        mutate: impl FnOnce(&mut Self) -> Result<(), E>,
+    ) -> Result<Effects, E> {
+        let simulation_before = self.simulation.is_some();
+        let revisions_before = self.revision_snapshot();
+        mutate(self)?;
+        Ok(Effects {
+            stale: self.moved_revisions(&revisions_before),
+            simulation_cleared: simulation_before && self.simulation.is_none(),
+            revision: index
+                .filter(|i| *i < self.toolpath_count())
+                .map(|i| self.toolpath_revision(i)),
+        })
+    }
+
+    /// Run one mutation that cannot fail, and report what it changed.
+    ///
+    /// The infallible half of [`Self::try_with_effects`], which builds
+    /// the [`Effects`]. This method builds none of its own.
+    pub(crate) fn with_effects(
+        &mut self,
+        index: Option<usize>,
+        mutate: impl FnOnce(&mut Self),
+    ) -> Effects {
+        self.try_with_effects(index, |session| {
+            mutate(session);
+            Ok::<(), std::convert::Infallible>(())
+        })
+        // SAFETY: `Infallible` holds no value, so the closure below has
+        // no case to answer. The compiler proves the error arm cannot
+        // happen. This is not `unwrap`: nothing can panic here.
+        .unwrap_or_else(|never| match never {})
     }
 
     /// Read every toolpath's generation-input revision, in index order.

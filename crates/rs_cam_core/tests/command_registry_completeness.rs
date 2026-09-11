@@ -48,8 +48,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    Command, CommandId, CommandKind, LoadedModel, ProjectSession, Reach, SetToolpathParamArgs,
-    ToolpathConfig,
+    AdoptResultArgs, Command, CommandId, CommandKind, LoadedModel, ProjectSession, Reach,
+    SetToolpathParamArgs, ToolpathConfig,
 };
 
 /// The feed value the behavioural arm writes.
@@ -234,6 +234,21 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
     }
 }
 
+/// Deliver a computed result the way the compute lane does.
+///
+/// `insert_result` was the public door before WP3. A completion now
+/// carries the revision the lane started from.
+fn adopt(s: &mut ProjectSession, index: usize) {
+    let revision = s.toolpath_revision(index);
+    let _ = s
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index,
+            revision,
+            result: Box::new(fake_result()),
+        }))
+        .expect("the fixture adopts at the current revision");
+}
+
 /// One setup, one tool, one model, two enabled toolpaths in plan order.
 ///
 /// Index 0 is a `Fresh` Pocket. Index 1 is a Rest that reads the stock
@@ -261,8 +276,8 @@ fn fixture() -> ProjectSession {
     );
     s.add_toolpath(0, upstream).unwrap();
     s.add_toolpath(0, downstream).unwrap();
-    s.insert_result(0, fake_result()).unwrap();
-    s.insert_result(1, fake_result()).unwrap();
+    adopt(&mut s, 0);
+    adopt(&mut s, 1);
     assert_fixture_is_live(&s);
     s
 }
@@ -353,12 +368,15 @@ fn apply_reports_the_set_the_setter_dropped() {
     );
     assert_eq!(
         effects.revision,
-        s.toolpath_revision(0),
+        Some(s.toolpath_revision(0)),
         "Effects::revision is the named toolpath's own revision, never \
-         the session-global next_revision"
+         the session-global next_revision. It is `Some` because the \
+         command names one toolpath that still sits at that index."
     );
     assert!(
-        effects.revision > before[0],
+        effects
+            .revision
+            .is_some_and(|revision| revision > before[0]),
         "the edit must move the named toolpath's revision"
     );
     assert!(
@@ -374,12 +392,13 @@ fn apply_reports_the_set_the_setter_dropped() {
 #[test]
 fn the_command_writes_the_parameter() {
     let mut s = fixture();
-    s.apply(Command::SetToolpathParam(SetToolpathParamArgs {
-        index: 0,
-        param: "feed_rate".to_owned(),
-        value: serde_json::json!(EDITED_FEED_RATE),
-    }))
-    .expect("feed_rate is a Pocket parameter");
+    let _ = s
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "feed_rate".to_owned(),
+            value: serde_json::json!(EDITED_FEED_RATE),
+        }))
+        .expect("feed_rate is a Pocket parameter");
     let feed = s.toolpath_configs()[0].operation.feed_rate();
     assert!(
         (feed - EDITED_FEED_RATE).abs() < 1e-9,
@@ -393,7 +412,7 @@ fn the_command_writes_the_parameter() {
 fn the_legacy_setter_drops_what_the_command_drops() {
     let mut through_setter = fixture();
     let before_setter = revisions(&through_setter);
-    through_setter
+    let _ = through_setter
         .set_toolpath_param(0, "feed_rate", serde_json::json!(EDITED_FEED_RATE))
         .expect("feed_rate is a Pocket parameter");
     let (setter_dropped, _) = observe(&through_setter, &before_setter);

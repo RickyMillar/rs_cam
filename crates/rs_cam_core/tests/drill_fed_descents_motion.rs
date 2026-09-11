@@ -105,7 +105,7 @@ const Z_EPS: f64 = 1e-6;
 
 fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: FLAT_X,
         y: FLAT_Y,
         z: FLAT_Z,

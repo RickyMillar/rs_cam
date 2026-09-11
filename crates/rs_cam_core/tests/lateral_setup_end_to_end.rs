@@ -243,7 +243,7 @@ fn drill_op() -> OperationConfig {
 /// refusal cannot be confused with a broken fixture.
 fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
         z: STOCK_Z,
@@ -264,7 +264,7 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
 
     session.setups_mut()[0].face_up = FaceUp::Front;
     if with_fixture {
-        session
+        let _ = session
             .add_fixture(
                 0,
                 Fixture {

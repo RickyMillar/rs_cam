@@ -102,7 +102,7 @@ fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) ->
         feed_scale_factor: 1.0,
         kc: 10.0,
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
     session.set_machine(machine);
 
     let tool_idx = session.add_tool(ToolConfig::new_default(ToolId(0), tool));

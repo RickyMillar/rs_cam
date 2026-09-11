@@ -52,7 +52,7 @@ const PIN: [f64; 2] = [2.5, 2.5];
 #[test]
 fn pin_holes_land_where_the_stock_says_the_pins_are() {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 240.0,
         y: 250.0,
         z: 25.0,
@@ -164,7 +164,7 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
 #[test]
 fn a_flipped_setup_pin_translation_is_a_no_op() {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 240.0,
         y: 250.0,
         z: 25.0,

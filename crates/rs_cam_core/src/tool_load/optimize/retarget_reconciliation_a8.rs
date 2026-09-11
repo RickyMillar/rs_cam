@@ -127,7 +127,7 @@ fn fixture_session(depth_mm: f64) -> ProjectSession {
     stock.material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
 
     // A machine whose feed ceiling does not bind the fixture — the point is
     // the chipload band, and a machine clamp would silently become the
@@ -234,7 +234,7 @@ fn run_arm(session: &mut ProjectSession, feed: f64) -> Arm {
         .expect("toolpath 0")
         .dressups
         .clone();
-    session
+    let _ = session
         .apply_toolpath_param_snapshot(0, op, dressups, None)
         .expect("apply feed");
     session

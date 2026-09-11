@@ -1,4 +1,13 @@
 //! CRUD mutation methods on [`ProjectSession`].
+//!
+//! Every mutation here reports [`Effects`] — the toolpath indices whose
+//! generation inputs moved, whether it cleared the simulation, and the
+//! revision of the one toolpath it names. It builds none of that itself:
+//! it runs its body inside
+//! [`ProjectSession::try_with_effects`](ProjectSession::try_with_effects),
+//! the one construction site (`session/command.rs`).
+
+use std::collections::BTreeSet;
 
 use tracing::instrument;
 
@@ -10,7 +19,7 @@ use crate::compute::transform::FaceUp;
 use crate::enriched_mesh::FaceGroupId;
 
 use super::{
-    Fixture, KeepOutZone, ProjectPostConfig, ProjectSession, SessionError, SetupData,
+    Effects, Fixture, KeepOutZone, ProjectPostConfig, ProjectSession, SessionError, SetupData,
     ToolpathConfig,
 };
 use crate::compute::transform::ZRotation;
@@ -88,48 +97,54 @@ impl ProjectSession {
     ///
     /// Updates all setup `toolpath_indices` so that indices above the
     /// removed one are shifted down by one.
+    ///
+    /// [`Effects::revision`] is `None`: the index names a different
+    /// toolpath after the removal, so no revision read at it answers
+    /// about the toolpath the caller passed.
     #[instrument(skip(self))]
-    pub fn remove_toolpath(&mut self, index: usize) -> Result<(), SessionError> {
-        if index >= self.toolpath_configs.len() {
-            return Err(SessionError::ToolpathNotFound(index));
-        }
+    pub fn remove_toolpath(&mut self, index: usize) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, |session| {
+            if index >= session.toolpath_configs.len() {
+                return Err(SessionError::ToolpathNotFound(index));
+            }
 
-        // Propagate BEFORE the removal reshuffles indices: downstream
-        // rest-machining results were generated against the stock this
-        // toolpath left (see `invalidate_result_chain`).
-        self.invalidate_output_dependents(index, true);
+            // Propagate BEFORE the removal reshuffles indices: downstream
+            // rest-machining results were generated against the stock this
+            // toolpath left (see `invalidate_result_chain`).
+            session.invalidate_output_dependents(index, true);
 
-        self.toolpath_configs.remove(index);
-        self.drop_result(index);
+            session.toolpath_configs.remove(index);
+            session.drop_result(index);
 
-        // Rebuild every setup's toolpath_indices: remove the index,
-        // then decrement any index above it.
-        for setup in &mut self.setups {
-            setup.toolpath_indices.retain(|&i| i != index);
-            for idx in &mut setup.toolpath_indices {
-                if *idx > index {
-                    *idx -= 1;
+            // Rebuild every setup's toolpath_indices: remove the index,
+            // then decrement any index above it.
+            for setup in &mut session.setups {
+                setup.toolpath_indices.retain(|&i| i != index);
+                for idx in &mut setup.toolpath_indices {
+                    if *idx > index {
+                        *idx -= 1;
+                    }
                 }
             }
-        }
 
-        // Re-key cached results whose index shifted
-        let mut new_results = std::collections::HashMap::new();
-        for (k, v) in self.results.drain() {
-            if k > index {
-                new_results.insert(k - 1, v);
-            } else {
-                new_results.insert(k, v);
+            // Re-key cached results whose index shifted
+            let mut new_results = std::collections::HashMap::new();
+            for (k, v) in session.results.drain() {
+                if k > index {
+                    new_results.insert(k - 1, v);
+                } else {
+                    new_results.insert(k, v);
+                }
             }
-        }
-        self.results = new_results;
+            session.results = new_results;
 
-        // Every index above the removed one now names a different
-        // toolpath, so no revision a reader recorded still applies.
-        self.bump_all_revisions();
+            // Every index above the removed one now names a different
+            // toolpath, so no revision a reader recorded still applies.
+            session.bump_all_revisions();
 
-        self.simulation = None;
-        Ok(())
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     /// Move a toolpath from `from_index` to `to_index` within the same setup.
@@ -152,50 +167,57 @@ impl ProjectSession {
     /// gap, and only an insert can honour it. They are two gestures with one
     /// meaning — "put this op here" — not two policies that had to be
     /// reconciled.
+    ///
+    /// [`Effects::revision`] is `None`: the call names two toolpaths, so
+    /// there is no one index to report a revision for.
     #[instrument(skip(self))]
     pub fn reorder_toolpath(
         &mut self,
         from_index: usize,
         to_index: usize,
-    ) -> Result<(), SessionError> {
-        if from_index >= self.toolpath_configs.len() {
-            return Err(SessionError::ToolpathNotFound(from_index));
-        }
-        if to_index >= self.toolpath_configs.len() {
-            return Err(SessionError::ToolpathNotFound(to_index));
-        }
-        if from_index == to_index {
-            return Ok(());
-        }
-
-        // Re-order only the display order within the setup that owns both
-        // toolpaths. `toolpath_configs` and the results cache are keyed by
-        // stable global indices and must not move.
-        //
-        // Remove at `pf`, insert at `pt`, both read off the ORIGINAL list.
-        // Downward (pf < pt) that lands the op just after the target,
-        // upward (pf > pt) just before it; either way the target keeps its
-        // neighbours and only the moved op changes rank.
-        for setup in &mut self.setups {
-            let pos_from = setup.toolpath_indices.iter().position(|&i| i == from_index);
-            let pos_to = setup.toolpath_indices.iter().position(|&i| i == to_index);
-            if let (Some(pf), Some(pt)) = (pos_from, pos_to) {
-                let moved = setup.toolpath_indices.remove(pf);
-                setup.toolpath_indices.insert(pt, moved);
-                break;
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, |session| {
+            if from_index >= session.toolpath_configs.len() {
+                return Err(SessionError::ToolpathNotFound(from_index));
             }
-        }
+            if to_index >= session.toolpath_configs.len() {
+                return Err(SessionError::ToolpathNotFound(to_index));
+            }
+            if from_index == to_index {
+                return Ok(());
+            }
 
-        // Plan order changed for both toolpaths: each moved op's own
-        // FromRemainingStock result (if any) and everything downstream of
-        // either position may have been generated against a stock sequence
-        // that no longer exists (see `invalidate_result_chain`). Each moved
-        // op is covered as "downstream" of the other's seed.
-        self.invalidate_output_dependents(from_index, true);
-        self.invalidate_output_dependents(to_index, true);
+            // Re-order only the display order within the setup that owns
+            // both toolpaths. `toolpath_configs` and the results cache are
+            // keyed by stable global indices and must not move.
+            //
+            // Remove at `pf`, insert at `pt`, both read off the ORIGINAL
+            // list. Downward (pf < pt) that lands the op just after the
+            // target, upward (pf > pt) just before it; either way the
+            // target keeps its neighbours and only the moved op changes
+            // rank.
+            for setup in &mut session.setups {
+                let pos_from = setup.toolpath_indices.iter().position(|&i| i == from_index);
+                let pos_to = setup.toolpath_indices.iter().position(|&i| i == to_index);
+                if let (Some(pf), Some(pt)) = (pos_from, pos_to) {
+                    let moved = setup.toolpath_indices.remove(pf);
+                    setup.toolpath_indices.insert(pt, moved);
+                    break;
+                }
+            }
 
-        self.simulation = None;
-        Ok(())
+            // Plan order changed for both toolpaths: each moved op's own
+            // FromRemainingStock result (if any) and everything downstream
+            // of either position may have been generated against a stock
+            // sequence that no longer exists (see
+            // `invalidate_result_chain`). Each moved op is covered as
+            // "downstream" of the other's seed.
+            session.invalidate_output_dependents(from_index, true);
+            session.invalidate_output_dependents(to_index, true);
+
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     /// Invalidate a toolpath's cached result plus every cached result that
@@ -233,9 +255,19 @@ impl ProjectSession {
     /// directions change the chain); pass `false` for edits to a toolpath
     /// that is and stays disabled (only its `DerivedRestRegions` consumers
     /// are invalidated).
-    pub(crate) fn invalidate_result_chain(&mut self, index: usize, stock_chain_changed: bool) {
+    ///
+    /// Returns every index whose cached result this call dropped. The set
+    /// always holds `index` itself, because `drop_result` runs on it
+    /// whether or not it held a cached result.
+    pub(crate) fn invalidate_result_chain(
+        &mut self,
+        index: usize,
+        stock_chain_changed: bool,
+    ) -> BTreeSet<usize> {
         self.drop_result(index);
-        self.invalidate_output_dependents(index, stock_chain_changed);
+        let (_dirty, mut dropped) = self.invalidate_output_dependents(index, stock_chain_changed);
+        dropped.insert(index);
+        dropped
     }
 
     /// Propagation half of [`Self::invalidate_result_chain`]: invalidate
@@ -243,14 +275,24 @@ impl ProjectSession {
     /// result. Used by the enable toggle — the toggled op's own result stays
     /// valid for a future re-enable; only what was built on top of its
     /// stock/regions is stale.
-    pub(crate) fn invalidate_output_dependents(&mut self, index: usize, stock_chain_changed: bool) {
-        use std::collections::BTreeSet;
-
+    ///
+    /// Returns `(dirty, dropped)`. `dirty` is every index whose cached
+    /// result is now invalid, INCLUDING `index` itself. `dropped` is the
+    /// subset this call actually called `drop_result` on, which EXCLUDES
+    /// `index`: the enable toggle depends on exactly that asymmetry, so
+    /// the two sets are reported apart rather than conflated.
+    pub(crate) fn invalidate_output_dependents(
+        &mut self,
+        index: usize,
+        stock_chain_changed: bool,
+    ) -> (BTreeSet<usize>, BTreeSet<usize>) {
         self.simulation = None;
 
         // Indices whose cached result is now invalid.
         let mut dirty: BTreeSet<usize> = BTreeSet::new();
         dirty.insert(index);
+        // The subset `drop_result` ran on. `index` never joins it here.
+        let mut dropped: BTreeSet<usize> = BTreeSet::new();
         // Subset of `dirty` whose stock contribution changed (drives the
         // same-setup downstream rule). A dirtied enabled op joins this set:
         // its regenerated output may cut differently.
@@ -308,6 +350,7 @@ impl ProjectSession {
             for tp_idx in newly {
                 self.drop_result(tp_idx);
                 dirty.insert(tp_idx);
+                dropped.insert(tp_idx);
                 if self
                     .toolpath_configs
                     .get(tp_idx)
@@ -317,29 +360,38 @@ impl ProjectSession {
                 }
             }
         }
+
+        (dirty, dropped)
     }
 
     /// Enable or disable a toolpath. Flipping the flag in EITHER direction
     /// changes the setup's material-removal chain, so downstream
     /// rest-machining results are invalidated (see
     /// [`Self::invalidate_result_chain`]).
+    ///
+    /// The toggled op KEEPS its own cached result (the N1 design): it
+    /// stays valid for a re-enable. Its revision therefore does not move,
+    /// and [`Effects::stale`] — the revision-moved set — excludes
+    /// `index`. It reports the downstream set only.
     #[instrument(skip(self))]
     pub fn set_toolpath_enabled(
         &mut self,
         index: usize,
         enabled: bool,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        let changed = tc.enabled != enabled;
-        tc.enabled = enabled;
-        if changed {
-            self.invalidate_output_dependents(index, true);
-        }
-        self.simulation = None;
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            let changed = tc.enabled != enabled;
+            tc.enabled = enabled;
+            if changed {
+                session.invalidate_output_dependents(index, true);
+            }
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     /// Replace the dressup config for a toolpath, invalidating its cached result.
@@ -348,18 +400,20 @@ impl ProjectSession {
         &mut self,
         index: usize,
         mut dressups: DressupConfig,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        // Enforce the per-operation dressup invariant so incompatible
-        // combinations can't be introduced via this API.
-        dressups.normalize_for_op(tc.operation.op_type());
-        tc.dressups = dressups;
-        let enabled = tc.enabled;
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            // Enforce the per-operation dressup invariant so incompatible
+            // combinations can't be introduced via this API.
+            dressups.normalize_for_op(tc.operation.op_type());
+            tc.dressups = dressups;
+            let enabled = tc.enabled;
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     /// Replace a toolpath's operation config wholesale — including switching
@@ -374,20 +428,22 @@ impl ProjectSession {
         &mut self,
         index: usize,
         operation: OperationConfig,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        tc.operation = operation;
-        // Same invariant set_dressup_config enforces: the surviving dressups
-        // must be legal for the NEW operation kind.
-        let mut dressups = tc.dressups.clone();
-        dressups.normalize_for_op(tc.operation.op_type());
-        tc.dressups = dressups;
-        let enabled = tc.enabled;
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            tc.operation = operation;
+            // Same invariant set_dressup_config enforces: the surviving
+            // dressups must be legal for the NEW operation kind.
+            let mut dressups = tc.dressups.clone();
+            dressups.normalize_for_op(tc.operation.op_type());
+            tc.dressups = dressups;
+            let enabled = tc.enabled;
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     /// Update a single dressup field by merging a JSON patch onto the existing
@@ -395,6 +451,22 @@ impl ProjectSession {
     /// the cached result.
     #[instrument(skip(self, value))]
     pub fn set_dressup_field(
+        &mut self,
+        index: usize,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            session.set_dressup_field_impl(index, key, value)
+        })
+    }
+
+    /// The body of [`Self::set_dressup_field`].
+    ///
+    /// The setter wraps this in the [`Effects`] combinator. The body
+    /// stays a separate function because the JSON merge is long and the
+    /// wrapper reads better with one call in it.
+    fn set_dressup_field_impl(
         &mut self,
         index: usize,
         key: &str,
@@ -476,15 +548,17 @@ impl ProjectSession {
         &mut self,
         index: usize,
         source: crate::compute::config::StockSource,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        tc.stock_source = source;
-        let enabled = tc.enabled;
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            tc.stock_source = source;
+            let enabled = tc.enabled;
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     /// Replace the heights config for a toolpath, invalidating its cached result.
@@ -493,15 +567,17 @@ impl ProjectSession {
         &mut self,
         index: usize,
         heights: HeightsConfig,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        tc.heights = heights;
-        let enabled = tc.enabled;
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            tc.heights = heights;
+            let enabled = tc.enabled;
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     /// Replace the boundary config for a toolpath, invalidating its cached
@@ -514,24 +590,29 @@ impl ProjectSession {
         &mut self,
         index: usize,
         boundary: BoundaryConfig,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        let auto_enable_source = match (boundary.enabled, &boundary.source) {
-            (true, BoundarySource::DerivedRestRegions { source_toolpath_id }) => {
-                Some(*source_toolpath_id)
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            let auto_enable_source = match (boundary.enabled, &boundary.source) {
+                (true, BoundarySource::DerivedRestRegions { source_toolpath_id }) => {
+                    Some(*source_toolpath_id)
+                }
+                _ => None,
+            };
+            tc.boundary = boundary;
+            let enabled = tc.enabled;
+            session.invalidate_result_chain(index, enabled);
+            if let Some(source_id) = auto_enable_source {
+                // The producer hook reports its own effects. This
+                // wrapper's snapshot spans both mutations, so the outer
+                // answer already carries what the hook dropped.
+                let _ = session.auto_enable_rest_analysis_for_source(source_id);
             }
-            _ => None,
-        };
-        tc.boundary = boundary;
-        let enabled = tc.enabled;
-        self.invalidate_result_chain(index, enabled);
-        if let Some(source_id) = auto_enable_source {
-            self.auto_enable_rest_analysis_for_source(source_id);
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Demand-driven rest-analysis producer hook (P2 pencil-panel
@@ -543,37 +624,41 @@ impl ProjectSession {
     /// `rest_grid` / `rest_regions` via
     /// `compute::execute::attach_generic_rest_analysis`.
     ///
-    /// A no-op (returns `false`) when the source toolpath doesn't exist,
+    /// A no-op (returns `None`) when the source toolpath doesn't exist,
     /// already has rest analysis enabled, or is itself a `rest_depth`
     /// pencil — that detector attaches the same artifacts on its own, and
     /// `attach_generic_rest_analysis` already skips itself once they're
     /// present, so forcing the flag there would just be a redundant,
     /// confusing UI toggle (the GUI hides it entirely for these ops).
+    ///
+    /// `None` says the call changed nothing. It is not an error, and it
+    /// is not an empty [`Effects`].
     #[instrument(skip(self))]
     pub fn auto_enable_rest_analysis_for_source(
         &mut self,
         source_id: crate::ids::ToolpathId,
-    ) -> bool {
-        let Some((idx, tc)) = self.find_toolpath_config_by_id_mut(source_id) else {
-            return false;
-        };
+    ) -> Option<Effects> {
+        let (idx, tc) = self.find_toolpath_config_by_id(source_id)?;
         if tc.rest_analysis.enabled {
-            return false;
+            return None;
         }
         if let OperationConfig::Pencil(cfg) = &tc.operation
             && crate::pencil::PencilDetector::parse(&cfg.detector)
                 == crate::pencil::PencilDetector::RestDepth
         {
-            return false;
+            return None;
         }
-        tc.rest_analysis.enabled = true;
-        self.drop_result(idx);
-        tracing::info!(
-            source_toolpath_id = source_id.0,
-            "Auto-enabled rest analysis: a toolpath now consumes this one's \
-             derived rest regions as a machining boundary"
-        );
-        true
+        Some(self.with_effects(Some(idx), move |session| {
+            if let Some((_, tc)) = session.find_toolpath_config_by_id_mut(source_id) {
+                tc.rest_analysis.enabled = true;
+            }
+            session.drop_result(idx);
+            tracing::info!(
+                source_toolpath_id = source_id.0,
+                "Auto-enabled rest analysis: a toolpath now consumes this one's \
+                 derived rest regions as a machining boundary"
+            );
+        }))
     }
 
     /// Replace the rest-analysis config (P2.5) for a toolpath, invalidating
@@ -583,15 +668,17 @@ impl ProjectSession {
         &mut self,
         index: usize,
         rest_analysis: crate::compute::config::RestAnalysisConfig,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        tc.rest_analysis = rest_analysis;
-        let enabled = tc.enabled;
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            tc.rest_analysis = rest_analysis;
+            let enabled = tc.enabled;
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     // ── Model CRUD ────────────────────────────────────────────────
@@ -735,39 +822,45 @@ impl ProjectSession {
     ///
     /// The cached toolpath result is invalidated because the setup transform
     /// may have changed (e.g. top → bottom orientation).
+    ///
+    /// [`Effects::revision`] is `None`: the toolpath lands in another
+    /// setup's plan order, so the index the caller passed no longer
+    /// describes where the toolpath sits.
     #[instrument(skip(self))]
     pub fn move_toolpath_to_setup(
         &mut self,
         tp_index: usize,
         target_setup_index: usize,
         target_position: Option<usize>,
-    ) -> Result<(), SessionError> {
-        if tp_index >= self.toolpath_configs.len() {
-            return Err(SessionError::ToolpathNotFound(tp_index));
-        }
-        if target_setup_index >= self.setups.len() {
-            return Err(SessionError::SetupNotFound(target_setup_index));
-        }
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            if tp_index >= session.toolpath_configs.len() {
+                return Err(SessionError::ToolpathNotFound(tp_index));
+            }
+            if target_setup_index >= session.setups.len() {
+                return Err(SessionError::SetupNotFound(target_setup_index));
+            }
 
-        // Propagate while the toolpath is still in its ORIGINAL setup so
-        // that setup's downstream rest ops are invalidated (see
-        // `invalidate_result_chain`); its own result dies below.
-        self.invalidate_output_dependents(tp_index, true);
+            // Propagate while the toolpath is still in its ORIGINAL setup
+            // so that setup's downstream rest ops are invalidated (see
+            // `invalidate_result_chain`); its own result dies below.
+            session.invalidate_output_dependents(tp_index, true);
 
-        // Remove from whichever setup currently owns this toolpath
-        for setup in &mut self.setups {
-            setup.toolpath_indices.retain(|&i| i != tp_index);
-        }
+            // Remove from whichever setup currently owns this toolpath
+            for setup in &mut session.setups {
+                setup.toolpath_indices.retain(|&i| i != tp_index);
+            }
 
-        // SAFETY: target_setup_index bounds-checked above
-        #[allow(clippy::indexing_slicing)]
-        let target = &mut self.setups[target_setup_index].toolpath_indices;
-        let at = target_position.unwrap_or(target.len()).min(target.len());
-        target.insert(at, tp_index);
+            // SAFETY: target_setup_index bounds-checked above
+            #[allow(clippy::indexing_slicing)]
+            let target = &mut session.setups[target_setup_index].toolpath_indices;
+            let at = target_position.unwrap_or(target.len()).min(target.len());
+            target.insert(at, tp_index);
 
-        self.drop_result(tp_index);
-        self.simulation = None;
-        Ok(())
+            session.drop_result(tp_index);
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     // ── Toolpath config updates ──────────────────────────────────
@@ -797,24 +890,31 @@ impl ProjectSession {
     /// A rebind to the tool already bound is a no-op and invalidates
     /// nothing.
     #[instrument(skip(self))]
-    pub fn set_toolpath_tool(&mut self, index: usize, tool_id: usize) -> Result<(), SessionError> {
-        if !self.tools.iter().any(|t| t.id.0 == tool_id) {
-            return Err(SessionError::ToolNotFound(ToolId(tool_id)));
-        }
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        if tc.tool_id == tool_id {
-            return Ok(());
-        }
-        tc.tool_id = tool_id;
-        let enabled = tc.enabled;
-        // A different cutter removes different material, so this is a
-        // stock-chain change: same invalidation as `set_face_selection`
-        // and `set_heights_config`, not the narrower `remove_result`.
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+    pub fn set_toolpath_tool(
+        &mut self,
+        index: usize,
+        tool_id: usize,
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            if !session.tools.iter().any(|t| t.id.0 == tool_id) {
+                return Err(SessionError::ToolNotFound(ToolId(tool_id)));
+            }
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            if tc.tool_id == tool_id {
+                return Ok(());
+            }
+            tc.tool_id = tool_id;
+            let enabled = tc.enabled;
+            // A different cutter removes different material, so this is a
+            // stock-chain change: same invalidation as
+            // `set_face_selection` and `set_heights_config`, not the
+            // narrower `remove_result`.
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     /// Rebind a toolpath to a different **input model**, invalidating its
@@ -846,25 +946,27 @@ impl ProjectSession {
         &mut self,
         index: usize,
         model_id: usize,
-    ) -> Result<(), SessionError> {
-        if !self.models.iter().any(|m| m.id == model_id) {
-            let known: Vec<String> = self.models.iter().map(|m| m.id.to_string()).collect();
-            return Err(SessionError::MissingGeometry(format!(
-                "Model id {model_id} not found; project model ids: [{}]",
-                known.join(", ")
-            )));
-        }
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        if tc.model_id == model_id {
-            return Ok(());
-        }
-        tc.model_id = model_id;
-        let enabled = tc.enabled;
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            if !session.models.iter().any(|m| m.id == model_id) {
+                let known: Vec<String> = session.models.iter().map(|m| m.id.to_string()).collect();
+                return Err(SessionError::MissingGeometry(format!(
+                    "Model id {model_id} not found; project model ids: [{}]",
+                    known.join(", ")
+                )));
+            }
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            if tc.model_id == model_id {
+                return Ok(());
+            }
+            tc.model_id = model_id;
+            let enabled = tc.enabled;
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     /// Set the BREP face selection for a toolpath, invalidating its cached result.
@@ -873,15 +975,17 @@ impl ProjectSession {
         &mut self,
         index: usize,
         face_ids: Option<Vec<FaceGroupId>>,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        tc.face_selection = face_ids;
-        let enabled = tc.enabled;
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            tc.face_selection = face_ids;
+            let enabled = tc.enabled;
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     /// Update the alignment pin drill holes for a toolpath.
@@ -892,24 +996,26 @@ impl ProjectSession {
         &mut self,
         index: usize,
         holes: Vec<[f64; 2]>,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        match tc.operation {
-            OperationConfig::AlignmentPinDrill(ref mut cfg) => {
-                cfg.holes = holes;
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            match tc.operation {
+                OperationConfig::AlignmentPinDrill(ref mut cfg) => {
+                    cfg.holes = holes;
+                }
+                _ => {
+                    return Err(SessionError::InvalidParam(
+                        "Toolpath is not an AlignmentPinDrill operation".to_owned(),
+                    ));
+                }
             }
-            _ => {
-                return Err(SessionError::InvalidParam(
-                    "Toolpath is not an AlignmentPinDrill operation".to_owned(),
-                ));
-            }
-        }
-        let enabled = tc.enabled;
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+            let enabled = tc.enabled;
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     /// Set the explicitly-selected drill holes (DXF point / circle-centre
@@ -923,27 +1029,29 @@ impl ProjectSession {
         &mut self,
         index: usize,
         selected_holes: Option<Vec<[f64; 2]>>,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        match tc.operation {
-            OperationConfig::Drill(ref mut cfg) => {
-                cfg.selected_holes = selected_holes;
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            match tc.operation {
+                OperationConfig::Drill(ref mut cfg) => {
+                    cfg.selected_holes = selected_holes;
+                }
+                OperationConfig::AlignmentPinDrill(ref mut cfg) => {
+                    cfg.selected_holes = selected_holes;
+                }
+                _ => {
+                    return Err(SessionError::InvalidParam(
+                        "Toolpath is not a drilling operation".to_owned(),
+                    ));
+                }
             }
-            OperationConfig::AlignmentPinDrill(ref mut cfg) => {
-                cfg.selected_holes = selected_holes;
-            }
-            _ => {
-                return Err(SessionError::InvalidParam(
-                    "Toolpath is not a drilling operation".to_owned(),
-                ));
-            }
-        }
-        self.drop_result(index);
-        self.simulation = None;
-        Ok(())
+            session.drop_result(index);
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     // ── Setup mutations ──────────────────────────────────────────
@@ -965,18 +1073,20 @@ impl ProjectSession {
         &mut self,
         setup_index: usize,
         fixture: Fixture,
-    ) -> Result<(), SessionError> {
-        let setup = self
-            .setups
-            .get_mut(setup_index)
-            .ok_or(SessionError::SetupNotFound(setup_index))?;
-        setup.fixtures.push(fixture);
-        let indices: Vec<usize> = setup.toolpath_indices.clone();
-        for &tp_idx in &indices {
-            self.drop_result(tp_idx);
-        }
-        self.simulation = None;
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            setup.fixtures.push(fixture);
+            let indices: Vec<usize> = setup.toolpath_indices.clone();
+            for &tp_idx in &indices {
+                session.drop_result(tp_idx);
+            }
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     /// Remove a fixture from a setup by its ID.
@@ -985,18 +1095,20 @@ impl ProjectSession {
         &mut self,
         setup_index: usize,
         fixture_id: FixtureId,
-    ) -> Result<(), SessionError> {
-        let setup = self
-            .setups
-            .get_mut(setup_index)
-            .ok_or(SessionError::SetupNotFound(setup_index))?;
-        setup.fixtures.retain(|f| f.id != fixture_id);
-        let indices: Vec<usize> = setup.toolpath_indices.clone();
-        for &tp_idx in &indices {
-            self.drop_result(tp_idx);
-        }
-        self.simulation = None;
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            setup.fixtures.retain(|f| f.id != fixture_id);
+            let indices: Vec<usize> = setup.toolpath_indices.clone();
+            for &tp_idx in &indices {
+                session.drop_result(tp_idx);
+            }
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     /// Add a keep-out zone to a setup, invalidating all toolpath results in that setup.
@@ -1005,18 +1117,20 @@ impl ProjectSession {
         &mut self,
         setup_index: usize,
         zone: KeepOutZone,
-    ) -> Result<(), SessionError> {
-        let setup = self
-            .setups
-            .get_mut(setup_index)
-            .ok_or(SessionError::SetupNotFound(setup_index))?;
-        setup.keep_out_zones.push(zone);
-        let indices: Vec<usize> = setup.toolpath_indices.clone();
-        for &tp_idx in &indices {
-            self.drop_result(tp_idx);
-        }
-        self.simulation = None;
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            setup.keep_out_zones.push(zone);
+            let indices: Vec<usize> = setup.toolpath_indices.clone();
+            for &tp_idx in &indices {
+                session.drop_result(tp_idx);
+            }
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     /// Remove a keep-out zone from a setup by its ID.
@@ -1025,18 +1139,20 @@ impl ProjectSession {
         &mut self,
         setup_index: usize,
         zone_id: KeepOutId,
-    ) -> Result<(), SessionError> {
-        let setup = self
-            .setups
-            .get_mut(setup_index)
-            .ok_or(SessionError::SetupNotFound(setup_index))?;
-        setup.keep_out_zones.retain(|z| z.id != zone_id);
-        let indices: Vec<usize> = setup.toolpath_indices.clone();
-        for &tp_idx in &indices {
-            self.drop_result(tp_idx);
-        }
-        self.simulation = None;
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            setup.keep_out_zones.retain(|z| z.id != zone_id);
+            let indices: Vec<usize> = setup.toolpath_indices.clone();
+            for &tp_idx in &indices {
+                session.drop_result(tp_idx);
+            }
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     // ── Invalidation helpers ─────────────────────────────────────
@@ -1050,48 +1166,51 @@ impl ProjectSession {
     /// Drops EVERY toolpath result, not only the simulation — see
     /// [`Self::drop_all_results`] for the operator ruling behind that.
     #[instrument(skip(self))]
-    pub fn invalidate_stock(&mut self) {
-        self.drop_all_results();
+    pub fn invalidate_stock(&mut self) -> Effects {
+        self.with_effects(None, |session| session.drop_all_results())
     }
 
     /// Invalidate cached simulation after machine profile was mutated in-place.
     #[instrument(skip(self))]
-    pub fn invalidate_machine(&mut self) {
-        self.simulation = None;
+    pub fn invalidate_machine(&mut self) -> Effects {
+        self.with_effects(None, |session| {
+            session.simulation = None;
+        })
     }
 
     /// Invalidate cached results for all toolpaths that reference a given
-    /// tool. Returns the toolpath indices whose result was dropped, so a
-    /// caller can request their regeneration.
+    /// tool. [`Effects::stale`] carries the toolpath indices whose result
+    /// was dropped, so a caller can request their regeneration.
     #[instrument(skip(self))]
-    pub fn invalidate_tool(&mut self, tool_id: usize) -> Vec<usize> {
-        // A toolpath depends on a tool through TWO doors, not one. The
-        // obvious door is `tool_id` — the cutter that machines it. The
-        // second is a `PlannedTierRegions` boundary, whose islands are
-        // "the coarsest tool on THIS LADDER that holds each cell": re-dial
-        // any ladder member and the fine tier's territory moves, even
-        // though the fine tier's own cutter is untouched. Missing that
-        // door leaves a generated tier bounded by a map that no longer
-        // exists.
-        let stale: Vec<usize> = self
-            .toolpath_configs
-            .iter()
-            .enumerate()
-            .filter(|(_, tc)| {
-                tc.tool_id == tool_id
-                    || matches!(
-                        &tc.boundary.source,
-                        BoundarySource::PlannedTierRegions { tool_ids, .. }
-                            if tc.boundary.enabled && tool_ids.contains(&tool_id)
-                    )
-            })
-            .map(|(idx, _)| idx)
-            .collect();
-        for &idx in &stale {
-            self.drop_result(idx);
-        }
-        self.simulation = None;
-        stale
+    pub fn invalidate_tool(&mut self, tool_id: usize) -> Effects {
+        self.with_effects(None, move |session| {
+            // A toolpath depends on a tool through TWO doors, not one.
+            // The obvious door is `tool_id` — the cutter that machines
+            // it. The second is a `PlannedTierRegions` boundary, whose
+            // islands are "the coarsest tool on THIS LADDER that holds
+            // each cell": re-dial any ladder member and the fine tier's
+            // territory moves, even though the fine tier's own cutter is
+            // untouched. Missing that door leaves a generated tier
+            // bounded by a map that no longer exists.
+            let stale: Vec<usize> = session
+                .toolpath_configs
+                .iter()
+                .enumerate()
+                .filter(|(_, tc)| {
+                    tc.tool_id == tool_id
+                        || matches!(
+                            &tc.boundary.source,
+                            BoundarySource::PlannedTierRegions { tool_ids, .. }
+                                if tc.boundary.enabled && tool_ids.contains(&tool_id)
+                        )
+                })
+                .map(|(idx, _)| idx)
+                .collect();
+            for &idx in &stale {
+                session.drop_result(idx);
+            }
+            session.simulation = None;
+        })
     }
 
     /// Invalidate cached results for every toolpath that machines a given
@@ -1099,22 +1218,23 @@ impl ProjectSession {
     ///
     /// A model reload or rescale replaces the geometry every one of those
     /// results was generated against, so none of them still describes the
-    /// project. Returns the toolpath indices whose result was dropped, so
-    /// a caller can request their regeneration.
+    /// project. [`Effects::stale`] carries the toolpath indices whose
+    /// result was dropped, so a caller can request their regeneration.
     #[instrument(skip(self))]
-    pub fn invalidate_model(&mut self, model_id: usize) -> Vec<usize> {
-        let affected: Vec<usize> = self
-            .toolpath_configs
-            .iter()
-            .enumerate()
-            .filter(|(_, tc)| tc.model_id == model_id)
-            .map(|(idx, _)| idx)
-            .collect();
-        for &idx in &affected {
-            self.drop_result(idx);
-        }
-        self.simulation = None;
-        affected
+    pub fn invalidate_model(&mut self, model_id: usize) -> Effects {
+        self.with_effects(None, move |session| {
+            let affected: Vec<usize> = session
+                .toolpath_configs
+                .iter()
+                .enumerate()
+                .filter(|(_, tc)| tc.model_id == model_id)
+                .map(|(idx, _)| idx)
+                .collect();
+            for &idx in &affected {
+                session.drop_result(idx);
+            }
+            session.simulation = None;
+        })
     }
 
     // ── Global config ─────────────────────────────────────────────
@@ -1123,9 +1243,11 @@ impl ProjectSession {
     ///
     /// Drops every toolpath result — see [`Self::drop_all_results`].
     #[instrument(skip(self, stock))]
-    pub fn set_stock_config(&mut self, stock: StockConfig) {
-        self.stock = stock;
-        self.drop_all_results();
+    pub fn set_stock_config(&mut self, stock: StockConfig) -> Effects {
+        self.with_effects(None, move |session| {
+            session.stock = stock;
+            session.drop_all_results();
+        })
     }
 
     /// Update stock dimensions from a bounding box (used by `auto_from_model`
@@ -1135,51 +1257,63 @@ impl ProjectSession {
     /// preserves the existing Z so attaching an SVG/DXF doesn't collapse stock
     /// thickness — see F-13 in the April 2026 review.
     #[instrument(skip(self))]
-    pub fn update_stock_from_bbox(&mut self, bbox: &BoundingBox3) {
-        self.stock.update_from_bbox(bbox);
-        self.drop_all_results();
+    pub fn update_stock_from_bbox(&mut self, bbox: &BoundingBox3) -> Effects {
+        self.with_effects(None, move |session| {
+            session.stock.update_from_bbox(bbox);
+            session.drop_all_results();
+        })
     }
 
     /// Add an alignment pin, deduping against existing pins within 0.01mm.
     ///
-    /// Returns `true` if the pin was added, `false` if a duplicate was skipped.
+    /// Reports the effects when the pin was added, and `None` when a
+    /// duplicate was skipped. `None` says the call changed nothing.
     #[instrument(skip(self))]
-    pub fn add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> bool {
+    pub fn add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> Option<Effects> {
         const PIN_DEDUP_EPSILON_MM: f64 = 0.01;
         let exists = self.stock.alignment_pins.iter().any(|p| {
             (p.x - x).abs() < PIN_DEDUP_EPSILON_MM && (p.y - y).abs() < PIN_DEDUP_EPSILON_MM
         });
         if exists {
-            return false;
+            return None;
         }
-        self.stock
-            .alignment_pins
-            .push(crate::compute::stock_config::AlignmentPin::new(
-                x, y, diameter,
-            ));
-        self.drop_all_results();
-        true
+        Some(self.with_effects(None, move |session| {
+            session
+                .stock
+                .alignment_pins
+                .push(crate::compute::stock_config::AlignmentPin::new(
+                    x, y, diameter,
+                ));
+            session.drop_all_results();
+        }))
     }
 
     /// Remove an alignment pin by index. Returns `Err` if out of bounds.
+    ///
+    /// `index` names a PIN, not a toolpath, so [`Effects::revision`] is
+    /// `None`.
     #[instrument(skip(self))]
-    pub fn remove_alignment_pin(&mut self, index: usize) -> Result<(), SessionError> {
-        if index >= self.stock.alignment_pins.len() {
-            return Err(SessionError::InvalidParam(format!(
-                "alignment pin index {index} out of range ({} pins)",
-                self.stock.alignment_pins.len()
-            )));
-        }
-        self.stock.alignment_pins.remove(index);
-        self.drop_all_results();
-        Ok(())
+    pub fn remove_alignment_pin(&mut self, index: usize) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            if index >= session.stock.alignment_pins.len() {
+                return Err(SessionError::InvalidParam(format!(
+                    "alignment pin index {index} out of range ({} pins)",
+                    session.stock.alignment_pins.len()
+                )));
+            }
+            session.stock.alignment_pins.remove(index);
+            session.drop_all_results();
+            Ok(())
+        })
     }
 
     /// Replace the post-processor configuration, invalidating simulation.
     #[instrument(skip(self, post))]
-    pub fn set_post_config(&mut self, post: ProjectPostConfig) {
-        self.post = post;
-        self.simulation = None;
+    pub fn set_post_config(&mut self, post: ProjectPostConfig) -> Effects {
+        self.with_effects(None, move |session| {
+            session.post = post;
+            session.simulation = None;
+        })
     }
 
     /// Replace the machine profile.
@@ -1192,11 +1326,14 @@ impl ProjectSession {
     ///
     /// Invalidates simulation (tool geometry changes affect material removal).
     #[instrument(skip(self, tools))]
-    pub fn replace_tools(&mut self, tools: Vec<ToolConfig>) {
-        self.tools = tools;
-        // Update the next-ID counter so newly added tools don't collide.
-        self.next_tool_id = self.tools.iter().map(|t| t.id.0 + 1).max().unwrap_or(0);
-        self.simulation = None;
+    pub fn replace_tools(&mut self, tools: Vec<ToolConfig>) -> Effects {
+        self.with_effects(None, move |session| {
+            session.tools = tools;
+            // Update the next-ID counter so newly added tools don't
+            // collide.
+            session.next_tool_id = session.tools.iter().map(|t| t.id.0 + 1).max().unwrap_or(0);
+            session.simulation = None;
+        })
     }
 
     /// Replace a single toolpath configuration by its index in
@@ -1206,21 +1343,23 @@ impl ProjectSession {
         &mut self,
         index: usize,
         config: ToolpathConfig,
-    ) -> Result<(), SessionError> {
-        let slot = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        *slot = config;
-        // R0.1 §4.3: a wholesale config replacement is an input edit like
-        // any other, so it invalidates the downstream stock chain too, not
-        // only this toolpath's own slot.
-        let enabled = self
-            .toolpath_configs
-            .get(index)
-            .is_some_and(|tc| tc.enabled);
-        self.invalidate_result_chain(index, enabled);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let slot = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            *slot = config;
+            // R0.1 §4.3: a wholesale config replacement is an input edit
+            // like any other, so it invalidates the downstream stock
+            // chain too, not only this toolpath's own slot.
+            let enabled = session
+                .toolpath_configs
+                .get(index)
+                .is_some_and(|tc| tc.enabled);
+            session.invalidate_result_chain(index, enabled);
+            Ok(())
+        })
     }
 
     /// Apply an undo/redo snapshot of toolpath parameters to a toolpath at
@@ -1237,17 +1376,19 @@ impl ProjectSession {
         operation: OperationConfig,
         dressups: DressupConfig,
         face_selection: Option<Vec<FaceGroupId>>,
-    ) -> Result<(), SessionError> {
-        let tc = self
-            .toolpath_configs
-            .get_mut(index)
-            .ok_or(SessionError::ToolpathNotFound(index))?;
-        tc.operation = operation;
-        tc.dressups = dressups;
-        tc.face_selection = face_selection;
-        self.drop_result(index);
-        self.simulation = None;
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            tc.operation = operation;
+            tc.dressups = dressups;
+            tc.face_selection = face_selection;
+            session.drop_result(index);
+            session.simulation = None;
+            Ok(())
+        })
     }
 
     /// Overwrite a toolpath's feeds provenance (W2.1). Used by the optimizer's
@@ -1281,7 +1422,13 @@ impl ProjectSession {
     /// `apply_toolpath_param_snapshot` cleared `results[idx]` and the
     /// GUI regen only repopulated `gui.toolpath_rt`. See
     /// `planning/F1_RCA.md` (Roadmap F.1) for the divergence write-up.
-    pub fn insert_result(
+    ///
+    /// WP3 closed the public door. A completion now arrives as
+    /// [`Command::AdoptResult`](crate::session::Command), which carries
+    /// the revision the compute lane started from and refuses a
+    /// completion that answers a superseded parameter set.
+    /// [`ProjectSession::apply`] is the only caller.
+    pub(crate) fn insert_result(
         &mut self,
         index: usize,
         result: super::ToolpathComputeResult,
@@ -1306,11 +1453,19 @@ impl ProjectSession {
     /// "has this been generated?") counted as generated, which withholds a
     /// pending rest op's phantom prior-stock snapshot.
     ///
-    /// Returns `true` when a cached result was actually removed. Never an
-    /// error: removing the result of an index that has none is the
-    /// no-op the callers want.
-    pub fn remove_result(&mut self, index: usize) -> bool {
-        self.drop_result(index)
+    /// Never an error: removing the result of an index that has none is
+    /// the no-op the callers want.
+    ///
+    /// The method reported `true` when a cached result was actually
+    /// removed. It reports [`Effects`] instead, and the two are not the
+    /// same reading: `drop_result` bumps the revision whether or not a
+    /// result was there, so `Effects::stale` always holds `index`. A
+    /// caller that needs "was a result present" reads
+    /// [`ProjectSession::get_result`] before the call.
+    pub fn remove_result(&mut self, index: usize) -> Effects {
+        self.with_effects(Some(index), move |session| {
+            session.drop_result(index);
+        })
     }
 
     /// Drop a toolpath's cached result and bump its revision.
@@ -1382,12 +1537,14 @@ impl ProjectSession {
     /// PREVIOUS result and export emitted it (R0.1 §2.2 item 1), and the
     /// downstream `FromRemainingStock` chain was never invalidated either.
     /// Call it after writing, when a generation input actually changed.
-    pub fn invalidate_toolpath_inputs(&mut self, index: usize) {
-        let enabled = self
-            .toolpath_configs
-            .get(index)
-            .is_some_and(|tc| tc.enabled);
-        self.invalidate_result_chain(index, enabled);
+    pub fn invalidate_toolpath_inputs(&mut self, index: usize) -> Effects {
+        self.with_effects(Some(index), move |session| {
+            let enabled = session
+                .toolpath_configs
+                .get(index)
+                .is_some_and(|tc| tc.enabled);
+            session.invalidate_result_chain(index, enabled);
+        })
     }
 
     /// Set a setup's face-up orientation, dropping every result in that
@@ -1402,14 +1559,16 @@ impl ProjectSession {
         &mut self,
         setup_index: usize,
         face_up: FaceUp,
-    ) -> Result<(), SessionError> {
-        let setup = self
-            .setups
-            .get_mut(setup_index)
-            .ok_or(SessionError::SetupNotFound(setup_index))?;
-        setup.face_up = face_up;
-        self.drop_setup_results(setup_index);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            setup.face_up = face_up;
+            session.drop_setup_results(setup_index);
+            Ok(())
+        })
     }
 
     /// Set a setup's Z rotation, dropping every result in that setup.
@@ -1419,14 +1578,16 @@ impl ProjectSession {
         &mut self,
         setup_index: usize,
         z_rotation: ZRotation,
-    ) -> Result<(), SessionError> {
-        let setup = self
-            .setups
-            .get_mut(setup_index)
-            .ok_or(SessionError::SetupNotFound(setup_index))?;
-        setup.z_rotation = z_rotation;
-        self.drop_setup_results(setup_index);
-        Ok(())
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            setup.z_rotation = z_rotation;
+            session.drop_setup_results(setup_index);
+            Ok(())
+        })
     }
 
     /// Wholesale replace all setups and toolpath configs from an external
@@ -1440,21 +1601,24 @@ impl ProjectSession {
         &mut self,
         setups: Vec<SetupData>,
         toolpath_configs: Vec<ToolpathConfig>,
-    ) {
-        self.setups = setups;
-        self.toolpath_configs = toolpath_configs;
-        // Update the next-ID counters.
-        self.next_toolpath_id = self
-            .toolpath_configs
-            .iter()
-            .map(|tc| tc.id.0 + 1)
-            .max()
-            .unwrap_or(0);
-        self.next_setup_id = self.setups.iter().map(|s| s.id + 1).max().unwrap_or(0);
-        // Invalidate all cached results — the indices may have shifted.
-        self.results.clear();
-        self.bump_all_revisions();
-        self.simulation = None;
+    ) -> Effects {
+        self.with_effects(None, move |session| {
+            session.setups = setups;
+            session.toolpath_configs = toolpath_configs;
+            // Update the next-ID counters.
+            session.next_toolpath_id = session
+                .toolpath_configs
+                .iter()
+                .map(|tc| tc.id.0 + 1)
+                .max()
+                .unwrap_or(0);
+            session.next_setup_id = session.setups.iter().map(|s| s.id + 1).max().unwrap_or(0);
+            // Invalidate all cached results — the indices may have
+            // shifted.
+            session.results.clear();
+            session.bump_all_revisions();
+            session.simulation = None;
+        })
     }
 }
 
@@ -1468,6 +1632,7 @@ impl ProjectSession {
 mod tests {
     use super::*;
     use crate::ids::ToolpathId;
+    use crate::session::{AdoptResultArgs, Command};
     use std::sync::Arc;
 
     use crate::compute::catalog::OperationConfig;
@@ -1575,7 +1740,7 @@ mod tests {
         // Add cached result for index 2
         s.results.insert(2, fake_result());
 
-        s.remove_toolpath(0).unwrap();
+        let _ = s.remove_toolpath(0).unwrap();
 
         // Setup indices shifted: [1, 2] → [0, 1]
         assert_eq!(s.list_setups()[0].toolpath_indices, vec![0, 1]);
@@ -1605,7 +1770,7 @@ mod tests {
         let id_0 = s.toolpath_configs()[0].id;
         let id_1 = s.toolpath_configs()[1].id;
 
-        s.reorder_toolpath(0, 1).unwrap();
+        let _ = s.reorder_toolpath(0, 1).unwrap();
         // Global config order is stable; only the setup's display order swaps.
         assert_eq!(s.toolpath_configs()[0].id, id_0);
         assert_eq!(s.toolpath_configs()[1].id, id_1);
@@ -1617,7 +1782,7 @@ mod tests {
         let mut s = make_session();
         s.add_tool(make_tool());
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
-        s.set_toolpath_enabled(0, false).unwrap();
+        let _ = s.set_toolpath_enabled(0, false).unwrap();
         assert!(!s.toolpath_configs()[0].enabled);
         assert!(s.simulation.is_none());
     }
@@ -1629,7 +1794,7 @@ mod tests {
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
         s.results.insert(0, fake_result());
 
-        s.set_dressup_config(0, DressupConfig::default()).unwrap();
+        let _ = s.set_dressup_config(0, DressupConfig::default()).unwrap();
         assert!(!s.results.contains_key(&0));
         assert!(s.simulation.is_none());
     }
@@ -1641,7 +1806,7 @@ mod tests {
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
         s.results.insert(0, fake_result());
 
-        s.set_heights_config(0, HeightsConfig::default()).unwrap();
+        let _ = s.set_heights_config(0, HeightsConfig::default()).unwrap();
         assert!(!s.results.contains_key(&0));
         assert!(s.simulation.is_none());
     }
@@ -1670,7 +1835,7 @@ mod tests {
         s.results.insert(1, fake_result());
         s.results.insert(2, fake_result());
 
-        s.set_toolpath_enabled(0, false).unwrap();
+        let _ = s.set_toolpath_enabled(0, false).unwrap();
         // The toggled op keeps its own result (still valid on re-enable)…
         assert!(s.results.contains_key(&0));
         // …the downstream FromRemainingStock result dies (generated against
@@ -1681,7 +1846,7 @@ mod tests {
 
         // Toggling back is ALSO a chain change (cuts reappear upstream).
         s.results.insert(1, fake_result());
-        s.set_toolpath_enabled(0, true).unwrap();
+        let _ = s.set_toolpath_enabled(0, true).unwrap();
         assert!(!s.results.contains_key(&1));
     }
 
@@ -1709,7 +1874,7 @@ mod tests {
         s.results.insert(1, fake_result());
         s.results.insert(2, fake_result());
 
-        s.set_heights_config(0, HeightsConfig::default()).unwrap();
+        let _ = s.set_heights_config(0, HeightsConfig::default()).unwrap();
         assert!(!s.results.contains_key(&0), "edited op invalidated");
         assert!(
             !s.results.contains_key(&1),
@@ -1736,7 +1901,7 @@ mod tests {
 
         // Editing an op that is (and stays) disabled doesn't change the
         // material-removal chain — downstream results survive.
-        s.set_heights_config(0, HeightsConfig::default()).unwrap();
+        let _ = s.set_heights_config(0, HeightsConfig::default()).unwrap();
         assert!(s.results.contains_key(&1));
     }
 
@@ -1747,7 +1912,7 @@ mod tests {
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
         s.results.insert(0, fake_result());
 
-        s.set_boundary_config(0, BoundaryConfig::default()).unwrap();
+        let _ = s.set_boundary_config(0, BoundaryConfig::default()).unwrap();
         assert!(!s.results.contains_key(&0));
         assert!(s.simulation.is_none());
     }
@@ -1771,7 +1936,7 @@ mod tests {
             },
             ..BoundaryConfig::default()
         };
-        s.set_boundary_config(consumer_idx, boundary).unwrap();
+        let _ = s.set_boundary_config(consumer_idx, boundary).unwrap();
 
         assert!(s.toolpath_configs()[source_idx].rest_analysis.enabled);
         // The source's own cached result must be invalidated — it needs to
@@ -1803,7 +1968,7 @@ mod tests {
             },
             ..BoundaryConfig::default()
         };
-        s.set_boundary_config(consumer_idx, boundary).unwrap();
+        let _ = s.set_boundary_config(consumer_idx, boundary).unwrap();
 
         // A rest_depth pencil already attaches its own rest artifacts —
         // forcing the generic flag on would be redundant, so it stays off.
@@ -1829,13 +1994,15 @@ mod tests {
             },
             ..BoundaryConfig::default()
         };
-        s.set_boundary_config(enabled_consumer_idx, enabled_boundary.clone())
+        let _ = s
+            .set_boundary_config(enabled_consumer_idx, enabled_boundary.clone())
             .unwrap();
         let disabled_boundary = BoundaryConfig {
             enabled: false,
             ..enabled_boundary
         };
-        s.set_boundary_config(disabled_consumer_idx, disabled_boundary)
+        let _ = s
+            .set_boundary_config(disabled_consumer_idx, disabled_boundary)
             .unwrap();
 
         assert_eq!(
@@ -1928,7 +2095,7 @@ mod tests {
         assert_eq!(s.list_setups()[0].toolpath_indices, vec![0]);
         assert!(s.list_setups()[1].toolpath_indices.is_empty());
 
-        s.move_toolpath_to_setup(0, 1, None).unwrap();
+        let _ = s.move_toolpath_to_setup(0, 1, None).unwrap();
 
         assert!(s.list_setups()[0].toolpath_indices.is_empty());
         assert_eq!(s.list_setups()[1].toolpath_indices, vec![0]);
@@ -1961,7 +2128,7 @@ mod tests {
             crate::enriched_mesh::FaceGroupId(1),
             crate::enriched_mesh::FaceGroupId(3),
         ];
-        s.set_face_selection(0, Some(faces)).unwrap();
+        let _ = s.set_face_selection(0, Some(faces)).unwrap();
 
         assert!(s.toolpath_configs()[0].face_selection.is_some());
         assert!(!s.results.contains_key(&0));
@@ -2008,7 +2175,7 @@ mod tests {
             size_z: 20.0,
             clearance: 3.0,
         };
-        s.add_fixture(0, fixture).unwrap();
+        let _ = s.add_fixture(0, fixture).unwrap();
 
         assert_eq!(s.list_setups()[0].fixtures.len(), 1);
         assert!(!s.results.contains_key(&0));
@@ -2031,10 +2198,10 @@ mod tests {
             size_z: 10.0,
             clearance: 1.0,
         };
-        s.add_fixture(0, fixture).unwrap();
+        let _ = s.add_fixture(0, fixture).unwrap();
         assert_eq!(s.list_setups()[0].fixtures.len(), 1);
 
-        s.remove_fixture(0, FixtureId(42)).unwrap();
+        let _ = s.remove_fixture(0, FixtureId(42)).unwrap();
         assert!(s.list_setups()[0].fixtures.is_empty());
     }
 
@@ -2056,7 +2223,7 @@ mod tests {
             size_x: 20.0,
             size_y: 20.0,
         };
-        s.add_keep_out(0, zone).unwrap();
+        let _ = s.add_keep_out(0, zone).unwrap();
 
         assert_eq!(s.list_setups()[0].keep_out_zones.len(), 1);
         assert!(!s.results.contains_key(&0));
@@ -2075,10 +2242,11 @@ mod tests {
             size_x: 10.0,
             size_y: 10.0,
         };
-        s.add_keep_out(0, zone).unwrap();
+        let _ = s.add_keep_out(0, zone).unwrap();
         assert_eq!(s.list_setups()[0].keep_out_zones.len(), 1);
 
-        s.remove_keep_out(0, crate::compute::stock_config::KeepOutId(7))
+        let _ = s
+            .remove_keep_out(0, crate::compute::stock_config::KeepOutId(7))
             .unwrap();
         assert!(s.list_setups()[0].keep_out_zones.is_empty());
     }
@@ -2098,7 +2266,7 @@ mod tests {
         s.results.insert(0, fake_result());
 
         let holes = vec![[10.0, 20.0], [90.0, 20.0]];
-        s.set_alignment_pin_drill_holes(0, holes).unwrap();
+        let _ = s.set_alignment_pin_drill_holes(0, holes).unwrap();
 
         match &s.toolpath_configs()[0].operation {
             OperationConfig::AlignmentPinDrill(cfg) => {
@@ -2126,14 +2294,14 @@ mod tests {
     fn invalidate_stock_clears_simulation() {
         let mut s = make_session();
         // simulation starts as None; invalidate should keep it None
-        s.invalidate_stock();
+        let _ = s.invalidate_stock();
         assert!(s.simulation.is_none());
     }
 
     #[test]
     fn invalidate_machine_clears_simulation() {
         let mut s = make_session();
-        s.invalidate_machine();
+        let _ = s.invalidate_machine();
         assert!(s.simulation.is_none());
     }
 
@@ -2153,7 +2321,7 @@ mod tests {
         s.results.insert(1, fake_result());
         s.results.insert(2, fake_result());
 
-        s.invalidate_tool(tool_id_0);
+        let _ = s.invalidate_tool(tool_id_0);
 
         // Results for toolpaths using tool_id_0 (idx 0, 2) should be cleared
         assert!(!s.results.contains_key(&0));
@@ -2166,7 +2334,7 @@ mod tests {
     #[test]
     fn set_stock_config_runs() {
         let mut s = make_session();
-        s.set_stock_config(StockConfig::default());
+        let _ = s.set_stock_config(StockConfig::default());
         assert!(s.simulation.is_none());
     }
 
@@ -2177,7 +2345,7 @@ mod tests {
         t1.id = ToolId(5);
         let mut t2 = make_tool();
         t2.id = ToolId(10);
-        s.replace_tools(vec![t1, t2]);
+        let _ = s.replace_tools(vec![t1, t2]);
 
         // next_tool_id should be max(5, 10) + 1 = 11
         let new_idx = s.add_tool(make_tool());
@@ -2192,7 +2360,7 @@ mod tests {
         s.results.insert(0, fake_result());
 
         let new_tc = make_tc(s.tools()[0].id.0, 0);
-        s.replace_toolpath_config(0, new_tc).unwrap();
+        let _ = s.replace_toolpath_config(0, new_tc).unwrap();
 
         assert!(!s.results.contains_key(&0));
     }
@@ -2205,7 +2373,7 @@ mod tests {
             min: P3::new(0.0, 0.0, 0.0),
             max: P3::new(120.0, 80.0, 25.0),
         };
-        s.update_stock_from_bbox(&bbox);
+        let _ = s.update_stock_from_bbox(&bbox);
 
         // Stock grew to fit bbox + padding (XY) and exact bbox + padding (Z).
         assert!((s.stock_config().x - (120.0 + 2.0 * pad)).abs() < 1e-6);
@@ -2228,7 +2396,8 @@ mod tests {
         let snapshot_dress = DressupConfig::default();
         let snapshot_faces = Some(vec![crate::enriched_mesh::FaceGroupId(7)]);
 
-        s.apply_toolpath_param_snapshot(0, snapshot_op, snapshot_dress, snapshot_faces.clone())
+        let _ = s
+            .apply_toolpath_param_snapshot(0, snapshot_op, snapshot_dress, snapshot_faces.clone())
             .unwrap();
 
         match &s.toolpath_configs()[0].operation {
@@ -2252,45 +2421,67 @@ mod tests {
         assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
     }
 
+    /// Deliver a completion the way the compute lane does.
+    ///
+    /// `insert_result` is no longer a public door. A completion arrives
+    /// as `Command::AdoptResult`, which carries the revision the lane
+    /// started from.
+    fn adopt(s: &mut ProjectSession, index: usize) {
+        let revision = s.toolpath_revision(index);
+        let _ = s
+            .apply(Command::AdoptResult(AdoptResultArgs {
+                index,
+                revision,
+                result: Box::new(fake_result()),
+            }))
+            .expect("the fixture adopts at the current revision");
+    }
+
     #[test]
-    fn insert_result_populates_cache() {
+    fn adopt_result_populates_cache() {
         let mut s = make_session();
         s.add_tool(make_tool());
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
 
         assert!(s.get_result(0).is_none());
-        s.insert_result(0, fake_result()).unwrap();
+        adopt(&mut s, 0);
         assert!(s.get_result(0).is_some());
     }
 
     #[test]
-    fn insert_result_after_apply_snapshot_restores_cache() {
+    fn adopt_result_after_apply_snapshot_restores_cache() {
         // Roadmap F.1: apply_toolpath_param_snapshot clears
         // results[idx]. The viz-side regen used to leave that empty
-        // because writes only landed in gui.toolpath_rt. insert_result
-        // is the symmetric write that closes the cache gap.
+        // because writes only landed in gui.toolpath_rt. The adoption
+        // door is the symmetric write that closes the cache gap.
         let mut s = make_session();
         s.add_tool(make_tool());
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
         s.results.insert(0, fake_result());
 
-        s.apply_toolpath_param_snapshot(
+        let snapshot = s.apply_toolpath_param_snapshot(
             0,
             OperationConfig::Pocket(PocketConfig::default()),
             DressupConfig::default(),
             None,
-        )
-        .unwrap();
+        );
+        assert!(snapshot.is_ok(), "index 0 exists");
         assert!(s.get_result(0).is_none());
 
-        s.insert_result(0, fake_result()).unwrap();
+        adopt(&mut s, 0);
         assert!(s.get_result(0).is_some());
     }
 
     #[test]
-    fn insert_result_rejects_out_of_range_index() {
+    fn adopt_result_rejects_out_of_range_index() {
         let mut s = make_session();
-        let err = s.insert_result(99, fake_result()).unwrap_err();
+        let err = s
+            .apply(Command::AdoptResult(AdoptResultArgs {
+                index: 99,
+                revision: 0,
+                result: Box::new(fake_result()),
+            }))
+            .unwrap_err();
         assert!(matches!(err, SessionError::ToolpathNotFound(99)));
     }
 }

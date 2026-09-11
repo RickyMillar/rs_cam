@@ -121,7 +121,7 @@ impl<B: ComputeBackend> AppController<B> {
         // sweep at all, so the cards stayed green and export emitted those
         // paths. The `ModelKind::Step` arm returns above, before the
         // import, so a door that moved nothing still invalidates nothing.
-        let affected = self.state.session.invalidate_model(model_id.0);
+        let affected = self.state.session.invalidate_model(model_id.0).stale;
         let now = Instant::now();
         for index in affected {
             if let Some(tc) = self.state.session.get_toolpath_config(index) {
@@ -172,7 +172,7 @@ impl<B: ComputeBackend> AppController<B> {
         // against has just been replaced. Drop those results and request
         // their regeneration; before this the cards stayed green and
         // export emitted paths for the previous file contents.
-        let affected = self.state.session.invalidate_model(model_id.0);
+        let affected = self.state.session.invalidate_model(model_id.0).stale;
         let now = std::time::Instant::now();
         for index in affected {
             if let Some(tc) = self.state.session.get_toolpath_config(index) {
@@ -269,7 +269,7 @@ impl<B: ComputeBackend> AppController<B> {
         // combo sees NOTHING here — same id, same everything, different
         // geometry. `invalidate_model` keys on the id rather than on a
         // signature, which is what makes it the right instrument.
-        let affected = self.state.session.invalidate_model(model_id.0);
+        let affected = self.state.session.invalidate_model(model_id.0).stale;
         let now = std::time::Instant::now();
         for index in affected {
             if let Some(tc) = self.state.session.get_toolpath_config(index) {
@@ -300,7 +300,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn save_job_to_path(&mut self, path: &Path) -> Result<(), VizError> {
         // Sync the viz post config into the session before saving.
         let session_post = GuiState::post_to_session(&self.state.gui.post);
-        self.state.session.set_post_config(session_post);
+        let _ = self.state.session.set_post_config(session_post);
 
         self.state
             .session
@@ -542,10 +542,10 @@ impl<B: ComputeBackend> AppController<B> {
 fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     session.set_name(job.name.clone());
-    session.set_stock_config(job.stock.clone());
-    session.set_post_config(GuiState::post_to_session(&job.post));
+    let _ = session.set_stock_config(job.stock.clone());
+    let _ = session.set_post_config(GuiState::post_to_session(&job.post));
     session.set_machine(job.machine.clone());
-    session.replace_tools(job.tools.clone());
+    let _ = session.replace_tools(job.tools.clone());
 
     let mut session_setups = Vec::new();
     let mut session_tp_configs = Vec::new();
@@ -669,7 +669,7 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
             });
     }
 
-    session.replace_setups_and_toolpaths(session_setups, session_tp_configs);
+    let _ = session.replace_setups_and_toolpaths(session_setups, session_tp_configs);
     session
 }
 

@@ -9,7 +9,8 @@
 //! claim at `1c0a4ac` and found it **half true**:
 //!
 //! * The *store* is wired. `drain_compute_results` has called
-//!   `ProjectSession::insert_result` since `d706c036`, and the payload it
+//!   `ProjectSession::insert_result` since `d706c036` (the door is
+//!   `Command::AdoptResult` since WP3), and the payload it
 //!   writes goes through the same `compute::stats_with_findings` join the
 //!   core session path uses. So the generation findings, the spans and the
 //!   `DrillOp` all land in `session.results` in GUI mode.
@@ -20,8 +21,8 @@
 //!   the session cache is "only populated by the standalone MCP", which
 //!   stopped being true three months before the row was written.
 //!
-//! These sentries pin both halves: the store (so removing `insert_result`
-//! fails here, not silently in production), and the read (red before this
+//! These sentries pin both halves: the store (so removing the adoption
+//! call fails here, not silently in production), and the read (red before this
 //! wave — the keys were simply absent from the row).
 
 use std::sync::Arc;
@@ -189,7 +190,7 @@ fn drain_one_result(controller: &mut AppController<InertBackend>) {
 /// lookup, its `drill_op` lookup, `diagnose_toolpath_with_trace`'s stats
 /// lookup, `sim_trace_is_fresh`) sees the same thing the CLI's does.
 ///
-/// Deleting the `insert_result` call in `drain_compute_results` fails here.
+/// Deleting the `AdoptResult` call in `drain_compute_results` fails here.
 #[test]
 fn gui_drain_writes_findings_and_spans_into_session_results() {
     let mut controller = parity_controller();

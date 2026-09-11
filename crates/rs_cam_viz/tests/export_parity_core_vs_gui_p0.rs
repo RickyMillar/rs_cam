@@ -153,7 +153,9 @@ use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig};
+use rs_cam_core::session::{
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::io::export::export_gcode_from_session_with_policy;
@@ -258,7 +260,7 @@ fn cutter(tool_type: ToolType, name: &str, number: u32) -> ToolConfig {
 fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, SimulationState) {
     let mut session = ProjectSession::new_empty();
     session.set_name("phase 0 export parity".to_owned());
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
         z: STOCK_Z,
@@ -305,8 +307,13 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
         .expect("add the flipped-setup toolpath");
 
     for index in 0..LABELS.len() {
-        session
-            .insert_result(index, core_result())
+        let revision = session.toolpath_revision(index);
+        let _ = session
+            .apply(Command::AdoptResult(AdoptResultArgs {
+                index,
+                revision,
+                result: Box::new(core_result()),
+            }))
             .expect("insert core result");
     }
 

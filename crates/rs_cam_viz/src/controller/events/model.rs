@@ -181,7 +181,7 @@ impl<B: ComputeBackend> AppController<B> {
         match rs_cam_core::machine_library::load(name) {
             Ok(profile) => {
                 *self.state.session.machine_mut() = profile;
-                self.state.session.invalidate_machine();
+                let _ = self.state.session.invalidate_machine();
                 self.state.gui.mark_edited();
                 self.set_status(format!("Imported machine '{name}' (snapshot copy)"));
             }
@@ -630,11 +630,11 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_stock_changed(&mut self) {
         let auto_from_model = self.state.session.stock_config().auto_from_model;
         if auto_from_model && let Some(bbox) = self.first_model_bbox() {
-            self.state.session.update_stock_from_bbox(&bbox);
+            let _ = self.state.session.update_stock_from_bbox(&bbox);
         } else {
             // No bbox to apply, but stock fields may still have been mutated
             // upstream — clear stale simulation just in case.
-            self.state.session.invalidate_stock();
+            let _ = self.state.session.invalidate_stock();
         }
         // G-FRESHSTATE / R0.1 §7 Q1 (operator ruling, 2026-09-10): a stock
         // edit stales EVERYTHING. Both core calls above dropped every

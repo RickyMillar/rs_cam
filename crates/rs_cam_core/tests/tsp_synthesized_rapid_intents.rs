@@ -140,7 +140,7 @@ fn the_reorder_never_invents_a_drilling_move() {
 
 fn flat_session(op: OperationConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 100.0,
         y: 80.0,
         z: 12.0,

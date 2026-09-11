@@ -134,7 +134,7 @@ fn session() -> ProjectSession {
     let mut session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
-    session.replace_tools(vec![tool]);
+    let _ = session.replace_tools(vec![tool]);
     session.models_mut().push(polygon_model(MODEL_2D));
     session.models_mut().push(mesh_model(MODEL_3D));
     let stock = StockConfig {
@@ -142,7 +142,7 @@ fn session() -> ProjectSession {
         auto_from_model: false,
         ..StockConfig::default()
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
     session
 }
 

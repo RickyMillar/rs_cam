@@ -58,7 +58,7 @@ fn build_drill_session(material: Material) -> ProjectSession {
         material,
         ..StockConfig::default()
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
 
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 4.0;

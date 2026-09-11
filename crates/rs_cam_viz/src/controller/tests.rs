@@ -16,7 +16,7 @@ use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{Adaptive3dConfig, OperationConfig, ToolpathId, ToolpathResult};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
-use rs_cam_core::session::{LoadedModel, ToolpathConfig};
+use rs_cam_core::session::{AdoptResultArgs, Command, LoadedModel, ToolpathConfig};
 
 struct ScriptedBackend {
     toolpath_lane: LaneSnapshot,
@@ -538,20 +538,22 @@ fn controller_save_open_and_export_smoke() {
     // viz store together). Seeding only the viz store used to export
     // through the silent fallback; it now reads as an operation edited
     // since it was generated, and the export refuses by name.
-    controller
+    let revision = controller.state.session.toolpath_revision(0);
+    let _ = controller
         .state
         .session
-        .insert_result(
-            0,
-            rs_cam_core::session::ToolpathComputeResult {
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: 0,
+            revision,
+            result: Box::new(rs_cam_core::session::ToolpathComputeResult {
                 op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(
                     rs_cam_core::toolpath_spans::AnnotatedToolpath::new(generated.clone()),
                 )),
                 stats: Default::default(),
                 debug_trace: None,
                 semantic_trace: None,
-            },
-        )
+            }),
+        }))
         .expect("seed the core result");
     controller
         .state
@@ -1161,6 +1163,101 @@ fn drain_compute_results_repopulates_session_results() {
     assert!(Arc::ptr_eq(session_result.annotated(), &annotated));
 }
 
+/// Push one successful completion for `ToolpathId(0)` onto the fake
+/// lane's queue, the way `drain_compute_results_repopulates_session_results`
+/// does.
+fn push_toolpath_completion(controller: &mut AppController<ScriptedBackend>) {
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Ok(ToolpathResult {
+                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                        Toolpath::new(),
+                    )),
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            },
+        )));
+}
+
+/// WP3 — the drain hands the lane's revision stamp to
+/// `Command::AdoptResult`, and core refuses a completion whose toolpath
+/// moved while the job ran.
+///
+/// The refusal costs the operator nothing visible: `rt.result` still
+/// carries the geometry, so the viewport draws it. Only the CORE slot
+/// stays empty, which is what derives `EditedSince` and puts STALE on
+/// every surface F2.2 wired. This is the outcome the deleted viz gate
+/// produced, now produced by the one door.
+#[test]
+fn drain_refuses_a_completion_whose_revision_moved() {
+    let mut controller = sample_controller();
+    let submitted = controller.state.session.toolpath_revision(0);
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(ToolpathId(0))
+        .submitted_revision = Some(submitted);
+
+    // The edit an operator makes while the lane runs.
+    let _ = controller.state.session.invalidate_toolpath_inputs(0);
+    assert_ne!(
+        controller.state.session.toolpath_revision(0),
+        submitted,
+        "the fixture must move the revision, or the test proves nothing"
+    );
+
+    push_toolpath_completion(&mut controller);
+    controller.drain_compute_results();
+
+    assert!(
+        controller.state.session.get_result(0).is_none(),
+        "a completion that answers a superseded revision must not reach \
+         the core cache"
+    );
+    assert!(
+        controller.state.gui.toolpath_rt[&ToolpathId(0)]
+            .result
+            .is_some(),
+        "the viz copy is kept, so the viewport still draws the geometry"
+    );
+}
+
+/// The sibling arm: a completion that answers the CURRENT revision is
+/// adopted. This is what fails if the stamp reads a session-global
+/// counter instead of the toolpath's own revision.
+#[test]
+fn drain_adopts_a_completion_whose_revision_is_current() {
+    let mut controller = sample_controller();
+    // Move the revision FIRST, so the test cannot pass on a stamp that
+    // only ever matches the initial value.
+    let _ = controller.state.session.invalidate_toolpath_inputs(0);
+    let submitted = controller.state.session.toolpath_revision(0);
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(ToolpathId(0))
+        .submitted_revision = Some(submitted);
+
+    push_toolpath_completion(&mut controller);
+    controller.drain_compute_results();
+
+    assert!(
+        controller.state.session.get_result(0).is_some(),
+        "a completion that answers the current revision is adopted"
+    );
+}
+
 #[test]
 fn drain_compute_results_clears_pending_apply_resim_on_success() {
     // Roadmap F.2 — auto-verify after Apply. The drain handler must
@@ -1441,7 +1538,7 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
         containment: crate::state::toolpath::BoundaryContainment::Center,
         offset: 0.0,
     };
-    controller
+    let _ = controller
         .state
         .session
         .set_boundary_config(consumer_index, boundary)
@@ -1917,7 +2014,7 @@ fn build_world_stock_bbox_respects_stock_origin_f024() {
         },
         ..StockConfig::default()
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
 
     let bbox: BoundingBox3 =
         crate::controller::events::simulation::build_world_stock_bbox(&session);
@@ -1996,7 +2093,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
         },
         ..StockConfig::default()
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
 
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     tool.diameter = 6.0;
@@ -2210,7 +2307,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         },
         ..StockConfig::default()
     };
-    controller.state.session.set_stock_config(stock);
+    let _ = controller.state.session.set_stock_config(stock);
 
     // 6 mm endmill matching the AS001 fixture.
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
@@ -3781,10 +3878,15 @@ fn generate_all_for_test<B: ComputeBackend>(controller: &mut AppController<B>) {
         .map(|(idx, tc)| (idx, tc.id))
         .collect();
     for (index, id) in ids {
-        controller
+        let revision = controller.state.session.toolpath_revision(index);
+        let _ = controller
             .state
             .session
-            .insert_result(index, core_result())
+            .apply(Command::AdoptResult(AdoptResultArgs {
+                index,
+                revision,
+                result: Box::new(core_result()),
+            }))
             .expect("index is in range");
         let rt = controller.state.gui.toolpath_rt_or_default(id);
         rt.status = crate::state::runtime::ComputeStatus::Done;
@@ -4016,7 +4118,7 @@ fn freshness_reorder_keeps_fresh_ops_current() {
     let second = push_toolpath(&mut controller, "Second");
     let third = push_toolpath(&mut controller, "Rest");
     if let Some((idx, _)) = controller.state.session.find_toolpath_config_by_id(third) {
-        controller
+        let _ = controller
             .state
             .session
             .set_stock_source(
@@ -4080,13 +4182,13 @@ fn freshness_setup_orientation_stales_the_setup() {
         generate_all_for_test(&mut controller);
 
         if row == "face" {
-            controller
+            let _ = controller
                 .state
                 .session
                 .set_setup_face(0, rs_cam_core::compute::transform::FaceUp::Bottom)
                 .expect("setup 0 exists");
         } else {
-            controller
+            let _ = controller
                 .state
                 .session
                 .set_setup_rotation(0, rs_cam_core::compute::transform::ZRotation::Deg90)
@@ -4132,10 +4234,14 @@ fn toolpath_revision_bumps_on_every_input_drop() {
     generate_all_for_test(&mut controller);
     let before = controller.state.session.toolpath_revision(0);
 
-    controller
+    let _ = controller
         .state
         .session
-        .insert_result(0, core_result())
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: 0,
+            revision: before,
+            result: Box::new(core_result()),
+        }))
         .expect("index is in range");
     assert_eq!(
         controller.state.session.toolpath_revision(0),
@@ -4315,7 +4421,7 @@ fn freshness_chip_reports_stale_ahead_of_pending() {
     let first = controller.state.session.toolpath_configs()[0].id;
 
     // Toolpath 1 never generated, toolpath 0 generated then edited.
-    controller.state.session.invalidate_toolpath_inputs(1);
+    let _ = controller.state.session.invalidate_toolpath_inputs(1);
     if let Some(rt) = controller.state.gui.toolpath_rt.get_mut(&second) {
         rt.result = None;
     }
@@ -4370,7 +4476,7 @@ fn freshness_counts_exclude_disabled_and_error() {
     generate_all_for_test(&mut controller);
     let id = controller.state.session.toolpath_configs()[0].id;
 
-    controller
+    let _ = controller
         .state
         .session
         .set_toolpath_enabled(0, false)
@@ -4378,7 +4484,7 @@ fn freshness_counts_exclude_disabled_and_error() {
     assert_eq!(state_of(&controller, 0), FreshnessState::Disabled);
     assert_eq!(readiness::freshness_counts(&controller.state).0, 0);
 
-    controller
+    let _ = controller
         .state
         .session
         .set_toolpath_enabled(0, true)
@@ -4889,10 +4995,15 @@ fn missing_model_relink_g_modelrelink() {
 
     // Make the toolpath look generated, so the invalidation assertion below
     // is not comparing two empty caches.
-    controller
+    let revision = controller.state.session.toolpath_revision(0);
+    let _ = controller
         .state
         .session
-        .insert_result(0, core_result())
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: 0,
+            revision,
+            result: Box::new(core_result()),
+        }))
         .expect("index 0 exists");
     let tp_id = controller.state.session.toolpath_configs()[0].id;
     let rt = controller.state.gui.toolpath_rt_or_default(tp_id);

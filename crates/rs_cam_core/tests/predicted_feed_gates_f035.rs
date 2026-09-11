@@ -339,7 +339,7 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
         },
         ..StockConfig::default()
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
 
     let tool_idx = session.add_tool(make_endmill_6mm_tool_config());
     let tool_id = session.tools()[tool_idx].id.0;

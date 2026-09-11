@@ -93,7 +93,7 @@ fn build_project(dir: &Path, post_token: &str) -> PathBuf {
     let model_path = write_model(dir);
 
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 100.0,
         y: 100.0,
         z: 12.0,
@@ -109,7 +109,7 @@ fn build_project(dir: &Path, post_token: &str) -> PathBuf {
 
     let mut post = session.post_config().clone();
     post.format = post_token.to_owned();
-    session.set_post_config(post);
+    let _ = session.set_post_config(post);
 
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 6.0;

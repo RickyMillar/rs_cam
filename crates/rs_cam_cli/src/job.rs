@@ -630,7 +630,7 @@ fn execute_op_via_session(
                 param: key.to_owned(),
                 value,
             });
-            crate::command::apply_command(&mut session, command)
+            let _ = crate::command::apply_command(&mut session, command)
                 .map_err(|e| anyhow::anyhow!("param '{key}': {e}"))?;
         } else {
             // Pre-T9 the flat OperationDef silently ignored fields the

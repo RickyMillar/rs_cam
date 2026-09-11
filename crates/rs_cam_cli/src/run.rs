@@ -142,7 +142,8 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
             param: key.to_owned(),
             value: parse_json_value(value),
         });
-        apply_command(&mut session, command).map_err(|e| anyhow::anyhow!("--set {key}: {e}"))?;
+        let _ = apply_command(&mut session, command)
+            .map_err(|e| anyhow::anyhow!("--set {key}: {e}"))?;
     }
 
     let post = session.post_mut();

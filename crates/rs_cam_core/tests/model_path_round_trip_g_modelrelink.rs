@@ -298,12 +298,27 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
         )
         .unwrap();
     for index in 0..3 {
-        session.insert_result(index, result()).unwrap();
+        let revision = session.toolpath_revision(index);
+        let _ = session
+            .apply(rs_cam_core::session::Command::AdoptResult(
+                rs_cam_core::session::AdoptResultArgs {
+                    index,
+                    revision,
+                    result: Box::new(result()),
+                },
+            ))
+            .expect("the fixture adopts at the current revision");
     }
 
-    let affected = session.invalidate_model(0);
+    let effects = session.invalidate_model(0);
 
-    assert_eq!(affected, vec![0, 1], "both operations on model 0");
+    assert_eq!(
+        effects.stale,
+        [0, 1]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        "both operations on model 0"
+    );
     assert!(session.get_result(0).is_none());
     assert!(
         session.get_result(1).is_none(),

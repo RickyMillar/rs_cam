@@ -86,7 +86,7 @@ fn build_vcarve_session() -> ProjectSession {
         },
         ..StockConfig::default()
     };
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
 
     let tool_idx = session.add_tool(make_vbit_12_7mm_60deg());
     let tool_id = session.tools()[tool_idx].id.0;

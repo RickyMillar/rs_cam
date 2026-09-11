@@ -145,7 +145,7 @@ fn trace_toolpath(name: &str, tool_id: usize, model_id: usize) -> ToolpathConfig
 /// coordinates is the frame.
 fn build_two_setup_session() -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
         z: STOCK_Z,
@@ -404,7 +404,7 @@ fn export_datum_shift_is_stock_relative_xy_and_stock_top_z() {
 #[test]
 fn zero_origin_stock_is_unchanged() {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
         z: STOCK_Z,
@@ -442,7 +442,7 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
     const TOP_Z: f64 = 7.0;
     let build = |z_method: ZDatum| -> rs_cam_core::geo::P3 {
         let mut session = ProjectSession::new_empty();
-        session.set_stock_config(StockConfig {
+        let _ = session.set_stock_config(StockConfig {
             x: STOCK_X,
             y: STOCK_Y,
             z: 25.0,

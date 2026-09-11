@@ -113,7 +113,7 @@ fn rect_with_island() -> Polygon2 {
 fn build_session(retract_z: HeightMode) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
 
-    session.set_stock_config(StockConfig {
+    let _ = session.set_stock_config(StockConfig {
         x: 100.0,
         y: 100.0,
         z: 12.0,

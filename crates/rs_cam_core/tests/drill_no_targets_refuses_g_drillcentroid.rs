@@ -136,7 +136,7 @@ fn drill_op(selected_holes: Option<Vec<[f64; 2]>>) -> OperationConfig {
 /// emitted columns are exactly the holes.
 fn session_with(model: LoadedModel, op: OperationConfig) -> ProjectSession {
     let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock());
+    let _ = session.set_stock_config(stock());
     let tool_idx = session.add_tool(make_endmill_6mm());
     let tool_id = session.tools()[tool_idx].id.0;
     let model_id = session.add_model(model);

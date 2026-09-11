@@ -38,13 +38,13 @@ fn kinematics_histogram_wanaka() {
 
     // Apply post-C1 winner params to TP 1 (Back Rough).
     // Snapshot from prior MCP smoke: feed=4000, stepover=2.2, DOC=3.0.
-    session
+    let _ = session
         .set_toolpath_param(1, "feed_rate", serde_json::json!(4000.0))
         .expect("set tp1 feed_rate");
-    session
+    let _ = session
         .set_toolpath_param(1, "stepover", serde_json::json!(2.2))
         .expect("set tp1 stepover");
-    session
+    let _ = session
         .set_toolpath_param(1, "depth_per_pass", serde_json::json!(3.0))
         .expect("set tp1 depth_per_pass");
 

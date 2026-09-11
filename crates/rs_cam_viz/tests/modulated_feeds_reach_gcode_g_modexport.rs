@@ -53,7 +53,9 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig};
+use rs_cam_core::session::{
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::io::export::export_gcode_from_session_with_policy;
@@ -149,8 +151,13 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
     session.add_toolpath(0, tp).expect("add toolpath");
     let tp_id = session.toolpath_configs()[0].id;
 
-    session
-        .insert_result(0, core_result(sample_toolpath(COMMANDED_FEED)))
+    let revision = session.toolpath_revision(0);
+    let _ = session
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: 0,
+            revision,
+            result: Box::new(core_result(sample_toolpath(COMMANDED_FEED))),
+        }))
         .expect("insert core result");
 
     let mut gui = GuiState::new();
@@ -231,8 +238,13 @@ fn viz_export_emits_the_modulated_feed_schedule() {
 
     // What `apply_adaptive_feed_modulation` does: swap the modulated
     // annotated toolpath into `session.results` — and nowhere else.
-    session
-        .insert_result(0, core_result(sample_toolpath(MODULATED_FEED)))
+    let revision = session.toolpath_revision(0);
+    let _ = session
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index: 0,
+            revision,
+            result: Box::new(core_result(sample_toolpath(MODULATED_FEED))),
+        }))
         .expect("swap modulated result");
 
     let after = f_words(&export(&session, &gui, &sim));
@@ -254,7 +266,7 @@ fn viz_export_refuses_the_worker_result_when_the_session_slot_is_invalidated() {
     // `invalidate_tool`, which drops the affected `session.results`
     // entries. The viz store keeps its result (that's what the stale
     // display is drawn from).
-    session.invalidate_tool(1);
+    let _ = session.invalidate_tool(1);
     assert!(
         session.get_result(0).is_none(),
         "invalidate_tool must clear the session result — otherwise this \

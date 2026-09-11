@@ -63,7 +63,7 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
     stock.x = 100.0;
     stock.y = 100.0;
     stock.z = 10.0;
-    session.set_stock_config(stock);
+    let _ = session.set_stock_config(stock);
 
     // Add a 6mm end mill (matches the optimize gate's typical wood
     // router setup). add_tool returns the vec index; we want the
