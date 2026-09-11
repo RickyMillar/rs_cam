@@ -31,9 +31,9 @@ use crate::tool::MillingCutter;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ProjectDiagnostics, ProjectEvidence, ProjectSession, SessionError, SimulationOptions,
-    ToolpathComputeResult, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind,
-    VerdictSeverity,
+    Command, ProjectDiagnostics, ProjectEvidence, ProjectSession, SessionError,
+    SetToolpathParamArgs, SimulationOptions, ToolpathComputeResult, ToolpathDiagnostic, Verdict,
+    VerdictEvidence, VerdictKind, VerdictSeverity,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -332,8 +332,36 @@ impl ProjectSession {
     /// result chain and reported success.
     ///
     /// Invalidates the cached compute result for this toolpath.
-    #[instrument(skip(self, value))]
+    ///
+    /// Since WP1 this is a thin wrapper over [`ProjectSession::apply`].
+    /// It drops the [`Effects`](crate::session::Effects) the door
+    /// reports. A caller that needs the set of dropped indices calls
+    /// `apply` instead.
     pub fn set_toolpath_param(
+        &mut self,
+        index: usize,
+        param: &str,
+        value: serde_json::Value,
+    ) -> Result<(), SessionError> {
+        let command = Command::SetToolpathParam(SetToolpathParamArgs {
+            index,
+            param: param.to_owned(),
+            value,
+        });
+        self.apply(command)?;
+        Ok(())
+    }
+
+    /// The body of the `set_toolpath_param` command.
+    ///
+    /// [`ProjectSession::apply`] is the only caller. It reads the
+    /// revision map around this call and builds
+    /// [`Effects`](crate::session::Effects) from it.
+    ///
+    /// The `#[instrument]` span keeps the name `set_toolpath_param`, so a
+    /// trace consumer reads the name it read before WP1.
+    #[instrument(name = "set_toolpath_param", skip(self, value))]
+    pub(crate) fn set_toolpath_param_impl(
         &mut self,
         index: usize,
         param: &str,
@@ -5381,13 +5409,11 @@ mod tests {
         assert_eq!(stale.toolpath_indices, vec![0, 1]);
     }
 
-    #[test]
-    fn compute_stale_set_for_toolpath_param_returns_single_toolpath() {
-        let mut s = make_session();
-        s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
-        let stale = compute_stale_set(&s, MutationKind::ToolpathParamChanged { toolpath_index: 0 });
-        assert_eq!(stale.toolpath_indices, vec![0]);
-    }
+    // WP1 deleted `compute_stale_set_for_toolpath_param_returns_single_toolpath`.
+    // It was vacuous-green, not red: its session held one `Fresh` Pocket,
+    // so a chain-aware answer is also `[0]`. The narrow answer it looked
+    // like a contract for is a divergence, and
+    // `mutation_paths_invalidate_alike_p0.rs` pins it by name.
 
     #[test]
     fn compute_stale_set_for_setup_change_returns_setup_toolpaths() {

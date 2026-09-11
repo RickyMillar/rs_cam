@@ -45,7 +45,7 @@ use rs_cam_core::{
     debug_trace::ToolpathDebugOptions,
     gcode::CoolantMode,
     semantic_trace::ToolpathTraceArtifact,
-    session::{LoadedModel, ProjectSession, ToolpathConfig},
+    session::{Command, LoadedModel, ProjectSession, SetToolpathParamArgs, ToolpathConfig},
     toolpath::Toolpath,
 };
 
@@ -625,8 +625,12 @@ fn execute_op_via_session(
     let table = op_type.registry_entry().param_defs;
     for (key, value) in params {
         if table.iter().any(|d| d.name == key) {
-            session
-                .set_toolpath_param(tp_index, key, value)
+            let command = Command::SetToolpathParam(SetToolpathParamArgs {
+                index: tp_index,
+                param: key.to_owned(),
+                value,
+            });
+            crate::command::apply_command(&mut session, command)
                 .map_err(|e| anyhow::anyhow!("param '{key}': {e}"))?;
         } else {
             // Pre-T9 the flat OperationDef silently ignored fields the

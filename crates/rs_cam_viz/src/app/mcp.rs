@@ -8,7 +8,7 @@ use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
 };
 use rs_cam_core::compute::tool_config::ToolId;
-use rs_cam_core::session::MutationKind;
+use rs_cam_core::session::{Command, MutationKind, SetToolpathParamArgs};
 
 use crate::controller::Severity;
 use crate::mcp_bridge::{
@@ -2709,6 +2709,17 @@ impl super::RsCamApp {
         let stale =
             rs_cam_core::session::compute_stale_set(&self.controller.state().session, mutation)
                 .toolpath_indices;
+        self.mcp_stamp_stale(&stale);
+        stale
+    }
+
+    /// Mark `stale_since` on the GUI toolpath runtimes of the given
+    /// indices.
+    ///
+    /// This is the stamping half of [`Self::mcp_apply_stale`]. An arm
+    /// that reads its stale set from `Effects::stale` calls this half
+    /// directly, so the two routes stamp the same way.
+    fn mcp_stamp_stale(&mut self, stale: &[usize]) {
         let now = std::time::Instant::now();
         let ids: Vec<rs_cam_core::ToolpathId> = stale
             .iter()
@@ -2726,7 +2737,6 @@ impl super::RsCamApp {
                 rt.stale_since = Some(now);
             }
         }
-        stale
     }
 
     /// The refusal reply. The shape lives in
@@ -3453,17 +3463,19 @@ impl super::RsCamApp {
         // declared schema is the primary fix; this is the fallback.
         let value = coerce_json_container_string(value);
         let before = self.mcp_diagnostic_snapshot();
-        match self
-            .controller
-            .state_mut()
-            .session
-            .set_toolpath_param(index, param, value)
-        {
-            Ok(()) => {
+        // WP1: one door. `apply` reports every index the setter dropped,
+        // so the reply no longer re-derives a narrower answer of its own
+        // through `compute_stale_set` (N15).
+        let command = Command::SetToolpathParam(SetToolpathParamArgs {
+            index,
+            param: param.to_owned(),
+            value,
+        });
+        match self.controller.state_mut().session.apply(command) {
+            Ok(effects) => {
                 self.controller.state_mut().gui.mark_edited();
-                let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-                    toolpath_index: index,
-                });
+                let stale: Vec<usize> = effects.stale.into_iter().collect();
+                self.mcp_stamp_stale(&stale);
                 let applied = self
                     .controller
                     .state()

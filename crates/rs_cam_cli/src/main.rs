@@ -2,6 +2,7 @@
 #![allow(clippy::print_stderr)] // CLI uses eprintln! for user-facing diagnostic output
 #![allow(clippy::print_stdout)] // CLI `version` prints build info to stdout
 
+mod command;
 mod job;
 mod nc_replay;
 mod project;

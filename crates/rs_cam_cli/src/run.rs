@@ -20,7 +20,11 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{
+    Command, LoadedModel, ProjectSession, SetToolpathParamArgs, ToolpathConfig,
+};
+
+use crate::command::apply_command;
 
 /// CLI arguments for `run`, mirrored from the clap variant in `main.rs`.
 #[allow(clippy::struct_excessive_bools)]
@@ -133,9 +137,12 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
     // messages (listing valid names) are identical across surfaces.
     for kv in &args.set {
         let (key, value) = split_kv(kv)?;
-        session
-            .set_toolpath_param(tp_index, key, parse_json_value(value))
-            .map_err(|e| anyhow::anyhow!("--set {key}: {e}"))?;
+        let command = Command::SetToolpathParam(SetToolpathParamArgs {
+            index: tp_index,
+            param: key.to_owned(),
+            value: parse_json_value(value),
+        });
+        apply_command(&mut session, command).map_err(|e| anyhow::anyhow!("--set {key}: {e}"))?;
     }
 
     let post = session.post_mut();

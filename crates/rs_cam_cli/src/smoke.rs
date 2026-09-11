@@ -24,7 +24,9 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::embedded_vendor_lut;
 use rs_cam_core::feeds::suggest::{StockContext, SuggestParamsInput, suggest_params};
 use rs_cam_core::material::{AluminumAlloy, Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
-use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    Command, ProjectSession, SetToolpathParamArgs, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::tool_load::drill_gates::DrillGatesVerdict;
 use rs_cam_core::tool_load::verdict::ChipSide;
 use rs_cam_core::tool_load::{
@@ -583,7 +585,12 @@ fn materialize_case_toolpath(
             continue;
         }
         let json_value = serde_json::Value::String(value.clone());
-        if let Err(e) = session.set_toolpath_param(tp_idx, key, json_value) {
+        let command = Command::SetToolpathParam(SetToolpathParamArgs {
+            index: tp_idx,
+            param: key.clone(),
+            value: json_value,
+        });
+        if let Err(e) = crate::command::apply_command(session, command) {
             param_warnings.push(format!("{key}={value}: {e}"));
         }
     }

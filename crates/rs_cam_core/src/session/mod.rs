@@ -11,6 +11,7 @@
 //! let diag = session.diagnostics();
 //! ```
 
+mod command;
 mod compute;
 mod eval_context;
 pub mod multitool;
@@ -20,6 +21,9 @@ mod reach;
 mod save;
 pub mod wizard;
 
+pub use command::{
+    Command, CommandId, CommandKind, Effects, Reach, SetToolpathParamArgs, Surfaces,
+};
 pub use compute::{MutationKind, StaleSet, compute_stale_set};
 pub use eval_context::SetupEvalContext;
 pub use multitool::{
