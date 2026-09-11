@@ -24,7 +24,7 @@ pub mod wizard;
 pub use command::{
     Command, CommandId, CommandKind, Effects, Reach, SetToolpathParamArgs, Surfaces,
 };
-pub use compute::{MutationKind, StaleSet, compute_stale_set};
+pub use compute::{MutationKind, ResolvedGenInputs, StaleSet, compute_stale_set};
 pub use eval_context::SetupEvalContext;
 pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, TierStrategy, equal_cusp_stepover_mm,

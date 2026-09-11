@@ -189,7 +189,15 @@ fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMes
 /// without re-deriving any frame-sensitive value: `generate_toolpath`
 /// consumes it once; the strategy advisor reuses it across candidate
 /// strategies (only the `operation`'s clearing strategy varies per candidate).
-struct ResolvedGenInputs {
+///
+/// WP11a publishes the type so another crate names it. The fields stay
+/// private and the type derives no `Default`, so a caller outside this module
+/// builds no value of it. One public function produces it:
+/// [`ProjectSession::resolve_generation_inputs`]. A second assembly of the
+/// same inputs is therefore unnameable, which is the point of the publication
+/// (`planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §1).
+/// The sentry is `tests/resolved_gen_inputs_has_one_producer.rs`.
+pub struct ResolvedGenInputs {
     tool: ToolConfig,
     mesh: Option<Arc<TriangleMesh>>,
     polygons: Option<Arc<Vec<crate::polygon::Polygon2>>>,
@@ -1115,7 +1123,12 @@ impl ProjectSession {
     /// walks a full-grid drop-cutter tier map (seconds to tens of seconds on
     /// a real board), and a resolution that could not be interrupted would
     /// make Cancel a lie for the whole of it. Every other source ignores it.
-    fn resolve_generation_inputs(
+    ///
+    /// WP11a: this is the ONLY producer of [`ResolvedGenInputs`]. The bundle
+    /// has private fields and no `Default`, so every caller — this crate, the
+    /// GUI worker door, a future one — reads the inputs from here or builds
+    /// no bundle at all. Add no second producer; extend this one.
+    pub fn resolve_generation_inputs(
         &self,
         index: usize,
         cancel: &AtomicBool,
