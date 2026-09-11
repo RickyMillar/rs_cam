@@ -1133,3 +1133,77 @@ toolpath, because `bump_all_revisions` re-keys results without dropping them. Th
 revision on removal invalidates in-flight completions, not cached results. §5 WP3 carries
 this as a non-guarantee: `stale` answers "which completions are now stale", and a caller
 that wants "which results were dropped" reads the result slots.
+
+---
+
+## §17 WP5 and WP8 pre-implementation corrections and rulings (2026-09-11)
+
+Scouts measured §4 WP5 and §4 WP8 against master `c9780b4f`. Full briefs: session scratchpad
+`wp5_brief.md`, `wp8_brief.md`. Both packages proceed on the §9 defaults (Q1: one command;
+Q2: viz wide, optimizer narrow).
+
+### Order
+
+**WP9 → WP8 → WP5.** WP9 changes the row shape (six columns), so both rows wait for it. WP8
+lands before WP5: its restore command is UNCONDITIONAL and WP5's replace command is
+signature-GATED, two commands with opposite contracts that share only the row list.
+
+### WP8 corrections
+
+- The `mutation.rs` cites are pre-WP3 (`apply_toolpath_param_snapshot`, `set_drill_selected_holes`
+  moved). Every producer now returns `#[must_use] Effects`.
+- The plan's flip "`assert_ne!` at `:396` becomes `assert_eq!`" is not reachable as written: arm 2
+  calls the narrow fn, which STAYS narrow. `pub(crate)` on it also stops
+  `crates/rs_cam_core/tests/` compiling. The arm is retargeted, not flipped in place.
+- `undo.rs:145` serves undo AND redo; one edit, two behaviours.
+- `feeds_provenance` is not in the undo entry, so an undo of an optimizer apply leaves the
+  `Optimizer` stamp on restored values.
+
+### WP8 rulings
+
+1. **A new row, `RestoreToolpathSnapshot(RestoreToolpathSnapshotArgs { index, operation,
+   dressups, face_selection, feeds_provenance: Option<FeedsProvenance> })`**, unconditional by
+   contract: it writes the fields and calls `invalidate_result_chain`. Its doc says so. Not
+   `ReplaceToolpathConfig` (WP5's gated command would drop nothing on a byte-identical restore
+   and break F2.5).
+2. **The four viz callers call it**; `UndoAction` gains the old and new `feeds_provenance` so the
+   restore carries them. A shared viz helper stamps `stale_since` for every index in
+   `Effects.stale` (precedent `apply_tool_snapshot`, `mcp_stamp_stale`); all four sites use it.
+3. **`set_drill_selected_holes` calls `invalidate_result_chain`** (N6 closed). Behaviour change
+   the commit names: toggling a hole now stales downstream rest ops.
+4. **The optimizer keeps the narrow path as `pub(crate) apply_toolpath_param_snapshot_narrow`**
+   (two call sites; `context.rs`'s `Drop` must never widen). A two-toolpath in-crate test pins
+   that the neighbour's result survives the narrow path.
+5. **P0:** arm 2 of `mutation_paths_invalidate_alike_p0.rs` is retargeted at the new command and
+   its expectation becomes `{0, 1}`; the n6 arm flips the same way; prose that names the retired
+   door is updated. The rename touches twelve prose sites the writer lists.
+
+### WP5 corrections
+
+- `replace_toolpath_config` has zero production callers (confirmed dead) and invalidates
+  unconditionally; `mutation.rs:2356` pins that.
+- The inspector has no commit event; it writes back every frame.
+- Line drift of +3 on every cited `properties/mod.rs` site; WP6 hatch sites also +3.
+
+### WP5 rulings
+
+1. **`ReplaceToolpathConfig(ReplaceToolpathConfigArgs { index, config: Box<ToolpathConfig> })`
+   replaces the dead `replace_toolpath_config`.** The signature gate moves INTO core as
+   `ToolpathConfig::generation_inputs_signature()` (one definition; the viz copy is deleted).
+   The command always writes the config and invalidates only when the signature moved. The
+   `mutation.rs:2356` test is rewritten for the gate: same-signature replace drops nothing and
+   the name / coolant / pre and post G-code land; signature change drops the chain.
+2. **Apply every frame; the core gate decides.** No viz diff.
+3. **The panel stamps `Effects.stale`** through the WP8 helper, so downstream rows are stamped
+   too (today one id). Wire change recorded.
+4. **The two side effects that need the moved field** (`HeightPlanesChanged`, the rest-analysis
+   auto-enable) stay viz-side, derived from the panel's own before / after config. No field
+   report on `Effects`.
+5. **The projection clones the stored config and applies the sixteen fields onto the clone**,
+   never a fresh literal (`id`, `boundary_inherit`, `planner_origin` survive). The
+   `feeds_provenance` ordering (`detect_manual_edits` on the stored config, pill stamps
+   reapplied) stays in the projection.
+6. **Sentries:** core `replace_toolpath_config_gates_on_the_signature.rs` (three arms above) and
+   one in-crate viz test that the projection preserves the three unsupplied fields and that an
+   open panel with no edit drops no result across a frame.
+7. **`ApplyFeeds` keeps `invalidate_toolpath_inputs`**, which now reads the core signature.
