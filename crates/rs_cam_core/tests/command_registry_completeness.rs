@@ -12,9 +12,9 @@
 //! - every wire name is non-empty, unique, and snake_case;
 //! - every `Reach::Skip` carries a reason;
 //! - `Command::id()` answers the identifier of the row it carries;
-//! - `CommandId::ALL` holds one entry per `Command` variant. The count
-//!   comes from a second callback on the SAME list, so the two cannot
-//!   drift.
+//! - `CommandId::ALL` holds one entry per declared row, of any kind. The
+//!   count comes from a second callback on the SAME list, so the two
+//!   cannot drift.
 //!
 //! The behavioural half measures `Effects`. `apply` reads the revision
 //! map before and after the mutation, so `Effects::stale` must equal the
@@ -48,8 +48,9 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, CommandId, CommandKind, LoadedModel, ProjectSession, Reach,
-    SetToolpathParamArgs, ToolpathConfig,
+    AdoptResultArgs, Command, CommandId, CommandKind, LoadedModel, ProjectSession, Query,
+    QueryAnswer, Reach, SetToolpathParamArgs, ToolpathConfig, ToolpathCycleTimeAnswer,
+    ToolpathCycleTimeArgs,
 };
 
 /// The feed value the behavioural arm writes.
@@ -170,6 +171,52 @@ fn a_constructed_command_answers_its_identifier() {
         Reach::Reached,
         "MCP reaches this row; the viz sentry checks the tool exists"
     );
+}
+
+/// WP9 — a constructed `Query` answers its own identifier, and that row
+/// declares the `Query` kind.
+///
+/// The row-count macro above (`declare_registry_row_count!`) needs no
+/// change for this row: its pattern is `( $($row:tt)* )`, which never
+/// names a column, so it counts a `Query` row exactly like a `Command`
+/// row. `all_holds_one_entry_per_declared_row` therefore still measures
+/// what it says: `CommandId` stays the union of every kind.
+#[test]
+fn a_constructed_query_answers_its_identifier() {
+    let query = Query::ToolpathCycleTime(ToolpathCycleTimeArgs {
+        index: 0,
+        trace: None,
+        cutting_distance_mm: None,
+        nominal_feed_mm_min: None,
+    });
+    assert_eq!(query.id(), CommandId::ToolpathCycleTime);
+    assert_eq!(
+        CommandId::ToolpathCycleTime.kind(),
+        CommandKind::Query,
+        "a synchronous read is a Query, not a Command"
+    );
+    assert_eq!(
+        CommandId::ToolpathCycleTime.wire_name(),
+        "toolpath_cycle_time"
+    );
+}
+
+/// WP9 — `QueryAnswer` declares one variant per `Query` row.
+///
+/// `QueryAnswer` cannot be counted at run time the way `CommandId::ALL`
+/// is: it has no fieldless mirror. An exhaustive match over one
+/// constructed value of every current variant is the check instead. Rust
+/// requires an exhaustive match to cover every variant, so the day a
+/// `Query` row's answer variant is added or removed without a matching
+/// arm here, this match stops compiling.
+#[test]
+fn query_answer_has_one_variant_per_query_row() {
+    let answer = QueryAnswer::ToolpathCycleTime(ToolpathCycleTimeAnswer {
+        cycle_time: rs_cam_core::session::CycleTime::NONE,
+    });
+    match answer {
+        QueryAnswer::ToolpathCycleTime(_) => {}
+    }
 }
 
 // ── fixture ──────────────────────────────────────────────────────
