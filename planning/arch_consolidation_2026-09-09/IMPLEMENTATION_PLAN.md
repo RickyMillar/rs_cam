@@ -933,3 +933,55 @@ Full inventory: session scratchpad `wp3_brief.md`.
 7. **Two writers, one worktree, one fix commit.** The core writer lands the sentry commit
    and the fix commit (core side; the workspace does not compile between). The viz writer
    AMENDS that fix commit with the caller side. The verifier sees two commits.
+
+---
+
+## §13 WP9 and WP11a pre-implementation corrections and rulings (2026-09-11)
+
+Scouts measured §4 WP9 and §4 WP11a against master `4a480fc8`. Full briefs: session
+scratchpad `wp9_brief.md`, `wp11a_brief.md`.
+
+### WP11a corrections
+
+- The sentry grep `-> ResolvedGenInputs` → 1 is vacuous: the producer returns
+  `Result<ResolvedGenInputs, SessionError>` (0 hits today). The sentry counts every `fn` in
+  core whose return type mentions the struct, including `-> Self` inside an
+  `impl ResolvedGenInputs`, and asserts exactly one, named `resolve_generation_inputs`.
+- `session/mod.rs` declares `mod compute;` privately, so the package adds the struct to the
+  `pub use` line. Without that viz cannot name it and WP10 stays blocked.
+- No private field type blocks publication; all eleven field types are already `pub`.
+- Line drift only: resolver at `:1118`, executor at `:3492-3527`.
+
+### WP9 corrections
+
+- `readiness::toolpath_cycle_time` is viz, called from five viz sites and one viz test
+  (`cycle_time_basis_g_timeest.rs`). MCP and the CLI never call it. MCP `get_cut_trace`
+  reads `toolpath_summaries` only (blind to drills) and `narrate_toolpath` adds
+  `feed_time_s + dwell_time_s`, a third quantity. Neither is in WP9's scope.
+- The aggregate tier (`project_cycle_time`, `estimate_total_time`) gates on
+  `gui.toolpath_rt` and stays in viz.
+- The `Deletes` range overshoots: the function ends at `readiness.rs:527`.
+
+### WP9 rulings
+
+1. **One list, one `CommandId` union.** `for_each_command!` keeps a single row list and
+   `CommandId::ALL` keeps covering every row, so the completeness sentry's
+   `ALL.len() == DECLARED_ROWS` stays true. The callback macro splits rows by the kind
+   column (a tt-muncher) into the `Command` payload enum and a new `Query` payload enum.
+2. **A sixth row column names the answer type.** `Command` rows write `Effects` there.
+   `Query` rows name their answer struct. The callback generates `enum QueryAnswer` with one
+   variant per `Query` row, and `ProjectSession::query(&self, Query) -> Result<QueryAnswer,
+   SessionError>` (a `&self` door: every read site holds `&AppState`).
+3. **Row 1 is `ToolpathCycleTime(ToolpathCycleTimeArgs)`** with `Surfaces { gui: Reached,
+   mcp: Skip("get_cut_trace and narrate_toolpath report other quantities; WP4 revisits"),
+   cli: Skip("the CLI project report prints the simulation total, not per-toolpath") }`.
+   The payload carries what the `CuttingOnly` arm needs (`cutting_distance_mm`,
+   `nominal_feed_mm_min`) because neither is on the trace.
+4. **The five viz sites call the Query; `readiness::toolpath_cycle_time` is deleted.**
+   `CycleTime` stays `Copy`; `CycleTimeBasis::remedy()`'s GUI text stays in viz as a
+   viz-side extension of the core answer.
+5. **Sentry:** `crates/rs_cam_core/tests/query_cycle_time_one_answer.rs` — the core Query
+   and the pre-fix viz function agree on the same fixture for every basis arm (the viz
+   function is copied into the test as the pre-fix oracle, then the test keeps the oracle
+   as a frozen table). Plus the `command_registry_completeness` count moves to 3 rows.
+6. **Order:** WP9 starts after WP3 lands; both edit `command.rs`.
