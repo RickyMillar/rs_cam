@@ -636,8 +636,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // W2.2 [P1-004]: the session is canonical for post config. Push the
             // edited gui.post straight through so `session.post_config()` can't
             // lag behind the panel (the stale window the GUI-vs-MCP race read).
-            // Guarded on a real change because set_post_config invalidates the
-            // simulation cache — we must not wipe it every idle frame.
+            // Guarded on a real change: the panel must not write the
+            // session on every idle frame. WP17 moved the second half of
+            // this reason into the setter — `set_post_config` clears the
+            // simulation only for a field that reaches emitted motion,
+            // so an unchanged write clears nothing now either.
             let session_post = crate::state::runtime::GuiState::post_to_session(&state.gui.post);
             if *state.session.post_config() != session_post {
                 let _ = state.session.set_post_config(session_post);

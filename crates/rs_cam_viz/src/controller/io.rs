@@ -3,7 +3,8 @@ use std::time::Instant;
 
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::session::{
-    AdoptModelGeometryArgs, Command, ProjectSession, ProjectSessionBuilder, SetStockConfigArgs,
+    AdoptModelGeometryArgs, Command, Effects, ProjectSession, ProjectSessionBuilder,
+    SetPostConfigArgs, SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -315,10 +316,47 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(())
     }
 
+    /// Mirror the effects of a post-config write into viz state.
+    ///
+    /// Two doors write that block before a save — this controller and
+    /// the MCP `save_project` route — and viz state follows the session
+    /// on both. `Effects::stale` reaches the toolpath cards.
+    /// `Effects::simulation_cleared` reaches the viewport, because the
+    /// session and the viewport hold ONE simulation (WP11b, N12 item
+    /// 10): a session that drops it must not leave the viewport showing
+    /// one.
+    pub(crate) fn adopt_post_effects(&mut self, effects: &Effects) {
+        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+        if effects.simulation_cleared {
+            self.invalidate_simulation();
+        }
+    }
+
+    /// Write the project to `path`.
+    ///
+    /// WP17: the sync of the viz post block into the session runs ONLY
+    /// when the two blocks differ, and it takes the command door. This
+    /// method called `set_post_config` on every save, with the block the
+    /// session already held, and that setter dropped the simulation.
+    /// `ProjectSession::start` then refused every `FromRemainingStock`
+    /// operation, because it reads the rest snapshot from the simulation
+    /// (WP11b). The GUI post panel guards the same way
+    /// (`ui/properties/mod.rs`).
     pub fn save_job_to_path(&mut self, path: &Path) -> Result<(), VizError> {
-        // Sync the viz post config into the session before saving.
         let session_post = GuiState::post_to_session(&self.state.gui.post);
-        let _ = self.state.session.set_post_config(session_post);
+        if *self.state.session.post_config() != session_post {
+            let command = Command::SetPostConfig(SetPostConfigArgs {
+                post: Box::new(session_post),
+            });
+            match self.state.session.apply(command) {
+                Ok(effects) => self.adopt_post_effects(&effects),
+                Err(error) => {
+                    return Err(VizError::Other(format!(
+                        "Save failed: the post block was refused: {error}"
+                    )));
+                }
+            }
+        }
 
         self.state
             .session

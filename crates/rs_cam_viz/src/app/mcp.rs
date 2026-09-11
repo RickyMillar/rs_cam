@@ -339,9 +339,18 @@ impl super::RsCamApp {
                 // below, after the mutation.
                 let toast = self.core_toast_for(&request);
                 self.mcp_before_core(&request);
-                let (resp, stated) = match self.core_command_for(request) {
+                // WP17: a row whose command needs one mutation BEFORE it
+                // asks for a pair. The preparation runs here, not in the
+                // conversion, which reads.
+                let plan = self.core_command_for(request);
+                let (resp, stated) = match self.run_core_preparation(plan) {
                     CorePlan::Answered(reply) => (reply, None),
-                    CorePlan::Apply(command, before) => {
+                    // `run_core_preparation` reduces every pair to its
+                    // own command, so the second pattern binds nothing
+                    // the first does not. It names the variant rather
+                    // than a wildcard, so a fourth plan still has to
+                    // compile here.
+                    CorePlan::Apply(command, before) | CorePlan::ApplyPair(_, command, before) => {
                         let id = command.id();
                         let outcome = self.controller.state_mut().session.apply(command);
                         let described = self.describe_core(id, outcome, &before);

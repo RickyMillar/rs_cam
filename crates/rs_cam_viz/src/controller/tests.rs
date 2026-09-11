@@ -3247,10 +3247,10 @@ fn the_mcp_save_conversion_writes_no_session_state_wp17() {
         .find("CoreRequest::SaveProject(p) => {")
         .expect("core_command_for holds a save_project arm");
     let tail = &COMMANDS_SRC[at..];
-    let end = tail
-        .find("\n            CoreRequest::")
-        .unwrap_or(tail.len());
-    let arm = &tail[..end];
+    let arm = match tail.find("\n            CoreRequest::") {
+        Some(end) => &tail[..end],
+        None => tail,
+    };
     assert!(
         !arm.contains("state_mut()"),
         "the conversion step reads; it must not write. The save_project \

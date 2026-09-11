@@ -51,6 +51,31 @@ fn keep_out_collision_inputs_moved(before: &KeepOutZone, after: &KeepOutZone) ->
     named_before != *after
 }
 
+/// Whether a post-config edit moved a field that reaches emitted motion
+/// or the simulated clock (WP17).
+///
+/// `true` names the fields whose old value is baked into a cached
+/// artefact — the stored toolpaths, or the cut trace. The two fields it
+/// exempts are read LIVE, so no cached artefact can hold a stale copy of
+/// either:
+///
+/// - `format`, the post flavour, which
+///   [`crate::gcode::export_gcode_checked`] resolves from
+///   [`ProjectSession::post_config`] at emit time;
+/// - `spindle_strategy`, which the feeds suggest path reads at suggest
+///   time (`ProjectSession::feeds_result_for_toolpath`).
+///
+/// It follows [`fixture_collision_inputs_moved`]: it equalises the two
+/// exempt fields and compares the WHOLE record, so a field ADDED to
+/// [`ProjectPostConfig`] later counts as a motion input until someone
+/// states otherwise. That is the safe default.
+fn post_change_reaches_motion(before: &ProjectPostConfig, after: &ProjectPostConfig) -> bool {
+    let mut exempt_before = before.clone();
+    exempt_before.format.clone_from(&after.format);
+    exempt_before.spindle_strategy = after.spindle_strategy;
+    exempt_before != *after
+}
+
 /// Compute a 3D bounding box from a slice of 2D polygons (SVG/DXF models).
 /// Z extent is zero; `update_from_bbox` preserves stock Z for 2D models.
 /// Returns `None` if all polygons are empty.
@@ -1653,12 +1678,49 @@ impl ProjectSession {
         })
     }
 
-    /// Replace the post-processor configuration, invalidating simulation.
+    /// Replace the post-processor configuration.
+    ///
+    /// The door of the `SetPostConfig` command row. It clears the
+    /// simulation ONLY when `post_change_reaches_motion` says the edit
+    /// moved a field that reaches emitted motion or the simulated clock.
+    /// **This is a behaviour change (WP17).**
+    ///
+    /// The method wrote `simulation = None` on EVERY call. Both GUI save
+    /// doors called it before every save, with the block the session
+    /// already held, so a save dropped the simulation. `start` then
+    /// refused every `FromRemainingStock` operation, because WP11b reads
+    /// the rest snapshot from that field, and nothing re-adopted.
+    ///
+    /// The per-field rule:
+    ///
+    /// - `format` — read at emit time. No invalidation.
+    /// - `spindle_strategy` — read at suggest time. No invalidation.
+    /// - `spindle_speed` — the emitted S word, read at emit time, and
+    ///   `SimulationRequest::spindle_rpm`. The cut trace's gate readings
+    ///   carry the old value, so the simulation goes.
+    /// - `high_feedrate_mode`, `high_feedrate` — the rate the simulated
+    ///   clock runs rapids at (`SimulationRequest::rapid_feed_mm_min`).
+    ///   The runtime and air-cut readings carry the old rate, so the
+    ///   simulation goes.
+    /// - `safe_z` — `SetupEvalContext` resolves it at GENERATION time,
+    ///   and the generators emit rapids at that height. The simulation
+    ///   goes.
+    ///
+    /// **One gap, named.** A `safe_z` change makes the stored RESULTS
+    /// stale, and the instrument for that is `drop_all_results`. This
+    /// door does not call it. The GUI post panel writes this block on
+    /// every frame its widget differs, with no draft-commit step, so a
+    /// results drop here destroys generated work while the operator
+    /// drags the spinner. The panel needs the draft-commit the stock
+    /// panel has before that drop is safe.
     #[instrument(skip(self, post))]
     pub fn set_post_config(&mut self, post: ProjectPostConfig) -> Effects {
+        let reaches_motion = post_change_reaches_motion(&self.post, &post);
         self.with_effects(None, move |session| {
             session.post = post;
-            session.simulation = None;
+            if reaches_motion {
+                session.simulation = None;
+            }
         })
     }
 
