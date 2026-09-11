@@ -32,6 +32,47 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Architecture consolidation — 2026-09-11/12 (one command surface: implementation COMPLETE)
+
+All sixteen work packages of `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md`
+landed on `master` between 2026-09-11 13:00 and 2026-09-12 06:00 NZST, each red-first with a
+named sentry. The tracker is `STATUS.md` (table "Command surface — work packages").
+
+- **The registry.** `rs_cam_core::session::command` holds one `for_each_command!` list with
+  six columns (kind, id, wire name, payload, answer, surfaces) and a kind-split callback:
+  `Command` rows (`apply` → `#[must_use] Effects { stale, simulation_cleared, revision:
+  Option<u64>, created }`), `Query` rows (`query` → `QueryAnswer`), `Job` rows (`start` →
+  handle; `execute_job` off-loop; `AdoptResult`). A second registry in viz
+  (`ui_command.rs`) holds `UiCommand` / `UiQuery` rows. `SurfaceId` unions both.
+- **One producer of the stale answer.** Every session mutation builds `Effects` through one
+  combinator (`with_effects`). MCP replies read `Effects.stale` (N15 closed except two
+  hand-written holdouts). `AdoptResult` refuses a completion whose revision moved.
+- **One assembly of generation inputs.** `ResolvedGenInputs` is public with private fields
+  and one producer; the GUI worker runs core's `execute_job` on a handle from `start`; the
+  loose executor is crate-private. N12 items 1-10 closed (item 10, two simulation states,
+  closed by `AdoptSimulation`).
+- **No mutation hatch.** Of the eleven `*_mut` doors, six are deleted, three are
+  `pub(crate)`, `insert_result` is `pub(crate)`, `wizard_mut` is gone (`WizardState` moved
+  to viz). `cargo build -p rs_cam_viz` is the containment proof. Test fixtures build through
+  `ProjectSessionBuilder`.
+- **Doors.** MCP: 29 mutation variants collapsed to `McpRequestKind::Core(CoreRequest)` with
+  one arm and a describe step; 18 view variants under `Ui` / `UiQuery`. GUI: the inspector
+  applies `ReplaceToolpathConfig` each frame with the signature gate in core; the twelve
+  egui draw sites and 34 non-egui sites write through rows; undo/redo restore through
+  `RestoreToolpathSnapshot` (N14 closed); drill picks invalidate the chain (N6 closed); the
+  five post-write notification events and `RemoveSetup` are deleted.
+- **Gates.** Per package: sentries red then green, targeted suites, viz / CLI / MCP crate
+  suites, fmt, clippy with `heavy-tests` `-D warnings`. Final counts: viz 660, CLI 32, MCP
+  29, core `session::` 156. The full heavy core gate was NOT run (operator ruling
+  2026-09-11: no large test gates). `f036b` stays red by design.
+- **Residuals recorded in the plan §5 and STATUS:** three MCP holdouts (`apply_feeds`,
+  `plan_multitool_finishing`, `export_gcode`) plus `load_project`; `compute_stale_set` /
+  `MutationKind` kept for two callers; the strategy advisor's loose executor call and the
+  14-argument `execute_operation` (test-only); `OptimizeToolpath`, `RecommendClearingStrategy`
+  and `PreviewTierMap` are ruled `Job` (§14) but not yet moved; the `CloseOptimize*`
+  `mem::replace`. Two independent Opus reviews (completeness, tech debt) are filed beside
+  this block in `planning/arch_consolidation_2026-09-09/` when they complete.
+
 ## Architecture consolidation — 2026-09-10 (N1 DONE)
 
 On `ui-fix-2026-09-09`, N1 now excludes disabled cached operations from core
