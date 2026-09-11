@@ -156,6 +156,117 @@ pub(crate) fn commit_tool_draft(
     state.gui.mark_edited();
 }
 
+/// The bounding box of the first model that carries geometry.
+///
+/// WP6. `AppController::first_model_bbox` answers the same question, and
+/// a draw site cannot reach the controller. The two read the same two
+/// sources in the same order.
+fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> {
+    state.session.models().iter().find_map(|model| {
+        model.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
+            let polygons = model.polygons.as_deref().map(Vec::as_slice);
+            crate::state::job::session_polygons_bbox(polygons)
+        })
+    })
+}
+
+/// Apply the stock panel's draft through the one command door.
+///
+/// G-FRESHSTATE: `Command::SetStockConfig` drops every toolpath result,
+/// because heights reference the stock top, an inherited boundary
+/// follows the stock outline, and the material sets the feeds. The panel
+/// used to write `stock_mut()` in place and ask for that invalidation
+/// with an `AppEvent`; the event is gone and the command carries the
+/// rule.
+///
+/// Two things the deleted `StockChanged` handler did are NOT core rules,
+/// so they stay here:
+///
+/// - `auto_from_model` re-sizes the stock around the first model. The
+///   handler did it before invalidating; this does it before the write,
+///   so one command carries the finished record.
+/// - the viewport buffers and the pin-drill operation both read what
+///   moved. The panel raises both flags; the frame loop discharges them.
+fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::StockConfig) {
+    let mut stock = draft;
+    if stock.auto_from_model
+        && let Some(bbox) = first_model_bbox(state)
+    {
+        stock.update_from_bbox(&bbox);
+    }
+    let command = rs_cam_core::session::Command::SetStockConfig(
+        rs_cam_core::session::SetStockConfigArgs {
+            stock: Box::new(stock),
+        },
+    );
+    match state.session.apply(command) {
+        Ok(effects) => {
+            crate::state::stale::stamp_stale(state, &effects.stale);
+            state.gui.mark_edited();
+            state.panel_side_effects.upload = true;
+            state.panel_side_effects.pin_drill_sync = true;
+        }
+        Err(error) => {
+            tracing::warn!("the stock edit was refused: {error}");
+        }
+    }
+}
+
+/// What one frame of a scratch-copy panel did to its draft (WP6).
+///
+/// An immediate-mode panel writes a CLONE of the project record and
+/// applies one `Command` when an edit finishes. This is what the panel
+/// reports back, so the caller knows when to apply and when the draft
+/// may be dropped.
+///
+/// Plan §19 ruling 8 sets the two commit rules. A `DragValue` or a
+/// `Slider` applies on release or on lost focus, never per frame: each
+/// frame of a drag used to push an event that dropped every cached
+/// result. A checkbox, a combo, a button and a text field apply on
+/// `changed()`, which is one event per operator action already.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PanelEdit {
+    /// A widget wrote the draft this frame.
+    pub changed: bool,
+    /// An edit FINISHED this frame, so the caller applies its command.
+    pub committed: bool,
+    /// A widget of this panel is still dragged or focused. The draft
+    /// must survive the frame; `false` lets the caller drop it and read
+    /// the session again, which is how an edit from another surface
+    /// reaches the panel.
+    pub in_flight: bool,
+}
+
+impl PanelEdit {
+    /// Read a `DragValue` or a `Slider` response.
+    pub(crate) fn drag(&mut self, response: &egui::Response) {
+        self.changed |= response.changed();
+        self.committed |= response.drag_stopped() || response.lost_focus();
+        self.in_flight |= response.dragged() || response.has_focus();
+    }
+
+    /// Read a checkbox, combo, button or text-field response.
+    pub(crate) fn click(&mut self, response: &egui::Response) {
+        self.changed |= response.changed();
+        self.committed |= response.changed();
+        self.in_flight |= response.has_focus();
+    }
+
+    /// Record a finished edit a `Response` cannot report — a helper that
+    /// answers `bool`, or a deferred structural change.
+    pub(crate) fn commit(&mut self) {
+        self.changed = true;
+        self.committed = true;
+    }
+
+    /// Fold in what a sub-panel reported.
+    pub(crate) fn merge(&mut self, other: Self) {
+        self.changed |= other.changed;
+        self.committed |= other.committed;
+        self.in_flight |= other.in_flight;
+    }
+}
+
 /// Flush post undo snapshot if the user navigated away from post.
 fn flush_post_snapshot(state: &mut AppState) {
     if let Some(old) = state.history.post_snapshot.take() {
@@ -284,20 +395,35 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .list_setups()
                 .iter()
                 .any(|s| s.face_up != crate::state::job::FaceUp::Top);
-            stock::draw(ui, state.session.stock_mut(), has_flipped_setup, events);
-            // If an edit just finished (DragValue released), push undo
-            if events
-                .iter()
-                .any(|e| matches!(e, AppEvent::StockChanged | AppEvent::StockMaterialChanged))
-                && let Some(old) = state.history.stock_snapshot.take()
-                && old != *state.session.stock_config()
-            {
-                state
-                    .history
-                    .push(crate::state::history::UndoAction::StockChange {
-                        old,
-                        new: state.session.stock_config().clone(),
-                    });
+            // WP6: the widgets write a DRAFT, not the session. The draft
+            // is re-read from the session on any frame no widget of this
+            // panel is dragged or focused, so an edit made on another
+            // surface reaches the panel instead of being overwritten.
+            let mut draft = state
+                .history
+                .stock_draft
+                .take()
+                .unwrap_or_else(|| state.session.stock_config().clone());
+            let edit = stock::draw(ui, &mut draft, has_flipped_setup, events);
+            if edit.committed {
+                apply_stock_draft(state, draft.clone());
+                // The undo compare runs AFTER the command, so the
+                // session already holds the new value and the comparison
+                // is true exactly once. It used to compare a session the
+                // panel had already written in place.
+                if let Some(old) = state.history.stock_snapshot.take()
+                    && old != *state.session.stock_config()
+                {
+                    state
+                        .history
+                        .push(crate::state::history::UndoAction::StockChange {
+                            old,
+                            new: state.session.stock_config().clone(),
+                        });
+                }
+            }
+            if edit.in_flight {
+                state.history.stock_draft = Some(draft);
             }
         }
         Selection::PostProcessor => {

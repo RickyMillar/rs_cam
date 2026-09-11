@@ -324,9 +324,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetStockConfig, "set_stock_config", SetStockConfigArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI calls the session setter directly; WP6 adopts this row",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",

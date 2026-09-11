@@ -2,19 +2,27 @@ use rs_cam_core::compute::stock_config::{
     PIN_MATCH_TOL_MM, PIN_WALL_MM, PinPlacementError, PinPlacementRequest, place_keyed_pins,
 };
 
+use super::PanelEdit;
 use crate::state::job::{AlignmentPin, FaceUp, FlipAxis, StockConfig};
 use crate::ui::AppEvent;
 
+/// Draw the stock panel over a SCRATCH copy of the stock configuration.
+///
+/// WP6: `stock` is a draft the caller owns, not the session's own record.
+/// The caller applies `Command::SetStockConfig` when the returned
+/// [`PanelEdit`] reports a finished edit. The panel therefore pushes no
+/// `StockChanged` event of its own; the command carries the invalidation
+/// the event used to ask for.
 pub fn draw(
     ui: &mut egui::Ui,
     stock: &mut StockConfig,
     has_flipped_setup: bool,
     events: &mut Vec<AppEvent>,
-) {
+) -> PanelEdit {
     ui.heading("Stock Setup");
     ui.separator();
 
-    let mut changed = false;
+    let mut edit = PanelEdit::default();
 
     // Material picker — hierarchical menu so the backend enum shape
     // (flat list of variants) doesn't leak into the UX. Drills
@@ -24,8 +32,7 @@ pub fn draw(
     // additional species, FPL Ch.5 + Wood Database).
     ui.add_space(4.0);
     if draw_hierarchical_material_picker(ui, stock) {
-        changed = true;
-        events.push(AppEvent::StockMaterialChanged);
+        edit.commit();
     }
 
     // Show material properties (read-only)
@@ -74,36 +81,30 @@ pub fn draw(
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
             ui.label("X:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut stock.x)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.1..=10000.0),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut stock.x)
+                    .suffix(" mm")
+                    .speed(0.5)
+                    .range(0.1..=10000.0),
+            ));
             ui.end_row();
 
             ui.label("Y:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut stock.y)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.1..=10000.0),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut stock.y)
+                    .suffix(" mm")
+                    .speed(0.5)
+                    .range(0.1..=10000.0),
+            ));
             ui.end_row();
 
             ui.label("Z:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut stock.z)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.1..=10000.0),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut stock.z)
+                    .suffix(" mm")
+                    .speed(0.5)
+                    .range(0.1..=10000.0),
+            ));
             ui.end_row();
         });
 
@@ -114,60 +115,47 @@ pub fn draw(
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
             ui.label("X:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut stock.origin_x)
-                        .suffix(" mm")
-                        .speed(0.5),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut stock.origin_x)
+                    .suffix(" mm")
+                    .speed(0.5),
+            ));
             ui.end_row();
 
             ui.label("Y:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut stock.origin_y)
-                        .suffix(" mm")
-                        .speed(0.5),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut stock.origin_y)
+                    .suffix(" mm")
+                    .speed(0.5),
+            ));
             ui.end_row();
 
             ui.label("Z:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut stock.origin_z)
-                        .suffix(" mm")
-                        .speed(0.5),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut stock.origin_z)
+                    .suffix(" mm")
+                    .speed(0.5),
+            ));
             ui.end_row();
         });
 
     ui.add_space(8.0);
-    changed |= ui
-        .checkbox(&mut stock.auto_from_model, "Auto from model")
-        .changed();
+    edit.click(&ui.checkbox(&mut stock.auto_from_model, "Auto from model"));
     if stock.auto_from_model {
         ui.horizontal(|ui| {
             ui.label("Padding:");
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut stock.padding)
-                        .suffix(" mm")
-                        .speed(0.1)
-                        .range(0.0..=100.0),
-                )
-                .changed();
+            edit.drag(&ui.add(
+                egui::DragValue::new(&mut stock.padding)
+                    .suffix(" mm")
+                    .speed(0.1)
+                    .range(0.0..=100.0),
+            ));
         });
     }
 
-    if changed {
-        events.push(AppEvent::StockChanged);
-    }
-
     ui.add_space(12.0);
-    draw_alignment_pins(ui, stock, has_flipped_setup, events);
+    edit.merge(draw_alignment_pins(ui, stock, has_flipped_setup, events));
+    edit
 }
 
 /// Draw the "Alignment Pins" collapsible section in the stock panel.
@@ -176,7 +164,7 @@ fn draw_alignment_pins(
     stock: &mut StockConfig,
     has_flipped_setup: bool,
     events: &mut Vec<AppEvent>,
-) {
+) -> PanelEdit {
     let header = egui::RichText::new("Alignment Pins")
         .strong()
         .color(egui::Color32::from_rgb(180, 180, 195));
@@ -188,7 +176,7 @@ fn draw_alignment_pins(
     egui::CollapsingHeader::new(header)
         .default_open(!stock.alignment_pins.is_empty() || has_flipped_setup)
         .show(ui, |ui| {
-            let mut changed = false;
+            let mut edit = PanelEdit::default();
 
             // Quick two-sided setup button
             if !has_flipped_setup && stock.alignment_pins.is_empty() {
@@ -278,20 +266,18 @@ fn draw_alignment_pins(
                 let mut shared_diameter = stock.alignment_pins[0].diameter;
                 ui.horizontal(|ui| {
                     ui.label("Pin diameter:");
-                    if ui
-                        .add(
-                            egui::DragValue::new(&mut shared_diameter)
-                                .suffix(" mm")
-                                .speed(0.1)
-                                .range(1.0..=25.0),
-                        )
-                        .changed()
-                    {
+                    let response = ui.add(
+                        egui::DragValue::new(&mut shared_diameter)
+                            .suffix(" mm")
+                            .speed(0.1)
+                            .range(1.0..=25.0),
+                    );
+                    if response.changed() {
                         for pin in stock.alignment_pins.iter_mut() {
                             pin.diameter = shared_diameter;
                         }
-                        changed = true;
                     }
+                    edit.drag(&response);
                 });
                 ui.add_space(4.0);
             }
@@ -305,23 +291,19 @@ fn draw_alignment_pins(
                     ui.horizontal(|ui| {
                         ui.label(format!("Pin {}:", i + 1));
                         ui.label("X");
-                        changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut pin.x)
-                                    .suffix(" mm")
-                                    .speed(0.5)
-                                    .range(0.0..=stock.x),
-                            )
-                            .changed();
+                        edit.drag(&ui.add(
+                            egui::DragValue::new(&mut pin.x)
+                                .suffix(" mm")
+                                .speed(0.5)
+                                .range(0.0..=stock.x),
+                        ));
                         ui.label("Y");
-                        changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut pin.y)
-                                    .suffix(" mm")
-                                    .speed(0.5)
-                                    .range(0.0..=stock.y),
-                            )
-                            .changed();
+                        edit.drag(&ui.add(
+                            egui::DragValue::new(&mut pin.y)
+                                .suffix(" mm")
+                                .speed(0.5)
+                                .range(0.0..=stock.y),
+                        ));
                     });
                     ui.horizontal(|ui| {
                         ui.add_space(48.0);
@@ -359,7 +341,7 @@ fn draw_alignment_pins(
                 } else {
                     stock.alignment_pins.push(mirrored);
                 }
-                changed = true;
+                edit.commit();
             }
 
             if let Some(idx) = remove_idx {
@@ -372,7 +354,7 @@ fn draw_alignment_pins(
                 if stock.alignment_pins.is_empty() {
                     stock.flip_axis = None;
                 }
-                changed = true;
+                edit.commit();
             }
 
             // Buttons row. The keyed pair is the whole product here: two
@@ -404,7 +386,7 @@ fn draw_alignment_pins(
                     // Explicit edit, so the cache is written here — and
                     // now there are pins for it to describe.
                     stock.flip_axis = derived_axis;
-                    changed = true;
+                    edit.commit();
                 }
 
                 let centre = (stock.x * 0.5, stock.y * 0.5);
@@ -427,7 +409,7 @@ fn draw_alignment_pins(
                         .alignment_pins
                         .push(AlignmentPin::new(centre.0, centre.1, diameter));
                     stock.flip_axis = derived_axis;
-                    changed = true;
+                    edit.commit();
                 }
             });
 
@@ -470,10 +452,10 @@ fn draw_alignment_pins(
                 );
             }
 
-            if changed {
-                events.push(AppEvent::StockChanged);
-            }
-        });
+            edit
+        })
+        .body_returned
+        .unwrap_or_default()
 }
 
 /// Pin diameter the panel plans against.
