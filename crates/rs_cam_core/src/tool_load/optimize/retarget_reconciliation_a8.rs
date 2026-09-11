@@ -235,7 +235,7 @@ fn run_arm(session: &mut ProjectSession, feed: f64) -> Arm {
         .dressups
         .clone();
     let _ = session
-        .apply_toolpath_param_snapshot(0, op, dressups, None)
+        .apply_toolpath_param_snapshot_narrow(0, op, dressups, None)
         .expect("apply feed");
     session
         .generate_toolpath(0, &cancel)

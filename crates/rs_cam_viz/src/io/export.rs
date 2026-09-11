@@ -104,7 +104,7 @@ fn phase_tool_for_export(tool: &ToolConfig) -> PhaseTool<'_> {
 /// one divergence is genuinely reachable in the other direction:
 /// [`rs_cam_core::session::ProjectSession::invalidate_tool`] (a GUI tool
 /// param edit — `ui::properties::commit_tool_draft`) and
-/// `apply_toolpath_param_snapshot` drop `session.results` entries, while
+/// `Command::RestoreToolpathSnapshot` drop `session.results` entries, while
 /// the viz store keeps its result so the UI can draw the stale toolpath.
 /// Nothing modulated exists for such a toolpath anyway, so falling back to
 /// the worker IR preserves the pre-fix behaviour exactly. Every other

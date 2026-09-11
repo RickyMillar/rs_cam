@@ -413,7 +413,10 @@ fn evaluate_candidate_inner(
     let toolpath_index = ctx.toolpath_index;
 
     // Apply.
-    let _ = guard.session_mut().apply_toolpath_param_snapshot(
+    // The NARROW path, deliberately. A wide invalidation would drop
+    // every downstream `FromRemainingStock` result once per candidate,
+    // and the simulation below depends on those results standing.
+    let _ = guard.session_mut().apply_toolpath_param_snapshot_narrow(
         toolpath_index,
         candidate_op.clone(),
         dressups,

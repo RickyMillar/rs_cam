@@ -436,6 +436,7 @@ fn w4_face_selection_in_undo_snapshot() {
             tc.operation.clone(),
             tc.dressups.clone(),
             tc.face_selection.clone(),
+            tc.feeds_provenance.clone(),
         ));
     }
 
@@ -452,7 +453,7 @@ fn w4_face_selection_in_undo_snapshot() {
 
     // Flush snapshot (simulates navigating away from toolpath)
     // Take the snapshot and push an undo action
-    if let Some((snap_id, old_op, old_dressups, old_faces)) =
+    if let Some((snap_id, old_op, old_dressups, old_faces, old_provenance)) =
         c.state.history.toolpath_snapshot.take()
     {
         if let Some((_, tc)) = c.state.session.find_toolpath_config_by_id(snap_id) {
@@ -466,6 +467,8 @@ fn w4_face_selection_in_undo_snapshot() {
                     new_dressups: tc.dressups.clone(),
                     old_face_selection: old_faces,
                     new_face_selection: tc.face_selection.clone(),
+                    old_feeds_provenance: old_provenance,
+                    new_feeds_provenance: tc.feeds_provenance.clone(),
                 });
         }
     }

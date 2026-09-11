@@ -5,6 +5,8 @@ pub(crate) mod simulation;
 mod toolpath;
 mod undo;
 
+use rs_cam_core::session::{Command, RestoreToolpathSnapshotArgs};
+
 use crate::compute::ComputeBackend;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
@@ -226,12 +228,15 @@ impl<B: ComputeBackend> AppController<B> {
                     // Empty selection reverts to the legacy default (None) so a
                     // viewport deselect doesn't leave a confusing "nothing" state.
                     let new_selection = if holes.is_empty() { None } else { Some(holes) };
-                    let _ = self
+                    // N6 (WP8): the setter drops the downstream stock
+                    // chain now, so the stamp follows `Effects::stale`
+                    // rather than naming this toolpath alone.
+                    if let Ok(effects) = self
                         .state
                         .session
-                        .set_drill_selected_holes(idx, new_selection);
-                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-                        rt.stale_since = Some(std::time::Instant::now());
+                        .set_drill_selected_holes(idx, new_selection)
+                    {
+                        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
                     }
                     self.state.selection = Selection::Toolpath(toolpath_id);
                     self.state.gui.mark_edited();
@@ -535,8 +540,8 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Apply a candidate from the cached Optimize outcome. Index 0 is
     /// the baseline (no-op); higher indexes select a non-baseline
-    /// candidate. Routes through `apply_toolpath_param_snapshot` with
-    /// the candidate's params.
+    /// candidate. Routes through `Command::RestoreToolpathSnapshot`
+    /// with the candidate's params and its provenance stamp.
     fn apply_optimize_candidate(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
@@ -616,24 +621,31 @@ impl<B: ComputeBackend> AppController<B> {
             .clone()
             .stamped_optimizer(&baseline_op, &candidate_op);
 
-        if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
-            idx,
-            candidate_op,
-            dressups,
-            face_selection,
-        ) {
-            self.push_notification(
-                format!("Apply failed: {e}"),
-                crate::controller::Severity::Error,
-            );
-            return;
-        }
-        let _ = self.state.session.set_feeds_provenance(idx, new_provenance);
+        // One command writes the params and the provenance stamp. Two
+        // calls left an undo able to restore the params under the later
+        // stamp (WP8, N14).
+        let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(
+            RestoreToolpathSnapshotArgs {
+                index: idx,
+                operation: Box::new(candidate_op),
+                dressups: Box::new(dressups),
+                face_selection,
+                feeds_provenance: Some(Box::new(new_provenance)),
+            },
+        ));
+        let effects = match restored {
+            Ok(effects) => effects,
+            Err(e) => {
+                self.push_notification(
+                    format!("Apply failed: {e}"),
+                    crate::controller::Severity::Error,
+                );
+                return;
+            }
+        };
 
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-            rt.stale_since = Some(std::time::Instant::now());
-        }
+        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
         self.state.optimize_modal = None;
 
         // Roadmap F.2 — auto-verify after Apply. Set the pending flag,
@@ -760,18 +772,25 @@ impl<B: ComputeBackend> AppController<B> {
             .clone()
             .stamped_optimizer(&baseline_op, &new_op);
 
-        if let Err(e) =
-            self.state
-                .session
-                .apply_toolpath_param_snapshot(idx, new_op, dressups, face_selection)
-        {
-            self.push_notification(
-                format!("Re-optimize failed: {e}"),
-                crate::controller::Severity::Error,
-            );
-            return;
-        }
-        let _ = self.state.session.set_feeds_provenance(idx, new_provenance);
+        let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(
+            RestoreToolpathSnapshotArgs {
+                index: idx,
+                operation: Box::new(new_op),
+                dressups: Box::new(dressups),
+                face_selection,
+                feeds_provenance: Some(Box::new(new_provenance)),
+            },
+        ));
+        let effects = match restored {
+            Ok(effects) => effects,
+            Err(e) => {
+                self.push_notification(
+                    format!("Re-optimize failed: {e}"),
+                    crate::controller::Severity::Error,
+                );
+                return;
+            }
+        };
         if !clamp_warnings.is_empty() {
             // A clamp that fires silently is the defect, not the fix: the
             // operator accepted a number and got a different one.
@@ -788,9 +807,7 @@ impl<B: ComputeBackend> AppController<B> {
             );
         }
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-            rt.stale_since = Some(std::time::Instant::now());
-        }
+        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
         // Re-run the search against the new baseline. open_optimize_modal
         // reuses the cached baseline trace; the modal's FreshnessGate
         // banner flags that the trace is now one edit behind.
@@ -1201,9 +1218,10 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Apply every selected row from the project rollup. Each row's
     /// candidate is the first-safe recommendation from that row's
-    /// outcome. Routes through `apply_toolpath_param_snapshot` for
+    /// outcome. Routes through `Command::RestoreToolpathSnapshot` for
     /// each toolpath; closes the rollup and marks every touched
-    /// toolpath stale so auto-regen kicks in.
+    /// toolpath — and every toolpath downstream of one — stale so
+    /// auto-regen kicks in.
     fn apply_optimize_project(&mut self) {
         use rs_cam_core::tool_load::optimize::OutcomeKind;
 
@@ -1252,7 +1270,6 @@ impl<B: ComputeBackend> AppController<B> {
             };
             let dressups = tc.dressups.clone();
             let face_selection = tc.face_selection.clone();
-            let toolpath_id_raw = tc.id;
             // W2.1: stamp Optimizer on changed dimensions before applying.
             let baseline_op = tc.operation.clone();
             let new_provenance = tc
@@ -1260,23 +1277,25 @@ impl<B: ComputeBackend> AppController<B> {
                 .clone()
                 .stamped_optimizer(&baseline_op, &params);
 
-            if let Err(e) = self.state.session.apply_toolpath_param_snapshot(
-                toolpath_index,
-                params,
-                dressups,
-                face_selection,
-            ) {
-                failed.push(format!("toolpath idx {toolpath_index}: {e}"));
-                continue;
-            }
-            let _ = self
-                .state
-                .session
-                .set_feeds_provenance(toolpath_index, new_provenance);
-            // Mark stale so auto-regen picks it up.
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id_raw) {
-                rt.stale_since = Some(std::time::Instant::now());
-            }
+            let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(
+                RestoreToolpathSnapshotArgs {
+                    index: toolpath_index,
+                    operation: Box::new(params),
+                    dressups: Box::new(dressups),
+                    face_selection,
+                    feeds_provenance: Some(Box::new(new_provenance)),
+                },
+            ));
+            let effects = match restored {
+                Ok(effects) => effects,
+                Err(e) => {
+                    failed.push(format!("toolpath idx {toolpath_index}: {e}"));
+                    continue;
+                }
+            };
+            // Mark stale so auto-regen picks it up. The set covers the
+            // rows downstream of this one too.
+            crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
             applied += 1;
         }
 

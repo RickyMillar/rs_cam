@@ -1,3 +1,5 @@
+use rs_cam_core::session::{Command, RestoreToolpathSnapshotArgs};
+
 use crate::compute::ComputeBackend;
 use crate::state::history::UndoAction;
 use crate::state::job::{ToolConfig, ToolId};
@@ -26,9 +28,16 @@ impl<B: ComputeBackend> AppController<B> {
                     old_op,
                     old_dressups,
                     old_face_selection,
+                    old_feeds_provenance,
                     ..
                 } => {
-                    self.apply_toolpath_snapshot(tp_id, old_op, old_dressups, old_face_selection);
+                    self.apply_toolpath_snapshot(
+                        tp_id,
+                        old_op,
+                        old_dressups,
+                        old_face_selection,
+                        old_feeds_provenance,
+                    );
                 }
                 UndoAction::MachineChange { old, .. } => {
                     self.state.session.set_machine(old);
@@ -73,9 +82,16 @@ impl<B: ComputeBackend> AppController<B> {
                     new_op,
                     new_dressups,
                     new_face_selection,
+                    new_feeds_provenance,
                     ..
                 } => {
-                    self.apply_toolpath_snapshot(tp_id, new_op, new_dressups, new_face_selection);
+                    self.apply_toolpath_snapshot(
+                        tp_id,
+                        new_op,
+                        new_dressups,
+                        new_face_selection,
+                        new_feeds_provenance,
+                    );
                 }
                 UndoAction::MachineChange { new, .. } => {
                     self.state.session.set_machine(new);
@@ -113,43 +129,47 @@ impl<B: ComputeBackend> AppController<B> {
             *slot = tool;
         }
         let affected = self.state.session.invalidate_tool(tool_id.0).stale;
-        let now = std::time::Instant::now();
-        for index in affected {
-            if let Some(tc) = self.state.session.get_toolpath_config(index) {
-                let id = tc.id;
-                self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
-            }
-        }
+        crate::state::stale::stamp_stale(&mut self.state, &affected);
         self.invalidate_simulation();
     }
 
-    /// Install an operation/dressup/face snapshot.
+    /// Install an operation, dressup, face and provenance snapshot.
     ///
-    /// `apply_toolpath_param_snapshot` drops the core result and bumps the
-    /// revision, so the operation reads `EditedSince` afterwards — including
-    /// when the undo has restored the exact configuration the retained
-    /// geometry was generated from. **That is deliberate; see `F2.5.md` §3.**
-    /// In short: nothing records which configuration the retained
-    /// `ToolpathRuntime::result` actually answers, the snapshot restores three
-    /// fields out of the nine that decide the geometry, and being wrong the
-    /// conservative way costs a regeneration while being wrong the other way
-    /// exports a program that does not match the project.
+    /// `Command::RestoreToolpathSnapshot` drops the core result and bumps
+    /// the revision, so the operation reads `EditedSince` afterwards —
+    /// including when the undo has restored the exact configuration the
+    /// retained geometry was generated from. **That is deliberate; see
+    /// `F2.5.md` §3.** In short: nothing records which configuration the
+    /// retained `ToolpathRuntime::result` actually answers, the snapshot
+    /// restores three fields out of the nine that decide the geometry, and
+    /// being wrong the conservative way costs a regeneration while being
+    /// wrong the other way exports a program that does not match the
+    /// project. The command is unconditional for that reason, and a
+    /// signature-gated command cannot take its place.
+    ///
+    /// WP8 (N14) widened both halves of this. The command drops the
+    /// downstream stock chain, not the edited index alone, and the stamp
+    /// below follows `Effects::stale` rather than naming one toolpath.
     fn apply_toolpath_snapshot(
         &mut self,
         tp_id: crate::state::toolpath::ToolpathId,
         operation: crate::state::toolpath::OperationConfig,
         dressups: crate::state::toolpath::DressupConfig,
         face_selection: Option<Vec<rs_cam_core::enriched_mesh::FaceGroupId>>,
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
     ) {
         if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
-            let _ = self.state.session.apply_toolpath_param_snapshot(
-                idx,
-                operation,
-                dressups,
-                face_selection,
-            );
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
-                rt.stale_since = Some(std::time::Instant::now());
+            let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(
+                RestoreToolpathSnapshotArgs {
+                    index: idx,
+                    operation: Box::new(operation),
+                    dressups: Box::new(dressups),
+                    face_selection,
+                    feeds_provenance: Some(Box::new(feeds_provenance)),
+                },
+            ));
+            if let Ok(effects) = restored {
+                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
             }
         }
         // No `invalidate_simulation` here, deliberately: a hand parameter

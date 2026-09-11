@@ -1130,7 +1130,7 @@ fn cancelled_drain_resolves_pending_mcp_generate_toolpath_waiter() {
 // Roadmap F.1 — session.results cache must repopulate when the threaded
 // compute backend returns a fresh result. Before the fix, the callback
 // only wrote to gui.toolpath_rt and session.results stayed empty after
-// apply_toolpath_param_snapshot — breaking project_load_report's span
+// the undo snapshot path ran — breaking project_load_report's span
 // lookup for the just-applied toolpath. See planning/F1_RCA.md.
 // ---------------------------------------------------------------------------
 
@@ -4601,6 +4601,8 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
                     new_dressups: tc.dressups.clone(),
                     old_face_selection: None,
                     new_face_selection: None,
+                    old_feeds_provenance: tc.feeds_provenance.clone(),
+                    new_feeds_provenance: tc.feeds_provenance.clone(),
                 }
             }),
         ),
@@ -4761,6 +4763,8 @@ fn an_undone_param_edit_does_not_resurrect_the_old_result() {
             new_dressups: Default::default(),
             old_face_selection: None,
             new_face_selection: None,
+            old_feeds_provenance: Default::default(),
+            new_feeds_provenance: Default::default(),
         });
     panel_edit(&mut controller, tp_id, |entry| {
         entry.operation.set_feed_rate(4321.0);

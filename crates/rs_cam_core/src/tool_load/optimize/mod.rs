@@ -124,7 +124,7 @@ pub enum SearchStage {
 ///
 /// **Mutation note.** `session` is mutated transiently — each candidate
 /// evaluation writes that candidate's params via
-/// `apply_toolpath_param_snapshot`, regenerates the toolpath, and runs
+/// `apply_toolpath_param_snapshot_narrow`, regenerates the toolpath, and runs
 /// a fresh project sim. An RAII baseline-restore guard re-applies the
 /// original params on every exit path (Ok, NoSafeImprovement, Skipped,
 /// cancelled, panicked candidate), so callers observe the session as
@@ -789,7 +789,7 @@ fn run_grid_strategy(
 //
 // **Stock-state hygiene between toolpaths.** `optimize_toolpath`'s
 // `BaselineRestoreGuard` restores the toolpath's params on drop via
-// `apply_toolpath_param_snapshot`, which invalidates that toolpath's
+// `apply_toolpath_param_snapshot_narrow`, which invalidates that toolpath's
 // cached `result`. After each call, the project's per-toolpath stock
 // state would be incomplete (the just-optimized TP has no result, so
 // subsequent project sims would skip it). We re-generate the toolpath

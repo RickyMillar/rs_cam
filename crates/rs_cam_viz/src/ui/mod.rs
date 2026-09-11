@@ -375,7 +375,7 @@ pub enum AppEvent {
     ToggleOptimizeProjectRow(usize),
     /// Apply every row whose checkbox is currently true. Each
     /// applied candidate is the first-safe recommendation from that
-    /// row's outcome. Routes through `apply_toolpath_param_snapshot`.
+    /// row's outcome. Routes through `Command::RestoreToolpathSnapshot`.
     ApplyOptimizeProject,
 
     // Multi-tool finishing planner (Phase U of the multi-tool plan)

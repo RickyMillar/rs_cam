@@ -190,7 +190,8 @@ pub(crate) fn machine_max_power_kw(machine: &MachineProfile) -> f64 {
 //
 // Each candidate evaluation in the optimizer mutates
 // `session.toolpath_configs[idx].operation` (via
-// `apply_toolpath_param_snapshot`), regenerates, and runs a fresh sim.
+// `apply_toolpath_param_snapshot_narrow`), regenerates, and runs a fresh
+// sim.
 // Without explicit cleanup, the session is left holding the last
 // candidate's params when the optimizer returns — a silent state leak.
 //
@@ -203,7 +204,7 @@ pub(crate) fn machine_max_power_kw(machine: &MachineProfile) -> f64 {
 
 /// Snapshot of the toolpath fields the optimizer mutates per
 /// candidate. Captured up-front and re-applied via
-/// `apply_toolpath_param_snapshot` on drop.
+/// `apply_toolpath_param_snapshot_narrow` on drop.
 #[derive(Debug, Clone)]
 pub(crate) struct ToolpathParamsSnapshot {
     pub operation: OperationConfig,
@@ -232,9 +233,13 @@ impl ToolpathParamsSnapshot {
 /// The guard holds the only `&mut ProjectSession` in flight while it
 /// lives; access the session via `session_mut()` so the borrow chain
 /// stays through the guard. Drop calls
-/// `apply_toolpath_param_snapshot` and ignores its `Result` —
+/// `apply_toolpath_param_snapshot_narrow` and ignores its `Result` —
 /// restoration failure can only happen if the toolpath was removed
 /// mid-search, which would already be a programming error.
+///
+/// **This restore must never go wide.** A wide restore drops exactly
+/// the neighbour results the search preserved, at the moment the caller
+/// wants them back, and a `Drop` cannot report the loss.
 pub(crate) struct BaselineRestoreGuard<'a> {
     session: &'a mut ProjectSession,
     toolpath_index: usize,
@@ -272,7 +277,7 @@ impl<'a> BaselineRestoreGuard<'a> {
 
 impl Drop for BaselineRestoreGuard<'_> {
     fn drop(&mut self) {
-        let _ = self.session.apply_toolpath_param_snapshot(
+        let _ = self.session.apply_toolpath_param_snapshot_narrow(
             self.toolpath_index,
             self.snapshot.operation.clone(),
             self.snapshot.dressups.clone(),
@@ -412,7 +417,7 @@ mod restore_guard_tests {
             let face_sel = guard.baseline().face_selection.clone();
             let _ = guard
                 .session_mut()
-                .apply_toolpath_param_snapshot(0, new_op_clone, dressups, face_sel)
+                .apply_toolpath_param_snapshot_narrow(0, new_op_clone, dressups, face_sel)
                 .unwrap();
             // While the guard lives, the session reflects the candidate.
             assert!(
@@ -462,7 +467,7 @@ mod restore_guard_tests {
             new_op.set_feed_rate(9999.0);
             let _ = guard
                 .session_mut()
-                .apply_toolpath_param_snapshot(0, new_op, dressups, face_sel)
+                .apply_toolpath_param_snapshot_narrow(0, new_op, dressups, face_sel)
                 .unwrap();
             // Confirm we're in the mutated state.
             assert!(

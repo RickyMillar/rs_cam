@@ -7,6 +7,7 @@ pub mod rest_dependency;
 pub mod runtime;
 pub mod selection;
 pub mod simulation;
+pub mod stale;
 pub mod toolpath;
 pub mod viewport;
 

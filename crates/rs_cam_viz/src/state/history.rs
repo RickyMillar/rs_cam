@@ -1,15 +1,19 @@
 use super::job::{PostConfig, StockConfig, ToolConfig, ToolId};
 use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
 use rs_cam_core::enriched_mesh::FaceGroupId;
+use rs_cam_core::feeds::FeedsProvenance;
 use rs_cam_core::machine::MachineProfile;
 
 /// A snapshot of undoable state.
-// SAFETY: ToolpathParamChange holds 2× OperationConfig + 2× DressupConfig (≈648
-// bytes) which is intentional — undo/redo needs the full state snapshot. The
-// surrounding code stores UndoAction in a bounded history Vec (not a hot loop),
-// so the per-variant size diff vs simple variants like StockChange is
-// acceptable for the readability win of keeping the variants inline. Boxing
-// the large variant is a possible refactor when memory pressure shows up.
+// SAFETY: ToolpathParamChange holds 2× OperationConfig + 2× DressupConfig +
+// 2× FeedsProvenance, which is intentional — undo/redo needs the full state
+// snapshot. The byte figure this comment used to carry (≈648) was measured
+// before WP8 added the provenance pair, so it is dropped rather than guessed
+// at. The surrounding code stores UndoAction in a bounded history Vec (not a
+// hot loop), so the per-variant size diff vs simple variants like StockChange
+// is acceptable for the readability win of keeping the variants inline.
+// Boxing the large variant is a possible refactor when memory pressure shows
+// up.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum UndoAction {
@@ -26,6 +30,13 @@ pub enum UndoAction {
         old: ToolConfig,
         new: ToolConfig,
     },
+    /// One parameter edit on one toolpath.
+    ///
+    /// The variant carries the feeds provenance on both sides (WP8). The
+    /// three optimizer apply paths stamp `ProvenanceSource::Optimizer`
+    /// on the dimensions a candidate moved, and without the pair here an
+    /// undo put the pre-optimizer numbers back and left that stamp
+    /// standing on them.
     ToolpathParamChange {
         tp_id: ToolpathId,
         old_op: OperationConfig,
@@ -34,6 +45,8 @@ pub enum UndoAction {
         new_dressups: DressupConfig,
         old_face_selection: Option<Vec<FaceGroupId>>,
         new_face_selection: Option<Vec<FaceGroupId>>,
+        old_feeds_provenance: FeedsProvenance,
+        new_feeds_provenance: FeedsProvenance,
     },
     MachineChange {
         old: rs_cam_core::machine::MachineProfile,
@@ -42,12 +55,18 @@ pub enum UndoAction {
 }
 
 /// Snapshot of toolpath state captured before a parameter edit drag.
-/// Includes id, operation+dressup configs, and optional face selection.
+/// Includes id, operation+dressup configs, the optional face selection,
+/// and the feeds provenance the edit starts from.
+///
+/// The provenance is the fifth member since WP8. Without it the flush
+/// below cannot record the OLD provenance on the undo entry, and an undo
+/// restores values under a stamp that describes different ones.
 pub type ToolpathSnapshot = (
     ToolpathId,
     OperationConfig,
     DressupConfig,
     Option<Vec<FaceGroupId>>,
+    FeedsProvenance,
 );
 
 /// Simple undo/redo stack.

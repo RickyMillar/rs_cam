@@ -1020,8 +1020,15 @@ impl ProjectSession {
 
     /// Set the explicitly-selected drill holes (DXF point / circle-centre
     /// picks) for a `Drill` or `AlignmentPinDrill` toolpath, invalidating its
-    /// cached result. `None` reverts a `Drill` op to its legacy
-    /// all-polygon-centroids behaviour.
+    /// cached result and the results of every operation downstream of it.
+    /// `None` reverts a `Drill` op to its legacy all-polygon-centroids
+    /// behaviour.
+    ///
+    /// A pick changes which holes the operation cuts, so it changes the
+    /// stock a downstream `StockSource::FromRemainingStock` operation
+    /// reads. This called `drop_result` alone until WP8 (N6), while its
+    /// sibling [`Self::set_alignment_pin_drill_holes`] 30 lines above
+    /// walked the chain. The two now answer alike.
     ///
     /// Errors if the toolpath's operation is not a drilling op.
     #[instrument(skip(self, selected_holes))]
@@ -1035,6 +1042,8 @@ impl ProjectSession {
                 .toolpath_configs
                 .get_mut(index)
                 .ok_or(SessionError::ToolpathNotFound(index))?;
+            // Read before the match: `tc` is borrowed mutably inside it.
+            let enabled = tc.enabled;
             match tc.operation {
                 OperationConfig::Drill(ref mut cfg) => {
                     cfg.selected_holes = selected_holes;
@@ -1048,8 +1057,7 @@ impl ProjectSession {
                     ));
                 }
             }
-            session.drop_result(index);
-            session.simulation = None;
+            session.invalidate_result_chain(index, enabled);
             Ok(())
         })
     }
@@ -1362,15 +1370,31 @@ impl ProjectSession {
         })
     }
 
-    /// Apply an undo/redo snapshot of toolpath parameters to a toolpath at
-    /// `index`. Restores the operation config, dressup config, and BREP
-    /// face selection in one shot, invalidating the cached result and
-    /// simulation.
+    /// Install an operation, dressup and face-selection triple on the
+    /// toolpath at `index`, and drop THAT INDEX ALONE.
     ///
-    /// This is the session-API path used by the GUI undo stack and by
-    /// the optimizer's candidate-apply path.
+    /// **The narrowness is the point, and no surface may call this.** The
+    /// tool-load optimizer's candidate search
+    /// (`tool_load/optimize/candidate.rs`) restores a candidate, then
+    /// regenerates that one index, then runs a project simulation against
+    /// the neighbours' cached results. `candidate.rs` says so at the
+    /// simulation call: "Other toolpaths' cached results from baseline
+    /// still apply because `generate_toolpath` only touched index
+    /// `toolpath_index`." A wide invalidation would drop every downstream
+    /// `StockSource::FromRemainingStock` result once PER CANDIDATE, so the
+    /// search would regenerate the whole chain at every point of the
+    /// search instead of once. `optimize/context.rs`'s
+    /// `BaselineRestoreGuard` restores the baseline on drop through the
+    /// same path, and a `Drop` cannot report an error, so a wide restore
+    /// there would silently leave a dead chain behind every
+    /// `optimize_toolpath` call.
+    ///
+    /// Every OTHER caller takes
+    /// [`Command::RestoreToolpathSnapshot`](super::Command), which walks
+    /// the chain (WP8, N14). `the_narrow_path_leaves_the_neighbour_result_cached`
+    /// in this file's test module pins the difference.
     #[instrument(skip(self, operation, dressups, face_selection))]
-    pub fn apply_toolpath_param_snapshot(
+    pub(crate) fn apply_toolpath_param_snapshot_narrow(
         &mut self,
         index: usize,
         operation: OperationConfig,
@@ -1391,11 +1415,16 @@ impl ProjectSession {
         })
     }
 
-    /// Overwrite a toolpath's feeds provenance (W2.1). Used by the optimizer's
-    /// candidate-apply path to stamp [`crate::feeds::ProvenanceSource::Optimizer`]
-    /// on the dimensions it changed, after the operation values themselves are
-    /// installed via [`Self::apply_toolpath_param_snapshot`]. Does not touch the
-    /// result/simulation caches — the snapshot call already invalidated them.
+    /// Overwrite a toolpath's feeds provenance (W2.1), stamping
+    /// [`crate::feeds::ProvenanceSource::Optimizer`] on the dimensions a
+    /// caller changed. Does not touch the result or simulation caches.
+    ///
+    /// **This has no production caller since WP8.** The three optimizer
+    /// apply paths called it right after the snapshot, which is how an
+    /// undo came to restore the earlier values under the later stamp.
+    /// They now carry the provenance in
+    /// [`RestoreToolpathSnapshotArgs`](super::RestoreToolpathSnapshotArgs),
+    /// so one command writes the values and the stamp together.
     pub fn set_feeds_provenance(
         &mut self,
         index: usize,
@@ -1419,7 +1448,7 @@ impl ProjectSession {
     /// compute backend writes through this method so the core cache
     /// stays in sync with the viz-side `gui.toolpath_rt[id].result`
     /// cache; before this method existed, the two caches diverged after
-    /// `apply_toolpath_param_snapshot` cleared `results[idx]` and the
+    /// the undo snapshot path cleared `results[idx]` and the
     /// GUI regen only repopulated `gui.toolpath_rt`. See
     /// `planning/F1_RCA.md` (Roadmap F.1) for the divergence write-up.
     ///
@@ -1638,7 +1667,9 @@ mod tests {
     use crate::compute::catalog::OperationConfig;
     use crate::compute::config::ToolpathStats;
     use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
-    use crate::compute::operation_configs::{AlignmentPinDrillConfig, PencilConfig, PocketConfig};
+    use crate::compute::operation_configs::{
+        AlignmentPinDrillConfig, PencilConfig, PocketConfig, RestConfig,
+    };
     use crate::compute::stock_config::FixtureId;
     use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
@@ -2385,7 +2416,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_toolpath_param_snapshot_invalidates() {
+    fn apply_toolpath_param_snapshot_narrow_invalidates() {
         let mut s = make_session();
         s.add_tool(make_tool());
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
@@ -2397,7 +2428,12 @@ mod tests {
         let snapshot_faces = Some(vec![crate::enriched_mesh::FaceGroupId(7)]);
 
         let _ = s
-            .apply_toolpath_param_snapshot(0, snapshot_op, snapshot_dress, snapshot_faces.clone())
+            .apply_toolpath_param_snapshot_narrow(
+                0,
+                snapshot_op,
+                snapshot_dress,
+                snapshot_faces.clone(),
+            )
             .unwrap();
 
         match &s.toolpath_configs()[0].operation {
@@ -2410,15 +2446,66 @@ mod tests {
     }
 
     #[test]
-    fn apply_toolpath_param_snapshot_not_found() {
+    fn apply_toolpath_param_snapshot_narrow_not_found() {
         let mut s = make_session();
-        let result = s.apply_toolpath_param_snapshot(
+        let result = s.apply_toolpath_param_snapshot_narrow(
             99,
             OperationConfig::Pocket(PocketConfig::default()),
             DressupConfig::default(),
             None,
         );
         assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
+    }
+
+    /// The optimizer's dependence on the narrowness, pinned.
+    ///
+    /// `tool_load/optimize/candidate.rs` restores a candidate, then
+    /// regenerates ONE index, then simulates against the neighbours'
+    /// cached results. The narrow path is what leaves those results in
+    /// place. `Command::RestoreToolpathSnapshot` drops them, which is
+    /// the right answer for an undo and the wrong answer for one point
+    /// of a candidate search.
+    ///
+    /// The wide half of this pair lives in
+    /// `tests/restore_snapshot_invalidates_like_the_setter_n14.rs`. It
+    /// cannot reach this path, because `pub(crate)` keeps the path
+    /// inside the crate.
+    #[test]
+    fn the_narrow_path_leaves_the_neighbour_result_cached() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool, 0)).unwrap();
+        let mut downstream = make_tc(tool, 0);
+        downstream.operation = OperationConfig::Rest(RestConfig::default());
+        downstream.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, downstream).unwrap();
+        s.results.insert(0, fake_result());
+        s.results.insert(1, fake_result());
+        assert!(
+            s.get_result(0).is_some() && s.get_result(1).is_some(),
+            "both rows need a cached result, or the reading below is vacuous"
+        );
+
+        let _ = s
+            .apply_toolpath_param_snapshot_narrow(
+                0,
+                OperationConfig::Pocket(PocketConfig::default()),
+                DressupConfig::default(),
+                None,
+            )
+            .unwrap();
+
+        assert!(
+            s.get_result(0).is_none(),
+            "the restored row loses its own result on either contract"
+        );
+        assert!(
+            s.get_result(1).is_some(),
+            "and the row that reads its remaining stock keeps its \
+             result. The candidate search regenerates one index and \
+             simulates against this cache."
+        );
     }
 
     /// Deliver a completion the way the compute lane does.
@@ -2450,8 +2537,8 @@ mod tests {
 
     #[test]
     fn adopt_result_after_apply_snapshot_restores_cache() {
-        // Roadmap F.1: apply_toolpath_param_snapshot clears
-        // results[idx]. The viz-side regen used to leave that empty
+        // Roadmap F.1: the snapshot path clears results[idx].
+        // The viz-side regen used to leave that empty
         // because writes only landed in gui.toolpath_rt. The adoption
         // door is the symmetric write that closes the cache gap.
         let mut s = make_session();
@@ -2459,7 +2546,7 @@ mod tests {
         s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
         s.results.insert(0, fake_result());
 
-        let snapshot = s.apply_toolpath_param_snapshot(
+        let snapshot = s.apply_toolpath_param_snapshot_narrow(
             0,
             OperationConfig::Pocket(PocketConfig::default()),
             DressupConfig::default(),

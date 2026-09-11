@@ -26,12 +26,21 @@
 //! `AdoptResult`) and one `Query` row. Later work packages add the rest,
 //! and a future `Job` kind (WP10) adds a third accumulator to the
 //! callback macro's kind split, not a rewrite of it.
+//!
+//! WP8 adds `RestoreToolpathSnapshot`, the door the GUI undo stack and
+//! the GUI redo stack take. It is the first row that invalidates
+//! UNCONDITIONALLY by contract: it compares nothing, so a restore of a
+//! byte-identical configuration still drops the chain.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::cycle_time::{self, CycleTime};
 use super::{ProjectSession, SessionError, ToolpathComputeResult};
+use crate::compute::catalog::OperationConfig;
+use crate::compute::config::DressupConfig;
+use crate::enriched_mesh::FaceGroupId;
+use crate::feeds::FeedsProvenance;
 use crate::simulation_cut::SimulationCutTrace;
 
 /// Declares every command and query row once.
@@ -79,6 +88,15 @@ macro_rules! for_each_command {
                  cli: Reach::Skip(
                      "the CLI project report prints the simulation total, not per-toolpath",
                  ),
+             }),
+            (Command, RestoreToolpathSnapshot, "restore_toolpath_snapshot",
+             RestoreToolpathSnapshotArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "undo and redo are GUI actions; MCP has no history",
+                 ),
+                 cli: Reach::Skip("the CLI holds no undo history"),
              }),
         }
     };
@@ -152,6 +170,47 @@ pub struct AdoptResultArgs {
     pub revision: u64,
     /// The computed result.
     pub result: Box<ToolpathComputeResult>,
+}
+
+/// The arguments of the `restore_toolpath_snapshot` command.
+///
+/// The GUI undo stack, the GUI redo stack and the three optimizer apply
+/// paths all install a captured `(operation, dressups, face_selection)`
+/// triple on one toolpath. The optimizer paths also stamp a feeds
+/// provenance on the dimensions they changed, which is why the payload
+/// carries one: before WP8 they wrote it in a second call, and an undo
+/// then restored the earlier values under the later stamp.
+///
+/// **The command invalidates UNCONDITIONALLY, by contract.** It compares
+/// nothing. A restore of the byte-identical configuration the cached
+/// geometry was generated from still drops the chain (F2.5). Nothing
+/// records which configuration a cached result answers; the snapshot
+/// restores three of the nine fields that decide the geometry; and being
+/// wrong this way costs one regeneration, while being wrong the other
+/// way exports a program that does not match the project. A
+/// signature-gated command cannot serve undo, which is why this row is
+/// not `ReplaceToolpathConfig`.
+///
+/// Three fields are boxed. [`Command`] is one enum, so its size is the
+/// size of its largest variant, and an operation configuration, a
+/// dressup configuration and six provenance slots together run to
+/// several hundred bytes beside the other rows' arguments.
+/// `large_enum_variant` is denied.
+#[derive(Debug, Clone)]
+pub struct RestoreToolpathSnapshotArgs {
+    /// The index of the toolpath the command restores.
+    pub index: usize,
+    /// The operation configuration to install.
+    pub operation: Box<OperationConfig>,
+    /// The dressup configuration to install.
+    pub dressups: Box<DressupConfig>,
+    /// The BREP face selection to install.
+    pub face_selection: Option<Vec<FaceGroupId>>,
+    /// The feeds provenance to install.
+    ///
+    /// `None` means the caller restores no provenance. The toolpath
+    /// keeps the provenance it carries, and the command clears nothing.
+    pub feeds_provenance: Option<Box<FeedsProvenance>>,
 }
 
 /// What a command changed.
@@ -433,6 +492,38 @@ impl ProjectSession {
                 self.try_with_effects(Some(index), move |session| {
                     session.insert_result(index, *result)
                 })
+            }
+            Command::RestoreToolpathSnapshot(args) => {
+                let RestoreToolpathSnapshotArgs {
+                    index,
+                    operation,
+                    dressups,
+                    face_selection,
+                    feeds_provenance,
+                } = args;
+                if index >= self.toolpath_count() {
+                    return Err(SessionError::ToolpathNotFound(index));
+                }
+                Ok(self.with_effects(Some(index), move |session| {
+                    if let Some(tc) = session.toolpath_configs.get_mut(index) {
+                        tc.operation = *operation;
+                        tc.dressups = *dressups;
+                        tc.face_selection = face_selection;
+                        if let Some(provenance) = feeds_provenance {
+                            tc.feeds_provenance = *provenance;
+                        }
+                    }
+                    // Unconditional by contract. The chain call runs
+                    // whether or not the restore moved a field: a
+                    // byte-identical restore still drops the chain
+                    // (F2.5). The index is checked above, so the read
+                    // below answers `Some`.
+                    let enabled = session
+                        .toolpath_configs
+                        .get(index)
+                        .is_some_and(|tc| tc.enabled);
+                    session.invalidate_result_chain(index, enabled);
+                }))
             }
         }
     }

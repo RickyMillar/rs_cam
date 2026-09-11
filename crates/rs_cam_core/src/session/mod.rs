@@ -26,7 +26,8 @@ pub mod wizard;
 pub use builder::ProjectSessionBuilder;
 pub use command::{
     AdoptResultArgs, Command, CommandId, CommandKind, Effects, Query, QueryAnswer, Reach,
-    SetToolpathParamArgs, Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
+    RestoreToolpathSnapshotArgs, SetToolpathParamArgs, Surfaces, ToolpathCycleTimeAnswer,
+    ToolpathCycleTimeArgs,
 };
 pub use compute::{MutationKind, ResolvedGenInputs, StaleSet, compute_stale_set};
 pub use cycle_time::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
