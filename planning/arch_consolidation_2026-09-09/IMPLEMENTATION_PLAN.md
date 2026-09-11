@@ -1309,3 +1309,53 @@ A scout measured §4 WP7 against master `cd2b8efd`. Full brief: session scratchp
    `pub(crate)`, the 20 LIVE sites, the two reproductions, the sentry (a source scan: each hatch
    declared `pub(crate)`; `rg` of `.<hatch>(` outside `crates/rs_cam_core/src` is 0, comments
    excluded). The evidence row carries `cargo build -p rs_cam_viz` and the sentry.
+
+---
+
+## §21 WP13 (moves and sentry) corrections and rulings (2026-09-11)
+
+A scout measured WP13's second half against master `5fba840b` and the WP4 worktree. Full
+brief: session scratchpad `wp13_moves_brief.md`.
+
+### Corrections
+
+- The `AppEvent` pass-through is 33 variants, all handled in `app/input.rs`; none is dead.
+- After §14, `McpRequestKind` yields 10 `UiCommand` and 8 `UiQuery` rows; `AppEvent` yields
+  55 `UiCommand` and no `UiQuery`.
+- "Seven prose properties into tests" over-scopes: four already have sentries; three are
+  structural and new.
+- Sentry property 1 as worded ("every `gui: Reached` row resolves an `AppEvent::Core` path")
+  is false today (`AdoptResult`, `RestoreToolpathSnapshot` reach no event) and goes vacuous
+  once `AppEvent::Core` is one wrapper.
+- `WizardSetPost` needs no row: WP4 declares `SetPostConfig`.
+- `CommandKind` has four variants; §14 needs a fifth.
+
+### Rulings
+
+1. **Mechanism (b): a second registry in viz.** `for_each_ui_command!` in
+   `crates/rs_cam_viz/src/ui_command.rs`, the same six columns and the same muncher shape as
+   core's, reusing core's `CommandKind`, `Reach` and `Surfaces`, generating `UiCommand`,
+   `UiQuery`, `UiQueryAnswer` and `UiCommandId`; one union `SurfaceId { Core(CommandId),
+   Ui(UiCommandId) }` for the cross-surface sentry. Core cannot name viz payload types, so
+   rows cannot live in core.
+2. **`CommandKind` gains `UiQuery`** (a one-line core edit owned by WP13).
+3. **`GetOperationSchema` is a `Query`** (a core catalog read): a core row, added in WP13.
+4. **The door for reads is `AppState::ui_query(&self, UiQuery) -> UiQueryAnswer`**; the door
+   for `UiCommand` is the existing event dispatch, wrapped as `AppEvent::Ui(UiCommand)`.
+5. **The three library listings and the ten file-store events are `UiQuery` / `UiCommand`
+   for now** and carry a doc note that they read a per-user file aggregate; a `Store` kind is
+   not opened.
+6. **`UiCommandId` keeps `Surfaces`;** the sentry asserts `gui: Reached` and `cli: Skip` on
+   every `UiCommand` row, and that every `UiCommand` MCP wire name is in the WP2a snapshot.
+7. **The 10 MCP `UiCommand` variants leave `McpRequestKind` in WP13**, after WP4 lands
+   `McpRequestKind::Core`; they become `McpRequestKind::Ui(UiCommand)`.
+8. **`RemoveSetup` is deleted** (zero emitters, no control, no tool, no row); its four test
+   sites call `session.remove_setup` directly.
+9. **Sentry property 1 is rewritten:** every `CommandId` with `gui: Reached` is constructed
+   somewhere in viz `src/` (a source scan for `Command::<Id>(`, comments stripped), with a
+   non-vacuity guard; the reverse for `Skip`. Property "no `UiCommand` / `UiQuery` row writes
+   `ProjectSession`" scans the handler arms located by name in `controller/events/*.rs` AND
+   `app/input.rs`. The four properties with existing sentries are cited, not duplicated.
+10. **Order:** WP13's moves start after WP4 lands. The optimizer rows (`CloseOptimizeModal` /
+    `CloseOptimizeProject`) are exempt from property 3 until WP10's Job shape retires their
+    `std::mem::replace`; the sentry lists them as a named exemption with the WP that removes it.
