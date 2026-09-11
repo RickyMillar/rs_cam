@@ -26,29 +26,24 @@
 //! 2. the semantic Region items reconcile with the structural region-node
 //!    spans — same count, same move ranges — so the two systems cannot
 //!    drift apart again.
+//!
+//! Moved in-crate in WP12 because the loose entry is crate-private. The lint
+//! allows of the old integration header sit on the `mod` declaration in
+//! `compute/execute.rs`.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout,
-    clippy::print_stderr
-)]
-
-use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::ResolvedHeights;
-use rs_cam_core::compute::cutter::build_cutter;
-use rs_cam_core::compute::execute::execute_operation_annotated;
-use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::geo::BoundingBox3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
-use rs_cam_core::narrate::narrate_toolpath;
-use rs_cam_core::semantic_trace::{
+use crate::compute::catalog::OperationConfig;
+use crate::compute::config::ResolvedHeights;
+use crate::compute::cutter::build_cutter;
+use crate::compute::execute::execute_operation_annotated;
+use crate::compute::operation_configs::UnifiedFinishConfig;
+use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use crate::geo::BoundingBox3;
+use crate::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
+use crate::narrate::narrate_toolpath;
+use crate::semantic_trace::{
     ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticRecorder, ToolpathSemanticTrace,
 };
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, RegionSpanRole, SpanKind};
+use crate::toolpath_spans::{AnnotatedToolpath, RegionSpanRole, SpanKind};
 use std::sync::atomic::AtomicBool;
 
 // ── Fixture ──────────────────────────────────────────────────────────────
@@ -96,7 +91,7 @@ fn unified_finish_op() -> OperationConfig {
 struct Generated {
     annotated: AnnotatedToolpath,
     trace: ToolpathSemanticTrace,
-    tool_def: rs_cam_core::tool::ToolDefinition,
+    tool_def: crate::tool::ToolDefinition,
 }
 
 /// Run UnifiedFinish through the SAME entry point production uses, with a

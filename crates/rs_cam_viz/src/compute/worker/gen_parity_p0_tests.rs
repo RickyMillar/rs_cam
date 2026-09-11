@@ -2,25 +2,21 @@
 //! worker entry points" (`planning/arch_consolidation_2026-09-09/PLAN.md`,
 //! the Phase 0 characterization list).
 //!
-//! # The two doors
+//! # One door
 //!
-//! One operation reaches the same core executor by two routes, and
-//! everything before that executor is written twice.
+//! The worker mirrors no core module. It runs core's `Job` steps: the
+//! controller submits a request, and the worker's `run_compute` calls
+//! `rs_cam_core::session::execute_job`, which runs the generation, the
+//! dressups and the boundary clip. `ProjectSession::generate_toolpath` runs
+//! the same steps. One input assembly, one executor.
 //!
-//! * The **session door**: `ProjectSession::generate_toolpath`
-//!   (`crates/rs_cam_core/src/session/compute.rs:1466`) →
-//!   `resolve_generation_inputs` (`:1090`) →
-//!   `execute_operation_annotated_with_regions` (`:1624`) → the core
-//!   `apply_dressups` (`:1698`) → the boundary clip → the result cache.
-//! * The **GUI worker door**: `AppController::submit_toolpath_compute`
-//!   (`crates/rs_cam_viz/src/controller/events/compute.rs:181`) builds a
-//!   `ComputeRequest` and submits it; the worker's `run_compute` →
-//!   `rs_cam_core::session::execute_job`, which is the SAME pipeline the
-//!   session door runs. Before WP11b the worker had its own
-//!   `generate_via_core` and its own `apply_dressups`.
+//! WP11b made that true. Before it the worker held its own
+//! `generate_via_core` and its own `apply_dressups`, and everything before
+//! the executor was written twice. WP12 then made the loose executor
+//! `pub(crate)`, so no viz source can reach it at all.
 //!
-//! These tests drive both doors from ONE `ProjectSession` and compare the
-//! emitted motion. The module is in-crate because `run_compute` is
+//! These tests drive both entry points from ONE `ProjectSession` and compare
+//! the emitted motion. The module is in-crate because `run_compute` is
 //! `pub(super)`.
 //!
 //! # What this fixture reaches

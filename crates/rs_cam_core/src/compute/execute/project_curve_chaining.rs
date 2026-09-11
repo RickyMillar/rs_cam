@@ -38,39 +38,46 @@
 //! * The relinker's own structural claims (no fed position dropped, every
 //!   input move accounted for by the provenance) are unit-tested in
 //!   `surface_link`; these are the ADAPTER-level gates.
+//!
+//! Moved in-crate in WP12 because the loose entry is crate-private. The lint
+//! allows of the old integration header sit on the `mod` declaration in
+//! `compute/execute.rs`. The one helper this file took from the integration
+//! fixtures, `common::tools::endmill_tool_config`, is inlined below: an
+//! in-crate module cannot reach `tests/common/`.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout
-)]
-
-mod common;
-
-use common::tools::endmill_tool_config;
-
-use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
-use rs_cam_core::compute::config::{DressupConfig, ResolvedHeights};
-use rs_cam_core::compute::cutter::build_cutter;
-use rs_cam_core::compute::execute::{apply_dressups, execute_operation_annotated_with_regions};
-use rs_cam_core::compute::operation_configs::{ProjectCurveConfig, ProjectCurveDirection};
-use rs_cam_core::compute::stats::compute_retract_trips;
-use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
-use rs_cam_core::geo::{BoundingBox3, P2, P3};
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
-use rs_cam_core::region_set::RegionSet;
-use rs_cam_core::tool::{FlatEndmill, MillingCutter};
-use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, PLUNGE_CLEARANCE_MM, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
-use rs_cam_core::transform_provenance::ReconcileSet;
+use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::config::{DressupConfig, ResolvedHeights};
+use crate::compute::cutter::build_cutter;
+use crate::compute::execute::{apply_dressups, execute_operation_annotated_with_regions};
+use crate::compute::operation_configs::{ProjectCurveConfig, ProjectCurveDirection};
+use crate::compute::stats::compute_retract_trips;
+use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use crate::dexel_stock::{StockCutDirection, TriDexelStock};
+use crate::geo::{BoundingBox3, P2, P3};
+use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::Polygon2;
+use crate::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
+use crate::region_set::RegionSet;
+use crate::tool::{FlatEndmill, MillingCutter};
+use crate::toolpath::{Move, MoveIntent, MoveType, PLUNGE_CLEARANCE_MM, Toolpath};
+use crate::toolpath_spans::AnnotatedToolpath;
+use crate::transform_provenance::ReconcileSet;
 
 use std::sync::atomic::AtomicBool;
 
 // ── Fixture ──────────────────────────────────────────────────────────────
+
+/// A flat end mill at `diameter_mm`, every other dial at its default.
+///
+/// This is `common::tools::endmill_tool_config` verbatim. WP12 moved this
+/// file in-crate, and an in-crate module cannot reach `tests/common/`, so
+/// the four lines live here.
+fn endmill_tool_config(diameter_mm: f64) -> ToolConfig {
+    ToolConfig {
+        diameter: diameter_mm,
+        ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+    }
+}
 
 /// Ø2 flat engraver. Small enough that the conservative-ceiling disc stays
 /// local to the gap it is asked about.
@@ -311,22 +318,21 @@ fn chaining_off_emits_exactly_what_the_generator_emits() {
     let tool_def = build_cutter(&tool_cfg);
     let cfg = project_curve_config(0.0);
 
-    let params = rs_cam_core::project_curve::ProjectCurveParams {
+    let params = crate::project_curve::ProjectCurveParams {
         depth: cfg.depth,
         point_spacing: cfg.point_spacing,
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: SAFE_Z_MM,
-        direction: rs_cam_core::project_curve::ProjectDirection::FromAbove,
+        direction: crate::project_curve::ProjectDirection::FromAbove,
         tool_radius: tool_def.radius(),
-        side: rs_cam_core::project_curve::ProjectSide::Center,
+        side: crate::project_curve::ProjectSide::Center,
         setup_z_flipped: false,
     };
     let mut raw = Toolpath::new();
     for poly in curves() {
-        let tp = rs_cam_core::project_curve::project_curve_toolpath(
-            &poly, &mesh, &index, &tool_def, &params,
-        );
+        let tp =
+            crate::project_curve::project_curve_toolpath(&poly, &mesh, &index, &tool_def, &params);
         raw.moves.extend(tp.moves);
     }
 
@@ -707,7 +713,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
     let (mesh, index) = plate();
     let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
     let tool_def = build_cutter(&tool_cfg);
-    let params = rs_cam_core::surface_link::RelinkParams {
+    let params = crate::surface_link::RelinkParams {
         hookup_distance: CANDIDATE_CHAIN_MM,
         stock_to_leave: 0.0,
         sampling: POINT_SPACING_MM,
@@ -717,7 +723,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
         link_kinematics: None,
         reorder: true,
         boundary: Some(&region_set),
-        link_ceiling: Some(rs_cam_core::surface_link::LinkCeiling {
+        link_ceiling: Some(crate::surface_link::LinkCeiling {
             stock: None,
             tool_radius: tool_def.radius(),
             fallback_top_z: 0.0,
@@ -728,7 +734,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
         // an airborne link gets no exemption from it.
         airborne_links_may_leave_territory: false,
     };
-    let (_, report) = rs_cam_core::surface_link::relink_fragments(
+    let (_, report) = crate::surface_link::relink_fragments(
         AnnotatedToolpath::new(unbounded_baseline()),
         &mesh,
         &index,

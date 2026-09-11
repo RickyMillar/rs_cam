@@ -31,25 +31,21 @@
 //! 3. Every operation whose `cutting_levels` ladder is non-empty declares
 //!    `honors_pinned_bottom_z() == false`, so the declaration cannot drift
 //!    away from the ladder that decides.
-
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
-)]
+//!
+//! Moved in-crate in WP12 because the loose entry is crate-private. The lint
+//! allows of the old integration header sit on the `mod` declaration in
+//! `compute/execute.rs`.
 
 use std::sync::atomic::AtomicBool;
 
-use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
-use rs_cam_core::compute::config::ResolvedHeights;
-use rs_cam_core::compute::cutter::build_cutter;
-use rs_cam_core::compute::execute::execute_operation;
-use rs_cam_core::compute::operation_configs::PocketConfig;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::geo::{BoundingBox3, P2, P3};
-use rs_cam_core::polygon::Polygon2;
+use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::config::ResolvedHeights;
+use crate::compute::cutter::build_cutter;
+use crate::compute::execute::execute_operation;
+use crate::compute::operation_configs::PocketConfig;
+use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use crate::geo::{BoundingBox3, P2, P3};
+use crate::polygon::Polygon2;
 
 const STOCK_TOP_Z: f64 = 0.0;
 const STOCK_BOTTOM_Z: f64 = -18.0;

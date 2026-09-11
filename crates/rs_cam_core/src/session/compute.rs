@@ -1015,11 +1015,11 @@ pub fn execute_job(
 /// executor.
 ///
 /// WP11b, `IMPLEMENTATION_PLAN.md` §22 ruling 4. The loose entry
-/// [`execute_operation_annotated_with_regions`] takes 21 arguments and
-/// builds nothing, so every caller of it assembles the inputs itself. This
-/// function takes the two bundles the submit step produced, and a caller
-/// outside this module can construct neither, so it cannot assemble a
-/// second answer.
+/// `compute::execute::execute_operation_annotated_with_regions` takes 21
+/// arguments and builds nothing, so every caller of it assembles the inputs
+/// itself. This function takes the two bundles the submit step produced, and
+/// a caller outside this module can construct neither, so it cannot assemble
+/// a second answer.
 ///
 /// `inputs` carries every per-generation input.
 /// [`ResolvedGenInputs::spatial_index`] is FORCED here, so this function
@@ -1027,11 +1027,11 @@ pub fn execute_job(
 /// machined-stock seed, the rest-analysis dials and the machine envelope.
 /// `observer` carries the trace contexts the generator records into.
 ///
-/// The loose entry stays for now. Its remaining callers hold no session —
-/// the strategy advisor's plain wrapper and four integration tests — and
-/// WP12 deletes it with `ComputeRequest`'s mirrored fields.
-///
-/// [`execute_operation_annotated_with_regions`]: crate::compute::execute::execute_operation_annotated_with_regions
+/// The loose entry stays, and WP12 made it `pub(crate)` (§23 ruling 1), so
+/// this function is the only door to it that a caller outside the crate can
+/// reach. One in-crate caller remains beside this one: the strategy
+/// advisor below. The four integration tests that called it moved in-crate.
+/// The sentry is `tests/loose_executor_is_crate_private_wp12.rs`.
 pub fn execute_generation(
     inputs: &ResolvedGenInputs,
     context: &GenContext,
@@ -1707,6 +1707,12 @@ impl ProjectSession {
             };
             // Plan the clearing toolpath — no recorders / dressups / persist;
             // the raw path is what we time.
+            //
+            // WP12 / §23 ruling 3: this is the named §5 residual. It plans a
+            // DIFFERENT operation (`op_loadlimited`) than the bundle carries,
+            // so `execute_generation` cannot serve it, and the loose entry
+            // stays `pub(crate)` for it until the advisor becomes a Query or
+            // a Job row.
             let result = crate::compute::execute::execute_operation_annotated(
                 &op_loadlimited,
                 resolved.mesh.as_deref(),

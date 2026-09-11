@@ -3348,8 +3348,14 @@ pub(crate) fn generate_waterline(
 /// Dispatches to the correct core algorithm based on the [`OperationConfig`]
 /// variant. When `cutting_levels` is non-empty, depth-stepped operations use
 /// those levels directly; otherwise they build levels from the heights config.
+///
+/// WP12 made this entry `pub(crate)`, which showed that every caller it has
+/// left is a test. No production path in this crate calls it. The entry
+/// stays, per §23 ruling 1, so the `dead_code` allow applies to the
+/// non-test build only. A production caller removes the need for it.
 #[allow(clippy::too_many_arguments)]
-pub fn execute_operation(
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn execute_operation(
     op: &OperationConfig,
     mesh: Option<&TriangleMesh>,
     index: Option<&SpatialIndex>,
@@ -3397,7 +3403,7 @@ pub fn execute_operation(
 /// pre-existing callers (the GUI compute worker, the strategy advisor) that
 /// don't participate in the P2.3 mesh-finish pre-clip.
 #[allow(clippy::too_many_arguments)]
-pub fn execute_operation_annotated(
+pub(crate) fn execute_operation_annotated(
     op: &OperationConfig,
     mesh: Option<&TriangleMesh>,
     index: Option<&SpatialIndex>,
@@ -3489,7 +3495,7 @@ pub fn execute_operation_annotated(
 /// hookup decision); production builders that have a machine profile
 /// in scope (session's `generate_toolpath`) populate `Some`.
 #[allow(clippy::too_many_arguments)]
-pub fn execute_operation_annotated_with_regions(
+pub(crate) fn execute_operation_annotated_with_regions(
     op: &OperationConfig,
     mesh: Option<&TriangleMesh>,
     index: Option<&SpatialIndex>,
@@ -4485,6 +4491,56 @@ fn effective_levels(
         stepping.all_levels()
     }
 }
+
+// ── Moved-in-crate sentries (WP12) ────────────────────────────────────
+//
+// The three generation entries above are `pub(crate)`, so a test that calls
+// one must live inside the crate. These four modules were integration tests
+// under `crates/rs_cam_core/tests/`. WP12 moved them here unchanged: every
+// assertion, every fixture and every raw pre-dressup expectation is the one
+// the integration file carried. The lint allows are the ones each file's
+// own header carried, because `#[cfg(test)]` exempts none of them by
+// itself. See `IMPLEMENTATION_PLAN.md` §23 ruling 2.
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::print_stderr
+)]
+mod pinned_bottom_z_reaches_motion_g_bottompin;
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::print_stdout
+)]
+mod project_curve_chaining;
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod unified_finish_ring_collapse_g_unifiedcrash;
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::print_stderr
+)]
+mod unified_finish_semantic_regions;
 
 #[cfg(test)]
 #[allow(

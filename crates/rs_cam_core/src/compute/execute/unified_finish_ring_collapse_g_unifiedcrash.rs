@@ -29,23 +29,20 @@
 //! real entry point at the parameter combination that died, so a future
 //! change that reintroduces an uncontained dependency panic anywhere in the
 //! band pipeline fails here rather than in an operator's session.
+//!
+//! Moved in-crate in WP12 because the loose entry is crate-private. The lint
+//! allows of the old integration header sit on the `mod` declaration in
+//! `compute/execute.rs`.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
-use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::ResolvedHeights;
-use rs_cam_core::compute::cutter::build_cutter;
-use rs_cam_core::compute::execute::execute_operation_annotated;
-use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::geo::BoundingBox3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use crate::compute::catalog::OperationConfig;
+use crate::compute::config::ResolvedHeights;
+use crate::compute::cutter::build_cutter;
+use crate::compute::execute::execute_operation_annotated;
+use crate::compute::operation_configs::UnifiedFinishConfig;
+use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use crate::geo::BoundingBox3;
+use crate::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
+use crate::toolpath_spans::AnnotatedToolpath;
 use std::sync::atomic::AtomicBool;
 
 /// A hemisphere is the cheapest mixed-slope surface that exercises all three
@@ -78,7 +75,7 @@ fn generate(
     scallop_height: f64,
     z_step: f64,
     raster_stepover: f64,
-) -> Result<AnnotatedToolpath, rs_cam_core::compute::OperationError> {
+) -> Result<AnnotatedToolpath, crate::compute::OperationError> {
     let (mesh, index) = hemisphere();
     let tool_cfg = tapered_ball_tool();
     let tool_def = build_cutter(&tool_cfg);
