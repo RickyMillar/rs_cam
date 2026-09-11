@@ -2415,10 +2415,13 @@ impl super::RsCamApp {
         }
         // Route through the viz-side exporter so the gate sees the viz cut
         // trace (`state.simulation.results.cut_trace`) — the async sim
-        // worker leaves its trace there, not on `session.simulation`, so
-        // the core-side `session.export_gcode_with_policy` would refuse
-        // with a spurious SimulationRequired (UX_PAIN_POINTS_2026-05-11.md,
-        // Roadmap A).
+        // worker leaves its trace there, and the core-side
+        // `session.export_gcode_with_policy` used to refuse with a spurious
+        // SimulationRequired (UX_PAIN_POINTS_2026-05-11.md, Roadmap A).
+        // Since N12 item 10 the drain adopts the same simulation into the
+        // session, so both doors read ONE trace `Arc` from that adopt until
+        // a session mutation clears the slot. This route stays, because it
+        // is the one the GUI export button takes.
         //
         // The trace is the ONLY reason left. This comment used to also
         // claim `session.results` "the GUI/MCP path never populates" —

@@ -25,8 +25,8 @@ mod save;
 pub use builder::ProjectSessionBuilder;
 pub use command::{
     AddAlignmentPinArgs, AddModelArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs,
-    AdoptModelGeometryArgs, AdoptResultArgs, Command, CommandId, CommandKind, Effects,
-    GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
+    AdoptModelGeometryArgs, AdoptResultArgs, AdoptSimulationArgs, Command, CommandId, CommandKind,
+    Effects, GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
     ImportMachineSettingsArgs, Job, JobHandle, MoveToolpathToSetupArgs, Query, QueryAnswer, Reach,
     RemoveAlignmentPinArgs, RemoveToolArgs, RemoveToolpathArgs, ReplaceFixtureArgs,
     ReplaceKeepOutArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,

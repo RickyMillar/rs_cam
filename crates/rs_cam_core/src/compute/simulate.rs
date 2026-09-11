@@ -353,6 +353,16 @@ pub struct ColumnDeviation {
 }
 
 /// Full result from a stock simulation run.
+///
+/// The `Clone` exists for one reason: [`Command`](crate::session::Command)
+/// derives it, and `AdoptSimulation` carries this type. Nothing in the tree
+/// calls it. A clone copies the display mesh and the two deviation vectors
+/// and shares the checkpoints, the cut trace and the prior stocks, which are
+/// each behind an `Arc`.
+///
+/// The type publishes no `Debug`: three of its field types are display
+/// meshes that carry none.
+#[derive(Clone)]
 pub struct SimulationResult {
     pub mesh: StockMesh,
     pub total_moves: usize,

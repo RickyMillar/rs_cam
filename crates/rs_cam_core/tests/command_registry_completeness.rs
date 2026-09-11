@@ -23,11 +23,12 @@
 //! WP1 the MCP reply re-derived a narrower answer through
 //! `compute_stale_set`, which reported `{0}` (N15).
 //!
-//! NOT MEASURED: the `true` case of `Effects::simulation_cleared`. The
-//! `simulation` field is private and the crate publishes no setter, so
-//! an integration test cannot seed a simulation. This file asserts the
-//! `false` case only, and a `false` reading here is not evidence about
-//! the `true` one.
+//! NOT MEASURED: the `true` case of `Effects::simulation_cleared`. This
+//! file asserts the `false` case only, and a `false` reading here is not
+//! evidence about the `true` one. The `simulation` field is private, and
+//! until the `AdoptSimulation` row (N12 item 10) the crate published no
+//! setter at all; a test that wants the `true` case now seeds through
+//! that row and then runs a mutation that clears the simulation.
 
 #![allow(
     clippy::unwrap_used,

@@ -4596,7 +4596,11 @@ impl ProjectSession {
         // a defect on fresh stock exactly as it is on rest stock.
         // The trace the caller is triaging decides the readings' feeds
         // provenance (Phase 3), so it is the one to pass — not
-        // `self.simulation`, which the GUI never populates.
+        // `self.simulation`, which may hold a different run, or none.
+        // Since N12 item 10 the GUI adopts its simulation into the
+        // session through `Command::AdoptSimulation`, so that slot is
+        // populated in the GUI process too; the rule is unchanged,
+        // because the caller's own trace is still the one it displays.
         let kinematic_utilization = self.kinematic_utilizations(Some(trace));
 
         SimulationTriage::build_with_rest_context(

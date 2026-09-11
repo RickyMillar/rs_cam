@@ -72,6 +72,7 @@ use super::{
 };
 use crate::compute::catalog::{OperationConfig, OperationSchema};
 use crate::compute::config::DressupConfig;
+use crate::compute::simulate::SimulationResult;
 use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::FeedsProvenance;
 use crate::simulation_cut::SimulationCutTrace;
@@ -515,6 +516,16 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
+            (Command, AdoptSimulation, "adopt_simulation", AdoptSimulationArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the MCP run_simulation tool simulates through the GUI lane, which adopts",
+                 ),
+                 cli: Reach::Skip(
+                     "the CLI simulates through run_simulation, which stores the result itself",
+                 ),
+             }),
         }
     };
 }
@@ -589,6 +600,51 @@ pub struct AdoptResultArgs {
     pub revision: u64,
     /// The computed result.
     pub result: Box<ToolpathComputeResult>,
+}
+
+/// The arguments of the `adopt_simulation` command.
+///
+/// The GUI simulates on its own lane, off the frame loop, and adopts the
+/// answer into view state for the viewport. This row carries the SAME
+/// answer into the session, so one process holds one simulation state.
+/// [`ProjectSession::start`](super::ProjectSession::start) reads the rest
+/// snapshot from that state, and a GUI that adopted into view state alone
+/// refused every `FromRemainingStock` operation — N12 item 10.
+///
+/// The command REPLACES whatever simulation the session holds. It stales
+/// no toolpath, because it moves no generation input.
+///
+/// `result` is boxed. A [`SimulationResult`] carries a display mesh, a
+/// per-toolpath checkpoint list and a prior-stock map, which is far more
+/// than the other rows' arguments.
+#[derive(Clone)]
+pub struct AdoptSimulationArgs {
+    /// The simulation to store, exactly as
+    /// [`ProjectSession::run_simulation`](super::ProjectSession::run_simulation)
+    /// stores it: the display mesh, the boundaries, the checkpoints, the
+    /// collisions, the cut trace and the prior stocks.
+    ///
+    /// A caller that modulates the cut trace attaches the MODULATED trace
+    /// here. `run_simulation` stores the trace its own post-pass leaves,
+    /// and a caller that adopted the pre-modulation trace would publish
+    /// two different traces on two surfaces.
+    pub result: Box<SimulationResult>,
+}
+
+/// Names the simulation's countable parts, and no geometry.
+///
+/// [`Command`] derives `Debug` and a [`SimulationResult`] publishes none,
+/// so this impl answers for the row. It prints what a reader of a log
+/// wants — how many moves, how many snapshots, whether a trace came with
+/// it — and never a marching-cubes vertex list.
+impl std::fmt::Debug for AdoptSimulationArgs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdoptSimulationArgs")
+            .field("total_moves", &self.result.total_moves)
+            .field("prior_stocks", &self.result.prior_stocks.len())
+            .field("cut_trace", &self.result.cut_trace.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 /// The arguments of the `restore_toolpath_snapshot` command.
@@ -1543,6 +1599,19 @@ impl ProjectSession {
                 self.try_with_effects(Some(index), move |session| {
                     session.insert_result(index, *result)
                 })
+            }
+            Command::AdoptSimulation(args) => {
+                let AdoptSimulationArgs { result } = args;
+                // The row names no toolpath, so `index` is `None`.
+                //
+                // `stale` reads empty: a simulation moves no
+                // generation-input revision. `simulation_cleared` reads
+                // `before && !after`, and the store leaves `after` as
+                // `Some`, so it reads false whether or not the session
+                // held a simulation already.
+                Ok(self.with_effects(None, move |session| {
+                    session.simulation = Some(*result);
+                }))
             }
             // ── WP4: the MCP mutation section ────────────────────
             //

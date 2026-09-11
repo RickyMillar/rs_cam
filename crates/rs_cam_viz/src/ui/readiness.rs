@@ -381,10 +381,12 @@ impl CycleTimeBasisExt for CycleTimeBasis {
 ///
 /// `trace` is the current simulation's cut trace, if any. It travels as an
 /// `Arc` because that is what the GUI's own simulation state holds
-/// (`state.simulation.results.cut_trace`) — the session's own
-/// `simulation_result()` is a different, usually-empty slot, since the GUI
-/// simulates off the frame loop rather than through
-/// [`ProjectSession::run_simulation`].
+/// (`state.simulation.results.cut_trace`). The GUI simulates off the frame
+/// loop rather than through [`ProjectSession::run_simulation`], and since
+/// N12 item 10 the drain adopts that answer into the session as well
+/// (`Command::AdoptSimulation`). `simulation_result()` therefore holds
+/// the same run and shares this `Arc`, from the drain's adopt until a
+/// session mutation clears the slot.
 pub fn toolpath_cycle_time(
     session: &ProjectSession,
     trace: Option<&Arc<SimulationCutTrace>>,

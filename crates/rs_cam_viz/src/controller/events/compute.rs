@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use rs_cam_core::dexel_stock::TriDexelStock;
+use rs_cam_core::session::{AdoptSimulationArgs, Command};
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
@@ -594,6 +595,15 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 ComputeMessage::Simulation(result) => match result {
                     Ok(simulation) => {
+                        // N12 item 10 — one simulation state. The GUI
+                        // simulates on its own lane, so the session never
+                        // saw this answer and `ProjectSession::start`
+                        // refused every `FromRemainingStock` operation in
+                        // the GUI process. The core-typed copy is built
+                        // HERE, before the view state consumes the fields;
+                        // the cut trace is attached below, after the
+                        // modulation post-pass rewrites it.
+                        let mut adopted = core_simulation_from_lane(&simulation);
                         if simulation.resolution_clamped {
                             self.push_notification(
                                 "Sim resolution was coarsened to fit grid limits — \
@@ -745,6 +755,34 @@ impl<B: ComputeBackend> AppController<B> {
                                     results.cut_trace = cut_trace;
                                 }
                             }
+                        }
+
+                        // N12 item 10 — the session adopts the simulation
+                        // the viewport just adopted, so `start` sees the
+                        // prior stock a `FromRemainingStock` operation
+                        // needs.
+                        //
+                        // The trace is attached HERE and not in
+                        // `core_simulation_from_lane`. The modulation pass
+                        // above rewrites the trace through `Arc::make_mut`,
+                        // which COPIES while a second `Arc` exists — so a
+                        // copy taken before that pass would leave the
+                        // session reading the pre-modulation trace and the
+                        // viewport reading the modulated one. Taken after
+                        // it, the two share one `Arc`.
+                        adopted.cut_trace = self
+                            .state
+                            .simulation
+                            .results
+                            .as_ref()
+                            .and_then(|results| results.cut_trace.as_ref())
+                            .map(Arc::clone);
+                        let args = AdoptSimulationArgs {
+                            result: Box::new(adopted),
+                        };
+                        let adopt = Command::AdoptSimulation(args);
+                        if let Err(error) = self.state.session.apply(adopt) {
+                            tracing::warn!("simulation not adopted into the session: {error}");
                         }
 
                         let inspect_target =
@@ -1919,5 +1957,53 @@ impl<B: ComputeBackend> AppController<B> {
                 result: Ok(json_str(serde_json::json!({"error": error}))),
             });
         }
+    }
+}
+
+/// Build the core simulation the session stores from the lane's answer.
+///
+/// N12 item 10. The two types carry ONE simulation. The viz one adds the
+/// playback stream and the trace artifact path, which are the viewport's
+/// own and which core carries no slot for; core's own
+/// `ProjectSession::run_simulation` stores every other field.
+///
+/// What the copy SHARES, each behind an `Arc`: the per-toolpath
+/// checkpoints and the prior stocks. What it COPIES: the display mesh,
+/// the two deviation vectors, the boundary list and the rapid-collision
+/// list. The mesh copy is the price of one simulation state, and it is
+/// one mesh beside a per-toolpath checkpoint list the two already share.
+///
+/// The `cut_trace` slot is the one field this function does not fill. The
+/// caller attaches the trace AFTER the feed-modulation post-pass runs,
+/// because that pass rewrites the trace through `Arc::make_mut`. A second
+/// `Arc` held at that moment makes `make_mut` copy the trace, and the two
+/// surfaces then publish two different traces.
+fn core_simulation_from_lane(
+    simulation: &crate::compute::SimulationResult,
+) -> rs_cam_core::compute::simulate::SimulationResult {
+    rs_cam_core::compute::simulate::SimulationResult {
+        mesh: simulation.mesh.clone(),
+        total_moves: simulation.total_moves,
+        deviations: simulation.deviations.clone(),
+        column_deviations: simulation.column_deviations.clone(),
+        boundaries: simulation
+            .boundaries
+            .iter()
+            .map(|boundary| rs_cam_core::compute::simulate::SimBoundary {
+                id: boundary.id,
+                name: boundary.name.clone(),
+                tool_name: boundary.tool_name.clone(),
+                start_move: boundary.start_move,
+                end_move: boundary.end_move,
+                direction: boundary.direction,
+            })
+            .collect(),
+        checkpoints: simulation.checkpoints.clone(),
+        rapid_collisions: simulation.rapid_collisions.clone(),
+        rapid_collision_move_indices: simulation.rapid_collision_move_indices.clone(),
+        cut_trace: None,
+        resolution_clamped: simulation.resolution_clamped,
+        column_grid_cell_mm: simulation.column_grid_cell_mm,
+        prior_stocks: simulation.prior_stocks.clone(),
     }
 }
