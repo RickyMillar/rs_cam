@@ -11,7 +11,7 @@
 //!
 //! | Arm | Path | Entry point | Today |
 //! |---|---|---|---|
-//! | 1 | MCP and CLI setter | `session/compute.rs:336` `set_toolpath_param`, chain call at `:623` | WIDE |
+//! | 1 | MCP and CLI setter | `set_toolpath_param` -> `ProjectSession::apply` -> `set_toolpath_param_impl` | WIDE |
 //! | 2 | undo/redo and optimizer apply | `session/mutation.rs:1234` `apply_toolpath_param_snapshot` | NARROW |
 //! | 3 | GUI inspector write-back | a direct field write, then `session/mutation.rs:1385` `invalidate_toolpath_inputs` | WIDE |
 //! | 4 | wholesale config replacement | `session/mutation.rs:1205` `replace_toolpath_config` | WIDE |
@@ -32,6 +32,8 @@
 //!
 //! - `the_setter_the_inspector_door_and_the_replacement_agree`: arms 1, 3
 //!   and 4 drop the same set, `{0, 1}`.
+//! - `n15_apply_reports_the_set_the_setter_dropped`: the command door's
+//!   `Effects::stale` equals the set core dropped. WP1 closed this row.
 //! - `a_dropped_result_and_a_bumped_revision_are_the_same_event`: on every
 //!   arm the set of indices whose result went away equals the set whose
 //!   `toolpath_revision` moved. `drop_result` (`mutation.rs:1328`) is the
@@ -46,7 +48,10 @@
 //!
 //! - `n14_undo_and_optimizer_apply_invalidate_one_index_today`
 //! - `n6_set_drill_selected_holes_invalidates_one_index_today`
-//! - `n15_compute_stale_set_reports_one_index_while_the_setter_drops_two`
+//! - `n15_compute_stale_set_still_reports_one_index_pinned_divergence`
+//!   — the narrow answer `compute_stale_set` gives. WP1 took the
+//!   `set_toolpath_param` MCP arm off that function; WP3 and WP4 move
+//!   the remaining arms.
 //!
 //! ## Scope, and what this file does NOT cover
 //!
@@ -65,7 +70,8 @@
 //!   `simulation_result() == None` after the edit only because it read
 //!   `None` before it, and that is not evidence. All four paths write
 //!   `simulation = None`; I read that at `mutation.rs:249,945,1249` and
-//!   `compute.rs:623`.
+//!   in `set_toolpath_param_impl`'s chain call. `Effects::simulation_cleared`
+//!   has the same limit: this file asserts no case of it.
 
 #![allow(
     clippy::unwrap_used,
@@ -88,7 +94,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    LoadedModel, MutationKind, ProjectSession, ToolpathConfig, compute_stale_set,
+    Command, LoadedModel, MutationKind, ProjectSession, SetToolpathParamArgs, ToolpathConfig,
+    compute_stale_set,
 };
 
 /// The one feed value every arm writes.
@@ -444,32 +451,66 @@ fn n6_set_alignment_pin_drill_holes_invalidates_the_chain() {
     );
 }
 
-/// PINNED DIVERGENCE — N15. A third staleness model, on the MCP reply.
+/// CONTRACT — N15. The command door reports what the setter dropped.
+///
+/// WP1 gave the setter one door, `ProjectSession::apply`. The door
+/// measures `Effects::stale` from the revision map around the mutation,
+/// so the reported set IS the dropped set. The MCP reply reads that
+/// field, so the reply and core no longer carry two staleness models.
 #[test]
-fn n15_compute_stale_set_reports_one_index_while_the_setter_drops_two() {
+fn n15_apply_reports_the_set_the_setter_dropped() {
     let mut s = fixture(pocket());
+    let before = revisions(&s);
+
+    let effects = s
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "feed_rate".to_owned(),
+            value: serde_json::json!(EDITED_FEED_RATE),
+        }))
+        .expect("feed_rate is a Pocket parameter");
+
+    let observed = observe(&s, &before);
+    assert_eq!(
+        observed.dropped,
+        set(&[0, 1]),
+        "the setter walks the stock chain, so both rows lose their result"
+    );
+    assert_eq!(
+        effects.stale, observed.dropped,
+        "N15: Effects::stale must equal what core dropped. Before WP1 \
+         the MCP reply re-derived a narrower answer through \
+         compute_stale_set and said {{0}} while core dropped {{0, 1}}."
+    );
+    assert_eq!(
+        effects.revision,
+        s.toolpath_revision(0),
+        "Effects::revision names the edited toolpath's own revision"
+    );
+}
+
+/// PINNED DIVERGENCE — N15. `compute_stale_set` keeps the narrow answer.
+///
+/// `compute_stale_set` is the OTHER staleness model. WP1 took the
+/// `set_toolpath_param` arm of the MCP reply off it, but the function
+/// itself is unchanged and other MCP arms still call it. WP3 and WP4
+/// move those arms onto the command door. This assertion inverts there.
+///
+/// WP1 deleted `compute_stale_set_for_toolpath_param_returns_single_toolpath`
+/// in `session/compute.rs`, which pinned the same narrow answer as a
+/// unit test. That test was vacuous-green: its session held one `Fresh`
+/// toolpath, so a chain-aware answer is also `[0]`. This fixture holds a
+/// chain, so the narrow answer here is a real divergence.
+#[test]
+fn n15_compute_stale_set_still_reports_one_index_pinned_divergence() {
+    let s = fixture(pocket());
     let mutation = MutationKind::ToolpathParamChanged { toolpath_index: 0 };
     let reported = compute_stale_set(&s, mutation);
     assert_eq!(
         reported.toolpath_indices,
         vec![0],
         "N15: compute_stale_set(ToolpathParamChanged) returns exactly one \
-         index (compute.rs:53-58), with no chain walk."
-    );
-
-    let before = revisions(&s);
-    s.set_toolpath_param(0, "feed_rate", serde_json::json!(EDITED_FEED_RATE))
-        .expect("feed_rate is a Pocket parameter");
-    let actually_dropped = observe(&s, &before).dropped;
-    assert_eq!(actually_dropped, set(&[0, 1]));
-
-    assert_ne!(
-        set(&reported.toolpath_indices),
-        actually_dropped,
-        "N15: the MCP reply's stale_toolpaths under-reports what core \
-         dropped. Today the reply says {{0}} and core dropped {{0, 1}}. \
-         Intended is one answer on both surfaces. It flips in Phase 1A. \
-         compute_stale_set_for_toolpath_param_returns_single_toolpath \
-         (compute.rs:5355) pins the narrow answer and must change too."
+         index (`compute.rs:53` `compute_stale_set`), with no chain walk, \
+         while the setter on this fixture drops {{0, 1}}."
     );
 }
