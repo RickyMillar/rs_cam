@@ -12,7 +12,7 @@
 //! | Arm | Path | Entry point | Today |
 //! |---|---|---|---|
 //! | 1 | MCP and CLI setter | `set_toolpath_param` -> `ProjectSession::apply` -> `set_toolpath_param_impl` | WIDE |
-//! | 2 | undo/redo and optimizer apply | `session/mutation.rs:1234` `apply_toolpath_param_snapshot` | NARROW |
+//! | 2 | GUI undo and redo | `ProjectSession::apply` -> `Command::RestoreToolpathSnapshot` | WIDE |
 //! | 3 | GUI inspector write-back | a direct field write, then `session/mutation.rs:1385` `invalidate_toolpath_inputs` | WIDE |
 //! | 4 | wholesale config replacement | `session/mutation.rs:1205` `replace_toolpath_config` | WIDE |
 //!
@@ -22,6 +22,19 @@
 //! A NARROW path ends at `drop_result` plus `simulation = None`, so a
 //! downstream `StockSource::FromRemainingStock` result stays cached after
 //! the stock above it moves.
+//!
+//! WP8 moved arm 2. It called `apply_toolpath_param_snapshot`, the one
+//! narrow path of the four, and the GUI undo stack, the GUI redo stack
+//! and three optimizer apply sites all ended there. The four GUI sites
+//! now take `Command::RestoreToolpathSnapshot`, which is wide.
+//!
+//! The core optimizer keeps a narrow fifth path,
+//! `apply_toolpath_param_snapshot_narrow`, on purpose: its candidate
+//! search regenerates one index and simulates it against cached
+//! neighbours. This file cannot reach that path — `pub(crate)` keeps it
+//! inside the crate — so the in-crate test
+//! `the_narrow_path_leaves_the_neighbour_result_cached`
+//! (`session/mutation.rs`) pins it instead.
 //!
 //! Arm 4 also corrects the audit. `AUDIT.md:68` calls
 //! `replace_toolpath_config` narrow. It is wide since R0.1 §4.3.
@@ -39,6 +52,8 @@
 //!   `toolpath_revision` moved. `drop_result` (`mutation.rs:1328`) is the
 //!   only bump site on these four paths.
 //! - `n6_set_alignment_pin_drill_holes_invalidates_the_chain`.
+//! - `n14_undo_and_the_setter_invalidate_alike` — WP8 closed N14.
+//! - `n6_a_drill_pick_invalidates_the_chain` — WP8 closed N6.
 //! - `the_fixture_is_live`, the non-vacuity guard.
 //!
 //! PINNED DIVERGENCE — each of these asserts TODAY's answer. Each names
@@ -46,8 +61,6 @@
 //! forbids a test that freezes a defect as desired behaviour, so no
 //! assertion here states a divergence as the contract:
 //!
-//! - `n14_undo_and_optimizer_apply_invalidate_one_index_today`
-//! - `n6_set_drill_selected_holes_invalidates_one_index_today`
 //! - `n15_compute_stale_set_still_reports_one_index_pinned_divergence`
 //!   — the narrow answer `compute_stale_set` gives. WP1 took the
 //!   `set_toolpath_param` MCP arm off that function; WP3 and WP4 move
@@ -94,8 +107,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, MutationKind, ProjectSession, SetToolpathParamArgs,
-    ToolpathConfig, compute_stale_set,
+    AdoptResultArgs, Command, LoadedModel, MutationKind, ProjectSession,
+    RestoreToolpathSnapshotArgs, SetToolpathParamArgs, ToolpathConfig, compute_stale_set,
 };
 
 /// The one feed value every arm writes.
@@ -302,8 +315,13 @@ fn arm_setter() -> Observation {
     observe(&s, &before)
 }
 
-/// Arm 2 — `ProjectSession::apply_toolpath_param_snapshot`. The GUI undo
-/// stack and the optimizer candidate apply both end in this door.
+/// Arm 2 — `Command::RestoreToolpathSnapshot`, the GUI undo and redo
+/// door.
+///
+/// WP8 retargeted this arm. It called `apply_toolpath_param_snapshot`,
+/// which the optimizer still calls and which stays narrow on purpose. A
+/// `pub(crate)` path does not compile from `tests/`, so the arm could
+/// not be flipped in place; it names the door the GUI takes now.
 fn arm_snapshot() -> Observation {
     let mut s = fixture(pocket());
     let before = revisions(&s);
@@ -312,7 +330,15 @@ fn arm_snapshot() -> Observation {
     let dressups = s.toolpath_configs()[0].dressups.clone();
     let faces = s.toolpath_configs()[0].face_selection.clone();
     let _ = s
-        .apply_toolpath_param_snapshot(0, op, dressups, faces)
+        .apply(Command::RestoreToolpathSnapshot(
+            RestoreToolpathSnapshotArgs {
+                index: 0,
+                operation: Box::new(op),
+                dressups: Box::new(dressups),
+                face_selection: faces,
+                feeds_provenance: None,
+            },
+        ))
         .expect("index 0 exists");
     assert_feed_landed(&s);
     observe(&s, &before)
@@ -386,7 +412,7 @@ fn the_setter_the_inspector_door_and_the_replacement_agree() {
 fn a_dropped_result_and_a_bumped_revision_are_the_same_event() {
     let arms = [
         ("set_toolpath_param", arm_setter()),
-        ("apply_toolpath_param_snapshot", arm_snapshot()),
+        ("Command::RestoreToolpathSnapshot", arm_snapshot()),
         ("invalidate_toolpath_inputs", arm_inspector_door()),
         ("replace_toolpath_config", arm_replace_config()),
     ];
@@ -399,28 +425,30 @@ fn a_dropped_result_and_a_bumped_revision_are_the_same_event() {
     }
 }
 
-// ── pinned divergences ───────────────────────────────────────────
+// ── closed contracts, and the remaining pinned divergence ────────
 
-/// PINNED DIVERGENCE — N14.
+/// CONTRACT — N14, closed by WP8.
+///
+/// The GUI undo and redo door drops the set the setter drops. Before WP8
+/// it dropped the edited index alone, so a downstream
+/// `FromRemainingStock` result survived an undo of the stock above it.
+/// The core optimizer keeps a narrow path; the module doc says where it
+/// is pinned.
 #[test]
-fn n14_undo_and_optimizer_apply_invalidate_one_index_today() {
+fn n14_undo_and_the_setter_invalidate_alike() {
     let snapshot = arm_snapshot();
     let setter = arm_setter();
 
     assert_eq!(
         snapshot.dropped,
-        set(&[0]),
-        "N14: undo/redo and optimizer apply invalidate one index today. \
-         Today {{0}}. Intended {{0, 1}}, the set the setter drops. \
-         Phase 1A makes this arm equal to the setter's set, and this \
-         assertion then inverts. One constraint Phase 1A carries: \
-         optimize/candidate.rs:428-430 documents a live dependence on \
-         the narrowness, so the transaction cannot always walk the chain."
+        set(&[0, 1]),
+        "N14: the restore command walks the stock chain. The edited row \
+         and the downstream FromRemainingStock row both go stale."
     );
-    assert_ne!(
+    assert_eq!(
         snapshot.dropped, setter.dropped,
-        "N14: the two paths disagree today. They agree after Phase 1A, \
-         and this assertion inverts with the one above."
+        "N14: one logical edit, one invalidated set. The two paths \
+         disagreed before WP8."
     );
     assert!(
         snapshot.dropped.contains(&0),
@@ -428,10 +456,10 @@ fn n14_undo_and_optimizer_apply_invalidate_one_index_today() {
     );
 }
 
-/// PINNED DIVERGENCE — N6, the narrow half. `set_drill_selected_holes`
-/// (`mutation.rs:922-947`) ends at `drop_result` plus `simulation = None`.
+/// CONTRACT — N6, closed by WP8. `set_drill_selected_holes` calls
+/// `invalidate_result_chain`, as its pin-hole sibling below already did.
 #[test]
-fn n6_set_drill_selected_holes_invalidates_one_index_today() {
+fn n6_a_drill_pick_invalidates_the_chain() {
     let mut s = fixture(OperationConfig::Drill(DrillConfig::default()));
     let before = revisions(&s);
     let _ = s
@@ -441,17 +469,18 @@ fn n6_set_drill_selected_holes_invalidates_one_index_today() {
 
     assert_eq!(
         obs.dropped,
-        set(&[0]),
+        set(&[0, 1]),
         "N6: a drill pick changes which holes the op cuts, so it changes \
-         the stock the downstream row inherits. Today {{0}}. Intended \
-         {{0, 1}}. It flips in Phase 1A, with N6."
+         the stock the downstream row inherits. It dropped {{0}} alone \
+         before WP8."
     );
     assert_eq!(obs.bumped, obs.dropped, "one event, as above");
 }
 
-/// CONTRACT, and the wide half of N6. `set_alignment_pin_drill_holes`
-/// (`mutation.rs:891`) sits beside the narrow setter above and calls
-/// `invalidate_result_chain`.
+/// CONTRACT, and the sibling of N6. `set_alignment_pin_drill_holes`
+/// (`mutation.rs:891`) sits beside the drill-pick setter above and calls
+/// `invalidate_result_chain`. It always did. The answer it gives is the
+/// answer WP8 gave the drill-pick setter.
 #[test]
 fn n6_set_alignment_pin_drill_holes_invalidates_the_chain() {
     let op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
@@ -466,7 +495,7 @@ fn n6_set_alignment_pin_drill_holes_invalidates_the_chain() {
         obs.dropped,
         set(&[0, 1]),
         "the pin-hole setter walks the chain. This is the answer the \
-         drill-pick setter above must reach in Phase 1A."
+         drill-pick setter above reaches too, since WP8."
     );
 }
 

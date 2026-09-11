@@ -4787,6 +4787,124 @@ fn an_undone_param_edit_does_not_resurrect_the_old_result() {
     );
 }
 
+/// WP8 / N14 — an undo stales the whole chain, and it restores the feeds
+/// provenance the edit stamped.
+///
+/// Two defects in one test, both of the same shape: the undo door knew
+/// about ONE toolpath and ONE set of fields.
+///
+/// - The core call dropped the edited row's result alone, and the GUI
+///   stamped `stale_since` on that row alone. A downstream
+///   `FromRemainingStock` operation kept a result generated against
+///   stock that had moved, read `Current` on every surface, and the
+///   auto-regen sweep never queued it.
+/// - The undo entry carried no `feeds_provenance`. Three optimizer apply
+///   paths wrote the provenance in a second call right after the
+///   snapshot, so an undo put the pre-optimizer numbers back and left
+///   the `Optimizer` stamp standing on them.
+#[test]
+fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
+    let (mut controller, tp_id) = controller_ready_for_undo();
+    let rest_id = push_toolpath(&mut controller, "Rest");
+    if let Some((idx, _)) = controller.state.session.find_toolpath_config_by_id(rest_id) {
+        let _ = controller
+            .state
+            .session
+            .set_stock_source(
+                idx,
+                rs_cam_core::compute::config::StockSource::FromRemainingStock,
+            )
+            .expect("index is in range");
+    }
+
+    let before_op = controller.state.session.toolpath_configs()[0]
+        .operation
+        .clone();
+    let before_provenance = controller.state.session.toolpath_configs()[0]
+        .feeds_provenance
+        .clone();
+    let after_provenance = rs_cam_core::feeds::FeedsProvenance {
+        feed_rate: Some(rs_cam_core::feeds::ValueProvenance::optimizer()),
+        ..Default::default()
+    };
+    let mut after_op = before_op.clone();
+    after_op.set_feed_rate(4321.0);
+    assert_ne!(
+        before_provenance, after_provenance,
+        "the two stamps must differ, or the restore assertion is vacuous"
+    );
+
+    // The edit, with the entry the panel pushes for it.
+    panel_edit(&mut controller, tp_id, |entry| {
+        entry.operation.set_feed_rate(4321.0);
+    });
+    let _ = controller
+        .state
+        .session
+        .set_feeds_provenance(0, after_provenance.clone());
+    controller
+        .state
+        .history
+        .push(crate::state::history::UndoAction::ToolpathParamChange {
+            tp_id,
+            old_op: before_op.clone(),
+            new_op: after_op,
+            old_dressups: Default::default(),
+            new_dressups: Default::default(),
+            old_face_selection: None,
+            new_face_selection: None,
+            old_feeds_provenance: before_provenance.clone(),
+            new_feeds_provenance: after_provenance.clone(),
+        });
+
+    // Regenerate, so the undo has something to invalidate on BOTH rows.
+    generate_all_for_test(&mut controller);
+    assert!(
+        controller.state.session.get_result(1).is_some()
+            && controller.state.gui.toolpath_rt[&rest_id]
+                .stale_since
+                .is_none(),
+        "the downstream row starts fresh, or the assertions below are \
+         vacuous"
+    );
+
+    controller.handle_internal_event(AppEvent::Undo);
+
+    assert_eq!(
+        controller.state.session.toolpath_configs()[0]
+            .operation
+            .feed_rate(),
+        before_op.feed_rate(),
+        "the undo restores the operation"
+    );
+    assert_eq!(
+        controller.state.session.toolpath_configs()[0].feeds_provenance,
+        before_provenance,
+        "and the provenance the edit stamped"
+    );
+    assert!(
+        controller.state.session.get_result(1).is_none(),
+        "the downstream row reads the stock index 0 leaves, so its \
+         result goes with the undo"
+    );
+    assert!(
+        controller.state.gui.toolpath_rt[&rest_id]
+            .stale_since
+            .is_some(),
+        "and the GUI stamps every index in Effects::stale, not the \
+         edited one alone. The auto-regen sweep reads stale_since."
+    );
+
+    controller.handle_internal_event(AppEvent::Redo);
+
+    assert_eq!(
+        controller.state.session.toolpath_configs()[0].feeds_provenance,
+        after_provenance,
+        "redo is the same edit in the other direction, so it carries the \
+         provenance too"
+    );
+}
+
 /// A machine-kinematics undo leaves the toolpaths current. F2.1's operator
 /// ruling (R0.1 §7 Q3) is that kinematics change timing and modulation, not
 /// geometry — so this arm must NOT acquire staleness it does not deserve
