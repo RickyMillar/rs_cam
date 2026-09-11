@@ -31,9 +31,10 @@ use crate::tool::MillingCutter;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Command, Effects, ProjectDiagnostics, ProjectEvidence, ProjectSession, SessionError,
-    SetToolpathParamArgs, SimulationOptions, ToolpathComputeResult, ToolpathDiagnostic, Verdict,
-    VerdictEvidence, VerdictKind, VerdictSeverity,
+    AdoptResultArgs, Command, Effects, GenerateToolpathArgs, Job, JobHandle, ProjectDiagnostics,
+    ProjectEvidence, ProjectSession, SessionError, SetToolpathParamArgs, SimulationOptions,
+    ToolpathComputeResult, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind,
+    VerdictSeverity,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,9 +187,10 @@ fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMes
 /// [`ProjectSession::resolve_generation_inputs`]. Owning everything (mesh /
 /// polygons via `Arc`, an owned [`SpatialIndex`](crate::mesh::SpatialIndex))
 /// lets a caller generate one *or many* toolpaths off a single resolution
-/// without re-deriving any frame-sensitive value: `generate_toolpath`
-/// consumes it once; the strategy advisor reuses it across candidate
-/// strategies (only the `operation`'s clearing strategy varies per candidate).
+/// without re-deriving any frame-sensitive value: a
+/// [`GenerateToolpathHandle`] owns one; the strategy advisor reuses it
+/// across candidate strategies (only the `operation`'s clearing strategy
+/// varies per candidate).
 ///
 /// WP11a publishes the type so another crate names it. The fields stay
 /// private and the type derives no `Default`, so a caller outside this module
@@ -239,6 +241,497 @@ pub struct ResolvedGenInputs {
     /// polygons are transformed on the way in, but `selected_holes` arrive
     /// as raw model coordinates on the operation config.
     setup_transform: Option<crate::compute::transform::SetupTransformInfo>,
+}
+
+/// The session reads the generation TAIL makes, captured at submit time.
+///
+/// Step (i) of a `Job` holds `&mut ProjectSession`. Step (ii) holds no
+/// session at all. Every read the tail of a generation used to make off
+/// `self` therefore moves here, and [`execute_job`] reads it from the
+/// handle.
+///
+/// The fields stay private and the type derives no `Default`, so a
+/// caller outside this module builds no value of it — the rule
+/// [`ResolvedGenInputs`] carries, for the same reason.
+///
+/// **[`ResolvedGenInputs`] does not grow to hold these.** That bundle is
+/// the executor's input set, and WP11b narrows the executor onto it. A
+/// recorder label, a dressup configuration and a post-clip region set
+/// are not executor inputs.
+///
+/// **Five fields read the RAW operation, not the patched one.**
+/// `op_label`, `entry_probe_leave`, `feed_rate`, `plunge_rate` and
+/// `transform_capabilities` come from `ToolpathConfig::operation`, while
+/// the executor, the drill-op builder and the empty-generation gate read
+/// [`ResolvedGenInputs`]'s compute-time-patched copy. The tail made that
+/// split before WP10 split the function; reading these off the patched
+/// copy would change the answer.
+pub struct GenContext {
+    /// `ToolpathConfig::name`. The recorder labels and the
+    /// empty-generation refusal name the toolpath the operator sees.
+    toolpath_name: String,
+    /// The RAW operation's label.
+    op_label: &'static str,
+    /// `ToolpathConfig::stock_source`. It gates the machined-stock seed.
+    stock_source: crate::session::StockSource,
+    /// `ToolpathConfig::dressups`.
+    dressups: crate::compute::config::DressupConfig,
+    /// `ToolpathConfig::rest_analysis`.
+    rest_analysis: crate::compute::config::RestAnalysisConfig,
+    /// The RAW operation's entry-probe stock-to-leave. `None` names a
+    /// prism operation, which gets no surface probe (G-RAMPTERRAIN).
+    entry_probe_leave: Option<f64>,
+    /// The RAW operation's cutting feed, in mm/min.
+    feed_rate: f64,
+    /// The RAW operation's plunge rate, in mm/min.
+    plunge_rate: f64,
+    /// The RAW operation's transform capabilities.
+    transform_capabilities: crate::compute::catalog::OperationTransformCapabilities,
+    /// The simulated machined-stock snapshot this toolpath's id names,
+    /// read from `self.simulation.prior_stocks`.
+    ///
+    /// S-4 (G-BYTE): this is the snapshot the generation CONSUMES in the
+    /// broadest true sense. `stock_source` gates the generator seed and
+    /// the entry-descent split, but the dressup air-cut filter reads the
+    /// same snapshot ungated. `None` means no machined stock at all.
+    prior_stock: Option<Arc<crate::dexel_stock::TriDexelStock>>,
+    /// The machine envelope the pencil family's emit-time link decision
+    /// costs candidates against, built from `self.machine`.
+    link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    /// `self.stock.material`. The drill gates read the workpiece's own
+    /// hardness (F-016).
+    material: crate::material::Material,
+    /// The RAW region set the POST-generation boundary clip walks, for
+    /// the two sources that resolve to a set of disjoint regions.
+    ///
+    /// `None` means the boundary is disabled or names another source,
+    /// and the single-polygon clip answers instead. It never means "the
+    /// set was empty": an empty resolution is `Some` of an empty list.
+    ///
+    /// This is NOT [`ResolvedGenInputs`]'s `pre_boundary_regions`, which
+    /// is the PROCESSED set — keep-outs subtracted and the user offset
+    /// applied. The clip processes the raw set itself.
+    post_clip_regions: Option<Arc<Vec<crate::polygon::Polygon2>>>,
+}
+
+/// What [`ProjectSession::start`] captured for one `generate_toolpath`
+/// job.
+///
+/// The handle is the whole input of step (ii). It owns its inputs, so
+/// [`execute_job`] reads no session and runs off the frame loop.
+///
+/// `index` and `revision` are public because step (iii) needs both and
+/// they carry no invariant. `inputs` and `context` stay private, so no
+/// caller outside this module builds a handle: a handle is the evidence
+/// of one submit.
+pub struct GenerateToolpathHandle {
+    /// The index of the toolpath this job generates.
+    pub index: usize,
+    /// The generation-input revision step (i) read, AFTER it dropped the
+    /// cached result.
+    ///
+    /// Step (iii) hands it back through
+    /// [`AdoptResultArgs`](super::AdoptResultArgs). An edit between the
+    /// two steps moves the toolpath's revision, and the adopt then
+    /// refuses with
+    /// [`SessionError::StaleCompletion`](super::SessionError::StaleCompletion).
+    pub revision: u64,
+    /// Every per-generation input, resolved once by
+    /// [`ProjectSession::resolve_generation_inputs`].
+    inputs: ResolvedGenInputs,
+    /// Every session read the generation tail makes.
+    context: GenContext,
+}
+
+/// Generate one toolpath from a handle — step (ii) of the
+/// `generate_toolpath` job.
+///
+/// **This function holds no session.** It is a free function over
+/// `&`[`GenerateToolpathHandle`], so it coerces to a plain `fn` pointer
+/// and cannot capture a `&mut ProjectSession`. That is what lets a
+/// caller run it off the frame loop while the session stays usable. The
+/// sentry `tests/job_three_steps_equal_generate_toolpath.rs` pins the
+/// coercion.
+///
+/// The function runs the generator, the dressups, the boundary clip, the
+/// entry-descent split and the empty-generation gate — the tail
+/// [`ProjectSession::generate_toolpath`] used to run inline. It writes
+/// nothing: the answer goes back to the session through step (iii),
+/// `apply(Command::AdoptResult { .. })`.
+///
+/// `cancel` reaches the generator, which polls it between levels.
+pub fn execute_job(
+    handle: &GenerateToolpathHandle,
+    cancel: &AtomicBool,
+) -> Result<ToolpathComputeResult, SessionError> {
+    let inputs = &handle.inputs;
+    let context = &handle.context;
+
+    // Create recorders
+    let debug_recorder =
+        ToolpathDebugRecorder::new(context.toolpath_name.clone(), context.op_label);
+    let semantic_recorder =
+        ToolpathSemanticRecorder::new(context.toolpath_name.clone(), context.op_label);
+    let debug_root = debug_recorder.root_context();
+    let semantic_root = semantic_recorder.root_context();
+
+    let core_scope = debug_root.start_span("core_generate", context.op_label);
+    let core_ctx = core_scope.context();
+
+    // Execute the operation via the shared compute::execute module (annotated variant)
+    // Rest machining: when this toolpath cuts the stock previous ops left
+    // (`StockSource::FromRemainingStock`), seed generation with the per-op
+    // simulated snapshot so adaptive3d clears only the leftover. The same
+    // snapshot is reused for dressup air-cut filtering below. The
+    // "snapshot present" precondition was enforced by the submit step (a
+    // FromRemainingStock op with no snapshot already returned an error), so
+    // here `as_deref()` is guaranteed `Some` — never a fresh-stock fallback.
+    let gen_initial_stock = match context.stock_source {
+        crate::session::StockSource::FromRemainingStock => context.prior_stock.as_deref(),
+        crate::session::StockSource::Fresh => None,
+    };
+
+    let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, context.op_label);
+    let child_ctx = op_scope.context();
+    // P2.3: `_with_regions` threads `pre_boundary_regions` (resolved once,
+    // by the submit step, alongside `pre_boundary`) into the mesh-finish
+    // family's pre-clip via `ExecutionContext::boundary_regions`. Every
+    // other caller of the plain `execute_operation_annotated` still gets
+    // `None` through its unchanged signature.
+    let tp_result = crate::compute::execute::execute_operation_annotated_with_regions(
+        &inputs.operation,
+        inputs.mesh.as_deref(),
+        inputs.spatial_index.as_deref(),
+        inputs.polygons.as_deref().map(|v| v.as_slice()),
+        &inputs.tool_def,
+        &inputs.tool,
+        &inputs.heights,
+        &inputs.cutting_levels,
+        &inputs.emission_stock_bbox,
+        inputs.prev_tool_radius,
+        inputs.reference_tool_cfg.clone(),
+        Some(&core_ctx),
+        cancel,
+        gen_initial_stock,
+        Some(&child_ctx),
+        inputs.pre_boundary.as_ref(),
+        inputs.pre_boundary_regions.as_deref(),
+        Some(&context.rest_analysis),
+        context.link_kinematics.clone(),
+        inputs.setup_transform.as_ref(),
+        &inputs.drill_targets,
+    );
+
+    match tp_result {
+        Ok((annotated, findings)) => {
+            let mut annotated = annotated;
+            // Checkpoint C (Q2): the boundary clip below can add a
+            // finding of its own, so the findings stay mutable until the
+            // join rather than being moved straight into it.
+            let mut findings = findings;
+
+            if !annotated.toolpath.moves.is_empty() {
+                core_scope.set_move_range(0, annotated.toolpath.moves.len().saturating_sub(1));
+                op_scope.bind_to_toolpath(&annotated.toolpath, 0, annotated.toolpath.moves.len());
+            }
+            drop(core_scope);
+
+            // Apply dressups. Reuse the `prior_stock` snapshot the submit
+            // step captured (enables air-cut filter + rest-machining-aware
+            // dressups).
+            let prior_stock_ref = context.prior_stock.as_deref();
+            // C1: the index-carrying channels this call site owns. The
+            // session produces a semantic trace, so its recorder is
+            // registered here once and every transform below reconciles
+            // against it — dressups, the boundary clip and the
+            // entry-descent split alike.
+            let mut channels =
+                crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
+            // G-RAMPTERRAIN: entry moves of SURFACE-RIDING
+            // operations clip to the drop-cutter surface
+            // (`entry_probe_leave` names them). Prism operations
+            // get no probe: their entries legitimately descend
+            // below the model surface (FINDINGS.md amendment 1).
+            let entry_surface = match (
+                inputs.mesh.as_deref(),
+                inputs.spatial_index.as_deref(),
+                context.entry_probe_leave,
+            ) {
+                (Some(m), Some(idx), Some(leave)) => Some(crate::dressup::EntrySurfaceProbe {
+                    mesh: m,
+                    index: idx,
+                    cutter: &inputs.tool_def,
+                    stock_to_leave: leave,
+                    off_mesh: crate::dressup::OffMeshEntry::PlungeFallback,
+                    // G-ISOCLIPENTRY: `Some` only on a rest-driven pass —
+                    // `gen_initial_stock` is `None` for `StockSource::Fresh`.
+                    rest_stock: gen_initial_stock,
+                }),
+                _ => None,
+            };
+            let dressed = crate::compute::execute::apply_dressups(
+                annotated,
+                &context.dressups,
+                context.feed_rate,
+                inputs.tool_def.diameter(),
+                inputs.heights.retract_z,
+                // Stock top in the simulator's frame (= the bbox passed to
+                // dexel construction) — used by `apply_entry` to keep ramp /
+                // helix descent rapids above stock. The dexel collision
+                // check operates on this same Z; using a different frame
+                // (e.g. `heights.top_z`) here re-introduces the
+                // false-positive rapids the fix targets.
+                inputs.emission_stock_bbox.max.z,
+                prior_stock_ref,
+                None,
+                // S3: the air-cut filter classifies each sample for the
+                // whole cutter, so this op's tool rides in even though
+                // feed optimisation (the other consumer) is off on this
+                // path — `feed_opt_stock` above stays `None` and keeps it
+                // off.
+                Some(&inputs.tool_def as &dyn crate::tool::MillingCutter),
+                entry_surface,
+                context.transform_capabilities,
+                None,
+                None,
+                // No per-dressup ITEMS on this path (that is the GUI
+                // worker's trace), but the items recorded at generation
+                // time must still follow the moves through every step.
+                &mut channels,
+            );
+            annotated = dressed;
+
+            // ── Boundary clipping ─────────────────────────────────
+            // After dressups, clip the toolpath to the machining boundary
+            // (matching the GUI compute path). Spans are precisely
+            // remapped through the clip via the input→output provenance
+            // map (S83) so spans_valid stays true.
+            if inputs.boundary_config.enabled {
+                let resolves_to_a_region_set = matches!(
+                    inputs.boundary_config.source,
+                    crate::compute::config::BoundarySource::PlannedTierRegions { .. }
+                        | crate::compute::config::BoundarySource::DerivedRestRegions { .. }
+                );
+                annotated = if resolves_to_a_region_set {
+                    // The submit step resolved this set, for exactly
+                    // these two sources. It re-read the SAME memoised
+                    // tier map `pre_boundary` came off, so agreement
+                    // between the two clips stays structural — the P2.3
+                    // rule that made `DerivedRestRegions` safe.
+                    //
+                    // The `None` arm cannot be reached from
+                    // `ProjectSession::start`. It propagates rather than
+                    // clipping against an empty set, because an
+                    // un-confined fine tier runs over the whole board.
+                    let regions = context.post_clip_regions.as_ref().ok_or_else(|| {
+                        SessionError::OperationFailed(
+                            "the boundary resolves to a region set and the submit step \
+                             captured none"
+                                .to_owned(),
+                        )
+                    })?;
+                    ProjectSession::apply_boundary_clip_multi(
+                        annotated,
+                        &inputs.boundary_config,
+                        regions.as_slice(),
+                        &inputs.keep_out_footprints,
+                        inputs.tool_def.diameter(),
+                        inputs.heights.retract_z,
+                        Some(context.plunge_rate),
+                        &semantic_root,
+                        &mut channels,
+                        &mut findings,
+                    )
+                    .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+                } else {
+                    ProjectSession::apply_boundary_clip(
+                        annotated,
+                        &inputs.boundary_config,
+                        &inputs.emission_stock_bbox,
+                        inputs.mesh.as_ref(),
+                        &inputs.keep_out_footprints,
+                        inputs.tool_def.diameter(),
+                        inputs.heights.retract_z,
+                        Some(context.plunge_rate),
+                        &semantic_root,
+                        &mut channels,
+                        &mut findings,
+                    )
+                    .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+                };
+            }
+
+            // ── Entry-descent optimization ────────────────────────
+            // P1 W2 (reworked): split long safe_z-to-cut-depth plunges
+            // by rapiding down to just above the INPUT STOCK's material
+            // ceiling first — using the actual stock (the same snapshot
+            // generation was seeded with for FromRemainingStock ops, or
+            // the fresh-stock top otherwise), never a mesh height. This
+            // runs on every generation (not just finish passes) since
+            // the stock-derived ceiling is safe by construction — unlike
+            // the mesh-derived height it replaces, which understates
+            // remaining stock on rest-machining ops (the 151-collision
+            // Rivers lesson — see `optimize_entry_descents`'s doc).
+            //
+            // Inserts moves after span construction, so the spans are
+            // remapped through the same provenance-map contract the
+            // boundary clip uses (`Span::remap`), rather than
+            // invalidating them.
+            //
+            // G-ISOCLIPENTRY: on a REST-DRIVEN surface-riding pass the
+            // same pass also ramps the descent instead of plunging it.
+            // The dressup entry door ran before the boundary clip and
+            // the clip rapids its geometry away, inventing a fresh
+            // vertical descent per region re-entry that no door ever
+            // sees; this is the post-clip door. `gen_initial_stock` is
+            // `Some` exactly on `FromRemainingStock`, so a fresh-stock
+            // pass is unchanged.
+            {
+                let rest_entry_ramp =
+                    context
+                        .entry_probe_leave
+                        .map(|_| crate::dressup::RestEntryRamp {
+                            contact_radius_mm: crate::pencil::tip_contact_radius(&inputs.tool_def),
+                            feed_rate: context.feed_rate,
+                            plunge_rate: context.plunge_rate,
+                        });
+                let (transformed, _split_count) = crate::dressup::optimize_entry_descents_annotated(
+                    annotated,
+                    gen_initial_stock,
+                    inputs.heights.top_z,
+                    inputs.tool_def.radius(),
+                    &inputs.tool_def,
+                    rest_entry_ramp.as_ref(),
+                );
+                annotated = transformed.reconcile(&mut channels).into_inner();
+            }
+
+            // ── G-ENTRYEMPTY: the empty-generation gate ───────────
+            // The pipeline is finished; `annotated` is exactly what
+            // would be cached, simulated and posted. An operation that
+            // reaches here with no cutting motion at all, from a region
+            // that was NOT empty, is a generation failure that used to
+            // be reported as `Done` — see `compute::generated_empty`'s
+            // module doc for the ruling and for every case that is
+            // legitimately empty (rest machining and the fixpoint
+            // chains that depend on it are exempt, so this cannot wedge
+            // `generate_all`).
+            //
+            // Placed HERE, before the result is built, so a refusal
+            // returns no result at all and the submit step's removal
+            // stands. That is load-bearing for G-STICKYEMPTY: a cached
+            // empty result makes `PhantomPriorStockScan` treat the op as
+            // "generated", which withholds its phantom prior-stock
+            // snapshot on the next simulation and leaves a
+            // `FromRemainingStock` op unable to regenerate even after
+            // its parameters are put back — the empty generation
+            // poisoning itself.
+            let empty_verdict = crate::compute::generated_empty::classify(
+                &annotated.toolpath,
+                &crate::compute::generated_empty::EmptyGenerationInputs {
+                    toolpath_name: &context.toolpath_name,
+                    operation: &inputs.operation,
+                    stock_source: context.stock_source,
+                    seeded_machined_stock: gen_initial_stock.is_some(),
+                    has_mesh: inputs.mesh.is_some(),
+                    polygon_count: inputs.polygons.as_deref().map_or(0, Vec::len),
+                    boundary_is_derived_rest_regions: matches!(
+                        inputs.boundary_config.source,
+                        crate::compute::config::BoundarySource::DerivedRestRegions { .. }
+                    ),
+                },
+            );
+            match empty_verdict {
+                crate::compute::generated_empty::EmptyGenerationVerdict::NotEmpty => {}
+                crate::compute::generated_empty::EmptyGenerationVerdict::Legitimate(reason) => {
+                    tracing::info!(
+                        toolpath = %context.toolpath_name,
+                        operation = %context.op_label,
+                        reason = reason.describe(),
+                        "Generated an empty toolpath, and that is expected here"
+                    );
+                }
+                crate::compute::generated_empty::EmptyGenerationVerdict::Refuse(refusal) => {
+                    // No result is returned, and the entry the submit
+                    // step removed stays removed — so a refused
+                    // generation leaves the operation with NO cached
+                    // result at all, which is what stops it poisoning
+                    // the next one.
+                    let _ = debug_recorder.finish();
+                    let _ = semantic_recorder.finish();
+                    return Err(SessionError::GeneratedEmpty(refusal.to_string()));
+                }
+            }
+
+            // H2.1: ONE join, shared with the GUI compute worker. This
+            // used to be a struct literal that read `findings.<field>`
+            // eleven times — exhaustive on `ToolpathStats` but not on
+            // `GenerationFindings`, so a new finding was dropped here in
+            // silence. `stats_with_findings` destructures both sides, so
+            // it cannot be.
+            //
+            // Byte-equivalent to the literal it replaces:
+            // `Toolpath::total_cutting_distance` counts
+            // `Linear | ArcCW | ArcCCW` and the helper counts everything
+            // that is not `Rapid` — the same three variants, `MoveType`
+            // having exactly four. The rapid distance and the
+            // `compute_retract_trips` arguments were already identical.
+            // S-4 (G-BYTE): stamp the machined-stock snapshot THIS
+            // generation consumed. `context.prior_stock` — not
+            // `gen_initial_stock` — is deliberately the subject: the
+            // source-gated `gen_initial_stock` seeds the generator and
+            // the entry-descent split, but the same `Arc` also reaches
+            // the dressup air-cut filter ungated, so it is the snapshot
+            // this generation consumed in the broadest true sense.
+            // `None` therefore means no machined stock was consumed at
+            // all, which is what the field documents.
+            let stats = crate::compute::stats::stats_with_findings(
+                &annotated.toolpath,
+                annotated.spans_valid.then_some(annotated.spans.as_slice()),
+                findings,
+                context
+                    .prior_stock
+                    .as_deref()
+                    .map(crate::compute::config::StockSnapshotStamp::of),
+            );
+
+            let mut debug_trace = debug_recorder.finish();
+            let mut semantic_trace = semantic_recorder.finish();
+            enrich_traces(&mut debug_trace, &mut semantic_trace);
+
+            // Build the drill-op view atomically with the annotated
+            // toolpath when this is a drill cycle (§6.E dual-rep
+            // invariant). Material comes from the live stock config so
+            // the chip-welding / peck-adequacy / plunge-feed gates
+            // (F-016) see the workpiece's actual hardness.
+            let drill_op = crate::compute::execute::build_drill_op_for_config(
+                &inputs.operation,
+                &inputs.drill_targets,
+                &inputs.tool_def,
+                &inputs.tool,
+                &inputs.emission_stock_bbox,
+                context.material.clone(),
+                inputs.setup_transform.as_ref(),
+            );
+            let annotated_arc = Arc::new(annotated);
+            let op_data = match drill_op {
+                Some(d) => crate::drill_op::OpData::DrillOp(Arc::new(d), annotated_arc),
+                None => crate::drill_op::OpData::Toolpath(annotated_arc),
+            };
+            Ok(ToolpathComputeResult {
+                op_data,
+                stats,
+                debug_trace: Some(debug_trace),
+                semantic_trace: Some(semantic_trace),
+            })
+        }
+        Err(e) => {
+            drop(core_scope);
+            let _ = debug_recorder.finish();
+            let _ = semantic_recorder.finish();
+            Err(SessionError::OperationFailed(e.to_string()))
+        }
+    }
 }
 
 /// Clearing strategies the advisor compares for a 3D roughing op — the two
@@ -1111,10 +1604,11 @@ impl ProjectSession {
     /// one or many toolpaths off a single resolution (the strategy advisor's
     /// per-strategy candidates) without re-deriving frame-sensitive values.
     ///
-    /// [`generate_toolpath`](Self::generate_toolpath) destructures this and
-    /// then owns the per-generation recorders + dressup/persist tail; the
-    /// extraction keeps that pipeline byte-identical (the recorders simply
-    /// move after the resolution, which never depended on them).
+    /// [`start_generate_toolpath`](Self::start_generate_toolpath) puts this
+    /// on a [`GenerateToolpathHandle`], and [`execute_job`] then owns the
+    /// per-generation recorders + dressup/persist tail; the extraction keeps
+    /// that pipeline byte-identical (the recorders simply move after the
+    /// resolution, which never depended on them).
     ///
     /// `cancel` is threaded because one boundary source does real geometric
     /// work HERE rather than inside the generator:
@@ -1501,13 +1995,35 @@ impl ProjectSession {
         })
     }
 
-    /// Generate a single toolpath by index.
-    #[instrument(skip(self, cancel))]
-    pub fn generate_toolpath(
+    /// Start a generation of toolpath `index` — step (i) of the
+    /// `generate_toolpath` job.
+    ///
+    /// [`ProjectSession::start`] is the public door; this is the arm
+    /// behind it. The method holds `&mut self` and is meant to run on the
+    /// frame loop. It does, in order:
+    ///
+    /// 1. drops the cached result (G-STICKYEMPTY);
+    /// 2. runs the rest-machining and boundary preconditions, so a
+    ///    refusal appears at SUBMIT time and not on the worker thread;
+    /// 3. resolves every generation input through
+    ///    [`Self::resolve_generation_inputs`], the one producer;
+    /// 4. captures into a [`GenContext`] every session read the tail of
+    ///    the generation makes;
+    /// 5. stamps the toolpath's revision, read AFTER the drop.
+    ///
+    /// The handle it answers is the whole input of step (ii), so
+    /// [`execute_job`] reads no session.
+    ///
+    /// **The drop moves no revision.** `self.results.remove` is what this
+    /// method calls, the same call the monolith made; `drop_result` is
+    /// the door that bumps, and a generation is not an edit of the
+    /// inputs. So `revision` here is the revision the toolpath already
+    /// carried, and a generation that nothing interrupts adopts cleanly.
+    pub(crate) fn start_generate_toolpath(
         &mut self,
         index: usize,
         cancel: &AtomicBool,
-    ) -> Result<&ToolpathComputeResult, SessionError> {
+    ) -> Result<GenerateToolpathHandle, SessionError> {
         // G-STICKYEMPTY: drop the cached result FIRST, on every path.
         //
         // [`Self::insert_result`] already states the invariant this restores
@@ -1579,73 +2095,26 @@ impl ProjectSession {
             }
         }
 
-        let ResolvedGenInputs {
-            setup_transform,
-            tool,
-            mesh,
-            polygons,
-            drill_targets,
-            keep_out_footprints,
-            boundary_config,
-            emission_stock_bbox,
-            heights,
-            tool_def,
-            spatial_index,
-            cutting_levels,
-            prev_tool_radius,
-            reference_tool_cfg,
-            operation,
-            pre_boundary,
-            pre_boundary_regions,
-        } = self.resolve_generation_inputs(index, cancel)?;
+        let inputs = self.resolve_generation_inputs(index, cancel)?;
 
-        // Re-borrow the config for the per-generation recorder labels and the
-        // dressup/persist tail below. The resolved bundle owns everything
-        // else; this borrow touches only `self.toolpath_configs`, leaving the
-        // `self.results` write that ends the method field-disjoint — the same
-        // borrow shape as before `resolve_generation_inputs` was extracted.
+        // Re-borrow the config for the recorder labels and for every dial
+        // the generation tail reads. The resolved bundle owns everything
+        // else; this borrow touches only `self.toolpath_configs`.
+        //
+        // The five operation dials below come from the RAW `tc.operation`,
+        // never from `inputs.operation`, which the resolver patches at
+        // compute time. The monolith read them this way, and reading them
+        // off the patched copy would change the answer.
         let tc = self
             .toolpath_configs
             .get(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
 
-        // Create recorders
-        let debug_recorder = ToolpathDebugRecorder::new(tc.name.clone(), tc.operation.label());
-        let semantic_recorder =
-            ToolpathSemanticRecorder::new(tc.name.clone(), tc.operation.label());
-        let debug_root = debug_recorder.root_context();
-        let semantic_root = semantic_recorder.root_context();
-
-        let core_scope = debug_root.start_span("core_generate", tc.operation.label());
-        let core_ctx = core_scope.context();
-
-        let op_label = tc.operation.label().to_owned();
-        // G-ENTRYEMPTY: captured up here because the empty-generation gate
-        // below runs after the `tc` borrow has to have ended (the tail of
-        // this method takes `&mut self.results`), and because a refusal must
-        // name the toolpath the operator sees.
-        let tp_name = tc.name.clone();
-        let tc_stock_source = tc.stock_source;
-
-        // Execute the operation via the shared compute::execute module (annotated variant)
-        // Rest machining: when this toolpath cuts the stock previous ops left
-        // (`StockSource::FromRemainingStock`), seed generation with the per-op
-        // simulated snapshot so adaptive3d clears only the leftover. The same
-        // snapshot is reused for dressup air-cut filtering below. The
-        // "snapshot present" precondition was enforced at function entry (a
-        // FromRemainingStock op with no snapshot already returned an error), so
-        // here `as_deref()` is guaranteed `Some` — never a fresh-stock fallback.
-        let prior_stock_arc = self
+        let prior_stock = self
             .simulation
             .as_ref()
             .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
-        let gen_initial_stock = match tc.stock_source {
-            crate::session::StockSource::FromRemainingStock => prior_stock_arc.as_deref(),
-            crate::session::StockSource::Fresh => None,
-        };
 
-        let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
-        let child_ctx = op_scope.context();
         // P1 W4a: the pencil family's emit-time surface-link-vs-retract
         // decision costs candidates against the real machine envelope —
         // same accessor pattern `apply_adaptive_feed_modulation` uses
@@ -1656,389 +2125,127 @@ impl ProjectSession {
             max_feed_mm_min: self.machine.cutting_feed_ceiling_mm_min().max(1.0),
             rapid_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
         });
-        // P2.3: `_with_regions` threads `pre_boundary_regions` (resolved once,
-        // above, alongside `pre_boundary`) into the mesh-finish family's
-        // pre-clip via `ExecutionContext::boundary_regions`. Every other
-        // caller of the plain `execute_operation_annotated` still gets `None`
-        // through its unchanged signature.
-        let tp_result = crate::compute::execute::execute_operation_annotated_with_regions(
-            &operation,
-            mesh.as_deref(),
-            spatial_index.as_deref(),
-            polygons.as_deref().map(|v| v.as_slice()),
-            &tool_def,
-            &tool,
-            &heights,
-            &cutting_levels,
-            &emission_stock_bbox,
-            prev_tool_radius,
-            reference_tool_cfg,
-            Some(&core_ctx),
-            cancel,
-            gen_initial_stock,
-            Some(&child_ctx),
-            pre_boundary.as_ref(),
-            pre_boundary_regions.as_deref(),
-            Some(&tc.rest_analysis),
-            link_kinematics,
-            setup_transform.as_ref(),
-            &drill_targets,
-        );
 
-        match tp_result {
-            Ok((annotated, findings)) => {
-                let mut annotated = annotated;
-                // Checkpoint C (Q2): the boundary clip below can add a
-                // finding of its own, so the findings stay mutable until the
-                // join rather than being moved straight into it.
-                let mut findings = findings;
-
-                if !annotated.toolpath.moves.is_empty() {
-                    core_scope.set_move_range(0, annotated.toolpath.moves.len().saturating_sub(1));
-                    op_scope.bind_to_toolpath(
-                        &annotated.toolpath,
-                        0,
-                        annotated.toolpath.moves.len(),
-                    );
-                }
-                drop(core_scope);
-
-                // Apply dressups. Reuse the `prior_stock` snapshot hoisted above
-                // (enables air-cut filter + rest-machining-aware dressups).
-                let prior_stock_ref = prior_stock_arc.as_deref();
-                // C1: the index-carrying channels this call site owns. The
-                // session produces a semantic trace, so its recorder is
-                // registered here once and every transform below reconciles
-                // against it — dressups, the boundary clip and the
-                // entry-descent split alike.
-                let mut channels =
-                    crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
-                // G-RAMPTERRAIN: entry moves of SURFACE-RIDING
-                // operations clip to the drop-cutter surface
-                // (`entry_probe_leave` names them). Prism operations
-                // get no probe: their entries legitimately descend
-                // below the model surface (FINDINGS.md amendment 1).
-                let entry_surface = match (
-                    mesh.as_deref(),
-                    spatial_index.as_deref(),
-                    tc.operation.entry_probe_leave(),
-                ) {
-                    (Some(m), Some(idx), Some(leave)) => Some(crate::dressup::EntrySurfaceProbe {
-                        mesh: m,
-                        index: idx,
-                        cutter: &tool_def,
-                        stock_to_leave: leave,
-                        off_mesh: crate::dressup::OffMeshEntry::PlungeFallback,
-                        // G-ISOCLIPENTRY: `Some` only on a rest-driven pass —
-                        // `gen_initial_stock` is `None` for `StockSource::Fresh`.
-                        rest_stock: gen_initial_stock,
-                    }),
+        // The POST-generation clip's own region set, for the two sources
+        // that resolve to a set of disjoint regions. The monolith resolved
+        // it after the generator ran; the handle carries it instead, so
+        // the executor holds no session.
+        //
+        // Re-resolved, never carried over from the pre-clip: the tier map
+        // is memoised on (mesh identity, ladder, params), so this is a
+        // cache hit on the exact map that produced the pre-decompose
+        // boundary. Agreement between the two clips is therefore
+        // structural — the P2.3 rule that made `DerivedRestRegions` safe.
+        // It is also the RAW set. `inputs.pre_boundary_regions` is the
+        // PROCESSED set, and the clip processes the raw set itself.
+        let post_clip_regions: Option<Arc<Vec<crate::polygon::Polygon2>>> =
+            if inputs.boundary_config.enabled {
+                match &inputs.boundary_config.source {
+                    crate::compute::config::BoundarySource::PlannedTierRegions {
+                        tool_ids,
+                        tier,
+                        cell_mm,
+                        tolerance_mm,
+                        margin_mm,
+                        treatment,
+                        islands,
+                    } => {
+                        let regions = self.resolve_planned_tier_region_polys(
+                            &tc.name,
+                            inputs.mesh.as_ref(),
+                            inputs.spatial_index.as_ref(),
+                            &super::multitool::PlannedTierRecipe {
+                                tool_ids,
+                                tier: *tier,
+                                cell_mm: *cell_mm,
+                                tolerance_mm: *tolerance_mm,
+                                margin_mm: *margin_mm,
+                                treatment: *treatment,
+                                islands: *islands,
+                            },
+                            cancel,
+                        )?;
+                        Some(Arc::new(regions))
+                    }
+                    crate::compute::config::BoundarySource::DerivedRestRegions {
+                        source_toolpath_id,
+                    } => {
+                        // The precondition above already validated this —
+                        // it can only fail here if the source toolpath's
+                        // result was invalidated in between, which cannot
+                        // happen under `&mut self`. Propagate defensively
+                        // rather than `#[allow(clippy::unwrap_used)]`.
+                        Some(self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?)
+                    }
                     _ => None,
-                };
-                let dressed = crate::compute::execute::apply_dressups(
-                    annotated,
-                    &tc.dressups,
-                    tc.operation.feed_rate(),
-                    tool_def.diameter(),
-                    heights.retract_z,
-                    // Stock top in the simulator's frame (= the bbox passed to
-                    // dexel construction) — used by `apply_entry` to keep ramp /
-                    // helix descent rapids above stock. The dexel collision
-                    // check operates on this same Z; using a different frame
-                    // (e.g. `heights.top_z`) here re-introduces the
-                    // false-positive rapids the fix targets.
-                    emission_stock_bbox.max.z,
-                    prior_stock_ref,
-                    None,
-                    // S3: the air-cut filter classifies each sample for the
-                    // whole cutter, so this op's tool rides in even though
-                    // feed optimisation (the other consumer) is off on this
-                    // path — `feed_opt_stock` above stays `None` and keeps it
-                    // off.
-                    Some(&tool_def as &dyn crate::tool::MillingCutter),
-                    entry_surface,
-                    tc.operation.transform_capabilities(),
-                    None,
-                    None,
-                    // No per-dressup ITEMS on this path (that is the GUI
-                    // worker's trace), but the items recorded at generation
-                    // time must still follow the moves through every step.
-                    &mut channels,
-                );
-                annotated = dressed;
-
-                // ── Boundary clipping ─────────────────────────────────
-                // After dressups, clip the toolpath to the machining boundary
-                // (matching the GUI compute path). Spans are precisely
-                // remapped through the clip via the input→output provenance
-                // map (S83) so spans_valid stays true.
-                if boundary_config.enabled {
-                    annotated =
-                        if let crate::compute::config::BoundarySource::PlannedTierRegions {
-                            tool_ids,
-                            tier,
-                            cell_mm,
-                            tolerance_mm,
-                            margin_mm,
-                            treatment,
-                            islands,
-                        } = &boundary_config.source
-                        {
-                            // Re-resolved, never carried over from the
-                            // pre-clip: the tier map is memoised on (mesh
-                            // identity, ladder, params), so this is a cache
-                            // hit on the exact map that produced the
-                            // pre-decompose boundary. Agreement between the
-                            // two clips is therefore structural — the P2.3
-                            // rule that made `DerivedRestRegions` safe.
-                            let regions = self.resolve_planned_tier_region_polys(
-                                &tp_name,
-                                mesh.as_ref(),
-                                spatial_index.as_ref(),
-                                &super::multitool::PlannedTierRecipe {
-                                    tool_ids,
-                                    tier: *tier,
-                                    cell_mm: *cell_mm,
-                                    tolerance_mm: *tolerance_mm,
-                                    margin_mm: *margin_mm,
-                                    treatment: *treatment,
-                                    islands: *islands,
-                                },
-                                cancel,
-                            )?;
-                            Self::apply_boundary_clip_multi(
-                                annotated,
-                                &boundary_config,
-                                &regions,
-                                &keep_out_footprints,
-                                tool_def.diameter(),
-                                heights.retract_z,
-                                Some(tc.operation.plunge_rate()),
-                                &semantic_root,
-                                &mut channels,
-                                &mut findings,
-                            )
-                            .map_err(|e| SessionError::OperationFailed(e.to_string()))?
-                        } else if let crate::compute::config::BoundarySource::DerivedRestRegions {
-                            source_toolpath_id,
-                        } = &boundary_config.source
-                        {
-                            // Precondition already validated at function entry —
-                            // this can only fail here if the source toolpath's
-                            // result was invalidated mid-generation, which can't
-                            // happen under `&mut self`. Propagate defensively
-                            // rather than `#[allow(clippy::unwrap_used)]`.
-                            let regions =
-                                self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?;
-                            Self::apply_boundary_clip_multi(
-                                annotated,
-                                &boundary_config,
-                                &regions,
-                                &keep_out_footprints,
-                                tool_def.diameter(),
-                                heights.retract_z,
-                                Some(tc.operation.plunge_rate()),
-                                &semantic_root,
-                                &mut channels,
-                                &mut findings,
-                            )
-                            .map_err(|e| SessionError::OperationFailed(e.to_string()))?
-                        } else {
-                            Self::apply_boundary_clip(
-                                annotated,
-                                &boundary_config,
-                                &emission_stock_bbox,
-                                mesh.as_ref(),
-                                &keep_out_footprints,
-                                tool_def.diameter(),
-                                heights.retract_z,
-                                Some(tc.operation.plunge_rate()),
-                                &semantic_root,
-                                &mut channels,
-                                &mut findings,
-                            )
-                            .map_err(|e| SessionError::OperationFailed(e.to_string()))?
-                        };
                 }
+            } else {
+                None
+            };
 
-                // ── Entry-descent optimization ────────────────────────
-                // P1 W2 (reworked): split long safe_z-to-cut-depth plunges
-                // by rapiding down to just above the INPUT STOCK's material
-                // ceiling first — using the actual stock (the same snapshot
-                // generation was seeded with for FromRemainingStock ops, or
-                // the fresh-stock top otherwise), never a mesh height. This
-                // runs on every generation (not just finish passes) since
-                // the stock-derived ceiling is safe by construction — unlike
-                // the mesh-derived height it replaces, which understates
-                // remaining stock on rest-machining ops (the 151-collision
-                // Rivers lesson — see `optimize_entry_descents`'s doc).
-                //
-                // Inserts moves after span construction, so the spans are
-                // remapped through the same provenance-map contract the
-                // boundary clip uses (`Span::remap`), rather than
-                // invalidating them.
-                //
-                // G-ISOCLIPENTRY: on a REST-DRIVEN surface-riding pass the
-                // same pass also ramps the descent instead of plunging it.
-                // The dressup entry door ran before the boundary clip and
-                // the clip rapids its geometry away, inventing a fresh
-                // vertical descent per region re-entry that no door ever
-                // sees; this is the post-clip door. `gen_initial_stock` is
-                // `Some` exactly on `FromRemainingStock`, so a fresh-stock
-                // pass is unchanged.
-                {
-                    let rest_entry_ramp =
-                        tc.operation
-                            .entry_probe_leave()
-                            .map(|_| crate::dressup::RestEntryRamp {
-                                contact_radius_mm: crate::pencil::tip_contact_radius(&tool_def),
-                                feed_rate: tc.operation.feed_rate(),
-                                plunge_rate: tc.operation.plunge_rate(),
-                            });
-                    let (transformed, _split_count) =
-                        crate::dressup::optimize_entry_descents_annotated(
-                            annotated,
-                            gen_initial_stock,
-                            heights.top_z,
-                            tool_def.radius(),
-                            &tool_def,
-                            rest_entry_ramp.as_ref(),
-                        );
-                    annotated = transformed.reconcile(&mut channels).into_inner();
-                }
+        let context = GenContext {
+            toolpath_name: tc.name.clone(),
+            op_label: tc.operation.label(),
+            stock_source: tc.stock_source,
+            dressups: tc.dressups.clone(),
+            rest_analysis: tc.rest_analysis.clone(),
+            entry_probe_leave: tc.operation.entry_probe_leave(),
+            feed_rate: tc.operation.feed_rate(),
+            plunge_rate: tc.operation.plunge_rate(),
+            transform_capabilities: tc.operation.transform_capabilities(),
+            prior_stock,
+            link_kinematics,
+            material: self.stock.material.clone(),
+            post_clip_regions,
+        };
 
-                // ── G-ENTRYEMPTY: the empty-generation gate ───────────
-                // The pipeline is finished; `annotated` is exactly what
-                // would be cached, simulated and posted. An operation that
-                // reaches here with no cutting motion at all, from a region
-                // that was NOT empty, is a generation failure that used to
-                // be reported as `Done` — see `compute::generated_empty`'s
-                // module doc for the ruling and for every case that is
-                // legitimately empty (rest machining and the fixpoint
-                // chains that depend on it are exempt, so this cannot wedge
-                // `generate_all`).
-                //
-                // Placed HERE, before the result is built, so a refusal
-                // leaves `self.results` with no entry for this index. That
-                // is load-bearing for G-STICKYEMPTY: a cached empty result
-                // makes `PhantomPriorStockScan` treat the op as
-                // "generated", which withholds its phantom prior-stock
-                // snapshot on the next simulation and leaves a
-                // `FromRemainingStock` op unable to regenerate even after
-                // its parameters are put back — the empty generation
-                // poisoning itself.
-                let empty_verdict = crate::compute::generated_empty::classify(
-                    &annotated.toolpath,
-                    &crate::compute::generated_empty::EmptyGenerationInputs {
-                        toolpath_name: &tp_name,
-                        operation: &operation,
-                        stock_source: tc_stock_source,
-                        seeded_machined_stock: gen_initial_stock.is_some(),
-                        has_mesh: mesh.is_some(),
-                        polygon_count: polygons.as_deref().map_or(0, Vec::len),
-                        boundary_is_derived_rest_regions: matches!(
-                            boundary_config.source,
-                            crate::compute::config::BoundarySource::DerivedRestRegions { .. }
-                        ),
-                    },
-                );
-                match empty_verdict {
-                    crate::compute::generated_empty::EmptyGenerationVerdict::NotEmpty => {}
-                    crate::compute::generated_empty::EmptyGenerationVerdict::Legitimate(reason) => {
-                        tracing::info!(
-                            toolpath = %tp_name,
-                            operation = %op_label,
-                            reason = reason.describe(),
-                            "Generated an empty toolpath, and that is expected here"
-                        );
-                    }
-                    crate::compute::generated_empty::EmptyGenerationVerdict::Refuse(refusal) => {
-                        // No `results` entry is written, and the entry this
-                        // method removed on the way in stays removed — so a
-                        // refused generation leaves the operation with NO
-                        // cached result at all, which is what stops it
-                        // poisoning the next one (see the removal at the top
-                        // of this method).
-                        let _ = debug_recorder.finish();
-                        let _ = semantic_recorder.finish();
-                        return Err(SessionError::GeneratedEmpty(refusal.to_string()));
-                    }
-                }
+        Ok(GenerateToolpathHandle {
+            index,
+            revision: self.toolpath_revision(index),
+            inputs,
+            context,
+        })
+    }
 
-                // H2.1: ONE join, shared with the GUI compute worker. This
-                // used to be a struct literal that read `findings.<field>`
-                // eleven times — exhaustive on `ToolpathStats` but not on
-                // `GenerationFindings`, so a new finding was dropped here in
-                // silence. `stats_with_findings` destructures both sides, so
-                // it cannot be.
-                //
-                // Byte-equivalent to the literal it replaces:
-                // `Toolpath::total_cutting_distance` counts
-                // `Linear | ArcCW | ArcCCW` and the helper counts everything
-                // that is not `Rapid` — the same three variants, `MoveType`
-                // having exactly four. The rapid distance and the
-                // `compute_retract_trips` arguments were already identical.
-                // S-4 (G-BYTE): stamp the machined-stock snapshot THIS
-                // generation consumed. `prior_stock_arc` — not
-                // `gen_initial_stock` — is deliberately the subject: the
-                // source-gated `gen_initial_stock` seeds the generator and
-                // the entry-descent split, but the same `Arc` also reaches
-                // the dressup air-cut filter ungated, so it is the snapshot
-                // this generation consumed in the broadest true sense.
-                // `None` therefore means no machined stock was consumed at
-                // all, which is what the field documents.
-                let stats = crate::compute::stats::stats_with_findings(
-                    &annotated.toolpath,
-                    annotated.spans_valid.then_some(annotated.spans.as_slice()),
-                    findings,
-                    prior_stock_arc
-                        .as_deref()
-                        .map(crate::compute::config::StockSnapshotStamp::of),
-                );
-
-                let mut debug_trace = debug_recorder.finish();
-                let mut semantic_trace = semantic_recorder.finish();
-                enrich_traces(&mut debug_trace, &mut semantic_trace);
-
-                // Build the drill-op view atomically with the annotated
-                // toolpath when this is a drill cycle (§6.E dual-rep
-                // invariant). Material comes from the live stock config so
-                // the chip-welding / peck-adequacy / plunge-feed gates
-                // (F-016) see the workpiece's actual hardness.
-                let drill_op = crate::compute::execute::build_drill_op_for_config(
-                    &operation,
-                    &drill_targets,
-                    &tool_def,
-                    &tool,
-                    &emission_stock_bbox,
-                    self.stock.material.clone(),
-                    setup_transform.as_ref(),
-                );
-                let annotated_arc = Arc::new(annotated);
-                let op_data = match drill_op {
-                    Some(d) => crate::drill_op::OpData::DrillOp(Arc::new(d), annotated_arc),
-                    None => crate::drill_op::OpData::Toolpath(annotated_arc),
-                };
-                self.results.insert(
-                    index,
-                    ToolpathComputeResult {
-                        op_data,
-                        stats,
-                        debug_trace: Some(debug_trace),
-                        semantic_trace: Some(semantic_trace),
-                    },
-                );
-                // SAFETY: we just inserted at this key
-                #[allow(clippy::indexing_slicing)]
-                Ok(&self.results[&index])
-            }
-            Err(e) => {
-                drop(core_scope);
-                let _ = debug_recorder.finish();
-                let _ = semantic_recorder.finish();
-                Err(SessionError::OperationFailed(e.to_string()))
-            }
-        }
+    /// Generate a single toolpath by index.
+    ///
+    /// The method runs the three steps of the `generate_toolpath` job
+    /// INLINE: [`Self::start`], then [`execute_job`], then
+    /// `apply(Command::AdoptResult { .. })`. The monolith this replaces
+    /// is split, not wrapped — the same three functions the GUI worker
+    /// lane runs, in the same order.
+    ///
+    /// It holds `&mut self` across all three, so nothing can move the
+    /// revision between the capture and the adopt: the adopt on this
+    /// door cannot report a stale completion.
+    ///
+    /// The CLI takes this door for every generation
+    /// (`crates/rs_cam_cli/src/{run,job,project,smoke}.rs`), so the CLI
+    /// runs the three steps too.
+    #[instrument(skip(self, cancel))]
+    pub fn generate_toolpath(
+        &mut self,
+        index: usize,
+        cancel: &AtomicBool,
+    ) -> Result<&ToolpathComputeResult, SessionError> {
+        // The registry declares one `Job` row, so this pattern is
+        // irrefutable today. A second row stops it compiling, which is
+        // the forcing function that keeps this door honest.
+        let JobHandle::GenerateToolpath(handle) = self.start(
+            Job::GenerateToolpath(GenerateToolpathArgs { index }),
+            cancel,
+        )?;
+        let result = execute_job(&handle, cancel)?;
+        let _ = self.apply(Command::AdoptResult(AdoptResultArgs {
+            index: handle.index,
+            revision: handle.revision,
+            result: Box::new(result),
+        }))?;
+        // SAFETY: the adopt above inserted at this key. It refuses and
+        // returns early when the index names no toolpath or the revision
+        // moved, and neither can happen under one `&mut self`.
+        #[allow(clippy::indexing_slicing)]
+        Ok(&self.results[&index])
     }
 
     /// Resolve the polygon set for `BoundarySource::DerivedRestRegions`,

@@ -25,11 +25,14 @@ pub mod wizard;
 
 pub use builder::ProjectSessionBuilder;
 pub use command::{
-    AdoptResultArgs, Command, CommandId, CommandKind, Effects, Query, QueryAnswer, Reach,
-    ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs, SetToolpathParamArgs, Surfaces,
-    ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
+    AdoptResultArgs, Command, CommandId, CommandKind, Effects, GenerateToolpathArgs, Job,
+    JobHandle, Query, QueryAnswer, Reach, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
+    SetToolpathParamArgs, Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
-pub use compute::{MutationKind, ResolvedGenInputs, StaleSet, compute_stale_set};
+pub use compute::{
+    GenContext, GenerateToolpathHandle, MutationKind, ResolvedGenInputs, StaleSet,
+    compute_stale_set, execute_job,
+};
 pub use cycle_time::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
 pub use eval_context::SetupEvalContext;
 pub use multitool::{

@@ -21,11 +21,8 @@
 //! [`ProjectSession::try_with_effects`], so no mutation builds an
 //! [`Effects`] of its own.
 //!
-//! WP9 adds the `Query` kind and its first row, `ToolpathCycleTime`. The
-//! registry carries two `Command` rows (`SetToolpathParam`,
-//! `AdoptResult`) and one `Query` row. Later work packages add the rest,
-//! and a future `Job` kind (WP10) adds a third accumulator to the
-//! callback macro's kind split, not a rewrite of it.
+//! WP9 adds the `Query` kind and its first row, `ToolpathCycleTime`.
+//! Later work packages add the rest.
 //!
 //! WP8 adds `RestoreToolpathSnapshot`, the door the GUI undo stack and
 //! the GUI redo stack take. It is the first row that invalidates
@@ -38,25 +35,37 @@
 //! drops the chain only when
 //! [`ToolpathConfig::generation_inputs_signature`] moved. The two rows
 //! answer two different questions, and neither can serve the other.
+//!
+//! WP10 adds the `Job` kind and its first row, `GenerateToolpath`. A
+//! job runs three synchronous steps and never an `async fn`:
+//! [`ProjectSession::start`] captures on the frame loop and answers a
+//! [`JobHandle`]; a free function runs the work off the loop holding no
+//! session; `apply(Command::AdoptResult { .. })` records the answer.
+//! The kind cost the callback macro a third accumulator and one more
+//! per-row arm, not a rewrite.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use super::cycle_time::{self, CycleTime};
-use super::{ProjectSession, SessionError, ToolpathComputeResult, ToolpathConfig};
+use super::{
+    GenerateToolpathHandle, ProjectSession, SessionError, ToolpathComputeResult, ToolpathConfig,
+};
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::DressupConfig;
 use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::FeedsProvenance;
 use crate::simulation_cut::SimulationCutTrace;
 
-/// Declares every command and query row once.
+/// Declares every command, query and job row once.
 ///
-/// The columns are: the row kind (`Command` or `Query`), the identifier,
-/// the wire name, the payload type, the answer type, and the surface
-/// table. A `Command` row's answer type is always [`Effects`]; a `Query`
-/// row names its own answer struct. Edit this list, not the blocks a
-/// callback macro generates from it.
+/// The columns are: the row kind (`Command`, `Query` or `Job`), the
+/// identifier, the wire name, the payload type, the answer type, and the
+/// surface table. A `Command` row's answer type is always [`Effects`]; a
+/// `Query` row names its own answer struct; a `Job` row names the HANDLE
+/// its three steps share. Edit this list, not the blocks a callback
+/// macro generates from it.
 ///
 /// The macro carries `#[macro_export]` because a sentry in `tests/`
 /// counts the rows with its own callback. `for_each_op!` needs no export:
@@ -66,7 +75,7 @@ macro_rules! for_each_command {
     ($m:ident) => {
         $m! {
             //  kind      id                wire name             payload
-            //  answer    surfaces
+            //  answer / handle     surfaces
             (Command, SetToolpathParam, "set_toolpath_param", SetToolpathParamArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
@@ -115,6 +124,13 @@ macro_rules! for_each_command {
                  cli: Reach::Skip(
                      "the CLI writes a whole job file, not a live config",
                  ),
+             }),
+            (Job, GenerateToolpath, "generate_toolpath", GenerateToolpathArgs,
+             GenerateToolpathHandle,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
+                 cli: Reach::Reached,
              }),
         }
     };
@@ -265,6 +281,22 @@ pub struct ReplaceToolpathConfigArgs {
     pub config: Box<ToolpathConfig>,
 }
 
+/// The arguments of the `generate_toolpath` job.
+///
+/// The payload names the toolpath and nothing else. Every generation
+/// input comes from the session at step (i), so a caller cannot hand
+/// one in: that is what makes the resolver the only assembly
+/// (`planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §1).
+/// The payload derives no `Copy`. [`ProjectSession::start`] matches on
+/// the [`Job`] it is handed, and a `Copy` payload would make that match
+/// a read rather than a move — the argument would then be passed by
+/// value and never consumed, which `needless_pass_by_value` denies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerateToolpathArgs {
+    /// The index of the toolpath to generate.
+    pub index: usize,
+}
+
 /// What a command changed.
 ///
 /// The type carries `#[must_use]`. A caller that runs a mutation and
@@ -334,27 +366,32 @@ pub struct ToolpathCycleTimeAnswer {
     pub cycle_time: CycleTime,
 }
 
-/// Splits the registry's rows by kind, and emits the [`Command`] and
-/// [`Query`] payload enums plus [`QueryAnswer`].
+/// Splits the registry's rows by kind, and emits the [`Command`],
+/// [`Query`] and [`Job`] payload enums plus [`QueryAnswer`] and
+/// [`JobHandle`].
 ///
 /// GENERATED support macro for `define_command_registry!`, called with
 /// the same rows that macro receives. It walks the row list one row at a
 /// time — an incremental "tt-muncher" — sorting each row's columns into
-/// the `commands` or `queries` accumulator by matching the literal
-/// identifier `Command` or `Query` in the row's first column. The base
-/// case (no rows left) is tried first on every recursive call, so it
-/// fires the moment both accumulators hold every row and none remains.
+/// the `commands`, `queries` or `jobs` accumulator by matching the
+/// literal identifier `Command`, `Query` or `Job` in the row's first
+/// column. The base case (no rows left) is tried first on every
+/// recursive call, so it fires the moment the accumulators hold every
+/// row and none remains.
 ///
-/// A future `Job` or `UiCommand` row (WP10 and later) needs one more
-/// accumulator and one more per-row arm here — the shape does not need a
-/// rewrite to grow a third kind.
+/// WP10 added the third accumulator and its per-row arm. A future
+/// `UiCommand` row needs one more of each — the shape does not need a
+/// rewrite to grow another kind.
 macro_rules! split_command_rows {
-    // Base case: no rows left. Emit the two payload enums and their
-    // `id()`, from the two accumulators built by the arms below.
+    // Base case: no rows left. Emit the three payload enums and their
+    // `id()`, from the three accumulators built by the arms below.
     (@split
         commands = [$( ($c_id:ident, $c_wire:literal, $c_payload:ident) ),* $(,)?],
         queries = [
             $( ($q_id:ident, $q_wire:literal, $q_payload:ident, $q_answer:ty) ),* $(,)?
+        ],
+        jobs = [
+            $( ($j_id:ident, $j_wire:literal, $j_payload:ident, $j_handle:ty) ),* $(,)?
         ] $(,)?
     ) => {
         /// One command and its arguments.
@@ -415,12 +452,58 @@ macro_rules! split_command_rows {
                 $q_id($q_answer),
             )*
         }
+
+        /// One job and its arguments.
+        ///
+        /// GENERATED from the `for_each_command!` list — edit the list,
+        /// not this block.
+        ///
+        /// A job runs three synchronous steps, never an `async fn`:
+        /// [`ProjectSession::start`] captures on the frame loop and
+        /// answers a [`JobHandle`], a free function runs the work off
+        /// the loop holding no session, and
+        /// `apply(Command::AdoptResult { .. })` records the answer.
+        #[derive(Debug, Clone)]
+        pub enum Job {
+            $(
+                #[doc = concat!("The `", $j_wire, "` job.")]
+                $j_id($j_payload),
+            )*
+        }
+
+        impl Job {
+            /// The identifier of this job. GENERATED.
+            pub fn id(&self) -> CommandId {
+                match self {
+                    $(Job::$j_id(_) => CommandId::$j_id,)*
+                }
+            }
+        }
+
+        /// What [`ProjectSession::start`] captured for one [`Job`].
+        ///
+        /// GENERATED — one variant per `Job` row, named by that row's
+        /// answer column. The handle is the whole input of step (ii),
+        /// so step (ii) needs no session.
+        ///
+        /// The enum derives nothing. A handle owns a
+        /// [`ResolvedGenInputs`](super::ResolvedGenInputs), which
+        /// publishes neither equality nor a clone: a resolution is the
+        /// evidence of one submit, and a copy of it would be a second
+        /// assembly of the same inputs.
+        pub enum JobHandle {
+            $(
+                #[doc = concat!("What the `", $j_wire, "` job captured.")]
+                $j_id($j_handle),
+            )*
+        }
     };
 
     // Next row is a `Command` row: file it under `commands` and recurse.
     (@split
         commands = [$($commands:tt)*],
         queries = [$($queries:tt)*],
+        jobs = [$($jobs:tt)*],
         (Command, $id:ident, $wire:literal, $payload:ident, $answer:ty, $surfaces:expr),
         $($rest:tt)*
     ) => {
@@ -428,6 +511,7 @@ macro_rules! split_command_rows {
             @split
             commands = [$($commands)* ($id, $wire, $payload),],
             queries = [$($queries)*],
+            jobs = [$($jobs)*],
             $($rest)*
         }
     };
@@ -436,6 +520,7 @@ macro_rules! split_command_rows {
     (@split
         commands = [$($commands:tt)*],
         queries = [$($queries:tt)*],
+        jobs = [$($jobs:tt)*],
         (Query, $id:ident, $wire:literal, $payload:ident, $answer:ty, $surfaces:expr),
         $($rest:tt)*
     ) => {
@@ -443,6 +528,24 @@ macro_rules! split_command_rows {
             @split
             commands = [$($commands)*],
             queries = [$($queries)* ($id, $wire, $payload, $answer),],
+            jobs = [$($jobs)*],
+            $($rest)*
+        }
+    };
+
+    // Next row is a `Job` row: file it under `jobs` and recurse.
+    (@split
+        commands = [$($commands:tt)*],
+        queries = [$($queries:tt)*],
+        jobs = [$($jobs:tt)*],
+        (Job, $id:ident, $wire:literal, $payload:ident, $answer:ty, $surfaces:expr),
+        $($rest:tt)*
+    ) => {
+        split_command_rows! {
+            @split
+            commands = [$($commands)*],
+            queries = [$($queries)*],
+            jobs = [$($jobs)* ($id, $wire, $payload, $answer),],
             $($rest)*
         }
     };
@@ -500,6 +603,7 @@ macro_rules! define_command_registry {
             @split
             commands = [],
             queries = [],
+            jobs = [],
             $( ($kind, $id, $wire, $payload, $answer, $surfaces), )+
         }
     };
@@ -648,6 +752,39 @@ impl ProjectSession {
                 Ok(QueryAnswer::ToolpathCycleTime(ToolpathCycleTimeAnswer {
                     cycle_time,
                 }))
+            }
+        }
+    }
+
+    /// Start one job, and report the handle its steps share.
+    ///
+    /// This is step (i), and it is the third door beside [`Self::apply`]
+    /// and [`Self::query`]. A job runs three synchronous steps and never
+    /// an `async fn`:
+    ///
+    /// 1. `start` holds `&mut self` and runs on the frame loop. It drops
+    ///    the cached result, checks every precondition, resolves the
+    ///    inputs and captures the session reads the work needs. A refusal
+    ///    therefore appears at submit time.
+    /// 2. A free function runs the work. It reads the handle and holds no
+    ///    session, so it runs off the frame loop.
+    ///    [`execute_job`](super::execute_job) is that function for the
+    ///    `generate_toolpath` row.
+    /// 3. `apply(Command::AdoptResult { .. })` records the answer at the
+    ///    revision the handle carries. An edit between step (1) and step
+    ///    (3) moves that revision and the adopt refuses.
+    ///
+    /// `cancel` reaches the resolver, which does real geometric work for
+    /// one boundary source: a
+    /// [`BoundarySource::PlannedTierRegions`](crate::compute::config::BoundarySource::PlannedTierRegions)
+    /// boundary walks a full-grid tier map. A `start` that resolved that
+    /// map under a flag of its own would make Cancel a lie for the whole
+    /// of it.
+    pub fn start(&mut self, job: Job, cancel: &AtomicBool) -> Result<JobHandle, SessionError> {
+        match job {
+            Job::GenerateToolpath(args) => {
+                let handle = self.start_generate_toolpath(args.index, cancel)?;
+                Ok(JobHandle::GenerateToolpath(handle))
             }
         }
     }
