@@ -55,8 +55,8 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::session::{
     AddToolpathArgs, AdoptResultArgs, Command, CommandId, CommandKind, LoadedModel, ProjectSession,
-    Reach, SetMachineArgs, SetSetupModelsArgs, SetStockConfigArgs, SetToolpathDebugOptionsArgs,
-    SetToolpathHeightsArgs, ToolpathConfig,
+    ProjectSessionBuilder, Reach, SetMachineArgs, SetSetupModelsArgs, SetStockConfigArgs,
+    SetToolpathDebugOptionsArgs, SetToolpathHeightsArgs, ToolpathConfig,
 };
 
 /// The clearance height the heights arm writes.
@@ -160,11 +160,11 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// is a `Fresh` Pocket. Index 1 is a Rest that reads the stock index 0
 /// leaves. Both carry a cached result.
 fn fixture() -> ProjectSession {
-    let mut s = ProjectSession::new_empty();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let _ = s.add_model(empty_model("part.svg"));
-    let tool = s.tools()[0].id.0;
-    let model = s.models()[0].id;
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_model(empty_model("part.svg"));
+    let tool = builder.tools()[0].id.0;
+    let model = builder.models()[0].id;
     let upstream = tc(
         "upstream",
         OperationConfig::Pocket(PocketConfig::default()),
@@ -179,8 +179,9 @@ fn fixture() -> ProjectSession {
         tool,
         model,
     );
-    let _ = s.add_toolpath(0, upstream).unwrap();
-    let _ = s.add_toolpath(0, downstream).unwrap();
+    let _ = builder.add_toolpath(0, upstream).unwrap();
+    let _ = builder.add_toolpath(0, downstream).unwrap();
+    let mut s = builder.build();
     adopt(&mut s, 0);
     adopt(&mut s, 1);
     assert_fixture_is_live(&s);

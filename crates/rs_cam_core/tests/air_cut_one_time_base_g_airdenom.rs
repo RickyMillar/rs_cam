@@ -56,7 +56,9 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine_kinematics::{CycleTimeBreakdown, MachineKinematics};
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::{
     AirCutRatios, Engagement, SimulationCutSample, SimulationCutTrace, rebase_cutting_times,
 };
@@ -97,8 +99,8 @@ fn rounded_rect_with_island() -> Polygon2 {
 /// hardwood pocket band, so the modulator raises it; 4000 mm/min is above
 /// every ceiling in scope, so the modulator lowers it.
 fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: 100.0,
         y: 100.0,
         z: 12.0,
@@ -112,29 +114,23 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
         ..StockConfig::default()
     });
 
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
 
-    let model_id = session
-        .add_model(LoadedModel {
-            id: 0,
-            name: "as001_pocket".to_owned(),
-            mesh: None,
-            polygons: Some(Arc::new(vec![rounded_rect_with_island()])),
-            drill_targets: Arc::new(Vec::new()),
-            layers: Arc::new(Vec::new()),
-            path: PathBuf::from("synthetic://as001_pocket.svg"),
-            kind: None,
-            units: None,
-            enriched_mesh: None,
-            winding_report: None,
-            load_error: None,
-        })
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(LoadedModel {
+        id: 0,
+        name: "as001_pocket".to_owned(),
+        mesh: None,
+        polygons: Some(Arc::new(vec![rounded_rect_with_island()])),
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        path: PathBuf::from("synthetic://as001_pocket.svg"),
+        kind: None,
+        units: None,
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+    });
 
     let tc = ToolpathConfig {
         id: ToolpathId(0),
@@ -168,7 +164,8 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tc).expect("add pocket toolpath");
+    let _ = builder.add_toolpath(0, tc).expect("add pocket toolpath");
+    let mut session = builder.build();
 
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_stock());

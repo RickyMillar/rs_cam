@@ -51,7 +51,9 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::CutKinematics;
 use rs_cam_core::tool_load::DeflectionVerdict;
 
@@ -81,7 +83,7 @@ fn rounded_rect_with_island() -> Polygon2 {
 /// at (-10, -10, -12) so stock top sits at world Z=0; pocket depth 6,
 /// `depth_per_pass = 2` so the first pass cuts at Z=-2.
 fn build_as001_pocket_session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
 
     let stock = StockConfig {
         x: 100.0,
@@ -96,13 +98,10 @@ fn build_as001_pocket_session() -> ProjectSession {
         },
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    builder = builder.stock(stock);
 
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
 
     let polygon = rounded_rect_with_island();
     let model = LoadedModel {
@@ -119,10 +118,7 @@ fn build_as001_pocket_session() -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(model);
 
     let pocket = PocketConfig {
         stepover: 2.0,
@@ -160,7 +156,8 @@ fn build_as001_pocket_session() -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tc).expect("add pocket toolpath");
+    let _ = builder.add_toolpath(0, tc).expect("add pocket toolpath");
+    let session = builder.build();
 
     session
 }

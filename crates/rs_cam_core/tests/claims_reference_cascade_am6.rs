@@ -63,7 +63,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{ClaimsReferenceFinding, StockSource};
 use rs_cam_core::compute::operation_configs::{ClaimsReference, UnifiedFinishConfig};
 use rs_cam_core::compute::tool_config::ToolConfig;
-use rs_cam_core::session::{ProjectSession, SimulationOptions};
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SimulationOptions};
 use rs_cam_core::unified_finish::{ClaimsReferenceResolution, CreaseReference};
 
 /// Half-extent (mm) of the fixture surface. Small on purpose: the cascade
@@ -162,17 +162,12 @@ fn unified_cfg(arm: Option<RestArm>) -> UnifiedFinishConfig {
 /// A two-op same-tool cascade: an all-over finish, then a rest pass reading
 /// the stock that finish left.
 fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_over(HALF, STOCK_Z));
-    let tool_idx = session
-        .add_tool(tool)
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(mesh_model(bumpy_surface(), "bumps"))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_over(HALF, STOCK_Z));
+    let tool_idx = builder.add_tool(tool);
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(mesh_model(bumpy_surface(), "bumps"));
+    let mut session = builder.build();
 
     // Surface ops carry no depth dial, so an Auto `bottom_z` resolves to
     // `top_z - 0.0` and collapses every band onto the rim — both ops must pin

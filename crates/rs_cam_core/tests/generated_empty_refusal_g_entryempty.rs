@@ -59,7 +59,7 @@ use common::tools::endmill_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
-use rs_cam_core::session::{ProjectSession, SessionError, SimulationOptions};
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SessionError, SimulationOptions};
 use rs_cam_core::toolpath::MoveType;
 
 /// Half-extent (mm) of the square the pocket clears — a 40 × 40 mm region.
@@ -206,22 +206,13 @@ fn a_refused_generation_leaves_no_cached_result() {
 /// `zero_removal`.
 #[test]
 fn a_rest_operation_that_finds_nothing_still_succeeds() {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_under(HALF, STOCK_Z));
-    let prev_idx = session
-        .add_tool(endmill_tool_config(OVERSIZE_TOOL_D))
-        .created
-        .expect("add_tool reports the new tool index");
-    let prev_id = session.tools()[prev_idx].id;
-    let cur_idx = session
-        .add_tool(endmill_tool_config(OVERSIZE_TOOL_D))
-        .created
-        .expect("add_tool reports the new tool index");
-    let cur_tool = session.tools()[cur_idx].id.0;
-    let model_id = session
-        .add_model(polygon_model(vec![square_polygon(HALF)], "square"))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_under(HALF, STOCK_Z));
+    let prev_idx = builder.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
+    let prev_id = builder.tools()[prev_idx].id;
+    let cur_idx = builder.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
+    let cur_tool = builder.tools()[cur_idx].id.0;
+    let model_id = builder.add_model(polygon_model(vec![square_polygon(HALF)], "square"));
     let op = OperationConfig::Rest(RestConfig {
         prev_tool_id: Some(prev_id),
         stepover: 2.0,
@@ -229,9 +220,10 @@ fn a_rest_operation_that_finds_nothing_still_succeeds() {
         depth_per_pass: 3.0,
         ..RestConfig::default()
     });
-    let _ = session
+    let _ = builder
         .add_toolpath(0, toolpath_config("Rest", op, cur_tool, model_id))
         .expect("add rest toolpath");
+    let mut session = builder.build();
 
     generate(&mut session, 0).expect("an empty rest pass is a legitimate result, not a refusal");
     assert_eq!(
@@ -299,24 +291,15 @@ fn an_empty_generation_does_not_stop_the_next_one() {
 /// again is not allowed to turn into an error.
 #[test]
 fn an_empty_rest_pass_keeps_its_prior_stock_snapshot() {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_under(HALF, STOCK_Z));
-    let rough_idx = session
-        .add_tool(endmill_tool_config(FITTING_TOOL_D))
-        .created
-        .expect("add_tool reports the new tool index");
-    let rough_tool = session.tools()[rough_idx].id.0;
-    let rest_idx = session
-        .add_tool(endmill_tool_config(OVERSIZE_TOOL_D))
-        .created
-        .expect("add_tool reports the new tool index");
-    let rest_tool = session.tools()[rest_idx].id.0;
-    let model_id = session
-        .add_model(polygon_model(vec![square_polygon(HALF)], "square"))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_under(HALF, STOCK_Z));
+    let rough_idx = builder.add_tool(endmill_tool_config(FITTING_TOOL_D));
+    let rough_tool = builder.tools()[rough_idx].id.0;
+    let rest_idx = builder.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
+    let rest_tool = builder.tools()[rest_idx].id.0;
+    let model_id = builder.add_model(polygon_model(vec![square_polygon(HALF)], "square"));
 
-    let _ = session
+    let _ = builder
         .add_toolpath(
             0,
             toolpath_config("Rough", pocket_op(), rough_tool, model_id),
@@ -324,7 +307,8 @@ fn an_empty_rest_pass_keeps_its_prior_stock_snapshot() {
         .expect("add rough");
     let mut rest_cfg = toolpath_config("Rest pocket", pocket_op(), rest_tool, model_id);
     rest_cfg.stock_source = StockSource::FromRemainingStock;
-    let _ = session.add_toolpath(0, rest_cfg).expect("add rest pocket");
+    let _ = builder.add_toolpath(0, rest_cfg).expect("add rest pocket");
+    let mut session = builder.build();
 
     generate(&mut session, 0).expect("rough generates");
     assert!(cutting_moves(&session, 0) > 0, "fixture is vacuous");

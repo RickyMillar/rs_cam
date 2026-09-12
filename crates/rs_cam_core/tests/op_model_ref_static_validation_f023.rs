@@ -34,7 +34,7 @@ use rs_cam_core::diagnostics::{Diagnostic, Severity, ids};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 
 // ── helpers ─────────────────────────────────────────────────────────
 
@@ -100,14 +100,12 @@ fn pocket_op_with_unresolved_model_id_surfaces_blocking_diagnostic() {
     // is added with a model_id that doesn't resolve against any
     // loaded model. F-023 requires the unified diagnostic stream to
     // surface this, not just the GUI banner.
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
-    let mid = session
-        .add_model(polygon_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(tool);
+    let mid = builder.add_model(polygon_model(0));
+    let mut session = builder.build();
     // Sanity: prove we're using a model_id the session does NOT carry.
     assert_ne!(mid, 999_usize, "test fixture must use a dangling id");
 
@@ -148,16 +146,13 @@ fn pocket_op_with_unresolved_model_id_surfaces_blocking_diagnostic() {
 
 #[test]
 fn pocket_op_with_resolved_model_id_emits_no_ref_diagnostic() {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
-    let mid = session
-        .add_model(polygon_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(tool);
+    let mid = builder.add_model(polygon_model(0));
 
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp(
@@ -167,9 +162,8 @@ fn pocket_op_with_resolved_model_id_emits_no_ref_diagnostic() {
                 mid,
             ),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -185,13 +179,13 @@ fn pocket_op_with_resolved_model_id_emits_no_ref_diagnostic() {
 fn face_op_with_unresolved_model_id_is_silent() {
     // Face is a stock-based op — it doesn't need a loaded model, so a
     // dangling model_id should NOT trip the ref check.
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
+    builder.add_tool(tool);
     // No models loaded at all.
 
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp(
@@ -201,9 +195,8 @@ fn face_op_with_unresolved_model_id_is_silent() {
                 /* model_id = */ 999,
             ),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(

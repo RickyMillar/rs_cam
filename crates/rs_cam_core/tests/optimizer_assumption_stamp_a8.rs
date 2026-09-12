@@ -68,7 +68,9 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::SimulationCutTrace;
 use rs_cam_core::tool_load::ModulationStrategyTag;
 use rs_cam_core::tool_load::optimize::{
@@ -85,7 +87,7 @@ use rs_cam_core::tool_load::optimize::{
 /// on it at step 3, **after** building the evaluation context. That ordering
 /// is what makes the LUT-routing half of the stamp observable for free.
 fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
 
     let mut stock = StockConfig {
         x: 100.0,
@@ -102,14 +104,11 @@ fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) ->
         feed_scale_factor: 1.0,
         kc: 10.0,
     };
-    let _ = session.set_stock_config(stock);
-    let _ = session.set_machine(machine);
+    builder = builder.stock(stock);
+    builder = builder.machine(machine);
 
-    let tool_idx = session
-        .add_tool(ToolConfig::new_default(ToolId(0), tool))
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(ToolConfig::new_default(ToolId(0), tool));
+    let tool_id = builder.tools()[tool_idx].id.0;
 
     let square = Polygon2::new(vec![
         P2::new(-20.0, -20.0),
@@ -117,23 +116,20 @@ fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) ->
         P2::new(20.0, 20.0),
         P2::new(-20.0, 20.0),
     ]);
-    let model_id = session
-        .add_model(LoadedModel {
-            id: 0,
-            name: "a8 square".to_owned(),
-            mesh: None,
-            polygons: Some(Arc::new(vec![square])),
-            drill_targets: Arc::new(Vec::new()),
-            layers: Arc::new(Vec::new()),
-            path: std::path::PathBuf::from("synthetic://a8"),
-            kind: Some(ModelKind::Svg),
-            units: Some(ModelUnits::Millimeters),
-            enriched_mesh: None,
-            winding_report: None,
-            load_error: None,
-        })
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(LoadedModel {
+        id: 0,
+        name: "a8 square".to_owned(),
+        mesh: None,
+        polygons: Some(Arc::new(vec![square])),
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        path: std::path::PathBuf::from("synthetic://a8"),
+        kind: Some(ModelKind::Svg),
+        units: Some(ModelUnits::Millimeters),
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+    });
 
     let op_type = op.op_type();
     let cfg = ToolpathConfig {
@@ -157,7 +153,8 @@ fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) ->
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, cfg).expect("add toolpath");
+    let _ = builder.add_toolpath(0, cfg).expect("add toolpath");
+    let session = builder.build();
     session
 }
 

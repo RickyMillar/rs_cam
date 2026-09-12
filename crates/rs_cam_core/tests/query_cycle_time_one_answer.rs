@@ -54,8 +54,8 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::machine_kinematics::CycleTimeBreakdown;
 use rs_cam_core::session::{
     AdoptResultArgs, Command, CommandId, CommandKind, CycleTime, CycleTimeBasis, LoadedModel,
-    ProjectSession, Query, QueryAnswer, ToolpathConfig, ToolpathCycleTimeAnswer,
-    ToolpathCycleTimeArgs,
+    ProjectSession, ProjectSessionBuilder, Query, QueryAnswer, ToolpathConfig,
+    ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
 use rs_cam_core::simulation_cut::{
     SimulationCutTrace, SimulationToolpathCutSummary, ToolpathKinematicRuntime,
@@ -222,11 +222,11 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// One setup, one tool, one model, one computed Pocket toolpath at index
 /// 0.
 fn fixture() -> ProjectSession {
-    let mut s = ProjectSession::new_empty();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let _ = s.add_model(empty_model("part.svg"));
-    let tool = s.tools()[0].id.0;
-    let model = s.models()[0].id;
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_model(empty_model("part.svg"));
+    let tool = builder.tools()[0].id.0;
+    let model = builder.models()[0].id;
     let toolpath = tc(
         "pocket",
         OperationConfig::Pocket(PocketConfig::default()),
@@ -234,7 +234,8 @@ fn fixture() -> ProjectSession {
         tool,
         model,
     );
-    let _ = s.add_toolpath(0, toolpath).unwrap();
+    let _ = builder.add_toolpath(0, toolpath).unwrap();
+    let mut s = builder.build();
     adopt(&mut s, 0);
     assert!(s.get_result(0).is_some(), "index 0 needs a cached result");
     s

@@ -61,7 +61,7 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::{Polygon2, offset_polygon};
 use rs_cam_core::region_set::RegionSet;
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::ProjectSessionBuilder;
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::tool::MillingCutter;
@@ -162,22 +162,14 @@ fn a_fine_tier_op_cuts_only_inside_its_own_islands() {
         .collect();
     let allowed = RegionSet::new(slack);
 
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(common::session::stock_under(HALF_MM, 6.0));
-    let coarse_idx = session
-        .add_tool(ball_tool_config(4.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let fine_idx = session
-        .add_tool(ball_tool_config(2.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let coarse_id = session.tools()[coarse_idx].id.0;
-    let fine_id = session.tools()[fine_idx].id.0;
-    let model_id = session
-        .add_model(common::session::mesh_model(plane_with_bowl(), "bowl"))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(common::session::stock_under(HALF_MM, 6.0));
+    let coarse_idx = builder.add_tool(ball_tool_config(4.0));
+    let fine_idx = builder.add_tool(ball_tool_config(2.0));
+    let coarse_id = builder.tools()[coarse_idx].id.0;
+    let fine_id = builder.tools()[fine_idx].id.0;
+    let model_id = builder.add_model(common::session::mesh_model(plane_with_bowl(), "bowl"));
+    let mut session = builder.build();
 
     // The op the planner would emit for tier 1, minus the stock chaining:
     // `Fresh` keeps this sentry about the BOUNDARY. The stock source is a

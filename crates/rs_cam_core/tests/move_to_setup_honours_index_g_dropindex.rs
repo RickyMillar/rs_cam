@@ -25,7 +25,7 @@
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
-use rs_cam_core::session::{ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 
 fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
@@ -54,19 +54,18 @@ fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
 /// Setup 0 holds one op; setup 1 holds three. Returns the session and the
 /// global index of the op in setup 0.
 fn two_setups() -> (ProjectSession, usize) {
-    let mut s = ProjectSession::new_empty();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let tool_id = s.tools()[0].id.0;
-    let _ = s.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let tool_id = builder.tools()[0].id.0;
+    builder.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
 
-    let travelling = s
+    let travelling = builder
         .add_toolpath(0, toolpath("Travelling", tool_id))
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
     for name in ["Target A", "Target B", "Target C"] {
-        let _ = s.add_toolpath(1, toolpath(name, tool_id)).unwrap();
+        let _ = builder.add_toolpath(1, toolpath(name, tool_id)).unwrap();
     }
+    let s = builder.build();
     (s, travelling)
 }
 

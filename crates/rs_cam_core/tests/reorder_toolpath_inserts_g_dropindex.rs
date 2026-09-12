@@ -28,7 +28,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::session::{ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 
 fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
@@ -56,12 +56,13 @@ fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
 
 /// One setup holding A B C D E, each op's global index equal to its position.
 fn five_ops() -> ProjectSession {
-    let mut s = ProjectSession::new_empty();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let tool_id = s.tools()[0].id.0;
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let tool_id = builder.tools()[0].id.0;
     for name in ["A", "B", "C", "D", "E"] {
-        let _ = s.add_toolpath(0, toolpath(name, tool_id)).unwrap();
+        let _ = builder.add_toolpath(0, toolpath(name, tool_id)).unwrap();
     }
+    let s = builder.build();
     s
 }
 

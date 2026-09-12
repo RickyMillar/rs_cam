@@ -96,7 +96,7 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::profile::ProfileSide;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::{MoveIntent, MoveType};
 
 // ── Fixture geometry ────────────────────────────────────────────────────
@@ -448,8 +448,8 @@ fn hemi_session(
 /// measured on (`CLAUDE.md`: "useless on terrain"; on the hemisphere it
 /// emits nothing at all).
 fn plate_session(op: OperationConfig, profile: DressupProfile) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: PLATE_MM,
         y: PLATE_MM,
         z: PLATE_STOCK_Z_MM,
@@ -459,6 +459,7 @@ fn plate_session(op: OperationConfig, profile: DressupProfile) -> ProjectSession
         auto_from_model: false,
         ..StockConfig::default()
     });
+    let mut session = builder.build();
     let tool_id = add_tool(&mut session, ToolType::BallNose, 6.0, "w6 census ball");
     let model_id = session
         .add_model(LoadedModel {

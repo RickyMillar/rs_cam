@@ -59,7 +59,7 @@ use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::profile::ProfileSide;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
@@ -139,8 +139,8 @@ fn the_reorder_never_invents_a_drilling_move() {
 // ── Integration level: real generated families ──────────────────────────
 
 fn flat_session(op: OperationConfig) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: 100.0,
         y: 80.0,
         z: 12.0,
@@ -157,11 +157,8 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
     tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
-    let tool_idx = session
-        .add_tool(tool)
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(tool);
+    let tool_id = builder.tools()[tool_idx].id.0;
 
     let poly = Polygon2::new(vec![
         P2::new(5.0, 5.0),
@@ -169,26 +166,23 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
         P2::new(75.0, 55.0),
         P2::new(5.0, 55.0),
     ]);
-    let model_id = session
-        .add_model(LoadedModel {
-            id: 0,
-            name: "tsp_intent_rect".to_owned(),
-            mesh: None,
-            polygons: Some(Arc::new(vec![poly])),
-            drill_targets: Arc::new(Vec::new()),
-            layers: Arc::new(Vec::new()),
-            path: PathBuf::from("synthetic://tsp_intent_rect.svg"),
-            kind: None,
-            units: None,
-            enriched_mesh: None,
-            winding_report: None,
-            load_error: None,
-        })
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(LoadedModel {
+        id: 0,
+        name: "tsp_intent_rect".to_owned(),
+        mesh: None,
+        polygons: Some(Arc::new(vec![poly])),
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        path: PathBuf::from("synthetic://tsp_intent_rect.svg"),
+        kind: None,
+        units: None,
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+    });
 
     let op_type = op.op_type();
-    let _ = session
+    let _ = builder
         .add_toolpath(
             0,
             ToolpathConfig {
@@ -214,6 +208,7 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
             },
         )
         .expect("add toolpath");
+    let session = builder.build();
     session
 }
 

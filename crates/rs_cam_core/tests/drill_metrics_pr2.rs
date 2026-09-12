@@ -26,7 +26,9 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+};
 
 fn make_drill_tool(diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
@@ -71,7 +73,7 @@ fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
 }
 
 fn build_drill_session(peck_depth: f64, tool_diameter: f64) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
@@ -89,15 +91,13 @@ fn build_drill_session(peck_depth: f64, tool_diameter: f64) -> ProjectSession {
         },
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    builder = builder.stock(stock);
 
-    let tool_idx = session
-        .add_tool(make_drill_tool(tool_diameter))
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(make_drill_tool(tool_diameter));
+    let tool_id = builder.tools()[tool_idx].id.0;
     let tc = make_drill_toolpath(tool_id, peck_depth);
-    let _ = session.add_toolpath(0, tc).expect("add drill toolpath");
+    let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
+    let session = builder.build();
     session
 }
 

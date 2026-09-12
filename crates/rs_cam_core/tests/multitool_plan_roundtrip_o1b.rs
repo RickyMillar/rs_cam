@@ -47,7 +47,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
 };
-use rs_cam_core::session::{PlannerOrigin, ProjectFile, ProjectSession};
+use rs_cam_core::session::{PlannerOrigin, ProjectFile, ProjectSession, ProjectSessionBuilder};
 use rs_cam_core::tier_islands::TierIslandParams;
 use rs_cam_core::tier_map::ResidualTreatment;
 
@@ -91,15 +91,10 @@ fn recipe(tool_ids: Vec<usize>) -> BoundarySource {
 /// One tool pair, one hand-built op carrying both Phase O additions, and one
 /// plain op carrying neither.
 fn session_with_a_planned_op() -> (ProjectSession, usize, usize) {
-    let mut session = ProjectSession::new_empty();
-    let coarse = session
-        .add_tool(ball_tool_config(4.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let fine = session
-        .add_tool(ball_tool_config(3.0))
-        .created
-        .expect("add_tool reports the new tool index");
+    let mut builder = ProjectSessionBuilder::new();
+    let coarse = builder.add_tool(ball_tool_config(4.0));
+    let fine = builder.add_tool(ball_tool_config(3.0));
+    let mut session = builder.build();
     let (coarse_id, fine_id) = (session.tools()[coarse].id.0, session.tools()[fine].id.0);
 
     let plain = common::session::toolpath_config(
@@ -209,8 +204,9 @@ fn both_loader_doors_reproduce_a_planned_chain_identically() {
 /// operator built every op" — never as a plan nobody made.
 #[test]
 fn a_pre_phase_o_project_loads_with_no_provenance() {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.add_tool(ball_tool_config(3.0));
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ball_tool_config(3.0));
+    let mut session = builder.build();
     let tool_id = session.tools()[0].id.0;
     let plain = common::session::toolpath_config(
         "Hand pass",

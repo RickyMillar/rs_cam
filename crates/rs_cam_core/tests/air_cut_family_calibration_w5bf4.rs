@@ -83,7 +83,9 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::profile::ProfileSide;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::AirCutRatios;
 
 // ── Fixture geometry ────────────────────────────────────────────────────
@@ -393,8 +395,8 @@ const PLATE_STOCK_Z_MM: f64 = 3.0;
 /// sits at z = 0 with 3 mm of stock above it, so the op has real material
 /// to take and the reading is a reading.
 fn plate_session(op: OperationConfig) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: PLATE_MM,
         y: PLATE_MM,
         z: PLATE_STOCK_Z_MM,
@@ -404,6 +406,7 @@ fn plate_session(op: OperationConfig) -> ProjectSession {
         auto_from_model: false,
         ..StockConfig::default()
     });
+    let mut session = builder.build();
     let tool_id = add_tool(&mut session, ToolType::BallNose, 6.0, "w5bf4 ball");
     let model_id = session
         .add_model(LoadedModel {

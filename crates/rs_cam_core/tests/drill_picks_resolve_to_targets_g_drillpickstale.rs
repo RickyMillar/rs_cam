@@ -86,7 +86,8 @@ use rs_cam_core::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    AdoptModelGeometryArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult,
+    AdoptModelGeometryArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    ToolpathComputeResult,
 };
 
 /// Where the drawing's one hole sits when the operator picks it.
@@ -187,21 +188,15 @@ fn pin_drill_op(picks: &[[f64; 2]]) -> OperationConfig {
 /// `add_*` doors. Entry styling and the rapid reorder are pinned off so
 /// the emitted columns are exactly the holes.
 fn session_with(model: LoadedModel, op: OperationConfig) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock());
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new().stock(stock());
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(model);
     let mut tc = toolpath_config("Drill", op, tool_id, model_id);
     tc.dressups.entry_style = DressupEntryStyle::None;
     tc.dressups.optimize_rapid_order = false;
-    let _ = session.add_toolpath(0, tc).expect("add drill toolpath");
+    let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
+    let session = builder.build();
     session
 }
 

@@ -17,7 +17,7 @@ use rs_cam_core::compute::operation_configs::TraceConfig;
 use rs_cam_core::gcode::{ToolLoadExportPolicy, export_gcode_checked};
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::ProjectSessionBuilder;
 use std::sync::atomic::AtomicBool;
 
 const DISABLED_LABEL: &str = "N1 disabled trace";
@@ -45,35 +45,22 @@ fn trace_op(spindle_rpm: u32) -> OperationConfig {
 
 #[test]
 fn disabled_cached_toolpath_is_absent_from_checked_export() {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_under(20.0, 4.0));
+    let mut builder = ProjectSessionBuilder::new().stock(stock_under(20.0, 4.0));
 
     let mut disabled_tool = make_endmill_6mm();
     disabled_tool.name = "N1 Disabled Tool".to_owned();
     disabled_tool.tool_number = 17;
-    let disabled_tool_idx = session
-        .add_tool(disabled_tool)
-        .created
-        .expect("add_tool reports the new tool index");
-    let disabled_tool_id = session.tools()[disabled_tool_idx].id.0;
+    let disabled_tool_idx = builder.add_tool(disabled_tool);
+    let disabled_tool_id = builder.tools()[disabled_tool_idx].id.0;
 
     let mut enabled_tool = make_endmill_6mm();
     enabled_tool.name = "N1 Enabled Tool".to_owned();
     enabled_tool.tool_number = 23;
-    let enabled_tool_idx = session
-        .add_tool(enabled_tool)
-        .created
-        .expect("add_tool reports the new tool index");
-    let enabled_tool_id = session.tools()[enabled_tool_idx].id.0;
+    let enabled_tool_idx = builder.add_tool(enabled_tool);
+    let enabled_tool_id = builder.tools()[enabled_tool_idx].id.0;
 
-    let disabled_model_id = session
-        .add_model(polygon_model(vec![square_at(1.0)], "n1_disabled"))
-        .created
-        .expect("add_model reports the new model id");
-    let enabled_model_id = session
-        .add_model(polygon_model(vec![square_at(11.0)], "n1_enabled"))
-        .created
-        .expect("add_model reports the new model id");
+    let disabled_model_id = builder.add_model(polygon_model(vec![square_at(1.0)], "n1_disabled"));
+    let enabled_model_id = builder.add_model(polygon_model(vec![square_at(11.0)], "n1_enabled"));
 
     let mut disabled = toolpath_config(
         DISABLED_LABEL,
@@ -83,7 +70,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     );
     disabled.pre_gcode = Some(DISABLED_MARKER.to_owned());
     disabled.post_gcode = Some("N1_DISABLED_POST".to_owned());
-    let _ = session
+    let _ = builder
         .add_toolpath(0, disabled)
         .expect("add disabled trace");
 
@@ -95,7 +82,8 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     );
     enabled.pre_gcode = Some(ENABLED_MARKER.to_owned());
     enabled.post_gcode = Some("N1_ENABLED_POST".to_owned());
-    let _ = session.add_toolpath(0, enabled).expect("add enabled trace");
+    let _ = builder.add_toolpath(0, enabled).expect("add enabled trace");
+    let mut session = builder.build();
 
     let cancel = AtomicBool::new(false);
     session

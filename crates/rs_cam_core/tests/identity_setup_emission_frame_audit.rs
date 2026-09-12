@@ -41,7 +41,7 @@ use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::MoveType;
 
 /// Flat two-triangle surface at `z`, spanning XY [10, 50] x [10, 50].
@@ -61,7 +61,7 @@ fn build_identity_origin_session() -> ProjectSession {
 }
 
 fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
 
     // Stock world Z=[-12, 0]: zero-rooted local top (12) differs from the
     // world top (0) by exactly -origin_z, which is what finding 4 is about.
@@ -78,13 +78,10 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
         },
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    builder = builder.stock(stock);
 
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
 
     let mesh = flat_quad_mesh(-6.0);
     let model = LoadedModel {
@@ -101,10 +98,7 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
         winding_report: None,
         load_error: None,
     };
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(model);
 
     let adaptive = Adaptive3dConfig {
         depth_per_pass: 2.0,
@@ -133,9 +127,10 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session
+    let _ = builder
         .add_toolpath(0, tc)
         .expect("add adaptive3d toolpath");
+    let session = builder.build();
 
     session
 }

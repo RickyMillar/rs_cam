@@ -33,7 +33,7 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 
 // ── helpers ─────────────────────────────────────────────────────────
 
@@ -129,17 +129,14 @@ fn has_id(diags: &[Diagnostic], id: &str) -> bool {
 
 #[test]
 fn rest_op_without_prior_enabled_tool_surfaces_blocking_diagnostic() {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut t_small = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     t_small.diameter = 3.0;
     let mut t_large = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     t_large.diameter = 6.0;
-    let _ = session.add_tool(t_small);
-    let _ = session.add_tool(t_large);
-    let mid = session
-        .add_model(polygon_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(t_small);
+    builder.add_tool(t_large);
+    let mid = builder.add_model(polygon_model(0));
 
     // Rest op with prev_tool_id = the 6 mm tool, but nothing earlier in
     // the setup uses it. Generation will fail at runtime — diagnose
@@ -148,14 +145,13 @@ fn rest_op_without_prior_enabled_tool_surfaces_blocking_diagnostic() {
         prev_tool_id: Some(ToolId(1)),
         ..RestConfig::default()
     };
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp("rest_dangler", OperationConfig::Rest(rest_cfg), 0, mid),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -172,27 +168,23 @@ fn rest_op_without_prior_enabled_tool_surfaces_blocking_diagnostic() {
 
 #[test]
 fn rest_op_without_prev_tool_id_surfaces_blocking_diagnostic() {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
-    let mid = session
-        .add_model(polygon_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(tool);
+    let mid = builder.add_model(polygon_model(0));
 
     let rest_cfg = RestConfig {
         prev_tool_id: None,
         ..RestConfig::default()
     };
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp("rest_no_prev", OperationConfig::Rest(rest_cfg), 0, mid),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -204,20 +196,17 @@ fn rest_op_without_prev_tool_id_surfaces_blocking_diagnostic() {
 
 #[test]
 fn rest_op_with_correct_prior_is_silent() {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut t_small = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     t_small.diameter = 3.0;
     let mut t_large = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     t_large.diameter = 6.0;
-    let _ = session.add_tool(t_small);
-    let _ = session.add_tool(t_large);
-    let mid = session
-        .add_model(polygon_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(t_small);
+    builder.add_tool(t_large);
+    let mid = builder.add_model(polygon_model(0));
 
     // Prior op uses the large tool.
-    let _ = session
+    let _ = builder
         .add_toolpath(
             0,
             make_tp(
@@ -233,14 +222,13 @@ fn rest_op_with_correct_prior_is_silent() {
         prev_tool_id: Some(ToolId(1)),
         ..RestConfig::default()
     };
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp("rest_clean", OperationConfig::Rest(rest_cfg), 0, mid),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -257,24 +245,20 @@ fn rest_op_with_correct_prior_is_silent() {
 #[test]
 fn project_curve_in_single_model_project_surfaces_blocking_diagnostic() {
     // Project has only a surface STL — no curve polygons anywhere.
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
-    let mid = session
-        .add_model(mesh_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(tool);
+    let mid = builder.add_model(mesh_model(0));
 
     let cfg = ProjectCurveConfig::default();
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp("pc_no_curve", OperationConfig::ProjectCurve(cfg), 0, mid),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -292,24 +276,20 @@ fn project_curve_in_single_model_project_surfaces_blocking_diagnostic() {
 #[test]
 fn project_curve_without_any_surface_mesh_surfaces_blocking_diagnostic() {
     // Project has only a polygon model — no STL anywhere.
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
-    let mid = session
-        .add_model(polygon_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(tool);
+    let mid = builder.add_model(polygon_model(0));
 
     let cfg = ProjectCurveConfig::default();
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp("pc_no_surface", OperationConfig::ProjectCurve(cfg), 0, mid),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -321,28 +301,21 @@ fn project_curve_without_any_surface_mesh_surfaces_blocking_diagnostic() {
 
 #[test]
 fn project_curve_with_curve_and_surface_models_is_silent() {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
-    let curve_id = session
-        .add_model(polygon_model(0))
-        .created
-        .expect("add_model reports the new model id");
-    let _surface_id = session
-        .add_model(mesh_model(1))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(tool);
+    let curve_id = builder.add_model(polygon_model(0));
+    let _surface_id = builder.add_model(mesh_model(1));
 
     let cfg = ProjectCurveConfig::default();
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp("pc_happy", OperationConfig::ProjectCurve(cfg), 0, curve_id),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     let pc_diags: Vec<_> = diags
@@ -362,16 +335,13 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
     // Drill needs polygons (hole centroids). Mesh-only model fails at
     // generate time with "No hole positions found"; the precondition
     // adapter must surface that before that point.
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
-    let mid = session
-        .add_model(mesh_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(tool);
+    let mid = builder.add_model(mesh_model(0));
 
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp(
@@ -381,9 +351,8 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
                 mid,
             ),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -400,16 +369,13 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
 
 #[test]
 fn drill_op_against_target_bearing_model_is_silent() {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
-    let mid = session
-        .add_model(target_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(tool);
+    let mid = builder.add_model(target_model(0));
 
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp(
@@ -419,9 +385,8 @@ fn drill_op_against_target_bearing_model_is_silent() {
                 mid,
             ),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     assert!(
@@ -436,16 +401,13 @@ fn drill_op_against_target_bearing_model_is_silent() {
 /// generator drilled the centroid of every polygon.
 #[test]
 fn drill_op_against_polygon_only_model_fires_no_targets() {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    let _ = session.add_tool(tool);
-    let mid = session
-        .add_model(polygon_model(0))
-        .created
-        .expect("add_model reports the new model id");
+    builder.add_tool(tool);
+    let mid = builder.add_model(polygon_model(0));
 
-    let idx = session
+    let idx = builder
         .add_toolpath(
             0,
             make_tp(
@@ -455,9 +417,8 @@ fn drill_op_against_polygon_only_model_fires_no_targets() {
                 mid,
             ),
         )
-        .unwrap()
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .unwrap();
+    let session = builder.build();
 
     let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
     let diag = diags

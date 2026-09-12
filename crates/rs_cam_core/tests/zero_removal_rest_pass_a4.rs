@@ -78,7 +78,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{ClaimsReference, UnifiedFinishConfig};
 use rs_cam_core::diagnostics::ids;
-use rs_cam_core::session::{ProjectSession, SimulationOptions};
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SimulationOptions};
 use rs_cam_core::unified_finish::ClaimsReferenceResolution;
 
 /// Half-extent (mm) of the fixture surface.
@@ -146,17 +146,11 @@ fn unified_cfg(raster_stepover: f64, rest_pass: bool) -> UnifiedFinishConfig {
 
 /// Finish, then a rest pass reading the stock the finish left.
 fn cascade_session(finish_stepover: f64) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_over(HALF, STOCK_Z));
-    let tool_idx = session
-        .add_tool(ball_tool_config(3.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(mesh_model(bumpy_surface(), "bumps"))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_over(HALF, STOCK_Z));
+    let tool_idx = builder.add_tool(ball_tool_config(3.0));
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(mesh_model(bumpy_surface(), "bumps"));
     let heights = pinned_heights(STOCK_Z, STOCK_Z - RELIEF);
 
     let mut finish = toolpath_config(
@@ -166,7 +160,7 @@ fn cascade_session(finish_stepover: f64) -> ProjectSession {
         model_id,
     );
     finish.heights = heights.clone();
-    let _ = session.add_toolpath(0, finish).expect("add finish op");
+    let _ = builder.add_toolpath(0, finish).expect("add finish op");
 
     let mut rest = toolpath_config(
         "Rest (same tool)",
@@ -178,7 +172,8 @@ fn cascade_session(finish_stepover: f64) -> ProjectSession {
     // Without this the op reads FRESH stock and there is no reference for
     // anything to be measured against.
     rest.stock_source = StockSource::FromRemainingStock;
-    let _ = session.add_toolpath(0, rest).expect("add rest op");
+    let _ = builder.add_toolpath(0, rest).expect("add rest op");
+    let session = builder.build();
     session
 }
 

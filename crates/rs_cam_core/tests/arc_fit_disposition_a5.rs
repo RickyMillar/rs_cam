@@ -122,7 +122,9 @@ use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::feeds::suggest::SuggestWarning;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::session::{Command, ProjectSession, ReplaceToolpathConfigArgs, SimulationOptions};
+use rs_cam_core::session::{
+    Command, ProjectSession, ProjectSessionBuilder, ReplaceToolpathConfigArgs, SimulationOptions,
+};
 
 // ── Fixture constants ───────────────────────────────────────────────────
 
@@ -381,32 +383,23 @@ fn fixtures() -> Vec<Fixture> {
 /// Two-op cascade: op 0 fresh-stock rough, op 1 the measured op reading what
 /// op 0 left.
 fn build_session(fx: &Fixture) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
 
     let mut stock = stock_over(HALF, STOCK_Z);
     stock.material = fx.material.clone();
-    let _ = session.set_stock_config(stock);
+    builder = builder.stock(stock);
 
-    let _ = session.set_machine(MachineProfile {
+    builder = builder.machine(MachineProfile {
         max_feed_mm_min: fx.max_feed_mm_min,
         max_cutting_feed_mm_min: fx.max_cutting_feed_mm_min,
         ..MachineProfile::default()
     });
 
-    let rt = session
-        .add_tool(fx.rough_tool.clone())
-        .created
-        .expect("add_tool reports the new tool index");
-    let rough_id = session.tools()[rt].id.0;
-    let mt = session
-        .add_tool(fx.tool.clone())
-        .created
-        .expect("add_tool reports the new tool index");
-    let meas_id = session.tools()[mt].id.0;
-    let model_id = session
-        .add_model(mesh_model(bumpy_surface(), "a5_bumps"))
-        .created
-        .expect("add_model reports the new model id");
+    let rt = builder.add_tool(fx.rough_tool.clone());
+    let rough_id = builder.tools()[rt].id.0;
+    let mt = builder.add_tool(fx.tool.clone());
+    let meas_id = builder.tools()[mt].id.0;
+    let model_id = builder.add_model(mesh_model(bumpy_surface(), "a5_bumps"));
 
     let heights = pinned_heights(STOCK_Z, STOCK_Z - RELIEF);
 
@@ -417,12 +410,13 @@ fn build_session(fx: &Fixture) -> ProjectSession {
         model_id,
     );
     rough.heights = heights.clone();
-    let _ = session.add_toolpath(0, rough).expect("add rough op");
+    let _ = builder.add_toolpath(0, rough).expect("add rough op");
 
     let mut measured = toolpath_config(fx.label, fx.op.clone(), meas_id, model_id);
     measured.heights = heights;
     measured.stock_source = StockSource::FromRemainingStock;
-    let _ = session.add_toolpath(0, measured).expect("add measured op");
+    let _ = builder.add_toolpath(0, measured).expect("add measured op");
+    let session = builder.build();
 
     session
 }

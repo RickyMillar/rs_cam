@@ -40,7 +40,7 @@ use rs_cam_core::pencil::{
     PencilDetector, PencilParams, PencilRuntimeEvent, pencil_toolpath_structured_annotated,
 };
 use rs_cam_core::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 
 fn wanaka_taper() -> TaperedBallEndmill {
@@ -511,8 +511,8 @@ fn pencil_toolpath(cfg: PencilConfig, tool_id: usize, model_id: usize) -> Toolpa
 }
 
 fn generate_pencil_through_session(route_width_factor: f64) -> ToolpathStats {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: 40.0,
         y: 24.0,
         z: 4.0,
@@ -522,20 +522,14 @@ fn generate_pencil_through_session(route_width_factor: f64) -> ToolpathStats {
         auto_from_model: false,
         ..StockConfig::default()
     });
-    let tool_idx = session
-        .add_tool(ToolConfig {
-            diameter: 1.0,
-            taper_half_angle: 7.0,
-            shaft_diameter: 6.0,
-            ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
-        })
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(mesh_model(grooved_block(2.5, 70.0, 1.2, 1.0)))
-        .created
-        .expect("add_model reports the new model id");
+    let tool_idx = builder.add_tool(ToolConfig {
+        diameter: 1.0,
+        taper_half_angle: 7.0,
+        shaft_diameter: 6.0,
+        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+    });
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(mesh_model(grooved_block(2.5, 70.0, 1.2, 1.0)));
     let cfg = PencilConfig {
         detector: "rest_depth".to_owned(),
         rest_cell_mm: 0.4,
@@ -545,9 +539,10 @@ fn generate_pencil_through_session(route_width_factor: f64) -> ToolpathStats {
         route_width_factor,
         ..PencilConfig::default()
     };
-    let _ = session
+    let _ = builder
         .add_toolpath(0, pencil_toolpath(cfg, tool_id, model_id))
         .expect("add pencil toolpath");
+    let mut session = builder.build();
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)

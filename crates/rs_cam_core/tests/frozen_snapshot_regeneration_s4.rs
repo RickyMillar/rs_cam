@@ -114,7 +114,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{ClaimsReference, UnifiedFinishConfig};
 use rs_cam_core::gcode::ToolLoadExportPolicy;
-use rs_cam_core::session::{ProjectSession, SimulationOptions};
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SimulationOptions};
 
 /// Half-extent (mm) of the fixture surface.
 const HALF: f64 = 20.0;
@@ -196,17 +196,11 @@ fn unified_cfg(raster_stepover: f64, rest_pass: bool) -> UnifiedFinishConfig {
 ///   incident's dominant class: `G0` approach heights, whose Z comes
 ///   straight from `max_conservative_top_z_in_disc` on the snapshot.
 fn cascade_session_with(rest_claims: bool) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_over(HALF, STOCK_Z));
-    let tool_idx = session
-        .add_tool(ball_tool_config(3.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(mesh_model(bumpy_surface(), "bumps"))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_over(HALF, STOCK_Z));
+    let tool_idx = builder.add_tool(ball_tool_config(3.0));
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(mesh_model(bumpy_surface(), "bumps"));
     let heights = pinned_heights(STOCK_Z, STOCK_Z - RELIEF);
 
     let mut finish = toolpath_config(
@@ -216,7 +210,7 @@ fn cascade_session_with(rest_claims: bool) -> ProjectSession {
         model_id,
     );
     finish.heights = heights.clone();
-    let _ = session.add_toolpath(0, finish).expect("add finish op");
+    let _ = builder.add_toolpath(0, finish).expect("add finish op");
 
     let mut rest = toolpath_config(
         "Rest (same tool)",
@@ -226,7 +220,8 @@ fn cascade_session_with(rest_claims: bool) -> ProjectSession {
     );
     rest.heights = heights;
     rest.stock_source = StockSource::FromRemainingStock;
-    let _ = session.add_toolpath(0, rest).expect("add rest op");
+    let _ = builder.add_toolpath(0, rest).expect("add rest op");
+    let session = builder.build();
     session
 }
 

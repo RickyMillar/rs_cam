@@ -67,7 +67,7 @@ use rs_cam_core::compute::stock_config::{AlignmentPin, StockConfig};
 use rs_cam_core::dressup::{EntryStyle, apply_entry};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession};
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
@@ -144,23 +144,17 @@ fn pin_drill_op() -> OperationConfig {
 /// `None` for `entry` leaves whatever `DressupConfig::for_op` builds for
 /// the operation — which for `AlignmentPinDrill` is `Ramp`.
 fn drill_moves(op: OperationConfig, entry: Option<DressupEntryStyle>) -> Vec<(i64, i64, i64)> {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock());
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(plate_model())
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new().stock(stock());
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(plate_model());
 
     let mut tc = toolpath_config("Drill", op, tool_id, model_id);
     if let Some(style) = entry {
         tc.dressups.entry_style = style;
     }
-    let _ = session.add_toolpath(0, tc).expect("add drill toolpath");
+    let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
+    let mut session = builder.build();
 
     let cancel = AtomicBool::new(false);
     let result = session

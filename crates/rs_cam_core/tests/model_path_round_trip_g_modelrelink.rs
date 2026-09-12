@@ -31,7 +31,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
 
 /// A unique scratch directory for one test.
 fn scratch(name: &str) -> PathBuf {
@@ -273,15 +273,15 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
         }
     }
 
-    let mut session = ProjectSession::new_empty();
-    let _ = session.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let _ = session
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let _ = builder
         .add_toolpath(
             0,
             toolpath(0, 0, rs_cam_core::compute::config::StockSource::Fresh),
         )
         .unwrap();
-    let _ = session
+    let _ = builder
         .add_toolpath(
             0,
             toolpath(
@@ -291,12 +291,13 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
             ),
         )
         .unwrap();
-    let _ = session
+    let _ = builder
         .add_toolpath(
             0,
             toolpath(2, 1, rs_cam_core::compute::config::StockSource::Fresh),
         )
         .unwrap();
+    let mut session = builder.build();
     for index in 0..3 {
         let revision = session.toolpath_revision(index);
         let _ = session

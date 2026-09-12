@@ -69,7 +69,7 @@ use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::measurement::{MeasurementDomain, MeasurementStage};
 use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 
 // ── Fixture ──────────────────────────────────────────────────────────────
 
@@ -261,20 +261,14 @@ fn stock() -> StockConfig {
 }
 
 fn session_with(mesh: TriangleMesh, name: &str, op: OperationConfig) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock());
-    let tool_idx = session
-        .add_tool(ball_tool())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(mesh_model(mesh, name))
-        .created
-        .expect("add_model reports the new model id");
-    let _ = session
+    let mut builder = ProjectSessionBuilder::new().stock(stock());
+    let tool_idx = builder.add_tool(ball_tool());
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(mesh_model(mesh, name));
+    let _ = builder
         .add_toolpath(0, toolpath(op, tool_id, model_id))
         .expect("add toolpath");
+    let mut session = builder.build();
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)

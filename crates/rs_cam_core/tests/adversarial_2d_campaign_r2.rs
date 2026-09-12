@@ -54,7 +54,7 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
 
 // ---------------------------------------------------------------------------
 // Pre-registered bars (rule 7: these are written before the evidence is run)
@@ -283,21 +283,16 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
         }
         other => other,
     };
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_for(&fixture.polys));
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_for(&fixture.polys));
     let tool = match kind {
         ToolKind::EndMill => endmill(fixture.tool_d),
         ToolKind::VBit => vbit(),
     };
-    let tool_idx = session
-        .add_tool(tool)
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(polygon_model(fixture.polys.clone(), fixture.name))
-        .created
-        .expect("add_model reports the new model id");
+    let tool_idx = builder.add_tool(tool);
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(polygon_model(fixture.polys.clone(), fixture.name));
+    let mut session = builder.build();
     let cfg = toolpath_config(fixture.name, op, tool_id, model_id);
     let _ = session
         .add_toolpath(0, cfg)
@@ -309,22 +304,14 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
 /// rest pass. Below `tool_radius < prev_tool_radius` it returns empty by
 /// contract (`rest.rs:70`), so the sizes are not decorative.
 fn rest_session(fixture: &Fixture) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_for(&fixture.polys));
-    let prev_idx = session
-        .add_tool(endmill(fixture.tool_d * 2.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let prev_id = session.tools()[prev_idx].id;
-    let cur_idx = session
-        .add_tool(endmill(fixture.tool_d))
-        .created
-        .expect("add_tool reports the new tool index");
-    let cur_id = session.tools()[cur_idx].id.0;
-    let model_id = session
-        .add_model(polygon_model(fixture.polys.clone(), fixture.name))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_for(&fixture.polys));
+    let prev_idx = builder.add_tool(endmill(fixture.tool_d * 2.0));
+    let prev_id = builder.tools()[prev_idx].id;
+    let cur_idx = builder.add_tool(endmill(fixture.tool_d));
+    let cur_id = builder.tools()[cur_idx].id.0;
+    let model_id = builder.add_model(polygon_model(fixture.polys.clone(), fixture.name));
+    let mut session = builder.build();
     let op = OperationConfig::Rest(RestConfig {
         prev_tool_id: Some(prev_id),
         stepover: fixture.tool_d * 0.4,

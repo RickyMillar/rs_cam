@@ -62,7 +62,7 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 
 // ── Tool geometry (the wanaka-class finisher, as in M2.1) ───────────────
@@ -213,20 +213,14 @@ fn stock() -> StockConfig {
 /// The REAL production entry point, so the derivation is exercised through
 /// the wiring the GUI and the CLI share.
 fn generate_through_session(tool: ToolConfig) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock());
-    let tool_idx = session
-        .add_tool(tool)
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(mesh_model(two_groove_plateau()))
-        .created
-        .expect("add_model reports the new model id");
-    let _ = session
+    let mut builder = ProjectSessionBuilder::new().stock(stock());
+    let tool_idx = builder.add_tool(tool);
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(mesh_model(two_groove_plateau()));
+    let _ = builder
         .add_toolpath(0, toolpath(unified_finish_op(), tool_id, model_id))
         .expect("add unified-finish toolpath");
+    let mut session = builder.build();
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)

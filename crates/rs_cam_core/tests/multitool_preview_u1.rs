@@ -36,7 +36,7 @@ use common::tools::{ball_cutter, ball_tool_config};
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::session::{MultitoolPlanSpec, ProjectSession};
+use rs_cam_core::session::{MultitoolPlanSpec, ProjectSession, ProjectSessionBuilder};
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::tier_map::{
     NO_TIER, ResidualTreatment, TierLadder, TierMapParams, compute_tier_map,
@@ -91,22 +91,14 @@ fn spec(coarse_id: usize, fine_id: usize, model_id: usize) -> MultitoolPlanSpec 
 /// A session over the fixture with a Ø4 / Ø2 ball ladder.
 /// Returns `(session, coarse_id, fine_id, model_id)`.
 fn session_with_ladder() -> (ProjectSession, usize, usize, usize) {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(common::session::stock_under(HALF_MM, 6.0));
-    let coarse_idx = session
-        .add_tool(ball_tool_config(4.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let fine_idx = session
-        .add_tool(ball_tool_config(2.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let coarse_id = session.tools()[coarse_idx].id.0;
-    let fine_id = session.tools()[fine_idx].id.0;
-    let model_id = session
-        .add_model(common::session::mesh_model(plane_with_bowl(), "bowl"))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(common::session::stock_under(HALF_MM, 6.0));
+    let coarse_idx = builder.add_tool(ball_tool_config(4.0));
+    let fine_idx = builder.add_tool(ball_tool_config(2.0));
+    let coarse_id = builder.tools()[coarse_idx].id.0;
+    let fine_id = builder.tools()[fine_idx].id.0;
+    let model_id = builder.add_model(common::session::mesh_model(plane_with_bowl(), "bowl"));
+    let session = builder.build();
     (session, coarse_id, fine_id, model_id)
 }
 

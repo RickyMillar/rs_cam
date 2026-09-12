@@ -66,7 +66,9 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::CutKinematics;
 
 // ----- AS001 pocket fixture (matches F-024 / F-035) -----------------
@@ -106,7 +108,7 @@ fn rounded_rect_with_island() -> Polygon2 {
 /// kinematics when `attach_kinematics` is true so the F-036b post-pass
 /// fires; otherwise modulation is a no-op even with the flag on.
 fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
@@ -120,13 +122,10 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
         },
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    builder = builder.stock(stock);
 
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
 
     let polygon = rounded_rect_with_island();
     let model = LoadedModel {
@@ -143,10 +142,7 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(model);
 
     let pocket = PocketConfig {
         stepover: 2.0,
@@ -181,7 +177,8 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tc).expect("add pocket toolpath");
+    let _ = builder.add_toolpath(0, tc).expect("add pocket toolpath");
+    let mut session = builder.build();
 
     if attach_kinematics {
         let mut machine = session.machine().clone();

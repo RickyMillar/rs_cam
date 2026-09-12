@@ -69,7 +69,7 @@ use rs_cam_core::compute::stock_config::{AlignmentPin, StockConfig};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
 
 const STOCK_X: f64 = 240.0;
 const STOCK_Y: f64 = 250.0;
@@ -148,17 +148,11 @@ const FLIPPED_PIN: usize = 3;
 /// that differs between an identity arm and its flipped twin is the setup
 /// transform, so any coordinate difference is attributable to it.
 fn two_setup_session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock());
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(polygon_model(vec![plate_polygon()], "plate"))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new().stock(stock());
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(polygon_model(vec![plate_polygon()], "plate"));
+    let mut session = builder.build();
 
     // ISOLATE THE VARIABLE: this sentry is about WHERE the holes are, not
     // what shape they are, so every dressup that can add or move a

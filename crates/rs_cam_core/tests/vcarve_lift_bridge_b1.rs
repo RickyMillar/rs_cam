@@ -34,7 +34,9 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+};
 
 /// 5-pointed star polygon (10 vertices, alternating outer/inner radius).
 /// Matches the geometry of `fixtures/demo_star.svg` in spirit: a single
@@ -69,7 +71,7 @@ fn make_vbit_12_7mm_60deg() -> ToolConfig {
 }
 
 fn build_vcarve_session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
 
     // Matches `test_data/ux_2d_star.toml` stock — 120×120×12 hardwood,
     // origin -10,-10,-12 so the stock top sits at z=0.
@@ -86,13 +88,10 @@ fn build_vcarve_session() -> ProjectSession {
         },
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    builder = builder.stock(stock);
 
-    let tool_idx = session
-        .add_tool(make_vbit_12_7mm_60deg())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(make_vbit_12_7mm_60deg());
+    let tool_id = builder.tools()[tool_idx].id.0;
 
     let polygon = five_point_star();
     let model = LoadedModel {
@@ -109,10 +108,7 @@ fn build_vcarve_session() -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(model);
 
     let vcarve = VCarveConfig {
         max_depth: 3.0,
@@ -147,7 +143,8 @@ fn build_vcarve_session() -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tc).expect("add v_carve toolpath");
+    let _ = builder.add_toolpath(0, tc).expect("add v_carve toolpath");
+    let session = builder.build();
 
     session
 }

@@ -75,7 +75,7 @@ use common::session::{
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::TraceConfig;
 use rs_cam_core::feeds::{FeedsField, ProvenanceSource};
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
 use serde_json::json;
 
 /// The source of `set_toolpath_param`, read for assertion 5.
@@ -116,18 +116,11 @@ fn accepts_depth_per_pass(op: OperationType) -> bool {
 /// constraint an end mill fails still gets a record here. That is what
 /// this test wants: the param route is under test, not the generator.
 fn all_ops_session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_under(20.0, 4.0));
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let mut builder = ProjectSessionBuilder::new().stock(stock_under(20.0, 4.0));
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
     let model = polygon_model(vec![square_polygon(2.0)], "n5_all_ops");
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(model);
     for op in OperationType::ALL {
         let cfg = toolpath_config(
             op.label(),
@@ -135,8 +128,9 @@ fn all_ops_session() -> ProjectSession {
             tool_id,
             model_id,
         );
-        let _ = session.add_toolpath(0, cfg).expect("add one op per type");
+        let _ = builder.add_toolpath(0, cfg).expect("add one op per type");
     }
+    let session = builder.build();
     session
 }
 

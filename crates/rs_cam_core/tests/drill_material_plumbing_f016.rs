@@ -33,7 +33,7 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 
 fn unit_square_at(cx: f64, cy: f64) -> Polygon2 {
     Polygon2::new(vec![
@@ -45,7 +45,7 @@ fn unit_square_at(cx: f64, cy: f64) -> Polygon2 {
 }
 
 fn build_drill_session(material: Material) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
 
     let stock = StockConfig {
         x: 100.0,
@@ -58,15 +58,12 @@ fn build_drill_session(material: Material) -> ProjectSession {
         material,
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    builder = builder.stock(stock);
 
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 4.0;
-    let tool_idx = session
-        .add_tool(tool)
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(tool);
+    let tool_id = builder.tools()[tool_idx].id.0;
 
     let model = LoadedModel {
         id: 0,
@@ -89,10 +86,7 @@ fn build_drill_session(material: Material) -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(model);
 
     let drill = DrillConfig {
         depth: 15.0,
@@ -123,7 +117,8 @@ fn build_drill_session(material: Material) -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tc).unwrap();
+    let _ = builder.add_toolpath(0, tc).unwrap();
+    let session = builder.build();
 
     session
 }

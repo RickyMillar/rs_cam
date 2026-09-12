@@ -255,7 +255,7 @@ use rs_cam_core::measurement::{
 };
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::semantic_trace::{SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace};
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions};
 use rs_cam_core::tool::MillingCutter;
 use rs_cam_core::toolpath::Move;
 
@@ -759,17 +759,10 @@ fn run_cascade_arm(
     heights: HeightsConfig,
     sim_mm: f64,
 ) -> ArmResult {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock);
-    let tool_idx = session
-        .add_tool(session_tool())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new().stock(stock);
+    let tool_idx = builder.add_tool(session_tool());
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(model);
 
     let mut op0 = toolpath_config(
         &format!("{label} op0 (all-over)"),
@@ -778,7 +771,7 @@ fn run_cascade_arm(
         model_id,
     );
     op0.heights = heights.clone();
-    let _ = session.add_toolpath(0, op0).expect("add cascade op0");
+    let _ = builder.add_toolpath(0, op0).expect("add cascade op0");
 
     let mut op1 = toolpath_config(
         &format!("{label} op1 (rest)"),
@@ -790,7 +783,8 @@ fn run_cascade_arm(
     // Without this op1 reads FRESH stock and there is no machined prior for
     // ANY claims reference to use — the cascade would not be a cascade.
     op1.stock_source = StockSource::FromRemainingStock;
-    let _ = session.add_toolpath(0, op1).expect("add cascade op1");
+    let _ = builder.add_toolpath(0, op1).expect("add cascade op1");
+    let mut session = builder.build();
 
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {

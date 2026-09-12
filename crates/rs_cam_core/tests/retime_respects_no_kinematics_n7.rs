@@ -83,7 +83,9 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::SimulationCutTrace;
 
 /// The AS001 pocket, which produces an engagement summary.
@@ -261,7 +263,7 @@ fn drill_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
 /// `kinematics` is the knob. `None` is the shipped preset value and the case
 /// this file is about; `Some` builds the control.
 fn build_session(kinematics: Option<MachineKinematics>) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
@@ -275,29 +277,21 @@ fn build_session(kinematics: Option<MachineKinematics>) -> ProjectSession {
         },
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    builder = builder.stock(stock);
 
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
 
-    let pocket_model_id = session
-        .add_model(pocket_model())
-        .created
-        .expect("add_model reports the new model id");
-    let drill_model_id = session
-        .add_model(drill_model())
-        .created
-        .expect("add_model reports the new model id");
+    let pocket_model_id = builder.add_model(pocket_model());
+    let drill_model_id = builder.add_model(drill_model());
 
-    let _ = session
+    let _ = builder
         .add_toolpath(0, pocket_toolpath(tool_id, pocket_model_id))
         .expect("add pocket toolpath");
-    let _ = session
+    let _ = builder
         .add_toolpath(0, drill_toolpath(tool_id, drill_model_id))
         .expect("add drill toolpath");
+    let mut session = builder.build();
 
     let mut machine = session.machine().clone();
     machine.kinematics = kinematics;

@@ -49,9 +49,9 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, CommandId, CommandKind, LoadedModel, ProjectSession, Query,
-    QueryAnswer, Reach, SetToolpathParamArgs, ToolpathConfig, ToolpathCycleTimeAnswer,
-    ToolpathCycleTimeArgs,
+    AdoptResultArgs, Command, CommandId, CommandKind, LoadedModel, ProjectSession,
+    ProjectSessionBuilder, Query, QueryAnswer, Reach, SetToolpathParamArgs, ToolpathConfig,
+    ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
 
 /// The feed value the behavioural arm writes.
@@ -304,11 +304,11 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// index 0 leaves. Both carry a cached result. The fixture is the one
 /// `mutation_paths_invalidate_alike_p0.rs` uses.
 fn fixture() -> ProjectSession {
-    let mut s = ProjectSession::new_empty();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let _ = s.add_model(empty_model("part.svg"));
-    let tool = s.tools()[0].id.0;
-    let model = s.models()[0].id;
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_model(empty_model("part.svg"));
+    let tool = builder.tools()[0].id.0;
+    let model = builder.models()[0].id;
     let upstream = tc(
         "upstream",
         OperationConfig::Pocket(PocketConfig::default()),
@@ -323,8 +323,9 @@ fn fixture() -> ProjectSession {
         tool,
         model,
     );
-    let _ = s.add_toolpath(0, upstream).unwrap();
-    let _ = s.add_toolpath(0, downstream).unwrap();
+    let _ = builder.add_toolpath(0, upstream).unwrap();
+    let _ = builder.add_toolpath(0, downstream).unwrap();
+    let mut s = builder.build();
     adopt(&mut s, 0);
     adopt(&mut s, 1);
     assert_fixture_is_live(&s);

@@ -63,7 +63,7 @@ use rs_cam_core::compute::operation_configs::{ProfileConfig, ProfileSide};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
 use rs_cam_core::toolpath::MoveType;
 
 /// Half-extent of the part outline: a 30 mm square, world `-15..15` in both
@@ -102,20 +102,14 @@ fn generated_profile(face_up: FaceUp, side: ProfileSide) -> ProjectSession {
         ..ProfileConfig::default()
     });
 
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(polygon_model(
-            vec![square_polygon(PART_HALF)],
-            "profile_square",
-        ))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_under(STOCK_HALF, STOCK_HEIGHT));
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(polygon_model(
+        vec![square_polygon(PART_HALF)],
+        "profile_square",
+    ));
 
     let mut cfg = toolpath_config("Profile", op, tool_id, model_id);
     cfg.dressups.entry_style = DressupEntryStyle::None;
@@ -128,14 +122,12 @@ fn generated_profile(face_up: FaceUp, side: ProfileSide) -> ProjectSession {
     let setup = if face_up == FaceUp::Top {
         0
     } else {
-        session
-            .add_setup("Flipped".to_owned(), face_up)
-            .created
-            .expect("add_setup reports the new setup index")
+        builder.add_setup("Flipped".to_owned(), face_up)
     };
-    let _ = session
+    let _ = builder
         .add_toolpath(setup, cfg)
         .expect("add the profile toolpath to its setup");
+    let mut session = builder.build();
 
     generate(&mut session, 0);
     session
@@ -228,8 +220,9 @@ fn profile_side_survives_a_face_up_flip() {
 /// sign. A bare mirror does not, which is what G-PROFILE-FLIP was.
 #[test]
 fn flip_preserves_the_ccw_winding_convention() {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_under(STOCK_HALF, STOCK_HEIGHT));
+    let session = builder.build();
 
     let mut with_hole = Polygon2::with_holes(
         square_polygon(PART_HALF).exterior,
@@ -288,8 +281,9 @@ fn flip_preserves_the_ccw_winding_convention() {
 /// which would agree with a reversal that moved every point consistently.
 #[test]
 fn flip_leaves_open_path_direction_alone() {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(stock_under(STOCK_HALF, STOCK_HEIGHT));
+    let session = builder.build();
 
     // Authored CCW so that the Bottom mirror (y -> stock_y - y) makes the
     // transformed ring CW — the one case where a re-wind is not a no-op.

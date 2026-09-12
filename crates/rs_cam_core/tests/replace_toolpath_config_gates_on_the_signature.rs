@@ -55,7 +55,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, PlannerOrigin, ProjectSession,
+    AdoptResultArgs, Command, LoadedModel, PlannerOrigin, ProjectSession, ProjectSessionBuilder,
     ReplaceToolpathConfigArgs, ToolpathConfig,
 };
 
@@ -145,11 +145,11 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 ///
 /// Both rows carry a cached result before the caller replaces anything.
 fn fixture() -> ProjectSession {
-    let mut s = ProjectSession::new_empty();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let _ = s.add_model(empty_model("part.svg"));
-    let tool = s.tools()[0].id.0;
-    let model = s.models()[0].id;
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_model(empty_model("part.svg"));
+    let tool = builder.tools()[0].id.0;
+    let model = builder.models()[0].id;
     let upstream = tc(
         "upstream",
         OperationConfig::Pocket(PocketConfig::default()),
@@ -164,8 +164,9 @@ fn fixture() -> ProjectSession {
         tool,
         model,
     );
-    let _ = s.add_toolpath(0, upstream).unwrap();
-    let _ = s.add_toolpath(0, downstream).unwrap();
+    let _ = builder.add_toolpath(0, upstream).unwrap();
+    let _ = builder.add_toolpath(0, downstream).unwrap();
+    let mut s = builder.build();
     adopt(&mut s, 0);
     adopt(&mut s, 1);
     assert_fixture_is_live(&s);

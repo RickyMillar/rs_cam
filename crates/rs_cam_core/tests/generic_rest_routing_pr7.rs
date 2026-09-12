@@ -61,7 +61,7 @@ use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::tool::{BallEndmill, TaperedBallEndmill};
 
 fn wanaka_taper() -> TaperedBallEndmill {
@@ -213,8 +213,8 @@ fn generate_with_rest_analysis(
     finisher: ToolConfig,
     rest_analysis: RestAnalysisConfig,
 ) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: 44.0,
         y: 28.0,
         z: 8.0,
@@ -224,25 +224,17 @@ fn generate_with_rest_analysis(
         auto_from_model: false,
         ..StockConfig::default()
     });
-    let fine_idx = session
-        .add_tool(finisher)
-        .created
-        .expect("add_tool reports the new tool index");
-    let fine_id = session.tools()[fine_idx].id.0;
-    let ref_idx = session
-        .add_tool(ball_tool(1, 12.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let ref_id = session.tools()[ref_idx].id;
-    let model_id = session
-        .add_model(mesh_model(grooved_block(8.0, 50.0, 5.0, 1.0)))
-        .created
-        .expect("add_model reports the new model id");
+    let fine_idx = builder.add_tool(finisher);
+    let fine_id = builder.tools()[fine_idx].id.0;
+    let ref_idx = builder.add_tool(ball_tool(1, 12.0));
+    let ref_id = builder.tools()[ref_idx].id;
+    let model_id = builder.add_model(mesh_model(grooved_block(8.0, 50.0, 5.0, 1.0)));
     let mut ra = rest_analysis;
     ra.reference_tool_id = Some(ref_id);
-    let _ = session
+    let _ = builder
         .add_toolpath(0, toolpath(fine_id, model_id, ra))
         .expect("add scallop toolpath");
+    let mut session = builder.build();
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)

@@ -48,7 +48,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, SessionError, ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SessionError,
+    ToolpathConfig,
 };
 
 // ── fixture ──────────────────────────────────────────────────────
@@ -113,14 +114,14 @@ fn empty_model(name: &str) -> LoadedModel {
 /// One setup, two tools (`Ø6 end mill` id 0, `Ø3 ball nose` id 1), two
 /// models, one Pocket toolpath bound to tool 0 / model 0.
 fn seed() -> ProjectSession {
-    let mut s = ProjectSession::new_empty();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
-    let _ = s.add_model(empty_model("first.svg"));
-    let _ = s.add_model(empty_model("second.svg"));
-    let tool_a = s.tools()[0].id.0;
-    let model_a = s.models()[0].id;
-    let _ = s
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
+    builder.add_model(empty_model("first.svg"));
+    builder.add_model(empty_model("second.svg"));
+    let tool_a = builder.tools()[0].id.0;
+    let model_a = builder.models()[0].id;
+    let _ = builder
         .add_toolpath(
             0,
             tc(
@@ -131,6 +132,7 @@ fn seed() -> ProjectSession {
             ),
         )
         .unwrap();
+    let s = builder.build();
     s
 }
 
@@ -284,14 +286,14 @@ fn an_out_of_range_toolpath_index_is_refused_by_both_setters() {
 /// by the generators (R0.3 §2.2 row E1).
 #[test]
 fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_refuses() {
-    let mut s = ProjectSession::new_empty();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let _ = s.add_model(empty_model("terrain.stl"));
-    let ball = s.tools()[0].id.0;
-    let flat = s.tools()[1].id.0;
-    let model = s.models()[0].id;
-    let _ = s
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_model(empty_model("terrain.stl"));
+    let ball = builder.tools()[0].id.0;
+    let flat = builder.tools()[1].id.0;
+    let model = builder.models()[0].id;
+    let _ = builder
         .add_toolpath(
             0,
             tc(
@@ -304,6 +306,7 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
             ),
         )
         .unwrap();
+    let mut s = builder.build();
 
     // Scallop's registry entry requires a ball tip. The rebind still lands.
     let _ = s.set_toolpath_tool(0, flat).unwrap();

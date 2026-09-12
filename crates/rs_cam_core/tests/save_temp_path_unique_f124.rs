@@ -46,7 +46,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Barrier;
 
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
 
 /// How many saves each arm of the concurrent test runs.
 const ROUNDS: usize = 32;
@@ -122,8 +122,9 @@ fn the_temp_name_is_not_the_pid_alone() {
     // Non-vacuity floor: the obstruction must really be in the way.
     assert!(obstruction.is_dir(), "the obstruction is a directory");
 
-    let mut session = ProjectSession::new_empty();
-    session.set_name("Pid Name".to_owned());
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.name("Pid Name".to_owned());
+    let session = builder.build();
 
     let project = dir.join("project.toml");
     let saved = session.save(&project);
@@ -155,10 +156,12 @@ fn two_saves_into_one_directory_both_succeed() {
     // window in which the two saves can interleave, so the pre-fix failure
     // is reliable rather than lucky.
     let padding = "x".repeat(128_000);
-    let mut session_a = ProjectSession::new_empty();
-    session_a.set_name(format!("{MARKER_A}-{padding}"));
-    let mut session_b = ProjectSession::new_empty();
-    session_b.set_name(format!("{MARKER_B}-{padding}"));
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.name(format!("{MARKER_A}-{padding}"));
+    let session_a = builder.build();
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.name(format!("{MARKER_B}-{padding}"));
+    let session_b = builder.build();
 
     let barrier = Barrier::new(2);
     let a_path = path_a.clone();
@@ -210,8 +213,9 @@ fn a_failed_save_removes_its_temp_file() {
     // Non-vacuity floor: a rename onto a directory is what fails here.
     assert!(blocked.is_dir(), "the destination is a directory");
 
-    let mut session = ProjectSession::new_empty();
-    session.set_name("Failed Save".to_owned());
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.name("Failed Save".to_owned());
+    let session = builder.build();
 
     let saved = session.save(&blocked);
     assert!(

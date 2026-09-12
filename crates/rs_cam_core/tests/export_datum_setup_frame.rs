@@ -145,8 +145,8 @@ fn trace_toolpath(name: &str, tool_id: usize, model_id: usize) -> ToolpathConfig
 /// same model, so the only thing that can differ between their emitted
 /// coordinates is the frame.
 fn build_two_setup_session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
         z: STOCK_Z,
@@ -157,28 +157,20 @@ fn build_two_setup_session() -> ProjectSession {
         ..StockConfig::default()
     });
 
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(polygon_model(vec![square_model_polygon()], "square30"))
-        .created
-        .expect("add_model reports the new model id");
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(polygon_model(vec![square_model_polygon()], "square30"));
 
     // Setup 0 is the identity setup `new_empty` already created.
-    let _ = session
+    let _ = builder
         .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
         .expect("add identity-setup trace");
 
-    let flipped = session
-        .add_setup("Flip".to_owned(), FaceUp::Bottom)
-        .created
-        .expect("add_setup reports the new setup index");
-    let _ = session
+    let flipped = builder.add_setup("Flip".to_owned(), FaceUp::Bottom);
+    let _ = builder
         .add_toolpath(flipped, trace_toolpath(FLIPPED_LABEL, tool_id, model_id))
         .expect("add flipped-setup trace");
+    let session = builder.build();
 
     session
 }
@@ -413,8 +405,8 @@ fn export_datum_shift_is_stock_relative_xy_and_stock_top_z() {
 /// stock origin is already at the world origin emits byte-identical G-code.
 #[test]
 fn zero_origin_stock_is_unchanged() {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
         z: STOCK_Z,
@@ -424,18 +416,13 @@ fn zero_origin_stock_is_unchanged() {
         auto_from_model: false,
         ..StockConfig::default()
     });
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(polygon_model(vec![square_model_polygon()], "square30"))
-        .created
-        .expect("add_model reports the new model id");
-    let _ = session
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(polygon_model(vec![square_model_polygon()], "square30"));
+    let _ = builder
         .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
         .expect("add identity-setup trace");
+    let session = builder.build();
 
     let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, 0);
     assert!(

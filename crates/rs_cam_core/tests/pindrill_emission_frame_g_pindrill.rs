@@ -43,7 +43,7 @@ use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::session::{ProjectSession, SetupEvalContext, ToolpathConfig};
+use rs_cam_core::session::{ProjectSessionBuilder, SetupEvalContext, ToolpathConfig};
 
 const ORIGIN_X: f64 = -20.0;
 const ORIGIN_Y: f64 = -25.0;
@@ -51,8 +51,8 @@ const PIN: [f64; 2] = [2.5, 2.5];
 
 #[test]
 fn pin_holes_land_where_the_stock_says_the_pins_are() {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: 240.0,
         y: 250.0,
         z: 25.0,
@@ -66,11 +66,8 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
         ],
         ..StockConfig::default()
     });
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
 
     let cfg = AlignmentPinDrillConfig {
         holes: vec![PIN, [237.5, 2.5]],
@@ -105,7 +102,8 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tc).expect("add pin drill");
+    let _ = builder.add_toolpath(0, tc).expect("add pin drill");
+    let mut session = builder.build();
 
     let ctx = SetupEvalContext::build(&session, FaceUp::Top, ZRotation::Deg0);
 
@@ -166,8 +164,8 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
 /// Its own sentry is `drill_pick_emission_frame_g_drillpick.rs`.
 #[test]
 fn a_flipped_setup_pin_translation_is_a_no_op() {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: 240.0,
         y: 250.0,
         z: 25.0,
@@ -178,6 +176,7 @@ fn a_flipped_setup_pin_translation_is_a_no_op() {
         alignment_pins: vec![AlignmentPin::new(PIN[0], PIN[1], 6.0)],
         ..StockConfig::default()
     });
+    let session = builder.build();
     let flipped = SetupEvalContext::build(&session, FaceUp::Bottom, ZRotation::Deg0);
     assert!(
         flipped.local_to_global.is_some(),

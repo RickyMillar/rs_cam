@@ -70,7 +70,7 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 
 const STOCK_TOP_Z: f64 = 0.0;
 const STOCK_BOTTOM_Z: f64 = -18.0;
@@ -261,8 +261,8 @@ fn the_id_is_in_the_registry() {
 /// Build the same project the operator would: an 18 mm board, one Ø6 end
 /// mill, one pocket at `depth`.
 fn pocket_session(depth: f64) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: 100.0,
         y: 100.0,
         z: STOCK_TOP_Z - STOCK_BOTTOM_Z,
@@ -276,33 +276,27 @@ fn pocket_session(depth: f64) -> ProjectSession {
         },
         ..StockConfig::default()
     });
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(LoadedModel {
-            id: 0,
-            name: "board".to_owned(),
-            mesh: None,
-            polygons: Some(Arc::new(vec![Polygon2::new(vec![
-                P2::new(5.0, 5.0),
-                P2::new(75.0, 5.0),
-                P2::new(75.0, 55.0),
-                P2::new(5.0, 55.0),
-            ])])),
-            drill_targets: Arc::new(Vec::new()),
-            layers: Arc::new(Vec::new()),
-            path: PathBuf::from("synthetic://board.svg"),
-            kind: None,
-            units: None,
-            enriched_mesh: None,
-            winding_report: None,
-            load_error: None,
-        })
-        .created
-        .expect("add_model reports the new model id");
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(LoadedModel {
+        id: 0,
+        name: "board".to_owned(),
+        mesh: None,
+        polygons: Some(Arc::new(vec![Polygon2::new(vec![
+            P2::new(5.0, 5.0),
+            P2::new(75.0, 5.0),
+            P2::new(75.0, 55.0),
+            P2::new(5.0, 55.0),
+        ])])),
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        path: PathBuf::from("synthetic://board.svg"),
+        kind: None,
+        units: None,
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+    });
     let tc = ToolpathConfig {
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
@@ -337,7 +331,8 @@ fn pocket_session(depth: f64) -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tc).expect("add pocket toolpath");
+    let _ = builder.add_toolpath(0, tc).expect("add pocket toolpath");
+    let session = builder.build();
     session
 }
 

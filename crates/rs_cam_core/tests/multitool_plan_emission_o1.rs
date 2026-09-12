@@ -35,7 +35,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundarySource, StockSource};
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::multitool::MultitoolPlanSpec;
-use rs_cam_core::session::{ProjectSession, equal_cusp_stepover_mm};
+use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, equal_cusp_stepover_mm};
 use rs_cam_core::tier_map::ResidualTreatment;
 
 /// Cusp height (mm) every tier is dialled to.
@@ -53,22 +53,14 @@ fn dome() -> TriangleMesh {
 /// A session with one mesh model and a Ø4 / Ø3 ball pair, nothing else.
 /// Returns the session plus `(coarse_id, fine_id, model_id)`.
 fn session_with_ladder() -> (ProjectSession, usize, usize, usize) {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(common::session::stock_over(9.0, 12.0));
-    let coarse_idx = session
-        .add_tool(ball_tool_config(4.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let fine_idx = session
-        .add_tool(ball_tool_config(3.0))
-        .created
-        .expect("add_tool reports the new tool index");
-    let coarse_id = session.tools()[coarse_idx].id.0;
-    let fine_id = session.tools()[fine_idx].id.0;
-    let model_id = session
-        .add_model(common::session::mesh_model(dome(), "dome"))
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(common::session::stock_over(9.0, 12.0));
+    let coarse_idx = builder.add_tool(ball_tool_config(4.0));
+    let fine_idx = builder.add_tool(ball_tool_config(3.0));
+    let coarse_id = builder.tools()[coarse_idx].id.0;
+    let fine_id = builder.tools()[fine_idx].id.0;
+    let model_id = builder.add_model(common::session::mesh_model(dome(), "dome"));
+    let session = builder.build();
     (session, coarse_id, fine_id, model_id)
 }
 

@@ -84,7 +84,9 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::CutKinematics;
 
 const PLATEAU_Z: f64 = -0.5;
@@ -144,7 +146,7 @@ fn heightfield_mesh(span: f64, step: f64) -> TriangleMesh {
 }
 
 fn build_session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
+    let mut builder = ProjectSessionBuilder::new();
 
     // Stock: 60x60, top at world Z=0, deep enough for the FLOOR_Z=-12 valley.
     let stock = StockConfig {
@@ -160,13 +162,10 @@ fn build_session() -> ProjectSession {
         },
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    builder = builder.stock(stock);
 
-    let tool_idx = session
-        .add_tool(make_endmill_6mm())
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_id = builder.tools()[tool_idx].id.0;
 
     let mesh = heightfield_mesh(60.0, 0.5);
     let model = LoadedModel {
@@ -183,10 +182,7 @@ fn build_session() -> ProjectSession {
         winding_report: None,
         load_error: None,
     };
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(model);
 
     let adaptive3d = Adaptive3dConfig {
         trochoid_cap_mult: 1.6,
@@ -238,9 +234,10 @@ fn build_session() -> ProjectSession {
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
         planner_origin: None,
     };
-    let _ = session
+    let _ = builder
         .add_toolpath(0, tc)
         .expect("add adaptive3d toolpath");
+    let session = builder.build();
 
     session
 }

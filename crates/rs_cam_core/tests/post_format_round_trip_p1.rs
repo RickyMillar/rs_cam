@@ -61,7 +61,7 @@ use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::{CoolantMode, PostFormat, ToolLoadExportPolicy, export_gcode_checked};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 
 /// A closed 50 x 40 rectangle. Written to disk because the project file
 /// stores a model *path*: an in-memory synthetic model cannot survive
@@ -92,8 +92,8 @@ fn write_model(dir: &Path) -> PathBuf {
 fn build_project(dir: &Path, post_token: &str) -> PathBuf {
     let model_path = write_model(dir);
 
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(StockConfig {
+    let mut builder = ProjectSessionBuilder::new();
+    builder = builder.stock(StockConfig {
         x: 100.0,
         y: 100.0,
         z: 12.0,
@@ -106,6 +106,7 @@ fn build_project(dir: &Path, post_token: &str) -> PathBuf {
         },
         ..StockConfig::default()
     });
+    let mut session = builder.build();
 
     let mut post = session.post_config().clone();
     post.format = post_token.to_owned();
