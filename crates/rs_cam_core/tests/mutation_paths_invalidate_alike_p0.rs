@@ -323,7 +323,14 @@ fn assert_feed_landed(s: &ProjectSession) {
 
 // ── the four arms ────────────────────────────────────────────────
 
-/// Arm 1 — `ProjectSession::set_toolpath_param`, the MCP and CLI door.
+/// Arm 1 — `Command::SetToolpathParam`, the MCP and CLI door.
+///
+/// WP15b retargeted this arm. It called `ProjectSession::set_toolpath_param`,
+/// which is `pub(crate)` from that package on, so an integration test cannot
+/// reach it. The row runs the same body: `apply` dispatches
+/// `set_toolpath_param_impl`, and the setter was already a wrapper over
+/// `apply` from WP1. The arm therefore measures the same path it always
+/// measured, through the one door.
 fn arm_setter() -> Observation {
     let mut s = fixture(pocket());
     let before = revisions(&s);

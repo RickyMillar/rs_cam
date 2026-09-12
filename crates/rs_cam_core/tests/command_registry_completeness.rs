@@ -456,23 +456,30 @@ fn the_command_writes_the_parameter() {
     );
 }
 
-/// The legacy setter is a wrapper over the same door, so both routes
-/// drop the same set.
+/// CONTRACT. The set the command REPORTS is the set the session really
+/// dropped, and the row answers the same way twice.
+///
+/// This arm compared `ProjectSession::set_toolpath_param` against
+/// `Command::SetToolpathParam` until WP15b. The setter is `pub(crate)` from
+/// that package on, so an integration test cannot call it, and the
+/// comparison was already a route against ITSELF: WP1 made the setter a
+/// wrapper over `apply`. What survives is the weaker, still-real property —
+/// the observed drop equals `Effects::stale`, on two fresh fixtures.
 #[test]
-fn the_legacy_setter_drops_what_the_command_drops() {
-    let mut through_setter = fixture();
-    let before_setter = revisions(&through_setter);
-    let _ = through_setter
+fn the_reported_stale_set_is_the_set_the_session_dropped() {
+    let mut observed = fixture();
+    let before_observed = revisions(&observed);
+    let _ = observed
         .apply(Command::SetToolpathParam(SetToolpathParamArgs {
             index: 0,
             param: "feed_rate".to_owned(),
             value: serde_json::json!(EDITED_FEED_RATE),
         }))
         .expect("feed_rate is a Pocket parameter");
-    let (setter_dropped, _) = observe(&through_setter, &before_setter);
+    let (dropped, _) = observe(&observed, &before_observed);
 
-    let mut through_command = fixture();
-    let effects = through_command
+    let mut reported = fixture();
+    let effects = reported
         .apply(Command::SetToolpathParam(SetToolpathParamArgs {
             index: 0,
             param: "feed_rate".to_owned(),
@@ -481,9 +488,8 @@ fn the_legacy_setter_drops_what_the_command_drops() {
         .expect("feed_rate is a Pocket parameter");
 
     assert_eq!(
-        setter_dropped, effects.stale,
-        "set_toolpath_param is a thin wrapper over apply; the two \
-         routes cannot drop different sets"
+        dropped, effects.stale,
+        "Effects::stale must name the results the session really dropped"
     );
 }
 
