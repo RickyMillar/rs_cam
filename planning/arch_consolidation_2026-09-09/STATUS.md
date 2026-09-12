@@ -407,6 +407,7 @@ only inside a pi session transcript, and were recovered on 2026-09-10.
 
 ## Related open items
 
+- **G-FEEDOPTPLUNGE — FIXED by WP22 (`d880ca1a`, 2026-09-13; sentry `e9289426`).** The feedopt pass caps a geometric plunge at the operation's `plunge_rate` (plan §27 ruling 3). Measured red: 18 of 18 plunges at 2.00x on the sentry pocket; `perf_golden_sim_metrics` plunge leading-edge speed moved from 1000 to 400 mm/min on its 2D fixture. The original observation follows.
 - **G-FEEDOPTPLUNGE (observed 2026-09-12 by the WP18 verifier, not acted on).** The feed
   optimisation dressup (`feedopt::optimize_feed_rates_inner`, `feedopt.rs:~164`) writes
   `nominal * factor` onto every cutting move and reads no move's own feed, clamped to
@@ -416,6 +417,14 @@ only inside a pi session transcript, and were recovered on 2026-09-10.
   decision and a sentry before any change. Evidence: `feed_optimization_refusals_wp18.rs`
   arm (c) measured ON 72 vs OFF 114 off-commanded moves on the P0 pocket. WP21 (`4aeaeda3`)
   removed the panic; the plunge-rate overwrite itself stays open.
+
+- **G-PERFGOLDEN2D (observed 2026-09-13 by the WP22 verifier, not acted on).**
+  `perf_golden_sim_metrics::sim_metrics_match_golden` is RED at base `61c16b75`
+  with 36 fields off the golden (35 with WP22; every plunge field and
+  `triage_action_count` move TOWARD the golden). The golden was last written at
+  `d0aeee02`; last explicit re-bless `691304b4`. No planning note records this
+  red. A re-bless (`UPDATE_PERF_GOLDENS=1`) is an operator decision: it writes
+  measured numbers. NOT MEASURED: which commit moved the 2D fixture.
 
 
 `planning/ui_fix_2026-09-09/PLAN.md` §11 carries twelve follow-ons opened on
