@@ -1681,6 +1681,11 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Report ladder progress on whichever surface started it, with the
     /// completion count the caller already knows.
+    ///
+    /// `progress` and `total` reach the MCP progress channel alone. The
+    /// GUI sink writes the status line and reads the message only, so a
+    /// build without the `mcp` feature never reads the two numbers.
+    #[cfg_attr(not(feature = "mcp"), allow(unused_variables))]
     fn generate_all_progress_at(&mut self, message: &str, progress: f64, total: Option<f64>) {
         use crate::controller::generate_all::GenerateAllSink;
 

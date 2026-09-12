@@ -53,6 +53,10 @@ pub struct RsCamApp {
     /// The egui context, held so [`RsCamApp::off_frame_pump`] can dispatch
     /// without an `eframe::Frame` or an `egui::Ui` — neither of which exists
     /// outside a paint. Cheap `Arc` handle; `Clone + Send + Sync`.
+    ///
+    /// `pump_dispatch` reads the field inside its `#[cfg(feature = "mcp")]`
+    /// arm alone, so a build without the `mcp` feature never reads it.
+    #[cfg_attr(not(feature = "mcp"), allow(dead_code))]
     egui_ctx: egui::Context,
     camera: OrbitCamera,
     /// Cached viewport rect for click detection.

@@ -308,6 +308,13 @@ pub struct GetCutTraceArgs {
     /// Whether to include the per-peck drill samples.
     pub include_drill_samples: bool,
     /// The per-array caps of Checkpoint L.
+    ///
+    /// `rs_cam_mcp` is an optional dependency, and `get_cut_trace` is a
+    /// wire-only row: its `gui` column says `Skip`, and both the door
+    /// that builds this payload and the door that reads it sit behind
+    /// `#[cfg(feature = "mcp")]`. The field carries the same gate, so
+    /// the view registry compiles without the `mcp` feature.
+    #[cfg(feature = "mcp")]
     pub caps: rs_cam_mcp::response::CutTraceCaps,
 }
 
