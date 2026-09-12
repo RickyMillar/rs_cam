@@ -40,8 +40,9 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    ToolpathComputeResult, ToolpathConfig,
+    AdoptResultArgs, Command, ForgetResultArgs, InvalidateToolpathInputsArgs, LoadedModel,
+    ProjectSession, ProjectSessionBuilder, SetToolpathEnabledArgs, ToolpathComputeResult,
+    ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -101,10 +102,9 @@ fn policy() -> rs_cam_core::gcode::ToolLoadExportPolicy {
 /// core cache and a drawable copy in the viz store, exactly as
 /// `drain_compute_results` leaves it.
 fn build_state() -> (ProjectSession, GuiState, SimulationState) {
-    let mut session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    let _ = session.add_model(LoadedModel {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let _ = builder.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -141,7 +141,8 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
         planner_origin: None,
     };
     let id = tc.id;
-    let _ = session.add_toolpath(0, tc).expect("add toolpath");
+    let _ = builder.add_toolpath(0, tc).expect("add toolpath");
+    let mut session = builder.build();
     let revision = session.toolpath_revision(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
@@ -164,7 +165,11 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
 /// stays so the viewport can draw the old path. Reached here through the
 /// core door the GUI panel calls (`invalidate_toolpath_inputs`).
 fn edit_the_operation(session: &mut ProjectSession) {
-    let _ = session.invalidate_toolpath_inputs(0);
+    let _ = session
+        .apply(Command::InvalidateToolpathInputs(
+            InvalidateToolpathInputsArgs { index: 0 },
+        ))
+        .expect("toolpath 0 exists");
     assert!(
         session.get_result(0).is_none(),
         "the edit must drop the core result — otherwise this file is not \
@@ -315,7 +320,9 @@ fn accepting_the_previous_geometry_exports_it() {
 #[test]
 fn the_acceptance_does_not_waive_a_missing_result() {
     let (mut session, mut gui, sim) = build_state();
-    let _ = session.remove_result(0);
+    let _ = session
+        .apply(Command::ForgetResult(ForgetResultArgs { index: 0 }))
+        .expect("toolpath 0 exists");
     if let Some(rt) = gui.toolpath_rt.get_mut(&rs_cam_core::ToolpathId(0)) {
         rt.result = None;
         rt.status = ComputeStatus::Pending;
@@ -454,7 +461,10 @@ fn a_disabled_edited_operation_does_not_block() {
     let (mut session, gui, _sim) = build_state();
     edit_the_operation(&mut session);
     let _ = session
-        .set_toolpath_enabled(0, false)
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: 0,
+            enabled: false,
+        }))
         .expect("toolpath 0 exists");
 
     let rows = blocking_toolpaths(

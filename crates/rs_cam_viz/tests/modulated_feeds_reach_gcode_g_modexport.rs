@@ -54,8 +54,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    ToolpathComputeResult, ToolpathConfig,
+    AdoptResultArgs, Command, InvalidateToolArgs, LoadedModel, ProjectSession,
+    ProjectSessionBuilder, ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -106,13 +106,13 @@ fn viz_result(path: Toolpath) -> ToolpathResult {
 /// (the F1_RCA sync in `controller/events/compute.rs` writes
 /// `session.results` and `gui.toolpath_rt` from the same worker output).
 fn build_state() -> (ProjectSession, GuiState, SimulationState) {
-    let mut session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    session.set_name("g-modexport sentry".to_owned());
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new()
+        .tool(tool)
+        .name("g-modexport sentry".to_owned());
 
     let mesh = Arc::new(make_test_flat(40.0));
-    let _ = session.add_model(LoadedModel {
+    let _ = builder.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -148,7 +148,8 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tp).expect("add toolpath");
+    let _ = builder.add_toolpath(0, tp).expect("add toolpath");
+    let mut session = builder.build();
     let tp_id = session.toolpath_configs()[0].id;
 
     let revision = session.toolpath_revision(0);
@@ -266,7 +267,9 @@ fn viz_export_refuses_the_worker_result_when_the_session_slot_is_invalidated() {
     // `invalidate_tool`, which drops the affected `session.results`
     // entries. The viz store keeps its result (that's what the stale
     // display is drawn from).
-    let _ = session.invalidate_tool(1);
+    let _ = session
+        .apply(Command::InvalidateTool(InvalidateToolArgs { tool_id: 1 }))
+        .expect("the tool is in the session");
     assert!(
         session.get_result(0).is_none(),
         "invalidate_tool must clear the session result — otherwise this \

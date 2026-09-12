@@ -51,7 +51,10 @@ use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::diagnostics::ids::GEOM_DEPTH_BEYOND_STOCK;
 use rs_cam_core::diagnostics::{Diagnostic, Severity};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::session::{
+    AddSetupArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    ToolpathConfig,
+};
 use rs_cam_viz::state::job::{ModelKind, ModelUnits};
 use rs_cam_viz::state::runtime::GuiState;
 use rs_cam_viz::state::toolpath::OperationType;
@@ -208,11 +211,15 @@ fn rule(
 #[test]
 fn a_pocket_deeper_than_the_stock_cautions_on_the_header_and_does_not_block() {
     let mut session = session();
+    let tc = toolpath("Pocket", MODEL_2D, pocket(25.0));
     let idx = session
-        .add_toolpath(0, toolpath("Pocket", MODEL_2D, pocket(25.0)))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     let snapshot = panel_snapshot(&session, idx);
 
     // Header: exactly one caution, worded with the excess.
@@ -249,11 +256,15 @@ fn a_pocket_deeper_than_the_stock_cautions_on_the_header_and_does_not_block() {
 #[test]
 fn a_the_rule_reads_the_excess_and_the_diagnostic_carries_its_id() {
     let mut session = session();
+    let tc = toolpath("Pocket", MODEL_2D, pocket(25.0));
     let idx = session
-        .add_toolpath(0, toolpath("Pocket", MODEL_2D, pocket(25.0)))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     let finding = rule(&session, idx).expect("(a) the rule fires");
     assert!(
         (finding.excess_mm - 7.0).abs() < 1e-9,
@@ -290,14 +301,15 @@ fn a_the_rule_reads_the_excess_and_the_diagnostic_carries_its_id() {
 #[test]
 fn b_depth_equal_to_the_stock_thickness_is_not_a_caution() {
     let mut session = session();
+    let tc = toolpath("Pocket through", MODEL_2D, pocket(STOCK_THICKNESS_MM));
     let idx = session
-        .add_toolpath(
-            0,
-            toolpath("Pocket through", MODEL_2D, pocket(STOCK_THICKNESS_MM)),
-        )
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     assert_eq!(
         rule(&session, idx),
         None,
@@ -315,11 +327,15 @@ fn b_depth_equal_to_the_stock_thickness_is_not_a_caution() {
 #[test]
 fn b2_a_shallower_pocket_is_not_a_caution() {
     let mut session = session();
+    let tc = toolpath("Pocket", MODEL_2D, pocket(6.0));
     let idx = session
-        .add_toolpath(0, toolpath("Pocket", MODEL_2D, pocket(6.0)))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     assert_eq!(rule(&session, idx), None);
 }
 
@@ -340,10 +356,13 @@ fn c_a_3d_operation_is_outside_the_rule() {
         offset: -30.0,
     });
     let idx = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     assert_eq!(
         rule(&session, idx),
         None,
@@ -360,18 +379,19 @@ fn c_a_3d_operation_is_outside_the_rule() {
 #[test]
 fn c2_alignment_pin_drill_penetrates_the_spoilboard_by_design() {
     let mut session = session();
+    let tc = toolpath(
+        "Pins",
+        MODEL_2D,
+        OperationConfig::AlignmentPinDrill(Default::default()),
+    );
     let idx = session
-        .add_toolpath(
-            0,
-            toolpath(
-                "Pins",
-                MODEL_2D,
-                OperationConfig::AlignmentPinDrill(Default::default()),
-            ),
-        )
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     assert_eq!(rule(&session, idx), None);
 }
 
@@ -390,10 +410,13 @@ fn d_a_bottom_z_pinned_below_the_stock_bottom_is_not_a_caution() {
         offset: -3.0,
     });
     let idx = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     assert_eq!(
         rule(&session, idx),
         None,
@@ -430,10 +453,13 @@ fn d2_a_manual_bottom_z_at_the_stock_bottom_is_not_a_caution() {
     let stock_bottom_z = session.stock_config().bbox().min.z;
     tc.heights.bottom_z = HeightMode::Manual(stock_bottom_z);
     let idx = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     assert_eq!(rule(&session, idx), None);
 }
 
@@ -443,14 +469,22 @@ fn d2_a_manual_bottom_z_at_the_stock_bottom_is_not_a_caution() {
 fn a_flipped_setup_reads_the_same_excess() {
     let mut session = session();
     let flip = session
-        .add_setup("Flip".to_owned(), FaceUp::Bottom)
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Flip".to_owned()),
+            face_up: FaceUp::Bottom,
+        }))
+        .expect("the session accepts a second setup")
         .created
-        .expect("add_setup reports the new setup index");
+        .expect("the AddSetup row reports the new setup index");
+    let tc = toolpath("Pocket", MODEL_2D, pocket(25.0));
     let idx = session
-        .add_toolpath(flip, toolpath("Pocket", MODEL_2D, pocket(25.0)))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: flip,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     let finding = rule(&session, idx).expect("the flipped pocket fires the rule");
     assert!(
         (finding.excess_mm - 7.0).abs() < 1e-9,

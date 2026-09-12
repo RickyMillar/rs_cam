@@ -33,7 +33,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathConfig,
+    AddSetupArgs, AddToolpathArgs, AdoptResultArgs, Command, InvalidateToolpathInputsArgs,
+    LoadedModel, ProjectSessionBuilder, SetToolpathEnabledArgs, ToolpathConfig,
 };
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::job::{ModelId, ModelKind, ModelUnits};
@@ -128,10 +129,13 @@ fn fresh_state() -> AppState {
 fn add(state: &mut AppState, setup_idx: usize, tc: ToolpathConfig) -> ToolpathId {
     let idx = state
         .session
-        .add_toolpath(setup_idx, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: setup_idx,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     let id = state.session.toolpath_configs()[idx].id;
     let mut rt = ToolpathRuntime::new(true);
     rt.status = ComputeStatus::Done;
@@ -267,7 +271,10 @@ fn b_disabled_candidate_above_is_no_dependency_on_both_surfaces() {
         .unwrap();
     let _ = state
         .session
-        .set_toolpath_enabled(rough_idx, false)
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: rough_idx,
+            enabled: false,
+        }))
         .unwrap();
 
     let (badge, validator_blocks) = both_surfaces(&state, rest_id, MODEL_A);
@@ -321,7 +328,12 @@ fn c2_a_qualifying_predecessor_that_needs_generation_reads_stale_dep() {
         .iter()
         .position(|tc| tc.id == rough_id)
         .unwrap();
-    let _ = state.session.invalidate_toolpath_inputs(rough_idx);
+    let _ = state
+        .session
+        .apply(Command::InvalidateToolpathInputs(
+            InvalidateToolpathInputsArgs { index: rough_idx },
+        ))
+        .unwrap();
     state.gui.toolpath_rt.get_mut(&rough_id).unwrap().status = ComputeStatus::Pending;
     state.gui.toolpath_rt.get_mut(&rough_id).unwrap().result = None;
 
@@ -338,9 +350,13 @@ fn d_candidate_in_another_setup_is_no_dependency_on_both_surfaces() {
     let mut state = fresh_state();
     let flip = state
         .session
-        .add_setup("Flip".to_owned(), FaceUp::Bottom)
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Flip".to_owned()),
+            face_up: FaceUp::Bottom,
+        }))
+        .expect("the session accepts a second setup")
         .created
-        .expect("add_setup reports the new setup index");
+        .expect("the AddSetup row reports the new setup index");
     let _rough_other_setup = add(
         &mut state,
         0,

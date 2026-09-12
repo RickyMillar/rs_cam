@@ -33,8 +33,9 @@ use rs_cam_core::gcode::PostFormat;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    SetSetupPauseMessageArgs, ToolpathComputeResult, ToolpathConfig,
+    AddSetupArgs, AddToolpathArgs, AdoptResultArgs, Command, LoadedModel, ProjectSession,
+    ProjectSessionBuilder, SetSetupPauseMessageArgs, SetStockConfigArgs, ToolpathComputeResult,
+    ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -108,14 +109,14 @@ fn seed_generated_result(
 
 fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     // Tool 1
-    let mut session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    session.set_name("wizard e2e".to_owned());
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new()
+        .tool(tool)
+        .name("wizard e2e".to_owned());
 
     // Flat mesh as a model
     let mesh = Arc::new(make_test_flat(40.0));
-    let _ = session.add_model(LoadedModel {
+    let _ = builder.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -154,7 +155,8 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tp).expect("add toolpath");
+    let _ = builder.add_toolpath(0, tp).expect("add toolpath");
+    let mut session = builder.build();
     let tp_id = session.toolpath_configs()[0].id;
 
     // Stub a computed result so the export pipeline has bytes to emit.
@@ -443,7 +445,12 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tp2).expect("add second toolpath");
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tp2),
+        }))
+        .expect("add second toolpath");
     let tp2_id = session.toolpath_configs()[1].id;
 
     let mut path = Toolpath::new();
@@ -577,9 +584,13 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
     // its own toolpath so the multi-setup emit path runs and emits the
     // inter-setup M0.
     let bottom_idx = session
-        .add_setup("Bottom".to_owned(), FaceUp::Bottom)
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Bottom".to_owned()),
+            face_up: FaceUp::Bottom,
+        }))
+        .expect("the session accepts a second setup")
         .created
-        .expect("add_setup reports the new setup index");
+        .expect("the AddSetup row reports the new setup index");
     let bottom_id = session.list_setups()[bottom_idx].id;
 
     let tp_bottom = ToolpathConfig {
@@ -604,7 +615,10 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         planner_origin: None,
     };
     let _ = session
-        .add_toolpath(bottom_idx, tp_bottom)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: bottom_idx,
+            config: Box::new(tp_bottom),
+        }))
         .expect("add bottom toolpath");
     let bottom_tp_id = session.list_setups()[bottom_idx]
         .toolpath_indices
@@ -709,23 +723,31 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
 
     // Stock whose min corner is NOT the world origin — the condition
     // that makes the two emission frames disagree.
-    let _ = session.set_stock_config(StockConfig {
-        x: 60.0,
-        y: 70.0,
-        z: 12.0,
-        origin_x: -20.0,
-        origin_y: -25.0,
-        origin_z: -12.0,
-        auto_from_model: false,
-        ..StockConfig::default()
-    });
+    let _ = session
+        .apply(Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(StockConfig {
+                x: 60.0,
+                y: 70.0,
+                z: 12.0,
+                origin_x: -20.0,
+                origin_y: -25.0,
+                origin_z: -12.0,
+                auto_from_model: false,
+                ..StockConfig::default()
+            }),
+        }))
+        .expect("the stock edit applies");
 
     let top_id = SetupId(session.list_setups()[0].id);
 
     let bottom_idx = session
-        .add_setup("Bottom".to_owned(), FaceUp::Bottom)
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Bottom".to_owned()),
+            face_up: FaceUp::Bottom,
+        }))
+        .expect("the session accepts a second setup")
         .created
-        .expect("add_setup reports the new setup index");
+        .expect("the AddSetup row reports the new setup index");
     let bottom_id = SetupId(session.list_setups()[bottom_idx].id);
     let tp_bottom = ToolpathConfig {
         id: rs_cam_core::ToolpathId(99),
@@ -749,7 +771,10 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         planner_origin: None,
     };
     let _ = session
-        .add_toolpath(bottom_idx, tp_bottom)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: bottom_idx,
+            config: Box::new(tp_bottom),
+        }))
         .expect("add bottom toolpath");
     let bottom_tp_id = session.list_setups()[bottom_idx]
         .toolpath_indices

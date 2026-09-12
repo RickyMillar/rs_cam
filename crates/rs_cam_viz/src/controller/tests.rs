@@ -18,8 +18,11 @@ use crate::state::toolpath::{Adaptive3dConfig, OperationConfig, ToolpathId, Tool
 use crate::ui_command::{NoArgs, SimJumpToMoveArgs, UiCommand};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ReplaceToolpathConfigArgs,
-    ToolpathConfig,
+    AddModelArgs, AddSetupArgs, AddToolpathArgs, AdoptResultArgs, Command,
+    InvalidateToolpathInputsArgs, LoadedModel, ProjectSessionBuilder, RemoveSetupArgs,
+    ReplaceToolpathConfigArgs, ReplaceToolsArgs, SetBoundaryConfigArgs, SetFeedsProvenanceArgs,
+    SetProjectNameArgs, SetSetupFaceArgs, SetSetupRotationArgs, SetStockConfigArgs,
+    SetStockSourceArgs, SetToolpathEnabledArgs, ToolpathConfig,
 };
 
 struct ScriptedBackend {
@@ -278,10 +281,10 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     // Every caller hands in a controller straight from `with_backend`, so the
     // builder replaces an empty session.
-    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
 
     let mesh = Arc::new(make_test_flat(40.0));
-    let _ = controller.state.session.add_model(LoadedModel {
+    let _ = builder.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -317,7 +320,8 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    let _ = controller.state.session.add_toolpath(0, tp_config).unwrap();
+    let _ = builder.add_toolpath(0, tp_config).unwrap();
+    controller.state.session = builder.build();
     let tp_id = controller.state.session.toolpath_configs()[0].id;
     let mut rt = ToolpathRuntime::new(true);
     rt.result = Some(ToolpathResult {
@@ -380,7 +384,14 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    let _ = controller.state.session.add_toolpath(0, cfg).unwrap();
+    let _ = controller
+        .state
+        .session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(cfg),
+        }))
+        .unwrap();
     ToolpathId(next)
 }
 
@@ -564,7 +575,13 @@ fn fixture_projects_load_2d_and_3d_models() {
 #[test]
 fn controller_save_open_and_export_smoke() {
     let mut controller = sample_controller();
-    controller.state.session.set_name("Smoke".to_owned());
+    let _ = controller
+        .state
+        .session
+        .apply(Command::SetProjectName(SetProjectNameArgs {
+            name: "Smoke".to_owned(),
+        }))
+        .expect("a project name moves no generation input");
     let generated = {
         let mut toolpath = Toolpath::new();
         toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
@@ -646,12 +663,13 @@ fn simulation_results_capture_setup_boundaries() {
     let setup_idx = controller
         .state
         .session
-        .add_setup(
-            "Bottom Side".to_owned(),
-            rs_cam_core::compute::transform::FaceUp::default(),
-        )
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Bottom Side".to_owned()),
+            face_up: rs_cam_core::compute::transform::FaceUp::default(),
+        }))
+        .expect("the session accepts a second setup")
         .created
-        .expect("add_setup reports the new setup index");
+        .expect("the AddSetup row reports the new setup index");
     let tp2_config = ToolpathConfig {
         id: ToolpathId(0),
         name: "Profile".to_owned(),
@@ -676,10 +694,13 @@ fn simulation_results_capture_setup_boundaries() {
     controller
         .state
         .session
-        .add_toolpath(setup_idx, tp2_config)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: setup_idx,
+            config: Box::new(tp2_config),
+        }))
         .unwrap()
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     let tp2_id = controller.state.session.toolpath_configs()[1].id;
 
     controller
@@ -1260,7 +1281,13 @@ fn drain_refuses_a_completion_whose_revision_moved() {
     let submitted = controller.state.session.toolpath_revision(0);
 
     // The edit an operator makes while the lane runs.
-    let _ = controller.state.session.invalidate_toolpath_inputs(0);
+    let _ = controller
+        .state
+        .session
+        .apply(Command::InvalidateToolpathInputs(
+            InvalidateToolpathInputsArgs { index: 0 },
+        ))
+        .expect("toolpath 0 exists");
     assert_ne!(
         controller.state.session.toolpath_revision(0),
         submitted,
@@ -1291,7 +1318,13 @@ fn drain_adopts_a_completion_whose_revision_is_current() {
     let mut controller = sample_controller();
     // Move the revision FIRST, so the test cannot pass on a stamp that
     // only ever matches the initial value.
-    let _ = controller.state.session.invalidate_toolpath_inputs(0);
+    let _ = controller
+        .state
+        .session
+        .apply(Command::InvalidateToolpathInputs(
+            InvalidateToolpathInputsArgs { index: 0 },
+        ))
+        .expect("toolpath 0 exists");
     let submitted = controller.state.session.toolpath_revision(0);
 
     push_toolpath_completion(&mut controller, Some(submitted));
@@ -1453,10 +1486,13 @@ fn add_derived_rest_dependent(
     controller
         .state
         .session
-        .add_toolpath(0, dependent_config)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(dependent_config),
+        }))
         .expect("dependent toolpath should be added to setup 0")
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     let dependent_id = controller.state.session.toolpath_configs()[1].id;
     controller
         .state
@@ -1578,10 +1614,13 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
     let consumer_index = controller
         .state
         .session
-        .add_toolpath(0, consumer_config)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(consumer_config),
+        }))
         .expect("consumer toolpath should be added to setup 0")
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
 
     let boundary = crate::state::toolpath::BoundaryConfig {
         enabled: true,
@@ -1594,7 +1633,10 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
     let _ = controller
         .state
         .session
-        .set_boundary_config(consumer_index, boundary)
+        .apply(Command::SetBoundaryConfig(SetBoundaryConfigArgs {
+            index: consumer_index,
+            boundary,
+        }))
         .expect("boundary set should succeed");
 
     let (_, source_tc) = controller
@@ -1657,7 +1699,11 @@ fn remove_tool_succeeds_when_no_toolpath_references_it() {
     let extra_tool = ToolConfig::new_default(unreferenced_id, ToolType::EndMill);
     let mut tools = controller.state.session.tools().to_vec();
     tools.push(extra_tool);
-    let _ = controller.state.session.replace_tools(tools);
+    let _ = controller
+        .state
+        .session
+        .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
+        .expect("the session takes the tool list");
     let tool_count_before = controller.state.session.tools().len();
 
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(unreferenced_id));
@@ -1749,7 +1795,7 @@ fn add_setup_and_remove_setup_lifecycle() {
     let effects = controller
         .state
         .session
-        .remove_setup(1)
+        .apply(Command::RemoveSetup(RemoveSetupArgs { index: 1 }))
         .expect("the second setup holds no toolpath");
     assert!(
         !effects.simulation_cleared,
@@ -1991,9 +2037,6 @@ fn build_world_stock_bbox_respects_stock_origin_f024() {
     use rs_cam_core::compute::stock_config::StockConfig;
     use rs_cam_core::geo::BoundingBox3;
     use rs_cam_core::material::{Material, WoodSpecies};
-    use rs_cam_core::session::ProjectSession;
-
-    let mut session = ProjectSession::new_empty();
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
@@ -2007,7 +2050,7 @@ fn build_world_stock_bbox_respects_stock_origin_f024() {
         },
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    let session = ProjectSessionBuilder::new().stock(stock).build();
 
     let bbox: BoundingBox3 =
         crate::controller::events::simulation::build_world_stock_bbox(&session);
@@ -2064,7 +2107,6 @@ fn build_world_stock_bbox_respects_stock_origin_f024() {
 fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024() {
     use rs_cam_core::compute::stock_config::StockConfig;
     use rs_cam_core::material::{Material, WoodSpecies};
-    use rs_cam_core::session::ProjectSession;
     use rs_cam_core::simulation_cut::CutKinematics;
     use std::sync::atomic::AtomicBool;
 
@@ -2072,7 +2114,6 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
         SetupSimGroup, SetupSimToolpath, SimulationRequest as VizSimulationRequest,
     };
 
-    let mut session = ProjectSession::new_empty();
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
@@ -2086,7 +2127,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
         },
         ..StockConfig::default()
     };
-    let _ = session.set_stock_config(stock);
+    let session = ProjectSessionBuilder::new().stock(stock).build();
 
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     tool.diameter = 6.0;
@@ -2311,28 +2352,37 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         },
         ..StockConfig::default()
     };
-    let _ = controller.state.session.set_stock_config(stock);
+    let _ = controller
+        .state
+        .session
+        .apply(Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(stock),
+        }))
+        .expect("the stock edit applies");
 
     // 2D polygon model (matches the SVG-driven AS001 pocket case).
     let model_id = controller
         .state
         .session
-        .add_model(LoadedModel {
-            id: 0,
-            path: std::path::PathBuf::from("demo_pocket.svg"),
-            name: "demo_pocket".to_owned(),
-            kind: Some(ModelKind::Svg),
-            mesh: None,
-            polygons: Some(Arc::new(vec![Polygon2::rectangle(20.0, 20.0, 80.0, 80.0)])),
-            drill_targets: std::sync::Arc::new(Vec::new()),
-            layers: std::sync::Arc::new(Vec::new()),
-            enriched_mesh: None,
-            units: Some(ModelUnits::Millimeters),
-            winding_report: None,
-            load_error: None,
-        })
+        .apply(Command::AddModel(AddModelArgs {
+            model: Box::new(LoadedModel {
+                id: 0,
+                path: std::path::PathBuf::from("demo_pocket.svg"),
+                name: "demo_pocket".to_owned(),
+                kind: Some(ModelKind::Svg),
+                mesh: None,
+                polygons: Some(Arc::new(vec![Polygon2::rectangle(20.0, 20.0, 80.0, 80.0)])),
+                drill_targets: std::sync::Arc::new(Vec::new()),
+                layers: std::sync::Arc::new(Vec::new()),
+                enriched_mesh: None,
+                units: Some(ModelUnits::Millimeters),
+                winding_report: None,
+                load_error: None,
+            }),
+        }))
+        .expect("the session takes the model")
         .created
-        .expect("add_model reports the new model id");
+        .expect("the AddModel row reports the new model id");
 
     // AS001 pocket params: depth=6, dpp=2, stepover=2.4, feed=900, plunge=350.
     let pocket = PocketConfig {
@@ -2372,10 +2422,13 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     let tp_idx = controller
         .state
         .session
-        .add_toolpath(0, tp_config)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tp_config),
+        }))
         .expect("add pocket to default setup")
         .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the AddToolpath row reports the new toolpath index");
     let tp_id = controller
         .state
         .session
@@ -2583,10 +2636,10 @@ fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
     let _ = controller
         .state
         .session
-        .set_stock_source(
+        .apply(Command::SetStockSource(SetStockSourceArgs {
             index,
-            crate::state::toolpath::StockSource::FromRemainingStock,
-        )
+            source: crate::state::toolpath::StockSource::FromRemainingStock,
+        }))
         .expect("the index comes from the session");
 
     controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
@@ -2644,10 +2697,10 @@ fn blocked_rest_op_names_its_blocking_upstream_operation() {
     let _ = controller
         .state
         .session
-        .set_stock_source(
-            rest_index,
-            crate::state::toolpath::StockSource::FromRemainingStock,
-        )
+        .apply(Command::SetStockSource(SetStockSourceArgs {
+            index: rest_index,
+            source: crate::state::toolpath::StockSource::FromRemainingStock,
+        }))
         .expect("the index comes from the session");
 
     // Blocker not generated: the wait is at least two rounds.
@@ -2759,7 +2812,10 @@ fn diagnostics_separate_blocked_from_failed_and_exclude_disabled() {
     let _ = controller
         .state
         .session
-        .set_toolpath_enabled(off_index, false)
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: off_index,
+            enabled: false,
+        }))
         .expect("the index comes from the session");
 
     let diag = controller.build_mcp_diagnostics();
@@ -2934,10 +2990,10 @@ fn rest_chain_controller(depth: usize) -> AppController<RestChainBackend> {
         let _ = controller
             .state
             .session
-            .set_stock_source(
+            .apply(Command::SetStockSource(SetStockSourceArgs {
                 index,
-                crate::state::toolpath::StockSource::FromRemainingStock,
-            )
+                source: crate::state::toolpath::StockSource::FromRemainingStock,
+            }))
             .expect("the index comes from the session");
     }
     // The fixture op at index 0 starts with a cached result; clear it so the
@@ -3341,7 +3397,10 @@ fn a_disabled_rest_op_is_not_generated_blocked_or_failed() {
     let _ = controller
         .state
         .session
-        .set_toolpath_enabled(off_index, false)
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: off_index,
+            enabled: false,
+        }))
         .expect("the index comes from the session");
 
     let (tx, mut rx) = tokio::sync::oneshot::channel();
@@ -3844,7 +3903,11 @@ fn planner_controller() -> AppController<ScriptedBackend> {
         tool.diameter = diameter;
         tools.push(tool);
     }
-    let _ = controller.state.session.replace_tools(tools);
+    let _ = controller
+        .state
+        .session
+        .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
+        .expect("the session takes the tool list");
     controller
 }
 
@@ -4081,12 +4144,13 @@ fn active_setup_index_follows_the_selection() {
     let second = controller
         .state
         .session
-        .add_setup(
-            "Back".to_owned(),
-            rs_cam_core::compute::transform::FaceUp::default(),
-        )
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Back".to_owned()),
+            face_up: rs_cam_core::compute::transform::FaceUp::default(),
+        }))
+        .expect("the session accepts a second setup")
         .created
-        .expect("add_setup reports the new setup index");
+        .expect("the AddSetup row reports the new setup index");
 
     // Nothing setup-scoped selected: the first setup's frame is displayed.
     controller.state.selection = Selection::None;
@@ -4436,7 +4500,11 @@ fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
         let mut controller = sample_controller();
         let mut tools = controller.state.session.tools().to_vec();
         tools.push(ToolConfig::new_default(ToolId(2), ToolType::EndMill));
-        let _ = controller.state.session.replace_tools(tools);
+        let _ = controller
+            .state
+            .session
+            .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
+            .expect("the session takes the tool list");
         generate_all_for_test(&mut controller);
         let id = controller.state.session.toolpath_configs()[0].id;
         panel_edit(&mut controller, id, |entry| {
@@ -4517,10 +4585,10 @@ fn freshness_reorder_keeps_fresh_ops_current() {
         let _ = controller
             .state
             .session
-            .set_stock_source(
-                idx,
-                rs_cam_core::compute::config::StockSource::FromRemainingStock,
-            )
+            .apply(Command::SetStockSource(SetStockSourceArgs {
+                index: idx,
+                source: rs_cam_core::compute::config::StockSource::FromRemainingStock,
+            }))
             .expect("index is in range");
     }
     generate_all_for_test(&mut controller);
@@ -4610,13 +4678,19 @@ fn freshness_setup_orientation_stales_the_setup() {
             let _ = controller
                 .state
                 .session
-                .set_setup_face(0, rs_cam_core::compute::transform::FaceUp::Bottom)
+                .apply(Command::SetSetupFace(SetSetupFaceArgs {
+                    setup_index: 0,
+                    face_up: rs_cam_core::compute::transform::FaceUp::Bottom,
+                }))
                 .expect("setup 0 exists");
         } else {
             let _ = controller
                 .state
                 .session
-                .set_setup_rotation(0, rs_cam_core::compute::transform::ZRotation::Deg90)
+                .apply(Command::SetSetupRotation(SetSetupRotationArgs {
+                    setup_index: 0,
+                    z_rotation: rs_cam_core::compute::transform::ZRotation::Deg90,
+                }))
                 .expect("setup 0 exists");
         }
 
@@ -4833,7 +4907,13 @@ fn freshness_chip_reports_stale_ahead_of_pending() {
     let first = controller.state.session.toolpath_configs()[0].id;
 
     // Toolpath 1 never generated, toolpath 0 generated then edited.
-    let _ = controller.state.session.invalidate_toolpath_inputs(1);
+    let _ = controller
+        .state
+        .session
+        .apply(Command::InvalidateToolpathInputs(
+            InvalidateToolpathInputsArgs { index: 1 },
+        ))
+        .expect("toolpath 1 exists");
     if let Some(rt) = controller.state.gui.toolpath_rt.get_mut(&second) {
         rt.result = None;
     }
@@ -4891,7 +4971,10 @@ fn freshness_counts_exclude_disabled_and_error() {
     let _ = controller
         .state
         .session
-        .set_toolpath_enabled(0, false)
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: 0,
+            enabled: false,
+        }))
         .expect("index 0 exists");
     assert_eq!(state_of(&controller, 0), FreshnessState::Disabled);
     assert_eq!(readiness::freshness_counts(&controller.state).0, 0);
@@ -4899,7 +4982,10 @@ fn freshness_counts_exclude_disabled_and_error() {
     let _ = controller
         .state
         .session
-        .set_toolpath_enabled(0, true)
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: 0,
+            enabled: true,
+        }))
         .expect("index 0 exists");
     if let Some(rt) = controller.state.gui.toolpath_rt.get_mut(&id) {
         rt.status = crate::state::runtime::ComputeStatus::Error("nope".to_owned());
@@ -5213,10 +5299,10 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
         let _ = controller
             .state
             .session
-            .set_stock_source(
-                idx,
-                rs_cam_core::compute::config::StockSource::FromRemainingStock,
-            )
+            .apply(Command::SetStockSource(SetStockSourceArgs {
+                index: idx,
+                source: rs_cam_core::compute::config::StockSource::FromRemainingStock,
+            }))
             .expect("index is in range");
     }
 
@@ -5244,7 +5330,11 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
     let _ = controller
         .state
         .session
-        .set_feeds_provenance(0, after_provenance.clone());
+        .apply(Command::SetFeedsProvenance(SetFeedsProvenanceArgs {
+            index: 0,
+            feeds_provenance: Box::new(after_provenance.clone()),
+        }))
+        .expect("index 0 exists");
     controller
         .state
         .history

@@ -111,19 +111,40 @@ fn viz_sources() -> Vec<PathBuf> {
     found
 }
 
-/// The four files that serve the MCP wire, and `tests.rs`.
+/// The four files that serve the MCP wire, and the `#[cfg(test)]` module
+/// files under `src`.
 ///
 /// A property about the GUI surface must not read an MCP construction as
-/// a GUI caller. These four files ARE the MCP surface: WP4's delegating
-/// arm converts a `CoreRequest` into a `Command` inside
+/// a GUI caller. The first four files ARE the MCP surface: WP4's
+/// delegating arm converts a `CoreRequest` into a `Command` inside
 /// `app/mcp/commands.rs`, so most `gui: Skip` rows are constructed there
 /// — correctly, and by the wire.
+///
+/// The rest are `#[cfg(test)]` modules their parent declares, so they are
+/// fixtures and not the view either. `controller/tests.rs` was the first
+/// one this list carried. WP15b migrated every fixture in the crate onto
+/// `ProjectSession::apply`, so a fixture now constructs the same rows a
+/// caller does: `controller/holder_clearance_scope_g_holderscope.rs`
+/// builds a two-tool job with `Command::ReplaceTools`, a row whose `gui`
+/// column says `Skip` and stays true — no GUI control replaces the tools
+/// list. Read a construction here as a fixture, never as a caller.
+///
+/// `ui/properties/operations/mod.rs` and `app/mcp.rs` carry an INLINE
+/// `mod tests`, so the file cannot be split. `app/mcp.rs` is on the list
+/// already as an MCP source; `ui/properties/operations/mod.rs` stays in
+/// the scan, because its production half is a view caller.
 const MCP_SOURCES: &[&str] = &[
     "src/app/mcp.rs",
     "src/app/mcp/commands.rs",
     "src/mcp_bridge.rs",
     "src/mcp_server.rs",
     "src/controller/tests.rs",
+    "src/controller/workflow_tests.rs",
+    "src/controller/results_parity_tests.rs",
+    "src/controller/holder_clearance_staleness_g_holderstale.rs",
+    "src/controller/holder_clearance_scope_g_holderscope.rs",
+    "src/controller/fixpoint_resolution_notice_g_resnotice.rs",
+    "src/compute/worker/gen_parity_p0_tests.rs",
 ];
 
 /// The view sources, comments stripped, excluding the MCP wire files.

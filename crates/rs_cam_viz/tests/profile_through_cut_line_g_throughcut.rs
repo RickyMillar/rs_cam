@@ -143,7 +143,10 @@ fn profile(depth: f64, tab_count: usize) -> OperationConfig {
 }
 
 /// One tool, one 2D model, 18 mm stock, one setup.
-fn build_session() -> ProjectSession {
+///
+/// The builder is returned unbuilt, so the caller adds its Profile through
+/// the same door.
+fn build_session() -> ProjectSessionBuilder {
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
@@ -155,7 +158,6 @@ fn build_session() -> ProjectSession {
         .tool(tool)
         .model(polygon_model(MODEL_2D))
         .stock(stock)
-        .build()
 }
 
 /// The rule the params panel reads for the Profile at `idx`.
@@ -170,15 +172,14 @@ fn rule(session: &ProjectSession, idx: usize) -> Option<ThroughCut> {
 
 #[test]
 fn a_full_depth_profile_with_no_tabs_reads_the_seed_line_g_throughcut() {
-    let mut session = build_session();
-    let idx = session
+    let mut builder = build_session();
+    let idx = builder
         .add_toolpath(
             0,
             toolpath("Cut out", MODEL_2D, profile(STOCK_THICKNESS_MM, 0)),
         )
-        .unwrap()
-        .created
         .expect("add_toolpath reports the new toolpath index");
+    let session = builder.build();
     let finding = rule(&session, idx).expect("(a) depth == thickness is a through cut");
     assert_eq!(finding.message(), NO_TABS_18);
     assert!((finding.depth_mm - STOCK_THICKNESS_MM).abs() < 1e-9);
@@ -198,23 +199,21 @@ fn a_full_depth_profile_with_no_tabs_reads_the_seed_line_g_throughcut() {
 
 #[test]
 fn a_partial_depth_profile_reads_nothing_g_throughcut() {
-    let mut session = build_session();
-    let idx = session
+    let mut builder = build_session();
+    let idx = builder
         .add_toolpath(0, toolpath("Rebate", MODEL_2D, profile(6.0, 0)))
-        .unwrap()
-        .created
         .expect("add_toolpath reports the new toolpath index");
+    let session = builder.build();
     assert_eq!(rule(&session, idx), None);
 }
 
 #[test]
 fn a_depth_beyond_the_board_shows_both_the_line_and_the_caution_g_throughcut() {
-    let mut session = build_session();
-    let idx = session
+    let mut builder = build_session();
+    let idx = builder
         .add_toolpath(0, toolpath("Deep", MODEL_2D, profile(25.0, 3)))
-        .unwrap()
-        .created
         .expect("add_toolpath reports the new toolpath index");
+    let session = builder.build();
     let finding = rule(&session, idx).expect("beyond the board is a through cut");
     assert_eq!(
         finding.message(),
@@ -232,17 +231,16 @@ fn a_top_z_pinned_below_the_stock_top_counts_towards_the_through_cut_g_throughcu
     // Depth 12 on an 18 mm board is a rebate — until Top Z is pinned 6 mm
     // down (a face pass went first), at which point the bottom reaches the
     // stock bottom. The generator cuts `top_z - depth`, so the line reads it.
-    let mut session = build_session();
+    let mut builder = build_session();
     let mut tc = toolpath("After face", MODEL_2D, profile(12.0, 0));
     tc.heights.top_z = HeightMode::FromReference(ReferenceOffset {
         reference: HeightReference::StockTop,
         offset: -6.0,
     });
-    let idx = session
+    let idx = builder
         .add_toolpath(0, tc)
-        .unwrap()
-        .created
         .expect("add_toolpath reports the new toolpath index");
+    let session = builder.build();
     let finding = rule(&session, idx).expect("pinned Top Z reaches the stock bottom");
     assert_eq!(finding.message(), NO_TABS_18);
     assert!(
@@ -252,11 +250,10 @@ fn a_top_z_pinned_below_the_stock_top_counts_towards_the_through_cut_g_throughcu
     );
 
     // The same op with Top Z at the stock top is a rebate again.
-    let mut session = build_session();
-    let idx = session
+    let mut builder = build_session();
+    let idx = builder
         .add_toolpath(0, toolpath("Rebate", MODEL_2D, profile(12.0, 0)))
-        .unwrap()
-        .created
         .expect("add_toolpath reports the new toolpath index");
+    let session = builder.build();
     assert_eq!(rule(&session, idx), None);
 }

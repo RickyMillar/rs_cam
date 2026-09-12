@@ -39,7 +39,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::session::{AddToolpathArgs, Command, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
     GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
@@ -112,14 +112,10 @@ fn controller_with(op_type: OperationType) -> AppController<SilentBackend> {
 /// file, so the arrangement must not run through it.
 fn controller_with_config(config: ToolpathConfig) -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    let _ = controller
-        .state
-        .session
-        .add_toolpath(0, config)
-        .expect("add toolpath");
+    let mut builder =
+        ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let _ = builder.add_toolpath(0, config).expect("add toolpath");
+    controller.state.session = builder.build();
     controller
 }
 
@@ -717,7 +713,10 @@ fn project_apply_all_skips_a_refused_toolpath_and_reports_it() {
     let _ = controller
         .state
         .session
-        .add_toolpath(0, toolpath(1, OperationType::Scallop))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(toolpath(1, OperationType::Scallop)),
+        }))
         .expect("add second toolpath");
 
     let before_valid = controller.state.session.toolpath_configs()[0]

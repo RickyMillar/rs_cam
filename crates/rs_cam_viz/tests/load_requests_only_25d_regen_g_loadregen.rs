@@ -135,9 +135,8 @@ fn toolpath(id: usize, name: &str, model_id: usize, operation: OperationConfig) 
 /// one Scallop (3D, `default_auto_regen` false) through the real save
 /// path, so the file shape is whatever the loader actually accepts.
 fn write_two_op_project() -> PathBuf {
-    let mut session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose))
-        .build();
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
     // Two models, because the two operations need different geometry: the
     // pocket is 2.5D and wants polygons, the scallop is 3D and wants a
     // mesh. The loader re-imports both from these paths, so an operation
@@ -146,7 +145,7 @@ fn write_two_op_project() -> PathBuf {
         (0usize, "square.svg", ModelKind::Svg),
         (1usize, "flat_plate.stl", ModelKind::Stl),
     ] {
-        let _ = session.add_model(LoadedModel {
+        let _ = builder.add_model(LoadedModel {
             id,
             path: fixtures_dir().join(file),
             name: file.to_owned(),
@@ -161,7 +160,7 @@ fn write_two_op_project() -> PathBuf {
             load_error: None,
         });
     }
-    let _ = session
+    let _ = builder
         .add_toolpath(
             0,
             toolpath(
@@ -172,7 +171,7 @@ fn write_two_op_project() -> PathBuf {
             ),
         )
         .expect("add pocket");
-    let _ = session
+    let _ = builder
         .add_toolpath(
             0,
             toolpath(
@@ -183,6 +182,7 @@ fn write_two_op_project() -> PathBuf {
             ),
         )
         .expect("add scallop");
+    let session = builder.build();
 
     let path = temp_project_path("loadregen");
     session.save(&path).expect("save the project");

@@ -60,8 +60,8 @@ use rs_cam_core::compute::stock_config::{ModelId, ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::drill_op::OpData;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathComputeResult,
-    ToolpathConfig,
+    AddToolpathArgs, AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder,
+    ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -178,10 +178,16 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
 
     let session = &mut controller.state.session;
     let _ = session
-        .add_toolpath(0, toolpath("Under test", id_under_test.0))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(toolpath("Under test", id_under_test.0)),
+        }))
         .expect("add the dependent toolpath");
     let _ = session
-        .add_toolpath(0, toolpath("Bystander", id_bystander.0))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(toolpath("Bystander", id_bystander.0)),
+        }))
         .expect("add the bystander toolpath");
     for index in [0usize, 1usize] {
         let revision = session.toolpath_revision(index);
@@ -347,9 +353,8 @@ fn a_reload_drops_the_dependent_results_control() {
 #[test]
 fn a_step_rescale_changes_nothing_and_drops_nothing() {
     let mut controller = AppController::with_backend(SilentBackend);
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
 
     // The path is never read: the STEP arm returns before the import.
     let record = LoadedModel {
@@ -366,14 +371,12 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
         winding_report: None,
         load_error: None,
     };
-    let session = &mut controller.state.session;
-    let model_id = session
-        .add_model(record)
-        .created
-        .expect("add_model reports the new model id");
-    let _ = session
+    let model_id = builder.add_model(record);
+    let _ = builder
         .add_toolpath(0, toolpath("On the STEP", model_id))
         .expect("add the dependent toolpath");
+    controller.state.session = builder.build();
+    let session = &mut controller.state.session;
     let revision = session.toolpath_revision(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {

@@ -49,7 +49,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::Diagnostic;
 use rs_cam_core::diagnostics::ids::GEOM_DEPTH_BEYOND_STOCK;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::job::{ModelKind, ModelUnits};
 use rs_cam_viz::state::runtime::GuiState;
 use rs_cam_viz::ui::properties::{
@@ -130,7 +130,10 @@ fn pocket(depth: f64) -> OperationConfig {
 }
 
 /// One tool, one 2D model, one 3D model, an 18 mm board, one setup.
-fn session() -> ProjectSession {
+///
+/// The builder is returned unbuilt, so the caller adds its toolpath through
+/// the same door.
+fn session() -> ProjectSessionBuilder {
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
@@ -143,7 +146,6 @@ fn session() -> ProjectSession {
         .model(polygon_model(MODEL_2D))
         .model(mesh_model(MODEL_3D))
         .stock(stock)
-        .build()
 }
 
 /// One fixture: a name, the operation, its heights, and the model it binds.
@@ -207,14 +209,13 @@ fn cases() -> Vec<Case> {
 /// and the Safety header's diagnostic list, both read the way the panel
 /// reads them.
 fn read_case(case: &Case) -> (Option<String>, Vec<Diagnostic>) {
-    let mut session = session();
+    let mut builder = session();
     let mut tc = toolpath(case.name, case.model_id, case.op.clone());
     tc.heights = case.heights.clone();
-    let idx = session
+    let idx = builder
         .add_toolpath(0, tc)
-        .unwrap()
-        .created
         .expect("add_toolpath reports the new toolpath index");
+    let session = builder.build();
 
     let tc = &session.toolpath_configs()[idx];
     let height_ctx = session.height_context_for_toolpath(tc);

@@ -120,13 +120,13 @@ enum SecondOp {
 }
 
 fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) {
-    let mut session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    session.set_name("g-exportskip sentry".to_owned());
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new()
+        .tool(tool)
+        .name("g-exportskip sentry".to_owned());
 
     let mesh = Arc::new(make_test_flat(40.0));
-    let _ = session.add_model(LoadedModel {
+    let _ = builder.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -141,14 +141,15 @@ fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) 
         load_error: None,
     });
 
-    let _ = session
+    let _ = builder
         .add_toolpath(0, toolpath_config(0, GENERATED_NAME, true))
         .expect("add generated toolpath");
     let second_enabled = !matches!(second, SecondOp::Disabled);
     // Both ops sit in the default setup (id 0), one after the other.
-    let _ = session
+    let _ = builder
         .add_toolpath(0, toolpath_config(1, UNGENERATED_NAME, second_enabled))
         .expect("add second toolpath");
+    let mut session = builder.build();
 
     let first_id = session.toolpath_configs()[0].id;
     let second_id = session.toolpath_configs()[1].id;

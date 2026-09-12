@@ -61,7 +61,9 @@ use rs_cam_core::diagnostics::ids::{
     GEOM_FEED_Z_BELOW_TOP_Z, GEOM_RETRACT_Z_BELOW_FEED_Z,
 };
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig,
+};
 use rs_cam_viz::state::job::{ModelKind, ModelUnits};
 use rs_cam_viz::state::runtime::GuiState;
 use rs_cam_viz::ui::properties::{collect_diagnostics, toolpath_panel_snapshot};
@@ -167,10 +169,13 @@ fn session() -> ProjectSession {
 /// Add one operation and return its index.
 fn add_operation(session: &mut ProjectSession, config: ToolpathConfig) -> usize {
     session
-        .add_toolpath(0, config)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(config),
+        }))
         .expect("the session accepts the operation")
         .created
-        .expect("add_toolpath reports the new toolpath index")
+        .expect("the AddToolpath row reports the new toolpath index")
 }
 
 /// Add one Pocket and return its index.

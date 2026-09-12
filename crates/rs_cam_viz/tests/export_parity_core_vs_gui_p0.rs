@@ -154,7 +154,8 @@ use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ToolpathComputeResult, ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -258,65 +259,54 @@ fn cutter(tool_type: ToolType, name: &str, number: u32) -> ToolConfig {
 /// Build the shared fixture. `last_coolant` is the coolant mode of the
 /// third toolpath, which is the last phase of the program.
 fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, SimulationState) {
-    let mut session = ProjectSession::new_empty();
-    session.set_name("phase 0 export parity".to_owned());
-    let _ = session.set_stock_config(StockConfig {
-        x: STOCK_X,
-        y: STOCK_Y,
-        z: STOCK_Z,
-        origin_x: ORIGIN_X,
-        origin_y: ORIGIN_Y,
-        origin_z: ORIGIN_Z,
-        auto_from_model: false,
-        ..StockConfig::default()
-    });
+    let mut builder = ProjectSessionBuilder::new()
+        .name("phase 0 export parity".to_owned())
+        .stock(StockConfig {
+            x: STOCK_X,
+            y: STOCK_Y,
+            z: STOCK_Z,
+            origin_x: ORIGIN_X,
+            origin_y: ORIGIN_Y,
+            origin_z: ORIGIN_Z,
+            auto_from_model: false,
+            ..StockConfig::default()
+        });
 
     let rough_bit = cutter(ToolType::EndMill, ROUGH_TOOL_NAME, ROUGH_TOOL_NUMBER);
     let finish_bit = cutter(ToolType::BallNose, FINISH_TOOL_NAME, FINISH_TOOL_NUMBER);
-    let rough_idx = session
-        .add_tool(rough_bit)
-        .created
-        .expect("add_tool reports the new tool index");
-    let finish_idx = session
-        .add_tool(finish_bit)
-        .created
-        .expect("add_tool reports the new tool index");
-    let rough_tool = session.tools()[rough_idx].id.0;
-    let finish_tool = session.tools()[finish_idx].id.0;
+    let rough_idx = builder.add_tool(rough_bit);
+    let finish_idx = builder.add_tool(finish_bit);
+    let rough_tool = builder.tools()[rough_idx].id.0;
+    let finish_tool = builder.tools()[finish_idx].id.0;
 
-    let model_id = session
-        .add_model(LoadedModel {
-            id: 0,
-            path: PathBuf::from("flat.stl"),
-            name: "Flat".to_owned(),
-            kind: Some(ModelKind::Stl),
-            mesh: Some(Arc::new(make_test_flat(40.0))),
-            polygons: None,
-            drill_targets: Arc::new(Vec::new()),
-            layers: Arc::new(Vec::new()),
-            enriched_mesh: None,
-            units: Some(ModelUnits::Millimeters),
-            winding_report: None,
-            load_error: None,
-        })
-        .created
-        .expect("add_model reports the new model id");
+    let model_id = builder.add_model(LoadedModel {
+        id: 0,
+        path: PathBuf::from("flat.stl"),
+        name: "Flat".to_owned(),
+        kind: Some(ModelKind::Stl),
+        mesh: Some(Arc::new(make_test_flat(40.0))),
+        polygons: None,
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        enriched_mesh: None,
+        units: Some(ModelUnits::Millimeters),
+        winding_report: None,
+        load_error: None,
+    });
 
-    let flipped = session
-        .add_setup("Flip".to_owned(), FaceUp::Bottom)
-        .created
-        .expect("add_setup reports the new setup index");
+    let flipped = builder.add_setup("Flip".to_owned(), FaceUp::Bottom);
 
     let rough = toolpath_config(ROUGH_LABEL, ROUGH_RPM, rough_tool, model_id);
     let finish = toolpath_config(FINISH_LABEL, FINISH_RPM, finish_tool, model_id);
     let mut flip = toolpath_config(FLIP_LABEL, FLIP_RPM, rough_tool, model_id);
     flip.coolant = last_coolant;
 
-    let _ = session.add_toolpath(0, rough).expect("add rough");
-    let _ = session.add_toolpath(0, finish).expect("add finish");
-    let _ = session
+    let _ = builder.add_toolpath(0, rough).expect("add rough");
+    let _ = builder.add_toolpath(0, finish).expect("add finish");
+    let _ = builder
         .add_toolpath(flipped, flip)
         .expect("add the flipped-setup toolpath");
+    let mut session = builder.build();
 
     for index in 0..LABELS.len() {
         let revision = session.toolpath_revision(index);

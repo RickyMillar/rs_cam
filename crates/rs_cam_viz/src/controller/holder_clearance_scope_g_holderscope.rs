@@ -59,6 +59,7 @@
 use std::sync::Arc;
 
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::session::{AddToolpathArgs, Command, ReplaceToolsArgs};
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
 use crate::controller::AppController;
@@ -84,17 +85,22 @@ fn two_operation_job() -> AppController<ScriptedLane> {
     second_tool.stickout += 20.0;
     let mut tools = controller.state.session.tools().to_vec();
     tools.push(second_tool);
-    let _ = controller.state.session.replace_tools(tools);
+    let _ = controller
+        .state
+        .session
+        .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
+        .expect("the session takes the tool list");
 
     let mut second_op = toolpath(1);
     second_op.tool_id = 2;
-    controller
+    let _ = controller
         .state
         .session
-        .add_toolpath(0, second_op)
-        .expect("the fixture project takes a second operation")
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(second_op),
+        }))
+        .expect("the fixture project takes a second operation");
     land_a_result_for(&mut controller, ToolpathId(1));
 
     controller

@@ -2599,11 +2599,10 @@ mod tests {
 
     #[test]
     fn validate_rest_requires_earlier_matching_operation() {
-        let mut session = ProjectSessionBuilder::new()
+        let mut builder = ProjectSessionBuilder::new()
             .tool(sample_tool(ToolId(1), ToolType::EndMill, 10.0))
             .tool(sample_tool(ToolId(2), ToolType::EndMill, 6.0))
-            .model(session_polygon_model(4))
-            .build();
+            .model(session_polygon_model(4));
 
         // Add the rest toolpath config to the session (no prior roughing)
         let mut rest_op = OperationConfig::Rest(Default::default());
@@ -2611,11 +2610,10 @@ mod tests {
             cfg.prev_tool_id = Some(ToolId(1));
         }
         let rest_config = make_session_toolpath_config("Rest", 2, 4, rest_op);
-        let rest_idx = session
+        let rest_idx = builder
             .add_toolpath(0, rest_config)
-            .unwrap()
-            .created
             .expect("add_toolpath reports the new toolpath index");
+        let session = builder.build();
 
         // Build entry with the session-assigned ID
         // SAFETY: rest_idx bounded by add_toolpath return
@@ -2642,11 +2640,10 @@ mod tests {
 
     #[test]
     fn validate_rest_accepts_earlier_matching_operation() {
-        let mut session = ProjectSessionBuilder::new()
+        let mut builder = ProjectSessionBuilder::new()
             .tool(sample_tool(ToolId(1), ToolType::EndMill, 10.0))
             .tool(sample_tool(ToolId(2), ToolType::EndMill, 6.0))
-            .model(session_polygon_model(4))
-            .build();
+            .model(session_polygon_model(4));
 
         // Add roughing toolpath first
         let roughing_config = make_session_toolpath_config(
@@ -2655,7 +2652,7 @@ mod tests {
             4,
             OperationConfig::Pocket(Default::default()),
         );
-        let _ = session.add_toolpath(0, roughing_config).unwrap();
+        let _ = builder.add_toolpath(0, roughing_config).unwrap();
 
         // Add rest toolpath — session assigns the ID
         let mut rest_op = OperationConfig::Rest(Default::default());
@@ -2663,11 +2660,10 @@ mod tests {
             cfg.prev_tool_id = Some(ToolId(1));
         }
         let rest_config = make_session_toolpath_config("Rest", 2, 4, rest_op);
-        let rest_idx = session
+        let rest_idx = builder
             .add_toolpath(0, rest_config)
-            .unwrap()
-            .created
             .expect("add_toolpath reports the new toolpath index");
+        let session = builder.build();
 
         // Build entry with the session-assigned ID so validation can locate it
         // SAFETY: rest_idx bounded by add_toolpath return

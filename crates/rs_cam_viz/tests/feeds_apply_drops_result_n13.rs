@@ -160,11 +160,9 @@ fn toolpath(name: &str, op_type: OperationType, stock_source: StockSource) -> To
 /// `invalidate_result_chain` must reach.
 fn build_controller() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    let session: &mut ProjectSession = &mut controller.state.session;
-    let _ = session.add_model(LoadedModel {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let _ = builder.add_model(LoadedModel {
         id: 0,
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -178,13 +176,13 @@ fn build_controller() -> AppController<SilentBackend> {
         winding_report: None,
         load_error: None,
     });
-    let _ = session
+    let _ = builder
         .add_toolpath(
             0,
             toolpath(LEAD_NAME, OperationType::Pocket, StockSource::default()),
         )
         .expect("add the lead toolpath");
-    let _ = session
+    let _ = builder
         .add_toolpath(
             0,
             toolpath(
@@ -194,6 +192,8 @@ fn build_controller() -> AppController<SilentBackend> {
             ),
         )
         .expect("add the downstream toolpath");
+    controller.state.session = builder.build();
+    let session: &mut ProjectSession = &mut controller.state.session;
     let lead_revision = session.toolpath_revision(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {

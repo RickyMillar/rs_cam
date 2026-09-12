@@ -130,23 +130,15 @@ fn toolpath(id: usize, stock_source: StockSource) -> ToolpathConfig {
 /// ladder advance a round.
 fn controller_with_a_chain() -> AppController<ScriptedLane> {
     let mut controller = AppController::with_backend(ScriptedLane::default());
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    controller
-        .state
-        .session
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    builder
         .add_toolpath(0, toolpath(0, StockSource::Fresh))
-        .expect("fresh op")
-        .created
-        .expect("add_toolpath reports the new toolpath index");
-    controller
-        .state
-        .session
+        .expect("fresh op");
+    builder
         .add_toolpath(0, toolpath(1, StockSource::FromRemainingStock))
-        .expect("rest op")
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("rest op");
+    controller.state.session = builder.build();
     controller
 }
 

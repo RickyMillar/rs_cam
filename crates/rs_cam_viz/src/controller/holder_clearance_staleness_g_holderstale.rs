@@ -140,10 +140,9 @@ pub(super) fn toolpath(id: usize) -> ToolpathConfig {
 /// the obstacle-edit classes have something to move.
 pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
     let mut controller = AppController::with_backend(ScriptedLane::default());
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    let _ = controller.state.session.add_model(LoadedModel {
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let _ = builder.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
@@ -157,13 +156,10 @@ pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
         winding_report: None,
         load_error: None,
     });
-    controller
-        .state
-        .session
+    builder
         .add_toolpath(0, toolpath(0))
-        .expect("the fixture project takes one operation")
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the fixture project takes one operation");
+    controller.state.session = builder.build();
     controller.handle_internal_event(AppEvent::AddFixture(SetupId(0)));
     land_a_result_for(&mut controller, ToolpathId(0));
     controller

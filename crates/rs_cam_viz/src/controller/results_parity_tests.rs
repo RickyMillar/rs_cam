@@ -79,8 +79,8 @@ fn parity_controller() -> AppController<InertBackend> {
         drained: Vec::new(),
     });
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
-    let _ = controller.state.session.add_model(LoadedModel {
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let _ = builder.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("plate.svg"),
         name: "Plate".to_owned(),
@@ -117,7 +117,8 @@ fn parity_controller() -> AppController<InertBackend> {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    let _ = controller.state.session.add_toolpath(0, tp_config).unwrap();
+    let _ = builder.add_toolpath(0, tp_config).unwrap();
+    controller.state.session = builder.build();
     controller
 }
 

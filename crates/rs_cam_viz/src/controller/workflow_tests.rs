@@ -20,7 +20,9 @@ use crate::state::selection::Selection;
 use crate::state::toolpath::{HeightContext, HeightMode, HeightsConfig, OperationType, ToolpathId};
 use crate::ui::AppEvent;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
-use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathConfig,
+};
 
 // ── Test backend (mirrors tests.rs) ─────────────────────────────────────
 
@@ -142,22 +144,22 @@ fn stl_model() -> LoadedModel {
 /// Build a controller with a STEP model and one tool, ready for toolpath creation.
 fn step_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    c.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    let model_id = c.state.session.add_model(step_model()).created;
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let model_id = builder.add_model(step_model());
     // model_id is the raw usize assigned by session
     let _ = model_id;
+    c.state.session = builder.build();
     c
 }
 
 /// Build a controller with an STL model and one tool.
 fn stl_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    c.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    let _ = c.state.session.add_model(stl_model());
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let _ = builder.add_model(stl_model());
+    c.state.session = builder.build();
     c
 }
 
@@ -208,7 +210,14 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    let _ = controller.state.session.add_toolpath(0, tp_config).unwrap();
+    let _ = controller
+        .state
+        .session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tp_config),
+        }))
+        .unwrap();
     let tp_id_raw = controller
         .state
         .session
@@ -517,13 +526,9 @@ fn w5_project_round_trip_preserves_step_face_selection() {
     // Build a session with STEP model + face selection
     let model = step_model();
     let enriched = model.enriched_mesh.as_ref().unwrap().clone();
-    let mut session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let model_id = builder.add_model(model);
 
     let face_id = find_horizontal_face(&enriched);
     let tp_config = ToolpathConfig {
@@ -547,7 +552,8 @@ fn w5_project_round_trip_preserves_step_face_selection() {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    let _ = session.add_toolpath(0, tp_config).unwrap();
+    let _ = builder.add_toolpath(0, tp_config).unwrap();
+    let session = builder.build();
 
     // Save
     let project_path = temp_dir.join("test_project.toml");

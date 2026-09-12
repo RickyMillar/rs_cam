@@ -146,8 +146,8 @@ fn fixture(feed_optimization: bool) -> Fixture {
         submitted: Arc::clone(&submitted),
     });
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
-    let _ = controller.state.session.add_model(LoadedModel {
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let _ = builder.add_model(LoadedModel {
         id: 0,
         path: std::path::PathBuf::from("plate.svg"),
         name: "Plate".to_owned(),
@@ -187,13 +187,10 @@ fn fixture(feed_optimization: bool) -> Fixture {
         rest_analysis: Default::default(),
         planner_origin: None,
     };
-    let tp_index = controller
-        .state
-        .session
+    let tp_index = builder
         .add_toolpath(0, tp_config)
-        .expect("the default setup accepts a toolpath")
-        .created
-        .expect("add_toolpath reports the new toolpath index");
+        .expect("the default setup accepts a toolpath");
+    controller.state.session = builder.build();
     let tp_id = controller.state.session.toolpath_configs()[tp_index].id;
     Fixture {
         controller,

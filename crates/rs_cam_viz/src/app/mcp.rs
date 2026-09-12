@@ -5380,6 +5380,7 @@ fn build_inspect_spans_response(
 mod tests {
     use super::*;
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use rs_cam_core::session::{AddToolpathArgs, Command, RemoveToolpathArgs};
     use rs_cam_core::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
     // ── B7 divergence 3: the wrong-tool fallback ────────────────────────
@@ -5515,10 +5516,13 @@ mod tests {
             };
             let index = state
                 .session
-                .add_toolpath(0, config)
+                .apply(Command::AddToolpath(AddToolpathArgs {
+                    setup_index: 0,
+                    config: Box::new(config),
+                }))
                 .expect("setup 0 exists on a default session")
                 .created
-                .expect("add_toolpath reports the new toolpath index");
+                .expect("the AddToolpath row reports the new toolpath index");
             let id = state
                 .session
                 .get_toolpath_config(index)
@@ -5660,7 +5664,10 @@ mod tests {
         // Drop the first toolpath so ids and indices diverge — the measured
         // condition on the real project, where 4/5/6 were simultaneously
         // valid indices and valid ids of DIFFERENT toolpaths.
-        let _ = state.session.remove_toolpath(0).expect("index 0 exists");
+        let _ = state
+            .session
+            .apply(Command::RemoveToolpath(RemoveToolpathArgs { index: 0 }))
+            .expect("index 0 exists");
         let live: Vec<usize> = (0..state.session.toolpath_count())
             .filter_map(|i| state.session.get_toolpath_config(i).map(|tc| tc.id.0))
             .collect();

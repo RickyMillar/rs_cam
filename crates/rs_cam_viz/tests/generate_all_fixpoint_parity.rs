@@ -143,21 +143,17 @@ fn toolpath(id: usize, stock_source: StockSource) -> ToolpathConfig {
 /// A project whose second op takes the remaining stock of the first.
 fn controller_with_chain(rest_ops: usize) -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose))
-        .build();
-    let _ = controller
-        .state
-        .session
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let _ = builder
         .add_toolpath(0, toolpath(0, StockSource::Fresh))
         .expect("first op");
     for i in 1..=rest_ops {
-        let _ = controller
-            .state
-            .session
+        let _ = builder
             .add_toolpath(0, toolpath(i, StockSource::FromRemainingStock))
             .expect("rest op");
     }
+    controller.state.session = builder.build();
     controller
 }
 
