@@ -1678,3 +1678,51 @@ The operator answered four questions at the programme close.
 4. **Cargo while the GUI runs.** Verifiers run debug builds and tests and the
    clippy/fmt gate only. Nothing touches `target/release`; the running GUI
    and its binary stay as built at `351e2880`.
+
+---
+
+## §28 WP19 and WP14b rulings after the re-scout (2026-09-13)
+
+**WP19 re-measured at `10263b4d`.** The nineteen `let _ =` stale sites the
+review named are closed: WP15a and WP17 routed them through
+`apply_controller_command`, `apply_quietly`, `apply_panel_command` and
+`adopt_post_effects`. The live residual is `Effects::simulation_cleared`:
+23 mutation sites drop `session.simulation`, and one viz production site
+reads the flag. H3 stands, with one bug: `toolpath_rt_or_default` creates
+a runtime row with `auto_regen = true` while twelve operations declare
+`default_auto_regen: false`.
+
+1. **Operator ruling (2026-09-13): a toolpath edit CLEARS the view's
+   simulation, like every other edit.** One rule, no per-row exception at
+   the apply doors. The F2.5 banner behaviour for toolpath edits ends. The
+   argument is WP11b: with the session's simulation gone, `start` refuses a
+   `FromRemainingStock` operation, and an empty viewport says so where a
+   banner does not.
+2. `mcp_stamp_stale` is deleted; every route stamps through
+   `state::stale::stamp_stale`, and a row it creates reads the catalog's
+   `default_auto_regen`.
+3. `PanelSideEffects` gains `invalidate_simulation`, discharged once per
+   frame beside the GPU upload, so a draw site can mirror the flag without
+   the controller borrow.
+
+**WP14b rulings on the brief's open points.**
+
+4. `execute_optimize_toolpath` takes `&mut OptimizeToolpathHandle`; the
+   optimizer needs `&mut ProjectSession`, and `&handle` would cost a second
+   clone. The function still coerces to a plain `fn` pointer.
+5. The cut trace rides the handle beside the cloned session and comes FROM
+   the session, which holds the GUI simulation since N12 item 10. `Args`
+   stays `{ index }`. Behaviour change, recorded in the WP14 row: an
+   `optimize_toolpath` issued after an edit that dropped the simulation
+   refuses at submit, where before it ran against the viz slot's older
+   trace.
+6. `OptimizeRequest::Project` (the project rollup) has no row and gets none
+   now. It stays on the Optimize lane and takes `session.clone()` instead
+   of `mem::replace`; `OptimizeResult.session` and the write-back are
+   deleted. The three `mem::replace` sites go; `ProjectSession::new_empty`
+   the function stays (about 150 callers).
+7. `OptimizeRequest::MultitoolPreview` submits the existing `PreviewTierMap`
+   row on the Job lane; that row's `gui` column flips to `Reached`.
+8. `is_optimizing` and the full-screen placeholder stay as a POLICY (one
+   Optimize run at a time), no longer a necessity. Removing the placeholder
+   is a separate operator decision.
