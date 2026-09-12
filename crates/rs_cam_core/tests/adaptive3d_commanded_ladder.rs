@@ -53,7 +53,7 @@ use rs_cam_core::compute::operation_configs::{
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::session::{ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{AddToolpathArgs, Command, ProjectSession, ToolpathConfig};
 
 /// The AS013 fixture: `ux_3d_terrain.toml` + an adaptive3d op with the round-05
 /// baseline params. Deliberately the same fixture the F-027 / F-031 sentries
@@ -126,7 +126,10 @@ fn build_as013_terrain_session() -> ProjectSession {
         planner_origin: None,
     };
     let _ = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .expect("add adaptive3d toolpath");
     session
 }

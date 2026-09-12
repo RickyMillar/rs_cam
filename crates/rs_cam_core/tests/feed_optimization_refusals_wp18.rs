@@ -87,8 +87,8 @@ use rs_cam_core::compute::simulate::SimulationResult;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{
-    AdoptSimulationArgs, Command, GenObserver, GenerateToolpathArgs, GenerateToolpathHandle, Job,
-    JobHandle, ProjectSession, ToolpathComputeResult, execute_job,
+    AddToolpathArgs, AdoptSimulationArgs, Command, GenObserver, GenerateToolpathArgs,
+    GenerateToolpathHandle, Job, JobHandle, ProjectSession, ToolpathComputeResult, execute_job,
 };
 use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::Toolpath;
@@ -200,7 +200,10 @@ fn rest_chain_session(feed_optimization: bool) -> ProjectSession {
     rest.stock_source = StockSource::FromRemainingStock;
     rest.dressups.feed_optimization = feed_optimization;
     let _ = session
-        .add_toolpath(0, rest)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(rest),
+        }))
         .expect("the fresh session holds setup 0");
 
     let rest_id = session.toolpath_configs()[1].id;

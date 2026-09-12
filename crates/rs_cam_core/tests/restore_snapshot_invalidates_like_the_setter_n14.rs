@@ -55,7 +55,7 @@ use rs_cam_core::feeds::{FeedsProvenance, ValueProvenance};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AdoptResultArgs, Command, Effects, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    RestoreToolpathSnapshotArgs, ToolpathConfig,
+    RestoreToolpathSnapshotArgs, SetDrillSelectedHolesArgs, ToolpathConfig,
 };
 
 /// The one feed value the arms write.
@@ -338,7 +338,10 @@ fn a_drill_pick_drops_the_chain_n6() {
     let mut s = fixture(OperationConfig::Drill(DrillConfig::default()));
 
     let effects = s
-        .set_drill_selected_holes(0, Some(vec![[1.0, 2.0]]))
+        .apply(Command::SetDrillSelectedHoles(SetDrillSelectedHolesArgs {
+            index: 0,
+            selected_holes: Some(vec![[1.0, 2.0]]),
+        }))
         .expect("index 0 is a Drill operation");
 
     assert_eq!(

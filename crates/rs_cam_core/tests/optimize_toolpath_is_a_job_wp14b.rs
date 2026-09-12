@@ -104,7 +104,8 @@ use rs_cam_core::compute::simulate::SimulationResult;
 use rs_cam_core::feed_modulation::ModulationStrategy;
 use rs_cam_core::session::{
     AdoptSimulationArgs, Command, CommandId, CommandKind, Job, JobHandle, OptimizeToolpathArgs,
-    OptimizeToolpathHandle, ProjectSession, SimulationOptions, execute_optimize_toolpath,
+    OptimizeToolpathHandle, ProjectSession, SetStockConfigArgs, SimulationOptions,
+    execute_optimize_toolpath,
 };
 use rs_cam_core::simulation_cut::SimulationCutTrace;
 use rs_cam_core::stock_mesh::StockMesh;
@@ -203,7 +204,11 @@ fn refusal_session() -> ProjectSession {
         feed_scale_factor: 1.0,
         kc: 10.0,
     };
-    let _ = session.set_stock_config(stock);
+    let _ = session
+        .apply(Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(stock),
+        }))
+        .expect("the stock door accepts a custom material");
     let adopted = session.apply(Command::AdoptSimulation(AdoptSimulationArgs {
         result: Box::new(result_carrying(SimulationCutTrace::test_fixture())),
     }));

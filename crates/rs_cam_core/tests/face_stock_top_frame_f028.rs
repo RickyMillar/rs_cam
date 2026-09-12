@@ -70,7 +70,9 @@ use rs_cam_core::compute::operation_configs::{FaceConfig, PocketConfig, PocketPa
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::face::FaceDirection;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, ProjectSession, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::tool_load::{ChiploadVerdict, DeflectionVerdict};
 
 fn ux_step_plate_mdf_path() -> PathBuf {
@@ -141,7 +143,10 @@ fn build_as004_face_session() -> ProjectSession {
 
     // The fixture loads with one setup at index 0 (identity / face_up=Top).
     let _ = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .expect("add face toolpath to setup 0");
 
     session
@@ -402,7 +407,10 @@ fn build_as001_pocket_session_from_file() -> ProjectSession {
     };
 
     let _ = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .expect("add pocket toolpath to setup 0");
 
     session

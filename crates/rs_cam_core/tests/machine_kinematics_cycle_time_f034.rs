@@ -51,7 +51,9 @@ use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine_kinematics::{MachineKinematics, compute_cycle_time};
-use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, ProjectSession, SetMachineArgs, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::toolpath::Toolpath;
 
 fn ux_2d_pocket_path() -> PathBuf {
@@ -116,7 +118,10 @@ fn build_pocket_session() -> ProjectSession {
         planner_origin: None,
     };
     let _ = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .expect("add pocket toolpath to setup 0");
     session
 }
@@ -280,7 +285,11 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_ricky_tuned());
     machine.max_feed_mm_min = 10_000.0;
     let max_feed = machine.max_feed_mm_min;
-    let _ = session.set_machine(machine);
+    let _ = session
+        .apply(Command::SetMachine(SetMachineArgs {
+            machine: Box::new(machine),
+        }))
+        .expect("the machine row refuses nothing");
 
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
@@ -499,7 +508,11 @@ fn flag_on_overrides_total_runtime_s() {
         let mut session = build_pocket_session();
         let mut machine = session.machine().clone();
         machine.kinematics = kinematics;
-        let _ = session.set_machine(machine);
+        let _ = session
+            .apply(Command::SetMachine(SetMachineArgs {
+                machine: Box::new(machine),
+            }))
+            .expect("the machine row refuses nothing");
 
         // Re-use whatever toolpaths the project ships with — the
         // fixture is already a pocket op. Just generate + simulate.

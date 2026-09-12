@@ -31,7 +31,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
+use rs_cam_core::session::{Command, InvalidateModelArgs, ProjectSession, ProjectSessionBuilder};
 
 /// A unique scratch directory for one test.
 fn scratch(name: &str) -> PathBuf {
@@ -311,7 +311,11 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
             .expect("the fixture adopts at the current revision");
     }
 
-    let effects = session.invalidate_model(0);
+    let effects = session
+        .apply(Command::InvalidateModel(InvalidateModelArgs {
+            model_id: 0,
+        }))
+        .expect("the model-invalidation row refuses nothing");
 
     assert_eq!(
         effects.stale,

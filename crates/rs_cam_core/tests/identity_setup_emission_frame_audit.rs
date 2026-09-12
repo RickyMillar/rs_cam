@@ -130,9 +130,7 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
     let _ = builder
         .add_toolpath(0, tc)
         .expect("add adaptive3d toolpath");
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 /// Lateral (non-plunge) cutting-move Z values of toolpath 0.

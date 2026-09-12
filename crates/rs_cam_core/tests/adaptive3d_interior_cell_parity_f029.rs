@@ -92,7 +92,9 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, ProjectSession, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::CutKinematics;
 use rs_cam_core::tool_load::DeflectionVerdict;
 
@@ -166,7 +168,10 @@ fn build_as013_terrain_session() -> ProjectSession {
         planner_origin: None,
     };
     let _ = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .expect("add adaptive3d toolpath");
 
     session

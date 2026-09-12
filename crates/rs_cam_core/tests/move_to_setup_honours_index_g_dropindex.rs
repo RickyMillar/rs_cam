@@ -25,7 +25,9 @@
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
-use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::session::{
+    Command, MoveToolpathToSetupArgs, ProjectSession, ProjectSessionBuilder, ToolpathConfig,
+};
 
 fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
@@ -90,7 +92,11 @@ fn a_cross_setup_drop_lands_at_the_dropped_position() {
     ] {
         let (mut s, travelling) = two_setups();
         let _ = s
-            .move_toolpath_to_setup(travelling, 1, Some(position))
+            .apply(Command::MoveToolpathToSetup(MoveToolpathToSetupArgs {
+                toolpath_index: travelling,
+                target_setup_index: 1,
+                target_position: Some(position),
+            }))
             .unwrap();
 
         assert!(
@@ -110,7 +116,13 @@ fn a_cross_setup_drop_lands_at_the_dropped_position() {
 #[test]
 fn a_position_past_the_end_clamps_to_the_end() {
     let (mut s, travelling) = two_setups();
-    let _ = s.move_toolpath_to_setup(travelling, 1, Some(99)).unwrap();
+    let _ = s
+        .apply(Command::MoveToolpathToSetup(MoveToolpathToSetupArgs {
+            toolpath_index: travelling,
+            target_setup_index: 1,
+            target_position: Some(99),
+        }))
+        .unwrap();
     assert_eq!(
         names_in_setup(&s, 1),
         ["Target A", "Target B", "Target C", "Travelling"]
@@ -122,7 +134,13 @@ fn a_position_past_the_end_clamps_to_the_end() {
 #[test]
 fn no_position_still_appends() {
     let (mut s, travelling) = two_setups();
-    let _ = s.move_toolpath_to_setup(travelling, 1, None).unwrap();
+    let _ = s
+        .apply(Command::MoveToolpathToSetup(MoveToolpathToSetupArgs {
+            toolpath_index: travelling,
+            target_setup_index: 1,
+            target_position: None,
+        }))
+        .unwrap();
     assert_eq!(
         names_in_setup(&s, 1),
         ["Target A", "Target B", "Target C", "Travelling"]

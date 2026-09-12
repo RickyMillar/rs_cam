@@ -76,8 +76,8 @@ use rs_cam_core::feeds::SpindleStrategy;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{
-    AdoptSimulationArgs, Command, GenerateToolpathArgs, Job, ProjectSession, SaveProjectArgs,
-    SetPostConfigArgs,
+    AddToolpathArgs, AdoptSimulationArgs, Command, GenerateToolpathArgs, Job, ProjectSession,
+    SaveProjectArgs, SetPostConfigArgs,
 };
 use rs_cam_core::stock_mesh::StockMesh;
 
@@ -129,7 +129,10 @@ fn rest_chain_session() -> ProjectSession {
     let mut rest = toolpath_config("Rest", pocket_op(), tool_id, model_id);
     rest.stock_source = StockSource::FromRemainingStock;
     let _ = session
-        .add_toolpath(0, rest)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(rest),
+        }))
         .expect("the fresh session holds setup 0");
     session
 }

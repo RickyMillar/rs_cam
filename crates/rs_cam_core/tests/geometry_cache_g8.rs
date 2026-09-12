@@ -27,6 +27,7 @@
 mod common;
 
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
+use rs_cam_core::session::{AddToolpathArgs, Command};
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
@@ -358,7 +359,12 @@ fn eight_toolpaths_over_one_model_build_one_index() {
             model_id,
         );
         cfg.heights = pinned_heights(0.0, -6.0);
-        let _ = session.add_toolpath(0, cfg).expect("add toolpath");
+        let _ = session
+            .apply(Command::AddToolpath(AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(cfg),
+            }))
+            .expect("add toolpath");
     }
     assert_eq!(session.toolpath_configs().len(), N);
 

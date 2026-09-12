@@ -416,9 +416,7 @@ fn build_session(fx: &Fixture) -> ProjectSession {
     measured.heights = heights;
     measured.stock_source = StockSource::FromRemainingStock;
     let _ = builder.add_toolpath(0, measured).expect("add measured op");
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 // ── Suggest-side read ───────────────────────────────────────────────────

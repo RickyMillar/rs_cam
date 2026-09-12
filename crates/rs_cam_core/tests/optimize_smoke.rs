@@ -31,7 +31,10 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::session::{LoadedModel, ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
+    SetStockConfigArgs, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::tool_load::optimize::{
     NoProgress, OutcomeKind, optimize_project, optimize_toolpath,
 };
@@ -63,13 +66,21 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
     stock.x = 100.0;
     stock.y = 100.0;
     stock.z = 10.0;
-    let _ = session.set_stock_config(stock);
+    let _ = session
+        .apply(Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(stock),
+        }))
+        .expect("the stock row refuses nothing");
 
     // Add a 6mm end mill (matches the optimize gate's typical wood
     // router setup). add_tool returns the vec index; we want the
     // assigned ToolId.0 for the toolpath link.
     let tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-    let _ = session.add_tool(tool);
+    let _ = session
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(tool),
+        }))
+        .expect("the tool row refuses nothing");
     let tool_id = session.tools()[0].id.0;
 
     // Add the SVG model.
@@ -88,7 +99,10 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         load_error: None,
     };
     let model_id = session
-        .add_model(model)
+        .apply(Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        }))
+        .expect("the model row refuses nothing")
         .created
         .expect("add_model reports the new model id");
 
@@ -122,7 +136,10 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         planner_origin: None,
     };
     let toolpath_index = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .expect("add_toolpath")
         .created
         .expect("add_toolpath reports the new toolpath index");

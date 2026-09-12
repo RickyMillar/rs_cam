@@ -87,8 +87,9 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    DatumConfig, Fixture, FixtureKind, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    SessionError, SetupData, ToolpathConfig,
+    AddFixtureArgs, AddModelArgs, AddToolArgs, AddToolpathArgs, Command, DatumConfig, Fixture,
+    FixtureKind, LoadedModel, ProjectSession, ProjectSessionBuilder, SessionError,
+    SetStockConfigArgs, SetupData, ToolpathConfig,
 };
 use rs_cam_core::toolpath::{Move, MoveType};
 
@@ -257,7 +258,7 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
             pause_message: None,
         })
         .build();
-    let _ = session.set_stock_config(StockConfig {
+    let stock = StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
         z: STOCK_Z,
@@ -266,54 +267,80 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
         origin_z: 0.0,
         auto_from_model: false,
         ..StockConfig::default()
-    });
+    };
+    let _ = session
+        .apply(Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(stock),
+        }))
+        .expect("the stock row refuses nothing");
 
     let tool_idx = session
-        .add_tool(make_endmill_6mm())
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(make_endmill_6mm()),
+        }))
+        .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
     if with_mesh {
-        let _ = session.add_model(part_model(0));
+        let _ = session
+            .apply(Command::AddModel(AddModelArgs {
+                model: Box::new(part_model(0)),
+            }))
+            .expect("the model row refuses nothing");
     }
     let drawing_id = session
-        .add_model(drawing_model(if with_mesh { 1 } else { 0 }))
+        .apply(Command::AddModel(AddModelArgs {
+            model: Box::new(drawing_model(if with_mesh { 1 } else { 0 })),
+        }))
+        .expect("the model row refuses nothing")
         .created
         .expect("add_model reports the new model id");
 
     if with_fixture {
+        let clamp = Fixture {
+            id: FixtureId(0),
+            name: "Clamp".to_owned(),
+            kind: FixtureKind::Clamp,
+            enabled: true,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            origin_z: 0.0,
+            size_x: 20.0,
+            size_y: 20.0,
+            size_z: 20.0,
+            clearance: 2.0,
+        };
         let _ = session
-            .add_fixture(
-                0,
-                Fixture {
-                    id: FixtureId(0),
-                    name: "Clamp".to_owned(),
-                    kind: FixtureKind::Clamp,
-                    enabled: true,
-                    origin_x: 0.0,
-                    origin_y: 0.0,
-                    origin_z: 0.0,
-                    size_x: 20.0,
-                    size_y: 20.0,
-                    size_z: 20.0,
-                    clearance: 2.0,
-                },
-            )
+            .apply(Command::AddFixture(AddFixtureArgs {
+                setup_index: 0,
+                fixture: Box::new(clamp),
+            }))
             .expect("add fixture");
     }
 
     let _ = session
-        .add_toolpath(
-            0,
-            toolpath_config("Front pocket", pocket_op(), tool_id, drawing_id),
-        )
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(toolpath_config(
+                "Front pocket",
+                pocket_op(),
+                tool_id,
+                drawing_id,
+            )),
+        }))
         .expect("add pocket");
     let _ = session
-        .add_toolpath(
-            0,
-            toolpath_config("Front drill", drill_op(), tool_id, drawing_id),
-        )
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(toolpath_config(
+                "Front drill",
+                drill_op(),
+                tool_id,
+                drawing_id,
+            )),
+        }))
         .expect("add drill");
 
     session

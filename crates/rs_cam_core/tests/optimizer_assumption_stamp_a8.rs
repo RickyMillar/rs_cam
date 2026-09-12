@@ -154,8 +154,7 @@ fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) ->
         planner_origin: None,
     };
     let _ = builder.add_toolpath(0, cfg).expect("add toolpath");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 fn pocket_op() -> OperationConfig {

@@ -36,7 +36,9 @@ use common::tools::{ball_cutter, ball_tool_config};
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::session::{MultitoolPlanSpec, ProjectSession, ProjectSessionBuilder};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, MultitoolPlanSpec, ProjectSession, ProjectSessionBuilder,
+};
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::tier_map::{
     NO_TIER, ResidualTreatment, TierLadder, TierMapParams, compute_tier_map,
@@ -215,7 +217,12 @@ fn a_preview_leaves_the_project_byte_identical() {
         fine_id,
         model_id,
     );
-    let _ = session.add_toolpath(0, tc).unwrap();
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
+        .unwrap();
 
     let before_path = temp_path("before");
     let after_path = temp_path("after");

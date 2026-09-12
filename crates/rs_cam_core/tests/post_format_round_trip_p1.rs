@@ -61,7 +61,10 @@ use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::{CoolantMode, PostFormat, ToolLoadExportPolicy, export_gcode_checked};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::session::{
+    AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
+    ProjectSessionBuilder, SetPostConfigArgs, ToolpathConfig,
+};
 
 /// A closed 50 x 40 rectangle. Written to disk because the project file
 /// stores a model *path*: an in-memory synthetic model cannot survive
@@ -110,71 +113,83 @@ fn build_project(dir: &Path, post_token: &str) -> PathBuf {
 
     let mut post = session.post_config().clone();
     post.format = post_token.to_owned();
-    let _ = session.set_post_config(post);
+    let _ = session
+        .apply(Command::SetPostConfig(SetPostConfigArgs {
+            post: Box::new(post),
+        }))
+        .expect("the post row refuses nothing");
 
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.name = "End Mill 6mm (P-1)".to_owned();
     let tool_idx = session
-        .add_tool(tool)
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(tool),
+        }))
+        .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
 
+    let model = LoadedModel {
+        id: 0,
+        name: "rect".to_owned(),
+        mesh: None,
+        polygons: None,
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        path: model_path,
+        kind: Some(ModelKind::Svg),
+        units: Some(ModelUnits::Millimeters),
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+    };
     let model_id = session
-        .add_model(LoadedModel {
-            id: 0,
-            name: "rect".to_owned(),
-            mesh: None,
-            polygons: None,
-            drill_targets: Arc::new(Vec::new()),
-            layers: Arc::new(Vec::new()),
-            path: model_path,
-            kind: Some(ModelKind::Svg),
-            units: Some(ModelUnits::Millimeters),
-            enriched_mesh: None,
-            winding_report: None,
-            load_error: None,
-        })
+        .apply(Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        }))
+        .expect("the model row refuses nothing")
         .created
         .expect("add_model reports the new model id");
 
+    let pocket = ToolpathConfig {
+        id: ToolpathId(0),
+        name: "Pocket".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Pocket(PocketConfig {
+            stepover: 3.0,
+            depth: 2.0,
+            depth_per_pass: 2.0,
+            feed_rate: 1000.0,
+            plunge_rate: 300.0,
+            climb: true,
+            pattern: PocketPattern::Contour,
+            angle: 0.0,
+            finishing_passes: 0,
+            spindle_rpm: Some(18_000),
+        }),
+        dressups: DressupConfig::for_op(OperationType::Pocket),
+        heights: HeightsConfig::default(),
+        tool_id,
+        model_id,
+        pre_gcode: None,
+        post_gcode: Some(DIALECT_PROBE_MCODE.to_owned()),
+        boundary: BoundaryConfig::default(),
+        boundary_inherit: true,
+        stock_source: StockSource::default(),
+        coolant: CoolantMode::Off,
+        face_selection: None,
+        debug_options: ToolpathDebugOptions::default(),
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+        planner_origin: None,
+    };
     let _ = session
-        .add_toolpath(
-            0,
-            ToolpathConfig {
-                id: ToolpathId(0),
-                name: "Pocket".to_owned(),
-                enabled: true,
-                operation: OperationConfig::Pocket(PocketConfig {
-                    stepover: 3.0,
-                    depth: 2.0,
-                    depth_per_pass: 2.0,
-                    feed_rate: 1000.0,
-                    plunge_rate: 300.0,
-                    climb: true,
-                    pattern: PocketPattern::Contour,
-                    angle: 0.0,
-                    finishing_passes: 0,
-                    spindle_rpm: Some(18_000),
-                }),
-                dressups: DressupConfig::for_op(OperationType::Pocket),
-                heights: HeightsConfig::default(),
-                tool_id,
-                model_id,
-                pre_gcode: None,
-                post_gcode: Some(DIALECT_PROBE_MCODE.to_owned()),
-                boundary: BoundaryConfig::default(),
-                boundary_inherit: true,
-                stock_source: StockSource::default(),
-                coolant: CoolantMode::Off,
-                face_selection: None,
-                debug_options: ToolpathDebugOptions::default(),
-                feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
-                rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
-                planner_origin: None,
-            },
-        )
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(pocket),
+        }))
         .expect("add pocket toolpath");
 
     let project_path = dir.join("project.toml");

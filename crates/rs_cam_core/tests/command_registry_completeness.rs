@@ -463,7 +463,11 @@ fn the_legacy_setter_drops_what_the_command_drops() {
     let mut through_setter = fixture();
     let before_setter = revisions(&through_setter);
     let _ = through_setter
-        .set_toolpath_param(0, "feed_rate", serde_json::json!(EDITED_FEED_RATE))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "feed_rate".to_owned(),
+            value: serde_json::json!(EDITED_FEED_RATE),
+        }))
         .expect("feed_rate is a Pocket parameter");
     let (setter_dropped, _) = observe(&through_setter, &before_setter);
 

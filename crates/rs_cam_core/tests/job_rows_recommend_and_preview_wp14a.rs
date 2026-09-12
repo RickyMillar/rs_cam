@@ -68,9 +68,9 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::session::{
-    CommandId, CommandKind, Job, JobHandle, MultitoolPlanSpec, MultitoolPreview,
-    PreviewTierMapArgs, PreviewTierMapHandle, ProjectSession, RecommendClearingStrategyArgs,
-    RecommendClearingStrategyHandle, SessionError,
+    AddToolArgs, Command, CommandId, CommandKind, Job, JobHandle, MultitoolPlanSpec,
+    MultitoolPreview, PreviewTierMapArgs, PreviewTierMapHandle, ProjectSession,
+    RecommendClearingStrategyArgs, RecommendClearingStrategyHandle, SessionError,
 };
 use rs_cam_core::session::{execute_preview_tier_map, execute_recommend_clearing_strategy};
 use rs_cam_core::strategy_advisor::StrategyRecommendation;
@@ -144,12 +144,18 @@ fn ball_tool(diameter_mm: f64, name: &str) -> ToolConfig {
 fn preview_session() -> (ProjectSession, MultitoolPlanSpec) {
     let mut session = advisor_session();
     let coarse_index = session
-        .add_tool(ball_tool(4.0, "Ball 4mm"))
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(ball_tool(4.0, "Ball 4mm")),
+        }))
+        .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
     let coarse_id = session.tools()[coarse_index].id.0;
     let fine_index = session
-        .add_tool(ball_tool(2.0, "Ball 2mm"))
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(ball_tool(2.0, "Ball 2mm")),
+        }))
+        .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
     let fine_id = session.tools()[fine_index].id.0;

@@ -173,8 +173,7 @@ fn cascade_session(finish_stepover: f64) -> ProjectSession {
     // anything to be measured against.
     rest.stock_source = StockSource::FromRemainingStock;
     let _ = builder.add_toolpath(0, rest).expect("add rest op");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 /// What the rest op of one arm did.

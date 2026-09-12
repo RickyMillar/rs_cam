@@ -72,7 +72,10 @@ use rs_cam_core::compute::operation_configs::{PocketConfig, ProfileConfig};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, ProjectSession, SetToolpathEnabledArgs, SimulationOptions,
+    ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::{AirCutRatios, SimulationCutIssueKind};
 
 /// `dexel_stock::stamping::FRESH_MATERIAL_THRESHOLD_MM`, restated here so
@@ -190,7 +193,10 @@ fn issue_channel_census_synthetic_2d() {
     ];
     for (i, (name, op)) in ops.iter().enumerate() {
         let _ = session
-            .add_toolpath(0, toolpath_config(i, name, op.clone(), tool_id, model_id))
+            .apply(Command::AddToolpath(AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(toolpath_config(i, name, op.clone(), tool_id, model_id)),
+            }))
             .expect("add census toolpath");
     }
 
@@ -325,13 +331,22 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
     });
 
     let _ = session
-        .add_toolpath(
-            0,
-            toolpath_config(0, "shallow-0.02mm", shallow, tool_id, model_id),
-        )
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(toolpath_config(
+                0,
+                "shallow-0.02mm",
+                shallow,
+                tool_id,
+                model_id,
+            )),
+        }))
         .expect("add shallow");
     let _ = session
-        .add_toolpath(0, toolpath_config(1, "deep-2mm", deep, tool_id, model_id))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(toolpath_config(1, "deep-2mm", deep, tool_id, model_id)),
+        }))
         .expect("add deep");
 
     let cancel = AtomicBool::new(false);
@@ -448,7 +463,10 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
     }
     for (index, enabled) in keep {
         let _ = session
-            .set_toolpath_enabled(index, enabled)
+            .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+                index,
+                enabled,
+            }))
             .expect("the toolpath index comes from the session itself");
     }
 

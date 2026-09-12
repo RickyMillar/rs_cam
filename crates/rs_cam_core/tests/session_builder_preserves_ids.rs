@@ -42,8 +42,8 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    DatumConfig, LoadedModel, ProjectSessionBuilder, SetupData, ToolpathComputeResult,
-    ToolpathConfig,
+    AddModelArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command, DatumConfig, LoadedModel,
+    ProjectSessionBuilder, SetupData, ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -254,7 +254,10 @@ fn builder_raises_the_id_counters_above_every_supplied_id() {
     // is per row: `add_tool`, `add_toolpath` and `add_setup` report an
     // INDEX, `add_model` reports the new model ID.
     let tool_index = session
-        .add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill))
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::EndMill)),
+        }))
+        .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
     let fresh_tool = session.tools()[tool_index].id.0;
@@ -263,7 +266,10 @@ fn builder_raises_the_id_counters_above_every_supplied_id() {
         "a later add_tool collided: {fresh_tool}"
     );
     let fresh_model = session
-        .add_model(polygon_model(0, "c.svg"))
+        .apply(Command::AddModel(AddModelArgs {
+            model: Box::new(polygon_model(0, "c.svg")),
+        }))
+        .expect("the model row refuses nothing")
         .created
         .expect("add_model reports the new model id");
     assert!(
@@ -271,7 +277,10 @@ fn builder_raises_the_id_counters_above_every_supplied_id() {
         "a later add_model collided: {fresh_model}"
     );
     let index = session
-        .add_toolpath(0, toolpath(0, "fourth", TOOL_A, MODEL_A))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(toolpath(0, "fourth", TOOL_A, MODEL_A)),
+        }))
         .expect("add a toolpath to setup A")
         .created
         .expect("add_toolpath reports the new toolpath index");
@@ -280,7 +289,11 @@ fn builder_raises_the_id_counters_above_every_supplied_id() {
         "a later add_toolpath collided"
     );
     let setup_index = session
-        .add_setup("Setup C".to_owned(), FaceUp::Top)
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Setup C".to_owned()),
+            face_up: FaceUp::Top,
+        }))
+        .expect("the setup row refuses nothing")
         .created
         .expect("add_setup reports the new setup index");
     assert!(

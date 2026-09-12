@@ -47,7 +47,9 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
 };
-use rs_cam_core::session::{PlannerOrigin, ProjectFile, ProjectSession, ProjectSessionBuilder};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, PlannerOrigin, ProjectFile, ProjectSession, ProjectSessionBuilder,
+};
 use rs_cam_core::tier_islands::TierIslandParams;
 use rs_cam_core::tier_map::ResidualTreatment;
 
@@ -103,7 +105,12 @@ fn session_with_a_planned_op() -> (ProjectSession, usize, usize) {
         coarse_id,
         0,
     );
-    let _ = session.add_toolpath(0, plain).unwrap();
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(plain),
+        }))
+        .unwrap();
 
     let mut planned = common::session::toolpath_config(
         "Finish tier 1 (R1.5)",
@@ -124,7 +131,12 @@ fn session_with_a_planned_op() -> (ProjectSession, usize, usize) {
         tier: 1,
         tier_count: 2,
     });
-    let _ = session.add_toolpath(0, planned).unwrap();
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(planned),
+        }))
+        .unwrap();
     (session, coarse_id, fine_id)
 }
 
@@ -214,7 +226,12 @@ fn a_pre_phase_o_project_loads_with_no_provenance() {
         tool_id,
         0,
     );
-    let _ = session.add_toolpath(0, plain).unwrap();
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(plain),
+        }))
+        .unwrap();
 
     let path = temp_path("legacy");
     session.save(&path).unwrap();

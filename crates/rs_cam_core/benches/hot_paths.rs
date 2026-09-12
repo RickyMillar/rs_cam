@@ -976,13 +976,16 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::gcode::CoolantMode;
     use rs_cam_core::profile::ProfileSide;
-    use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+    use rs_cam_core::session::{
+        AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
+        SetStockConfigArgs, ToolpathConfig,
+    };
 
     let mut session = ProjectSession::new_empty();
 
     // 2D ops cut at negative Z, so the stock hangs BELOW z = 0 and its top
     // sits at the world origin plane.
-    let _ = session.set_stock_config(StockConfig {
+    let stock = StockConfig {
         x: 100.0,
         y: 80.0,
         z: 12.0,
@@ -991,7 +994,12 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         origin_z: -12.0,
         auto_from_model: false,
         ..StockConfig::default()
-    });
+    };
+    let _ = session
+        .apply(Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(stock),
+        }))
+        .expect("the stock row refuses nothing");
 
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 6.0;
@@ -1002,7 +1010,10 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();
     let tool_idx = session
-        .add_tool(tool)
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(tool),
+        }))
+        .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
     let tool_id = session.tools()[tool_idx].id.0;
@@ -1013,21 +1024,25 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         P2::new(75.0, 55.0),
         P2::new(5.0, 55.0),
     ]);
+    let model = LoadedModel {
+        id: 0,
+        name: "perf_rect".to_owned(),
+        mesh: None,
+        polygons: Some(std::sync::Arc::new(vec![poly])),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
+        path: std::path::PathBuf::from("synthetic://perf_rect.svg"),
+        kind: None,
+        units: None,
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+    };
     let model_id = session
-        .add_model(LoadedModel {
-            id: 0,
-            name: "perf_rect".to_owned(),
-            mesh: None,
-            polygons: Some(std::sync::Arc::new(vec![poly])),
-            drill_targets: std::sync::Arc::new(Vec::new()),
-            layers: std::sync::Arc::new(Vec::new()),
-            path: std::path::PathBuf::from("synthetic://perf_rect.svg"),
-            kind: None,
-            units: None,
-            enriched_mesh: None,
-            winding_report: None,
-            load_error: None,
-        })
+        .apply(Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        }))
+        .expect("the model row refuses nothing")
         .created
         .expect("add_model reports the new model id");
 
@@ -1054,7 +1069,12 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
             rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
             planner_origin: None,
         };
-        let _ = session.add_toolpath(0, cfg).expect("add toolpath");
+        let _ = session
+            .apply(Command::AddToolpath(AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(cfg),
+            }))
+            .expect("add toolpath");
     };
 
     add(

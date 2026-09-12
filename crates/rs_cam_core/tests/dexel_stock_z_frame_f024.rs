@@ -157,9 +157,7 @@ fn build_as001_pocket_session() -> ProjectSession {
         planner_origin: None,
     };
     let _ = builder.add_toolpath(0, tc).expect("add pocket toolpath");
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 /// Acceptance test 1 (unit / sim layer).

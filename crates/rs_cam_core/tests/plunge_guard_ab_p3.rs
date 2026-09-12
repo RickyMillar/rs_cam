@@ -142,7 +142,7 @@ fn median(mut xs: Vec<f64>) -> Option<f64> {
 #[ignore = "instrument run: needs the user-local wanaka200 project and a full simulation"]
 fn wanaka_front_rough_plunge_guard_ab() {
     use rs_cam_core::feed_modulation::ModulationStrategy;
-    use rs_cam_core::session::{ProjectSession, SimulationOptions};
+    use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs, SimulationOptions};
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;
 
@@ -161,7 +161,11 @@ fn wanaka_front_rough_plunge_guard_ab() {
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_ricky_tuned());
     machine.max_feed_mm_min = MAX_FEED;
-    let _ = session.set_machine(machine);
+    let _ = session
+        .apply(Command::SetMachine(SetMachineArgs {
+            machine: Box::new(machine),
+        }))
+        .expect("the machine row refuses nothing");
 
     let index = session
         .toolpath_configs()

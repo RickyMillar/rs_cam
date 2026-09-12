@@ -97,8 +97,7 @@ fn build_drill_session(peck_depth: f64, tool_diameter: f64) -> ProjectSession {
     let tool_id = builder.tools()[tool_idx].id.0;
     let tc = make_drill_toolpath(tool_id, peck_depth);
     let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 /// End-to-end: a session with one AlignmentPinDrill toolpath produces a

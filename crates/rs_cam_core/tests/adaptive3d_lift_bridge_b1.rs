@@ -133,9 +133,7 @@ fn build_adaptive3d_session() -> ProjectSession {
     let _ = builder
         .add_toolpath(0, tc)
         .expect("add adaptive3d toolpath");
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 #[test]

@@ -140,9 +140,7 @@ fn build_session(origin_z: f64) -> ProjectSession {
     let _ = builder
         .add_toolpath(0, tc)
         .expect("add adaptive3d toolpath");
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 fn identity_safe_z(session: &ProjectSession) -> f64 {

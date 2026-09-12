@@ -16,7 +16,7 @@
 )]
 
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::session::{ProjectSession, SimulationOptions};
+use rs_cam_core::session::{Command, ProjectSession, SetToolpathParamArgs, SimulationOptions};
 use rs_cam_core::simulation_cut::{CutKinematics, SimulationCutSample};
 use rs_cam_core::toolpath_spans::SpanKind;
 use std::path::Path;
@@ -39,13 +39,25 @@ fn kinematics_histogram_wanaka() {
     // Apply post-C1 winner params to TP 1 (Back Rough).
     // Snapshot from prior MCP smoke: feed=4000, stepover=2.2, DOC=3.0.
     let _ = session
-        .set_toolpath_param(1, "feed_rate", serde_json::json!(4000.0))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 1,
+            param: "feed_rate".to_owned(),
+            value: serde_json::json!(4000.0),
+        }))
         .expect("set tp1 feed_rate");
     let _ = session
-        .set_toolpath_param(1, "stepover", serde_json::json!(2.2))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 1,
+            param: "stepover".to_owned(),
+            value: serde_json::json!(2.2),
+        }))
         .expect("set tp1 stepover");
     let _ = session
-        .set_toolpath_param(1, "depth_per_pass", serde_json::json!(3.0))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 1,
+            param: "depth_per_pass".to_owned(),
+            value: serde_json::json!(3.0),
+        }))
         .expect("set tp1 depth_per_pass");
 
     // Generate everything in setup order so simulation has a complete

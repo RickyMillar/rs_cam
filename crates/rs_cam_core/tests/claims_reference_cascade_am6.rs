@@ -63,7 +63,10 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{ClaimsReferenceFinding, StockSource};
 use rs_cam_core::compute::operation_configs::{ClaimsReference, UnifiedFinishConfig};
 use rs_cam_core::compute::tool_config::ToolConfig;
-use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SimulationOptions};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, SetStockSourceArgs,
+    SimulationOptions,
+};
 use rs_cam_core::unified_finish::{ClaimsReferenceResolution, CreaseReference};
 
 /// Half-extent (mm) of the fixture surface. Small on purpose: the cascade
@@ -181,7 +184,12 @@ fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
         model_id,
     );
     finish.heights = heights.clone();
-    let _ = session.add_toolpath(0, finish).expect("add finish op");
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(finish),
+        }))
+        .expect("add finish op");
 
     let mut rest = toolpath_config(
         "Rest (same tool)",
@@ -194,7 +202,12 @@ fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
     // there is no machined prior for ANY reference to use — the comparison
     // would be measuring nothing.
     rest.stock_source = StockSource::FromRemainingStock;
-    let _ = session.add_toolpath(0, rest).expect("add rest op");
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(rest),
+        }))
+        .expect("add rest op");
 
     session
 }
@@ -462,7 +475,10 @@ fn auto_over_fresh_stock_resolves_to_self_probe_and_says_so() {
     // The only change from the cascade: the rest op reads fresh stock, so no
     // machined prior is in scope even though an upstream op exists.
     let _ = session
-        .set_stock_source(1, StockSource::Fresh)
+        .apply(Command::SetStockSource(SetStockSourceArgs {
+            index: 1,
+            source: StockSource::Fresh,
+        }))
         .expect("the rest op takes fresh stock");
 
     generate(&mut session, 0);
@@ -646,7 +662,10 @@ fn pinning_machined_stock_without_a_prior_is_reported_not_swallowed() {
     );
     // Fresh stock: the dial asks for a machined prior that cannot exist.
     let _ = session
-        .set_stock_source(1, StockSource::Fresh)
+        .apply(Command::SetStockSource(SetStockSourceArgs {
+            index: 1,
+            source: StockSource::Fresh,
+        }))
         .expect("the rest op takes fresh stock");
 
     generate(&mut session, 0);

@@ -196,8 +196,7 @@ fn session_with(model: LoadedModel, op: OperationConfig) -> ProjectSession {
     tc.dressups.entry_style = DressupEntryStyle::None;
     tc.dressups.optimize_rapid_order = false;
     let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 /// Replace the session's model geometry the way every GUI refresh door

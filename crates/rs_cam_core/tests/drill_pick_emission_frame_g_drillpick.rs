@@ -69,7 +69,9 @@ use rs_cam_core::compute::stock_config::{AlignmentPin, StockConfig};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
+use rs_cam_core::session::{
+    AddSetupArgs, AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder,
+};
 
 const STOCK_X: f64 = 240.0;
 const STOCK_Y: f64 = 250.0;
@@ -167,7 +169,12 @@ fn two_setup_session() -> ProjectSession {
         tc.dressups.link_moves = false;
         tc.dressups.arc_fitting = false;
         tc.dressups.segment_merge = false;
-        let _ = session.add_toolpath(setup, tc).expect("add drill toolpath");
+        let _ = session
+            .apply(Command::AddToolpath(AddToolpathArgs {
+                setup_index: setup,
+                config: Box::new(tc),
+            }))
+            .expect("add drill toolpath");
     };
 
     // Setup 0 is the identity setup `new_empty` already created.
@@ -175,7 +182,11 @@ fn two_setup_session() -> ProjectSession {
     add(&mut session, 0, "PinTop", pin_drill_op());
 
     let flipped = session
-        .add_setup("Flip".to_owned(), FaceUp::Bottom)
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Flip".to_owned()),
+            face_up: FaceUp::Bottom,
+        }))
+        .expect("the setup row refuses nothing")
         .created
         .expect("add_setup reports the new setup index");
     add(&mut session, flipped, "HoleBottom", hole_drill_op());

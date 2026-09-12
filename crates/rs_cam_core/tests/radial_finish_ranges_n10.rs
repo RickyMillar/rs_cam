@@ -56,7 +56,7 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::RadialFinishConfig;
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{Command, ProjectSession, SetToolpathParamArgs};
 use serde_json::json;
 
 use common::make_endmill_6mm;
@@ -98,7 +98,11 @@ fn set_toolpath_param_refuses_a_non_positive_angular_step() {
 
     for bad in [0.0_f64, -5.0, -0.000_001] {
         let err = s
-            .set_toolpath_param(0, "angular_step", json!(bad))
+            .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                index: 0,
+                param: "angular_step".to_owned(),
+                value: json!(bad),
+            }))
             .expect_err(
                 "the generator divides 360 by this dial, so a zero or a negative \
                  value must be refused at the setter",
@@ -117,7 +121,11 @@ fn set_toolpath_param_refuses_a_non_positive_angular_step() {
 
     // The accepting side of the same boundary.
     let _ = s
-        .set_toolpath_param(0, "angular_step", json!(10.0))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "angular_step".to_owned(),
+            value: json!(10.0),
+        }))
         .expect("a real angular step must be accepted");
     assert!((dials(&s).0 - 10.0).abs() < 1e-12);
 }
@@ -131,7 +139,11 @@ fn set_toolpath_param_refuses_a_non_positive_point_spacing() {
 
     for bad in [0.0_f64, -0.5, -0.000_001] {
         let err = s
-            .set_toolpath_param(0, "point_spacing", json!(bad))
+            .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                index: 0,
+                param: "point_spacing".to_owned(),
+                value: json!(bad),
+            }))
             .expect_err(
                 "the generator divides the spoke radius by this dial, so a zero or \
                  a negative value must be refused at the setter",
@@ -149,7 +161,11 @@ fn set_toolpath_param_refuses_a_non_positive_point_spacing() {
     }
 
     let _ = s
-        .set_toolpath_param(0, "point_spacing", json!(0.25))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "point_spacing".to_owned(),
+            value: json!(0.25),
+        }))
         .expect("a real point spacing must be accepted");
     assert!((dials(&s).1 - 0.25).abs() < 1e-12);
 }

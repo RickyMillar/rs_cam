@@ -55,7 +55,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::machine_kinematics::MachineKinematics;
-use rs_cam_core::session::{ProjectSession, SimulationOptions};
+use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs, SimulationOptions};
 
 const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
 
@@ -109,7 +109,11 @@ fn run_back_rough(modulate: bool) -> f64 {
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_ricky_tuned());
     machine.max_feed_mm_min = 10_000.0;
-    let _ = session.set_machine(machine);
+    let _ = session
+        .apply(Command::SetMachine(SetMachineArgs {
+            machine: Box::new(machine),
+        }))
+        .expect("the machine row refuses nothing");
 
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {

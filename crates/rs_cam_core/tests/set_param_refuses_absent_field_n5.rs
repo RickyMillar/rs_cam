@@ -75,7 +75,7 @@ use common::session::{
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::TraceConfig;
 use rs_cam_core::feeds::{FeedsField, ProvenanceSource};
-use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
+use rs_cam_core::session::{Command, ProjectSession, ProjectSessionBuilder, SetToolpathParamArgs};
 use serde_json::json;
 
 /// The source of `set_toolpath_param`, read for assertion 5.
@@ -130,8 +130,7 @@ fn all_ops_session() -> ProjectSession {
         );
         let _ = builder.add_toolpath(0, cfg).expect("add one op per type");
     }
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 /// A Trace that generates real motion on the 2D fixture. Trace carries
@@ -176,7 +175,11 @@ fn set_toolpath_param_refuses_a_field_the_operation_does_not_carry() {
             ("depth_per_pass", accepts_depth_per_pass(*op)),
         ];
         for (field, accepted) in cases {
-            let outcome = session.set_toolpath_param(index, field, json!(0.7));
+            let outcome = session.apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                index,
+                param: field.to_owned(),
+                value: json!(0.7),
+            }));
             if accepted {
                 if let Err(e) = outcome {
                     panic!("{op:?} carries `{field}`; the setter must write it: {e}");
@@ -248,8 +251,13 @@ fn a_refused_write_keeps_the_cached_result_and_the_provenance() {
         "fixture: a fresh Trace carries no stepover stamp"
     );
 
-    let Err(err) = session.set_toolpath_param(0, "stepover", json!(1.1)) else {
-        panic!("Trace has no `stepover` field; the setter must refuse");
+    let outcome = session.apply(Command::SetToolpathParam(SetToolpathParamArgs {
+        index: 0,
+        param: "stepover".to_owned(),
+        value: json!(1.1),
+    }));
+    let Err(err) = outcome else {
+        panic!("Trace has no `stepover` field; the row must refuse");
     };
     assert!(
         err.to_string().contains("unknown parameter 'stepover'"),
@@ -308,7 +316,12 @@ fn alias_writes_through(
     );
 
     let mut session = single_op("N5 alias", OperationConfig::new_default(op));
-    if let Err(e) = session.set_toolpath_param(0, param, json!(value)) {
+    let outcome = session.apply(Command::SetToolpathParam(SetToolpathParamArgs {
+        index: 0,
+        param: param.to_owned(),
+        value: json!(value),
+    }));
+    if let Err(e) = outcome {
         panic!("{op:?} aliases `{param}` onto a real field: {e}");
     }
 
@@ -353,7 +366,11 @@ fn pocket_still_takes_a_stepover_and_stamps_manual_provenance() {
     let pocket = OperationConfig::new_default(OperationType::Pocket);
     let mut session = single_op("N5 pocket", pocket);
     let _ = session
-        .set_toolpath_param(0, "stepover", json!(2.75))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "stepover".to_owned(),
+            value: json!(2.75),
+        }))
         .expect("Pocket carries a stepover field");
 
     let tc = session

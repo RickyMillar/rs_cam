@@ -59,7 +59,10 @@ use common::tools::endmill_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
-use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SessionError, SimulationOptions};
+use rs_cam_core::session::{
+    Command, ProjectSession, ProjectSessionBuilder, SessionError, SetToolParamArgs,
+    SimulationOptions,
+};
 use rs_cam_core::toolpath::MoveType;
 
 /// Half-extent (mm) of the square the pocket clears — a 40 × 40 mm region.
@@ -254,14 +257,22 @@ fn an_empty_generation_does_not_stop_the_next_one() {
     // Empty it, exactly as switching a dial to a value the geometry cannot
     // satisfy does.
     let _ = session
-        .set_tool_param(0, "diameter", &serde_json::json!(OVERSIZE_TOOL_D))
+        .apply(Command::SetToolParam(SetToolParamArgs {
+            index: 0,
+            param: "diameter".to_owned(),
+            value: serde_json::json!(OVERSIZE_TOOL_D),
+        }))
         .expect("set tool diameter");
     let err = generate(&mut session, 0).expect_err("the oversize tool must be refused");
     assert!(matches!(err, SessionError::GeneratedEmpty(_)), "{err:?}");
 
     // Put it back. This is the step that used to keep returning nothing.
     let _ = session
-        .set_tool_param(0, "diameter", &serde_json::json!(FITTING_TOOL_D))
+        .apply(Command::SetToolParam(SetToolParamArgs {
+            index: 0,
+            param: "diameter".to_owned(),
+            value: serde_json::json!(FITTING_TOOL_D),
+        }))
         .expect("restore tool diameter");
     generate(&mut session, 0)
         .expect("restoring known-good parameters must regenerate without a project reload");

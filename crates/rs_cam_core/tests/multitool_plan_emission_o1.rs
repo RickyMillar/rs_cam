@@ -35,7 +35,9 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundarySource, StockSource};
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::multitool::MultitoolPlanSpec;
-use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, equal_cusp_stepover_mm};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, equal_cusp_stepover_mm,
+};
 use rs_cam_core::tier_map::ResidualTreatment;
 
 /// Cusp height (mm) every tier is dialled to.
@@ -209,7 +211,12 @@ fn a_re_plan_leaves_hand_built_ops_alone() {
         coarse_id,
         model_id,
     );
-    let _ = session.add_toolpath(0, hand).expect("add the hand op");
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(hand),
+        }))
+        .expect("add the hand op");
 
     session
         .plan_multitool_finishing(&spec(vec![coarse_id, fine_id], model_id))

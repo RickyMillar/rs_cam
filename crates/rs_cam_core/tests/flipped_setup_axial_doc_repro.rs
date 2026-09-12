@@ -148,9 +148,7 @@ fn build_flipped_pocket_session() -> ProjectSession {
     let _ = builder
         .add_toolpath(flipped_setup, tc)
         .expect("add pocket toolpath to flipped setup");
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 /// First-pass cutting samples on a flipped setup must read

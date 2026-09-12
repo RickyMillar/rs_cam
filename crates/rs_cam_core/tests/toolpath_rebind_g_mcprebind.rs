@@ -48,8 +48,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SessionError,
-    ToolpathConfig,
+    AddToolpathArgs, AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    SessionError, SetToolpathModelArgs, SetToolpathParamArgs, SetToolpathToolArgs, ToolpathConfig,
 };
 
 // ── fixture ──────────────────────────────────────────────────────
@@ -132,8 +132,7 @@ fn seed() -> ProjectSession {
             ),
         )
         .unwrap();
-    let s = builder.build();
-    s
+    builder.build()
 }
 
 // ── the rebind itself ────────────────────────────────────────────
@@ -150,7 +149,12 @@ fn set_toolpath_tool_rebinds_and_invalidates_the_cached_result() {
          assertion below proves nothing"
     );
 
-    let _ = s.set_toolpath_tool(0, tool_b).unwrap();
+    let _ = s
+        .apply(Command::SetToolpathTool(SetToolpathToolArgs {
+            index: 0,
+            tool_id: tool_b,
+        }))
+        .unwrap();
 
     assert_eq!(s.toolpath_configs()[0].tool_id, tool_b, "binding moved");
     assert!(
@@ -167,7 +171,12 @@ fn set_toolpath_model_rebinds_and_invalidates_the_cached_result() {
     adopt(&mut s, 0);
     assert!(s.get_result(0).is_some());
 
-    let _ = s.set_toolpath_model(0, model_b).unwrap();
+    let _ = s
+        .apply(Command::SetToolpathModel(SetToolpathModelArgs {
+            index: 0,
+            model_id: model_b,
+        }))
+        .unwrap();
 
     assert_eq!(s.toolpath_configs()[0].model_id, model_b);
     assert!(s.get_result(0).is_none());
@@ -190,13 +199,23 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
         model_a,
     );
     downstream.stock_source = StockSource::FromRemainingStock;
-    let _ = s.add_toolpath(0, downstream).unwrap();
+    let _ = s
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(downstream),
+        }))
+        .unwrap();
 
     // Both rows carry a result; only the upstream one is rebound.
     adopt(&mut s, 0);
     adopt(&mut s, 1);
 
-    let _ = s.set_toolpath_tool(0, tool_b).unwrap();
+    let _ = s
+        .apply(Command::SetToolpathTool(SetToolpathToolArgs {
+            index: 0,
+            tool_id: tool_b,
+        }))
+        .unwrap();
     assert!(s.get_result(0).is_none(), "the rebound op's own result");
     assert!(
         s.get_result(1).is_none(),
@@ -205,11 +224,21 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
     );
 
     // And the same for the model door.
-    let _ = s.set_toolpath_tool(0, tool_a).unwrap();
+    let _ = s
+        .apply(Command::SetToolpathTool(SetToolpathToolArgs {
+            index: 0,
+            tool_id: tool_a,
+        }))
+        .unwrap();
     let model_b = s.models()[1].id;
     adopt(&mut s, 0);
     adopt(&mut s, 1);
-    let _ = s.set_toolpath_model(0, model_b).unwrap();
+    let _ = s
+        .apply(Command::SetToolpathModel(SetToolpathModelArgs {
+            index: 0,
+            model_id: model_b,
+        }))
+        .unwrap();
     assert!(s.get_result(0).is_none());
     assert!(
         s.get_result(1).is_none(),
@@ -224,12 +253,22 @@ fn rebinding_to_the_same_id_is_a_no_op_and_keeps_the_result() {
     let model_a = s.models()[0].id;
     adopt(&mut s, 0);
 
-    let _ = s.set_toolpath_tool(0, tool_a).unwrap();
+    let _ = s
+        .apply(Command::SetToolpathTool(SetToolpathToolArgs {
+            index: 0,
+            tool_id: tool_a,
+        }))
+        .unwrap();
     assert!(
         s.get_result(0).is_some(),
         "no binding moved, so nothing is stale"
     );
-    let _ = s.set_toolpath_model(0, model_a).unwrap();
+    let _ = s
+        .apply(Command::SetToolpathModel(SetToolpathModelArgs {
+            index: 0,
+            model_id: model_a,
+        }))
+        .unwrap();
     assert!(s.get_result(0).is_some());
 }
 
@@ -239,7 +278,12 @@ fn rebinding_to_the_same_id_is_a_no_op_and_keeps_the_result() {
 fn a_tool_id_that_resolves_to_nothing_is_refused() {
     let mut s = seed();
     let tool_a = s.tools()[0].id.0;
-    let err = s.set_toolpath_tool(0, 999).unwrap_err();
+    let err = s
+        .apply(Command::SetToolpathTool(SetToolpathToolArgs {
+            index: 0,
+            tool_id: 999,
+        }))
+        .unwrap_err();
     assert!(
         matches!(err, SessionError::ToolNotFound(ToolId(999))),
         "expected ToolNotFound, got {err:?}"
@@ -255,7 +299,12 @@ fn a_tool_id_that_resolves_to_nothing_is_refused() {
 fn a_model_id_that_resolves_to_nothing_is_refused_and_names_the_valid_ids() {
     let mut s = seed();
     let model_a = s.models()[0].id;
-    let err = s.set_toolpath_model(0, 999).unwrap_err();
+    let err = s
+        .apply(Command::SetToolpathModel(SetToolpathModelArgs {
+            index: 0,
+            model_id: 999,
+        }))
+        .unwrap_err();
     let text = err.to_string();
     assert!(
         text.contains("999") && text.contains("project model ids"),
@@ -269,12 +318,20 @@ fn an_out_of_range_toolpath_index_is_refused_by_both_setters() {
     let mut s = seed();
     let tool_b = s.tools()[1].id.0;
     let model_b = s.models()[1].id;
+    let tool_outcome = s.apply(Command::SetToolpathTool(SetToolpathToolArgs {
+        index: 9,
+        tool_id: tool_b,
+    }));
     assert!(matches!(
-        s.set_toolpath_tool(9, tool_b),
+        tool_outcome,
         Err(SessionError::ToolpathNotFound(9))
     ));
+    let model_outcome = s.apply(Command::SetToolpathModel(SetToolpathModelArgs {
+        index: 9,
+        model_id: model_b,
+    }));
     assert!(matches!(
-        s.set_toolpath_model(9, model_b),
+        model_outcome,
         Err(SessionError::ToolpathNotFound(9))
     ));
 }
@@ -309,7 +366,12 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
     let mut s = builder.build();
 
     // Scallop's registry entry requires a ball tip. The rebind still lands.
-    let _ = s.set_toolpath_tool(0, flat).unwrap();
+    let _ = s
+        .apply(Command::SetToolpathTool(SetToolpathToolArgs {
+            index: 0,
+            tool_id: flat,
+        }))
+        .unwrap();
     assert_eq!(s.toolpath_configs()[0].tool_id, flat);
 
     // …and the registry predicate the generator reads still says no.
@@ -323,7 +385,12 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
     assert!(constraints.allows(ToolType::BallNose.cutter_kind()));
 
     // The repair route works: rebind back, and the op is generatable again.
-    let _ = s.set_toolpath_tool(0, ball).unwrap();
+    let _ = s
+        .apply(Command::SetToolpathTool(SetToolpathToolArgs {
+            index: 0,
+            tool_id: ball,
+        }))
+        .unwrap();
     assert_eq!(s.toolpath_configs()[0].tool_id, ball);
 }
 
@@ -343,7 +410,11 @@ fn rebind_is_not_reachable_through_the_param_route() {
 
     for key in ["tool_id", "model_id"] {
         let err = s
-            .set_toolpath_param(0, key, serde_json::json!(tool_b))
+            .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                index: 0,
+                param: key.to_owned(),
+                value: serde_json::json!(tool_b),
+            }))
             .unwrap_err();
         let text = err.to_string();
         assert!(
@@ -364,9 +435,18 @@ fn rebind_is_not_reachable_through_the_param_route() {
         model_a,
     );
     rest.stock_source = StockSource::Fresh;
-    let _ = s.add_toolpath(0, rest).unwrap();
     let _ = s
-        .set_toolpath_param(1, "prev_tool_id", serde_json::json!(tool_b))
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(rest),
+        }))
+        .unwrap();
+    let _ = s
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 1,
+            param: "prev_tool_id".to_owned(),
+            value: serde_json::json!(tool_b),
+        }))
         .expect("prev_tool_id is a real Rest param");
     assert_eq!(
         s.toolpath_configs()[1].tool_id,

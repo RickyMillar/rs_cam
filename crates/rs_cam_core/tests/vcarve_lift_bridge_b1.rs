@@ -144,9 +144,7 @@ fn build_vcarve_session() -> ProjectSession {
         planner_origin: None,
     };
     let _ = builder.add_toolpath(0, tc).expect("add v_carve toolpath");
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 #[test]

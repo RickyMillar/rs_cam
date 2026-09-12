@@ -17,7 +17,7 @@ use rs_cam_core::compute::operation_configs::TraceConfig;
 use rs_cam_core::gcode::{ToolLoadExportPolicy, export_gcode_checked};
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::ProjectSessionBuilder;
+use rs_cam_core::session::{Command, ProjectSessionBuilder, SetToolpathEnabledArgs};
 use std::sync::atomic::AtomicBool;
 
 const DISABLED_LABEL: &str = "N1 disabled trace";
@@ -112,7 +112,10 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     );
 
     let _ = session
-        .set_toolpath_enabled(0, false)
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: 0,
+            enabled: false,
+        }))
         .expect("disable first trace");
     assert!(
         session.get_result(0).is_some(),
@@ -148,7 +151,10 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     assert!(!gcode.contains("X21.000"));
 
     let _ = session
-        .set_toolpath_enabled(0, true)
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: 0,
+            enabled: true,
+        }))
         .expect("re-enable first trace");
     assert!(
         session

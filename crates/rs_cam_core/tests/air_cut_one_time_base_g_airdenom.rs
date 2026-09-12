@@ -57,7 +57,8 @@ use rs_cam_core::machine_kinematics::{CycleTimeBreakdown, MachineKinematics};
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+    Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetMachineArgs, SimulationOptions,
+    ToolpathConfig,
 };
 use rs_cam_core::simulation_cut::{
     AirCutRatios, Engagement, SimulationCutSample, SimulationCutTrace, rebase_cutting_times,
@@ -169,7 +170,11 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
 
     let mut machine = session.machine().clone();
     machine.kinematics = Some(MachineKinematics::shapeoko_xxl_stock());
-    let _ = session.set_machine(machine);
+    let _ = session
+        .apply(Command::SetMachine(SetMachineArgs {
+            machine: Box::new(machine),
+        }))
+        .expect("the machine row refuses nothing");
     session
 }
 

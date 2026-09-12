@@ -42,8 +42,9 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SessionError,
-    SetToolpathParamArgs, ToolpathConfig,
+    AddToolArgs, AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    SessionError, SetStockConfigArgs, SetToolpathEnabledArgs, SetToolpathParamArgs,
+    SetToolpathToolArgs, ToolpathConfig,
 };
 
 /// The feed value every mutating arm writes.
@@ -345,12 +346,21 @@ fn every_producer_reports_the_dropped_set() {
     // A rebind. The chain walk drops the edited row and the row that
     // reads its remaining stock.
     let mut s = fixture();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
+    let _ = s
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::BallNose)),
+        }))
+        .expect("the tool row refuses nothing");
     let tool_b = s.tools()[1].id.0;
     adopt_at_current_revision(&mut s, 0);
     adopt_at_current_revision(&mut s, 1);
     let before = cached(&s);
-    let effects = s.set_toolpath_tool(0, tool_b).expect("tool_b exists");
+    let effects = s
+        .apply(Command::SetToolpathTool(SetToolpathToolArgs {
+            index: 0,
+            tool_id: tool_b,
+        }))
+        .expect("tool_b exists");
     assert_eq!(
         effects.stale,
         dropped(&s, &before),
@@ -368,7 +378,11 @@ fn every_producer_reports_the_dropped_set() {
     adopt_at_current_revision(&mut s, 0);
     adopt_at_current_revision(&mut s, 1);
     let before = cached(&s);
-    let effects = s.set_stock_config(StockConfig::default());
+    let effects = s
+        .apply(Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(StockConfig::default()),
+        }))
+        .expect("the stock row refuses nothing");
     assert_eq!(
         effects.stale,
         dropped(&s, &before),
@@ -395,7 +409,12 @@ fn the_enable_toggle_excludes_its_own_index() {
     let before_revisions = revisions(&s);
     let before = cached(&s);
 
-    let effects = s.set_toolpath_enabled(0, false).expect("index 0 exists");
+    let effects = s
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: 0,
+            enabled: false,
+        }))
+        .expect("index 0 exists");
 
     assert_eq!(
         effects.stale,

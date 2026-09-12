@@ -37,7 +37,9 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::session::{ProjectSession, SimulationOptions, ToolpathConfig};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, ProjectSession, SimulationOptions, ToolpathConfig,
+};
 use rs_cam_core::simulation_cut::CutKinematics;
 
 /// Detector tolerance: a steady-state sample may read up to 1.5× the
@@ -132,7 +134,12 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
             rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
             planner_origin: None,
         };
-        let _ = session.add_toolpath(0, tc).expect("add detector toolpath");
+        let _ = session
+            .apply(Command::AddToolpath(AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(tc),
+            }))
+            .expect("add detector toolpath");
     }
 
     let cancel = AtomicBool::new(false);

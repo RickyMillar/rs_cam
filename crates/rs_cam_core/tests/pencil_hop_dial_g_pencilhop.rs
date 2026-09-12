@@ -59,7 +59,7 @@ use common::tools::ball_tool_config;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::PencilConfig;
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{Command, ProjectSession, SetToolpathParamArgs};
 
 /// The corrugated plate `link_counters_visible_g_linkvisible` uses for its
 /// pencil arm — many short cut runs whose ends nearly touch, which is the
@@ -160,12 +160,20 @@ fn the_dial_is_reachable_from_set_toolpath_param() {
     );
 
     let _ = session
-        .set_toolpath_param(0, "link_hop_distance_mm", serde_json::json!(0.0))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "link_hop_distance_mm".to_owned(),
+            value: serde_json::json!(0.0),
+        }))
         .expect("MCP must accept the dial by name");
     assert_eq!(read_hop_cap(&session), Some(0.0));
 
     let _ = session
-        .set_toolpath_param(0, "link_hop_distance_mm", serde_json::json!(null))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "link_hop_distance_mm".to_owned(),
+            value: serde_json::json!(null),
+        }))
         .expect("null must reset the dial");
     assert_eq!(
         read_hop_cap(&session),

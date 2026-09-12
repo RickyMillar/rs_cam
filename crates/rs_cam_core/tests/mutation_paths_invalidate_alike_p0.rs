@@ -125,8 +125,8 @@ use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AdoptResultArgs, Command, LoadedModel, MutationKind, ProjectSession, ProjectSessionBuilder,
-    ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs, SetToolpathParamArgs, ToolpathConfig,
-    compute_stale_set,
+    ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs, SetAlignmentPinDrillHolesArgs,
+    SetDrillSelectedHolesArgs, SetToolpathParamArgs, ToolpathConfig, compute_stale_set,
 };
 
 /// The one feed value every arm writes.
@@ -328,7 +328,11 @@ fn arm_setter() -> Observation {
     let mut s = fixture(pocket());
     let before = revisions(&s);
     let _ = s
-        .set_toolpath_param(0, "feed_rate", serde_json::json!(EDITED_FEED_RATE))
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "feed_rate".to_owned(),
+            value: serde_json::json!(EDITED_FEED_RATE),
+        }))
         .expect("feed_rate is a Pocket parameter");
     assert_feed_landed(&s);
     observe(&s, &before)
@@ -487,7 +491,10 @@ fn n6_a_drill_pick_invalidates_the_chain() {
     let mut s = fixture(OperationConfig::Drill(DrillConfig::default()));
     let before = revisions(&s);
     let _ = s
-        .set_drill_selected_holes(0, Some(vec![[1.0, 2.0]]))
+        .apply(Command::SetDrillSelectedHoles(SetDrillSelectedHolesArgs {
+            index: 0,
+            selected_holes: Some(vec![[1.0, 2.0]]),
+        }))
         .expect("index 0 is a Drill operation");
     let obs = observe(&s, &before);
 
@@ -511,7 +518,12 @@ fn n6_set_alignment_pin_drill_holes_invalidates_the_chain() {
     let mut s = fixture(op);
     let before = revisions(&s);
     let _ = s
-        .set_alignment_pin_drill_holes(0, vec![[1.0, 2.0]])
+        .apply(Command::SetAlignmentPinDrillHoles(
+            SetAlignmentPinDrillHolesArgs {
+                index: 0,
+                holes: vec![[1.0, 2.0]],
+            },
+        ))
         .expect("index 0 is an AlignmentPinDrill operation");
     let obs = observe(&s, &before);
 

@@ -360,12 +360,11 @@ fn fixture_session_2d() -> ProjectSession {
     ];
 
     for (name, op) in ops {
-        let _ = builder.add_toolpath(0, toolpath_config(name, op, tool_id, model_id))
-        .expect("add toolpath");
+        let _ = builder
+            .add_toolpath(0, toolpath_config(name, op, tool_id, model_id))
+            .expect("add toolpath");
     }
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 /// The 20-field `ToolpathConfig` literal, once, shared by both arms.
@@ -503,9 +502,7 @@ fn fixture_session_3d() -> ProjectSession {
         ..HeightsConfig::default()
     };
     let _ = builder.add_toolpath(0, wl).expect("add waterline");
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 /// Every simulation dial spelled out. `adaptive_feed_modulation` defaults to

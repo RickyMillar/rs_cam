@@ -28,7 +28,9 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::session::{
+    Command, ProjectSession, ProjectSessionBuilder, ReorderToolpathArgs, ToolpathConfig,
+};
 
 fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
@@ -62,8 +64,7 @@ fn five_ops() -> ProjectSession {
     for name in ["A", "B", "C", "D", "E"] {
         let _ = builder.add_toolpath(0, toolpath(name, tool_id)).unwrap();
     }
-    let s = builder.build();
-    s
+    builder.build()
 }
 
 fn plan_order(s: &ProjectSession) -> Vec<String> {
@@ -79,7 +80,12 @@ fn plan_order(s: &ProjectSession) -> Vec<String> {
 #[test]
 fn a_long_move_up_inserts_and_shifts_the_rest() {
     let mut s = five_ops();
-    let _ = s.reorder_toolpath(4, 0).unwrap();
+    let _ = s
+        .apply(Command::ReorderToolpath(ReorderToolpathArgs {
+            from_index: 4,
+            to_index: 0,
+        }))
+        .unwrap();
     assert_eq!(plan_order(&s), ["E", "A", "B", "C", "D"]);
 }
 
@@ -89,7 +95,12 @@ fn a_long_move_up_inserts_and_shifts_the_rest() {
 #[test]
 fn a_long_move_down_inserts_and_shifts_the_rest() {
     let mut s = five_ops();
-    let _ = s.reorder_toolpath(0, 4).unwrap();
+    let _ = s
+        .apply(Command::ReorderToolpath(ReorderToolpathArgs {
+            from_index: 0,
+            to_index: 4,
+        }))
+        .unwrap();
     assert_eq!(plan_order(&s), ["B", "C", "D", "E", "A"]);
 }
 
@@ -99,7 +110,12 @@ fn a_long_move_down_inserts_and_shifts_the_rest() {
 #[test]
 fn a_mid_list_move_touches_only_the_span_between_the_ends() {
     let mut s = five_ops();
-    let _ = s.reorder_toolpath(3, 1).unwrap();
+    let _ = s
+        .apply(Command::ReorderToolpath(ReorderToolpathArgs {
+            from_index: 3,
+            to_index: 1,
+        }))
+        .unwrap();
     assert_eq!(plan_order(&s), ["A", "D", "B", "C", "E"]);
 }
 
@@ -116,7 +132,12 @@ fn adjacent_moves_match_the_swap_they_replaced() {
         (4, 3, ["A", "B", "C", "E", "D"]),
     ] {
         let mut s = five_ops();
-        let _ = s.reorder_toolpath(from, to).unwrap();
+        let _ = s
+            .apply(Command::ReorderToolpath(ReorderToolpathArgs {
+                from_index: from,
+                to_index: to,
+            }))
+            .unwrap();
         assert_eq!(
             plan_order(&s),
             expected,
@@ -136,7 +157,12 @@ fn a_reorder_does_not_renumber_the_configs() {
         .iter()
         .map(|tc| tc.name.clone())
         .collect();
-    let _ = s.reorder_toolpath(4, 0).unwrap();
+    let _ = s
+        .apply(Command::ReorderToolpath(ReorderToolpathArgs {
+            from_index: 4,
+            to_index: 0,
+        }))
+        .unwrap();
     let after: Vec<String> = s
         .toolpath_configs()
         .iter()

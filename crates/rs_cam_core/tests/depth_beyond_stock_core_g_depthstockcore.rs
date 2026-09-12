@@ -332,8 +332,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
         planner_origin: None,
     };
     let _ = builder.add_toolpath(0, tc).expect("add pocket toolpath");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 /// The claim this arm exists to stop me over-stating.

@@ -208,8 +208,7 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
             },
         )
         .expect("add toolpath");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 /// The bar the entry-strip predicate actually depends on, asserted on

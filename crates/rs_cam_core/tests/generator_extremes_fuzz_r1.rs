@@ -44,7 +44,7 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::session::{ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{AddToolpathArgs, Command, ProjectSession, ToolpathConfig};
 
 /// `SearchPolicy` hard floor for DOC and stepover axes.
 const FLOOR_MM: f64 = 0.05;
@@ -122,7 +122,10 @@ fn run_2d_matrix(matrix: &[(&str, OperationConfig)]) {
 
     for (i, (name, op)) in matrix.iter().enumerate() {
         let _ = session
-            .add_toolpath(0, toolpath_config(i, name, op.clone(), tool_id, model_id))
+            .apply(Command::AddToolpath(AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(toolpath_config(i, name, op.clone(), tool_id, model_id)),
+            }))
             .expect("add extreme toolpath");
     }
 
@@ -257,10 +260,16 @@ fn adaptive3d_generator_survives_search_space_floors() {
         ..Adaptive3dConfig::default()
     });
     let _ = session
-        .add_toolpath(
-            0,
-            toolpath_config(0, "adaptive3d@floors", op, tool.id.0, mesh_model_id),
-        )
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(toolpath_config(
+                0,
+                "adaptive3d@floors",
+                op,
+                tool.id.0,
+                mesh_model_id,
+            )),
+        }))
         .expect("add adaptive3d toolpath");
 
     if let Some(f) = generate_isolated(&mut session, 0, "adaptive3d@floors") {

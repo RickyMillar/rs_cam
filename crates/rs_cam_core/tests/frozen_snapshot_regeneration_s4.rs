@@ -221,8 +221,7 @@ fn cascade_session_with(rest_claims: bool) -> ProjectSession {
     rest.heights = heights;
     rest.stock_source = StockSource::FromRemainingStock;
     let _ = builder.add_toolpath(0, rest).expect("add rest op");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 /// The default cascade: a full rest pass (claims + territory clip).

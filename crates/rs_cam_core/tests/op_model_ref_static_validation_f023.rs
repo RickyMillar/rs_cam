@@ -34,7 +34,9 @@ use rs_cam_core::diagnostics::{Diagnostic, Severity, ids};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::session::{
+    AddToolpathArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathConfig,
+};
 
 // ── helpers ─────────────────────────────────────────────────────────
 
@@ -110,15 +112,15 @@ fn pocket_op_with_unresolved_model_id_surfaces_blocking_diagnostic() {
     assert_ne!(mid, 999_usize, "test fixture must use a dangling id");
 
     let idx = session
-        .add_toolpath(
-            0,
-            make_tp(
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(make_tp(
                 "pocket_bad_ref",
                 OperationConfig::Pocket(PocketConfig::default()),
                 0,
                 /* model_id = */ 999,
-            ),
-        )
+            )),
+        }))
         .unwrap()
         .created
         .expect("add_toolpath reports the new toolpath index");

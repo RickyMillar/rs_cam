@@ -78,7 +78,8 @@ use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    DatumConfig, ProjectSession, ProjectSessionBuilder, SetupData, ToolpathConfig,
+    AddModelArgs, AddToolArgs, AddToolpathArgs, Command, DatumConfig, ProjectSession,
+    ProjectSessionBuilder, SetStockConfigArgs, SetupData, ToolpathConfig,
 };
 use std::sync::atomic::AtomicBool;
 
@@ -170,9 +171,7 @@ fn build_two_setup_session() -> ProjectSession {
     let _ = builder
         .add_toolpath(flipped, trace_toolpath(FLIPPED_LABEL, tool_id, model_id))
         .expect("add flipped-setup trace");
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 /// Generate both toolpaths and export one G-code program through the
@@ -461,7 +460,7 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
                 pause_message: None,
             })
             .build();
-        let _ = session.set_stock_config(StockConfig {
+        let stock = StockConfig {
             x: STOCK_X,
             y: STOCK_Y,
             z: 25.0,
@@ -470,18 +469,32 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
             origin_z: TOP_Z - 25.0,
             auto_from_model: false,
             ..StockConfig::default()
-        });
+        };
+        let _ = session
+            .apply(Command::SetStockConfig(SetStockConfigArgs {
+                stock: Box::new(stock),
+            }))
+            .expect("the stock row refuses nothing");
         let tool_idx = session
-            .add_tool(make_endmill_6mm())
+            .apply(Command::AddTool(AddToolArgs {
+                tool: Box::new(make_endmill_6mm()),
+            }))
+            .expect("the tool row refuses nothing")
             .created
             .expect("add_tool reports the new tool index");
         let tool_id = session.tools()[tool_idx].id.0;
         let model_id = session
-            .add_model(polygon_model(vec![square_model_polygon()], "square30"))
+            .apply(Command::AddModel(AddModelArgs {
+                model: Box::new(polygon_model(vec![square_model_polygon()], "square30")),
+            }))
+            .expect("the model row refuses nothing")
             .created
             .expect("add_model reports the new model id");
         let _ = session
-            .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
+            .apply(Command::AddToolpath(AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(trace_toolpath(IDENTITY_LABEL, tool_id, model_id)),
+            }))
             .expect("add identity-setup trace");
         rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, 0)
     };

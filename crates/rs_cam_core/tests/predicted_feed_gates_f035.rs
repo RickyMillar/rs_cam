@@ -65,7 +65,8 @@ use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
+    Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetMachineArgs, SimulationOptions,
+    ToolpathConfig,
 };
 use rs_cam_core::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
@@ -402,7 +403,11 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
     if kinematics.is_some() {
         let mut machine = session.machine().clone();
         machine.kinematics = kinematics;
-        let _ = session.set_machine(machine);
+        let _ = session
+            .apply(Command::SetMachine(SetMachineArgs {
+                machine: Box::new(machine),
+            }))
+            .expect("the machine row refuses nothing");
     }
     session
 }

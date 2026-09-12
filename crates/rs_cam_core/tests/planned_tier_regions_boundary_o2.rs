@@ -61,7 +61,7 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::{Polygon2, offset_polygon};
 use rs_cam_core::region_set::RegionSet;
-use rs_cam_core::session::ProjectSessionBuilder;
+use rs_cam_core::session::{AddToolpathArgs, Command, ProjectSessionBuilder};
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::tool::MillingCutter;
@@ -195,7 +195,10 @@ fn a_fine_tier_op_cuts_only_inside_its_own_islands() {
         offset: 0.0,
     };
     let index = session
-        .add_toolpath(0, tc)
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(tc),
+        }))
         .unwrap()
         .created
         .expect("add_toolpath reports the new toolpath index");

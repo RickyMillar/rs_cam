@@ -184,8 +184,7 @@ fn build_session(retract_z: HeightMode) -> ProjectSession {
         planner_origin: None,
     };
     let _ = builder.add_toolpath(0, tc).expect("add pocket toolpath");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 /// Generate + simulate one arm and return

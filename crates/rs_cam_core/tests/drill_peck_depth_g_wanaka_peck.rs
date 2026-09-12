@@ -138,8 +138,7 @@ fn drill_session(op: OperationConfig) -> ProjectSession {
     tc.dressups.arc_fitting = false;
     tc.dressups.segment_merge = false;
     let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 fn hole_op(depth: f64, peck_depth: f64) -> OperationConfig {

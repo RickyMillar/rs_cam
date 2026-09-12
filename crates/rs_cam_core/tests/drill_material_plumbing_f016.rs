@@ -118,9 +118,7 @@ fn build_drill_session(material: Material) -> ProjectSession {
         planner_origin: None,
     };
     let _ = builder.add_toolpath(0, tc).unwrap();
-    let session = builder.build();
-
-    session
+    builder.build()
 }
 
 fn generate_and_get_drill_material(session: &mut ProjectSession) -> Material {

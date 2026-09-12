@@ -179,8 +179,7 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
         planner_origin: None,
     };
     let _ = builder.add_toolpath(0, tc).expect("add pocket toolpath");
-    let session = builder.build();
-    session
+    builder.build()
 }
 
 fn generate(dressups: DressupConfig) -> (ProjectSession, Toolpath) {
