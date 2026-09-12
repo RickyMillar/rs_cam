@@ -38,6 +38,12 @@
 //! opened. If a later package moves the tool library into core, those 13
 //! rows move with it.
 //!
+//! WP23: a row that declares `gui: Reach::Reached` has a constructor in a
+//! production view file. A dispatch arm is not a caller, so a row whose
+//! last control went away is DELETED and not flipped to `Skip`. The
+//! census in `crates/rs_cam_viz/tests/command_surface_completeness.rs`
+//! enforces this.
+//!
 //! What this file does NOT declare: a row that mutates `ProjectSession`.
 //! `crates/rs_cam_viz/tests/command_surface_completeness.rs` measures
 //! that, with two named exemptions.
@@ -90,13 +96,6 @@ pub struct SimJumpToMoveArgs {
 /// Which operation boundary to move playback to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SimJumpToOpStartArgs {
-    /// The index into the simulation's operation boundary list.
-    pub boundary_index: usize,
-}
-
-/// Which operation boundary to move playback to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SimJumpToOpEndArgs {
     /// The index into the simulation's operation boundary list.
     pub boundary_index: usize,
 }
@@ -487,14 +486,6 @@ macro_rules! for_each_ui_command {
                  ),
                  cli: Reach::Skip("the batch CLI holds no playback state"),
              }),
-            (UiCommand, SimJumpToOpEnd, "sim_jump_to_op_end", SimJumpToOpEndArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "sim_jump_to_toolpath_end names the toolpath, not the boundary",
-                 ),
-                 cli: Reach::Skip("the batch CLI holds no playback state"),
-             }),
             (UiCommand, SimScrubToolpath, "sim_scrub_toolpath", SimScrubToolpathArgs, (),
              Surfaces {
                  gui: Reach::Skip(
@@ -515,9 +506,7 @@ macro_rules! for_each_ui_command {
             (UiCommand, SimJumpToToolpathEnd, "sim_jump_to_toolpath_end",
              SimJumpToToolpathEndArgs, (),
              Surfaces {
-                 gui: Reach::Skip(
-                     "the operation list jumps through sim_jump_to_op_end",
-                 ),
+                 gui: Reach::Skip("no GUI control jumps to an operation's last move"),
                  mcp: Reach::Reached,
                  cli: Reach::Skip("the batch CLI holds no playback state"),
              }),
@@ -771,15 +760,6 @@ macro_rules! for_each_ui_command {
                  gui: Reach::Reached,
                  mcp: Reach::Skip(
                      "cancel_generation cancels the toolpath lane alone, off the frame loop",
-                 ),
-                 cli: Reach::Skip("the batch CLI computes on its own thread"),
-             }),
-            (UiCommand, CancelToolpathGeneration, "cancel_toolpath_generation", NoArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "A/M12: cancel_generation is served through GenerationControl on \
-the MCP server thread, so it never queues behind the generate it aborts",
                  ),
                  cli: Reach::Skip("the batch CLI computes on its own thread"),
              }),

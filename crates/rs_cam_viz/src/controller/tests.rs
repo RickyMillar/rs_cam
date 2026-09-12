@@ -1068,46 +1068,17 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
 }
 
 // ---------------------------------------------------------------------------
-// MCP `cancel_generation`: cancel must target only the toolpath lane
-// (leaving Analysis/Optimize untouched, unlike the GUI's "cancel
-// everything" `UiCommand::CancelCompute`), and a cancelled generation must
-// resolve any pending MCP `generate_toolpath` waiter instead of leaving it
-// hanging — mirroring the fail-hard-at-submit fix immediately above, but
-// for the cancel-in-flight path instead of the reject-before-submit path.
+// MCP `cancel_generation`: a cancelled generation must resolve any pending
+// MCP `generate_toolpath` waiter instead of leaving it hanging — mirroring
+// the fail-hard-at-submit fix immediately above, but for the
+// cancel-in-flight path instead of the reject-before-submit path.
+//
+// WP23 deleted the lane-targeting test that shared this banner. It pinned
+// `UiCommand::CancelToolpathGeneration`, a view row that no surface
+// constructed: the MCP tool cancels the toolpath lane through
+// `GenerationControl` on the server thread, and the GUI cancels every lane
+// through `UiCommand::CancelCompute`.
 // ---------------------------------------------------------------------------
-
-/// `UiCommand::CancelToolpathGeneration` (issued by MCP's `cancel_generation`
-/// tool) must cancel only `ComputeLane::Toolpath`. Reusing the GUI's
-/// existing `UiCommand::CancelCompute` (which cancels Toolpath + Analysis +
-/// Optimize) would abort an unrelated in-flight simulation or optimize run
-/// just because an agent wanted to abort a runaway generate.
-#[test]
-fn cancel_toolpath_generation_event_only_cancels_toolpath_lane() {
-    let mut controller = sample_controller();
-    controller.compute.toolpath_lane.state = LaneState::Running;
-    controller.compute.analysis_lane.state = LaneState::Running;
-    controller.compute.optimize_lane.state = LaneState::Running;
-
-    controller.handle_internal_event(crate::ui::AppEvent::Ui(
-        UiCommand::CancelToolpathGeneration(NoArgs),
-    ));
-
-    assert_eq!(
-        controller.compute.toolpath_lane.state,
-        LaneState::Cancelling,
-        "toolpath lane must be cancelled"
-    );
-    assert_eq!(
-        controller.compute.analysis_lane.state,
-        LaneState::Running,
-        "analysis lane must be left alone by the targeted cancel"
-    );
-    assert_eq!(
-        controller.compute.optimize_lane.state,
-        LaneState::Running,
-        "optimize lane must be left alone by the targeted cancel"
-    );
-}
 
 /// A `Cancelled` outcome draining through `drain_compute_results` must
 /// resolve a pending MCP `generate_toolpath` waiter, the same way a

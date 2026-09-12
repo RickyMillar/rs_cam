@@ -16,8 +16,8 @@ use crate::state::selection::Selection;
 use crate::ui::AppEvent;
 use crate::ui_command::{
     DeleteLibraryToolArgs, MoveLibraryToolArgs, NoArgs, RenameMachineInLibraryArgs,
-    RenameToolCatalogArgs, SetToolLoadOverrideArgs, SimJumpToMoveArgs, SimJumpToOpEndArgs,
-    SimJumpToOpStartArgs, UiCommand, UpdateLibraryToolArgs,
+    RenameToolCatalogArgs, SetToolLoadOverrideArgs, SimJumpToMoveArgs, SimJumpToOpStartArgs,
+    UiCommand, UpdateLibraryToolArgs,
 };
 
 use super::AppController;
@@ -478,14 +478,7 @@ impl<B: ComputeBackend> AppController<B> {
                 UiCommand::SimJumpToOpStart(SimJumpToOpStartArgs { boundary_index }) => {
                     self.handle_sim_jump_to_op_start(boundary_index);
                 }
-                UiCommand::SimJumpToOpEnd(SimJumpToOpEndArgs { boundary_index }) => {
-                    self.handle_sim_jump_to_op_end(boundary_index);
-                }
                 UiCommand::CancelCompute(NoArgs) => self.compute.cancel_all(),
-                UiCommand::CancelToolpathGeneration(NoArgs) => {
-                    self.compute
-                        .cancel_lane(crate::compute::ComputeLane::Toolpath);
-                }
                 UiCommand::CloseOptimizeModal(NoArgs) => {
                     // WP14b: the run is a `Job` on the SHARED FIFO Job
                     // lane, so a lane cancel would also kill an MCP

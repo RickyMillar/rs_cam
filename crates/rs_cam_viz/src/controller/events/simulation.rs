@@ -86,19 +86,6 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    pub(crate) fn handle_sim_jump_to_op_end(&mut self, boundary_idx: usize) {
-        if let Some(end) = self
-            .state
-            .simulation
-            .boundaries()
-            .get(boundary_idx)
-            .map(|b| b.end_move)
-        {
-            self.state.simulation.playback.playing = false;
-            self.state.simulation.playback.current_move = end;
-        }
-    }
-
     /// Build per-setup simulation groups.
     pub(crate) fn build_simulation_groups(
         &self,
