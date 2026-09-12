@@ -506,6 +506,8 @@ fn dressed_entry(stock: &TriDexelStock, carry_rest_stock: bool) -> Toolpath {
         AnnotatedToolpath::new(plunge_then_cut()),
         &cfg,
         CUT_FEED,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         cutter.diameter(),
         SAFE_Z,
         STOCK_TOP_Z,
@@ -633,6 +635,8 @@ fn dressed_entry_wide(stock: &TriDexelStock) -> Toolpath {
         AnnotatedToolpath::new(plunge_then_cut()),
         &cfg,
         CUT_FEED,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         cutter.diameter(),
         SAFE_Z,
         STOCK_TOP_Z,

@@ -126,6 +126,8 @@ fn run_full_pipeline(
         annotated,
         cfg,
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         tool_diameter,
         /* safe_z */ 30.0,
         /* stock_top */ 0.0,
@@ -183,6 +185,8 @@ fn synthetic_three_pass_preserves_invariants_across_all_combos() {
             input,
             &cfg,
             1000.0,
+            // WP22: no operation in scope, so the plunge cap does not apply.
+            None,
             6.0,
             10.0,
             0.0,
@@ -223,6 +227,8 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
         input,
         &cfg,
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         6.0,
         10.0,
         0.0,
@@ -280,6 +286,8 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
         input,
         &cfg,
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         6.0,
         10.0,
         0.0,

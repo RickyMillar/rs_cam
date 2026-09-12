@@ -329,6 +329,8 @@ fn c_no_rapid_crosses_the_rest_stock() {
         AnnotatedToolpath::new(two_island_pass()),
         &cfg,
         CUT_FEED,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         cutter.diameter(),
         RETRACT_Z,
         STOCK_TOP_Z,

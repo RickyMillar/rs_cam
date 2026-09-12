@@ -215,6 +215,10 @@ fn the_pass_caps_the_floor_at_the_ceiling_instead_of_panicking() {
         min_feed_rate: nominal * 0.5,
         ramp_rate: 500.0,
         air_cut_threshold: 0.05,
+        // WP22: this arm measures the WP21 clamp, not the WP22 plunge cap.
+        // The fixture's vertical descent must stay uncapped, or the floor
+        // assertion below reads the plunge rate instead of the ceiling.
+        plunge_rate_mm_min: None,
     };
     assert!(
         params.min_feed_rate > params.max_feed_rate,

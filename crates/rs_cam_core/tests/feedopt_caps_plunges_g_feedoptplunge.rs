@@ -80,13 +80,17 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::DressupEntryStyle;
 use rs_cam_core::compute::operation_configs::PocketConfig;
+use rs_cam_core::dexel_stock::TriDexelStock;
+use rs_cam_core::feedopt::{FeedOptParams, optimize_feed_rates};
 use rs_cam_core::geo::P3;
 use rs_cam_core::kinematic_utilization::{MotionClass, classify_move};
 use rs_cam_core::session::{
     GenObserver, GenerateToolpathArgs, GenerateToolpathHandle, Job, JobHandle, ProjectSession,
     ToolpathComputeResult, execute_job,
 };
-use rs_cam_core::toolpath::Toolpath;
+use rs_cam_core::tool::FlatEndmill;
+use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
 mod common;
 use common::session::{polygon_model, single_op_session_with, square_polygon, stock_under};
@@ -278,4 +282,164 @@ fn the_generator_alone_emits_no_plunge_above_the_plunge_rate() {
          of the {total} plunges reads the plunge rate {plunge_rate} mm/min \
          exactly"
     );
+}
+
+// ── (b) the pass itself ─────────────────────────────────────────────
+
+/// The pass caps a vertical descent and leaves the lateral move alone.
+///
+/// The arm drives `optimize_feed_rates` directly, so it covers the cap site
+/// and arm (a) covers the construction site. A later caller that builds its
+/// own `FeedOptParams` stays caught here.
+///
+/// `ramp_rate` is zero, so `smooth_feed_rates` returns early and this arm
+/// measures the cap alone. With smoothing on, the forward pass would pull
+/// the lateral move down toward the capped descent and the arm would
+/// measure two effects at once.
+#[test]
+fn the_pass_caps_a_vertical_descent_and_leaves_a_lateral_move() {
+    let tool = FlatEndmill::new(10.0, 25.0);
+    let plunge_rate = 300.0;
+    let nominal = 1000.0;
+
+    let descent_start = P3::new(10.0, 10.0, 15.0);
+    let descent_end = P3::new(10.0, 10.0, 5.0);
+    let lateral_end = P3::new(20.0, 10.0, 5.0);
+
+    // The classifier, asserted first. A later change to the class boundary
+    // then fails here rather than silently emptying the arm.
+    let descent = [
+        descent_end.x - descent_start.x,
+        descent_end.y - descent_start.y,
+        descent_end.z - descent_start.z,
+    ];
+    let lateral = [
+        lateral_end.x - descent_end.x,
+        lateral_end.y - descent_end.y,
+        lateral_end.z - descent_end.z,
+    ];
+    let cutting = MoveType::Linear { feed_rate: nominal };
+    assert_eq!(classify_move(cutting, descent), MotionClass::Plunge);
+    assert_eq!(classify_move(cutting, lateral), MotionClass::Lateral);
+
+    let capped = run_pass(&tool, nominal, plunge_rate, Some(plunge_rate));
+    assert_eq!(
+        capped[0], plunge_rate,
+        "the cap is a set, not a band: the descent must read the plunge \
+         rate {plunge_rate} mm/min exactly"
+    );
+    assert!(
+        capped[1] > plunge_rate,
+        "the lateral move reads the same engagement and is NOT a plunge, so \
+         it must keep the pass's own answer; it reads {} mm/min",
+        capped[1]
+    );
+
+    // The control: the field is the lever. With it absent the same call
+    // leaves the descent above the plunge rate, which is the pre-WP22
+    // behaviour this arm records as deliberately changed.
+    let uncapped = run_pass(&tool, nominal, plunge_rate, None);
+    assert!(
+        uncapped[0] > plunge_rate,
+        "without the field the descent keeps the pass's own answer: it \
+         reads {} mm/min against a plunge rate of {plunge_rate} mm/min",
+        uncapped[0]
+    );
+    assert_eq!(
+        uncapped[1], capped[1],
+        "the field must move the descent alone; the lateral move reads {} \
+         mm/min with the cap and {} mm/min without it",
+        capped[1], uncapped[1]
+    );
+}
+
+/// A descent through AIR is capped too.
+///
+/// The air arm writes the ceiling, which is the worst reading the pass
+/// produces. A descent through air still ends in material, which is the
+/// reason the modulator caps a zero-engagement descent as well
+/// (`plunge_guard_p3::zero_engagement_vertical_descent_is_capped_too`).
+#[test]
+fn the_pass_caps_a_descent_that_reads_air() {
+    let tool = FlatEndmill::new(10.0, 25.0);
+    let plunge_rate = 300.0;
+    let nominal = 1000.0;
+    let ceiling = 3000.0;
+
+    // The block's top is at z = 10, and the descent stops at z = 12, so
+    // `estimate_engagement` reads no material and the air arm runs.
+    let mut stock = TriDexelStock::from_stock(0.0, 0.0, 50.0, 50.0, 0.0, 10.0, 1.0);
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(10.0, 10.0, 20.0));
+    tp.feed_to(P3::new(10.0, 10.0, 12.0), nominal);
+
+    let params = FeedOptParams {
+        nominal_feed_rate: nominal,
+        max_feed_rate: ceiling,
+        min_feed_rate: nominal * 0.5,
+        ramp_rate: 0.0,
+        air_cut_threshold: 0.05,
+        plunge_rate_mm_min: Some(plunge_rate),
+    };
+    let out = optimize_feed_rates(AnnotatedToolpath::new(tp), &tool, &mut stock, &params).toolpath;
+    let feeds = cutting_feeds(&out);
+    assert_eq!(feeds.len(), 1, "the fixture emits one cutting move");
+    assert_eq!(
+        feeds[0], plunge_rate,
+        "an unengaged vertical descent must still land on the plunge rate \
+         {plunge_rate} mm/min, not on the ceiling {ceiling} mm/min"
+    );
+}
+
+/// The two cutting feeds the arm (b) fixture emits, in move order.
+///
+/// One vertical descent into a full block, then one lateral move at depth.
+/// Both read the engaged arm of the pass.
+fn run_pass(
+    tool: &FlatEndmill,
+    nominal: f64,
+    plunge_rate: f64,
+    plunge_rate_mm_min: Option<f64>,
+) -> Vec<f64> {
+    let params = FeedOptParams {
+        nominal_feed_rate: nominal,
+        max_feed_rate: 3000.0,
+        min_feed_rate: 500.0,
+        // Smoothing off, so this arm measures the cap alone.
+        ramp_rate: 0.0,
+        air_cut_threshold: 0.05,
+        plunge_rate_mm_min,
+    };
+    assert!(
+        nominal > plunge_rate,
+        "the fixture must command above the plunge rate, or the cap has \
+         nothing to lower"
+    );
+
+    // A full block of material, so both moves take the engaged arm.
+    let mut stock = TriDexelStock::from_stock(0.0, 0.0, 50.0, 50.0, 0.0, 10.0, 1.0);
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(10.0, 10.0, 15.0));
+    tp.feed_to(P3::new(10.0, 10.0, 5.0), nominal);
+    tp.feed_to(P3::new(20.0, 10.0, 5.0), nominal);
+
+    let out = optimize_feed_rates(AnnotatedToolpath::new(tp), tool, &mut stock, &params).toolpath;
+    let feeds = cutting_feeds(&out);
+    assert_eq!(
+        feeds.len(),
+        2,
+        "the fixture emits two cutting moves; a different count makes every \
+         reading below vacuous"
+    );
+    feeds
+}
+
+/// Every cutting move's feed rate, in mm/min, in move order.
+fn cutting_feeds(toolpath: &Toolpath) -> Vec<f64> {
+    toolpath
+        .moves
+        .iter()
+        .filter(|mv| mv.move_type.is_cutting())
+        .filter_map(|mv| mv.move_type.feed_rate())
+        .collect()
 }

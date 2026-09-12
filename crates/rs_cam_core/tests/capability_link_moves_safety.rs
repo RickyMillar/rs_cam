@@ -185,6 +185,8 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
         rs_cam_core::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans),
         cfg,
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         tool_diameter,
         /* safe_z */ 30.0,
         /* stock_top */ 0.0,
@@ -217,6 +219,8 @@ fn dressup_with_caps(
         rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
         cfg,
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         tool_diameter,
         /* safe_z */ 30.0,
         /* stock_top */ 0.0,
@@ -1660,6 +1664,8 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
             AnnotatedToolpath::with_spans(raw.clone(), spans),
             cfg,
             1000.0,
+            // WP22: no operation in scope, so the plunge cap does not apply.
+            None,
             /* tool_diameter */ 3.0,
             /* safe_z */ 30.0,
             /* stock_top */ 0.0,
@@ -1875,6 +1881,8 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
             AnnotatedToolpath::with_spans(raw.clone(), steep_shallow_spans(&raw, &split)),
             cfg,
             1000.0,
+            // WP22: no operation in scope, so the plunge cap does not apply.
+            None,
             /* tool_diameter */ 3.0,
             /* safe_z */ 30.0,
             /* stock_top */ 0.0,

@@ -270,6 +270,8 @@ fn three_pass_full_dressups_fingerprint() {
         input,
         &full_dressups(),
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         6.0,
         /* safe_z */ 30.0,
         /* stock_top */ 0.0,
@@ -329,6 +331,8 @@ fn arc_raster_full_dressups_fingerprint() {
         input,
         &full_dressups(),
         1200.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         6.0,
         /* safe_z */ 30.0,
         /* stock_top */ 0.0,
@@ -429,6 +433,8 @@ fn face_full_chain_fingerprint() {
         input,
         &full_dressups(),
         1500.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         6.0,
         /* safe_z */ 30.0,
         /* stock_top */ 0.0,

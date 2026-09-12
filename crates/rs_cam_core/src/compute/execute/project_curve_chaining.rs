@@ -788,6 +788,8 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
         on,
         &dressups,
         800.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         TOOL_DIAMETER_MM,
         SAFE_Z_MM,
         0.0,

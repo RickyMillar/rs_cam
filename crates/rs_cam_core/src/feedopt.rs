@@ -52,6 +52,20 @@ pub struct FeedOptParams {
     pub ramp_rate: f64,
     /// Below this engagement fraction, use max feed (air cutting).
     pub air_cut_threshold: f64,
+    /// WP22 (G-FEEDOPTPLUNGE) — the OPERATION's own plunge rate (mm/min).
+    ///
+    /// The pass caps any move `kinematic_utilization::classify_move` calls
+    /// [`crate::kinematic_utilization::MotionClass::Plunge`] at this rate,
+    /// whatever the move's intent tag says. It is the same geometric guard
+    /// [`crate::feed_modulation::adaptive_feed_modulate`] carries (P3,
+    /// 2026-09-07), and both read one classifier.
+    ///
+    /// `None` means the caller held no operation, and the cap does not
+    /// apply. A value that is not finite and positive disables the cap too,
+    /// for the reason `ModulationContext::plunge_rate_mm_min` states: an
+    /// operation legitimately carries no plunge rate, and a cap at zero
+    /// stops the machine.
+    pub plunge_rate_mm_min: Option<f64>,
 }
 
 /// Compute the Radial Chip Thinning Factor (RCTF).
@@ -111,6 +125,12 @@ fn estimate_engagement(
 /// `MoveIntent`. Every move is preserved as-is except for its feed rate
 /// (see [`crate::toolpath::MoveType::with_feed_rate`]). Spans pass through
 /// unchanged and `spans_valid` is preserved.
+///
+/// WP22 (G-FEEDOPTPLUNGE): the pass caps a move the shared classifier
+/// [`crate::kinematic_utilization::classify_move`] calls
+/// [`crate::kinematic_utilization::MotionClass::Plunge`] at
+/// [`FeedOptParams::plunge_rate_mm_min`]. The cap reads GEOMETRY, never the
+/// move's intent tag. Set the field to `None` to disable it.
 pub fn optimize_feed_rates(
     annotated: AnnotatedToolpath,
     cutter: &dyn MillingCutter,
@@ -161,8 +181,20 @@ fn optimize_feed_rates_inner(
     let ceiling = params.max_feed_rate;
     let floor = params.min_feed_rate;
 
+    // WP22 (G-FEEDOPTPLUNGE): the operation's own plunge rate, once. A
+    // rate that is not finite and positive disables the cap, the same
+    // condition `feed_modulation.rs` applies to `plunge_rate_mm_min`.
+    let plunge_cap = params
+        .plunge_rate_mm_min
+        .filter(|rate| rate.is_finite() && *rate > 1e-9);
+
     // First pass: compute optimal feed rate for each move
     let mut feed_rates: Vec<f64> = Vec::with_capacity(toolpath.moves.len());
+
+    // WP22: the previous move's target, tracked over EVERY move including
+    // rapids. `feed_modulation.rs` reads `moves[i - 1].target` whatever
+    // that move is, and the two guards must measure one delta.
+    let mut prev_target: Option<P3> = None;
 
     for mv in &toolpath.moves {
         match mv.move_type {
@@ -178,12 +210,35 @@ fn optimize_feed_rates_inner(
                 let engagement = estimate_engagement(stock, cx, cy, cz, tool_radius, n_samples);
 
                 // Compute adjusted feed rate
-                let adjusted = if engagement < params.air_cut_threshold {
+                let mut adjusted = if engagement < params.air_cut_threshold {
                     ceiling
                 } else {
                     let factor = rctf(engagement);
                     (params.nominal_feed_rate * factor).max(floor).min(ceiling)
                 };
+
+                // WP22 (G-FEEDOPTPLUNGE) — the GEOMETRIC plunge cap.
+                //
+                // It runs AFTER both arms and after the floor and the
+                // ceiling, because the plunge rate is a safety limit and
+                // the floor is a preference. The air arm is capped too: a
+                // descent through air still ends in material, which is the
+                // reason the modulator caps a zero-engagement descent.
+                //
+                // It is a FLOOR UNDER THE LIFT, not a set. A plunge already
+                // at or below the rate keeps the value the arms wrote. The
+                // first move carries no previous target, so it is never
+                // capped — the same answer as the modulator's `i > 0`.
+                if let (Some(prev), Some(cap)) = (prev_target, plunge_cap)
+                    && adjusted > cap
+                {
+                    let delta = [cx - prev.x, cy - prev.y, cz - prev.z];
+                    if crate::kinematic_utilization::classify_move(mv.move_type, delta)
+                        == crate::kinematic_utilization::MotionClass::Plunge
+                    {
+                        adjusted = cap;
+                    }
+                }
 
                 feed_rates.push(adjusted);
 
@@ -191,6 +246,7 @@ fn optimize_feed_rates_inner(
                 stock.stamp_tool_at(&lut, tool_radius, cx, cy, cz, StockCutDirection::FromTop);
             }
         }
+        prev_target = Some(mv.target);
     }
 
     // Second pass: smooth feed rate transitions
@@ -262,6 +318,10 @@ mod tests {
             min_feed_rate: 200.0,
             ramp_rate: 500.0, // mm/min per mm
             air_cut_threshold: 0.05,
+            // WP22: these unit arms measure the engagement arms and the
+            // smoothing, not the plunge cap. `None` keeps every one of
+            // them byte-identical to its pre-WP22 answer.
+            plunge_rate_mm_min: None,
         }
     }
 

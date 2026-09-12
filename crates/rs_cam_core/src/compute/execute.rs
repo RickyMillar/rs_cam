@@ -3981,6 +3981,12 @@ pub fn apply_dressups(
     annotated: AnnotatedToolpath,
     cfg: &DressupConfig,
     nominal_feed_rate: f64,
+    // WP22 (G-FEEDOPTPLUNGE): the OPERATION's own plunge rate (mm/min).
+    // The feed-optimisation pass caps a geometric plunge at it. `None`
+    // names a caller with no operation in scope, and the cap does not
+    // apply. This is NOT the `plunge_rate` local below, which is a
+    // heuristic for the entry and link dressups.
+    plunge_rate_mm_min: Option<f64>,
     tool_diameter: f64,
     safe_z: f64,
     stock_top: f64,
@@ -4387,6 +4393,10 @@ pub fn apply_dressups(
             min_feed_rate: (nominal * 0.5).min(max_rate),
             ramp_rate,
             air_cut_threshold: 0.05,
+            // WP22 (G-FEEDOPTPLUNGE): the operation's own plunge rate. The
+            // pass caps a geometric plunge at it, so a vertical descent no
+            // longer leaves this pass at the CUTTING feed.
+            plunge_rate_mm_min,
         };
         current = apply_dressup_traced(
             current,
@@ -6077,6 +6087,8 @@ mod tests {
             AnnotatedToolpath::new(tp),
             &cfg,
             configured_feed,
+            // WP22: no operation in scope, so the plunge cap does not apply.
+            None,
             tool_def.diameter(),
             30.0,
             25.0,
@@ -6118,6 +6130,8 @@ mod tests {
             AnnotatedToolpath::new(tp),
             &cfg,
             1000.0,
+            // WP22: no operation in scope, so the plunge cap does not apply.
+            None,
             6.35,
             30.0,
             0.0,

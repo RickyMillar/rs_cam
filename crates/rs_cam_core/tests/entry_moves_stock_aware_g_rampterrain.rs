@@ -115,6 +115,8 @@ fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle) -> Dressed {
         AnnotatedToolpath::new(tp),
         &cfg,
         FEED,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         cutter.diameter(),
         SAFE_Z,
         RIDGE_HEIGHT_MM,
@@ -232,6 +234,8 @@ fn unclipped_ramp_keeps_two_legs() {
         AnnotatedToolpath::new(tp),
         &cfg,
         FEED,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         cutter.diameter(),
         SAFE_Z,
         RIDGE_HEIGHT_MM,

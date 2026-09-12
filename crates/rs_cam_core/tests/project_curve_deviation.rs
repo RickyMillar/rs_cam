@@ -399,6 +399,8 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         AnnotatedToolpath::new(all_moves.clone()),
         &with_links,
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         1.0,
         10.0,
         0.0,
@@ -419,6 +421,8 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         AnnotatedToolpath::new(all_moves.clone()),
         &DressupConfig::default(),
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         1.0,
         10.0,
         0.0,
@@ -446,6 +450,8 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         AnnotatedToolpath::new(all_moves.clone()),
         &finish_defaults,
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         1.0,
         10.0,
         0.0,
@@ -469,6 +475,8 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         AnnotatedToolpath::new(all_moves.clone()),
         &ramp_only,
         1000.0,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         1.0,
         10.0,
         0.0,

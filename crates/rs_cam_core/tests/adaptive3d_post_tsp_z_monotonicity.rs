@@ -74,6 +74,8 @@ mod tests {
             AnnotatedToolpath::with_spans(raw, spans),
             &cfg,
             1000.0,
+            // WP22: no operation in scope, so the plunge cap does not apply.
+            None,
             6.0,
             safe_z,
             0.0,
@@ -120,6 +122,8 @@ mod tests {
             AnnotatedToolpath::new(raw),
             &cfg,
             1000.0,
+            // WP22: no operation in scope, so the plunge cap does not apply.
+            None,
             6.0,
             safe_z,
             0.0,

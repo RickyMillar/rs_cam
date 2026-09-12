@@ -271,6 +271,8 @@ fn run(
         input.clone(),
         &pre_cfg,
         feed,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         6.0,
         30.0,
         0.0,
@@ -289,6 +291,8 @@ fn run(
         input,
         cfg,
         feed,
+        // WP22: no operation in scope, so the plunge cap does not apply.
+        None,
         6.0,
         30.0,
         0.0,

@@ -738,6 +738,12 @@ pub fn execute_job(
                 annotated,
                 &context.dressups,
                 context.feed_rate,
+                // WP22 (G-FEEDOPTPLUNGE): the RAW operation's plunge rate.
+                // The feed-optimisation pass caps a move the shared
+                // classifier calls `Plunge` at it. This is the one
+                // production door, so the cap reaches every generated
+                // toolpath and no test fixture.
+                Some(context.plunge_rate),
                 inputs.tool_def.diameter(),
                 inputs.heights.retract_z,
                 // Stock top in the simulator's frame (= the bbox passed to

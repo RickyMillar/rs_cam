@@ -363,11 +363,18 @@ fn the_captured_inputs_carry_the_real_stock_bounds() {
 ///
 /// The arm asserts NO direction, and the reason is the pass's design.
 /// `feedopt::optimize_feed_rates_inner` writes `nominal * factor` onto every
-/// cutting move (`crates/rs_cam_core/src/feedopt.rs:164`). It reads no
-/// move's own feed. A plunge descent at the plunge rate that reads full
-/// engagement therefore comes back at the commanded feed, and it LEAVES this
-/// population. The dial ON count is the smaller one on this fixture.
-/// Measured 2026-09-12: ON 72, OFF 114.
+/// cutting move. It reads no move's own feed. A move at partial engagement
+/// therefore leaves the pass away from the commanded feed, and it ENTERS
+/// this population.
+///
+/// Since WP22 (G-FEEDOPTPLUNGE) the pass caps a move the shared classifier
+/// calls `Plunge` at the operation's own plunge rate. A capped descent sits
+/// at the plunge rate, which is not the commanded feed, so it also enters
+/// the population. Before WP22 the pass lifted that same descent TO the
+/// commanded feed and it left the population instead. The two populations
+/// therefore differ in composition as well as in size, which is why this
+/// arm grades the counts as unequal and names no direction. The pre-WP22
+/// pair of counts is retired; the current pair is not re-stated here.
 #[test]
 fn the_feed_optimisation_dial_moves_the_off_commanded_feed_count() {
     let mut on = pocket_session(true);
