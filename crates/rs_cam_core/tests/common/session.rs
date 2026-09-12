@@ -53,7 +53,7 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 
 // ── Models ──────────────────────────────────────────────────────────────
 
@@ -187,8 +187,13 @@ pub fn pinned_heights(top_z: f64, bottom_z: f64) -> HeightsConfig {
 // ── Sessions ────────────────────────────────────────────────────────────
 
 /// One stock, one tool, one model, one toolpath — the shape nearly every
-/// end-to-end sentry wants, wired through the REAL production entry points
-/// (`ProjectSession::add_*`), not by poking fields.
+/// end-to-end sentry wants, wired through [`ProjectSessionBuilder`]'s
+/// allocating methods, not by poking fields.
+///
+/// Those methods allocate each id exactly as the session's own setters do,
+/// and `add_model` fits the stock when `StockConfig::auto_from_model` is
+/// set. The stock is written FIRST, so the fit reads the stock this fixture
+/// was given.
 ///
 /// The toolpath is added but NOT generated; call [`generate`] when the test is
 /// ready to pay for it.
@@ -212,23 +217,16 @@ pub fn single_op_session_with(
     op: OperationConfig,
     tweak: impl FnOnce(&mut ToolpathConfig),
 ) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    let _ = session.set_stock_config(stock);
-    let tool_idx = session
-        .add_tool(tool)
-        .created
-        .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session
-        .add_model(model)
-        .created
-        .expect("add_model reports the new model id");
+    let mut builder = ProjectSessionBuilder::new().stock(stock);
+    let tool_idx = builder.add_tool(tool);
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(model);
     let mut cfg = toolpath_config(name, op, tool_id, model_id);
     tweak(&mut cfg);
-    let _ = session
+    let _ = builder
         .add_toolpath(0, cfg)
         .expect("add toolpath to a fresh session");
-    session
+    builder.build()
 }
 
 /// Generate one toolpath through the production entry point the GUI worker
