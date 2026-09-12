@@ -32,6 +32,33 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Architecture consolidation — 2026-09-12 (reviews and follow-ons)
+
+Two independent Opus reviews ran after the sixteen packages landed
+(`planning/arch_consolidation_2026-09-09/REVIEW_COMPLETENESS_2026-09-12.md`: complete with
+residuals, no blocker, five majors; `REVIEW_TECH_DEBT_2026-09-12.md`: ten highs). The
+findings became WP14-WP21 in `STATUS.md`; six landed the same day, red-first:
+
+- WP16 `SetSetupName` reached from the GUI; WP20 prose pass (row count, twenty stale
+  `Skip` reasons, plan §5 residuals, doubled "Save failed"); WP18 feed-optimisation refusal
+  coverage restored and a vacuous WP12 sentry arm made to fire.
+- WP17: a save or a post-config edit no longer clears the session simulation unless a
+  motion-reaching post field changed; rest operations generate after a save again.
+- WP21: the feed-optimisation pass no longer panics when half the nominal feed exceeds the
+  dressup ceiling (a latent production panic since 2026-05; first exercised by the session
+  generate door on 2026-09-11).
+- WP14a: `RecommendClearingStrategy` and `PreviewTierMap` run as no-adopt `Job` rows on
+  the compute lane instead of blocking the frame loop.
+- WP15a: 24 rows so every public `ProjectSession` setter has one (registry 71 rows); the 48
+  remaining direct setter calls in viz and CLI go through `apply`; a source-scan sentry
+  keeps it so.
+
+Open: WP14b (`OptimizeToolpath` as a `Job` over a cloned session; plan §24), WP19 (nineteen
+viz sites still discard `Effects.stale`; merge the two stamp helpers), WP15b (setters to
+`pub(crate)`, 656 test sites), and the ledgered G-FEEDOPTPLUNGE (the pass can overwrite a
+plunge to twice its plunge rate; needs an operator decision). Final suite counts: viz 668,
+CLI 32, MCP 29, core `session::` 156. The full heavy gate was not run (operator ruling).
+
 ## Architecture consolidation — 2026-09-11/12 (one command surface: implementation COMPLETE)
 
 All sixteen work packages of `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md`
