@@ -1220,6 +1220,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 {
                     crate::state::stale::stamp_stale(state, &effects.stale);
                     state.gui.mark_edited();
+                    // WP19 (plan §28). The gate stays on `revision`: the
+                    // fold that changed nothing reports no revision AND
+                    // clears nothing, so the two agree.
+                    if effects.simulation_cleared {
+                        state.panel_side_effects.invalidate_simulation = true;
+                    }
                 }
             }
         }
@@ -4252,6 +4258,12 @@ pub(crate) fn write_entry_config_to_session(
     if !effects.stale.is_empty() {
         crate::state::stale::stamp_stale(state, &effects.stale);
         state.gui.mark_edited();
+        // WP19 (plan §28): a parameter edit clears the viewport's
+        // simulation, as every other edit does. The raise stays INSIDE
+        // this guard, so an idle frame raises nothing.
+        if effects.simulation_cleared {
+            state.panel_side_effects.invalidate_simulation = true;
+        }
     }
     Some(effects)
 }

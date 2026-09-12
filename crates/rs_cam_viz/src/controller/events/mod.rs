@@ -29,10 +29,27 @@ impl<B: ComputeBackend> AppController<B> {
     /// reaches them in their own words. The method answers whether the
     /// command was applied, so a caller can dirty the project once for a
     /// group of them.
+    ///
+    /// The door mirrors BOTH halves of the answer (WP19, plan §28).
+    /// `Effects::stale` reaches the toolpath cards.
+    /// `Effects::simulation_cleared` reaches the viewport, because the
+    /// session and the viewport hold ONE simulation (WP11b, N12 item
+    /// 10). The operator ruling is one rule for every row: a session
+    /// that drops its simulation leaves no viewport showing one.
+    ///
+    /// A caller that calls `invalidate_simulation` itself KEEPS that
+    /// call. The flag is `before && !after` over the SESSION's
+    /// simulation, so it is false when the session held none — and the
+    /// view can hold playback state, collision positions and a pending
+    /// upload the session never mirrored. `invalidate_simulation` is
+    /// idempotent, so the two together cost one pass.
     fn apply_controller_command(&mut self, command: Command, subject: &str) -> bool {
         match self.state.session.apply(command) {
             Ok(effects) => {
                 crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+                if effects.simulation_cleared {
+                    self.invalidate_simulation();
+                }
                 true
             }
             Err(error) => {
@@ -56,10 +73,18 @@ impl<B: ComputeBackend> AppController<B> {
     /// The answer carries the command's own [`Effects`], so a caller
     /// that read the setter's return — the new index in
     /// [`Effects::created`], for example — reads it here.
+    ///
+    /// It mirrors `Effects::simulation_cleared` too, on the rule and
+    /// for the reasons [`Self::apply_controller_command`] states
+    /// (WP19, plan §28). A caller that also calls
+    /// `invalidate_simulation` keeps that call.
     fn apply_quietly(&mut self, command: Command) -> Option<Effects> {
         match self.state.session.apply(command) {
             Ok(effects) => {
                 crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+                if effects.simulation_cleared {
+                    self.invalidate_simulation();
+                }
                 Some(effects)
             }
             Err(_) => None,
@@ -179,8 +204,16 @@ impl<B: ComputeBackend> AppController<B> {
                     let _ = self.apply_quietly(command);
                     // G-FRESHSTATE: the flip changes what the job cuts and
                     // what every downstream rest op starts from, so the
-                    // project is dirty and the simulation is stale. It
-                    // used to record neither.
+                    // project is dirty. It used to record neither that nor
+                    // the staleness.
+                    //
+                    // WP19 (plan §28): the door CLEARS the viewport's
+                    // simulation here, it no longer only stales it. The
+                    // core row drops the session's simulation, and
+                    // `ProjectSession::start` then refuses every
+                    // `FromRemainingStock` operation while a banner still
+                    // shows the operator stock that is not there. One rule
+                    // for every row, no per-row exception.
                     self.state.gui.mark_edited();
                 }
             }
@@ -1087,6 +1120,12 @@ impl<B: ComputeBackend> AppController<B> {
             .apply(command)
             .map_err(|error| format!("toolpath {}: {error}", toolpath_id.0))?;
         crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+        // WP19 (plan §28): N13 made this funnel drop the core result, so
+        // the row clears the session's simulation on the frames the
+        // signature moves. The viewport holds the same one.
+        if effects.simulation_cleared {
+            self.invalidate_simulation();
+        }
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());

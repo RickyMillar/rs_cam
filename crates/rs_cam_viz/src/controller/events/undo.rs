@@ -189,12 +189,19 @@ impl<B: ComputeBackend> AppController<B> {
             ));
             if let Ok(effects) = restored {
                 crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+                if effects.simulation_cleared {
+                    self.invalidate_simulation();
+                }
             }
         }
-        // No `invalidate_simulation` here, deliberately: a hand parameter
-        // edit does not clear the simulation either, it stales it — and the
-        // rule this task implements is that an undo leaves the project where
-        // the same edit made by hand would. The `mark_edited` at the end of
-        // the caller is what does the staling.
+        // WP19 (plan §28) replaced the rule this arm used to follow. It
+        // used to clear nothing, because a hand parameter edit only staled
+        // the simulation under the F2.5 banner. A hand parameter edit now
+        // CLEARS it, so the undo still leaves the project where the same
+        // edit made by hand would — the property F2.5 §3 asks for, over
+        // the one rule the operator ruled for every row. The core row
+        // drops the session's simulation for a parameter edit exactly as
+        // it does for a stock edit, and the viewport holds the same one.
+        // The `mark_edited` at the end of the caller still runs.
     }
 }

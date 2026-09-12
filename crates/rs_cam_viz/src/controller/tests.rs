@@ -5023,11 +5023,12 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             "{name}: undo must move the edit counter, or the simulation goes \
              on calling itself fresh"
         );
-        // Two treatments, one property. Three arms CLEAR the simulation
-        // (`invalidate_simulation`) and two only stale it, which is what a
-        // hand edit of the same thing does — a parameter edit stales, a stock
-        // or machine change clears. Either way the operator must not be shown
-        // the old run as current evidence, and that is what is asserted:
+        // One property, whatever the treatment. Every arm leaves the
+        // project where the same edit made by hand would. WP19 (plan §28)
+        // made that one rule: a session that drops its simulation leaves
+        // no viewport showing one, for a parameter edit as for a stock or
+        // machine change. Either way the operator must not be shown the
+        // old run as current evidence, and that is what is asserted:
         // cleared or stale, never present-and-fresh.
         let sim = &controller.state.simulation;
         assert!(
@@ -5822,4 +5823,38 @@ fn an_undone_stock_change_stales_every_toolpath_wp19() {
         );
         assert!(controller.state.session.get_result(index).is_none());
     }
+}
+
+/// b1 — a toolpath edit clears the view's simulation (plan §28).
+///
+/// The operator ruled ONE rule for every row: a session that drops its
+/// simulation leaves no viewport showing one. A toolpath-scoped edit
+/// used to STALE the view's instead, under the F2.5 banner, while
+/// `ProjectSession::start` was already refusing every
+/// `FromRemainingStock` operation because the session held none. A
+/// banner does not say that; an empty viewport does.
+///
+/// RED: this arm lands in the same commit as its fix, so the red is
+/// read by running it against the commit BEFORE. There the first
+/// assertion passes — `set_toolpath_enabled` writes
+/// `session.simulation = None` — and the last two fail, because
+/// `apply_quietly` cleared nothing in the view.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_toolpath_edit_clears_the_view_simulation_wp19() {
+    let mut controller = controller_holding_a_simulation();
+    let id = controller.state.session.toolpath_configs()[0].id;
+
+    controller.handle_internal_event(AppEvent::ToggleToolpathEnabled(id));
+
+    assert!(
+        controller.state.session.simulation_result().is_none(),
+        "the control: the toggle drops the session's simulation"
+    );
+    assert!(
+        controller.state.simulation.results.is_none(),
+        "and the viewport must not go on drawing the run of a job that \
+         no longer exists"
+    );
+    assert!(controller.state.simulation.last_run.is_none());
 }
