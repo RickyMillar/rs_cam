@@ -1655,3 +1655,26 @@ eight files, CLI 9 in three); 656 test-crate sites would break if the setters we
    the session half and the rest is a free function. A boundary that both
    names a missing tool and has no mesh now reports the tool refusal where
    it used to report the geometry one. Both are refusals at the same call.
+
+---
+
+## §27 Operator rulings on the close-out (2026-09-13)
+
+The operator answered four questions at the programme close.
+
+1. **Scope.** WP19, WP14b and WP15b all run now, while the operator tests
+   the GUI under MCP. Order: WP19, then WP22, then WP14b, then WP15b.
+   WP14b runs after WP15a landed, per §24 ruling 3, and WP15b after WP14b
+   so the optimizer's setter path moves once.
+2. **Core dev loop.** One capped run of `cargo test -p rs_cam_core -q`
+   (`CARGO_BUILD_JOBS=2`, `--test-threads=2`, `nice -n 10`) closes the
+   programme AFTER the open packages land. The no-large-gates ruling of
+   2026-09-11 stays for everything else; the heavy gate does not run.
+3. **G-FEEDOPTPLUNGE becomes WP22.** The feed-optimisation pass caps every
+   move `kinematic_utilization::classify_move` calls `Plunge` at the
+   operation's own `plunge_rate`, the same geometric guard
+   `adaptive_feed_modulate` carries (P3, 2026-09-07). No threshold, factor or
+   feeds constant moves. Sentry red-first, named after the finding.
+4. **Cargo while the GUI runs.** Verifiers run debug builds and tests and the
+   clippy/fmt gate only. Nothing touches `target/release`; the running GUI
+   and its binary stay as built at `351e2880`.
