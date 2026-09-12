@@ -13,8 +13,9 @@
 //!
 //! 1. Every `CommandId` whose `gui` reach is `Reached` is CONSTRUCTED in
 //!    the view's own sources, and every `gui: Skip` row is not.
-//! 2. Every `UiCommandId` `Skip` carries a reason, every view command
-//!    declares `cli: Skip`, and no view row is orphaned.
+//! 2. Every `UiCommandId` whose `gui` reach is `Reached` is CONSTRUCTED in
+//!    a production view file, every `Skip` carries a reason, every view
+//!    command declares `cli: Skip`, and no view row is orphaned.
 //! 3. No view command handler writes `ProjectSession`, and the view read
 //!    door holds the session by shared reference.
 //!
@@ -188,6 +189,29 @@ fn constructs(text: &str, kind: CommandKind, id: CommandId) -> bool {
     })
 }
 
+/// Does `text` construct the VIEW registry row `id`?
+///
+/// The needle keeps the `Ui(` of `AppEvent::Ui(...)`, which is the one
+/// shape a view command travels in. The bare spelling `UiCommand::<Id>(`
+/// also matches a MATCH ARM, and the two dispatch files —
+/// `controller/events/mod.rs` and `app/input.rs` — stay inside the
+/// GUI-only source set. With the bare needle every row that owns a
+/// handler reads as constructed, which is the vacuity this census exists
+/// to avoid. Do not drop the prefix.
+///
+/// A view READ needs no wrapper: it travels as a `UiQuery` into
+/// `RsCamApp::ui_query`, so a `UiQuery` row keeps the plain needle. No
+/// view read declares a GUI reach today, so that arm is a forward
+/// statement and not a measured one.
+fn view_constructs(text: &str, id: UiCommandId) -> bool {
+    let needle = match id.kind() {
+        CommandKind::UiCommand => format!("Ui(UiCommand::{id:?}("),
+        CommandKind::UiQuery => format!("UiQuery::{id:?}("),
+        other => panic!("{id:?} declares {other:?}, which belongs to the core registry"),
+    };
+    text.contains(&needle)
+}
+
 // ── P1 — a `gui` reach is a claim about a caller ──────────────────────
 
 /// This scan carries no exemption.
@@ -276,6 +300,69 @@ fn the_p1_locator_finds_a_known_construction() {
 }
 
 // ── P2 — the view registry's own columns ─────────────────────────────
+
+/// WP23 — a `gui: Reached` view row names a production constructor.
+///
+/// P1 asks this of the CORE rows the view constructs. Nothing asked it of
+/// the VIEW registry before WP23. The handler census below accepts a
+/// dispatch arm as proof, and a dispatch arm outlives the last caller, so
+/// a row could claim a GUI reach that no control made. Two rows sat that
+/// way — `SimJumpToOpEnd` and `CancelToolpathGeneration` — each with a
+/// row, a payload and a handler the GUI never reached.
+#[test]
+fn every_gui_reached_view_row_is_constructed_in_the_view() {
+    let text = gui_source_text();
+    let mut checked = 0_usize;
+    let mut missing = Vec::new();
+    for id in UiCommandId::ALL {
+        if !matches!(id.surfaces().gui, Reach::Reached) {
+            continue;
+        }
+        checked += 1;
+        if !view_constructs(&text, *id) {
+            missing.push(id.wire_name());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "these view rows claim the GUI reaches them, and no production \
+         view file constructs one: {missing:?}. Delete such a row; do not \
+         flip its gui column to Skip. A Skip keeps the handler arm, and \
+         the arm is what hid the row from the handler census."
+    );
+    assert!(
+        checked > 0,
+        "no view row claims a GUI reach, so this scan asserts nothing"
+    );
+}
+
+/// The view locator finds the needles it is built around.
+///
+/// The census above passes on an empty result set if the needle stops
+/// matching. This pins two known constructions and one known absence. The
+/// absence is the load-bearing one: `SetUiView` carries a dispatch match
+/// arm and no GUI caller, so a needle that matched an arm would find it.
+#[test]
+fn the_p2_view_locator_finds_a_known_construction() {
+    let text = gui_source_text();
+    assert!(
+        view_constructs(&text, UiCommandId::SimJumpToOpStart),
+        "the simulation operation list constructs \
+         UiCommand::SimJumpToOpStart; if the locator no longer finds it, \
+         the whole P2 census idiom has drifted"
+    );
+    assert!(
+        view_constructs(&text, UiCommandId::CancelCompute),
+        "the viewport overlay constructs UiCommand::CancelCompute"
+    );
+    assert!(
+        !view_constructs(&text, UiCommandId::SetUiView),
+        "set_ui_view is reached by the wire alone, so the GUI-only source \
+         set must NOT construct it. A hit here means the needle matched a \
+         dispatch match arm, or the MCP exclusion list has drifted, and \
+         the census above is vacuous either way"
+    );
+}
 
 #[test]
 fn every_view_skip_names_its_reason() {
