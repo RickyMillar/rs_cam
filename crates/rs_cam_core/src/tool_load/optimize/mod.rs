@@ -127,9 +127,22 @@ pub enum SearchStage {
 /// `apply_toolpath_param_snapshot_narrow`, regenerates the toolpath, and runs
 /// a fresh project sim. An RAII baseline-restore guard re-applies the
 /// original params on every exit path (Ok, NoSafeImprovement, Skipped,
-/// cancelled, panicked candidate), so callers observe the session as
-/// unchanged after this returns. Apply remains a separate user-initiated
-/// mutation; the optimizer never persists candidate state.
+/// cancelled, panicked candidate). Apply remains a separate
+/// user-initiated mutation; the optimizer never persists candidate state.
+///
+/// **The guard restores the PARAMETERS and only the parameters.** This
+/// note used to end "so callers observe the session as unchanged after
+/// this returns", which is false: `apply_toolpath_param_snapshot_narrow`
+/// ends with `drop_result(index)` and `session.simulation = None`, so the
+/// toolpath's cached result is gone, its generation-input revision has
+/// moved, and the project simulation slot is empty. Measured by
+/// `crates/rs_cam_core/tests/optimize_toolpath_is_a_job_wp14b.rs`.
+///
+/// Since WP14b no production caller hands this function a LIVE session.
+/// The per-toolpath route takes the `optimize_toolpath` `Job` row, whose
+/// handle owns a clone; the project rollup passes `session.clone()` to
+/// its lane. The residue therefore lands on a copy, and the session on
+/// screen keeps all three.
 ///
 /// **Cancellation.** `cancel` is polled between candidates and between
 /// search stages. Mid-sim cancellation works through the simulator's
@@ -782,10 +795,14 @@ fn run_grid_strategy(
 // `optimize_toolpath` for each, producing a `ProjectOptimizeReport`
 // for the U3 rollup view. The walk is sequential — `optimize_toolpath`
 // holds `&mut session` and runs full project sims internally; rayon
-// would need each worker to clone the whole session, which we
-// deliberately avoid (`ToolpathConfig` is not `Clone`, and a Cloneable
-// session would require a wide-touch refactor we don't want to do for
-// this).
+// would need each worker to clone the whole session.
+//
+// WP14b (2026-09-13) made `ProjectSession` `Clone`, so that is now
+// possible rather than blocked. It is still not done here: a clone per
+// worker copies the simulation display mesh per worker, and the walk's
+// own stock-state hygiene below reads one session in order. The note
+// used to say `ToolpathConfig` is not `Clone` and a cloneable session
+// would need a wide-touch refactor; both halves are stale.
 //
 // **Stock-state hygiene between toolpaths.** `optimize_toolpath`'s
 // `BaselineRestoreGuard` restores the toolpath's params on drop via

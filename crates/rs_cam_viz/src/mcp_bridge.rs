@@ -1041,6 +1041,13 @@ pub enum McpJobRender {
         /// The path was validated at submit time.
         svg_path: Option<String>,
     },
+    /// The `optimize_toolpath` reply (WP14b).
+    OptimizeOutcome {
+        /// The toolpath index the caller named. Held from submit time so
+        /// a refusal names the same index the caller used, whatever the
+        /// operator did to the project meanwhile.
+        index: usize,
+    },
 }
 
 /// Render one `Job` answer as the wire reply its row publishes.
@@ -1071,16 +1078,41 @@ pub fn render_job_answer(
             Ok(JobAnswer::PreviewTierMap(preview)),
         ) => render_tier_map_preview(preview, *setup_index, *model_id, svg_path.as_deref()),
         (McpJobRender::TierMapPreview { .. }, Err(error)) => preview_error(&error.to_string()),
+        (McpJobRender::OptimizeOutcome { index }, Ok(JobAnswer::OptimizeToolpath(outcome))) => {
+            render_optimize_outcome(*index, outcome)
+        }
+        (McpJobRender::OptimizeOutcome { .. }, Err(error)) => {
+            json_str(serde_json::json!({ "error": error.to_string() }))
+        }
         // The lane answers the row it was handed, so a render context and
         // an answer that name different rows cannot meet here. The arm
         // REPORTS the mismatch rather than picking one of the two.
         (McpJobRender::StrategyRecommendation { .. }, Ok(other))
-        | (McpJobRender::TierMapPreview { .. }, Ok(other)) => json_str(serde_json::json!({
+        | (McpJobRender::TierMapPreview { .. }, Ok(other))
+        | (McpJobRender::OptimizeOutcome { .. }, Ok(other)) => json_str(serde_json::json!({
             "error": format!(
                 "the reply context and the answer name different rows; the answer is the \
                  {} row's",
                 other.id().wire_name()
             ),
+        })),
+    }
+}
+
+/// The `optimize_toolpath` reply.
+///
+/// The body is the serialized [`OptimizeOutcome`], exactly as the
+/// synchronous arm published it before WP14b. `index` names the toolpath
+/// on the serialization refusal alone, where the outcome itself is not
+/// available to say which run failed.
+fn render_optimize_outcome(
+    index: usize,
+    outcome: &rs_cam_core::tool_load::optimize::OptimizeOutcome,
+) -> String {
+    match serde_json::to_value(outcome) {
+        Ok(v) => json_str(v),
+        Err(e) => json_str(serde_json::json!({
+            "error": format!("Failed to serialize optimize outcome for toolpath {index}: {e}")
         })),
     }
 }

@@ -95,7 +95,9 @@ use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use common::make_endmill_6mm;
-use common::session::{generate, polygon_model, single_op_session_with, square_polygon, stock_under};
+use common::session::{
+    generate, polygon_model, single_op_session_with, square_polygon, stock_under,
+};
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::simulate::SimulationResult;

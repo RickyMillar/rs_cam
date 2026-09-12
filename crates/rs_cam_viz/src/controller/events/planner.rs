@@ -14,12 +14,15 @@
 //! Open / Preview / Apply / Close also live here, because they are the same
 //! seam: the dialog edits a [`MultitoolPlanSpec`], the preview computes what
 //! that spec would claim, and Apply hands it to [`AppController::apply_multitool_plan`]
-//! above. The threading is copied verbatim from `open_optimize_project`: the
-//! session is `mem::replace`d into an Optimize-lane request, the main thread
-//! holds an empty placeholder behind `is_optimizing`, and the session comes
-//! back attached to the result. Cancel is that lane's own flag, which the tier
-//! walk polls once per grid row — so closing the dialog mid-walk actually
-//! stops it rather than merely hiding it.
+//! above.
+//!
+//! WP14b (§28 ruling 7): the preview submits the `preview_tier_map` `Job`
+//! row on the Job lane. Step (i) captures the ladder and the geometry on
+//! the frame loop, so the walk holds no session and the view keeps its
+//! own. It used to `mem::replace` the session into an Optimize-lane
+//! request and hold an empty placeholder behind `is_optimizing`. Cancel
+//! is now this submit's own flag rather than the lane's, because the Job
+//! lane is FIFO and shared with the MCP surface.
 
 use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::session::{MultitoolPlanOutcome, MultitoolPlanSpec};
@@ -149,15 +152,17 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// Submit a tier-map preview to the Optimize lane.
+    /// Submit a tier-map preview on the `Job` lane (WP14b).
     ///
-    /// The session moves into the request; the main thread renders a
-    /// placeholder until it returns. Identical in shape to
-    /// `open_optimize_project`, deliberately: two ways to lend the session out
-    /// would be two ways to lose it.
+    /// `ProjectSession::start` captures the ladder and the geometry here,
+    /// on the frame loop, so the walk holds no session and the view keeps
+    /// its own. A refusal — a ladder tool the project no longer carries,
+    /// or no mesh — therefore appears at SUBMIT time and lands on the
+    /// dialog's own `Failed` status, where it used to arrive through the
+    /// lane.
     pub(crate) fn request_multitool_preview(&mut self) {
         if self.state.is_optimizing {
-            tracing::warn!("Ignored PreviewMultitoolPlan — the Optimize lane is already busy");
+            tracing::warn!("Ignored PreviewMultitoolPlan — an Optimize run is already busy");
             return;
         }
         let Some(planner) = self.state.multitool_planner.as_mut() else {
@@ -173,13 +178,30 @@ impl<B: ComputeBackend> AppController<B> {
         planner.dirty_since = None;
         planner.apply_error = None;
 
-        let session = std::mem::replace(
-            &mut self.state.session,
-            rs_cam_core::session::ProjectSession::new_empty(),
+        // §22 ruling 3: a FRESH flag per submit. The veto arms it.
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started = self.state.session.start(
+            rs_cam_core::session::Job::PreviewTierMap(rs_cam_core::session::PreviewTierMapArgs {
+                spec: Box::new(spec),
+            }),
+            &cancel,
         );
+        let handle = match started {
+            Ok(handle) => handle,
+            Err(error) => {
+                if let Some(planner) = self.state.multitool_planner.as_mut() {
+                    planner.requested_key = None;
+                    planner.status = MultitoolPreviewStatus::Failed(error.to_string());
+                }
+                return;
+            }
+        };
         self.state.is_optimizing = true;
-        self.compute
-            .submit_optimize(crate::compute::OptimizeRequest::MultitoolPreview { session, spec });
+        self.submit_gui_job(
+            handle,
+            cancel,
+            crate::controller::GuiJobTarget::MultitoolPreview,
+        );
     }
 
     /// Emit the previewed ladder.
@@ -244,10 +266,12 @@ impl<B: ComputeBackend> AppController<B> {
             .as_ref()
             .is_some_and(MultitoolPlannerState::is_loading);
         if loading && self.state.is_optimizing {
-            // The walk polls this once per grid row; the result still lands
-            // (carrying the session), and the drain handler restores it.
-            self.compute
-                .cancel_lane(crate::compute::ComputeLane::Optimize);
+            // The walk polls this submit's OWN flag once per grid row.
+            // Not the lane's: the Job lane is FIFO and shared, so a lane
+            // cancel would also kill an MCP caller's job queued behind
+            // this one. The answer still lands, and the drain is where
+            // `is_optimizing` flips back to false.
+            self.cancel_gui_optimize_jobs();
         }
         if let Some(planner) = self.state.multitool_planner.as_mut() {
             planner.open = false;

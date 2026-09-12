@@ -8,7 +8,7 @@ use rs_cam_core::toolpath::Toolpath;
 
 use super::*;
 use crate::compute::{
-    CollisionRequest, ComputeMessage, ComputeRequest, LaneState, OptimizeRequest,
+    CollisionRequest, ComputeMessage, ComputeRequest, JobRequest, LaneState, OptimizeRequest,
     SimulationRequest, SimulationResult, ToolpathSubmitOutcome,
 };
 use crate::state::job::{SetupId, ToolConfig, ToolId, ToolType};
@@ -37,11 +37,17 @@ struct ScriptedBackend {
     /// under test makes the same decision the real lane makes.
     active_toolpath_id: Option<ToolpathId>,
     submitted: Vec<ToolpathId>,
-    /// Optimize-lane submissions, kept WHOLE rather than counted. The Phase U
-    /// tier preview rides this lane and carries the spec the dialog built, so
-    /// a test can witness what was actually asked for instead of only that
-    /// something was.
+    /// Optimize-lane submissions, kept WHOLE rather than counted. Only the
+    /// project rollup rides this lane since WP14b.
     optimize_requests: Vec<OptimizeRequest>,
+    /// `Job`-lane submissions, kept WHOLE for the same reason. The Phase U
+    /// tier preview and the per-toolpath Optimize run both ride this lane
+    /// since WP14b, and each handle carries what was actually asked for, so
+    /// a test can witness the request rather than only that one happened.
+    ///
+    /// `ComputeBackend::submit_job` has an empty default body, so a backend
+    /// that does not override it records nothing.
+    job_requests: Vec<JobRequest>,
 }
 
 impl ScriptedBackend {
@@ -56,6 +62,7 @@ impl ScriptedBackend {
             active_toolpath_id: None,
             submitted: Vec::new(),
             optimize_requests: Vec::new(),
+            job_requests: Vec::new(),
         }
     }
 }
@@ -74,6 +81,9 @@ impl ComputeBackend for ScriptedBackend {
     fn submit_collision(&mut self, _request: CollisionRequest) {}
     fn submit_optimize(&mut self, request: OptimizeRequest) {
         self.optimize_requests.push(request);
+    }
+    fn submit_job(&mut self, request: JobRequest) {
+        self.job_requests.push(request);
     }
 
     fn cancel_lane(&mut self, lane: ComputeLane) {
@@ -3931,7 +3941,7 @@ fn the_dialogs_dials_reach_the_submitted_spec() {
 
     assert!(
         controller.state.is_optimizing,
-        "the session is lent to the worker for the walk"
+        "one Optimize run at a time — the walk holds the policy flag"
     );
     assert!(
         controller
@@ -3942,16 +3952,18 @@ fn the_dialogs_dials_reach_the_submitted_spec() {
     );
     let request = controller
         .compute
-        .optimize_requests
+        .job_requests
         .first()
         .expect("a preview was submitted");
-    let OptimizeRequest::MultitoolPreview { spec, session } = request else {
-        panic!("the planner must submit a MultitoolPreview, not an Optimize run");
+    let rs_cam_core::session::JobHandle::PreviewTierMap(handle) = &request.handle else {
+        panic!("the planner must submit the preview_tier_map Job row");
     };
+    let spec = handle.spec();
     assert_eq!(
-        session.toolpath_configs().len(),
+        controller.state.session.toolpath_configs().len(),
         before_ops,
-        "the session is LENT whole — the worker reads it and hands it back"
+        "WP14b: the session is NOT lent out — the handle carries the walk's \
+         own inputs and the view keeps its project"
     );
     assert_eq!(spec.tool_ids.len(), 2);
     assert!((spec.cell_mm - 0.6).abs() < 1e-12);
@@ -4054,7 +4066,7 @@ fn a_one_tool_ladder_never_reaches_the_worker() {
 
     controller.handle_internal_event(crate::ui::AppEvent::PreviewMultitoolPlan);
 
-    assert!(controller.compute.optimize_requests.is_empty());
+    assert!(controller.compute.job_requests.is_empty());
     assert!(!controller.state.is_optimizing);
 }
 

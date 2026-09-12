@@ -30,7 +30,7 @@ pub use command::{
     GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
     ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
     InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle,
-    MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
+    MoveToolpathToSetupArgs, OptimizeToolpathArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
     RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveFixtureArgs, RemoveKeepOutArgs,
     RemoveModelArgs, RemoveSetupArgs, RemoveToolArgs, RemoveToolpathArgs, ReorderToolpathArgs,
     ReplaceFixtureArgs, ReplaceKeepOutArgs, ReplaceSetupsAndToolpathsArgs, ReplaceToolArgs,
@@ -46,8 +46,9 @@ pub use command::{
     ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{
-    GenContext, GenObserver, GenerateToolpathHandle, MutationKind, RecommendClearingStrategyHandle,
-    ResolvedGenInputs, StaleSet, compute_stale_set, execute_generation, execute_job,
+    GenContext, GenObserver, GenerateToolpathHandle, MutationKind, OptimizeToolpathHandle,
+    RecommendClearingStrategyHandle, ResolvedGenInputs, StaleSet, compute_stale_set,
+    execute_generation, execute_job, execute_optimize_toolpath,
     execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
@@ -161,6 +162,21 @@ pub enum SessionError {
     /// owns every "an empty result is legitimate here" exemption — see that
     /// module's doc.
     GeneratedEmpty(String),
+    /// WP14b — the job needs a baseline cut trace and the session holds
+    /// none.
+    ///
+    /// Distinct from [`Self::MissingGeometry`] on purpose: the geometry
+    /// is present, and what is absent is a MEASUREMENT of it. The
+    /// operator's repair is a simulation run, not an import.
+    ///
+    /// The payload names what needs the trace, so the sentence reads as
+    /// one instruction. Raised by
+    /// [`ProjectSession::start`] for the `optimize_toolpath` row, which
+    /// reads the trace off the session (§28 ruling 5). A session
+    /// mutation clears that slot, so an optimize issued after an edit
+    /// refuses here rather than scoring against a measurement the edit
+    /// already invalidated.
+    SimulationRequired(String),
     /// WP3 — a completion answers a superseded parameter set.
     ///
     /// A generation runs off the frame loop. The lane stamps the
@@ -209,6 +225,9 @@ impl std::fmt::Display for SessionError {
             // "Generated empty: " prefix would only push the toolpath name
             // further from the start of a truncated GUI badge.
             Self::GeneratedEmpty(msg) => write!(f, "{msg}"),
+            Self::SimulationRequired(what) => {
+                write!(f, "Run a simulation first — {what}")
+            }
             Self::StaleCompletion {
                 index,
                 submitted,
@@ -1389,6 +1408,28 @@ pub struct ProjectDiagnostics {
 ///
 /// Use [`ProjectSession::load`] to load from a TOML project file, or
 /// [`ProjectSession::from_project_file`] to construct from a parsed file.
+///
+/// # The clone (WP14b, §24 ruling 2)
+///
+/// The session derives `Clone` so the `optimize_toolpath` job can own a
+/// private copy. That row is the one job that MUTATES what it scores: it
+/// writes the toolpath's parameters, regenerates it and re-simulates the
+/// project once per candidate. It cannot reduce its inputs to a capture
+/// list the way the two read rows do, so it copies the session instead of
+/// borrowing the caller's.
+///
+/// **A clone is cheaper than the field list suggests.** Every geometry
+/// field is behind an `Arc` and costs a refcount: the model meshes and
+/// polygons ([`LoadedModel`]), the annotated toolpath of each cached
+/// result ([`ToolpathComputeResult`]), and the simulation's checkpoints,
+/// cut trace and prior stocks
+/// ([`SimulationResult`](crate::compute::simulate::SimulationResult)).
+/// The copied weight is the simulation's display mesh and its two
+/// deviation vectors, which scale with the dexel column population.
+///
+/// The type derives no `Debug`: `SimulationResult` publishes none, by
+/// design.
+#[derive(Clone)]
 pub struct ProjectSession {
     // Project metadata
     pub(crate) name: String,

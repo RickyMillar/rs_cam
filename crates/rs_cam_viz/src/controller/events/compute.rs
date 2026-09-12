@@ -1049,23 +1049,58 @@ impl<B: ComputeBackend> AppController<B> {
             .submit_job(crate::compute::JobRequest { id, handle, cancel });
     }
 
+    /// Submit one core `Job` row's work step the GUI started for ITSELF
+    /// (WP14b).
+    ///
+    /// The id comes from the same counter `submit_mcp_job` draws from, so
+    /// the two maps never key one submit twice. The flag is this submit's
+    /// own: a close arm arms it, and the lane's shared FIFO flag is left
+    /// alone so an MCP caller's job behind this one survives.
+    pub(crate) fn submit_gui_job(
+        &mut self,
+        handle: rs_cam_core::session::JobHandle,
+        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        target: crate::controller::GuiJobTarget,
+    ) {
+        let id = crate::compute::JobRequestId(self.next_job_request_id);
+        self.next_job_request_id = self.next_job_request_id.saturating_add(1);
+        self.gui_jobs.insert(
+            id,
+            crate::controller::PendingGuiJob {
+                target,
+                cancel: std::sync::Arc::clone(&cancel),
+            },
+        );
+        self.compute
+            .submit_job(crate::compute::JobRequest { id, handle, cancel });
+    }
+
     /// Deliver one finished `Job` answer to whoever asked for it.
     ///
-    /// There is no adopt step. Both rows that ride this lane are READS, so
-    /// the answer goes to the requester and the session is untouched.
+    /// There is no adopt step. The two read rows touch nothing, and
+    /// `optimize_toolpath` ran on its handle's own cloned session, so the
+    /// answer goes to the requester and the live session is untouched.
+    ///
+    /// **The GUI map is read FIRST and outside the feature gate.**
+    /// `pending_mcp` is `None` in every build launched without `--mcp`,
+    /// so a lookup behind the gate would never clear `is_optimizing` and
+    /// the GUI would stay on the placeholder for good.
     fn handle_job_result(&mut self, result: crate::compute::JobResult) {
         // Destructured here, above the feature gate: the answer is consumed
         // by value, which is what the gate's `needless_pass_by_value` rule
         // asks of a parameter this method takes by value.
         let crate::compute::JobResult { id, answer } = result;
+        if let Some(job) = self.gui_jobs.remove(&id) {
+            self.deliver_gui_job(&job.target, answer);
+            return;
+        }
         #[cfg(feature = "mcp")]
         {
             let Some(pending) = self.pending_mcp.as_mut() else {
                 return;
             };
             let Some(job) = pending.jobs.remove(&id) else {
-                // A `Job` the GUI started for itself, or an answer whose
-                // caller went away. Neither is an error.
+                // An answer whose caller went away. Not an error.
                 return;
             };
             let reply = crate::mcp_bridge::render_job_answer(&job.render, &answer);
@@ -1075,10 +1110,78 @@ impl<B: ComputeBackend> AppController<B> {
         }
         #[cfg(not(feature = "mcp"))]
         {
-            // No MCP surface in this build, so nothing is waiting on a job.
+            // No MCP surface in this build, so nothing else is waiting.
             let _ = id;
             drop(answer);
         }
+    }
+
+    /// Land one GUI-started `Job` answer on the view that asked for it.
+    ///
+    /// `is_optimizing` clears HERE for both targets, on every outcome —
+    /// the answer, a cancel and a panic alike. It is the only place a
+    /// GUI-started job can clear it, so an early return above this line
+    /// leaves the operator on the placeholder.
+    fn deliver_gui_job(
+        &mut self,
+        target: &crate::controller::GuiJobTarget,
+        answer: Result<rs_cam_core::session::JobAnswer, crate::compute::ComputeError>,
+    ) {
+        use rs_cam_core::session::JobAnswer;
+
+        self.state.is_optimizing = false;
+        match target {
+            crate::controller::GuiJobTarget::OptimizeModal { toolpath_id } => {
+                let status = match answer {
+                    Ok(JobAnswer::OptimizeToolpath(outcome)) => {
+                        crate::state::OptimizeRunStatus::Ready(*outcome)
+                    }
+                    Ok(other) => crate::state::OptimizeRunStatus::Failed(format!(
+                        "the Optimize modal was answered by the {} row",
+                        other.id().wire_name()
+                    )),
+                    Err(error) => crate::state::OptimizeRunStatus::Failed(error.to_string()),
+                };
+                self.land_optimize_outcome(*toolpath_id, status);
+            }
+            crate::controller::GuiJobTarget::MultitoolPreview => {
+                let result = match answer {
+                    Ok(JobAnswer::PreviewTierMap(preview)) => Ok(preview),
+                    Ok(other) => Err(format!(
+                        "the planner dialog was answered by the {} row",
+                        other.id().wire_name()
+                    )),
+                    Err(error) => Err(error.to_string()),
+                };
+                self.handle_multitool_preview_result(result);
+            }
+        }
+    }
+
+    /// Write one per-toolpath Optimize status into the open modal.
+    ///
+    /// A modal reopened on a different toolpath while the job ran keeps
+    /// its own state: the outcome names an operation the operator is no
+    /// longer looking at.
+    fn land_optimize_outcome(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        status: crate::state::OptimizeRunStatus,
+    ) {
+        let Some(modal) = self.state.optimize_modal.as_mut() else {
+            tracing::debug!(
+                "Optimize result for tp {toolpath_id} arrived after modal was closed — discarded"
+            );
+            return;
+        };
+        if modal.toolpath_id != toolpath_id {
+            tracing::debug!(
+                "Optimize result for tp {toolpath_id} dropped — modal now open on tp {}",
+                modal.toolpath_id
+            );
+            return;
+        }
+        modal.status = status;
     }
 
     /// Land a reach map on the viewport overlay (P5).
@@ -1144,39 +1247,19 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// Restore the session moved into the Optimize lane and stash the
-    /// outcome on `AppState`. The per-toolpath modal (U2 retrofit) and
-    /// the project rollup (U3) hook off the cached state from here.
+    /// Stash the project rollup's report on `AppState`.
+    ///
+    /// The lane no longer carries a session back: WP14b gives it a CLONE,
+    /// so the main thread never lost its own and there is nothing to
+    /// restore. `is_optimizing` still clears here, because the rollup is
+    /// the one arm left on this lane; the two `Job` rows clear it in
+    /// [`Self::deliver_gui_job`].
     fn handle_optimize_result(&mut self, result: crate::compute::OptimizeResult) {
         use crate::compute::OptimizeResultKind;
 
-        // Restore the session first — every other update reads it.
-        self.state.session = result.session;
         self.state.is_optimizing = false;
 
         match result.kind {
-            OptimizeResultKind::Toolpath {
-                toolpath_id,
-                outcome,
-            } => {
-                if let Some(modal) = self.state.optimize_modal.as_mut() {
-                    if modal.toolpath_id == toolpath_id {
-                        modal.status = crate::state::OptimizeRunStatus::Ready(outcome);
-                    } else {
-                        // The modal was reopened on a different
-                        // toolpath while the worker was running —
-                        // discard the stale result.
-                        tracing::debug!(
-                            "Optimize result for tp {toolpath_id} dropped — modal now open on tp {}",
-                            modal.toolpath_id
-                        );
-                    }
-                } else {
-                    tracing::debug!(
-                        "Optimize result for tp {toolpath_id} arrived after modal was closed — discarded"
-                    );
-                }
-            }
             OptimizeResultKind::Project { report } => {
                 // Default-select every row that has a recommended
                 // candidate. The user can flip individual rows before
@@ -1197,9 +1280,6 @@ impl<B: ComputeBackend> AppController<B> {
                     );
                 }
             }
-            OptimizeResultKind::MultitoolPreview { result } => {
-                self.handle_multitool_preview_result(result);
-            }
         }
     }
 
@@ -1208,9 +1288,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// A result that arrives after the dialog was vetoed is DISCARDED, not
     /// applied to a closed dialog: the operator already said no, and quietly
     /// re-arming the overlay behind them would be the veto failing. The
-    /// session has already been restored by the caller either way — that is
-    /// the whole reason the lane returns it on the result rather than on
-    /// success.
+    /// session was never lent out either way — since WP14b the preview runs
+    /// on the `Job` lane over its own handle.
     fn handle_multitool_preview_result(
         &mut self,
         result: Result<Box<rs_cam_core::session::MultitoolPreview>, String>,

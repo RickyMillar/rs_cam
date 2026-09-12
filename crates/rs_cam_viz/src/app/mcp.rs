@@ -406,9 +406,13 @@ impl super::RsCamApp {
                 let resp = self.mcp_get_project_diagnostics();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            // WP14b: a `Job` submit, not a synchronous run. The arm
+            // starts the job on the frame loop and stores the oneshot;
+            // the drain answers it. The wire is unchanged — the CLIENT
+            // still waits as long as it did, and the FRAME LOOP no
+            // longer does.
             McpRequestKind::OptimizeToolpath { index } => {
-                let resp = self.mcp_optimize_toolpath(index);
-                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+                self.mcp_optimize_toolpath(index, response_tx);
             }
             McpRequestKind::AddToolpathViaGui {
                 operation_type,
@@ -2658,36 +2662,55 @@ impl super::RsCamApp {
         json_str(serde_json::to_value(&diagnostics).unwrap_or(serde_json::Value::Null))
     }
 
-    /// Run the optimizer on a single toolpath synchronously and
-    /// return the OptimizeOutcome as JSON. The GUI thread blocks
-    /// for the duration of the search (~1-2 min). MCP automation
-    /// expects this — the LLM/agent waits on the response.
-    fn mcp_optimize_toolpath(&mut self, index: usize) -> String {
-        let trace_clone = self
-            .controller
-            .state()
-            .simulation
-            .results
-            .as_ref()
-            .and_then(|r| r.cut_trace.clone());
-        let Some(trace) = trace_clone else {
-            return json_str(serde_json::json!({
-                "error": "Run a simulation first — optimize_toolpath needs a baseline trace.",
-            }));
-        };
-        let cancel = std::sync::atomic::AtomicBool::new(false);
-        let outcome = rs_cam_core::tool_load::optimize::optimize_toolpath(
-            &mut self.controller.state_mut().session,
-            &trace,
-            index,
+    /// Run the optimizer on one toolpath as a `Job` (WP14b).
+    ///
+    /// Step (i) runs here, on the frame loop: it clones the session into
+    /// the handle and takes the baseline cut trace off the session, so a
+    /// refusal still appears at submit time with core's own wording.
+    /// Step (ii) — the candidate search, which is one to two minutes —
+    /// runs on the `Job` lane over that clone, so the GUI stays usable
+    /// and nothing on screen is lent out.
+    ///
+    /// The CLIENT waits exactly as long as it did: the arm stores the
+    /// oneshot and the drain answers it. No `timeout_s` is added, so the
+    /// pinned wire snapshot does not move (§26 ruling 1).
+    ///
+    /// **The trace source changed.** It used to come from the VIEW's
+    /// simulation slot. It now comes from the session, which the GUI
+    /// drain adopts every simulation into. A session mutation clears that
+    /// slot, so an `optimize_toolpath` issued after an edit refuses where
+    /// it used to score against the older trace (§28 ruling 5).
+    fn mcp_optimize_toolpath(
+        &mut self,
+        index: usize,
+        response_tx: tokio::sync::oneshot::Sender<McpResponse>,
+    ) {
+        // §22 ruling 3: a FRESH flag per submit. The lane maps "cancel
+        // this job" onto it.
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started = self.controller.state_mut().session.start(
+            rs_cam_core::session::Job::OptimizeToolpath(
+                rs_cam_core::session::OptimizeToolpathArgs { index },
+            ),
             &cancel,
         );
-        match serde_json::to_value(&outcome) {
-            Ok(v) => json_str(v),
-            Err(e) => json_str(serde_json::json!({
-                "error": format!("Failed to serialize optimize outcome: {e}")
-            })),
-        }
+        let handle = match started {
+            Ok(handle) => handle,
+            Err(e) => {
+                let _ = response_tx.send(McpResponse {
+                    result: Ok(json_str(serde_json::json!({
+                        "error": format!("{e}"),
+                    }))),
+                });
+                return;
+            }
+        };
+        self.controller.submit_mcp_job(
+            handle,
+            cancel,
+            crate::mcp_bridge::McpJobRender::OptimizeOutcome { index },
+            response_tx,
+        );
     }
 
     /// Put the operator's screen on the toolpath an MCP mutation is about

@@ -25,19 +25,21 @@ pub struct JobRequestId(pub u64);
 pub enum ComputeLane {
     Toolpath,
     Analysis,
-    /// Worker for the per-toolpath / project Optimize search. Each
-    /// request takes ownership of the `ProjectSession` for the run; the
-    /// session is returned attached to the result so the main thread
-    /// can swap it back.
+    /// Worker for the PROJECT Optimize rollup.
+    ///
+    /// The request owns a CLONE of the `ProjectSession` for the run and
+    /// drops it; the result carries the report alone. The per-toolpath
+    /// search left this lane in WP14b and rides [`Self::Job`] now.
     Optimize,
     /// Worker for a core `Job` row's work step (WP14a).
     ///
-    /// **Its own lane, and it carries no session.** The two rows that ride
-    /// it today — `recommend_clearing_strategy` and `preview_tier_map` —
-    /// are READS whose step (ii) is a free function over a handle, so the
-    /// session stays on the main thread and stays usable while the job
-    /// runs. That is what separates this lane from `Optimize`, whose every
-    /// request owns the session for the duration.
+    /// **Its own lane, and it carries no session of the main thread's.**
+    /// Two of the three rows that ride it — `recommend_clearing_strategy`
+    /// and `preview_tier_map` — are READS whose step (ii) is a free
+    /// function over a handle. The third, `optimize_toolpath` (WP14b),
+    /// mutates, but it mutates the CLONE its own handle owns. Either way
+    /// the session stays on the main thread and stays usable while the
+    /// job runs.
     ///
     /// The queue is FIFO and a submit supersedes nothing. Two previews at
     /// different dial sets are two different questions, and dropping the
@@ -262,10 +264,10 @@ pub enum ComputeMessage {
     Toolpath(Box<ComputeResult>),
     Simulation(Result<Box<SimulationResult>, ComputeError>),
     Collision(Result<CollisionResult, ComputeError>),
-    /// Optimize lane completion. Always carries a session for the main
-    /// thread to swap back; cancellation produces a `Cancelled` outcome
-    /// inside `OptimizeResultKind` rather than an `Err`, so we never
-    /// drop the session on the floor.
+    /// Optimize lane completion — the project rollup's report. It
+    /// carries NO session since WP14b: the request owned a clone, so
+    /// there is nothing to swap back. Cancellation still produces a
+    /// `Cancelled` outcome inside the report rather than an `Err`.
     Optimize(Box<OptimizeResult>),
     /// Reach lane completion (P5). Boxed for the same reason the toolpath
     /// variant is: the payload carries a whole per-vertex colour vector.
@@ -283,9 +285,11 @@ pub trait ComputeBackend: Send {
     fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome;
     fn submit_simulation(&mut self, request: SimulationRequest);
     fn submit_collision(&mut self, request: CollisionRequest);
-    /// Submit an Optimize request. The request takes ownership of the
-    /// `ProjectSession`; the worker returns it on the [`ComputeMessage::Optimize`]
-    /// reply so the main thread can put it back on `AppState::session`.
+    /// Submit an Optimize request. The request owns a CLONE of the
+    /// `ProjectSession` and the worker drops it with the request; the
+    /// [`ComputeMessage::Optimize`] reply carries the report alone.
+    /// Before WP14b the main thread MOVED its session in and the reply
+    /// carried it back.
     fn submit_optimize(&mut self, request: OptimizeRequest);
 
     /// Submit one core `Job` row's work step to the [`ComputeLane::Job`]

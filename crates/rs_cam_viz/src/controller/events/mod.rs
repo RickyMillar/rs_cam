@@ -487,18 +487,23 @@ impl<B: ComputeBackend> AppController<B> {
                         .cancel_lane(crate::compute::ComputeLane::Toolpath);
                 }
                 UiCommand::CloseOptimizeModal(NoArgs) => {
-                    // If a worker is still running, cancel it. The result
-                    // will arrive on the next drain; the drain handler
-                    // sees the modal is None and discards the outcome but
-                    // still restores the session — `is_optimizing` flips
-                    // back to false there.
+                    // WP14b: the run is a `Job` on the SHARED FIFO Job
+                    // lane, so a lane cancel would also kill an MCP
+                    // caller's job queued behind it. Arm this submit's
+                    // own flag instead, and leave the entry in the map:
+                    // the job still completes, the drain discards the
+                    // outcome against a closed modal, and the drain is
+                    // where `is_optimizing` flips back to false.
                     if self.state.is_optimizing {
-                        self.compute
-                            .cancel_lane(crate::compute::ComputeLane::Optimize);
+                        self.cancel_gui_optimize_jobs();
                     }
                     self.state.optimize_modal = None;
                 }
                 UiCommand::CloseOptimizeProject(NoArgs) => {
+                    // The project rollup keeps the Optimize lane (§28
+                    // ruling 6): it has no registry row, so it is still
+                    // the only thing on that lane and a lane cancel
+                    // reaches nobody else.
                     if self.state.is_optimizing {
                         self.compute
                             .cancel_lane(crate::compute::ComputeLane::Optimize);
@@ -595,17 +600,20 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// Open the per-toolpath Optimize modal. Submits an
-    /// `OptimizeRequest::Toolpath` to the Optimize compute lane,
-    /// taking ownership of the session for the run. The modal opens
-    /// in `Loading` state immediately; the result lands via
-    /// `ComputeMessage::Optimize` on the next drain, which transitions
-    /// the modal to `Ready` and restores the session.
+    /// Open the per-toolpath Optimize modal.
     ///
-    /// Pre-flight skip: if there's no baseline trace yet, the modal
-    /// opens directly to `Ready(Skipped { SimulationRequired })`
-    /// without touching the worker — there's nothing to optimize
-    /// against.
+    /// WP14b: this submits the `optimize_toolpath` `Job` row on the Job
+    /// lane. Step (i) runs here on the frame loop and CLONES the session
+    /// into the handle, so the view keeps its own and every panel stays
+    /// readable. The modal opens in `Loading`; the answer lands through
+    /// `ComputeMessage::Job` on a later drain.
+    ///
+    /// **The baseline trace comes from the SESSION now** (§28 ruling 5),
+    /// not from the view's simulation slot. The two slots diverge after a
+    /// mutation clears the session's, so an Optimize issued after an edit
+    /// refuses at submit where it used to score against the older trace.
+    /// That refusal renders as the same `Skipped { SimulationRequired }`
+    /// card the operator already knows.
     fn open_optimize_modal(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
         use rs_cam_core::tool_load::RefuseReason;
         use rs_cam_core::tool_load::optimize::OptimizeOutcome;
@@ -624,26 +632,6 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         };
 
-        // Need a baseline trace. Without one the optimizer can't
-        // score; surface a typed Skipped so the modal can render
-        // a clear "run sim first" message.
-        let trace_clone = self
-            .state
-            .simulation
-            .results
-            .as_ref()
-            .and_then(|r| r.cut_trace.clone());
-        let Some(trace) = trace_clone else {
-            self.state.close_modals_for_exclusivity();
-            self.state.optimize_modal = Some(crate::state::OptimizeModalState {
-                toolpath_id,
-                status: crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::skipped(
-                    RefuseReason::SimulationRequired,
-                )),
-            });
-            return;
-        };
-
         // Refuse to start a second Optimize run while one is already
         // in flight. The button that fires this event is hidden by
         // the GUI lockout, but a stray automation hit could still
@@ -653,26 +641,61 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
 
-        // Move the session into the request. Main thread holds an
-        // empty placeholder until the worker returns. Open the modal
-        // in Loading state immediately so the user sees "running…".
-        let session = std::mem::replace(
-            &mut self.state.session,
-            rs_cam_core::session::ProjectSession::new_empty(),
+        // §22 ruling 3: a FRESH flag per submit. The close arm arms it.
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started = self.state.session.start(
+            rs_cam_core::session::Job::OptimizeToolpath(
+                rs_cam_core::session::OptimizeToolpathArgs { index: idx },
+            ),
+            &cancel,
         );
+        let handle = match started {
+            Ok(handle) => handle,
+            Err(rs_cam_core::session::SessionError::SimulationRequired(_)) => {
+                // Surface the typed Skipped the modal already renders as
+                // "run a simulation first", rather than a toast.
+                self.state.close_modals_for_exclusivity();
+                self.state.optimize_modal = Some(crate::state::OptimizeModalState {
+                    toolpath_id,
+                    status: crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::skipped(
+                        RefuseReason::SimulationRequired,
+                    )),
+                });
+                return;
+            }
+            Err(error) => {
+                self.push_notification(
+                    format!("Optimize failed: {error}"),
+                    crate::controller::Severity::Error,
+                );
+                return;
+            }
+        };
+
         self.state.close_modals_for_exclusivity();
         self.state.is_optimizing = true;
         self.state.optimize_modal = Some(crate::state::OptimizeModalState {
             toolpath_id,
             status: crate::state::OptimizeRunStatus::Loading,
         });
-        self.compute
-            .submit_optimize(crate::compute::OptimizeRequest::Toolpath {
-                session,
-                baseline_trace: trace,
-                toolpath_index: idx,
-                toolpath_id,
-            });
+        self.submit_gui_job(
+            handle,
+            cancel,
+            crate::controller::GuiJobTarget::OptimizeModal { toolpath_id },
+        );
+    }
+
+    /// Arm the cancel flag of every `Job` this GUI started for the
+    /// Optimize modal or the planner dialog.
+    ///
+    /// The entries STAY in the map. The lane still reports the job, and
+    /// the drain is the one place a GUI-started job clears
+    /// `is_optimizing`. Removing the entry here would strand the flag on
+    /// the placeholder.
+    fn cancel_gui_optimize_jobs(&self) {
+        for job in self.gui_jobs.values() {
+            job.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
     }
 
     /// Apply a candidate from the cached Optimize outcome. Index 0 is
@@ -1337,10 +1360,14 @@ impl<B: ComputeBackend> AppController<B> {
     // refusal and the numbers together.
 
     /// Open the project-level Optimize rollup. Submits an
-    /// `OptimizeRequest::Project` to the worker lane, taking
-    /// ownership of the session for the duration of the walk.
-    /// The view opens in `Loading` immediately and the rollup
-    /// populates when the worker returns.
+    /// `OptimizeRequest::Project` to the Optimize lane over a CLONE of
+    /// the session. The view opens in `Loading` immediately and the
+    /// rollup populates when the worker returns.
+    ///
+    /// The rollup has no registry row and gets none in WP14b (§28 ruling
+    /// 6). It stays on this lane; what changed is that the session is
+    /// copied rather than moved, so the view keeps its own and the result
+    /// carries none back.
     fn open_optimize_project(&mut self) {
         // Pre-flight: needs a baseline trace.
         let trace_clone = self
@@ -1362,10 +1389,9 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
 
-        let session = std::mem::replace(
-            &mut self.state.session,
-            rs_cam_core::session::ProjectSession::new_empty(),
-        );
+        // The walk mutates what it scores, so it needs a session of its
+        // own. It takes a COPY; the view keeps the original.
+        let session = self.state.session.clone();
         self.state.close_modals_for_exclusivity();
         self.state.is_optimizing = true;
         self.state.optimize_project = Some(crate::state::OptimizeProjectState {

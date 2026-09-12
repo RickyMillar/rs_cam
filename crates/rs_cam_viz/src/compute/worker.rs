@@ -314,67 +314,41 @@ pub struct CollisionResult {
     pub positions: Vec<[f32; 3]>,
 }
 
-/// Request to the Optimize worker lane. Both variants own a
-/// `ProjectSession` for the duration of the run — the main thread
-/// `mem::replace`s its session into the request; the worker mutates
-/// freely; the session comes back on [`OptimizeResult::session`].
-#[allow(clippy::large_enum_variant)]
+/// Request to the Optimize worker lane. Its one variant owns a
+/// `ProjectSession` for the duration of the run — the main thread CLONES
+/// its session into the request and keeps the original.
+///
+/// WP14b emptied the other two arms. `Toolpath` became the
+/// `optimize_toolpath` `Job` row and `MultitoolPreview` became the
+/// existing `preview_tier_map` row, so both now ride
+/// [`ComputeLane::Job`](super::ComputeLane::Job) over a handle. The
+/// project rollup has no registry row and gets none now (§28 ruling 6),
+/// so it stays here — over a clone, not over a `mem::replace`.
 pub enum OptimizeRequest {
-    /// Run `optimize_toolpath` on a single toolpath. Surfaces in the
-    /// per-toolpath modal (U2's worker-thread retrofit).
-    Toolpath {
-        session: rs_cam_core::session::ProjectSession,
-        baseline_trace: Arc<rs_cam_core::simulation_cut::SimulationCutTrace>,
-        toolpath_index: usize,
-        /// Stable id from the toolpath config — pass-through so the
-        /// main thread can match the result to the open modal even if
-        /// indices have shifted.
-        toolpath_id: rs_cam_core::ToolpathId,
-    },
     /// Run `optimize_project` over every enabled toolpath. Surfaces in
     /// the U3 rollup view.
     Project {
+        /// The main thread's own session, CLONED. The worker mutates it
+        /// freely and it is dropped with the request; nothing comes
+        /// back but the report.
         session: rs_cam_core::session::ProjectSession,
         baseline_trace: Arc<rs_cam_core::simulation_cut::SimulationCutTrace>,
     },
-    /// Build the multi-tool planner's tier-map preview (Phase U). Rides
-    /// this lane rather than growing a fourth one because it has the same
-    /// two properties the lane exists for: it owns the session for the run,
-    /// and it is a minutes-scale walk that must not block the frame loop.
-    ///
-    /// Unlike the two Optimize arms it takes the session **immutably** —
-    /// `preview_multitool_plan` is `&self`, which is the operator's veto
-    /// guarantee — and it is cancellable at grid-row granularity through
-    /// this lane's own `cancel` flag.
-    MultitoolPreview {
-        session: rs_cam_core::session::ProjectSession,
-        spec: rs_cam_core::session::MultitoolPlanSpec,
-    },
 }
 
-/// Result from the Optimize worker. Always carries the session back
-/// for the main thread to swap into `AppState::session`. Cancellation
-/// surfaces inside `OptimizeResultKind` (the inner outcome carries a
-/// "cancelled" narrative), not as an `Err`, so the session never gets
-/// dropped on the floor.
+/// Result from the Optimize worker.
+///
+/// It carries NO session. Before WP14b the main thread held
+/// `ProjectSession::new_empty()` while the lane ran, so the result had to
+/// carry the real one back and a panic on this lane lost the project.
+/// The request now owns a clone, so there is nothing to give back.
 pub struct OptimizeResult {
-    pub session: rs_cam_core::session::ProjectSession,
     pub kind: OptimizeResultKind,
 }
 
 pub enum OptimizeResultKind {
-    Toolpath {
-        toolpath_id: rs_cam_core::ToolpathId,
-        outcome: rs_cam_core::tool_load::optimize::OptimizeOutcome,
-    },
     Project {
         report: rs_cam_core::tool_load::optimize::ProjectOptimizeReport,
-    },
-    /// Boxed: a `MultitoolPreview` carries a whole tier map (5 B/cell) and
-    /// its island masks, which would make this enum's size the map's size.
-    /// A cancelled walk arrives here as `Err`, not as a lost session.
-    MultitoolPreview {
-        result: Result<Box<rs_cam_core::session::MultitoolPreview>, String>,
     },
 }
 
@@ -919,13 +893,7 @@ fn analysis_job_label(request: &AnalysisRequest) -> String {
 
 fn optimize_job_label(request: &OptimizeRequest) -> String {
     match request {
-        OptimizeRequest::Toolpath { toolpath_index, .. } => {
-            format!("Optimize toolpath #{toolpath_index}")
-        }
         OptimizeRequest::Project { .. } => "Optimize project".to_owned(),
-        OptimizeRequest::MultitoolPreview { spec, .. } => {
-            format!("Tier map preview ({} tools)", spec.tool_ids.len())
-        }
     }
 }
 
@@ -945,6 +913,9 @@ fn job_label(request: &JobRequest) -> String {
         }
         JobHandle::PreviewTierMap(handle) => {
             format!("Tier map preview ({} tools)", handle.tool_count())
+        }
+        JobHandle::OptimizeToolpath(handle) => {
+            format!("Optimize toolpath #{}", handle.index)
         }
     }
 }
@@ -1215,11 +1186,7 @@ fn spawn_optimize_lane(
     lane: Arc<LaneQueue<OptimizeRequest>>,
     result_tx: mpsc::SyncSender<ComputeMessage>,
 ) -> std::thread::JoinHandle<()> {
-    use rs_cam_core::tool_load::RefuseReason;
-    use rs_cam_core::tool_load::optimize::{
-        OptimizeOutcome, OutcomeKind, OutcomeNarrative, ProjectOptimizeReport, optimize_project,
-        optimize_toolpath,
-    };
+    use rs_cam_core::tool_load::optimize::{ProjectOptimizeReport, optimize_project};
 
     std::thread::spawn(move || {
         loop {
@@ -1256,59 +1223,19 @@ fn spawn_optimize_lane(
                 return;
             }
 
-            // The optimizer carries the session through the request
-            // and produces an OptimizeResult that returns it. We do
-            // NOT wrap this in catch_unwind: a panic mid-optimize
-            // would lose the session, which is worse than killing
-            // the worker thread (the user can restart). Optimizer is
-            // covered by 70+ unit tests; panic risk is low.
+            // This lane carries NO `catch_unwind`, and WP14b changed why.
+            // Before it, a panic here lost the main thread's only session,
+            // which was worse than killing the worker. The request now
+            // owns a clone, so a panic loses the rollup and the clone and
+            // nothing else — the trade-off is the worker thread, which
+            // does not come back until the app restarts. The `Job` lane
+            // catches instead, because a job has a caller waiting on a
+            // oneshot. Adding one here is a separate decision; do not
+            // make it silently.
             let progress = LaneProgressBridge {
                 lane: Arc::clone(&lane),
             };
             let result = match request {
-                OptimizeRequest::Toolpath {
-                    mut session,
-                    baseline_trace,
-                    toolpath_index,
-                    toolpath_id,
-                } => {
-                    let outcome = optimize_toolpath(
-                        &mut session,
-                        &baseline_trace,
-                        toolpath_index,
-                        &lane.cancel,
-                    );
-                    // If the cancel flag was set, surface the
-                    // partial outcome with a "cancelled" narrative —
-                    // optimize_toolpath itself produces this when it
-                    // observes the cancel between candidates.
-                    let outcome = if lane.cancel.load(Ordering::SeqCst) {
-                        match outcome.kind {
-                            OutcomeKind::Ranked
-                            | OutcomeKind::MarginalSafe
-                            | OutcomeKind::TradeOff
-                            | OutcomeKind::NoSafeImprovement => outcome,
-                            OutcomeKind::Skipped => OptimizeOutcome::no_safe_improvement(
-                                Vec::new(),
-                                RefuseReason::NoImprovementFound,
-                                OutcomeNarrative {
-                                    explanation: "cancelled before optimization could run"
-                                        .to_owned(),
-                                    ..OutcomeNarrative::default()
-                                },
-                            ),
-                        }
-                    } else {
-                        outcome
-                    };
-                    OptimizeResult {
-                        session,
-                        kind: OptimizeResultKind::Toolpath {
-                            toolpath_id,
-                            outcome,
-                        },
-                    }
-                }
                 OptimizeRequest::Project {
                     mut session,
                     baseline_trace,
@@ -1316,22 +1243,7 @@ fn spawn_optimize_lane(
                     let report: ProjectOptimizeReport =
                         optimize_project(&mut session, &baseline_trace, &progress, &lane.cancel);
                     OptimizeResult {
-                        session,
                         kind: OptimizeResultKind::Project { report },
-                    }
-                }
-                OptimizeRequest::MultitoolPreview { session, spec } => {
-                    // `&self`: the preview cannot touch a toolpath, which is
-                    // what makes rejecting it free. The session comes back
-                    // unchanged either way — a cancelled walk is an `Err`
-                    // inside the kind, never a dropped session.
-                    let result = session
-                        .preview_multitool_plan(&spec, &lane.cancel)
-                        .map(Box::new)
-                        .map_err(|e| e.to_string());
-                    OptimizeResult {
-                        session,
-                        kind: OptimizeResultKind::MultitoolPreview { result },
                     }
                 }
             };
@@ -1372,7 +1284,7 @@ fn spawn_job_lane(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
-            let request = {
+            let mut request = {
                 let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                 while inner.queue.is_empty() {
                     if lane.shutdown.load(Ordering::SeqCst) {
@@ -1410,7 +1322,8 @@ fn spawn_job_lane(
             }
 
             let id = request.id;
-            let answer = match std::panic::catch_unwind(AssertUnwindSafe(|| run_job(&request))) {
+            let answer = match std::panic::catch_unwind(AssertUnwindSafe(|| run_job(&mut request)))
+            {
                 Ok(answer) => answer,
                 Err(panic_payload) => {
                     let msg = panic_message(&panic_payload);
@@ -1449,25 +1362,34 @@ fn spawn_job_lane(
 /// Run one `Job` row's work step.
 ///
 /// Every arm is a free function over the row's own handle, so this holds
-/// no session. `generate_toolpath` is the exception and it is not an
-/// exception to that rule: it runs on the toolpath lane, which reports
-/// its own result type, so this lane refuses it rather than producing a
-/// second answer for it.
-fn run_job(request: &JobRequest) -> Result<rs_cam_core::session::JobAnswer, ComputeError> {
+/// no session of the main thread's. `generate_toolpath` is the exception
+/// and it is not an exception to that rule: it runs on the toolpath lane,
+/// which reports its own result type, so this lane refuses it rather than
+/// producing a second answer for it.
+///
+/// The request is taken by `&mut` for the `optimize_toolpath` arm alone
+/// (§28 ruling 4): that handle owns a cloned session and the optimizer
+/// takes it mutably, so a shared handle would cost a second clone.
+fn run_job(request: &mut JobRequest) -> Result<rs_cam_core::session::JobAnswer, ComputeError> {
     use rs_cam_core::session::{JobAnswer, JobHandle};
-    match &request.handle {
+    let cancel = Arc::clone(&request.cancel);
+    match &mut request.handle {
         JobHandle::GenerateToolpath(_) => Err(ComputeError::Message(
             "generate_toolpath runs on the toolpath lane, which reports its own result".to_owned(),
         )),
         JobHandle::RecommendClearingStrategy(handle) => {
-            rs_cam_core::session::execute_recommend_clearing_strategy(handle, &request.cancel)
+            rs_cam_core::session::execute_recommend_clearing_strategy(handle, &cancel)
                 .map(|answer| JobAnswer::RecommendClearingStrategy(Box::new(answer)))
                 .map_err(|error| ComputeError::Message(error.to_string()))
         }
         JobHandle::PreviewTierMap(handle) => {
-            rs_cam_core::session::execute_preview_tier_map(handle, &request.cancel)
+            rs_cam_core::session::execute_preview_tier_map(handle, &cancel)
                 .map(|answer| JobAnswer::PreviewTierMap(Box::new(answer)))
                 .map_err(|error| ComputeError::Message(error.to_string()))
+        }
+        JobHandle::OptimizeToolpath(handle) => {
+            let outcome = rs_cam_core::session::execute_optimize_toolpath(handle, &cancel);
+            Ok(JobAnswer::OptimizeToolpath(Box::new(outcome)))
         }
     }
 }

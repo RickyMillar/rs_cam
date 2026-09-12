@@ -330,12 +330,15 @@ const UI_DISPATCH: &[&str] = &["src/controller/events/mod.rs", "src/app/input.rs
 /// Ruling 10's named exemption, kept as a record rather than a hole.
 ///
 /// `CloseOptimizeModal` and `CloseOptimizeProject` were expected to write
-/// the session: the optimizer takes it by `std::mem::replace` and
-/// something has to put it back. Measured at WP13: the `std::mem::replace`
-/// sits in `open_optimize_modal` and the restore sits in the compute
-/// drain, so NEITHER close arm writes the session and both pass the scan
-/// unaided. The names stay here because ruling 10 named them; they buy no
-/// exemption today. WP10's `Job` shape retires the `replace` itself.
+/// the session: the optimizer took it by `std::mem::replace` and
+/// something had to put it back. Measured at WP13: the `std::mem::replace`
+/// sat in `open_optimize_modal` and the restore sat in the compute drain,
+/// so NEITHER close arm wrote the session and both passed the scan
+/// unaided. WP14b deleted all three `mem::replace` sites — the two Job
+/// rows own a cloned or captured handle and the project rollup takes
+/// `session.clone()` — so there is no lend and no restore left to
+/// exempt. The names stay here because ruling 10 named them; they buy no
+/// exemption today and bought none then.
 const P3_NAMED_EXEMPTIONS: &[&str] = &["CloseOptimizeModal", "CloseOptimizeProject"];
 
 /// What a view handler must never contain.

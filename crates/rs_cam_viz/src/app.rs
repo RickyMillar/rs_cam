@@ -784,12 +784,15 @@ impl RsCamApp {
                 crate::ui::workspace_bar::draw(ui, state, events);
             });
 
-        // Draw workspace-specific layout. While the Optimize lane
-        // owns the session (mem::replace pulled it into the worker
-        // request), the panels would render against an empty
-        // placeholder — confusing for the user. Show a centred
-        // "Optimize running…" placeholder instead and let the
-        // modal/rollup window be the only interactive surface.
+        // Draw workspace-specific layout. The full-screen placeholder is
+        // a POLICY since WP14b, not a necessity (§28 ruling 8): one
+        // Optimize run at a time. Before it the lane OWNED the session —
+        // `mem::replace` pulled it into the worker request — and the
+        // panels would have rendered against an empty one. Every route
+        // now runs over a clone, so the panels would read the real
+        // project. Removing the placeholder is a separate operator
+        // decision; the modal / rollup window stays the only interactive
+        // surface until then.
         if self.controller.state().is_optimizing {
             // The lane is shared, so name what is actually on it: an operator
             // told "Optimize is running" while waiting on a tier-map preview

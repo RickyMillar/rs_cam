@@ -1269,6 +1269,18 @@ impl PreviewTierMapHandle {
     pub fn tool_count(&self) -> usize {
         self.tools.len()
     }
+
+    /// The dials the operator previewed, as the submit step read them.
+    ///
+    /// A READ. It hands out no way to build a handle, which is what the
+    /// private fields protect. WP14b added it because the GUI now submits
+    /// this row rather than a request carrying the spec, and the dialog's
+    /// own sentry reads the submitted dials
+    /// (`the_dialogs_dials_reach_the_submitted_spec`).
+    #[must_use]
+    pub fn spec(&self) -> &MultitoolPlanSpec {
+        &self.spec
+    }
 }
 
 /// Walk the tier map from a handle — step (ii) of the `preview_tier_map`

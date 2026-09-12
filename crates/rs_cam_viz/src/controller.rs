@@ -146,10 +146,44 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// can be in flight at once, and a key that recurred would deliver one
     /// caller's answer to the other.
     next_job_request_id: u64,
+    /// WP14b — the `Job` submits the GUI made for ITSELF.
+    ///
+    /// The MCP map (`pending_mcp.jobs`) cannot serve these: it exists
+    /// only under `--mcp`, and a GUI-started job must complete in every
+    /// build. Both maps draw their keys from `next_job_request_id`, so an
+    /// id names one submit on one map.
+    pub(crate) gui_jobs: std::collections::HashMap<crate::compute::JobRequestId, PendingGuiJob>,
     /// Pending MCP compute operations awaiting async results.
     /// `Some` when MCP mode is enabled, `None` otherwise.
     #[cfg(feature = "mcp")]
     pub pending_mcp: Option<crate::mcp_bridge::PendingMcpCompute>,
+}
+
+/// One in-flight `Job` the GUI started for itself (WP14b).
+pub(crate) struct PendingGuiJob {
+    /// Which view surface is waiting for the answer.
+    pub target: GuiJobTarget,
+    /// The cancel flag of THIS submit, per §22 ruling 3.
+    ///
+    /// NOT the lane's flag. The `Job` lane is FIFO and shared, so a
+    /// `cancel_lane(ComputeLane::Job)` from a modal would also kill an
+    /// MCP caller's in-flight `recommend_clearing_strategy`. A close arm
+    /// arms this flag and leaves the entry in the map: the job still
+    /// completes, and the drain is the one place that clears
+    /// `is_optimizing`.
+    pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// What a GUI-started `Job` answers.
+pub(crate) enum GuiJobTarget {
+    /// The per-toolpath Optimize modal. The id is the STABLE toolpath id,
+    /// so a reorder between submit and answer cannot deliver the outcome
+    /// to a different operation.
+    OptimizeModal {
+        toolpath_id: crate::state::toolpath::ToolpathId,
+    },
+    /// The multi-tool planner dialog's tier-map preview.
+    MultitoolPreview,
 }
 
 impl AppController<ThreadedComputeBackend> {
@@ -180,6 +214,7 @@ impl<B: ComputeBackend> AppController<B> {
             generate_all: None,
             reach_overlay_shown: true,
             next_job_request_id: 0,
+            gui_jobs: std::collections::HashMap::new(),
             #[cfg(feature = "mcp")]
             pending_mcp: None,
         }
@@ -192,9 +227,14 @@ impl<B: ComputeBackend> AppController<B> {
     /// count is a standing reason to keep repainting. The ladder term is
     /// counted here rather than on `PendingMcpCompute` because a GUI-started
     /// ladder needs those frames just as much and has no MCP slot at all.
+    ///
+    /// WP14b adds the GUI's own in-flight `Job` submits, and for the same
+    /// reason: the Optimize modal and the planner dialog wait on a drain,
+    /// and a build without `--mcp` has no MCP slot to count them.
     #[must_use]
     pub fn awaiting_deferred_completions(&self) -> u64 {
-        let ladder = u64::from(self.generate_all.is_some());
+        let ladder = u64::from(self.generate_all.is_some())
+            + u64::try_from(self.gui_jobs.len()).unwrap_or(u64::MAX);
         #[cfg(feature = "mcp")]
         let ladder = ladder
             + self

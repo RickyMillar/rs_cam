@@ -163,11 +163,19 @@ pub struct AppState {
     /// the rollup view renders the report. Mirrors the per-toolpath
     /// modal's lifecycle so the UI shapes stay consistent.
     pub optimize_project: Option<OptimizeProjectState>,
-    /// `true` while the Optimize worker thread holds the session.
-    /// During this window the main thread renders an empty placeholder
-    /// session — every panel that reads `state.session` should check
-    /// this flag and short-circuit to a "Optimize running…" view, with
-    /// the modal as the only interactive surface.
+    /// `true` while an Optimize run or a tier-map preview is in flight.
+    ///
+    /// **A POLICY since WP14b, not a necessity** (§28 ruling 8): one
+    /// Optimize run at a time. The flag used to mean "the worker thread
+    /// HOLDS the session", and the main thread then rendered against an
+    /// empty placeholder. Every route now runs over a clone or a handle,
+    /// so `state.session` is the real project throughout. The
+    /// full-screen "Optimize running…" view and the modal-only
+    /// interaction stay until an operator decides otherwise.
+    ///
+    /// One writer sets it — the three submit sites — and two clear it:
+    /// `AppController::deliver_gui_job` for the two `Job` rows, and
+    /// `AppController::handle_optimize_result` for the project rollup.
     pub is_optimizing: bool,
     /// Set after the user clicks Apply selected on the Optimize-project
     /// rollup. Holds the toolpath ids that need to finish regenerating

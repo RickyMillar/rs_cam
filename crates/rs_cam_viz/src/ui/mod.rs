@@ -245,9 +245,10 @@ pub enum AppEvent {
 
     // Optimize project (U3 of OPTIMIZER_UX_PLAN.md)
     /// Open the project-level Optimize rollup. Submits an
-    /// `OptimizeRequest::Project` to the worker lane, which walks
-    /// every enabled toolpath. The view opens in `Loading` state
-    /// immediately; the rollup populates when the worker returns.
+    /// `OptimizeRequest::Project` to the Optimize lane over a CLONE of
+    /// the session, which walks every enabled toolpath. The view opens
+    /// in `Loading` state immediately; the rollup populates when the
+    /// worker returns.
     OpenOptimizeProject,
     /// Apply every row whose checkbox is currently true. Each
     /// applied candidate is the first-safe recommendation from that
@@ -255,9 +256,9 @@ pub enum AppEvent {
     ApplyOptimizeProject,
 
     // Multi-tool finishing planner (Phase U of the multi-tool plan)
-    /// Run `preview_multitool_plan` on the Optimize worker lane. The
-    /// session moves into the request and comes back on the result, the
-    /// same shape `OpenOptimizeProject` uses.
+    /// Submit the `preview_tier_map` `Job` row on the Job lane (WP14b).
+    /// The handle carries the ladder and the geometry, so the session
+    /// stays on `AppState` and every panel stays readable.
     PreviewMultitoolPlan,
     /// Emit the previewed ladder through `apply_multitool_plan`. Enabled
     /// only on a Ready preview: applying something the operator has not

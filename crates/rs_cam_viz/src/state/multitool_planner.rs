@@ -85,15 +85,15 @@ pub struct PlannerToolRow {
 }
 
 /// Lifecycle of one preview run, mirroring
-/// [`crate::state::OptimizeProjectStatus`]'s shape because it rides the same
-/// worker lane.
+/// [`crate::state::OptimizeProjectStatus`]'s shape. The two rode one worker
+/// lane until WP14b moved this one to the `Job` lane; the shape stays.
 #[derive(Debug, Clone)]
 pub enum MultitoolPreviewStatus {
     /// Nothing computed yet.
     Idle,
-    /// The walk is on the Optimize lane. Cancel is
-    /// `ComputeLane::Optimize`'s own flag, which the walk polls once per grid
-    /// row.
+    /// The walk is on the `Job` lane. Cancel is THIS submit's own flag,
+    /// which the walk polls once per grid row — not the lane's, because
+    /// that lane is FIFO and shared with the MCP surface.
     Loading,
     /// A tier map and its islands, ready to be vetoed.
     Ready(Box<MultitoolPreview>),
@@ -358,7 +358,7 @@ impl MultitoolPlannerState {
         }
     }
 
-    /// `true` while a walk is in flight on the Optimize lane.
+    /// `true` while a walk is in flight on the `Job` lane.
     #[must_use]
     pub fn is_loading(&self) -> bool {
         matches!(self.status, MultitoolPreviewStatus::Loading)
