@@ -1664,10 +1664,13 @@ impl RsCamApp {
 
     /// Stamp `stale_since` on the toolpaths the command dropped, and
     /// report them for the reply's `stale_toolpaths`.
+    ///
+    /// WP19 (H3): the stamp takes `crate::state::stale::stamp_stale`,
+    /// the one helper. The reply is unchanged — the same indices, in
+    /// the same order.
     fn core_stale(&mut self, effects: &Effects) -> Vec<usize> {
-        let stale: Vec<usize> = effects.stale.iter().copied().collect();
-        self.mcp_stamp_stale(&stale);
-        stale
+        crate::state::stale::stamp_stale(self.controller.state_mut(), &effects.stale);
+        effects.stale.iter().copied().collect()
     }
 
     /// The refusal reply for one row.

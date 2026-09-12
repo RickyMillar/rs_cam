@@ -268,6 +268,12 @@ impl<B: ComputeBackend> AppController<B> {
             match self.state.session.apply(command) {
                 Ok(effects) => {
                     crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+                    // WP19: the row runs `invalidate_tool`, which drops
+                    // the session's simulation. The viewport holds the
+                    // same one (WP11b, N12 item 10).
+                    if effects.simulation_cleared {
+                        self.invalidate_simulation();
+                    }
                     if self.state.selection == Selection::Tool(tool_id) {
                         self.state.selection = Selection::None;
                     }

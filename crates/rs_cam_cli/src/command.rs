@@ -15,6 +15,18 @@ use rs_cam_core::session::{Command, Effects, ProjectSession, SessionError};
 /// The function is thin on purpose. It exists so the three CLI call
 /// sites share one entry point into [`ProjectSession::apply`], and so
 /// the bin can prove that entry point is the one they take.
+///
+/// # Why the CLI discards the answer
+///
+/// WP19. A caller here writes `let _ = apply_command(…)` or takes the
+/// `Err` arm alone. That is correct for this crate and for this crate
+/// only: `rs_cam_cli` holds no `ToolpathRuntime` and no `stale_since`
+/// (`rg -n "stale_since" crates/rs_cam_cli/src` is empty), and it
+/// generates every enabled operation in the run, so a stale set has no
+/// consumer. It draws no viewport either, so `simulation_cleared` has
+/// nothing to reach. The view surfaces mirror both halves; see
+/// `crates/rs_cam_viz/tests/effects_are_stamped_wp19.rs`, which names
+/// this doc as the one reason for all fifteen CLI sites.
 pub fn apply_command(
     session: &mut ProjectSession,
     command: Command,

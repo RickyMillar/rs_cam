@@ -209,15 +209,17 @@ pub struct AppState {
 
 /// Work a properties panel owes the frame loop.
 ///
-/// A draw site holds an [`AppState`] and nothing else. The two things
+/// A draw site holds an [`AppState`] and nothing else. The three things
 /// below live on the controller, so a panel cannot do them itself. It
 /// raises the flag; `AppController::discharge_panel_side_effects` runs
 /// the work once per frame.
 ///
-/// Both were carried by the five post-write `AppEvent`s that plan §14
-/// ruling 3 deletes. The invalidation half of those events moved into
-/// the command rows; this is the half that did NOT — it is view work and
-/// project bookkeeping, not a core rule.
+/// The first two were carried by the five post-write `AppEvent`s that
+/// plan §14 ruling 3 deletes. The invalidation half of those events
+/// moved into the command rows; this is the half that did NOT — it is
+/// view work and project bookkeeping, not a core rule. WP19 added the
+/// third for the same reason: the core answer says the session dropped
+/// its simulation, and clearing the view's is controller work.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PanelSideEffects {
     /// The viewport's GPU buffers read something the panel moved — the
@@ -227,6 +229,13 @@ pub struct PanelSideEffects {
     /// auto-generated pin-drill operation must be created, updated or
     /// removed.
     pub pin_drill_sync: bool,
+    /// The session dropped its simulation, and the viewport still holds
+    /// one (WP19).
+    ///
+    /// `Effects::simulation_cleared` reports the drop. Only the
+    /// controller can run `invalidate_simulation`, so a draw site
+    /// raises this and the frame loop clears the view.
+    pub invalidate_simulation: bool,
 }
 
 impl PanelSideEffects {

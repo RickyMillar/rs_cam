@@ -259,11 +259,16 @@ impl<B: ComputeBackend> AppController<B> {
     /// Run the work a properties panel raised while it drew.
     ///
     /// WP6. A draw site holds an [`crate::state::AppState`] and applies
-    /// its edit through one `Command`. Two things the deleted post-write
-    /// events used to do are outside that command's reach: the GPU
-    /// upload flag lives here, and the pin-drill synchronisation adds or
-    /// removes a toolpath. The panel raises a flag for each; this runs
-    /// them once per frame and clears them.
+    /// its edit through one `Command`. Three things are outside that
+    /// command's reach: the GPU upload flag lives here, the pin-drill
+    /// synchronisation adds or removes a toolpath, and the viewport's
+    /// simulation is cleared through
+    /// [`Self::invalidate_simulation`]. The panel raises a flag for
+    /// each; this runs them once per frame and clears them.
+    ///
+    /// WP19 added the third. `Effects::simulation_cleared` says the
+    /// session dropped its simulation, and the session and the viewport
+    /// hold ONE simulation (WP11b, N12 item 10).
     ///
     /// The flags are cleared whether or not the work runs, so a raised
     /// flag costs one pass and not a pass per frame after it.
@@ -274,6 +279,9 @@ impl<B: ComputeBackend> AppController<B> {
         }
         if owed.pin_drill_sync {
             self.sync_alignment_pin_drill();
+        }
+        if owed.invalidate_simulation {
+            self.invalidate_simulation();
         }
     }
 

@@ -2233,20 +2233,12 @@ impl super::RsCamApp {
     /// corresponding GUI toolpath runtimes. Returns the toolpath indices
     /// that were marked stale so callers can emit them in the mutation
     /// envelope's `stale_toolpaths` field.
-    fn mcp_apply_stale(&mut self, mutation: MutationKind) -> Vec<usize> {
-        let stale =
-            rs_cam_core::session::compute_stale_set(&self.controller.state().session, mutation)
-                .toolpath_indices;
-        self.mcp_stamp_stale(&stale);
-        stale
-    }
-
-    /// Mark `stale_since` on the GUI toolpath runtimes of the given
-    /// indices.
     ///
-    /// This is the stamping half of [`Self::mcp_apply_stale`]. An arm
-    /// that reads its stale set from `Effects::stale` calls this half
-    /// directly, so the two routes stamp the same way.
+    /// WP19 (H3): the stamp takes `crate::state::stale::stamp_stale`,
+    /// the one helper. The MCP surface had a second one that SKIPPED an
+    /// index whose runtime row was absent, so a toolpath the operator
+    /// had never drawn was stamped on the view route and not on this
+    /// one.
     ///
     /// WP3: the two routes do NOT report the same SET.
     /// `compute_stale_set(MutationKind::ToolpathParamChanged)` reports
@@ -2255,24 +2247,13 @@ impl super::RsCamApp {
     /// toolpath AND the downstream results the chain dropped. An arm
     /// whose core setter reports `Effects` takes the setter's answer,
     /// because the setter is the one that moved the revisions.
-    fn mcp_stamp_stale(&mut self, stale: &[usize]) {
-        let now = std::time::Instant::now();
-        let ids: Vec<rs_cam_core::ToolpathId> = stale
-            .iter()
-            .filter_map(|&index| {
-                self.controller
-                    .state()
-                    .session
-                    .toolpath_configs()
-                    .get(index)
-                    .map(|tc| tc.id)
-            })
-            .collect();
-        for id in ids {
-            if let Some(rt) = self.controller.state_mut().gui.toolpath_rt.get_mut(&id) {
-                rt.stale_since = Some(now);
-            }
-        }
+    fn mcp_apply_stale(&mut self, mutation: MutationKind) -> Vec<usize> {
+        let stale =
+            rs_cam_core::session::compute_stale_set(&self.controller.state().session, mutation)
+                .toolpath_indices;
+        let set: std::collections::BTreeSet<usize> = stale.iter().copied().collect();
+        crate::state::stale::stamp_stale(self.controller.state_mut(), &set);
+        stale
     }
 
     /// The refusal reply. The shape lives in
@@ -3404,6 +3385,9 @@ impl super::RsCamApp {
         // config, so the two have to be the same door. The row moves no
         // revision and drops no result, which is why it can run immediately
         // before the generate.
+        //
+        // WP19 `let _ =`: `Effects::stale` is therefore empty and
+        // `simulation_cleared` is false. There is nothing to mirror.
         let _ = self.controller.state_mut().session.apply(
             rs_cam_core::session::Command::SetToolpathDebugOptions(
                 rs_cam_core::session::SetToolpathDebugOptionsArgs {

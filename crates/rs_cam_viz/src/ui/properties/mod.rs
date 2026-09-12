@@ -207,6 +207,9 @@ pub(crate) fn apply_stock_draft(state: &mut AppState, mut draft: crate::state::j
             state.gui.mark_edited();
             state.panel_side_effects.upload = true;
             state.panel_side_effects.pin_drill_sync = true;
+            if effects.simulation_cleared {
+                state.panel_side_effects.invalidate_simulation = true;
+            }
         }
         Err(error) => {
             tracing::warn!("the stock edit was refused: {error}");
@@ -221,10 +224,20 @@ pub(crate) fn apply_stock_draft(state: &mut AppState, mut draft: crate::state::j
 /// rather than to a panel that has already drawn. It answers whether the
 /// command was applied, so a caller can dirty the project once for a
 /// group of them.
+///
+/// WP19: it mirrors the OTHER half of the answer too. A row that drops
+/// the session's simulation reports `Effects::simulation_cleared`, and
+/// the viewport must not go on drawing a simulation the session no
+/// longer holds (WP11b, N12 item 10). A draw site cannot clear the
+/// view itself, so it raises `PanelSideEffects::invalidate_simulation`
+/// and the frame loop discharges it.
 fn apply_panel_command(state: &mut AppState, command: rs_cam_core::session::Command) -> bool {
     match state.session.apply(command) {
         Ok(effects) => {
             crate::state::stale::stamp_stale(state, &effects.stale);
+            if effects.simulation_cleared {
+                state.panel_side_effects.invalidate_simulation = true;
+            }
             true
         }
         Err(error) => {

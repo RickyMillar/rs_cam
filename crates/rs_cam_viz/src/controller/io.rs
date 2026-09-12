@@ -32,7 +32,15 @@ impl<B: ComputeBackend> AppController<B> {
             stock: Box::new(stock),
         });
         match self.state.session.apply(command) {
-            Ok(effects) => crate::state::stale::stamp_stale(&mut self.state, &effects.stale),
+            Ok(effects) => {
+                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+                // WP19: the stock row drops every result and the
+                // session's simulation with them. The viewport holds the
+                // same one simulation, so it follows.
+                if effects.simulation_cleared {
+                    self.invalidate_simulation();
+                }
+            }
             Err(error) => {
                 tracing::warn!("the automatic stock fit was refused: {error}");
             }
@@ -50,6 +58,11 @@ impl<B: ComputeBackend> AppController<B> {
     /// result: the geometry it holds is the previous generation's
     /// answer, which is what the STALE chip and the dimmed viewport path
     /// are for.
+    ///
+    /// The SIMULATION is not kept. A reload replaces the geometry every
+    /// result was generated against, so WP19 mirrors
+    /// `Effects::simulation_cleared` into the view here: the session and
+    /// the viewport hold ONE simulation (WP11b, N12 item 10).
     fn adopt_model_geometry(
         &mut self,
         model_id: ModelId,
@@ -67,6 +80,9 @@ impl<B: ComputeBackend> AppController<B> {
             .apply(command)
             .map_err(|error| VizError::Other(error.to_string()))?;
         crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+        if effects.simulation_cleared {
+            self.invalidate_simulation();
+        }
         Ok(())
     }
 
@@ -642,6 +658,9 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
         });
     }
     let mut session = builder.build();
+    // WP19 `let _ =`: this function builds a session no surface has
+    // adopted. The caller rebuilds `GuiState` from scratch, so no
+    // runtime row exists to stamp and no viewport holds a simulation.
     let _ = session.apply(Command::SetProjectName(SetProjectNameArgs {
         name: job.name.clone(),
     }));
@@ -748,6 +767,9 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
         });
     }
 
+    // WP19 `let _ =`: the same builder, over the same unadopted session.
+    // The row bumps every revision and drops the simulation; neither
+    // answer has a surface to reach yet.
     let _ = session.apply(Command::ReplaceSetupsAndToolpaths(
         ReplaceSetupsAndToolpathsArgs {
             setups: session_setups,

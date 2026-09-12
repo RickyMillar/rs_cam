@@ -103,18 +103,31 @@ impl RsCamApp {
                     s.gui.mark_edited();
                 }
                 AppEvent::WizardSetPost(format) => {
-                    let s = self.controller.state_mut();
-                    s.gui.post.format = format;
-                    s.gui.mark_edited();
-                    let mut post = s.session.post_config().clone();
-                    post.format = format.to_token().to_owned();
-                    let command = rs_cam_core::session::Command::SetPostConfig(
-                        rs_cam_core::session::SetPostConfigArgs {
-                            post: Box::new(post),
-                        },
-                    );
-                    if let Err(error) = s.session.apply(command) {
-                        tracing::warn!("the post format write was refused: {error}");
+                    // WP19: the `Ok` arm did not exist here, so BOTH
+                    // halves of the answer were dropped — the stale set
+                    // and `simulation_cleared`. `adopt_post_effects` is
+                    // the one door that mirrors both, and the save route
+                    // already takes it. It is a method on the
+                    // controller, so the borrow of the state ends before
+                    // the command runs.
+                    let command = {
+                        let s = self.controller.state_mut();
+                        s.gui.post.format = format;
+                        s.gui.mark_edited();
+                        let mut post = s.session.post_config().clone();
+                        post.format = format.to_token().to_owned();
+                        rs_cam_core::session::Command::SetPostConfig(
+                            rs_cam_core::session::SetPostConfigArgs {
+                                post: Box::new(post),
+                            },
+                        )
+                    };
+                    let applied = self.controller.state_mut().session.apply(command);
+                    match applied {
+                        Ok(effects) => self.controller.adopt_post_effects(&effects),
+                        Err(error) => {
+                            tracing::warn!("the post format write was refused: {error}");
+                        }
                     }
                 }
                 AppEvent::ExportCombinedGcode => {

@@ -799,6 +799,10 @@ impl<B: ComputeBackend> AppController<B> {
                             result: Box::new(adopted),
                         };
                         let adopt = Command::AdoptSimulation(args);
+                        // WP19: the `Ok` arm stays absent on purpose.
+                        // Storing a simulation leaves the session's
+                        // `Some`, so `stale` is empty and
+                        // `simulation_cleared` is false.
                         if let Err(error) = self.state.session.apply(adopt) {
                             tracing::warn!("simulation not adopted into the session: {error}");
                         }
@@ -1391,6 +1395,9 @@ impl<B: ComputeBackend> AppController<B> {
         // `mcp_generate_toolpath` and the GUI's own capture toggle take.
         // The row moves no revision and drops no result, because a debug
         // trace is an OUTPUT of a generation and never an input to one.
+        //
+        // WP19 `let _ =`: `Effects::stale` is therefore empty and
+        // `simulation_cleared` is false. There is nothing to mirror.
         let count = self.state.session.toolpath_count();
         for index in 0..count {
             let Some(tc) = self.state.session.get_toolpath_config(index) else {
