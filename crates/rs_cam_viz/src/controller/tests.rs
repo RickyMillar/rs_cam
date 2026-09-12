@@ -5662,3 +5662,164 @@ fn a_relink_to_another_kind_is_refused_g_modelrelink() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ── WP19 — every `Effects` answer reaches the view ───────────────────
+//
+// A core mutation answers with an `Effects`. `stale` reaches the
+// toolpath cards; `simulation_cleared` reaches the viewport, because the
+// session and the viewport hold ONE simulation (WP11b, N12 item 10).
+// The source-scan half of this sentry is
+// `crates/rs_cam_viz/tests/effects_are_stamped_wp19.rs`.
+
+/// A rest-chain controller whose SESSION holds a simulation.
+///
+/// The control is load-bearing. `Effects::simulation_cleared` is
+/// `simulation_before && self.simulation.is_none()`
+/// (`session/command.rs`), so a fixture whose session holds no
+/// simulation reports `false` on every row, and an arm built on it
+/// proves nothing. The preamble is
+/// `a_save_keeps_the_simulation_so_a_rest_op_still_starts_wp17`'s.
+#[cfg(feature = "mcp")]
+fn controller_holding_a_simulation() -> AppController<RestChainBackend> {
+    let mut controller = rest_chain_controller(1);
+    let ids: Vec<ToolpathId> = controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| tc.id)
+        .collect();
+    controller.submit_toolpath_compute(ids[0]);
+    controller.drain_compute_results();
+    assert!(
+        controller.run_simulation_with_all(),
+        "the simulation must submit, or the arm measures nothing"
+    );
+    controller.drain_compute_results();
+    assert!(
+        controller.state.session.simulation_result().is_some(),
+        "the control: the session holds a simulation before the edit"
+    );
+    assert!(
+        controller.state.simulation.results.is_some(),
+        "the control: the viewport holds one too"
+    );
+    controller
+}
+
+/// b2 — a panel edit that drops the session's simulation owes the view.
+///
+/// `Command::SetStockConfig` reaches `drop_all_results`, which clears
+/// the session's simulation. A draw site holds an `AppState` and
+/// nothing else, so it cannot call `invalidate_simulation` itself: it
+/// raises a `PanelSideEffects` flag and the frame loop discharges it,
+/// the mechanism WP6 built.
+///
+/// Red before the fix: `state.simulation.results` is still `Some`. The
+/// operator reads collision counts off a simulation of a stock that no
+/// longer exists.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_panel_stock_edit_clears_the_view_simulation_wp19() {
+    let mut controller = controller_holding_a_simulation();
+
+    let mut draft = controller.state.session.stock_config().clone();
+    // The funnel re-fits an `auto_from_model` draft around the model
+    // before it compares, so a typed dimension alone would arrive back
+    // at the stored record. The operator clears the checkbox to type a
+    // dimension; the draft does the same
+    // (`freshness_stock_edit_stales_every_toolpath`).
+    draft.auto_from_model = false;
+    draft.x = 321.0;
+    crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
+
+    assert!(
+        controller.state.session.simulation_result().is_none(),
+        "the control: the stock row drops every result, and the \
+         session's simulation with them"
+    );
+    controller.discharge_panel_side_effects();
+    assert!(
+        controller.state.simulation.results.is_none(),
+        "the session dropped its simulation and the viewport still \
+         draws one. The panel owes the frame loop that work, and the \
+         frame loop runs it."
+    );
+}
+
+/// c1 — a stamp on a never-drawn toolpath creates the catalog's row.
+///
+/// `stamp_stale` writes through `toolpath_rt_or_default`, which CREATES
+/// a missing row. The row then joins `process_auto_regen`, which reads
+/// `rt.auto_regen`. Twelve of the twenty-four operations declare
+/// `default_auto_regen: false`, so a row hardcoded to `true` queues a
+/// 3D finishing pass the operator never asked for.
+///
+/// Red before the fix: the `auto_regen` half. The fixture's operation
+/// is `Scallop`, which the catalog opts OUT of auto-regeneration, and
+/// the created row reads `true`. The `stale_since` half is green — that
+/// is today's behaviour, and the arm pins it.
+#[test]
+fn a_stamped_row_reads_the_catalog_auto_regen_h3() {
+    let mut controller = sample_controller();
+    push_toolpath(&mut controller, "Second");
+    let (id, expected) = {
+        let tc = &controller.state.session.toolpath_configs()[1];
+        (tc.id, tc.operation.default_auto_regen())
+    };
+    assert!(
+        !expected,
+        "the fixture must use an operation the catalog opts OUT of, or \
+         this arm cannot tell a hardcoded `true` from a catalog read"
+    );
+    // The MCP route reaches a toolpath whose card the operator has
+    // never drawn, so no runtime row exists. That is the case H3 names.
+    controller.state.gui.toolpath_rt.remove(&id);
+
+    let mut stale = std::collections::BTreeSet::new();
+    stale.insert(1_usize);
+    crate::state::stale::stamp_stale(&mut controller.state, &stale);
+
+    let rt = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&id)
+        .expect("the stamp creates the row a never-drawn toolpath lacks");
+    assert!(rt.stale_since.is_some(), "and it stamps what it created");
+    assert_eq!(
+        rt.auto_regen, expected,
+        "a created row must read the operation's own `default_auto_regen`"
+    );
+}
+
+/// b3 — the undo of a stock change stales every toolpath.
+///
+/// This arm was GREEN when it was written. WP15a routed the undo door
+/// through `apply_quietly`, which stamps `Effects::stale`, and H2 named
+/// this site before that landed. It stays as a regression pin: the row
+/// drops EVERY result (G-FRESHSTATE), so every card must follow.
+#[test]
+fn an_undone_stock_change_stales_every_toolpath_wp19() {
+    use crate::state::history::UndoAction;
+
+    let (mut controller, _) = controller_ready_for_undo();
+    push_toolpath(&mut controller, "Second");
+    generate_all_for_test(&mut controller);
+    let action = UndoAction::StockChange {
+        old: controller.state.session.stock_config().clone(),
+        new: controller.state.session.stock_config().clone(),
+    };
+    controller.state.history.push(action);
+
+    controller.handle_internal_event(AppEvent::Undo);
+
+    for index in 0..2 {
+        assert_eq!(
+            state_of(&controller, index),
+            FreshnessState::EditedSince,
+            "toolpath {index} after an undone stock change"
+        );
+        assert!(controller.state.session.get_result(index).is_none());
+    }
+}
