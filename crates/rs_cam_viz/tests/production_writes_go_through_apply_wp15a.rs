@@ -406,8 +406,15 @@ fn session_setters() -> Vec<String> {
 }
 
 /// The name of the function one declaration line opens.
+///
+/// Both spellings count. WP15b flipped the setters to `pub(crate) fn`,
+/// and a reader that accepts only `pub fn ` returns an empty list after
+/// that flip, which takes the non-vacuity guard below with it.
 fn public_fn_name(line: &str) -> Option<&str> {
-    let rest = line.trim_start().strip_prefix("pub fn ")?;
+    let trimmed = line.trim_start();
+    let rest = trimmed
+        .strip_prefix("pub(crate) fn ")
+        .or_else(|| trimmed.strip_prefix("pub fn "))?;
     let name = rest.split('(').next()?;
     let plain = name
         .chars()

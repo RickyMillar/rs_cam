@@ -1660,7 +1660,7 @@ impl ProjectSession {
 
     /// Set (or clear) the library machine reference. Persisted on save;
     /// the referenced library file overrides the inline machine on load.
-    pub fn set_machine_ref(&mut self, machine_ref: Option<String>) {
+    pub(crate) fn set_machine_ref(&mut self, machine_ref: Option<String>) {
         self.machine_ref = machine_ref;
     }
 
@@ -1761,7 +1761,7 @@ impl ProjectSession {
     // method that invalidates.
 
     /// Replace the project name.
-    pub fn set_name(&mut self, name: String) {
+    pub(crate) fn set_name(&mut self, name: String) {
         self.name = name;
     }
 

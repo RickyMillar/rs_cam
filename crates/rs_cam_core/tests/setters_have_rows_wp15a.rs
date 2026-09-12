@@ -7,16 +7,18 @@
 //! is a SECOND write path: a surface reaches it, the registry never
 //! names it, and the surface table cannot say which surface writes
 //! what. The IMPLEMENTATION_PLAN §25 ruling 1 closes the gap from the
-//! registry side. The setter stays `pub` and keeps the invalidation
-//! rule; a row delegates to it, so the two routes cannot carry two
-//! staleness models. §12 ruling 2 states that rule: one construction
-//! site, and no arm re-derives a stale set of its own.
+//! registry side. The setter keeps the invalidation rule; a row
+//! delegates to it, so the two routes cannot carry two staleness
+//! models. §12 ruling 2 states that rule: one construction site, and no
+//! arm re-derives a stale set of its own. WP15a left the setters `pub`;
+//! WP15b made them `pub(crate)`, and the property below is unchanged.
 //!
 //! # The property
 //!
-//! For every `pub fn <name>(&mut self …)` declared inside an
+//! For every `pub fn <name>(&mut self …)` or
+//! `pub(crate) fn <name>(&mut self …)` declared inside an
 //! `impl ProjectSession` block under `crates/rs_cam_core/src/session/`,
-//! the body of `ProjectSession::apply` names `.<name>(`. Three
+//! the body of `ProjectSession::apply` names `.<name>(`. Four
 //! allowlists carry the exceptions, and each one says what it exempts:
 //!
 //! - [`DOORS`] — the three doors themselves. A door is not a setter.
@@ -27,6 +29,11 @@
 //!   `self.apply(`. It is already on the door, so a row that delegated
 //!   to it would recurse. A second test asserts the body really does
 //!   call `self.apply(`, so the exemption cannot go stale.
+//! - [`CRATE_PRIVATE_HELPERS`] — the crate-private `&mut self` methods
+//!   that are not the write surface: the raw halves, the one `Effects`
+//!   construction site, the result-cache internals and the `*_mut`
+//!   hatches. WP15b's flip is what brought them within reach of the
+//!   reader, and none of them ever took a row.
 //!
 //! # Why a source scan
 //!
@@ -96,6 +103,58 @@ const COMPUTE_DOORS: &[&str] = &[
 /// the wrapper claim, so a name parked here without the call fails.
 const WRAPPERS_OVER_APPLY: &[&str] = &["set_toolpath_param"];
 
+/// Crate-private `&mut self` methods that are NOT setters.
+///
+/// WP15b made every setter `pub(crate) fn`, so [`public_fn_name`] now
+/// accepts that spelling. The spelling alone cannot tell a setter from
+/// a helper, and `src/session/` holds nineteen crate-private `&mut self`
+/// methods the reader can see that were never part of the write
+/// surface:
+///
+/// - the raw halves a setter wraps (`*_impl`). The setter calls its own
+///   half inside the one [`Effects`] construction site.
+/// - `with_effects`, that construction site itself. `try_with_effects`
+///   stands beside it here, although only its generic parameter keeps
+///   the reader from seeing it today.
+/// - the result-cache internals: `insert_result`, the four `drop_*`
+///   methods, `bump_all_revisions`, `invalidate_result_chain` and
+///   `invalidate_output_dependents`.
+/// - the three `*_mut` hatches, which `hatches_are_crate_private_wp7`
+///   owns.
+/// - `start_generate_toolpath`, the raw half of the `start` door.
+/// - `apply_toolpath_param_snapshot_narrow`, the undo path's narrow
+///   write.
+///
+/// No row delegates to any of them. Four match a row's text by accident
+/// — `with_effects`, `insert_result`, `invalidate_result_chain` and
+/// `set_toolpath_param_impl` all appear inside an `apply` arm — so
+/// leaving them in the population would report a pass nobody wrote.
+///
+/// `rename_setup` is deliberately NOT here. It is a setter, it carries
+/// the row `SetSetupName`, and it is the precedent WP15b generalised.
+const CRATE_PRIVATE_HELPERS: &[&str] = &[
+    "add_model_impl",
+    "add_setup_impl",
+    "add_tool_impl",
+    "add_toolpath_impl",
+    "apply_toolpath_param_snapshot_narrow",
+    "bump_all_revisions",
+    "drop_all_results",
+    "drop_result",
+    "drop_setup_results",
+    "drop_tool_results",
+    "find_toolpath_config_by_id_mut",
+    "insert_result",
+    "invalidate_output_dependents",
+    "invalidate_result_chain",
+    "set_toolpath_param_impl",
+    "setups_mut",
+    "start_generate_toolpath",
+    "toolpath_configs_mut",
+    "try_with_effects",
+    "with_effects",
+];
+
 /// The lowest number of setters the scan must find.
 ///
 /// A scan that reads a handful of names proves nothing. An empty or
@@ -141,10 +200,17 @@ fn session_sources() -> Vec<PathBuf> {
 }
 
 /// The name of the function one declaration line opens, when the line
-/// opens a `pub fn`.
+/// opens a `pub fn` or a `pub(crate) fn`.
+///
+/// WP15b flipped the setters to `pub(crate) fn`. A reader that accepts
+/// only `pub fn ` finds none of them after that flip, and every check
+/// below reads an empty population and passes. The reader must see both
+/// spellings, or it cannot see the thing it checks.
 fn public_fn_name(line: &str) -> Option<&str> {
     let trimmed = line.trim_start();
-    let rest = trimmed.strip_prefix("pub fn ")?;
+    let rest = trimmed
+        .strip_prefix("pub(crate) fn ")
+        .or_else(|| trimmed.strip_prefix("pub fn "))?;
     let name = rest.split('(').next()?;
     let plain = name
         .chars()
@@ -172,8 +238,9 @@ fn signature(lines: &[&str], start: usize) -> String {
     out
 }
 
-/// Every `pub fn … (&mut self` declared inside an `impl ProjectSession`
-/// block under `src/session/`.
+/// Every `pub fn` or `pub(crate) fn` `… (&mut self` declared inside an
+/// `impl ProjectSession` block under `src/session/`, less the helpers
+/// [`CRATE_PRIVATE_HELPERS`] names.
 ///
 /// The scan is SCOPED to those blocks. `LoadedModel::adopt_geometry`
 /// and `CycleTime::fold` are public `&mut self` methods in the same
@@ -206,6 +273,9 @@ fn setters() -> Vec<(PathBuf, usize, String)> {
                 let Some(name) = public_fn_name(line) else {
                     continue;
                 };
+                if CRATE_PRIVATE_HELPERS.contains(&name) {
+                    continue;
+                }
                 if signature(&lines, inner).contains("&mut self") {
                     out.push((path.clone(), inner + 1, name.to_owned()));
                 }
@@ -320,7 +390,12 @@ fn every_wrapper_exemption_calls_the_door() {
                 calls_the_door = true;
                 break;
             }
-            if line.trim_start().starts_with("pub fn ") {
+            // Stop at the NEXT declaration, so the scan cannot read a
+            // later function's `self.apply(` as this body's. Both
+            // spellings stop it: WP15b made the setters `pub(crate) fn`,
+            // and a `pub fn `-only test would run past the body.
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("pub fn ") || trimmed.starts_with("pub(crate) fn ") {
                 break;
             }
         }

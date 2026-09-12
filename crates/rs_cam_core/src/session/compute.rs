@@ -1184,7 +1184,21 @@ impl ProjectSession {
     /// WP3 gave it the door's own answer: it reports the same
     /// [`Effects`] the command door reports, so the two routes cannot
     /// carry two staleness models.
-    pub fn set_toolpath_param(
+    ///
+    /// # Why the `dead_code` allow
+    ///
+    /// WP15b made this `pub(crate)`, and no PRODUCTION caller is left in
+    /// the crate: every surface takes `Command::SetToolpathParam`
+    /// instead. The in-crate `#[cfg(test)]` modules still call it, and
+    /// the compiler does not read those in the non-test build, so it
+    /// reports the method as never used. The method stays for two
+    /// reasons. It is the declared wrapper exemption that
+    /// `setters_have_rows_wp15a::every_wrapper_exemption_calls_the_door`
+    /// reads — that arm panics when no `impl ProjectSession` block
+    /// declares it. And it is the one setter whose own body proves the
+    /// two routes are one.
+    #[allow(dead_code)]
+    pub(crate) fn set_toolpath_param(
         &mut self,
         index: usize,
         param: &str,
@@ -1535,7 +1549,7 @@ impl ProjectSession {
     /// (§15 ruling 7), so the MCP reply reads the set the setter dropped
     /// instead of re-deriving a second answer.
     #[instrument(skip(self, value))]
-    pub fn set_tool_param(
+    pub(crate) fn set_tool_param(
         &mut self,
         index: usize,
         param: &str,

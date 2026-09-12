@@ -123,7 +123,7 @@ impl ProjectSession {
     /// [`Effects::revision`] is `None`: the caller names no existing
     /// index, so no revision read answers about it.
     #[instrument(skip(self, config))]
-    pub fn add_toolpath(
+    pub(crate) fn add_toolpath(
         &mut self,
         setup_index: usize,
         config: ToolpathConfig,
@@ -177,7 +177,7 @@ impl ProjectSession {
     /// toolpath after the removal, so no revision read at it answers
     /// about the toolpath the caller passed.
     #[instrument(skip(self))]
-    pub fn remove_toolpath(&mut self, index: usize) -> Result<Effects, SessionError> {
+    pub(crate) fn remove_toolpath(&mut self, index: usize) -> Result<Effects, SessionError> {
         self.try_with_effects(None, |session| {
             if index >= session.toolpath_configs.len() {
                 return Err(SessionError::ToolpathNotFound(index));
@@ -246,7 +246,7 @@ impl ProjectSession {
     /// [`Effects::revision`] is `None`: the call names two toolpaths, so
     /// there is no one index to report a revision for.
     #[instrument(skip(self))]
-    pub fn reorder_toolpath(
+    pub(crate) fn reorder_toolpath(
         &mut self,
         from_index: usize,
         to_index: usize,
@@ -449,7 +449,7 @@ impl ProjectSession {
     /// and [`Effects::stale`] — the revision-moved set — excludes
     /// `index`. It reports the downstream set only.
     #[instrument(skip(self))]
-    pub fn set_toolpath_enabled(
+    pub(crate) fn set_toolpath_enabled(
         &mut self,
         index: usize,
         enabled: bool,
@@ -471,7 +471,7 @@ impl ProjectSession {
 
     /// Replace the dressup config for a toolpath, invalidating its cached result.
     #[instrument(skip(self, dressups))]
-    pub fn set_dressup_config(
+    pub(crate) fn set_dressup_config(
         &mut self,
         index: usize,
         mut dressups: DressupConfig,
@@ -499,7 +499,7 @@ impl ProjectSession {
     /// this toolpath leaves). Re-normalizes the dressups for the new op kind
     /// and drops the cached result + simulation.
     #[instrument(skip(self, operation))]
-    pub fn set_toolpath_operation(
+    pub(crate) fn set_toolpath_operation(
         &mut self,
         index: usize,
         operation: OperationConfig,
@@ -525,7 +525,7 @@ impl ProjectSession {
     /// [`DressupConfig`]. Only the specified field is changed. Invalidates
     /// the cached result.
     #[instrument(skip(self, value))]
-    pub fn set_dressup_field(
+    pub(crate) fn set_dressup_field(
         &mut self,
         index: usize,
         key: &str,
@@ -619,7 +619,7 @@ impl ProjectSession {
     /// Set the stock_source for a toolpath (Fresh vs FromRemainingStock).
     /// Invalidates the cached result.
     #[instrument(skip(self))]
-    pub fn set_stock_source(
+    pub(crate) fn set_stock_source(
         &mut self,
         index: usize,
         source: crate::compute::config::StockSource,
@@ -638,7 +638,7 @@ impl ProjectSession {
 
     /// Replace the heights config for a toolpath, invalidating its cached result.
     #[instrument(skip(self, heights))]
-    pub fn set_heights_config(
+    pub(crate) fn set_heights_config(
         &mut self,
         index: usize,
         heights: HeightsConfig,
@@ -661,7 +661,7 @@ impl ProjectSession {
     /// to an enabled `DerivedRestRegions` source means that source must
     /// actually produce rest regions.
     #[instrument(skip(self, boundary))]
-    pub fn set_boundary_config(
+    pub(crate) fn set_boundary_config(
         &mut self,
         index: usize,
         boundary: BoundaryConfig,
@@ -709,7 +709,7 @@ impl ProjectSession {
     /// `None` says the call changed nothing. It is not an error, and it
     /// is not an empty [`Effects`].
     #[instrument(skip(self))]
-    pub fn auto_enable_rest_analysis_for_source(
+    pub(crate) fn auto_enable_rest_analysis_for_source(
         &mut self,
         source_id: crate::ids::ToolpathId,
     ) -> Option<Effects> {
@@ -739,7 +739,7 @@ impl ProjectSession {
     /// Replace the rest-analysis config (P2.5) for a toolpath, invalidating
     /// its cached result. Mirrors `set_boundary_config`.
     #[instrument(skip(self, rest_analysis))]
-    pub fn set_rest_analysis_config(
+    pub(crate) fn set_rest_analysis_config(
         &mut self,
         index: usize,
         rest_analysis: crate::compute::config::RestAnalysisConfig,
@@ -774,7 +774,7 @@ impl ProjectSession {
     /// A model is named by id on every other surface, and this method
     /// answered with the id before WP4.
     #[instrument(skip(self, model))]
-    pub fn add_model(&mut self, model: super::LoadedModel) -> Effects {
+    pub(crate) fn add_model(&mut self, model: super::LoadedModel) -> Effects {
         let mut created = None;
         let mut effects = self.with_effects(None, |session| {
             created = Some(session.add_model_impl(model));
@@ -818,7 +818,7 @@ impl ProjectSession {
     /// id, so a bound toolpath refuses to generate rather than reading
     /// the wrong geometry.
     #[instrument(skip(self))]
-    pub fn remove_model(&mut self, index: usize) -> Result<Effects, SessionError> {
+    pub(crate) fn remove_model(&mut self, index: usize) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             if index >= session.models.len() {
                 return Err(SessionError::MissingGeometry(format!(
@@ -839,7 +839,7 @@ impl ProjectSession {
     /// NOT the tool's id: a project that has removed a tool separates
     /// the two.
     #[instrument(skip(self, config))]
-    pub fn add_tool(&mut self, config: ToolConfig) -> Effects {
+    pub(crate) fn add_tool(&mut self, config: ToolConfig) -> Effects {
         let mut created = None;
         let mut effects = self.with_effects(None, |session| {
             created = Some(session.add_tool_impl(config));
@@ -860,7 +860,7 @@ impl ProjectSession {
 
     /// Remove a tool by index. Errors if any toolpath still references it.
     #[instrument(skip(self))]
-    pub fn remove_tool(&mut self, index: usize) -> Result<Effects, SessionError> {
+    pub(crate) fn remove_tool(&mut self, index: usize) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             let tool = session
                 .tools
@@ -889,7 +889,7 @@ impl ProjectSession {
     /// [`Effects::created`] carries the new setup's index in the setups
     /// list, the value this method returned before WP4.
     #[instrument(skip(self))]
-    pub fn add_setup(&mut self, name: String, face_up: FaceUp) -> Effects {
+    pub(crate) fn add_setup(&mut self, name: String, face_up: FaceUp) -> Effects {
         let mut created = None;
         let mut effects = self.with_effects(None, |session| {
             created = Some(session.add_setup_impl(name, face_up));
@@ -923,7 +923,7 @@ impl ProjectSession {
     ///
     /// An empty setup owns no result, so the removal drops none.
     #[instrument(skip(self))]
-    pub fn remove_setup(&mut self, index: usize) -> Result<Effects, SessionError> {
+    pub(crate) fn remove_setup(&mut self, index: usize) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             let setup = session
                 .setups
@@ -959,7 +959,7 @@ impl ProjectSession {
     /// setup's plan order, so the index the caller passed no longer
     /// describes where the toolpath sits.
     #[instrument(skip(self))]
-    pub fn move_toolpath_to_setup(
+    pub(crate) fn move_toolpath_to_setup(
         &mut self,
         tp_index: usize,
         target_setup_index: usize,
@@ -1022,7 +1022,7 @@ impl ProjectSession {
     /// A rebind to the tool already bound is a no-op and invalidates
     /// nothing.
     #[instrument(skip(self))]
-    pub fn set_toolpath_tool(
+    pub(crate) fn set_toolpath_tool(
         &mut self,
         index: usize,
         tool_id: usize,
@@ -1074,7 +1074,7 @@ impl ProjectSession {
     /// A rebind to the model already bound is a no-op and invalidates
     /// nothing.
     #[instrument(skip(self))]
-    pub fn set_toolpath_model(
+    pub(crate) fn set_toolpath_model(
         &mut self,
         index: usize,
         model_id: usize,
@@ -1103,7 +1103,7 @@ impl ProjectSession {
 
     /// Set the BREP face selection for a toolpath, invalidating its cached result.
     #[instrument(skip(self, face_ids))]
-    pub fn set_face_selection(
+    pub(crate) fn set_face_selection(
         &mut self,
         index: usize,
         face_ids: Option<Vec<FaceGroupId>>,
@@ -1124,7 +1124,7 @@ impl ProjectSession {
     ///
     /// Errors if the toolpath's operation is not `AlignmentPinDrill`.
     #[instrument(skip(self, holes))]
-    pub fn set_alignment_pin_drill_holes(
+    pub(crate) fn set_alignment_pin_drill_holes(
         &mut self,
         index: usize,
         holes: Vec<[f64; 2]>,
@@ -1164,7 +1164,7 @@ impl ProjectSession {
     ///
     /// Errors if the toolpath's operation is not a drilling op.
     #[instrument(skip(self, selected_holes))]
-    pub fn set_drill_selected_holes(
+    pub(crate) fn set_drill_selected_holes(
         &mut self,
         index: usize,
         selected_holes: Option<Vec<[f64; 2]>>,
@@ -1229,7 +1229,7 @@ impl ProjectSession {
     /// (`StockTop` puts Z0 at the stock top of the presented face). A
     /// datum edit therefore moves no geometry a result holds.
     #[instrument(skip(self))]
-    pub fn set_setup_datum(
+    pub(crate) fn set_setup_datum(
         &mut self,
         setup_index: usize,
         datum: super::DatumConfig,
@@ -1252,7 +1252,7 @@ impl ProjectSession {
     /// EXPORT alone, beside the `M0` the post emits, so it moves no
     /// geometry a result holds.
     #[instrument(skip(self))]
-    pub fn set_setup_pause_message(
+    pub(crate) fn set_setup_pause_message(
         &mut self,
         setup_index: usize,
         message: Option<String>,
@@ -1276,7 +1276,7 @@ impl ProjectSession {
     /// the scope decides which geometry a generation in this setup may
     /// read.
     #[instrument(skip(self))]
-    pub fn set_setup_models(
+    pub(crate) fn set_setup_models(
         &mut self,
         setup_index: usize,
         model_ids: Vec<crate::compute::stock_config::ModelId>,
@@ -1310,7 +1310,7 @@ impl ProjectSession {
     /// place and dropped nothing, so a clamp could move under a cached
     /// holder-clearance verdict (G-FRESHSTATE).
     #[instrument(skip(self, fixture))]
-    pub fn replace_fixture(
+    pub(crate) fn replace_fixture(
         &mut self,
         setup_index: usize,
         fixture_id: FixtureId,
@@ -1343,7 +1343,7 @@ impl ProjectSession {
     /// the setup's results only when a field other than the name moved,
     /// for the same reason.
     #[instrument(skip(self, zone))]
-    pub fn replace_keep_out(
+    pub(crate) fn replace_keep_out(
         &mut self,
         setup_index: usize,
         zone_id: KeepOutId,
@@ -1371,7 +1371,7 @@ impl ProjectSession {
 
     /// Add a fixture to a setup, invalidating all toolpath results in that setup.
     #[instrument(skip(self, fixture))]
-    pub fn add_fixture(
+    pub(crate) fn add_fixture(
         &mut self,
         setup_index: usize,
         fixture: Fixture,
@@ -1393,7 +1393,7 @@ impl ProjectSession {
 
     /// Remove a fixture from a setup by its ID.
     #[instrument(skip(self))]
-    pub fn remove_fixture(
+    pub(crate) fn remove_fixture(
         &mut self,
         setup_index: usize,
         fixture_id: FixtureId,
@@ -1415,7 +1415,7 @@ impl ProjectSession {
 
     /// Add a keep-out zone to a setup, invalidating all toolpath results in that setup.
     #[instrument(skip(self, zone))]
-    pub fn add_keep_out(
+    pub(crate) fn add_keep_out(
         &mut self,
         setup_index: usize,
         zone: KeepOutZone,
@@ -1437,7 +1437,7 @@ impl ProjectSession {
 
     /// Remove a keep-out zone from a setup by its ID.
     #[instrument(skip(self))]
-    pub fn remove_keep_out(
+    pub(crate) fn remove_keep_out(
         &mut self,
         setup_index: usize,
         zone_id: KeepOutId,
@@ -1468,13 +1468,13 @@ impl ProjectSession {
     /// Drops EVERY toolpath result, not only the simulation — see
     /// [`Self::drop_all_results`] for the operator ruling behind that.
     #[instrument(skip(self))]
-    pub fn invalidate_stock(&mut self) -> Effects {
+    pub(crate) fn invalidate_stock(&mut self) -> Effects {
         self.with_effects(None, |session| session.drop_all_results())
     }
 
     /// Invalidate cached simulation after machine profile was mutated in-place.
     #[instrument(skip(self))]
-    pub fn invalidate_machine(&mut self) -> Effects {
+    pub(crate) fn invalidate_machine(&mut self) -> Effects {
         self.with_effects(None, |session| {
             session.simulation = None;
         })
@@ -1484,7 +1484,7 @@ impl ProjectSession {
     /// tool. [`Effects::stale`] carries the toolpath indices whose result
     /// was dropped, so a caller can request their regeneration.
     #[instrument(skip(self))]
-    pub fn invalidate_tool(&mut self, tool_id: usize) -> Effects {
+    pub(crate) fn invalidate_tool(&mut self, tool_id: usize) -> Effects {
         self.with_effects(None, move |session| session.drop_tool_results(tool_id))
     }
 
@@ -1532,7 +1532,7 @@ impl ProjectSession {
     /// project. [`Effects::stale`] carries the toolpath indices whose
     /// result was dropped, so a caller can request their regeneration.
     #[instrument(skip(self))]
-    pub fn invalidate_model(&mut self, model_id: usize) -> Effects {
+    pub(crate) fn invalidate_model(&mut self, model_id: usize) -> Effects {
         self.with_effects(None, move |session| {
             session.drop_results_for_model(model_id);
         })
@@ -1581,7 +1581,7 @@ impl ProjectSession {
     /// The row refuses an id that names no model, rather than reporting
     /// an empty [`Effects`] a reader could take for "nothing to do".
     #[instrument(skip(self, geometry))]
-    pub fn adopt_model_geometry(
+    pub(crate) fn adopt_model_geometry(
         &mut self,
         model_id: usize,
         geometry: super::LoadedModel,
@@ -1614,7 +1614,7 @@ impl ProjectSession {
     ///
     /// Drops every toolpath result — see [`Self::drop_all_results`].
     #[instrument(skip(self, stock))]
-    pub fn set_stock_config(&mut self, stock: StockConfig) -> Effects {
+    pub(crate) fn set_stock_config(&mut self, stock: StockConfig) -> Effects {
         self.with_effects(None, move |session| {
             session.stock = stock;
             session.drop_all_results();
@@ -1628,7 +1628,7 @@ impl ProjectSession {
     /// preserves the existing Z so attaching an SVG/DXF doesn't collapse stock
     /// thickness — see F-13 in the April 2026 review.
     #[instrument(skip(self))]
-    pub fn update_stock_from_bbox(&mut self, bbox: &BoundingBox3) -> Effects {
+    pub(crate) fn update_stock_from_bbox(&mut self, bbox: &BoundingBox3) -> Effects {
         self.with_effects(None, move |session| {
             session.stock.update_from_bbox(bbox);
             session.drop_all_results();
@@ -1640,7 +1640,7 @@ impl ProjectSession {
     /// Reports the effects when the pin was added, and `None` when a
     /// duplicate was skipped. `None` says the call changed nothing.
     #[instrument(skip(self))]
-    pub fn add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> Option<Effects> {
+    pub(crate) fn add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> Option<Effects> {
         const PIN_DEDUP_EPSILON_MM: f64 = 0.01;
         let exists = self.stock.alignment_pins.iter().any(|p| {
             (p.x - x).abs() < PIN_DEDUP_EPSILON_MM && (p.y - y).abs() < PIN_DEDUP_EPSILON_MM
@@ -1664,7 +1664,7 @@ impl ProjectSession {
     /// `index` names a PIN, not a toolpath, so [`Effects::revision`] is
     /// `None`.
     #[instrument(skip(self))]
-    pub fn remove_alignment_pin(&mut self, index: usize) -> Result<Effects, SessionError> {
+    pub(crate) fn remove_alignment_pin(&mut self, index: usize) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             if index >= session.stock.alignment_pins.len() {
                 return Err(SessionError::InvalidParam(format!(
@@ -1714,7 +1714,7 @@ impl ProjectSession {
     /// drags the spinner. The panel needs the draft-commit the stock
     /// panel has before that drop is safe.
     #[instrument(skip(self, post))]
-    pub fn set_post_config(&mut self, post: ProjectPostConfig) -> Effects {
+    pub(crate) fn set_post_config(&mut self, post: ProjectPostConfig) -> Effects {
         let reaches_motion = post_change_reaches_motion(&self.post, &post);
         self.with_effects(None, move |session| {
             session.post = post;
@@ -1743,7 +1743,7 @@ impl ProjectSession {
     /// [`Self::import_machine_settings`], DO clear it: they write inline
     /// numbers that no library entry published.
     #[instrument(skip(self, machine))]
-    pub fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {
+    pub(crate) fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {
         self.with_effects(None, move |session| {
             session.machine = machine;
             session.simulation = None;
@@ -1761,7 +1761,7 @@ impl ProjectSession {
     /// The link drops because the values are inline now and no longer
     /// describe the named library machine.
     #[instrument(skip(self, kinematics))]
-    pub fn set_machine_kinematics(
+    pub(crate) fn set_machine_kinematics(
         &mut self,
         kinematics: crate::machine_kinematics::MachineKinematics,
     ) -> Effects {
@@ -1784,7 +1784,7 @@ impl ProjectSession {
     /// (`MachineKinematics::from_grbl_settings`), which also decides
     /// whether the dump was recognised at all.
     #[instrument(skip(self, kinematics))]
-    pub fn import_machine_settings(
+    pub(crate) fn import_machine_settings(
         &mut self,
         kinematics: crate::machine_kinematics::MachineKinematics,
         max_feed_mm_min: Option<f64>,
@@ -1811,7 +1811,7 @@ impl ProjectSession {
     /// the three routes cannot drop different sets. The id is the
     /// project-assigned one, NOT a position in the tools list.
     #[instrument(skip(self, tool))]
-    pub fn replace_tool(
+    pub(crate) fn replace_tool(
         &mut self,
         tool_id: usize,
         tool: ToolConfig,
@@ -1830,7 +1830,7 @@ impl ProjectSession {
     ///
     /// Invalidates simulation (tool geometry changes affect material removal).
     #[instrument(skip(self, tools))]
-    pub fn replace_tools(&mut self, tools: Vec<ToolConfig>) -> Effects {
+    pub(crate) fn replace_tools(&mut self, tools: Vec<ToolConfig>) -> Effects {
         self.with_effects(None, move |session| {
             session.tools = tools;
             // Update the next-ID counter so newly added tools don't
@@ -1895,7 +1895,7 @@ impl ProjectSession {
     /// They now carry the provenance in
     /// [`RestoreToolpathSnapshotArgs`](super::RestoreToolpathSnapshotArgs),
     /// so one command writes the values and the stamp together.
-    pub fn set_feeds_provenance(
+    pub(crate) fn set_feeds_provenance(
         &mut self,
         index: usize,
         feeds_provenance: crate::feeds::FeedsProvenance,
@@ -1921,7 +1921,7 @@ impl ProjectSession {
     /// for `set_toolpath_param`'s arm alone; a dedicated row for the
     /// generate-time write bumps nothing by design.
     #[instrument(skip(self))]
-    pub fn set_toolpath_debug_options(
+    pub(crate) fn set_toolpath_debug_options(
         &mut self,
         index: usize,
         debug_options: crate::debug_trace::ToolpathDebugOptions,
@@ -1989,7 +1989,7 @@ impl ProjectSession {
     /// result was there, so `Effects::stale` always holds `index`. A
     /// caller that needs "was a result present" reads
     /// [`ProjectSession::get_result`] before the call.
-    pub fn remove_result(&mut self, index: usize) -> Effects {
+    pub(crate) fn remove_result(&mut self, index: usize) -> Effects {
         self.with_effects(Some(index), move |session| {
             session.drop_result(index);
         })
@@ -2073,7 +2073,7 @@ impl ProjectSession {
     /// [`Command::ReplaceToolpathConfig`](super::Command) now, which
     /// carries the same gate inside core. The funnel keeps this door
     /// until §15 ruling 4 folds `ApplyFeeds` into a row of its own.
-    pub fn invalidate_toolpath_inputs(&mut self, index: usize) -> Effects {
+    pub(crate) fn invalidate_toolpath_inputs(&mut self, index: usize) -> Effects {
         self.with_effects(Some(index), move |session| {
             let enabled = session
                 .toolpath_configs
@@ -2091,7 +2091,7 @@ impl ProjectSession {
     /// still drops, because the GUI panel writes the field itself and then
     /// calls this to record the consequence.
     #[instrument(skip(self))]
-    pub fn set_setup_face(
+    pub(crate) fn set_setup_face(
         &mut self,
         setup_index: usize,
         face_up: FaceUp,
@@ -2110,7 +2110,7 @@ impl ProjectSession {
     /// Set a setup's Z rotation, dropping every result in that setup.
     /// See [`Self::set_setup_face`].
     #[instrument(skip(self))]
-    pub fn set_setup_rotation(
+    pub(crate) fn set_setup_rotation(
         &mut self,
         setup_index: usize,
         z_rotation: ZRotation,
@@ -2133,7 +2133,7 @@ impl ProjectSession {
     /// The caller is responsible for building valid `SetupData` and
     /// `ToolpathConfig` vecs whose `toolpath_indices` are consistent.
     #[instrument(skip(self, setups, toolpath_configs))]
-    pub fn replace_setups_and_toolpaths(
+    pub(crate) fn replace_setups_and_toolpaths(
         &mut self,
         setups: Vec<SetupData>,
         toolpath_configs: Vec<ToolpathConfig>,
