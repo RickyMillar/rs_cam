@@ -457,6 +457,19 @@ only inside a pi session transcript, and were recovered on 2026-09-10.
   arm (c) measured ON 72 vs OFF 114 off-commanded moves on the P0 pocket. WP21 (`4aeaeda3`)
   removed the panic; the plunge-rate overwrite itself stays open.
 
+- **G-F036B-FLOOR (observed 2026-09-13 by the closing core dev loop, not acted on).**
+  `adaptive_feed_modulation_pipeline_f036b::modulated_path_never_emits_below_min_chipload`
+  is RED beside the red-by-design band arm: `21 of 126 modulated moves below the
+  LUT band floor (worst = 0.0215, band floor = 0.0304, commanded feed = 770)`.
+  Figures identical at `2bddd689`, before WP15b. WP1 recorded ONE red in this
+  binary; no later package ran it, so the second red's first appearance is NOT
+  MEASURED. Same family as the J2 finding; needs an operator reading before any
+  change (the floor is a feeds quantity).
+- **`set_toolpath_param` kept as the in-crate proof (orchestrator ruling
+  2026-09-13).** After WP15b it is `pub(crate)` with no production caller and
+  33 in-crate test callers, under `#[allow(dead_code)]`. It stays: it is the one
+  place that shows the wrapper and the `apply` door are one route
+  (`setters_have_rows_wp15a::every_wrapper_exemption_calls_the_door`).
 - **G-PERFGOLDEN2D (observed 2026-09-13 by the WP22 verifier, not acted on).**
   `perf_golden_sim_metrics::sim_metrics_match_golden` is RED at base `61c16b75`
   with 36 fields off the golden (35 with WP22; every plunge field and
