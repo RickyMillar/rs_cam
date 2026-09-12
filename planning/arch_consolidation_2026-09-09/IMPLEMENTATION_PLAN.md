@@ -1726,3 +1726,31 @@ a runtime row with `auto_regen = true` while twelve operations declare
 8. `is_optimizing` and the full-screen placeholder stay as a POLICY (one
    Optimize run at a time), no longer a necessity. Removing the placeholder
    is a separate operator decision.
+
+---
+
+## §29 Rulings on the 2026-09-13 completeness review (orchestrator, 2026-09-13)
+
+The operator commissioned an independent completeness review at pin
+`61c16b75` (`REVIEW_COMPLETENESS_2026-09-13.md`, verdict INCOMPLETE, one
+blocker). Rulings:
+
+1. **B1 becomes WP23.** `UiCommand::SimJumpToOpEnd` and
+   `UiCommand::CancelToolpathGeneration` declare `gui: Reach::Reached` and no
+   production view file constructs either (the GUI jumps by
+   `SimJumpToOpStart` and cancels through `CancelCompute`; MCP cancels
+   through `GenerationControl`). Both rows, their `Args`, their handler
+   arms and their imports are DELETED. The view sentry gains a
+   constructor census: every `UiCommand` row that declares `gui: Reached`
+   is constructed in a production view file, mirroring P1's core census,
+   with a non-vacuity guard. Red-first: the census arm fails on the two
+   rows at HEAD.
+2. **M1: §21 item 6 is narrowed, not the code.** A `UiCommand` row may be
+   MCP-only (the seven wire-only rows at `ui_command.rs:498-551` at the
+   pin). The sentry contract stays: every row declares each surface, and
+   every `Reached` surface has a constructor.
+3. **N1: recorded as an exception.** `SetSetupName`'s sentry `ff81b712`
+   flipped `Skip` to `Reached` one commit before its caller `183900e2`.
+   History is not rewritten.
+4. **N2: closed by WP14b** (`2abf78aa`), which flipped `PreviewTierMap`'s
+   `gui` column to `Reached` and removed the forward-promise wording.
