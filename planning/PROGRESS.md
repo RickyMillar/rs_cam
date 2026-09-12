@@ -32,6 +32,38 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Architecture consolidation — 2026-09-13 (close-out: every package landed; one core dev loop)
+
+The operator answered four close-out questions (plan §27) and one UX
+question (plan §28 ruling 1). Every open package landed on `master`:
+
+- **WP22** (`d880ca1a`): the feed-optimisation pass caps a geometric
+  plunge at the operation's `plunge_rate`, the same classifier the
+  modulator's P3 guard reads. Measured red: 18 of 18 plunges at 2.00×
+  on the sentry pocket. G-FEEDOPTPLUNGE is closed.
+- **WP19** (`0395aba0`, `09eb9768`): the view mirrors
+  `Effects::simulation_cleared`; a toolpath edit CLEARS the viewport
+  simulation like every other edit (operator ruling; the F2.5 banner
+  for toolpath edits ends); `mcp_stamp_stale` is merged into
+  `state::stale::stamp_stale`, and a row it creates reads the catalog's
+  `default_auto_regen`.
+- **WP14b** (`2abf78aa`): `OptimizeToolpath` is a `Job` over a cloned
+  session; the three `mem::replace` sites are gone; the clone on the P0
+  fixture costs 0.07 ms. An `optimize_toolpath` issued after an edit that
+  dropped the simulation refuses at submit.
+- **WP15b** (`30dab0d0` over five fix commits): `ProjectSessionBuilder`
+  gains id-allocating `add_tool` / `add_model` / `add_setup` /
+  `add_toolpath` and read accessors; 610 out-of-crate test sites moved
+  to the builder or `apply`; the 59 `ProjectSession` setters are
+  `pub(crate)`. The compile is the completeness proof.
+
+**Closing core dev loop** (once, capped, at `15aa896f`): 3863 passed /
+4 failed / 272 ignored. All four reds are pre-existing: the f036b band
+arm (red by design), the f036b floor arm (new ledger G-F036B-FLOOR),
+`perf_golden_sim_metrics` (G-PERFGOLDEN2D, a re-bless is the operator's
+call), and one stale surfaces arm, fixed at `9a88dfef`. The heavy gate
+did not run.
+
 ## Architecture consolidation — 2026-09-12 (reviews and follow-ons)
 
 Two independent Opus reviews ran after the sixteen packages landed
