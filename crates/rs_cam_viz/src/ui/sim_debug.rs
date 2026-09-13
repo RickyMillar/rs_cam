@@ -74,38 +74,55 @@ pub fn semantic_kind_label(
     }
 }
 
+/// The colour of one semantic block in the generator-trace ribbon.
+///
+/// UP4: these 26 kinds are a CATEGORY and they carried 26 hand-picked hues —
+/// `(110,210,140)` green on `Pass`, `Raster`, `Row`, `FinishPass` and
+/// `OffsetPass`, `(210,120,120)` and `(240,130,110)` red on `SlotClearing`
+/// and `ForcedClear`, `(230,180,90)` amber on `Entry`, `Hole` and `Ray`.
+/// `DESIGN_SPEC.md` §2.6 principle 1 forbids exactly that: a green `Pass`
+/// block beside a red `ForcedClear` block reads as "passed, failed" when
+/// neither block is a judgement at all — both are just structure the
+/// generator emitted.
+///
+/// They now walk [`SPAN_SCALE`], the six-step cool ramp that exists for a
+/// category, in declaration order, so no two neighbouring kinds share a step.
+#[allow(clippy::indexing_slicing)]
+// SAFETY: every index below is a literal in `0..6` and `SPAN_SCALE` has six
+// entries, so each one is in bounds at compile time.
 pub fn semantic_kind_color(
     kind: &rs_cam_core::semantic_trace::ToolpathSemanticKind,
 ) -> egui::Color32 {
+    use crate::ui::tokens::SPAN_SCALE;
     use rs_cam_core::semantic_trace::ToolpathSemanticKind;
 
     match kind {
-        ToolpathSemanticKind::Operation => egui::Color32::from_rgb(160, 170, 210),
-        ToolpathSemanticKind::DepthLevel => egui::Color32::from_rgb(120, 150, 230),
-        ToolpathSemanticKind::Region => egui::Color32::from_rgb(150, 120, 220),
-        ToolpathSemanticKind::Pass => egui::Color32::from_rgb(110, 210, 140),
-        ToolpathSemanticKind::Entry => egui::Color32::from_rgb(230, 180, 90),
-        ToolpathSemanticKind::SlotClearing => egui::Color32::from_rgb(210, 120, 120),
-        ToolpathSemanticKind::Cleanup => egui::Color32::from_rgb(110, 200, 210),
-        ToolpathSemanticKind::ForcedClear => egui::Color32::from_rgb(240, 130, 110),
-        ToolpathSemanticKind::Contour => egui::Color32::from_rgb(130, 200, 220),
-        ToolpathSemanticKind::Raster => egui::Color32::from_rgb(120, 200, 130),
-        ToolpathSemanticKind::Row => egui::Color32::from_rgb(110, 190, 140),
-        ToolpathSemanticKind::Slice => egui::Color32::from_rgb(140, 200, 240),
-        ToolpathSemanticKind::Hole => egui::Color32::from_rgb(220, 170, 100),
-        ToolpathSemanticKind::Cycle => egui::Color32::from_rgb(220, 140, 110),
-        ToolpathSemanticKind::Chain => egui::Color32::from_rgb(150, 190, 230),
-        ToolpathSemanticKind::Band => egui::Color32::from_rgb(100, 180, 180),
-        ToolpathSemanticKind::Ramp => egui::Color32::from_rgb(220, 150, 110),
-        ToolpathSemanticKind::Ring => egui::Color32::from_rgb(180, 150, 230),
-        ToolpathSemanticKind::Ray => egui::Color32::from_rgb(240, 190, 100),
-        ToolpathSemanticKind::Curve => egui::Color32::from_rgb(180, 210, 110),
-        ToolpathSemanticKind::Dressup => egui::Color32::from_rgb(220, 120, 200),
-        ToolpathSemanticKind::FinishPass => egui::Color32::from_rgb(110, 230, 170),
-        ToolpathSemanticKind::OffsetPass => egui::Color32::from_rgb(90, 200, 180),
-        ToolpathSemanticKind::Centerline => egui::Color32::from_rgb(200, 210, 120),
-        ToolpathSemanticKind::BoundaryClip => egui::Color32::from_rgb(230, 130, 180),
-        ToolpathSemanticKind::Optimization => egui::Color32::from_rgb(250, 200, 120),
+        ToolpathSemanticKind::Operation => SPAN_SCALE[0],
+        ToolpathSemanticKind::DepthLevel => SPAN_SCALE[1],
+        ToolpathSemanticKind::Region => SPAN_SCALE[2],
+        ToolpathSemanticKind::Pass => SPAN_SCALE[3],
+        ToolpathSemanticKind::Entry => SPAN_SCALE[4],
+        ToolpathSemanticKind::SlotClearing => SPAN_SCALE[5],
+        ToolpathSemanticKind::Cleanup => SPAN_SCALE[0],
+        ToolpathSemanticKind::ForcedClear => SPAN_SCALE[1],
+        ToolpathSemanticKind::Contour => SPAN_SCALE[2],
+        ToolpathSemanticKind::Raster => SPAN_SCALE[3],
+        ToolpathSemanticKind::Row => SPAN_SCALE[4],
+        ToolpathSemanticKind::Slice => SPAN_SCALE[5],
+        ToolpathSemanticKind::Hole => SPAN_SCALE[0],
+        ToolpathSemanticKind::Cycle => SPAN_SCALE[1],
+        ToolpathSemanticKind::Chain => SPAN_SCALE[2],
+        ToolpathSemanticKind::Band => SPAN_SCALE[3],
+        ToolpathSemanticKind::Ramp => SPAN_SCALE[4],
+        ToolpathSemanticKind::Ring => SPAN_SCALE[5],
+        ToolpathSemanticKind::Ray => SPAN_SCALE[0],
+        ToolpathSemanticKind::Curve => SPAN_SCALE[1],
+        ToolpathSemanticKind::Dressup => SPAN_SCALE[2],
+        ToolpathSemanticKind::FinishPass => SPAN_SCALE[3],
+        ToolpathSemanticKind::OffsetPass => SPAN_SCALE[4],
+        ToolpathSemanticKind::Centerline => SPAN_SCALE[5],
+        ToolpathSemanticKind::BoundaryClip => SPAN_SCALE[0],
+        ToolpathSemanticKind::Optimization => SPAN_SCALE[1],
     }
 }
 

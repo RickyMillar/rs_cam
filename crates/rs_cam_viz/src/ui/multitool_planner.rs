@@ -730,8 +730,7 @@ fn draw_swatch(ui: &mut egui::Ui, tier: u8) {
 }
 
 fn to_color32(rgb: [f32; 3]) -> egui::Color32 {
-    let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as u8;
-    egui::Color32::from_rgb(channel(rgb[0]), channel(rgb[1]), channel(rgb[2]))
+    crate::ui::tokens::from_linear_rgb(rgb)
 }
 
 /// The one-line answer under the buttons: how many islands, how much

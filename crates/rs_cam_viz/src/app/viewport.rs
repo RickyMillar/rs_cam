@@ -571,11 +571,13 @@ impl RsCamApp {
                     .fixed_pos(egui::pos2(rect.center().x - 90.0, rect.min.y + 8.0))
                     .show(ui.ctx(), |ui| {
                         egui::Frame::default()
-                            .fill(egui::Color32::from_rgba_premultiplied(40, 50, 70, 220))
-                            .stroke(egui::Stroke::new(
-                                1.0_f32,
-                                egui::Color32::from_rgb(110, 140, 200),
+                            .fill(egui::Color32::from_rgba_unmultiplied(
+                                crate::ui::tokens::TINT_INFO.r(),
+                                crate::ui::tokens::TINT_INFO.g(),
+                                crate::ui::tokens::TINT_INFO.b(),
+                                220,
                             ))
+                            .stroke(egui::Stroke::new(1.0_f32, crate::ui::tokens::INFO))
                             .corner_radius(6)
                             .inner_margin(egui::Margin::symmetric(10, 4))
                             .show(ui, |ui| {
@@ -651,23 +653,38 @@ impl RsCamApp {
         painter.circle_filled(
             gizmo_center,
             gizmo_size * 0.5,
-            egui::Color32::from_rgba_premultiplied(20, 20, 30, 160),
+            egui::Color32::from_rgba_unmultiplied(
+                crate::ui::tokens::DIAGRAM_CANVAS.r(),
+                crate::ui::tokens::DIAGRAM_CANVAS.g(),
+                crate::ui::tokens::DIAGRAM_CANVAS.b(),
+                160,
+            ),
         );
 
+        // The X/Y/Z triad keeps its literals. It is a CATEGORY wearing hues
+        // that read as DANGER and OK, which §2.6 forbids, but red/green/blue
+        // for X/Y/Z is a CAD convention the operator reads without the
+        // letters, and no scale in §2.9 carries three separable hues.
+        // Ruling R22 makes the axis the one narrow exception: the hues stay,
+        // and what the tokens buy is what `AUDIT.md` §2.10 actually
+        // complained about — the X axis and error text used to be the SAME
+        // constant, so one could not move without the other. They are
+        // separate constants at different values now. An axis colour must
+        // never appear in a panel.
         let axes: [(nalgebra::Vector3<f32>, egui::Color32, &str); 3] = [
             (
                 nalgebra::Vector3::new(1.0, 0.0, 0.0),
-                egui::Color32::from_rgb(220, 60, 60),
+                crate::ui::tokens::AXIS_X,
                 "X",
             ),
             (
                 nalgebra::Vector3::new(0.0, 1.0, 0.0),
-                egui::Color32::from_rgb(60, 200, 60),
+                crate::ui::tokens::AXIS_Y,
                 "Y",
             ),
             (
                 nalgebra::Vector3::new(0.0, 0.0, 1.0),
-                egui::Color32::from_rgb(70, 100, 230),
+                crate::ui::tokens::AXIS_Z,
                 "Z",
             ),
         ];
@@ -746,7 +763,7 @@ impl RsCamApp {
             (2, 6),
             (3, 7),
         ];
-        let color = egui::Color32::from_rgb(255, 210, 120);
+        let color = crate::ui::tokens::ACCENT;
         let painter = ui.painter();
         for (start_idx, end_idx) in edges {
             if let (Some(start), Some(end)) = (projected[start_idx], projected[end_idx]) {
@@ -782,12 +799,17 @@ impl RsCamApp {
         painter.rect_filled(
             panel_rect,
             6.0,
-            egui::Color32::from_rgba_premultiplied(18, 20, 24, 220),
+            egui::Color32::from_rgba_unmultiplied(
+                crate::ui::tokens::DIAGRAM_CANVAS.r(),
+                crate::ui::tokens::DIAGRAM_CANVAS.g(),
+                crate::ui::tokens::DIAGRAM_CANVAS.b(),
+                220,
+            ),
         );
         painter.rect_stroke(
             panel_rect,
             6.0,
-            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(70, 74, 84)),
+            egui::Stroke::new(1.0_f32, crate::ui::tokens::BORDER),
             egui::StrokeKind::Middle,
         );
 
@@ -816,10 +838,10 @@ impl RsCamApp {
 
         painter.line_segment(
             [body_top, body_bottom],
-            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(100, 105, 112)),
+            egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_TOOL),
         );
         painter.line_segment([body_top, deflected_tip], egui::Stroke::new(2.0_f32, color));
-        painter.circle_filled(body_top, 3.0, egui::Color32::from_rgb(130, 135, 145));
+        painter.circle_filled(body_top, 3.0, crate::ui::tokens::DIAGRAM_TOOL);
         painter.circle_filled(deflected_tip, 3.5, color);
 
         let cutter_len_px = (playback.tool_cutting_length as f32 * px_per_mm).clamp(12.0, 34.0);
@@ -832,7 +854,7 @@ impl RsCamApp {
         painter.rect_stroke(
             cutter_rect,
             2.0,
-            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(150, 150, 95)),
+            egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_INK),
             egui::StrokeKind::Middle,
         );
 

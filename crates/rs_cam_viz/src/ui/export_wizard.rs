@@ -230,7 +230,7 @@ fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppE
     let setup_count = state.session.list_setups().len();
     if matches!(selected, OutputLayout::PerSetup) && setup_count <= 1 {
         ui.colored_label(
-            egui::Color32::from_rgb(220, 140, 0),
+            crate::ui::tokens::CAUTION,
             "⚠ Project has only one setup — \"per setup\" will produce a single file.",
         );
     }
@@ -385,7 +385,7 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
         // in millimeters (a silent 25.4× scale error). Proper
         // conversion is backlogged.
         ui.colored_label(
-            egui::Color32::from_rgb(220, 60, 60),
+            crate::ui::tokens::DANGER,
             "⚠ Inch output (G20) is not supported yet — coordinates are \
              millimeters and are not converted. Export is blocked until \
              units are set back to mm.",
@@ -394,7 +394,7 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
         && u != post.units
     {
         ui.colored_label(
-            egui::Color32::from_rgb(220, 140, 0),
+            crate::ui::tokens::CAUTION,
             format!(
                 "⚠ Units override ({}) differs from post default ({}). \
                  Coordinate values are not auto-converted — verify your \
@@ -470,7 +470,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
 
     if enabled_tcs.is_empty() {
         ui.colored_label(
-            egui::Color32::from_rgb(220, 140, 0),
+            crate::ui::tokens::CAUTION,
             "⚠ No enabled toolpaths — export will fail at the next step.",
         );
         return;
@@ -567,7 +567,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
         }
         if selected == Some(ToolChangeMode::M6) && !post_uses_m6 {
             ui.colored_label(
-                egui::Color32::from_rgb(220, 140, 0),
+                crate::ui::tokens::CAUTION,
                 "⚠ Vanilla GRBL rejects M6 (error:20). Only use this on a \
                  controller with a configured tool changer (e.g. grblHAL ATC).",
             );
@@ -767,7 +767,7 @@ fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
         Ok(s) => s,
         Err(err) => {
             ui.colored_label(
-                egui::Color32::from_rgb(220, 60, 60),
+                crate::ui::tokens::DANGER,
                 format!("Cannot generate preview: {err}"),
             );
             return;
@@ -820,10 +820,7 @@ fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
     ui.add_space(4.0);
 
     if findings.is_empty() {
-        ui.colored_label(
-            egui::Color32::from_rgb(60, 180, 90),
-            "✓ No findings. Safe to save.",
-        );
+        ui.colored_label(crate::ui::tokens::OK, "✓ No findings. Safe to save.");
     } else {
         let (errors, warnings, infos) = count_by_severity(&findings);
         ui.label(
@@ -857,7 +854,7 @@ fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
             }
             if !allow {
                 ui.colored_label(
-                    egui::Color32::from_rgb(220, 60, 60),
+                    crate::ui::tokens::DANGER,
                     "Save is blocked: errors must be resolved or the override above must be checked.",
                 );
             }
@@ -867,9 +864,9 @@ fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
 
 fn draw_finding(ui: &mut egui::Ui, f: &Finding) {
     let (icon, color) = match f.severity {
-        Severity::Error => ("✕", egui::Color32::from_rgb(220, 60, 60)),
-        Severity::Warning => ("⚠", egui::Color32::from_rgb(220, 140, 0)),
-        Severity::Info => ("ℹ", egui::Color32::from_rgb(120, 160, 220)),
+        Severity::Error => ("✕", crate::ui::tokens::DANGER),
+        Severity::Warning => ("⚠", crate::ui::tokens::CAUTION),
+        Severity::Info => ("ℹ", crate::ui::tokens::INFO),
     };
     ui.horizontal(|ui| {
         ui.colored_label(color, icon);
@@ -908,7 +905,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         Ok(s) => s,
         Err(err) => {
             ui.colored_label(
-                egui::Color32::from_rgb(220, 60, 60),
+                crate::ui::tokens::DANGER,
                 format!("Cannot prepare export: {err}"),
             );
             return;
@@ -999,7 +996,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             if wiz.dry_run {
                 ui.label("Dry-run:");
                 ui.colored_label(
-                    egui::Color32::from_rgb(220, 160, 60),
+                    crate::ui::tokens::CAUTION,
                     "ON — cutting Z clamped to safe-Z",
                 );
                 ui.end_row();
@@ -1038,7 +1035,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let save_blocked = errors > 0 && !wiz.allow_validator_errors;
     if save_blocked {
         ui.colored_label(
-            egui::Color32::from_rgb(220, 60, 60),
+            crate::ui::tokens::DANGER,
             format!(
                 "Save is blocked: {errors} validator error(s). Go back to Preview & validate \
                  to review and tick the override checkbox if you want to proceed anyway."
@@ -1092,7 +1089,7 @@ fn draw_limit_warnings(ui: &mut egui::Ui, post: &PostDefinition, project_rpm: u3
         && project_rpm > max_rpm.get()
     {
         ui.colored_label(
-            egui::Color32::from_rgb(220, 140, 0),
+            crate::ui::tokens::CAUTION,
             format!(
                 "⚠ Project spindle {} rpm exceeds post limit {} rpm — \
                  emitter will clamp at the move site.",

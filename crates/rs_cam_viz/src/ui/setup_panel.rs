@@ -133,11 +133,11 @@ fn draw_setup_card(
     let base_border = if is_selected {
         theme::ACCENT
     } else {
-        egui::Color32::from_rgb(55, 55, 65)
+        crate::ui::tokens::BORDER
     };
 
     let card_response = egui::Frame::default()
-        .fill(egui::Color32::from_rgb(38, 40, 50))
+        .fill(crate::ui::tokens::SURFACE_RAISED)
         .stroke(egui::Stroke::new(1.0_f32, base_border))
         .inner_margin(8.0)
         .corner_radius(4)
@@ -159,6 +159,14 @@ fn draw_setup_card(
                 }
             });
 
+            // The five chips below name KINDS of thing on a setup, not
+            // verdicts on it, so they take five steps of the span scale
+            // (§2.9) rather than five hues. "Keep Out" wore DANGER's red and
+            // "XY" wore a green, which is the collision §2.6 rules out: a
+            // count of keep-out zones is not an exceedance.
+            let [span_orient, span_xy, span_fix, span_keepout, span_pins, _] =
+                crate::ui::tokens::SPAN_SCALE;
+
             // Summary row: orientation + datum
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 12.0;
@@ -170,12 +178,7 @@ fn draw_setup_card(
                 } else {
                     format!("{} +{}", setup.face_up.label(), setup.z_rotation.label())
                 };
-                chip(
-                    ui,
-                    "Orient",
-                    &orient,
-                    egui::Color32::from_rgb(100, 140, 180),
-                );
+                chip(ui, "Orient", &orient, span_orient);
 
                 // Datum chip. Persisted project state since W9 / P-2 —
                 // no GUI overlay, so no "not set yet" fallback either.
@@ -185,7 +188,7 @@ fn draw_setup_card(
                     XYDatum::AlignmentPins => "Pins".to_owned(),
                     XYDatum::Manual => "Manual".to_owned(),
                 };
-                chip(ui, "XY", &datum, egui::Color32::from_rgb(140, 160, 100));
+                chip(ui, "XY", &datum, span_xy);
             });
 
             // Counts row
@@ -197,28 +200,13 @@ fn draw_setup_card(
                 let pin_count = state.session.stock_config().alignment_pins.len();
 
                 if fixture_count > 0 {
-                    chip(
-                        ui,
-                        "Fix",
-                        &fixture_count.to_string(),
-                        egui::Color32::from_rgb(160, 130, 100),
-                    );
+                    chip(ui, "Fix", &fixture_count.to_string(), span_fix);
                 }
                 if keepout_count > 0 {
-                    chip(
-                        ui,
-                        "Keep Out",
-                        &keepout_count.to_string(),
-                        egui::Color32::from_rgb(180, 100, 100),
-                    );
+                    chip(ui, "Keep Out", &keepout_count.to_string(), span_keepout);
                 }
                 if pin_count > 0 {
-                    chip(
-                        ui,
-                        "Pins",
-                        &pin_count.to_string(),
-                        egui::Color32::from_rgb(100, 160, 140),
-                    );
+                    chip(ui, "Pins", &pin_count.to_string(), span_pins);
                 }
                 if fixture_count == 0 && keepout_count == 0 && pin_count == 0 {
                     ui.label(
@@ -264,7 +252,7 @@ fn draw_setup_card(
 
     // Update border color on hover
     if card_response.hovered() && !is_selected {
-        let hover_border = egui::Color32::from_rgb(80, 120, 170);
+        let hover_border = crate::ui::tokens::INK_50;
         ui.painter().rect_stroke(
             card_response.rect,
             4.0,

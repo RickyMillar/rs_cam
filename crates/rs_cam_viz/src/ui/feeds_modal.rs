@@ -44,10 +44,45 @@ use rs_cam_core::feeds::{
 use super::components::compare::{self, CompareRow};
 use super::components::{ProvKind, ProvenanceBadge};
 use super::properties::feeds_rows;
-use super::{AppEvent, theme};
+use super::{AppEvent, theme, tokens};
 use crate::state::AppState;
 use crate::state::{FeedsModalMode, ProjectFeedsSort};
 use crate::ui_command::{NoArgs, UiCommand};
+
+/// The chart palette, named by what each series IS.
+///
+/// These charts draw RANGES and ORDERED VALUES, never verdicts, so every one
+/// of them reads a data scale rather than a semantic role (`DESIGN_SPEC.md`
+/// §2.6). The machine envelope is the one exception and takes `DANGER`
+/// directly, because a wall the machine cannot pass IS a verdict.
+// SAFETY: every index below is a literal inside its own array's length.
+#[allow(clippy::indexing_slicing)]
+mod chart {
+    use crate::ui::tokens;
+
+    /// The vendor advance-per-tooth band.
+    pub const BAND: egui::Color32 = tokens::CHART_SERIES[1];
+    /// The band-admitted (±5 %) wedge either side of the band.
+    pub const ADMITTED: egui::Color32 = tokens::CHART_SERIES[0];
+    /// The vendor RPM column.
+    pub const RPM_RANGE: egui::Color32 = tokens::CHART_SERIES[3];
+    /// The drag-to-explore proposal.
+    pub const EXPLORE: egui::Color32 = tokens::CHART_SERIES[2];
+    /// Iso-advance at the band minimum.
+    pub const ISO_MIN: egui::Color32 = tokens::SPAN_SCALE[1];
+    /// Iso-advance at the band midpoint.
+    pub const ISO_MID: egui::Color32 = tokens::SPAN_SCALE[3];
+    /// Iso-advance at the band maximum.
+    pub const ISO_MAX: egui::Color32 = tokens::SPAN_SCALE[5];
+}
+
+/// A token at a given alpha, for a chart wash.
+///
+/// Every translucent fill in these charts is one of these, so the hue stays a
+/// token and only the alpha is written at the call site.
+fn wash(base: egui::Color32, alpha: u8) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha)
+}
 
 /// Top-level draw entry. Short-circuits when no modal is open.
 pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -1551,16 +1586,17 @@ fn draw_chart_c(
         .show(ui, |plot_ui| {
             // 1. Band wedge polygon — clipped at machine RPM cap and
             //    feed cap so the band visually stops at the wall.
+            // §2.6 rule 2: the vendor band is a RANGE, not a verdict. It
+            // shared its green with `OK` at six sites and four alphas, so a
+            // reader could not tell the band from a pass. It is one chart
+            // series now.
             if let Some((lo, hi)) = band {
                 let band_poly =
                     wedge_polygon(lo, hi, env.spindle_max_rpm, flutes, env.max_feed_mm_min);
                 plot_ui.polygon(
                     Polygon::new("", band_poly)
-                        .fill_color(egui::Color32::from_rgba_unmultiplied(80, 180, 80, 50))
-                        .stroke(egui::Stroke::new(
-                            1.0_f32,
-                            egui::Color32::from_rgba_unmultiplied(80, 180, 80, 120),
-                        ))
+                        .fill_color(wash(chart::BAND, 50))
+                        .stroke(egui::Stroke::new(1.0_f32, wash(chart::BAND, 120)))
                         .name(format!("Vendor band {lo:.4}–{hi:.4} mm/tooth")),
                 );
                 // Inline label inside the band at the cap intersection
@@ -1577,7 +1613,7 @@ fn draw_chart_c(
                                 "VENDOR BAND\n{lo:.4}\u{2013}{hi:.4} mm advance/tooth"
                             ))
                             .small()
-                            .color(egui::Color32::from_rgba_unmultiplied(80, 180, 80, 220)),
+                            .color(wash(chart::BAND, 220)),
                         )
                         .anchor(egui::Align2::CENTER_CENTER),
                     );
@@ -1600,8 +1636,11 @@ fn draw_chart_c(
                     flutes,
                     env.max_feed_mm_min,
                 );
-                let warn = egui::Color32::from_rgba_unmultiplied(220, 180, 60, 50);
-                let warn_edge = egui::Color32::from_rgba_unmultiplied(220, 180, 60, 100);
+                // The admitted wedge is a second RANGE beside the band, so
+                // it takes the neighbouring series rather than the caution
+                // amber it used to borrow.
+                let warn = wash(chart::ADMITTED, 50);
+                let warn_edge = wash(chart::ADMITTED, 100);
                 plot_ui.polygon(
                     Polygon::new("", low_admit)
                         .fill_color(warn)
@@ -1621,10 +1660,14 @@ fn draw_chart_c(
             //    visible without consulting a legend.
             if let Some((lo, hi)) = band {
                 let mid = (lo + hi) * 0.5;
+                // min / mid / max were amber / green / red — a traffic
+                // light on what is an ORDERED SCALE, not three verdicts. The
+                // band's own maximum is not an exceedance. Three ascending
+                // steps of one scale now carry the order.
                 for (cl, color, prefix) in [
-                    (lo, egui::Color32::from_rgb(180, 130, 60), "min"),
-                    (mid, egui::Color32::from_rgb(120, 180, 120), "mid"),
-                    (hi, egui::Color32::from_rgb(200, 90, 90), "max"),
+                    (lo, chart::ISO_MIN, "min"),
+                    (mid, chart::ISO_MID, "mid"),
+                    (hi, chart::ISO_MAX, "max"),
                 ] {
                     let line_pts =
                         clip_iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min);
@@ -1668,11 +1711,8 @@ fn draw_chart_c(
                             [lo, feed_axis_max],
                         ]),
                     )
-                    .fill_color(egui::Color32::from_rgba_unmultiplied(100, 160, 200, 25))
-                    .stroke(egui::Stroke::new(
-                        1.0_f32,
-                        egui::Color32::from_rgba_unmultiplied(100, 160, 200, 80),
-                    ))
+                    .fill_color(wash(chart::RPM_RANGE, 25))
+                    .stroke(egui::Stroke::new(1.0_f32, wash(chart::RPM_RANGE, 80)))
                     .name("Vendor RPM range"),
                 );
             }
@@ -1702,7 +1742,7 @@ fn draw_chart_c(
                             .shape(MarkerShape::Circle)
                             .filled(false)
                             .radius(7.0_f32)
-                            .color(egui::Color32::from_rgb(100, 160, 240))
+                            .color(tokens::DIAGRAM_INK)
                             .name(format!("Target pre-derate ({target_chipload:.4} mm/tooth)")),
                     );
                     // Arrow from target down to derated recommendation.
@@ -1717,7 +1757,7 @@ fn draw_chart_c(
                                 ],
                             ]),
                         )
-                        .color(egui::Color32::from_rgba_unmultiplied(100, 160, 240, 180))
+                        .color(wash(tokens::DIAGRAM_INK, 180))
                         .style(egui_plot::LineStyle::Dashed { length: 4.0 })
                         .width(1.5_f32)
                         .name("derate chain"),
@@ -1731,7 +1771,7 @@ fn draw_chart_c(
                             egui_plot::PlotPoint::new(explain.recommended.rpm, mid_feed),
                             egui::RichText::new(format!(" −{derate_pct:.0}% derate"))
                                 .small()
-                                .color(egui::Color32::from_rgba_unmultiplied(100, 160, 240, 220)),
+                                .color(wash(tokens::DIAGRAM_INK, 220)),
                         )
                         .anchor(egui::Align2::LEFT_CENTER),
                     );
@@ -1750,7 +1790,7 @@ fn draw_chart_c(
                 .shape(MarkerShape::Diamond)
                 .filled(true)
                 .radius(6.0_f32)
-                .color(egui::Color32::from_rgb(100, 160, 240))
+                .color(tokens::DIAGRAM_INK)
                 .name("Recommended (after derates)"),
             );
 
@@ -1761,7 +1801,7 @@ fn draw_chart_c(
                         .shape(MarkerShape::Cross)
                         .filled(true)
                         .radius(8.0_f32)
-                        .color(egui::Color32::from_rgb(220, 200, 80))
+                        .color(chart::EXPLORE)
                         .name("Explore"),
                 );
                 // Proposed-move line from current → explore.
@@ -1774,7 +1814,7 @@ fn draw_chart_c(
                                 [display_point.rpm, display_point.feed_mm_min],
                             ]),
                         )
-                        .color(egui::Color32::from_rgba_unmultiplied(220, 200, 80, 180))
+                        .color(wash(chart::EXPLORE, 180))
                         .style(egui_plot::LineStyle::Dashed { length: 5.0 })
                         .width(1.2_f32)
                         .name("proposal"),
@@ -1815,7 +1855,7 @@ fn draw_chart_c(
                         egui_plot::PlotPoint::new(rpm_axis_max * 0.02, feed_axis_max * 0.97),
                         egui::RichText::new(label)
                             .small()
-                            .background_color(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 140))
+                            .background_color(tokens::SCRIM)
                             .color(color),
                     )
                     .anchor(egui::Align2::LEFT_TOP),
@@ -1873,13 +1913,13 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         let mid = (lo + hi) * 0.5;
         entries.push(LegendEntry::new(
             LegendSwatch::FilledSquare,
-            egui::Color32::from_rgba_unmultiplied(80, 180, 80, 200),
+            wash(chart::BAND, 200),
             "Vendor band",
             format!("{lo:.4}–{hi:.4} mm/tooth"),
         ));
         entries.push(LegendEntry::new(
             LegendSwatch::FilledSquare,
-            egui::Color32::from_rgba_unmultiplied(220, 180, 60, 180),
+            wash(chart::ADMITTED, 180),
             "+5% tolerance",
             format!(
                 "{:.4}–{lo:.4}  ·  {hi:.4}–{:.4} mm/tooth",
@@ -1889,19 +1929,19 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         ));
         entries.push(LegendEntry::new(
             LegendSwatch::Line,
-            egui::Color32::from_rgb(180, 130, 60),
+            chart::ISO_MIN,
             "iso-advance min",
             format!("{lo:.4} mm/tooth"),
         ));
         entries.push(LegendEntry::new(
             LegendSwatch::Line,
-            egui::Color32::from_rgb(120, 180, 120),
+            chart::ISO_MID,
             "iso-advance mid",
             format!("{mid:.4} mm/tooth"),
         ));
         entries.push(LegendEntry::new(
             LegendSwatch::Line,
-            egui::Color32::from_rgb(200, 90, 90),
+            chart::ISO_MAX,
             "iso-advance max",
             format!("{hi:.4} mm/tooth"),
         ));
@@ -1916,7 +1956,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         };
         entries.push(LegendEntry::new(
             LegendSwatch::FilledSquare,
-            egui::Color32::from_rgba_unmultiplied(100, 160, 200, 200),
+            wash(chart::RPM_RANGE, 200),
             "Vendor RPM range",
             value,
         ));
@@ -1924,7 +1964,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
 
     entries.push(LegendEntry::new(
         LegendSwatch::FilledSquare,
-        egui::Color32::from_rgba_unmultiplied(200, 90, 90, 150),
+        wash(tokens::DANGER, 150),
         "Machine forbidden",
         // ui-string-columns: air either side of "or" separates two limits
         // in a legend swatch; a single space runs them together.
@@ -1936,7 +1976,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
     if env.spindle_min_rpm > 0.0 {
         entries.push(LegendEntry::new(
             LegendSwatch::FilledSquare,
-            egui::Color32::from_rgba_unmultiplied(150, 150, 160, 150),
+            wash(tokens::CAUTION, 150),
             "Below spindle min",
             format!("< {} RPM", env.spindle_min_rpm as i64),
         ));
@@ -1955,7 +1995,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         if (target_feed - explain.recommended.feed_rate_mm_min).abs() > 1.0 {
             entries.push(LegendEntry::new(
                 LegendSwatch::Circle,
-                egui::Color32::from_rgb(100, 160, 240),
+                tokens::DIAGRAM_INK,
                 "○ Target (pre-derate)",
                 format!("{target_cl:.4} mm/tooth · {target_feed:.0} mm/min"),
             ));
@@ -1963,7 +2003,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
     }
     entries.push(LegendEntry::new(
         LegendSwatch::Diamond,
-        egui::Color32::from_rgb(100, 160, 240),
+        tokens::DIAGRAM_INK,
         "◆ Recommended (effective)",
         format!(
             "{:.0} RPM · {:.0} mm/min · chipload {:.4} mm/tooth",
@@ -2377,9 +2417,9 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
     min_pts.sort_by(|a, b| a[0].total_cmp(&b[0]));
     max_pts.sort_by(|a, b| a[0].total_cmp(&b[0]));
 
-    let band_color = egui::Color32::from_rgba_unmultiplied(80, 180, 80, 50);
-    let min_color = egui::Color32::from_rgb(180, 130, 60);
-    let max_color = egui::Color32::from_rgb(200, 90, 90);
+    let band_color = wash(chart::BAND, 50);
+    let min_color = chart::ISO_MIN;
+    let max_color = chart::ISO_MAX;
 
     Plot::new("feeds_modal_chart_a")
         .height(180.0)
@@ -2493,7 +2533,7 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                 .shape(MarkerShape::Diamond)
                 .filled(true)
                 .radius(5.0_f32)
-                .color(egui::Color32::from_rgb(100, 160, 240))
+                .color(tokens::DIAGRAM_INK)
                 .name("Recommended"),
             );
         });
@@ -2545,7 +2585,7 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             },
             MiniLegend {
                 swatch: LegendSwatch::Diamond,
-                color: egui::Color32::from_rgb(100, 160, 240),
+                color: tokens::DIAGRAM_INK,
                 label: "◆ recommended",
                 value: format!("{:.4} mm/tooth", explain.recommended.chip_load_mm),
             },
@@ -2612,9 +2652,9 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
     // hardness we recover it from `query_hardness_value` × scale.
     let q_hardness = explain.query_hardness_value.unwrap_or(0.0);
 
-    let band_color = egui::Color32::from_rgba_unmultiplied(80, 180, 80, 50);
-    let min_color = egui::Color32::from_rgb(180, 130, 60);
-    let max_color = egui::Color32::from_rgb(200, 90, 90);
+    let band_color = wash(chart::BAND, 50);
+    let min_color = chart::ISO_MIN;
+    let max_color = chart::ISO_MAX;
     let mut min_pts: Vec<[f64; 2]> = Vec::new();
     let mut max_pts: Vec<[f64; 2]> = Vec::new();
     for row in &rows {
@@ -2738,7 +2778,7 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                     .shape(MarkerShape::Diamond)
                     .filled(true)
                     .radius(5.0_f32)
-                    .color(egui::Color32::from_rgb(100, 160, 240))
+                    .color(tokens::DIAGRAM_INK)
                     .name("Recommended"),
             );
         });
@@ -2788,7 +2828,7 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             },
             MiniLegend {
                 swatch: LegendSwatch::Diamond,
-                color: egui::Color32::from_rgb(100, 160, 240),
+                color: tokens::DIAGRAM_INK,
                 label: "◆ recommended",
                 value: format!("{:.4} mm/tooth", explain.recommended.chip_load_mm),
             },
@@ -3157,10 +3197,12 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                     r.explain.recommended.feed_rate_mm_min,
                 ];
                 if let Some(c) = cur {
-                    // Connecting arrow line.
+                    // Connecting arrow line. Construction geometry, so it
+                    // takes the diagram's dim rung; it is darker than the
+                    // grey it replaces.
                     plot_ui.line(
                         Line::new("", PlotPoints::from(vec![c, rec]))
-                            .color(egui::Color32::from_rgba_unmultiplied(140, 140, 160, 140))
+                            .color(wash(tokens::DIAGRAM_DIM, 140))
                             .width(1.0_f32),
                     );
                     plot_ui.points(
@@ -3176,7 +3218,7 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                         .shape(MarkerShape::Diamond)
                         .filled(true)
                         .radius(4.5_f32)
-                        .color(egui::Color32::from_rgb(100, 160, 240)),
+                        .color(tokens::DIAGRAM_INK),
                 );
             }
         });
@@ -3192,8 +3234,11 @@ fn draw_machine_envelope(
     axis_rpm_max: f64,
     axis_feed_max: f64,
 ) {
-    let forbidden_fill = egui::Color32::from_rgba_unmultiplied(200, 90, 90, 35);
-    let forbidden_edge = egui::Color32::from_rgba_unmultiplied(200, 90, 90, 200);
+    // These two ARE verdicts — beyond them the machine cannot go — so the
+    // envelope keeps the danger hue that every category in these charts just
+    // gave up. It used to be a hand-mixed red one step off `DANGER`.
+    let forbidden_fill = wash(tokens::DANGER, 35);
+    let forbidden_edge = wash(tokens::DANGER, 200);
 
     if axis_rpm_max > env.spindle_max_rpm {
         plot_ui.polygon(
@@ -3233,6 +3278,9 @@ fn draw_machine_envelope(
             )),
         );
     }
+    // Below the spindle minimum is the SOFT half of the same envelope
+    // verdict the wall above carries, so it reads as caution rather than as
+    // the inert grey it used to mix, which said nothing at all.
     if env.spindle_min_rpm > 0.0 {
         plot_ui.polygon(
             Polygon::new(
@@ -3244,7 +3292,7 @@ fn draw_machine_envelope(
                     [0.0, axis_feed_max],
                 ]),
             )
-            .fill_color(egui::Color32::from_rgba_unmultiplied(150, 150, 160, 25))
+            .fill_color(wash(tokens::CAUTION, 25))
             .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
             .name(format!(
                 "Below spindle min ({} RPM)",
@@ -3259,7 +3307,7 @@ fn draw_machine_envelope(
                     [env.spindle_min_rpm, axis_feed_max],
                 ]),
             )
-            .color(egui::Color32::from_rgb(150, 150, 160))
+            .color(tokens::CAUTION)
             .width(1.5_f32)
             .name(format!("spindle min {} RPM", env.spindle_min_rpm as i64)),
         );

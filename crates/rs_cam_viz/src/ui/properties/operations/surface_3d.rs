@@ -315,7 +315,7 @@ fn draw_spiral_load_control(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool_
     ui.label(
         egui::RichText::new(format!("→ stepover ≈ {:.2} mm", cfg.stepover))
             .small()
-            .color(egui::Color32::from_rgb(140, 140, 150)),
+            .color(crate::ui::tokens::TEXT_MUTED),
     );
     ui.end_row();
 }
@@ -560,7 +560,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                          stock doesn't overlap this model's frame.",
                     )
                     .small()
-                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
                 );
                 ui.end_row();
             } else {
@@ -803,9 +803,9 @@ fn draw_unified_finish_claims(
             let r = f.resolution;
             let loud = r.needs_attention() || f.territory_clip_skipped();
             let colour = if loud {
-                egui::Color32::from_rgb(220, 180, 60)
+                crate::ui::tokens::CAUTION
             } else {
-                egui::Color32::from_rgb(150, 190, 150)
+                crate::ui::tokens::OK
             };
             let used = match r.reference() {
                 rs_cam_core::unified_finish::CreaseReference::MachinedStock => {
@@ -830,18 +830,21 @@ fn draw_unified_finish_claims(
                          covered its full territory, not rest islands.",
                     )
                     .small()
-                    .color(egui::Color32::from_rgb(220, 180, 60)),
+                    .color(crate::ui::tokens::CAUTION),
                 );
             }
         }
         None if cfg.pencil_claims => {
+            // UNKNOWN, not a grey. Nothing has been measured yet, and §2.6
+            // separates "not run" from "passed" so the two cannot be read
+            // alike at a glance.
             ui.label(
                 egui::RichText::new(
                     "Not generated yet — the resolved rest reference appears here after \
                      this operation runs.",
                 )
                 .small()
-                .color(egui::Color32::from_rgb(150, 150, 150)),
+                .color(crate::ui::tokens::UNKNOWN),
             );
         }
         None => {}
@@ -862,7 +865,7 @@ fn draw_unified_finish_claims(
                  operation.",
             )
             .small()
-            .color(egui::Color32::from_rgb(220, 180, 60)),
+            .color(crate::ui::tokens::CAUTION),
         );
     }
 }

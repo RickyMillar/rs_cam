@@ -662,7 +662,13 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
         tool_r,
         egui::Stroke::new(
             0.8_f32,
-            egui::Color32::from_rgba_premultiplied(220, 160, 50, 80),
+            // The same tone as the overcut it marks, at its original alpha.
+            egui::Color32::from_rgba_premultiplied(
+                overcut_color.r(),
+                overcut_color.g(),
+                overcut_color.b(),
+                80,
+            ),
         ),
     );
 
@@ -917,7 +923,15 @@ pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: 
     // Offset indicator (if applicable)
     if let Some(side) = offset_side {
         let offset_dist = 6.0;
-        let offset_color = egui::Color32::from_rgba_premultiplied(50, 200, 180, 100);
+        // The offset ring is a second KIND of line beside the path, so it
+        // takes a data-scale step rather than a hue of its own (§2.9).
+        let [.., span_offset, _] = crate::ui::tokens::SPAN_SCALE;
+        let offset_color = egui::Color32::from_rgba_unmultiplied(
+            span_offset.r(),
+            span_offset.g(),
+            span_offset.b(),
+            100,
+        );
         let inset = if side == "Inside" {
             offset_dist
         } else {
@@ -1183,8 +1197,10 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
     painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let dim_color = crate::ui::tokens::DIAGRAM_DIM;
-    let steep_color = crate::ui::tokens::DIAGRAM_INK;
-    let shallow_color = crate::ui::tokens::DIAGRAM_INK;
+    // Steep and shallow are two CATEGORIES, so they take two steps of the
+    // span scale (§2.9). They had collapsed onto one ink, which left the two
+    // zone washes below as the only thing separating them.
+    let [steep_color, .., shallow_color, _] = crate::ui::tokens::SPAN_SCALE;
 
     let margin = 14.0;
     let wp = egui::Rect::from_min_max(
@@ -1201,7 +1217,12 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
     painter.rect_filled(
         steep_rect,
         0.0,
-        egui::Color32::from_rgba_premultiplied(80, 160, 220, 20),
+        egui::Color32::from_rgba_unmultiplied(
+            steep_color.r(),
+            steep_color.g(),
+            steep_color.b(),
+            20,
+        ),
     );
     for i in 1..=3 {
         let inset = i as f32 * 6.0;
@@ -1223,7 +1244,12 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
     painter.rect_filled(
         shallow_rect,
         0.0,
-        egui::Color32::from_rgba_premultiplied(50, 200, 180, 20),
+        egui::Color32::from_rgba_unmultiplied(
+            shallow_color.r(),
+            shallow_color.g(),
+            shallow_color.b(),
+            20,
+        ),
     );
     let line_step = 7.0;
     let mut y = shallow_rect.top() + line_step;
@@ -1286,8 +1312,11 @@ pub(super) fn draw_inlay_diagram(
     painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let dim_color = crate::ui::tokens::DIAGRAM_DIM;
+    // The female pocket and the male plug are two CATEGORIES. They had
+    // collapsed onto one ink, so the plug fill below was the only thing
+    // telling them apart. Two steps of the span scale (§2.9) instead.
     let female_color = crate::ui::tokens::DIAGRAM_INK;
-    let male_color = crate::ui::tokens::DIAGRAM_INK;
+    let [.., male_color, _] = crate::ui::tokens::SPAN_SCALE;
     let mat_color = crate::ui::tokens::DIAGRAM_DIM;
 
     let cx = rect.center().x;
@@ -1351,7 +1380,7 @@ pub(super) fn draw_inlay_diagram(
     // Fill the plug
     painter.add(egui::Shape::convex_polygon(
         plug_pts.clone(),
-        egui::Color32::from_rgba_premultiplied(50, 200, 180, 40),
+        egui::Color32::from_rgba_unmultiplied(male_color.r(), male_color.g(), male_color.b(), 40),
         egui::Stroke::NONE,
     ));
     // SAFETY: plug_pts always has exactly 4 elements, constructed on the lines above.
@@ -1436,6 +1465,9 @@ pub(super) fn draw_ramp_finish_diagram(ui: &mut egui::Ui, max_stepdown: f64) {
 
     let path_color = crate::ui::tokens::DIAGRAM_INK;
     let dim_color = crate::ui::tokens::DIAGRAM_DIM;
+    // The ramp leg is a second KIND of move beside the contour, so it takes a
+    // span-scale step rather than a hue of its own (§2.9).
+    let [.., ramp_color, _] = crate::ui::tokens::SPAN_SCALE;
 
     let num_levels = 4;
     let x_start = rect.left() + 20.0;
@@ -1459,7 +1491,12 @@ pub(super) fn draw_ramp_finish_diagram(ui: &mut egui::Ui, max_stepdown: f64) {
                 [egui::pos2(x_end, y), egui::pos2(x_start, next_y)],
                 egui::Stroke::new(
                     1.0_f32,
-                    egui::Color32::from_rgba_premultiplied(50, 200, 180, 120),
+                    egui::Color32::from_rgba_unmultiplied(
+                        ramp_color.r(),
+                        ramp_color.g(),
+                        ramp_color.b(),
+                        120,
+                    ),
                 ),
             );
         }

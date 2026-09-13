@@ -60,7 +60,7 @@ pub fn draw(
     ui.label(
         egui::RichText::new("Orientation")
             .strong()
-            .color(egui::Color32::from_rgb(180, 180, 195)),
+            .color(crate::ui::tokens::TEXT_STRONG),
     );
     ui.horizontal(|ui| {
         ui.label("Face Up:");
@@ -95,7 +95,7 @@ pub fn draw(
         ui.label(
             egui::RichText::new(setup_data.face_up.flip_instruction())
                 .italics()
-                .color(egui::Color32::from_rgb(220, 180, 60)),
+                .color(crate::ui::tokens::CAUTION),
         );
         // Hint: suggest alignment pins when flipped setup has no pins configured
         if pin_count == 0 && !has_flip_axis {
@@ -114,7 +114,7 @@ pub fn draw(
     ui.label(
         egui::RichText::new("Datum / Alignment")
             .strong()
-            .color(egui::Color32::from_rgb(180, 180, 195)),
+            .color(crate::ui::tokens::TEXT_STRONG),
     );
 
     let xy_label = match &setup_data.datum.xy_method {
@@ -229,16 +229,19 @@ pub fn draw(
 
     // Alignment pins are now defined on the stock (shared across setups).
     if pin_count > 0 {
+        // OK, because this line is the pass arm of a verdict: its sibling
+        // below is the CAUTION that says no pins are defined. Both wore the
+        // same green before.
         ui.label(
             egui::RichText::new(format!("{pin_count} alignment pin(s) on stock"))
                 .small()
-                .color(egui::Color32::from_rgb(140, 180, 140)),
+                .color(crate::ui::tokens::OK),
         );
     } else if setup_data.datum.xy_method == XYDatum::AlignmentPins {
         ui.label(
             egui::RichText::new("No pins defined — add them in Stock properties")
                 .small()
-                .color(egui::Color32::from_rgb(220, 180, 60)),
+                .color(crate::ui::tokens::CAUTION),
         );
     }
 
@@ -247,20 +250,23 @@ pub fn draw(
     ui.label(
         egui::RichText::new("Models")
             .strong()
-            .color(egui::Color32::from_rgb(180, 180, 195)),
+            .color(crate::ui::tokens::TEXT_STRONG),
     );
     if all_models.is_empty() {
         ui.label(
             egui::RichText::new("No models loaded")
                 .italics()
-                .color(egui::Color32::from_rgb(120, 120, 130)),
+                .color(crate::ui::tokens::TEXT_MUTED),
         );
     } else {
         if setup_data.model_ids.is_empty() {
+            // INFO, not OK. This states what the selection IS; it is not a
+            // verdict on it. It shared one green with the pin-count pass
+            // above, which is the collision §2.6 rules out.
             ui.label(
                 egui::RichText::new("All models (unconstrained)")
                     .small()
-                    .color(egui::Color32::from_rgb(140, 180, 140)),
+                    .color(crate::ui::tokens::INFO),
             );
         }
         for &(model_id, ref model_name) in all_models {
@@ -301,14 +307,14 @@ pub fn draw(
     ui.label(
         egui::RichText::new("Fixtures")
             .strong()
-            .color(egui::Color32::from_rgb(180, 180, 195)),
+            .color(crate::ui::tokens::TEXT_STRONG),
     );
 
     if setup_data.fixtures.is_empty() {
         ui.label(
             egui::RichText::new("No fixtures")
                 .italics()
-                .color(egui::Color32::from_rgb(120, 120, 130)),
+                .color(crate::ui::tokens::TEXT_MUTED),
         );
     }
     for fixture in &setup_data.fixtures {
@@ -335,14 +341,14 @@ pub fn draw(
     ui.label(
         egui::RichText::new("Keep-Out Zones")
             .strong()
-            .color(egui::Color32::from_rgb(180, 180, 195)),
+            .color(crate::ui::tokens::TEXT_STRONG),
     );
 
     if setup_data.keep_out_zones.is_empty() {
         ui.label(
             egui::RichText::new("No keep-out zones")
                 .italics()
-                .color(egui::Color32::from_rgb(120, 120, 130)),
+                .color(crate::ui::tokens::TEXT_MUTED),
         );
     }
     for zone in &setup_data.keep_out_zones {
@@ -409,7 +415,7 @@ pub fn draw_fixture_properties(
     ui.label(
         egui::RichText::new("Position (mm)")
             .strong()
-            .color(egui::Color32::from_rgb(160, 160, 175)),
+            .color(crate::ui::tokens::TEXT_MUTED),
     );
     egui::Grid::new("fixture_position")
         .num_columns(2)
@@ -449,7 +455,7 @@ pub fn draw_fixture_properties(
     ui.label(
         egui::RichText::new("Size (mm)")
             .strong()
-            .color(egui::Color32::from_rgb(160, 160, 175)),
+            .color(crate::ui::tokens::TEXT_MUTED),
     );
     egui::Grid::new("fixture_size")
         .num_columns(2)
@@ -530,7 +536,7 @@ pub fn draw_keep_out_properties(
     ui.label(
         egui::RichText::new("Position (mm)")
             .strong()
-            .color(egui::Color32::from_rgb(160, 160, 175)),
+            .color(crate::ui::tokens::TEXT_MUTED),
     );
     egui::Grid::new("keepout_position")
         .num_columns(2)
@@ -561,7 +567,7 @@ pub fn draw_keep_out_properties(
     ui.label(
         egui::RichText::new("Size (mm)")
             .strong()
-            .color(egui::Color32::from_rgb(160, 160, 175)),
+            .color(crate::ui::tokens::TEXT_MUTED),
     );
     egui::Grid::new("keepout_size")
         .num_columns(2)

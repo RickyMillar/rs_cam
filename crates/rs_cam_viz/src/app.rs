@@ -340,7 +340,7 @@ impl RsCamApp {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
-                ui.label(egui::RichText::new(msg).color(egui::Color32::from_rgb(255, 200, 80)));
+                ui.label(egui::RichText::new(msg).color(crate::ui::tokens::CAUTION));
             }
         });
 
@@ -370,7 +370,7 @@ impl RsCamApp {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
-                ui.label(egui::RichText::new(msg).color(egui::Color32::from_rgb(255, 200, 80)));
+                ui.label(egui::RichText::new(msg).color(crate::ui::tokens::CAUTION));
             }
         });
 
@@ -425,7 +425,7 @@ impl RsCamApp {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
-                ui.label(egui::RichText::new(msg).color(egui::Color32::from_rgb(255, 200, 80)));
+                ui.label(egui::RichText::new(msg).color(crate::ui::tokens::CAUTION));
             }
         });
 
@@ -522,7 +522,12 @@ impl RsCamApp {
                 .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 54.0))
                 .show(ui.ctx(), |ui| {
                     egui::Frame::default()
-                        .fill(egui::Color32::from_rgba_premultiplied(35, 30, 18, 220))
+                        .fill(egui::Color32::from_rgba_unmultiplied(
+                            crate::ui::tokens::TINT_CAUTION.r(),
+                            crate::ui::tokens::TINT_CAUTION.g(),
+                            crate::ui::tokens::TINT_CAUTION.b(),
+                            220,
+                        ))
                         .corner_radius(5)
                         .inner_margin(egui::Margin::symmetric(10, 6))
                         .show(ui, |ui| {
@@ -532,7 +537,7 @@ impl RsCamApp {
                                 )
                                 .small()
                                 .strong()
-                                .color(egui::Color32::from_rgb(255, 220, 130)),
+                                .color(crate::ui::tokens::CAUTION),
                             );
                         });
                 });
@@ -780,7 +785,7 @@ impl RsCamApp {
         egui::Panel::top("workspace_bar")
             .frame(
                 egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(34, 34, 42))
+                    .fill(crate::ui::tokens::SURFACE_RAISED)
                     .inner_margin(egui::Margin::symmetric(8, 2)),
             )
             .show(ui, |ui| {
@@ -932,16 +937,14 @@ impl RsCamApp {
                         for (message, severity) in &notifications {
                             let (bg, text_color) = match severity {
                                 crate::controller::Severity::Info => {
-                                    (egui::Color32::from_rgb(40, 40, 50), egui::Color32::WHITE)
+                                    (crate::ui::tokens::TINT_INFO, crate::ui::tokens::INFO)
                                 }
-                                crate::controller::Severity::Warning => (
-                                    egui::Color32::from_rgb(80, 60, 10),
-                                    egui::Color32::from_rgb(255, 220, 100),
-                                ),
-                                crate::controller::Severity::Error => (
-                                    egui::Color32::from_rgb(80, 20, 20),
-                                    egui::Color32::from_rgb(255, 120, 120),
-                                ),
+                                crate::controller::Severity::Warning => {
+                                    (crate::ui::tokens::TINT_CAUTION, crate::ui::tokens::CAUTION)
+                                }
+                                crate::controller::Severity::Error => {
+                                    (crate::ui::tokens::TINT_DANGER, crate::ui::tokens::DANGER)
+                                }
                             };
                             egui::Frame::default()
                                 .fill(bg)

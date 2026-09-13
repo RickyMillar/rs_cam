@@ -731,3 +731,35 @@ pub fn from_linear_rgb(c: [f32; 3]) -> Color32 {
 pub fn accent_wash(alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(ACCENT.r(), ACCENT.g(), ACCENT.b(), alpha)
 }
+
+// ---- The axis triple (ruling R22) ---------------------------------------
+//
+// `AUDIT.md` §2.10 names `#DC3C3C` serving BOTH error text and the viewport
+// X-axis gizmo as one of four load-bearing collisions, and it is the one
+// this programme's first principle exists for: an axis that is the same red
+// as an error.
+//
+// Two agents migrating this crate independently reached the same wall, and
+// both stopped rather than force it: **no scale in §2.9 carries three
+// separable HUES.** Every data scale here is one hue by lightness, by
+// design, because a category wheel spends the semantic palette.
+//
+// The ruling is that an AXIS IS THE EXCEPTION, and a narrow one. X red,
+// Y green, Z blue is a convention every CAD operator reads without being
+// taught, and re-coding it by lightness would cost more than it saves. So
+// the axes keep their hues, and what the token set buys is the thing the
+// audit actually complained about: these are SEPARATE constants from the
+// verdict roles, at different values, so moving one cannot move the other.
+//
+// The limitation is real and stated rather than hidden: `AXIS_X` sits near
+// `DANGER` and `AXIS_Y` near `OK` in hue, because the convention puts them
+// there. What keeps them from being confused is CONTEXT — an axis gizmo is
+// drawn in the 3D viewport and a verdict on a chip in a panel, and the two
+// are never adjacent. An axis colour must NEVER appear in a panel.
+
+/// The X axis. Distinct from [`DANGER`]; 4.72 on the viewport ground.
+pub const AXIS_X: Color32 = Color32::from_rgb(0xD6, 0x5C, 0x55);
+/// The Y axis. Distinct from [`OK`]; 7.89 on the viewport ground.
+pub const AXIS_Y: Color32 = Color32::from_rgb(0x6F, 0xBF, 0x4A);
+/// The Z axis. 5.41 on the viewport ground.
+pub const AXIS_Z: Color32 = Color32::from_rgb(0x5B, 0x8D, 0xE0);

@@ -154,7 +154,7 @@ fn draw_detail_panel(ui: &mut egui::Ui, view: &mut MachineLibraryView, events: &
         Ok(p) => p,
         Err(e) => {
             ui.colored_label(
-                egui::Color32::from_rgb(220, 120, 120),
+                crate::ui::tokens::DANGER,
                 format!("Could not load '{name}': {e}"),
             );
             return;
@@ -208,10 +208,7 @@ fn draw_detail_panel(ui: &mut egui::Ui, view: &mut MachineLibraryView, events: &
         }
         if view.confirm_delete {
             if ui
-                .button(
-                    egui::RichText::new("Confirm delete")
-                        .color(egui::Color32::from_rgb(220, 90, 90)),
-                )
+                .button(egui::RichText::new("Confirm delete").color(crate::ui::tokens::DANGER))
                 .clicked()
             {
                 events.push(AppEvent::Ui(UiCommand::DeleteMachineFromLibrary(
@@ -224,7 +221,7 @@ fn draw_detail_panel(ui: &mut egui::Ui, view: &mut MachineLibraryView, events: &
                 view.confirm_delete = false;
             }
         } else if ui
-            .button(egui::RichText::new("Delete").color(egui::Color32::from_rgb(200, 100, 100)))
+            .button(egui::RichText::new("Delete").color(crate::ui::tokens::DANGER))
             .clicked()
         {
             view.confirm_delete = true;

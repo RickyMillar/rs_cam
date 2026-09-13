@@ -389,7 +389,7 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
 
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(22, 22, 28));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let cx = rect.center().x;
     let bottom = rect.bottom() - 10.0;
@@ -412,9 +412,13 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     let scale_y = draw_h / total_h.max(0.1);
     let scale = scale_x.min(scale_y);
 
-    let cutter_stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(160, 170, 190));
-    let shank_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(120, 125, 135));
-    let holder_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(90, 92, 100));
+    // The cutter is the subject of the drawing; the shank and the holder are
+    // the geometry around it. Three greys became two tokens: the palette
+    // carries one tool tone and one construction tone, so the shank joins the
+    // holder rather than inventing a rung between them.
+    let cutter_stroke = egui::Stroke::new(1.5_f32, crate::ui::tokens::DIAGRAM_TOOL);
+    let shank_stroke = egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_DIM);
+    let holder_stroke = egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_DIM);
 
     // --- Cutter cross-section from profile_points ---
     let profile = tool_def.profile_points(32);
@@ -491,7 +495,13 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
         [egui::pos2(cx, rect.top() + 5.0), egui::pos2(cx, bottom)],
         egui::Stroke::new(
             0.5_f32,
-            egui::Color32::from_rgba_premultiplied(80, 80, 100, 100),
+            // A construction line, so DIAGRAM_DIM at its original alpha.
+            egui::Color32::from_rgba_unmultiplied(
+                crate::ui::tokens::DIAGRAM_DIM.r(),
+                crate::ui::tokens::DIAGRAM_DIM.g(),
+                crate::ui::tokens::DIAGRAM_DIM.b(),
+                100,
+            ),
         ),
     );
 }

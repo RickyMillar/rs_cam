@@ -230,9 +230,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
 
             if has_failures {
                 ui.add_space(4.0);
-                let error_color = egui::Color32::from_rgb(220, 80, 80);
+                let error_color = crate::ui::tokens::DANGER;
                 egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(60, 25, 25))
+                    .fill(crate::ui::tokens::TINT_DANGER)
                     .stroke(egui::Stroke::new(1.5_f32, error_color))
                     .inner_margin(8.0)
                     .corner_radius(4)
@@ -240,7 +240,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                         ui.label(
                             egui::RichText::new("\u{26A0} Exporting with unresolved collisions")
                                 .strong()
-                                .color(egui::Color32::from_rgb(220, 100, 80)),
+                                .color(crate::ui::tokens::DANGER),
                         );
                         ui.add_space(4.0);
                         // Use egui memory for checkbox state
@@ -399,7 +399,7 @@ fn draw_stale_export_acceptance(ui: &mut egui::Ui, state: &AppState, events: &mu
     use crate::state::runtime::StaleResultPolicy;
 
     egui::Frame::default()
-        .fill(egui::Color32::from_rgb(50, 45, 25))
+        .fill(crate::ui::tokens::TINT_CAUTION)
         .stroke(egui::Stroke::new(1.5_f32, theme::WARNING))
         .inner_margin(8.0)
         .corner_radius(4)
@@ -450,9 +450,9 @@ fn draw_tool_load_overrides(
     let any_exceeded = report.any_exceeded();
     let any_unmodeled = report.any_unmodeled();
     let frame_color = if any_exceeded {
-        egui::Color32::from_rgb(60, 25, 25)
+        crate::ui::tokens::TINT_DANGER
     } else {
-        egui::Color32::from_rgb(50, 45, 25)
+        crate::ui::tokens::TINT_CAUTION
     };
     let stroke_color = if any_exceeded {
         theme::ERROR

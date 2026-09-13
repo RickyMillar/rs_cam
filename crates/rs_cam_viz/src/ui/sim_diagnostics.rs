@@ -213,11 +213,8 @@ fn draw_focused_hotspot_card(
     // FILLED with a solid orange border and a filled ◍ glyph (a "time-waste"
     // focus), structurally unlike the issue card's hollow outline.
     egui::Frame::default()
-        .fill(egui::Color32::from_rgb(50, 38, 28))
-        .stroke(egui::Stroke::new(
-            1.5_f32,
-            egui::Color32::from_rgb(255, 170, 90),
-        ))
+        .fill(crate::ui::tokens::TINT_CAUTION)
+        .stroke(egui::Stroke::new(1.5_f32, crate::ui::tokens::CAUTION))
         .inner_margin(6.0)
         .corner_radius(4)
         .show(ui, |ui| {
@@ -225,7 +222,7 @@ fn draw_focused_hotspot_card(
                 ui.label(
                     egui::RichText::new("\u{25CD} Hotspot")
                         .strong()
-                        .color(egui::Color32::from_rgb(255, 170, 90)),
+                        .color(crate::ui::tokens::CAUTION),
                 );
                 ui.label(
                     egui::RichText::new(format!("TP {}", tp_id.0 + 1))
@@ -289,10 +286,7 @@ fn draw_focused_issue_card(
     // HOLLOW outline (no fill) with an outline △ glyph and Prev/Next nav —
     // visually unlike the filled hotspot card even though they share the slot.
     egui::Frame::default()
-        .stroke(egui::Stroke::new(
-            1.5_f32,
-            egui::Color32::from_rgb(210, 170, 80),
-        ))
+        .stroke(egui::Stroke::new(1.5_f32, crate::ui::tokens::CAUTION))
         .inner_margin(6.0)
         .corner_radius(4)
         .show(ui, |ui| {
@@ -447,12 +441,12 @@ fn draw_project_section(
                 ui.add(
                     CountPill::verdict("\u{2713} within", ok)
                         .denom(total_tp)
-                        .color(egui::Color32::from_rgb(120, 200, 130))
+                        .color(crate::ui::tokens::OK)
                         .hover("Toolpaths within modeled load limits (of total modeled)."),
                 );
                 let exceeds_pill = CountPill::verdict("\u{2715} exceeding", bad)
             .denom(total_tp)
-            .color(egui::Color32::from_rgb(220, 90, 90))
+            .color(crate::ui::tokens::DANGER)
             .hover("Toolpaths exceeding a modeled load limit. Click to optimize all exceeding.");
                 if bad > 0 {
                     if ui.add(exceeds_pill.actionable()).clicked() {
@@ -461,10 +455,15 @@ fn draw_project_section(
                 } else {
                     ui.add(exceeds_pill.hide_when_zero());
                 }
+                // UP4: `unmodeled` is an ABSTENTION, not a caution. The gate
+                // could not model the toolpath, so it returned no verdict at
+                // all — and it wore the same amber as a measurement that came
+                // back and needs review. `DESIGN_SPEC.md` §2.6: "not run" is
+                // UNKNOWN.
                 ui.add(
             CountPill::verdict("\u{26A0} unmodeled", unmodeled)
                 .denom(total_tp)
-                .color(egui::Color32::from_rgb(210, 170, 80))
+                .color(crate::ui::tokens::UNKNOWN)
                 .hide_when_zero()
                 .hover("Toolpaths the gate could not model (drill cycles, no vendor data, etc.)."),
         );
@@ -763,7 +762,7 @@ fn draw_project_section(
                                     false,
                                     egui::RichText::new(label)
                                         .small()
-                                        .color(egui::Color32::from_rgb(255, 170, 90)),
+                                        .color(crate::ui::tokens::CAUTION),
                                 )
                                 .on_hover_text("Click to focus and jump to this hotspot.");
                             if resp.clicked() {
@@ -1581,7 +1580,7 @@ fn draw_span_body(
                     )
                 ))
                 .small()
-                .color(egui::Color32::from_rgb(255, 170, 90)),
+                .color(crate::ui::tokens::CAUTION),
             )
             .on_hover_text("Click to focus and jump to start move.");
         if resp.clicked() {

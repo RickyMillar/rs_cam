@@ -43,21 +43,21 @@ pub fn draw(
             ui.label(
                 egui::RichText::new("Hardness Index:")
                     .small()
-                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
             ).on_hover_text(
                 "Per-material feed-rate scaling factor (softwood baseline = 1.0). Higher values reduce recommended feed rates and depths of cut."
             );
             ui.label(
                 egui::RichText::new(format!("{:.2}", stock.material.feed_scale_factor()))
                     .small()
-                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
             );
             ui.end_row();
 
             ui.label(
                 egui::RichText::new("Kc:")
                     .small()
-                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
             ).on_hover_text(
                 "Specific cutting force (N/mm\u{00B2}). Used to calculate spindle load and recommended feed rates. Higher Kc = harder to cut."
             );
@@ -68,7 +68,7 @@ pub fn draw(
             ui.label(
                 egui::RichText::new(kc_text)
                     .small()
-                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
             );
             ui.end_row();
         });
@@ -181,7 +181,7 @@ fn draw_alignment_pins(
 ) -> PanelEdit {
     let header = egui::RichText::new("Alignment Pins")
         .strong()
-        .color(egui::Color32::from_rgb(180, 180, 195));
+        .color(crate::ui::tokens::TEXT_STRONG);
 
     // Pins only matter for two-sided work: open by default only when pins
     // exist or a flip is programmed (density pass 2026-06-11). Keyed off
@@ -200,7 +200,7 @@ fn draw_alignment_pins(
                 ui.label(
                     egui::RichText::new("Creates flipped Setup 2, sets flip axis, places 2 pins")
                         .small()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(crate::ui::tokens::TEXT_MUTED),
                 );
                 ui.add_space(4.0);
             }
@@ -247,7 +247,7 @@ fn draw_alignment_pins(
                     ui.label(
                         egui::RichText::new("(derived)")
                             .small()
-                            .color(egui::Color32::from_rgb(220, 180, 60)),
+                            .color(crate::ui::tokens::CAUTION),
                     );
                 }
             });
@@ -267,7 +267,7 @@ fn draw_alignment_pins(
                         }
                     ))
                     .small()
-                    .color(egui::Color32::from_rgb(220, 180, 60)),
+                    .color(crate::ui::tokens::CAUTION),
                 );
             }
 
@@ -447,7 +447,7 @@ fn draw_alignment_pins(
                 ui.label(
                     egui::RichText::new(reason.to_string())
                         .small()
-                        .color(egui::Color32::from_rgb(220, 100, 100)),
+                        .color(crate::ui::tokens::DANGER),
                 );
             }
 
@@ -467,7 +467,7 @@ fn draw_alignment_pins(
                 ui.label(
                     egui::RichText::new(warning)
                         .small()
-                        .color(egui::Color32::from_rgb(220, 180, 60)),
+                        .color(crate::ui::tokens::CAUTION),
                 );
             }
 
@@ -662,7 +662,7 @@ fn draw_wood_subcategory(
         ui.label(
             egui::RichText::new(format!("{} of {}", visible.len(), entries.len()))
                 .small()
-                .color(egui::Color32::from_rgb(140, 140, 150)),
+                .color(crate::ui::tokens::TEXT_MUTED),
         );
         ui.separator();
 
@@ -684,7 +684,7 @@ fn draw_wood_subcategory(
                         egui::RichText::new("no matches")
                             .small()
                             .italics()
-                            .color(egui::Color32::from_rgb(140, 140, 150)),
+                            .color(crate::ui::tokens::TEXT_MUTED),
                     );
                 }
             });

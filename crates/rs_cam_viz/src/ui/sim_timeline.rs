@@ -43,7 +43,7 @@ pub fn draw(
                 egui::RichText::new("⚡ Mesh quality reduced for playback — pause for full render")
                     .small()
                     .strong()
-                    .color(egui::Color32::from_rgb(255, 220, 130)),
+                    .color(crate::ui::tokens::CAUTION),
             );
         });
         ui.add_space(2.0);
@@ -161,7 +161,7 @@ fn draw_verdict_hud(
         .count();
 
     egui::Frame::default()
-        .fill(egui::Color32::from_rgb(30, 32, 42))
+        .fill(crate::ui::tokens::SURFACE_BASE)
         .inner_margin(egui::Margin::symmetric(6, 4))
         .corner_radius(4)
         .show(ui, |ui| {
@@ -173,14 +173,14 @@ fn draw_verdict_hud(
                 ui.add(
                     CountPill::verdict("\u{2713} load", ok)
                         .denom(total_tp)
-                        .color(egui::Color32::from_rgb(85, 180, 110))
+                        .color(crate::ui::tokens::OK)
                         .hover("Toolpaths within modeled load limits (of total modeled)."),
                 );
                 // Exceeds is a navigation control when any TP exceeds: click
                 // seeks to the first exceedance marker (TIM-005).
                 let exceeds_pill = CountPill::verdict("\u{2715} exceeds", bad)
                     .denom(total_tp)
-                    .color(egui::Color32::from_rgb(220, 90, 90))
+                    .color(crate::ui::tokens::DANGER)
                     .hover("Toolpaths exceeding a modeled load limit.");
                 if let Some(move_idx) = first_exceed_move.filter(|_| bad > 0) {
                     if ui.add(exceeds_pill.actionable()).clicked() {
@@ -197,7 +197,10 @@ fn draw_verdict_hud(
                 ui.add(
                     CountPill::verdict("\u{26A0} unmodeled", unmodeled)
                         .denom(total_tp)
-                        .color(egui::Color32::from_rgb(210, 170, 80))
+                        // UP4: an ABSTENTION, not a caution — the gate
+                        // could not model these toolpaths, so there is no
+                        // verdict to show (`DESIGN_SPEC.md` §2.6).
+                        .color(crate::ui::tokens::UNKNOWN)
                         .hide_when_zero()
                         .hover(
                             "Toolpaths the gate could not model (drill cycles, no vendor data, \
@@ -209,7 +212,7 @@ fn draw_verdict_hud(
                 // Zero-count chips self-hide (density pass V4) — at zero the
                 // within-pill plus the readiness checks carry the all-clear.
                 let collisions_pill = CountPill::observation("collisions", collision_count)
-                    .color(egui::Color32::from_rgb(255, 120, 110))
+                    .color(crate::ui::tokens::DANGER)
                     .hide_when_zero()
                     .hover("Rapid/holder collisions detected during simulation.");
                 if let Some(move_idx) = first_collision_move.filter(|_| collision_count > 0) {
@@ -223,7 +226,7 @@ fn draw_verdict_hud(
                 }
                 ui.add(
                     CountPill::observation("hotspots", hotspot_count)
-                        .color(egui::Color32::from_rgb(230, 190, 90))
+                        .color(crate::ui::tokens::CAUTION)
                         .hide_when_zero()
                         .hover(
                             "Sustained high-load clusters — triage in the Inspector's \
@@ -235,7 +238,7 @@ fn draw_verdict_hud(
                 if trace_count > 0 {
                     ui.add(
                         CountPill::observation("traces", trace_count)
-                            .color(egui::Color32::from_rgb(150, 170, 230))
+                            .color(crate::ui::tokens::INFO)
                             .hover("Generator traces recorded for inspection."),
                     );
                 }
@@ -289,11 +292,7 @@ fn draw_signal_spine(
         .enumerate()
         .map(|(i, b)| {
             let pc = palette_color(i);
-            let color = egui::Color32::from_rgb(
-                (pc[0] * 255.0) as u8,
-                (pc[1] * 255.0) as u8,
-                (pc[2] * 255.0) as u8,
-            );
+            let color = crate::ui::tokens::from_linear_rgb(pc);
             (b.id, b.start_move, color)
         })
         .collect();
@@ -421,6 +420,16 @@ fn draw_signal_spine(
         })
         .unwrap_or_default();
 
+    // UP4: the five tracks are SERIES in a chart, a category. They carried
+    // `(230,200,60)`, `(80,200,120)`, `(110,150,230)`, `(210,130,230)` and
+    // `(150,190,230)` — a hand-assembled colour wheel with a pass-green in
+    // it, which `DESIGN_SPEC.md` §2.6 principle 1 forbids. They walk
+    // `SPAN_SCALE` now; the summary track below takes the sixth step, so all
+    // six strips stay distinct. `CHART_SERIES` has only four steps and cannot
+    // cover this strip.
+    // SAFETY: every index is a literal in `0..6` and `SPAN_SCALE` has six
+    // entries, so each one is in bounds at compile time.
+    #[allow(clippy::indexing_slicing)]
     let tracks: [SignalTrack; 5] = [
         (
             // Checkpoint H3 (2026-08-08): this track keeps the arc-mean
@@ -446,32 +455,32 @@ fn draw_signal_spine(
                     s.effective_chip_thickness_mm
                 }
             },
-            egui::Color32::from_rgb(230, 200, 60),
+            crate::ui::tokens::SPAN_SCALE[0],
             // No envelope, on purpose. A shaded band IS a comparison.
             None,
         ),
         (
             "arc engagement",
             |s| s.arc_engagement_radians,
-            egui::Color32::from_rgb(80, 200, 120),
+            crate::ui::tokens::SPAN_SCALE[1],
             None,
         ),
         (
             "axial DOC",
             |s| (s.axial_doc_mm > 0.0).then_some(s.axial_doc_mm),
-            egui::Color32::from_rgb(110, 150, 230),
+            crate::ui::tokens::SPAN_SCALE[2],
             None,
         ),
         (
             "MRR",
             |s| (s.mrr_mm3_s > 0.0).then_some(s.mrr_mm3_s),
-            egui::Color32::from_rgb(210, 130, 230),
+            crate::ui::tokens::SPAN_SCALE[3],
             None,
         ),
         (
             "feed",
             |s| Some(s.feed_rate_mm_min),
-            egui::Color32::from_rgb(150, 190, 230),
+            crate::ui::tokens::SPAN_SCALE[4],
             None,
         ),
     ];
@@ -505,7 +514,7 @@ fn draw_signal_spine(
             ui.label(
                 egui::RichText::new("Playing: ")
                     .small()
-                    .color(egui::Color32::from_rgb(140, 140, 155)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
             );
             ui.label(egui::RichText::new(&focus_name).small().strong());
         });
@@ -548,10 +557,16 @@ fn draw_signal_spine(
             .filter(|(_, hi)| *hi > 0.0)
             .map(|(lo, hi)| (lo / hi, 1.0))
             .or(Some((0.0, 1.0)));
+        // UP4: the sixth series of the same strip. The amber it carried
+        // read as a standing warning; the verdict here is where the line
+        // crosses 1.0, not the line itself.
+        // SAFETY: index 5 is a literal and `SPAN_SCALE` has six entries.
+        #[allow(clippy::indexing_slicing)]
+        let summary_track = crate::ui::tokens::SPAN_SCALE[5];
         let summary_color = if stale {
-            desaturate(egui::Color32::from_rgb(235, 160, 70))
+            desaturate(summary_track)
         } else {
-            egui::Color32::from_rgb(235, 160, 70)
+            summary_track
         };
         draw_signal_track(
             ui,
@@ -769,12 +784,20 @@ fn draw_signal_track(
                 let band_y_max = max_y + (max_y - min_y).abs() * 0.1;
                 let band_stroke = egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT);
                 for (idx, (g_start, g_end, selected)) in pass_bands.iter().enumerate() {
+                    // UP4: three washes over one plot ground. They stay
+                    // PREMULTIPLIED — `tokens::accent_wash` is unmultiplied,
+                    // and at these alphas it would leave the selected band
+                    // dimmer than its unselected neighbours, inverting what
+                    // the bands are for. The base colours are the tokens.
+                    let wash = |c: egui::Color32, a: u8| {
+                        egui::Color32::from_rgba_premultiplied(c.r(), c.g(), c.b(), a)
+                    };
                     let fill = if *selected {
-                        egui::Color32::from_rgba_premultiplied(70, 95, 160, 28)
+                        wash(crate::ui::tokens::ACCENT_QUIET, 28)
                     } else if idx % 2 == 0 {
-                        egui::Color32::from_rgba_premultiplied(50, 60, 90, 12)
+                        wash(crate::ui::tokens::SURFACE_OVERLAY, 12)
                     } else {
-                        egui::Color32::from_rgba_premultiplied(35, 45, 70, 8)
+                        wash(crate::ui::tokens::SURFACE_RAISED, 8)
                     };
                     plot_ui.polygon(
                         Polygon::new(
@@ -865,7 +888,12 @@ fn draw_signal_track(
                                 [x_min, breakage_top],
                             ]),
                         )
-                        .fill_color(egui::Color32::from_rgba_premultiplied(70, 18, 18, 90))
+                        .fill_color(egui::Color32::from_rgba_premultiplied(
+                            crate::ui::tokens::TINT_DANGER.r(),
+                            crate::ui::tokens::TINT_DANGER.g(),
+                            crate::ui::tokens::TINT_DANGER.b(),
+                            90,
+                        ))
                         .stroke(transparent)
                         .allow_hover(false)
                         .name("breakage zone"),
@@ -883,13 +911,18 @@ fn draw_signal_track(
                                 [x_min, cl_min],
                             ]),
                         )
-                        .fill_color(egui::Color32::from_rgba_premultiplied(90, 60, 12, 80))
+                        .fill_color(egui::Color32::from_rgba_premultiplied(
+                            crate::ui::tokens::TINT_CAUTION.r(),
+                            crate::ui::tokens::TINT_CAUTION.g(),
+                            crate::ui::tokens::TINT_CAUTION.b(),
+                            80,
+                        ))
                         .stroke(transparent)
                         .allow_hover(false)
                         .name("burn zone"),
                     );
                 }
-                let band_color = egui::Color32::from_rgb(220, 90, 90);
+                let band_color = crate::ui::tokens::DANGER;
                 plot_ui.line(
                     Line::new("", PlotPoints::from(vec![[x_min, cl_min], [x_max, cl_min]]))
                         .color(band_color)
@@ -907,7 +940,7 @@ fn draw_signal_track(
             if let Some(x) = active_x {
                 plot_ui.line(
                     Line::new("", PlotPoints::from(vec![[x, min_y], [x, max_y]]))
-                        .color(egui::Color32::from_rgb(245, 245, 245))
+                        .color(crate::ui::tokens::TEXT_STRONG)
                         .name("playback"),
                 );
             }
@@ -915,7 +948,7 @@ fn draw_signal_track(
             if let Some(x) = display_x {
                 plot_ui.line(
                     Line::new("", PlotPoints::from(vec![[x, min_y], [x, max_y]]))
-                        .color(egui::Color32::from_rgb(200, 240, 100))
+                        .color(crate::ui::tokens::ACCENT)
                         .style(egui_plot::LineStyle::Dashed { length: 4.0 }),
                 );
                 if let Some((_, point)) = nearest_in_groups(x, &group_points) {
@@ -1034,7 +1067,7 @@ fn draw_spine_empty_placeholder(
 ) {
     ui.add_space(4.0);
     egui::Frame::default()
-        .fill(egui::Color32::from_rgb(28, 30, 38))
+        .fill(crate::ui::tokens::SURFACE_BASE)
         .inner_margin(egui::Margin::symmetric(8, 10))
         .corner_radius(4)
         .show(ui, |ui| {
@@ -1126,7 +1159,7 @@ fn draw_transport_and_scrubber(
             ui.label(
                 egui::RichText::new(format!("{} / {}", elapsed_str, total_str))
                     .monospace()
-                    .color(egui::Color32::from_rgb(160, 200, 240)),
+                    .color(crate::ui::tokens::TEXT_STRONG),
             );
             // Name the basis next to the clock (G-TIMEEST). The readout drives
             // the speed baseline below, so an operator who mistrusts one has to
@@ -1184,7 +1217,7 @@ fn draw_transport_and_scrubber(
             ui.label(
                 egui::RichText::new("Speed:")
                     .small()
-                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
             )
             .on_hover_text(format!(
                 "Playback speed multiplier. 1× = real-time playback for this project ({:.0} moves/sec, {}). [ and ] keys to adjust.",
@@ -1277,7 +1310,7 @@ fn draw_boundary_timeline(
     painter.rect_stroke(
         op_rect,
         rounding,
-        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 55, 65)),
+        egui::Stroke::new(1.0_f32, crate::ui::tokens::HAIRLINE),
         egui::StrokeKind::Middle,
     );
     for (i, boundary) in sim.boundaries().iter().enumerate() {
@@ -1285,16 +1318,10 @@ fn draw_boundary_timeline(
         let x_start = global_x(boundary.start_move);
         let x_end = global_x(boundary.end_move);
         let pc = palette_color(i);
-        let dim_color = egui::Color32::from_rgb(
-            (pc[0] * 50.0) as u8,
-            (pc[1] * 50.0) as u8,
-            (pc[2] * 50.0) as u8,
-        );
-        let color = egui::Color32::from_rgb(
-            (pc[0] * 255.0) as u8,
-            (pc[1] * 255.0) as u8,
-            (pc[2] * 255.0) as u8,
-        );
+        let color = crate::ui::tokens::from_linear_rgb(pc);
+        // The unplayed remainder of the band: the SAME palette colour dimmed,
+        // which is what the second literal here used to spell out by hand.
+        let dim_color = color.linear_multiply(50.0 / 255.0);
         let seg_rect = egui::Rect::from_min_max(
             egui::pos2(x_start, op_rect.min.y),
             egui::pos2(x_end, op_rect.max.y),
@@ -1328,7 +1355,7 @@ fn draw_boundary_timeline(
             .unwrap_or(false)
     };
     if let Some(ref report) = sim.checks.collision_report {
-        let holder_color = egui::Color32::from_rgb(255, 50, 50);
+        let holder_color = crate::ui::tokens::DANGER;
         for col in &report.collisions {
             if !in_focus(col.move_idx) {
                 continue;
@@ -1340,7 +1367,10 @@ fn draw_boundary_timeline(
             );
         }
     }
-    let rapid_color = egui::Color32::from_rgb(255, 160, 40);
+    // UP4: a rapid strike is a collision, so it takes DANGER like the
+    // holder strike above. The two stay apart by stroke width — 2.0 for the
+    // holder, 1.5 here — which was already the case.
+    let rapid_color = crate::ui::tokens::DANGER;
     for &idx in &sim.checks.rapid_collision_move_indices {
         if !in_focus(idx) {
             continue;
@@ -1542,7 +1572,12 @@ fn paint_span_subband(
     painter.rect_filled(
         rect,
         2.0,
-        egui::Color32::from_rgba_unmultiplied(20, 22, 30, 220),
+        egui::Color32::from_rgba_unmultiplied(
+            crate::ui::tokens::DIAGRAM_CANVAS.r(),
+            crate::ui::tokens::DIAGRAM_CANVAS.g(),
+            crate::ui::tokens::DIAGRAM_CANVAS.b(),
+            220,
+        ),
     );
 
     let scope_span_id = sim.debug.span_scope.span_id;
@@ -1604,11 +1639,20 @@ fn paint_span_subband(
     // Paint primary blocks with strong alternating contrast so every section
     // is visible at rest. Locked = bright cyan; playhead-current = gentle
     // highlight; otherwise alternating blue-grey.
-    const COLOR_EVEN: egui::Color32 = egui::Color32::from_rgb(120, 145, 185);
-    const COLOR_ODD: egui::Color32 = egui::Color32::from_rgb(70, 100, 145);
-    const COLOR_LOCKED: egui::Color32 = egui::Color32::from_rgb(220, 240, 255);
-    const COLOR_PLAYHEAD: egui::Color32 = egui::Color32::from_rgb(160, 200, 235);
-    const COLOR_HOVER_OUTLINE: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
+    // UP4: the ribbon blocks are a CATEGORY plus two states, so they walk
+    // `SPAN_SCALE` and keep their original brightness order — odd darkest,
+    // then even, then the playhead-current block, then the locked one.
+    // SAFETY: every index is a literal in `0..6` and `SPAN_SCALE` has six
+    // entries, so each one is in bounds at compile time.
+    #[allow(clippy::indexing_slicing)]
+    const COLOR_EVEN: egui::Color32 = crate::ui::tokens::SPAN_SCALE[1];
+    #[allow(clippy::indexing_slicing)]
+    const COLOR_ODD: egui::Color32 = crate::ui::tokens::SPAN_SCALE[0];
+    #[allow(clippy::indexing_slicing)]
+    const COLOR_LOCKED: egui::Color32 = crate::ui::tokens::SPAN_SCALE[5];
+    #[allow(clippy::indexing_slicing)]
+    const COLOR_PLAYHEAD: egui::Color32 = crate::ui::tokens::SPAN_SCALE[3];
+    const COLOR_HOVER_OUTLINE: egui::Color32 = crate::ui::tokens::TEXT_STRONG;
 
     let mut primary_index_seq = 0u32;
     let mut click_target: Option<(u32, usize)> = None;
@@ -1672,7 +1716,7 @@ fn paint_span_subband(
         // Thin separator on the right edge so consecutive passes don't blur.
         painter.line_segment(
             [egui::pos2(x_end, rect.min.y), egui::pos2(x_end, rect.max.y)],
-            egui::Stroke::new(0.5_f32, egui::Color32::from_rgb(15, 17, 24)),
+            egui::Stroke::new(0.5_f32, crate::ui::tokens::HAIRLINE),
         );
 
         if hovered {
@@ -1702,10 +1746,16 @@ fn paint_span_subband(
             let sid_u32 = sid as u32;
             let x_start = global_x(span.start_move);
             let x_end = global_x(span.end_move);
+            // UP4: Region sub-blocks are another span KIND, so they take
+            // two lighter steps of the same category ramp rather than the
+            // amber pair they carried.
+            // SAFETY: both indices are literals in `0..6`.
+            #[allow(clippy::indexing_slicing)]
             let color = if Some(sid_u32) == scope_span_id {
-                egui::Color32::from_rgb(240, 200, 120)
+                crate::ui::tokens::SPAN_SCALE[4]
             } else {
-                egui::Color32::from_rgba_unmultiplied(220, 180, 110, 180)
+                let c = crate::ui::tokens::SPAN_SCALE[2];
+                egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 180)
             };
             let block = egui::Rect::from_min_max(
                 egui::pos2(x_start, region_y),
@@ -1853,7 +1903,7 @@ fn draw_tool_load_timeline_markers(
             let x = rect.min.x + (global_move as f32 / total_moves) * total_width;
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-                egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(230, 60, 70)),
+                egui::Stroke::new(2.0_f32, crate::ui::tokens::DANGER),
             );
         } else if verdict.any_unmodeled()
             && let Some(boundary) = sim
@@ -1864,7 +1914,9 @@ fn draw_tool_load_timeline_markers(
             let x = rect.min.x + (boundary.start_move as f32 / total_moves) * total_width;
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.center().y)],
-                egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(250, 200, 80)),
+                // UP4: `any_unmodeled` is an ABSTENTION. The marker wore
+                // the caution amber; the gate returned no verdict at all.
+                egui::Stroke::new(1.5_f32, crate::ui::tokens::UNKNOWN),
             );
         }
     }
@@ -2112,7 +2164,7 @@ fn paint_semantic_subband(
     };
 
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 2.0, egui::Color32::from_rgb(30, 30, 40));
+    painter.rect_filled(rect, 2.0, crate::ui::tokens::SURFACE_BASE);
     let global_x = |local: usize| -> f32 {
         rect.min.x + ((boundary.start_move + local) as f32 / total_moves) * total_width
     };
@@ -2149,7 +2201,10 @@ fn paint_semantic_subband(
             let x = global_x(annotation.move_index);
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(255, 210, 120)),
+                // UP4: a generator annotation is a mark on a DRAWING, not
+                // a caution. `DIAGRAM_INK` is the token for the thing the
+                // drawing is describing (`DESIGN_SPEC.md` §2.8).
+                egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_INK),
             );
         }
     }
@@ -2165,12 +2220,21 @@ fn paint_semantic_subband(
             .filter(|issue| issue.toolpath_id == boundary.id)
         {
             let x = global_x(issue.move_index);
+            // UP4: these two dots distinguish the KIND of a sample-level
+            // finding, and they did it with an orange and an amber — the
+            // verdict palette spent on a category (`DESIGN_SPEC.md` §2.6
+            // principle 1). Neither dot is a judgement on the toolpath; the
+            // verdict lives in the load report. They take two steps of the
+            // chart-series ramp instead.
+            // SAFETY: both indices are literals in `0..4` and `CHART_SERIES`
+            // has four entries.
+            #[allow(clippy::indexing_slicing)]
             let color = match issue.kind {
                 rs_cam_core::simulation_cut::SimulationCutIssueKind::AirCut => {
-                    egui::Color32::from_rgb(255, 120, 80)
+                    crate::ui::tokens::CHART_SERIES[1]
                 }
                 rs_cam_core::simulation_cut::SimulationCutIssueKind::LowEngagement => {
-                    egui::Color32::from_rgb(250, 200, 100)
+                    crate::ui::tokens::CHART_SERIES[3]
                 }
             };
             painter.circle_filled(egui::pos2(x, rect.center().y), 2.5, color);

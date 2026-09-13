@@ -316,11 +316,7 @@ fn gradient_strip(ui: &mut egui::Ui, left: &str, right: &str, sample: impl Fn(f3
 }
 
 fn rgb(r: f32, g: f32, b: f32) -> egui::Color32 {
-    egui::Color32::from_rgb(
-        (r.clamp(0.0, 1.0) * 255.0) as u8,
-        (g.clamp(0.0, 1.0) * 255.0) as u8,
-        (b.clamp(0.0, 1.0) * 255.0) as u8,
-    )
+    crate::ui::tokens::from_linear_rgb([r, g, b])
 }
 
 /// A row of discrete labelled swatches, for a legend whose scale is a set of

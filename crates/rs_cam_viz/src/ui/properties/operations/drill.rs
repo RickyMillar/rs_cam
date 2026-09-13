@@ -49,7 +49,7 @@ fn draw_drill_target_selector(
         };
         ui.separator();
         ui.label("Drill targets: 0");
-        ui.colored_label(egui::Color32::from_rgb(220, 90, 60), refusal);
+        ui.colored_label(crate::ui::tokens::DANGER, refusal);
         ui.label(egui::RichText::new(TARGET_SOURCES_NOTE).small().weak());
         return;
     }
@@ -61,7 +61,7 @@ fn draw_drill_target_selector(
             "Drill targets: {total} available (none selected → drilling all targets)"
         )),
         Some(picked) if picked.is_empty() => ui.colored_label(
-            egui::Color32::from_rgb(220, 90, 60),
+            crate::ui::tokens::DANGER,
             format!(
                 "Drill targets: 0 of {total} selected — {}",
                 rs_cam_core::compute::execute::NO_DRILL_TARGETS_SELECTED_MSG
@@ -77,7 +77,7 @@ fn draw_drill_target_selector(
         .as_ref()
         .and_then(|picked| stale_drill_picks_refusal(picked, targets));
     if let Some(msg) = stale {
-        ui.colored_label(egui::Color32::from_rgb(220, 90, 60), msg);
+        ui.colored_label(crate::ui::tokens::DANGER, msg);
     }
     ui.label(
         egui::RichText::new("Click points/holes in the viewport to toggle.")

@@ -183,7 +183,7 @@ pub fn draw(
     // Staleness warning
     if sim.is_stale(gui.edit_counter) {
         egui::Frame::default()
-            .fill(egui::Color32::from_rgb(50, 42, 20))
+            .fill(crate::ui::tokens::TINT_CAUTION)
             .stroke(egui::Stroke::new(1.5_f32, theme::WARNING))
             .inner_margin(8.0)
             .corner_radius(4)
@@ -197,7 +197,7 @@ pub fn draw(
                 ui.label(
                     egui::RichText::new("Parameters changed since the last simulation run.")
                         .small()
-                        .color(egui::Color32::from_rgb(180, 160, 100)),
+                        .color(crate::ui::tokens::CAUTION),
                 );
                 ui.add_space(6.0);
                 let btn = egui::Button::new(egui::RichText::new("Re-run Simulation").strong())
@@ -250,11 +250,7 @@ pub fn draw(
         }
         let is_focused = sim.focused_toolpath() == Some(boundary.id);
         let pc = palette_color(i);
-        let color = egui::Color32::from_rgb(
-            (pc[0] * 255.0) as u8,
-            (pc[1] * 255.0) as u8,
-            (pc[2] * 255.0) as u8,
-        );
+        let color = crate::ui::tokens::from_linear_rgb(pc);
 
         // Frame the focused (currently-playing) operation with an accent
         // border so the row visibly tracks playback.
@@ -755,18 +751,27 @@ pub fn draw(
         }
     }
 
+    /// UP4: span kinds are a CATEGORY. The ten hues here included an amber
+    /// `Entry` and a green-ish `GeometryRefit`, so a span list read as a
+    /// verdict column when no span carries a verdict (`DESIGN_SPEC.md` §2.6
+    /// principle 1). They walk `SPAN_SCALE` in declaration order instead.
+    #[allow(clippy::indexing_slicing)]
+    // SAFETY: every index is a literal in `0..6` and `SPAN_SCALE` has six
+    // entries, so each one is in bounds at compile time.
     const fn span_kind_color(kind: SpanKind) -> egui::Color32 {
+        use crate::ui::tokens::SPAN_SCALE;
+
         match kind {
-            SpanKind::Operation => egui::Color32::from_rgb(160, 170, 210),
-            SpanKind::DepthPass => egui::Color32::from_rgb(120, 150, 230),
-            SpanKind::Region => egui::Color32::from_rgb(150, 120, 220),
-            SpanKind::Entry => egui::Color32::from_rgb(230, 180, 90),
-            SpanKind::LeadOut => egui::Color32::from_rgb(220, 150, 110),
-            SpanKind::LinkBridge => egui::Color32::from_rgb(110, 200, 210),
-            SpanKind::DressupArtifact => egui::Color32::from_rgb(220, 120, 200),
-            SpanKind::GeometryRefit => egui::Color32::from_rgb(140, 190, 160),
-            SpanKind::WaterlineCleanup => egui::Color32::from_rgb(180, 200, 130),
-            SpanKind::RapidOrderBarrier => egui::Color32::from_rgb(120, 120, 130),
+            SpanKind::Operation => SPAN_SCALE[0],
+            SpanKind::DepthPass => SPAN_SCALE[1],
+            SpanKind::Region => SPAN_SCALE[2],
+            SpanKind::Entry => SPAN_SCALE[3],
+            SpanKind::LeadOut => SPAN_SCALE[4],
+            SpanKind::LinkBridge => SPAN_SCALE[5],
+            SpanKind::DressupArtifact => SPAN_SCALE[0],
+            SpanKind::GeometryRefit => SPAN_SCALE[1],
+            SpanKind::WaterlineCleanup => SPAN_SCALE[2],
+            SpanKind::RapidOrderBarrier => SPAN_SCALE[3],
         }
     }
 
