@@ -1813,3 +1813,15 @@ default without a second visibility mechanism. The choice persists per
 project only if the scout finds an existing home for it; a new project-file
 field is not in scope. Every new control is a registry row constructed in a
 view file (WP23 census).
+
+## §33 Operator ruling on Optimize progress (2026-09-13)
+
+**Optimize reports progress → WP29.** Operator's words: "I get no real
+progress anymore.. like. its just a spinner. So its hard to guess how long is
+left." WP24 deferred the progress observer (brief §3(f)). The row and the
+window show a label and elapsed seconds only. WP29 adds the three stage
+boundaries the brief names (`optimize/mod.rs:~340, ~380, ~397`) and the
+candidate count (done / total) to the progress row and the Optimize window,
+through the existing lane snapshot or a channel the Job owns. No estimate of
+time left unless the candidate count gives one honestly (candidates done ×
+mean candidate seconds). Runs after WP27 on the single cargo lane.
