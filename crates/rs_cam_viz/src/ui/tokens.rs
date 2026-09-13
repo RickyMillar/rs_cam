@@ -509,3 +509,102 @@ pub fn apply_to_style(style: &mut egui::Style) {
     v.warn_fg_color = CAUTION;
     v.error_fg_color = DANGER;
 }
+
+/// Load the two families and register the three named weights.
+///
+/// Kept beside the tokens rather than in `app.rs` so the family names the
+/// `Style` asks for and the family names registered here cannot drift apart.
+/// They are the same constants, and
+/// `tests/panels_read_the_token_module_up1.rs` lays out text in every style
+/// to prove it: epaint panics with "FontFamily::.. is not bound to any
+/// fonts" at the first galley, which would otherwise be a crash on launch
+/// that no other gate catches.
+pub fn apply_fonts(ctx: &egui::Context) {
+    use egui::{FontData, FontDefinitions, FontFamily};
+    use std::sync::Arc;
+
+    let mut fonts = FontDefinitions::default();
+
+    // `DESIGN_SPEC.md` §3.1. Inter carries the prose and JetBrains Mono
+    // carries every measured value. Both are SIL OFL 1.1 and both ship as
+    // `.ttf` in `assets/fonts/`, loaded the same way the two Noto symbol
+    // fonts already were. Neither adds a Cargo dependency.
+    //
+    // egui reaches a WEIGHT through a named family, not a weight axis, so
+    // Medium and SemiBold are registered as families of their own. Inter
+    // replaces Ubuntu-Light because a light face has no room below it and
+    // `.strong()` then has to do all the work.
+    for (name, bytes) in [
+        (
+            "inter_regular",
+            &include_bytes!("../../assets/fonts/Inter-Regular.ttf")[..],
+        ),
+        (
+            "inter_medium",
+            &include_bytes!("../../assets/fonts/Inter-Medium.ttf")[..],
+        ),
+        (
+            "inter_semibold",
+            &include_bytes!("../../assets/fonts/Inter-SemiBold.ttf")[..],
+        ),
+        (
+            "mono_regular",
+            &include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf")[..],
+        ),
+        (
+            "mono_medium",
+            &include_bytes!("../../assets/fonts/JetBrainsMono-Medium.ttf")[..],
+        ),
+        // NotoSansSymbols covers geometric shapes (▶●○), arrows (→),
+        // math (≤), checkmarks (✓)
+        (
+            "noto_symbols",
+            &include_bytes!("../../assets/fonts/NotoSansSymbols-Regular.ttf")[..],
+        ),
+        // NotoSansSymbols2 covers braille (⠿), dingbats (✗✅❌), and
+        // extended symbols
+        (
+            "noto_symbols2",
+            &include_bytes!("../../assets/fonts/NotoSansSymbols2-Regular.ttf")[..],
+        ),
+    ] {
+        fonts
+            .font_data
+            .insert(name.to_owned(), Arc::new(FontData::from_static(bytes)));
+    }
+
+    // The symbol fonts are the tail of EVERY family, in their original
+    // order. egui's own defaults stay behind our faces rather than being
+    // replaced, so nothing that rendered before loses its glyph.
+    let symbols = ["noto_symbols".to_owned(), "noto_symbols2".to_owned()];
+
+    if let Some(family) = fonts.families.get_mut(&FontFamily::Proportional) {
+        family.insert(0, "inter_regular".to_owned());
+        family.extend(symbols.iter().cloned());
+    }
+    if let Some(family) = fonts.families.get_mut(&FontFamily::Monospace) {
+        family.insert(0, "mono_regular".to_owned());
+        family.extend(symbols.iter().cloned());
+    }
+
+    // The three named weight families. Each falls back through the
+    // proportional stack, so a glyph Inter lacks still renders.
+    let proportional = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    for (family_name, head) in [
+        (FAMILY_MEDIUM, "inter_medium"),
+        (FAMILY_SEMIBOLD, "inter_semibold"),
+        (FAMILY_MONO_MEDIUM, "mono_medium"),
+    ] {
+        let mut stack = vec![head.to_owned()];
+        stack.extend(proportional.iter().cloned());
+        fonts
+            .families
+            .insert(FontFamily::Name(family_name.into()), stack);
+    }
+
+    ctx.set_fonts(fonts);
+}

@@ -403,3 +403,66 @@ fn theme_keeps_every_name_it_had_before_up1() {
     let _ = theme::card_frame(false);
     let _ = theme::card_frame(true);
 }
+
+/// Arm 5. Every text style and every named family LAYS OUT.
+///
+/// `Style::text_styles` asks for `FontFamily::Name("inter_semibold")` and
+/// friends, and `tokens::apply_fonts` is what registers them. If those two
+/// lists ever disagree, epaint panics with
+/// `FontFamily::.. is not bound to any fonts` at the first galley — which is
+/// a crash on launch, not a wrong pixel, and no other gate in the crate
+/// catches it. Drawing one label per style is the cheapest possible proof
+/// that the style side and the font side agree, and it goes through the same
+/// path the app does.
+#[test]
+fn every_text_style_and_named_family_lays_out_up1() {
+    let ctx = egui::Context::default();
+    tokens::apply(&ctx);
+    tokens::apply_fonts(&ctx);
+
+    // `set_fonts` is queued, so one pass installs it before the probes run.
+    let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+    warmup.textures_delta.clear();
+
+    // ASCII the product actually draws, plus the em dash UNKNOWN uses and
+    // the three verdict glyphs, which live in the Noto fallbacks.
+    let probe = format!(
+        "0.12 mm Rest {} {} {} {}",
+        tokens::GLYPH_OK,
+        tokens::GLYPH_CAUTION,
+        tokens::GLYPH_DANGER,
+        tokens::GLYPH_UNKNOWN
+    );
+
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        for style in [
+            egui::TextStyle::Heading,
+            egui::TextStyle::Body,
+            egui::TextStyle::Button,
+            egui::TextStyle::Monospace,
+            egui::TextStyle::Small,
+        ] {
+            ui.label(egui::RichText::new(&probe).text_style(style));
+        }
+        for family in [
+            tokens::FAMILY_MEDIUM,
+            tokens::FAMILY_SEMIBOLD,
+            tokens::FAMILY_MONO_MEDIUM,
+        ] {
+            ui.label(egui::RichText::new(&probe).font(egui::FontId::new(
+                12.0,
+                egui::FontFamily::Name(family.into()),
+            )));
+        }
+        // The three helper rungs resolve through the same named families.
+        for font in [
+            tokens::font_display(),
+            tokens::font_subhead(),
+            tokens::font_micro(),
+            tokens::font_numeric(),
+        ] {
+            ui.label(egui::RichText::new(&probe).font(font));
+        }
+    });
+    output.textures_delta.clear();
+}
