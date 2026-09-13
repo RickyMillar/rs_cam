@@ -195,11 +195,15 @@ pub fn draw(
             |ui| match workspace {
                 // Readiness has no viewport, so this overlay never renders there.
                 Workspace::Setup | Workspace::Readiness => {}
-                Workspace::Toolpaths => {
-                    if ui.small_button("Generate All").clicked() {
-                        events.push(AppEvent::GenerateAll);
-                    }
-                }
+                // Q5, operator ruling 2026-09-14. "Generate All" used to sit
+                // here TOO, about 700 points from the identical action in the
+                // Operations panel, where it is now the workspace's one
+                // Primary. Two copies of one action on one screen is what
+                // §4.5's "at most one Primary" exists to stop — the second
+                // copy does not add reach, it removes the first one's
+                // meaning. The menu keeps its entry, which is conventional
+                // and is not on screen at the same time.
+                Workspace::Toolpaths => {}
                 Workspace::Simulation => {
                     if ui.small_button("Reset").clicked() {
                         events.push(AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));

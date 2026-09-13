@@ -23,7 +23,8 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("dc_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv_pill(
                 ui,
@@ -64,7 +65,8 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     let spiral = matches!(cfg.clearing_strategy, ClearingStrategy::ContourSpiral);
     egui::Grid::new("a3d_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             if spiral {
                 draw_spiral_load_control(ui, cfg, tool_radius);
@@ -330,7 +332,8 @@ pub(in crate::ui::properties) fn draw_waterline_params(
     // Leave Z Step alone; feed/plunge live on the Feeds tab (W3.2).
     egui::Grid::new("wl_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
@@ -374,7 +377,8 @@ pub(in crate::ui::properties) fn draw_pencil_params(
     };
     egui::Grid::new("pen_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             // Valley-detection front-end. Rest depth = dual-tool rest field (the
             // aligned detector — the reference tool decides where pencil runs);
@@ -624,7 +628,8 @@ pub(in crate::ui::properties) fn draw_scallop_params(
     // tab (W3.2).
     egui::Grid::new("sc_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(
                 ui,
@@ -720,7 +725,8 @@ fn draw_unified_finish_claims(
     ui.label(egui::RichText::new("Rest Claims").strong());
     egui::Grid::new("uf_claims")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Pencil Claims:");
             ui.checkbox(&mut cfg.pencil_claims, "").on_hover_text(
@@ -879,7 +885,8 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
 ) {
     egui::Grid::new("uf_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(
                 ui,
@@ -970,7 +977,8 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("ss_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(
                 ui,

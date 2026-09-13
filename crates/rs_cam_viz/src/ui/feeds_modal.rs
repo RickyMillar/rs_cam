@@ -561,7 +561,8 @@ fn draw_comparison_card(
     egui::Frame::group(ui.style()).show(ui, |ui| {
         egui::Grid::new("feeds_modal_compare")
             .num_columns(5)
-            .spacing([10.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 // Header row
                 ui.label(egui::RichText::new("").small());
@@ -1001,7 +1002,8 @@ fn draw_provenance_disclosure(
         Some(row) => {
             egui::Grid::new("feeds_modal_prov")
                 .num_columns(2)
-                .spacing([8.0, 2.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .show(ui, |ui| {
                     ui.label(egui::RichText::new("Row").small().color(theme::TEXT_DIM));
                     ui.label(egui::RichText::new(&row.observation_id).small());
@@ -1343,7 +1345,8 @@ fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
         );
         egui::Grid::new("feeds_modal_derates")
             .num_columns(3)
-            .spacing([8.0, 1.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 // Header
                 ui.label(
@@ -2031,7 +2034,8 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         // Two-column grid: swatch+label on the left, value on the right.
         egui::Grid::new("feeds_modal_chart_c_legend")
             .num_columns(2)
-            .spacing([10.0, 2.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 for entry in &entries {
                     ui.horizontal(|ui| {
@@ -2612,7 +2616,8 @@ fn draw_mini_chart_legend(ui: &mut egui::Ui, id: &str, entries: &[MiniLegend]) {
     egui::Frame::group(ui.style()).show(ui, |ui| {
         egui::Grid::new(id)
             .num_columns(2)
-            .spacing([10.0, 1.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 for entry in entries {
                     ui.horizontal(|ui| {
@@ -2995,7 +3000,8 @@ fn draw_project_view(
     egui::ScrollArea::vertical().show(ui, |ui| {
         egui::Grid::new("feeds_modal_project_table")
             .num_columns(9)
-            .spacing([10.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .striped(true)
             .show(ui, |ui| {
                 for h in [

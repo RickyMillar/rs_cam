@@ -158,7 +158,8 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     // Parameters grid
     egui::Grid::new("tool_params")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Diameter:");
             ui.add(
@@ -279,7 +280,8 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         ui.label(egui::RichText::new("Cutter geometry").strong());
         egui::Grid::new("tool_cutter_geometry")
             .num_columns(2)
-            .spacing([8.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 ui.label("Upper shaft ⌀ (taper top):");
                 ui.add(
@@ -317,7 +319,8 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         .show(ui, |ui| {
             egui::Grid::new("holder_params")
                 .num_columns(2)
-                .spacing([8.0, 4.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .show(ui, |ui| {
                     ui.label("Holder Diameter:");
                     ui.add(
@@ -366,7 +369,8 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.collapsing("Catalog metadata", |ui| {
         egui::Grid::new("tool_catalog_metadata")
             .num_columns(2)
-            .spacing([8.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 ui.label("Vendor:");
                 ui.text_edit_singleline(&mut tool.vendor);

@@ -152,7 +152,8 @@ fn step_post(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     egui::Grid::new("wizard_step_post_meta")
         .num_columns(2)
-        .spacing([12.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Name:");
             ui.label(&post_def.name);
@@ -257,7 +258,8 @@ fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppE
     let preview = render_filename_preview(&wiz.filename_template, state, selected);
     egui::Grid::new("wizard_filename_preview")
         .num_columns(2)
-        .spacing([12.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Preview:");
             ui.label(egui::RichText::new(preview).monospace());
@@ -489,7 +491,8 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     }
     egui::Grid::new("wizard_step_tool_summary")
         .num_columns(4)
-        .spacing([12.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .striped(true)
         .show(ui, |ui| {
             ui.label(egui::RichText::new("Tool").strong());
@@ -625,7 +628,8 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     }
     egui::Grid::new("wizard_step_coolant_summary")
         .num_columns(2)
-        .spacing([12.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             for (idx, &count) in counts.iter().enumerate() {
                 if count == 0 {
@@ -945,7 +949,8 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     egui::Grid::new("wizard_step_save_summary")
         .num_columns(2)
-        .spacing([12.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Post:");
             ui.label(&post_def.name);

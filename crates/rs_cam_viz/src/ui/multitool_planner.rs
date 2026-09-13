@@ -146,7 +146,8 @@ fn draw_tool_list(ui: &mut egui::Ui, planner: &mut MultitoolPlannerState) {
 
     egui::Grid::new("multitool_planner_tools")
         .num_columns(4)
-        .spacing([10.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .striped(true)
         .show(ui, |ui| {
             ui.label(egui::RichText::new("use").small().strong());
@@ -577,7 +578,8 @@ fn draw_ready(ui: &mut egui::Ui, planner: &MultitoolPlannerState, preview: &Mult
 
     egui::Grid::new("multitool_planner_tiers")
         .num_columns(7)
-        .spacing([10.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .striped(true)
         .show(ui, |ui| {
             ui.label(egui::RichText::new("tier").small().strong());

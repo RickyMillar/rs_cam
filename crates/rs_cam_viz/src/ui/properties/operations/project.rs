@@ -88,7 +88,8 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
 
     egui::Grid::new("proj_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, -20.0..=20.0);
             dv(

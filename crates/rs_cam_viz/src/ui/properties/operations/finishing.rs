@@ -16,7 +16,8 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
     // axial DOC). No stepover field; feed/plunge live on the Feeds tab.
     egui::Grid::new("rf_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(
                 ui,
@@ -83,7 +84,8 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("spiral_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv_pill(
                 ui,
@@ -133,7 +135,8 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
     // clearing-style WOC/DOC. Feed/plunge live on the Feeds tab.
     egui::Grid::new("radial_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(
                 ui,
@@ -170,7 +173,8 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("horiz_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(
                 ui,

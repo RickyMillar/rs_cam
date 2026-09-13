@@ -1,10 +1,14 @@
 //! Sections & param grids — the `UiExt` trait, plus `SummaryCard`.
 //!
 //! Component layer (IA cleanup, Wave 1). The audit found the same section
-//! header (`RichText::new(..).small().strong().color(..)`) inlined 105+ times
-//! and the same 2-column param grid (`Grid::new(..).num_columns(2)
-//! .spacing([8.0, 4.0])`) repeated everywhere. These helpers standardize both
-//! so every surface speaks one layout grammar (P3-*, INS-001, TIM-008).
+//! header inlined many times, and the same 2-column param grid repeated
+//! everywhere with its own spacing. These helpers standardize both so every
+//! surface speaks one layout grammar (P3-*, INS-001, TIM-008).
+//!
+//! Measured 2026-09-14: the crate carried **nine different grid spacings**.
+//! Nine rhythms in one product is what "cluttered" looks like from the
+//! operator's side, so all of them are now the token pair `SPACE_3` by
+//! `SPACE_2`, with `ROW_DENSE` as the row height.
 //!
 //! `SummaryCard` is the "dig deeper" primitive: a glanceable header with an
 //! optional badge over a body hidden behind a disclosure — the summary-first
@@ -58,6 +62,7 @@ impl UiExt for egui::Ui {
         egui::Grid::new(id_salt)
             .num_columns(2)
             .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(self, add);
     }

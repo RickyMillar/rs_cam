@@ -165,7 +165,8 @@ fn draw_detail_panel(ui: &mut egui::Ui, view: &mut MachineLibraryView, events: &
     ui.add_space(2.0);
     egui::Grid::new("machinelib_preview")
         .num_columns(2)
-        .spacing([10.0, 3.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             let (min_rpm, max_rpm) = profile.rpm_range();
             row(ui, "RPM range", format!("{min_rpm:.0} – {max_rpm:.0}"));

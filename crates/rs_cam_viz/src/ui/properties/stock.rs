@@ -38,7 +38,8 @@ pub fn draw(
     // Show material properties (read-only)
     egui::Grid::new("material_info")
         .num_columns(2)
-        .spacing([8.0, 2.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new("Hardness Index:")
@@ -78,7 +79,8 @@ pub fn draw(
     ui.label("Dimensions:");
     egui::Grid::new("stock_dims")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("X:");
             edit.drag(
@@ -118,7 +120,8 @@ pub fn draw(
     ui.label("Origin:");
     egui::Grid::new("stock_origin")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("X:");
             edit.drag(

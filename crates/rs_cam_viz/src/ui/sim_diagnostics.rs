@@ -394,7 +394,8 @@ fn draw_project_section(
 
             egui::Grid::new("cut_overview_grid")
                 .num_columns(2)
-                .spacing([8.0, 2.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .show(ui, |ui| {
                     ui.label(
                         egui::RichText::new("Moves")
@@ -598,7 +599,8 @@ fn draw_project_section(
                 );
                 egui::Grid::new("cut_overview_must_address")
                     .num_columns(2)
-                    .spacing([8.0, 2.0])
+                    .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                    .min_row_height(crate::ui::tokens::ROW_DENSE)
                     .show(ui, |ui| {
                         for (kind, count) in &must_address {
                             ui.label(
@@ -651,7 +653,8 @@ fn draw_project_section(
                 );
                 egui::Grid::new("cut_overview_informational")
                     .num_columns(2)
-                    .spacing([8.0, 2.0])
+                    .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                    .min_row_height(crate::ui::tokens::ROW_DENSE)
                     .show(ui, |ui| {
                         let count_for = |kind: SimulationIssueKind| {
                             informational
@@ -1452,7 +1455,8 @@ fn draw_span_body(
             ui.add_space(2.0);
             egui::Grid::new(("selected_metrics_grid", sid))
                 .num_columns(2)
-                .spacing([8.0, 2.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .show(ui, |ui| {
                     let row = |ui: &mut egui::Ui, label: &str, value: String| -> egui::Response {
                         ui.label(egui::RichText::new(label).small().color(theme::TEXT_MUTED));
@@ -1684,7 +1688,8 @@ fn draw_generator_item_disclosure(
                     ui.add_space(4.0);
                     egui::Grid::new("sim_selection_details_grid")
                         .num_columns(2)
-                        .spacing([8.0, 2.0])
+                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                        .min_row_height(crate::ui::tokens::ROW_DENSE)
                         .show(ui, |ui| {
                             for (idx, (key, value)) in active.item.params.values.iter().enumerate()
                             {

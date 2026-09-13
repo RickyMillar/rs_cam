@@ -279,7 +279,8 @@ pub(super) fn draw_heights_params(
 
     egui::Grid::new("heights_p")
         .num_columns(4)
-        .spacing([4.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             draw_height_row(
                 ui,

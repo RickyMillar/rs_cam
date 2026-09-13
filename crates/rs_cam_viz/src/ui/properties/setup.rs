@@ -419,7 +419,8 @@ pub fn draw_fixture_properties(
     );
     egui::Grid::new("fixture_position")
         .num_columns(2)
-        .spacing([8.0, 3.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("X:");
             edit.drag(
@@ -459,7 +460,8 @@ pub fn draw_fixture_properties(
     );
     egui::Grid::new("fixture_size")
         .num_columns(2)
-        .spacing([8.0, 3.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("X:");
             edit.drag(
@@ -540,7 +542,8 @@ pub fn draw_keep_out_properties(
     );
     egui::Grid::new("keepout_position")
         .num_columns(2)
-        .spacing([8.0, 3.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("X:");
             edit.drag(
@@ -571,7 +574,8 @@ pub fn draw_keep_out_properties(
     );
     egui::Grid::new("keepout_size")
         .num_columns(2)
-        .spacing([8.0, 3.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("X:");
             edit.drag(

@@ -8,7 +8,8 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig, stock_top_z: f64) {
 
     egui::Grid::new("post_params")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Format:");
             egui::ComboBox::from_id_salt("post_format")
@@ -78,7 +79,8 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig, stock_top_z: f64) {
     if post.high_feedrate_mode {
         egui::Grid::new("high_feed_p")
             .num_columns(2)
-            .spacing([8.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 ui.label("  High Feed:");
                 ui.add(

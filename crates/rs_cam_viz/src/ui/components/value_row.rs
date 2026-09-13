@@ -138,11 +138,26 @@ impl<'a> ValueRow<'a> {
 
     /// Draw the row and call `ui.end_row()` (grid-friendly).
     pub fn show(self, ui: &mut egui::Ui) -> ValueRowOutcome {
-        let label_response = ui.label(self.label);
+        // The label never wraps and never breaks mid-word. A parameter label
+        // is read as a name, not as prose, so when the column is tight it
+        // truncates with an ellipsis and the hover carries the rest.
+        let label_response = ui.add(
+            egui::Label::new(self.label)
+                .truncate()
+                .wrap_mode(egui::TextWrapMode::Truncate),
+        );
         let mut suggested = false;
         let mut value_response = None;
         ui.horizontal(|ui| {
-            let mut resp = ui.add(
+            // A FIXED value width, so a column of parameter rows keeps one
+            // right edge whatever the digit count. Without it every row sized
+            // its own DragValue and the column read as ragged — `AUDIT.md`
+            // D-15, the two-indent defect, seen from the value side.
+            let mut resp = ui.add_sized(
+                [
+                    crate::ui::tokens::WELL_MIN_WIDTH,
+                    crate::ui::tokens::WELL_HEIGHT,
+                ],
                 egui::DragValue::new(self.value)
                     .suffix(self.suffix)
                     .speed(self.speed)

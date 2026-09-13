@@ -454,7 +454,8 @@ fn draw_detail_panel(
 fn draw_readonly_grid(ui: &mut egui::Ui, tool: &ToolConfig) {
     egui::Grid::new("toollib_detail_grid")
         .num_columns(2)
-        .spacing([12.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             row(ui, "Type", tool.tool_type.label().to_owned());
             row(ui, "Diameter", format!("{:.3} mm", tool.diameter));

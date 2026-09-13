@@ -634,7 +634,8 @@ fn draw_attempted(ui: &mut egui::Ui, candidates: &[OptimizeCandidate], events: &
 
     egui::Grid::new("optimize_attempted_grid")
         .num_columns(4)
-        .spacing([8.0, 6.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .striped(true)
         .show(ui, |ui| {
             ui.label(egui::RichText::new("Δ").small().strong());
@@ -800,7 +801,8 @@ fn draw_ranked(
 
     egui::Grid::new("optimize_candidates_grid")
         .num_columns(5)
-        .spacing([8.0, 6.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .striped(true)
         .show(ui, |ui| {
             ui.label(egui::RichText::new("").small()); // ⭐ column
@@ -838,7 +840,8 @@ fn draw_baseline_card(ui: &mut egui::Ui, baseline: &OptimizeCandidate) {
     let cycle_min = format_cycle(baseline.cycle_time_s);
     egui::Grid::new("optimize_baseline_grid")
         .num_columns(2)
-        .spacing([12.0, 3.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label(egui::RichText::new("Cycle:").small());
             ui.label(egui::RichText::new(cycle_min).small());

@@ -161,7 +161,8 @@ fn draw_ready(
                 draw_section_heading(ui, "APPLY NOW");
                 egui::Grid::new("optimize_apply_now_grid")
                     .num_columns(5)
-                    .spacing([8.0, 6.0])
+                    .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                    .min_row_height(crate::ui::tokens::ROW_DENSE)
                     .striped(true)
                     .show(ui, |ui| {
                         ui.label(egui::RichText::new("Apply").small().strong());
@@ -190,7 +191,8 @@ fn draw_ready(
                 draw_section_heading(ui, "NEEDS YOUR CALL");
                 egui::Grid::new("optimize_needs_call_grid")
                     .num_columns(4)
-                    .spacing([8.0, 6.0])
+                    .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                    .min_row_height(crate::ui::tokens::ROW_DENSE)
                     .striped(true)
                     .show(ui, |ui| {
                         ui.label(egui::RichText::new("role").small().strong());
@@ -620,7 +622,8 @@ fn draw_report_table_readonly(
             let cols = if show_reconciled { 5 } else { 4 };
             egui::Grid::new("optimize_project_readonly_grid")
                 .num_columns(cols)
-                .spacing([8.0, 6.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .striped(true)
                 .show(ui, |ui| {
                     ui.label(egui::RichText::new("toolpath").small().strong());

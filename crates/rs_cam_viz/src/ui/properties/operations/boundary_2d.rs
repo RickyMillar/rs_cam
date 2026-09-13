@@ -18,7 +18,8 @@ pub(in crate::ui::properties) fn draw_face_params(
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("face_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Direction:");
             egui::ComboBox::from_id_salt("face_dir")
@@ -72,7 +73,8 @@ pub(in crate::ui::properties) fn draw_pocket_params(
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("pocket_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Pattern:");
             egui::ComboBox::from_id_salt("pocket_pat")
@@ -141,7 +143,8 @@ pub(in crate::ui::properties) fn draw_profile_params(
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("profile_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Side:");
             egui::ComboBox::from_id_salt("prof_side")
@@ -207,7 +210,8 @@ pub(in crate::ui::properties) fn draw_profile_params(
         .show(ui, |ui| {
             egui::Grid::new("tab_p")
                 .num_columns(2)
-                .spacing([8.0, 4.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .show(ui, |ui| {
                     ui.label("Count:");
                     let mut count = cfg.tab_count as i32;
@@ -230,7 +234,8 @@ pub(in crate::ui::properties) fn draw_profile_params(
         });
     egui::Grid::new("prof_finish")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Finishing Passes:");
             let mut fp = cfg.finishing_passes as i32;
@@ -255,7 +260,8 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("adapt_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv_pill(
                 ui,
@@ -338,7 +344,8 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("vcarve_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv_pill(
                 ui,
@@ -381,7 +388,8 @@ pub(in crate::ui::properties) fn draw_rest_params(
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("rest_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Previous Tool:");
             let prev_label = cfg
@@ -436,7 +444,8 @@ pub(in crate::ui::properties) fn draw_inlay_params(
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     egui::Grid::new("inlay_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(
                 ui,
@@ -502,7 +511,8 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     egui::Grid::new("zigzag_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv_pill(
                 ui,

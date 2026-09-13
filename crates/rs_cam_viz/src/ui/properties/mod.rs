@@ -1304,7 +1304,8 @@ fn draw_model_properties(
         );
         egui::Grid::new("mesh_dims")
             .num_columns(2)
-            .spacing([8.0, 3.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 ui.label("X:");
                 ui.label(format!(
@@ -1426,7 +1427,8 @@ fn draw_model_properties(
                     );
                     egui::Grid::new("mesh_info")
                         .num_columns(2)
-                        .spacing([8.0, 3.0])
+                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                        .min_row_height(crate::ui::tokens::ROW_DENSE)
                         .show(ui, |ui| {
                             ui.label("Vertices:");
                             ui.label(format!("{}", mesh.vertices.len()));
@@ -1447,7 +1449,8 @@ fn draw_model_properties(
                     );
                     egui::Grid::new("brep_info")
                         .num_columns(2)
-                        .spacing([8.0, 3.0])
+                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                        .min_row_height(crate::ui::tokens::ROW_DENSE)
                         .show(ui, |ui| {
                             ui.label("Faces:");
                             ui.label(format!("{}", enriched.face_count()));
@@ -1614,7 +1617,8 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut V
         );
         egui::Grid::new("sim_tool_pos")
             .num_columns(2)
-            .spacing([8.0, 3.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 ui.label("X:");
                 ui.label(format!("{:.3} mm", pos[0]));
@@ -1768,7 +1772,8 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
     let mut edit = PanelEdit::default();
     egui::Grid::new("machine_specs")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             let (min_rpm, max_rpm) = state.session.machine().rpm_range();
             ui.label("RPM Range:");
@@ -1978,7 +1983,8 @@ fn draw_machine_kinematics(
 
     egui::Grid::new("machine_kinematics")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             for (label, index, hint) in [
                 ("Accel X:", 0_usize, "GRBL $120"),
@@ -2252,7 +2258,8 @@ fn calculate_and_apply_feeds(
                 ui.named_section("SPEED \u{2014} how fast (manual)", |ui| {
                     egui::Grid::new("feeds_manual_speed")
                         .num_columns(2)
-                        .spacing([8.0, 3.0])
+                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                        .min_row_height(crate::ui::tokens::ROW_DENSE)
                         .show(ui, |ui| {
                             let mut feed = entry.operation.feed_rate();
                             if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
@@ -2318,7 +2325,8 @@ fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::Too
         }
         egui::Grid::new("feeds_card_operating_point")
             .num_columns(2)
-            .spacing([8.0, 3.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 ui.label("Feed vs commanded:");
                 let d = summary.median_feed_delta_pct;
@@ -2389,7 +2397,8 @@ fn draw_advance_per_tooth_card(
     };
     egui::Grid::new("feeds_card_advance_per_tooth")
         .num_columns(2)
-        .spacing([8.0, 3.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label(format!("{COMMANDED_ADVANCE_PER_TOOTH}:"));
             // Checkpoint K (d2) — renderer 2 of 3. When the engine placed
@@ -2624,7 +2633,8 @@ fn draw_feeds_card(
             let (speed_kind, speed_ref) = prov_from_chipload(&result.chipload_source);
             egui::Grid::new("feeds_card_speed")
                 .num_columns(2)
-                .spacing([8.0, 3.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .show(ui, |ui| {
                     // Feed / Plunge — editable here (W3.2 relocated them off
                     // the Geometry tab), each with a per-field ⚡ that applies
@@ -2725,7 +2735,8 @@ fn draw_feeds_card(
             ui.named_section("CUT \u{2014} changes the cut", |ui| {
                 egui::Grid::new("feeds_card_cut")
                     .num_columns(2)
-                    .spacing([8.0, 3.0])
+                    .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
                     .show(ui, |ui| {
                         if let Some(row) = card_row(feeds_rows::DOC_ROW_LABEL) {
                             draw_card_row(ui, row);
@@ -2994,7 +3005,8 @@ fn draw_vendor_lut_viewer(
 
             egui::Grid::new("vendor_lut_table")
                 .num_columns(7)
-                .spacing([6.0, 2.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .striped(true)
                 .show(ui, |ui| {
                     // Column headers
@@ -6083,7 +6095,8 @@ fn draw_linking_params(
         DressupEntryStyle::Ramp => {
             egui::Grid::new("ramp_p")
                 .num_columns(2)
-                .spacing([8.0, 4.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .show(ui, |ui| {
                     dv(
                         ui,
@@ -6098,7 +6111,8 @@ fn draw_linking_params(
         DressupEntryStyle::Helix => {
             egui::Grid::new("helix_p")
                 .num_columns(2)
-                .spacing([8.0, 4.0])
+                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .show(ui, |ui| {
                     dv(
                         ui,
@@ -6131,7 +6145,8 @@ fn draw_linking_params(
     if cfg.lead_in_out && op_incompatible_msg.is_none() {
         egui::Grid::new("lead_p")
             .num_columns(2)
-            .spacing([8.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 dv(
                     ui,
@@ -6166,7 +6181,8 @@ fn draw_linking_params(
     if cfg.link_moves && op_incompatible_msg.is_none() {
         egui::Grid::new("link_p")
             .num_columns(2)
-            .spacing([8.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 dv(
                     ui,
@@ -6207,7 +6223,8 @@ fn draw_linking_params(
     if cfg.feed_optimization && feed_opt_reason.is_none() {
         egui::Grid::new("fopt_p")
             .num_columns(2)
-            .spacing([8.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 dv(
                     ui,
@@ -6276,7 +6293,8 @@ fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
     if cfg.arc_fitting {
         egui::Grid::new("arc_p")
             .num_columns(2)
-            .spacing([8.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 dv(
                     ui,
@@ -6294,7 +6312,8 @@ fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
     if cfg.dogbone {
         egui::Grid::new("dog_p")
             .num_columns(2)
-            .spacing([8.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(ui, |ui| {
                 dv(
                     ui,

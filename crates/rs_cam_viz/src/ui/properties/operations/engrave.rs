@@ -16,7 +16,8 @@ pub(in crate::ui::properties) fn draw_trace_params(
     // Feed/plunge are edited on the Feeds & Speeds tab (W3.2).
     egui::Grid::new("trace_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Compensation:");
             egui::ComboBox::from_id_salt("trace_comp")
@@ -54,7 +55,8 @@ pub(in crate::ui::properties) fn draw_chamfer_params(
     // plunge are edited on the Feeds & Speeds tab (W3.2).
     egui::Grid::new("chamfer_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(
                 ui,

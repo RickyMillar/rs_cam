@@ -144,7 +144,8 @@ pub(in crate::ui::properties) fn draw_drill_params(
     let feed_sugg = pills.map(PillSuggestions::feed_rate);
     egui::Grid::new("drill_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             ui.label("Cycle:");
             egui::ComboBox::from_id_salt("drill_cycle")
@@ -240,7 +241,8 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
     ));
     egui::Grid::new("pin_drill_p")
         .num_columns(2)
-        .spacing([8.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             dv(
                 ui,

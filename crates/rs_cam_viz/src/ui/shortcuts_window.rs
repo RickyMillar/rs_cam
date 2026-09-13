@@ -72,7 +72,8 @@ pub fn draw(ctx: &egui::Context, show: &mut bool) {
 fn draw_shortcut_grid(ui: &mut egui::Ui, shortcuts: &[(&str, &str)]) {
     egui::Grid::new(ui.next_auto_id())
         .num_columns(2)
-        .spacing([16.0, 4.0])
+        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             for (key, desc) in shortcuts {
                 ui.label(egui::RichText::new(*key).strong().monospace());
