@@ -417,6 +417,10 @@ covers the workspace switcher. `shot_13_up3.png` — a toast with a shadow.
 2. Render the same inspector on the Geometry tab and the Feeds tab: the
    panel's requested width is identical (D-16).
 3. No value row's trailing text is clipped at a panel width of 280 (D-16).
+3b. A parameter row measures 22 points and a control row 26, per
+   `DESIGN_SPEC.md` §2.1. The arm asserts the row height directly, because
+   density is an operator ruling and a drift back to `item_spacing`-derived
+   heights is exactly what it exists to catch.
 4. Exactly one `Button::Primary` renders in the workspace (spec §6).
 5. Non-vacuity: the render produced at least 20 rows.
 

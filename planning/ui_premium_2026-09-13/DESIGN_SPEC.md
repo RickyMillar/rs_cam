@@ -67,6 +67,30 @@ The base unit is **4 points**. Seven steps, and no others.
 `item_spacing` becomes `(SPACE_2, SPACE_2)` — `(4, 4)`, replacing today's
 `(6, 4)`.
 
+**Row rhythm is a token of its own, and it is not on the spacing scale.**
+
+| Token | Points | Use |
+|---|---|---|
+| `ROW_DENSE` | 22 | a parameter row, a key-value row, a table row |
+| `ROW_ACTION` | 26 | a row carrying a control, and the minimum control height |
+
+A parameter row sets a **fixed line box of 22 points**. It does not derive its
+height from `item_spacing` plus a text ascent, because that drifts with the
+font and with any caption inside the row. Eight parameter rows occupy exactly
+176 points.
+
+**Density is the point of an instrument.** The first drawn specimen of this
+specification ran parameter rows at 26 points, from `item_spacing` alone, and
+the operator's verdict was that it "looks a bit too spaced apart" and should
+"retain some density". At 26 points an inspector reads as a settings dialog;
+at 22 it reads as a control panel. A section header takes `SPACE_4` above and
+`SPACE_2` below, not `SPACE_5` / `SPACE_3`, for the same reason.
+
+This is the one place where legibility and density genuinely trade against
+each other, and the resolution is that **the type grows and the leading does
+not**. Caption text rises from 9 points to 11, which is where the legibility
+win is, while the row it sits in gets tighter.
+
 Retire 6.0, 10.0, 14.0, 18.0, 28.0, 40.0 and 48.0. Map each to the nearest
 step; 6 goes to 8, not to 4, so groups do not collapse.
 
@@ -496,6 +520,11 @@ suggest pill. It gains a fixed four-slot geometry.
   value sits in a `SURFACE_SUNKEN` well with `RADIUS_SM`; a read-only value
   has no well. The difference is then visible at the value, which is where
   the eye already is (`AUDIT.md` D-13).
+- The row is `ROW_DENSE`, 22 points, as a fixed line box (§2.1). The well is
+  18 points inside it, so a column of wells has 2 points of air above and
+  below and the rows still read as a stack rather than a list of boxes.
+- A well has a **minimum width**, so a column of values with different digit
+  counts keeps one right edge.
 
 ### 4.7 `DataTable`
 
@@ -506,7 +535,8 @@ new dependency.
 - Header row: `Subhead` in `TEXT_MUTED`, hairline below.
 - Zebra: even rows at `SURFACE_RAISED`, odd rows transparent.
 - Numeric columns right-aligned in `Numeric`.
-- Row height 24 points, `SPACE_3` between columns.
+- Row height `ROW_DENSE`, 22 points, matching `KeyValueRow` so a table and a
+  parameter list share one rhythm. `SPACE_3` between columns.
 - Hover tints the whole row one ramp step.
 
 The `Current / Recommended / Δ` table in the Feeds modal is the reference
