@@ -198,21 +198,30 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
         ui.add_space(12.0);
         ui.separator();
-        ui.add_space(8.0);
+        ui.add_space(crate::ui::tokens::SPACE_3);
 
         // Primary action: open the export gate. The pre-flight modal is the
         // confirm/override surface; this dashboard is its persistent twin.
         ui.horizontal(|ui| {
+            // UP3, §4.5: ONE Primary per screen. This dashboard exists to
+            // answer "is this safe to cut?", so the export gate is the action
+            // it is FOR. "Run simulation" is a step along the way and takes
+            // the default weight. Before this the two were identical and the
+            // screen could not say which was which.
             if ui
-                .add(egui::Button::new(
-                    egui::RichText::new("Export G-code\u{2026}").strong(),
+                .add(crate::ui::components::Button::primary(
+                    "Export G-code\u{2026}",
                 ))
                 .on_hover_text("Open the export readiness gate")
                 .clicked()
             {
                 events.push(AppEvent::Ui(UiCommand::ExportGcode(NoArgs)));
             }
-            if !sim.has_results() && ui.button("Run simulation").clicked() {
+            if !sim.has_results()
+                && ui
+                    .add(crate::ui::components::Button::new("Run simulation"))
+                    .clicked()
+            {
                 events.push(AppEvent::RunSimulation);
             }
         });
@@ -224,17 +233,17 @@ fn draw_verdict_banner(ui: &mut egui::Ui, status: CheckStatus) {
     let (text, fill, stroke) = match status {
         CheckStatus::Pass => (
             "\u{2713}  READY TO CUT",
-            egui::Color32::from_rgb(24, 44, 30),
+            crate::ui::tokens::TINT_OK,
             theme::SUCCESS,
         ),
         CheckStatus::Warning => (
             "\u{26A0}  REVIEW BEFORE CUTTING",
-            egui::Color32::from_rgb(48, 44, 24),
+            crate::ui::tokens::TINT_CAUTION,
             theme::WARNING,
         ),
         CheckStatus::Fail => (
             "\u{2717}  NOT READY — resolve issues first",
-            egui::Color32::from_rgb(54, 26, 26),
+            crate::ui::tokens::TINT_DANGER,
             theme::ERROR,
         ),
     };

@@ -2,7 +2,8 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::state::Workspace;
 use crate::ui::automation;
-use crate::ui::theme;
+use crate::ui::components::{Role, StatusChip};
+use crate::ui::{theme, tokens};
 use crate::ui_command::{NoArgs, UiCommand};
 
 /// Draw the workspace switcher bar. Sits below the menu bar, always visible.
@@ -29,14 +30,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
         // Right-aligned workspace context info
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
+            ui.spacing_mut().item_spacing.x = tokens::SPACE_3;
             optimize_progress_row(ui, state, events);
             // Show current workspace hint
-            ui.label(
-                egui::RichText::new(current.hint())
-                    .small()
-                    .color(theme::TEXT_FAINT),
-            );
+            ui.label(crate::ui::components::text::caption(current.hint()));
         });
     });
 }
@@ -69,15 +66,13 @@ fn optimize_progress_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<A
     // three older cancels fits: `CancelCompute` cancels every lane, which
     // kills an MCP caller's queued job, and both Close arms close a window
     // the operator may not have open.
-    let cancel = ui.add_enabled(
-        !run.cancel_requested,
-        egui::Button::new(egui::RichText::new("Cancel").small()),
-    );
+    let cancel =
+        ui.add(crate::ui::components::Button::quiet("Cancel").enabled(!run.cancel_requested));
     automation::record(ui, "workspace_bar_cancel_optimize", &cancel, "Cancel");
     if cancel.clicked() {
         events.push(AppEvent::Ui(UiCommand::CancelOptimizeRun(NoArgs)));
     }
-    ui.label(egui::RichText::new(text).small().color(theme::WARNING));
+    ui.label(crate::ui::components::text::caption(text).color(tokens::CAUTION));
     ui.spinner();
     ui.separator();
 }
@@ -92,50 +87,75 @@ fn workspace_tab(
 ) {
     let is_active = current == target;
 
+    // UP3. The active tab used to carry a private violet-blue that matched
+    // nothing else in the product. An active tab is a SELECTED thing, so it
+    // takes the same fill a selected row takes.
     let (bg, text_color) = if is_active {
-        (
-            egui::Color32::from_rgb(65, 72, 95),
-            egui::Color32::from_rgb(220, 225, 240),
-        )
+        (tokens::ACCENT_QUIET, tokens::TEXT_STRONG)
     } else {
-        (egui::Color32::TRANSPARENT, theme::TEXT_MUTED)
+        (egui::Color32::TRANSPARENT, tokens::TEXT_MUTED)
     };
 
-    let button = egui::Button::new(egui::RichText::new(label).color(text_color).strong())
-        .fill(bg)
-        .corner_radius(egui::CornerRadius {
-            nw: 4,
-            ne: 4,
-            sw: 0,
-            se: 0,
-        })
-        .min_size(egui::vec2(90.0, 28.0));
+    // §2.2: the asymmetric radius stays, because a tab really does join the
+    // panel below it. It is expressed as RADIUS_SM on the two TOP corners.
+    let button = egui::Button::new(
+        egui::RichText::new(label)
+            .text_style(egui::TextStyle::Button)
+            .color(text_color),
+    )
+    .fill(bg)
+    .corner_radius(egui::CornerRadius {
+        nw: tokens::RADIUS_SM,
+        ne: tokens::RADIUS_SM,
+        sw: 0,
+        se: 0,
+    })
+    .min_size(egui::vec2(90.0, tokens::ROW_ACTION));
 
     let response = ui.add(button);
     if response.clicked() && !is_active {
         events.push(AppEvent::Ui(UiCommand::SwitchWorkspace(target)));
     }
 
-    // Draw active indicator line under the tab
+    // The active indicator, sitting on the seam the tab shares with the
+    // panel below it.
     if is_active {
         let rect = response.rect;
-        let painter = ui.painter();
-        painter.line_segment(
+        ui.painter().line_segment(
             [
-                egui::pos2(rect.min.x + 2.0, rect.max.y),
-                egui::pos2(rect.max.x - 2.0, rect.max.y),
+                egui::pos2(rect.min.x, rect.max.y),
+                egui::pos2(rect.max.x, rect.max.y),
             ],
-            egui::Stroke::new(2.0_f32, theme::ACCENT),
+            egui::Stroke::new(2.0_f32, tokens::ACCENT),
         );
     }
 
-    // Badge (drawn after the tab button)
+    // UP3. The badge was a bare `ui.label` floating beside the tab, which is
+    // why "6 pending" read as debris rather than as a count. It is a pill
+    // now, so a count on a tab and a count in a panel are one thing.
     if let Some((badge_text, badge_color)) = badge {
-        let badge_label = egui::RichText::new(badge_text).small().color(badge_color);
-        ui.label(badge_label);
+        ui.add_space(tokens::SPACE_1);
+        ui.add(StatusChip::new(&badge_text, role_for(badge_color)));
     }
 
-    ui.add_space(2.0);
+    ui.add_space(tokens::SPACE_1);
+}
+
+/// Map a caller's legacy badge colour onto a semantic role.
+///
+/// The three badge producers still hand this bar a `Color32`. Rather than
+/// change their signatures inside UP3, the colour is read back to the role it
+/// meant. UP4 gives them roles directly and this function goes away.
+fn role_for(colour: egui::Color32) -> Role {
+    if colour == theme::ERROR || colour == tokens::DANGER {
+        Role::Danger
+    } else if colour == theme::SUCCESS || colour == tokens::OK {
+        Role::Ok
+    } else if colour == theme::WARNING || colour == tokens::CAUTION {
+        Role::Caution
+    } else {
+        Role::Info
+    }
 }
 
 /// Badge for the Toolpaths tab: stale operations, else pending ones.

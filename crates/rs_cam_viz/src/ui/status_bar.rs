@@ -107,7 +107,9 @@ pub fn draw(
                 ui.label(
                     egui::RichText::new("Modified")
                         .italics()
-                        .color(egui::Color32::from_rgb(140, 140, 100)),
+                        // "Modified" is a state worth reviewing before you
+                        // cut, not an error. It takes CAUTION.
+                        .color(crate::ui::tokens::CAUTION),
                 );
             });
         }
