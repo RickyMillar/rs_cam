@@ -47,7 +47,12 @@ commits. They run in order. UP1 and UP2 block everything after them.
 9. **The MCP boot opens a second GUI process.** A package that captures
    screenshots must **close its GUI when it finishes.**
 10. **Commit only your own files, staged by explicit path.** Never
-    `.mcp.json`. Never `Cargo.toml`. Never push. Never open a pull request.
+    `.mcp.json`. Never push. Never open a pull request. **`Cargo.toml` is
+    UP0's alone** — the operator authorised it for the egui upgrade on
+    2026-09-13 and for nothing else. No other package touches a manifest.
+11. **The cargo lane is shared.** Check for a running `cargo` process before
+    starting. `rustup update` changes the compiler for every session on the
+    machine, so UP0 agrees its timing with the operator.
 
 ### Sentry shape
 
@@ -61,6 +66,85 @@ non-vacuity guard so an empty scan cannot pass.
 **Every source-scan sentry in this plan must carry a non-vacuity guard.** A
 scan that finds no files, or an allowlist that has grown to cover
 everything, must fail.
+
+---
+
+## UP0 — upgrade egui 0.34 to 0.36
+
+**Operator ruling, 2026-09-13:** *"I give the go ahead to upgrade egui to use
+its new features."* This package is therefore FIRST, and it supersedes the
+original brief's "never touch `Cargo.toml`" constraint for this one file.
+
+**Why it comes first.** 0.35 added `Classes` on `UiBuilder` and widgets, a
+styling mechanism close to CSS classes, and `AtomLayout`, which does layout
+inside a widget and is what chips and buttons need. 0.36 added
+`extra_text_line_spacing`, the global line-height control that
+`DESIGN_SPEC.md` §10.2 records as missing on 0.34. Building the component set
+on 0.34 and upgrading afterwards would mean rebuilding part of UP2.
+
+**The migration surface, measured.** Smaller than the version numbers
+suggest.
+
+| Item | Count | Note |
+|---|---|---|
+| Deprecated egui calls removed in 0.35 | **22** | `.default_width` 10, `.default_height` 3, `.max_height` 9. Pure renames to `.default_size` / `.max_size`. |
+| `SelectableLabel` (removed in 0.35) | **0** | The struct is unused. `ui.selectable_label` and `ui.selectable_value` are methods, not deprecated, and their 132 call sites are safe. |
+| `clip_rect_margin` (removed in 0.36) | **0** | |
+| `RawInput` modifiers (changed in 0.36) | **0** | |
+| Deprecated `Context` style calls | **0** | The crate already uses `global_style` / `set_global_style`. |
+
+**The real risk is wgpu, not egui.** eframe 0.36.2 requires **wgpu 30**; the
+tree resolves wgpu 29 today. The crate imports it as `egui_wgpu::wgpu`, a
+re-export, so **no wgpu line is added to any manifest** — upgrading
+`egui-wgpu` moves it. But the crate has a hand-written renderer: 5 678 lines
+across 12 files in `src/render/`, with **359 `wgpu::` references, 6 render
+pipelines, 8 bind-group layouts, 4 shader modules and 5 vertex layouts**.
+Shaders are inline, not `.wgsl` files. The one mitigation that matters:
+**eframe owns the surface** — `SurfaceConfiguration` appears zero times — so
+the swapchain, where most wgpu breakage lands, is not this crate's problem.
+
+**A toolchain bump is required and it is shared.** eframe 0.36.2 declares
+`rust-version = "1.95"`. The installed stable is **1.92.0** and there is no
+`rust-toolchain.toml`. `rustup update stable` therefore changes the compiler
+for **every session on this machine**. Do not run it while another session
+has a build in flight; agree the moment with the operator first.
+
+**Delivers.**
+
+1. `rustup update stable` to 1.95 or later, at an agreed moment.
+2. Four version lines in `crates/rs_cam_viz/Cargo.toml`: `eframe`, `egui`,
+   `egui-wgpu` to `0.36`, and `egui_plot` to whichever release pairs with
+   egui 0.36 — **check this, do not assume**; it is on 0.35 today and its
+   numbering does not track egui's.
+3. `winit` stays at `0.30.13`. eframe 0.36.2 declares the same version, so
+   the pin and the comment above it at `Cargo.toml:17-22` remain correct.
+   Re-read that comment against eframe 0.36.2's manifest and update the
+   cited line numbers.
+4. The 22 renames.
+5. Whatever wgpu 29 to 30 requires in `src/render/`.
+
+**Sentry.** None of its own. **The compile is the proof**, as WP25 ruled for
+the `mcp` feature gate. The package is done when the existing
+`cargo test -p rs_cam_viz` suite — 48 sentries including the freshness,
+export-parity and command-surface families — passes unchanged, plus clippy
+and fmt. **No test may be edited to make the upgrade pass.** A sentry that
+goes red is a real regression and stops the package.
+
+**Acceptance.** `shot_03`, `shot_12`, `shot_17` re-captured as `*_up0.png`
+and compared to the originals. **They should look identical.** UP0 changes
+no styling. A visible difference is a regression to investigate, not a win.
+The MCP GUI is needed for this step; ask the operator to boot it once the
+build lands.
+
+**Must not change.** No styling, no layout, no behaviour, no string. UP0 is a
+dependency bump and the renames it forces, and nothing else. Every token and
+component change waits for UP1.
+
+**If wgpu 30 proves expensive**, stop and write a `STATUS.md` row rather than
+push through. The fallback is real: UP1 through UP9 all work on 0.34. Only
+three things are lost — `Classes`, `AtomLayout`, and the global line-height
+setting, which `DESIGN_SPEC.md` §10.2 already gives a per-call-site
+workaround for.
 
 ---
 
@@ -496,7 +580,7 @@ to a sentry file that exists and passes, in the shape of
 ## Order, and what blocks what
 
 ```text
-UP1 tokens ──► UP2 components ──┬─► UP3 chrome
+UP0 egui 0.36 ──► UP1 tokens ──► UP2 components ──┬─► UP3 chrome
                                  ├─► UP4 Toolpaths
                                  ├─► UP5 Setup
                                  ├─► UP6 Simulation
@@ -505,6 +589,10 @@ UP8 3D layer  (needs UP1 only; run it after UP4 so the before/after
                captures are not confounded)
 UP9 acceptance (needs all)
 ```
+
+UP0 blocks everything. It changes no styling, so nothing it does is wasted
+if a later package is re-scoped, and everything after it is written against
+one toolkit version rather than two.
 
 UP3 to UP7 are independent of each other and touch different files. On one
 cargo lane they still run serially. Conflicts, if any, land in
@@ -525,7 +613,9 @@ creates it.
 | The font licence review rejects Inter or JetBrains Mono. | `DESIGN_SPEC.md` §3.1 names the fallback. The scale is the load-bearing part. |
 | Raising the floor from 9 to 11 points overflows a dense panel. | **Measured and much smaller than first thought.** Form row labels already render at 13 points, because `ValueRow` uses a plain label; the two inspector files hold 44 of the 516 small-text sites and the modals hold 322. UP4's sentry arm 3 still measures clipping at 280 points, and UP1 sets a global `Style::wrap_mode` so overflow wraps rather than clips. |
 | The font licence work or the weight mechanism stalls UP1. | Weight travels on `FontFamily::Name`, one named family per weight, each with the symbol fallbacks appended (`DESIGN_SPEC.md` §10.3). If fonts stall, ship UP1 without them: the `Small` slot moving to 11 is independent of the typeface and delivers most of the gain. |
-| The crate pins egui 0.34 while upstream is 0.36.2. | 0.35's `Classes` and `AtomLayout` are both squarely aimed at this kind of work, and 0.36 adds the global line spacing §10.2 says is missing. Building UP2 on 0.34 and upgrading later means rebuilding part of it. Operator decision; it touches `Cargo.toml`. |
+| ~~The crate pins egui 0.34 while upstream is 0.36.2.~~ | **Decided 2026-09-13: upgrade. This is UP0.** |
+| wgpu 29 to 30 breaks the hand-written renderer. | The largest unknown in the programme. 359 `wgpu::` references, 6 pipelines, 8 bind-group layouts. Mitigated by eframe owning the surface. UP0 stops and reports rather than pushing through, and UP1 onward work on 0.34 if it does. |
+| The Rust toolchain bump to 1.95 affects other sessions. | Shared machine, no `rust-toolchain.toml`. UP0 agrees the timing with the operator instead of running `rustup update` unannounced. |
 | A restyle silently changes behaviour. | Rule 1, plus `cargo test -p rs_cam_viz`, which already holds 48 sentries including the freshness, export-parity and command-surface families. |
 | The `Color32` budget invites a package to move a literal without thinking. | The budget is a ceiling, not a target. The per-package sentries assert the *shape*; the budget only stops regression. |
 | UP6 changes one operator-visible string. | Recorded in `STATUS.md` as a deliberate exception for the operator to confirm, and reflected in `FEATURE_CATALOG.md` in UP9. |
