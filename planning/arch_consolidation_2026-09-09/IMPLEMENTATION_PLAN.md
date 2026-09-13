@@ -1825,3 +1825,27 @@ candidate count (done / total) to the progress row and the Optimize window,
 through the existing lane snapshot or a channel the Job owns. No estimate of
 time left unless the candidate count gives one honestly (candidates done ×
 mean candidate seconds). Runs after WP27 on the single cargo lane.
+
+## §34 WP28 scope after the live smoke pass and the third review revision (2026-09-14)
+
+**WP28: one GUI apply door.** Closes G-MCPSIMMIRROR and discharges the
+review's residuals in one package. Four parts:
+
+1. One viz function applies a `Command` and performs every mirror the view
+   owes: stale stamps, `simulation_cleared` → `invalidate_simulation`,
+   dirty flag, upload flag. The four hand-written doors (the three WP19
+   doors and the MCP `McpRequestKind::Core` door at `app/mcp.rs:~358`) call
+   it. A source-scan sentry fails on any raw `session.apply(` outside that
+   function in viz production code. The sentry's red arm is the MCP door on
+   a session with a simulation present (the 2026-09-13 smoke reproduction).
+2. Delete `compute_stale_set` and `MutationKind` (the §7 holdout). The MCP
+   helper `mcp_apply_stale` reads `Effects::stale` instead. A source scan
+   keeps them from returning.
+3. Delete the all-Skip core row `Command::RemoveSetup` (review §21.8).
+4. Docs: amend §22 to state what the code does (review M2): the tier-region
+   resolver forces a `LazyIndex` in the resolve path, `geom_cache` is a
+   process-global weak-identity table, and the observer flag rides the
+   worker request. No code moves for M2.
+
+Runs when the operator hands the cargo lane back from the UI programme,
+between UP1 and UP2, so the panel packages land on the fenced door.
