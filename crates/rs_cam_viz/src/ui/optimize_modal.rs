@@ -59,7 +59,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
                 FreshnessGate::banner(ui);
                 ui.add_space(4.0);
             }
-            draw_status(ui, modal, toolpath_id, events);
+            draw_status(ui, modal, state.optimize_run.as_ref(), toolpath_id, events);
         });
 
     if !still_open {
@@ -67,9 +67,16 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
     }
 }
 
+/// Draw the window's body for whatever state the run is in.
+///
+/// `run` is the run in flight (WP29). The Loading arm needs it for the
+/// rung list, and `draw` holds `state`, so the run comes in as a parameter
+/// rather than off a second read of the state. It is `None` when the
+/// window is open on a settled outcome.
 fn draw_status(
     ui: &mut egui::Ui,
     modal: &OptimizeModalState,
+    run: Option<&crate::state::OptimizeRun>,
     toolpath_id: rs_cam_core::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
@@ -79,6 +86,7 @@ fn draw_status(
                 ui.spinner();
                 ui.label(egui::RichText::new("Optimising — running candidate sims…").small());
             });
+            draw_stage_list(ui, run);
             ui.add_space(6.0);
             ui.label(
                 egui::RichText::new(
@@ -113,6 +121,43 @@ fn draw_status(
         OptimizeRunStatus::Ready(outcome) => {
             draw_outcome(ui, outcome, toolpath_id, events);
         }
+    }
+}
+
+/// Draw the search ladder: one row per rung, the running rung marked, and
+/// each announced rung's candidate count (WP29, plan §33).
+///
+/// The rows come from [`crate::state::OptimizeRun::stage_rows`], which the
+/// in-crate sentry reads too, so the list a test measures is the list the
+/// operator sees. A run that walks no candidate ladder returns no rows and
+/// this draws nothing.
+///
+/// A rung with NO count has not been announced. Its total is unknown until
+/// that rung starts, so the row shows a blank rather than a zero.
+fn draw_stage_list(ui: &mut egui::Ui, run: Option<&crate::state::OptimizeRun>) {
+    use crate::state::OptimizeStageMark;
+
+    let Some(run) = run else {
+        return;
+    };
+    let rows = run.stage_rows();
+    if rows.is_empty() {
+        return;
+    }
+    ui.add_space(4.0);
+    for row in rows {
+        let (glyph, colour) = match row.mark {
+            OptimizeStageMark::Done => ("✓", theme::TEXT_MUTED),
+            OptimizeStageMark::Current => ("▸", theme::WARNING),
+            OptimizeStageMark::Pending => ("·", theme::TEXT_FAINT),
+        };
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(glyph).small().color(colour));
+            ui.label(egui::RichText::new(&row.name).small().color(colour));
+            if let Some(count) = row.count.as_ref() {
+                ui.label(egui::RichText::new(count).small().color(colour));
+            }
+        });
     }
 }
 

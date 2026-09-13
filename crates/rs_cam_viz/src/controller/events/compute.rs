@@ -1063,11 +1063,18 @@ impl<B: ComputeBackend> AppController<B> {
     /// caller must run `AppState::close_modals_for_exclusivity` BEFORE this
     /// call: that rule spares a RUNNING Optimize, so a stamp ahead of it
     /// would spare the previous settled modal instead of closing it.
+    ///
+    /// `progress` is what the candidate search publishes about itself
+    /// (WP29). The Optimize submit builds one `Arc`, attaches it to the
+    /// handle and passes the same `Arc` here, so the row reads what the
+    /// worker writes. The tier-map preview runs no candidate ladder and
+    /// passes `None`.
     pub(crate) fn submit_gui_job(
         &mut self,
         handle: rs_cam_core::session::JobHandle,
         cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
         target: crate::controller::GuiJobTarget,
+        progress: Option<std::sync::Arc<rs_cam_core::tool_load::optimize::OptimizeProgress>>,
     ) {
         let id = crate::compute::JobRequestId(self.next_job_request_id);
         self.next_job_request_id = self.next_job_request_id.saturating_add(1);
@@ -1086,6 +1093,7 @@ impl<B: ComputeBackend> AppController<B> {
             job_id: Some(id),
             started_at: std::time::Instant::now(),
             cancel_requested: false,
+            progress,
         });
         self.gui_jobs.insert(
             id,

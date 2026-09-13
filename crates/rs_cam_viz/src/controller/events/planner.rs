@@ -211,6 +211,9 @@ impl<B: ComputeBackend> AppController<B> {
             handle,
             cancel,
             crate::controller::GuiJobTarget::MultitoolPreview,
+            // A tier-map preview runs no candidate ladder, so it has no
+            // rung to report.
+            None,
         );
     }
 

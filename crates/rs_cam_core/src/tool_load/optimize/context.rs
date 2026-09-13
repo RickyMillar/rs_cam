@@ -313,12 +313,25 @@ pub(crate) struct EvaluationContext {
     pub tool: crate::tool::ToolDefinition,
     /// Owned clone of the session's stock material.
     pub material: crate::material::Material,
+    /// Where the search publishes its rung and its candidate count
+    /// (WP29).
+    ///
+    /// The field rides the CONTEXT rather than a parameter, because all
+    /// four candidate-forming helpers already take `&EvaluationContext`.
+    /// That is the whole reason it is here: no helper signature moves.
+    ///
+    /// [`Self::from_session`] supplies a silent default, so a caller that
+    /// observes nothing writes nothing and changes nothing.
+    pub progress: std::sync::Arc<super::progress::OptimizeProgress>,
 }
 
 impl EvaluationContext {
     /// Build the evaluation context from the session for the given
     /// toolpath index. Returns `None` if the toolpath or its tool is
     /// missing — caller should `Skipped` in that case.
+    ///
+    /// The progress sink starts SILENT. Use [`Self::with_progress`] to
+    /// attach the one the caller wants to read.
     pub(crate) fn from_session(session: &ProjectSession, toolpath_index: usize) -> Option<Self> {
         let tc = session.get_toolpath_config(toolpath_index)?;
         let tool_cfg = session.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))?;
@@ -333,7 +346,17 @@ impl EvaluationContext {
             lut_pass_role: lut_pass_role_from(spec.feeds_pass_role),
             tool,
             material: session.stock_config().material.clone(),
+            progress: std::sync::Arc::new(super::progress::OptimizeProgress::default()),
         })
+    }
+
+    /// Attach the progress sink the caller reads (WP29).
+    pub(crate) fn with_progress(
+        mut self,
+        progress: std::sync::Arc<super::progress::OptimizeProgress>,
+    ) -> Self {
+        self.progress = progress;
+        self
     }
 }
 

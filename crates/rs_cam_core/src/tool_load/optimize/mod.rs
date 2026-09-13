@@ -48,6 +48,7 @@ mod outcome;
 pub mod patches;
 mod policy;
 mod preflight;
+pub mod progress;
 mod rank;
 mod refusal;
 pub mod retarget;
@@ -76,6 +77,7 @@ pub use outcome::{
     BaselineTraceAssumptions, CandidateSimAssumptions, KinematicsSource, LutQueryStamp,
     MachineSnapshot, OptimizeOutcome, OutcomeKind, ProjectOptimizeReport, SimAssumptionStamp,
 };
+pub use progress::{OptimizeProgress, OptimizeProgressSnapshot, SearchPhase};
 
 use context::{
     BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace,
@@ -159,6 +161,33 @@ pub fn optimize_toolpath(
     toolpath_index: usize,
     cancel: &AtomicBool,
 ) -> OptimizeOutcome {
+    let progress = std::sync::Arc::new(OptimizeProgress::default());
+    optimize_toolpath_observed(session, baseline_trace, toolpath_index, cancel, &progress)
+}
+
+/// Optimize one toolpath and publish the search's progress as it runs
+/// (WP29).
+///
+/// Same search as [`optimize_toolpath`], same outcome, same mutation
+/// note. The one difference is `progress`: the search announces each rung
+/// of its three-rung ladder on it, and ticks once per candidate at the top
+/// of each candidate loop. The caller reads it from another thread through
+/// [`OptimizeProgress::snapshot`].
+///
+/// [`optimize_toolpath`] delegates here with a silent sink, so the machine
+/// and assumption stamps stay in ONE place.
+///
+/// The progress is cleared on every exit path, because
+/// [`OptimizeProgress::finish`] runs after the inner call
+/// returns. The per-rung counters stand after that, so a settled run stays
+/// readable.
+pub fn optimize_toolpath_observed(
+    session: &mut ProjectSession,
+    baseline_trace: &SimulationCutTrace,
+    toolpath_index: usize,
+    cancel: &AtomicBool,
+    progress: &std::sync::Arc<OptimizeProgress>,
+) -> OptimizeOutcome {
     // F4.3 — stamp the machine caps this run consumed on every outcome
     // (including refusals/skips), so narratives stay reconcilable with
     // the profile that actually bounded the search.
@@ -170,7 +199,11 @@ pub fn optimize_toolpath(
     // point, and so the observation cannot be taken from a session the
     // search has transiently mutated.
     let assumptions = outcome::SimAssumptionStamp::of(session, toolpath_index, baseline_trace);
-    let mut outcome = optimize_toolpath_inner(session, baseline_trace, toolpath_index, cancel);
+    let mut outcome =
+        optimize_toolpath_inner(session, baseline_trace, toolpath_index, cancel, progress);
+    // WP29 — one clear site for every exit path of the inner search,
+    // including each early return and each refusal.
+    progress.finish();
     outcome.machine_snapshot = Some(snapshot);
     outcome.assumptions = Some(assumptions);
     outcome
@@ -181,12 +214,15 @@ fn optimize_toolpath_inner(
     baseline_trace: &SimulationCutTrace,
     toolpath_index: usize,
     cancel: &AtomicBool,
+    progress: &std::sync::Arc<OptimizeProgress>,
 ) -> OptimizeOutcome {
     use std::sync::atomic::Ordering;
 
     // 1. Build the evaluation context. Skip cleanly if the toolpath or
     //    its tool is missing.
-    let Some(ctx) = EvaluationContext::from_session(session, toolpath_index) else {
+    let Some(ctx) = EvaluationContext::from_session(session, toolpath_index)
+        .map(|ctx| ctx.with_progress(std::sync::Arc::clone(progress)))
+    else {
         return OptimizeOutcome::skipped(RefuseReason::SimulationRequired);
     };
 
@@ -343,6 +379,14 @@ fn optimize_toolpath_inner(
     // whatever outcome this run ends up producing — including the cancel
     // paths, so a partial result still says what was declined.
     let mut retarget_refusals: Vec<retarget::RetargetRefusal> = Vec::new();
+    // WP29 — the ORCHESTRATOR announces rung 1, not the two Stage-F
+    // helpers. An `Unmodeled` chipload with no exceeding load gate runs
+    // NEITHER mode, so no helper can announce the rung and the window's
+    // first row would never tick. Both helpers also return early on a
+    // non-optimizable surface, and this zero-total announce covers that
+    // path too. Each helper re-announces its own real total once the
+    // candidate list exists.
+    ctx.progress.begin_phase(SearchPhase::FeedRpm, 0);
     if any_load_gate_exceeds(&baseline_verdict) {
         let staged = run_retarget_strategy(
             &mut guard,
@@ -557,6 +601,10 @@ fn run_headroom_strategy(
     let mut candidates = strat.candidates(&view, baseline_verdict);
     let cp = candidates.pop()?; // strategy emits at most one candidate.
 
+    // WP29 — the real Stage-F total, over the orchestrator's zero.
+    ctx.progress.begin_phase(SearchPhase::FeedRpm, 1);
+    ctx.progress.begin_candidate(0);
+
     let candidate_op = patches::apply_patches_to_op(baseline_op, &cp.patches).ok()?;
     let delta = delta_against_baseline(baseline_op, &candidate_op);
     evaluate_candidate(
@@ -675,10 +723,20 @@ fn run_retarget_strategy(
         candidates: Vec::new(),
         refusals: staged.refusals,
     };
-    for cp in staged.candidates {
+    // WP29 — read the length BEFORE the loop consumes the `Vec`, and
+    // announce the real Stage-F total over the orchestrator's zero.
+    let stage_f_total = staged.candidates.len();
+    ctx.progress
+        .begin_phase(SearchPhase::FeedRpm, stage_f_total);
+    for (index, cp) in staged.candidates.into_iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
             break;
         }
+        // The tick sits HERE — after the cancel break and before the
+        // `continue` below. A tick inside `evaluate_candidate` would miss
+        // every candidate this arm skips, and the row would then freeze
+        // short of the total for the rest of the rung.
+        ctx.progress.begin_candidate(index);
         let Ok(candidate_op) = patches::apply_patches_to_op(baseline_op, &cp.patches) else {
             continue;
         };
@@ -748,11 +806,21 @@ fn run_grid_strategy(
     };
     let cps = strat.candidates(&baseline_view, baseline_verdict);
 
+    // WP29 — the grid is the big rung. Read the length before the loop
+    // consumes the `Vec`; the strategy forms the whole cross product in
+    // one call, so the total is honest the moment the rung starts.
+    let grid_total = cps.len();
+    ctx.progress.begin_phase(SearchPhase::AxisGrid, grid_total);
+
     let mut out: Vec<OptimizeCandidate> = Vec::new();
-    for cp in cps {
+    for (index, cp) in cps.into_iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
             break;
         }
+        // The tick sits HERE, for the reason `run_retarget_strategy`
+        // records: the `continue` below skips a candidate the evaluator
+        // never sees.
+        ctx.progress.begin_candidate(index);
         let Ok(candidate_op) = patches::apply_patches_to_op(&anchor_op, &cp.patches) else {
             continue;
         };

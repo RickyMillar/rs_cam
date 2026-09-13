@@ -346,9 +346,11 @@ pub enum OptimizeRunStatus {
 /// full-screen placeholder, so it is the only thing that tells the
 /// operator a run is under way.
 ///
-/// DEFERRED: no `phase` field. `optimize_toolpath` reports no progress at
-/// all today, so a phase field would have no writer on two of the three
-/// kinds; the row carries the label and the elapsed time instead.
+/// Since WP29 the `Toolpath` kind also carries the search's own progress,
+/// so the row names the rung of the ladder and the candidate inside it.
+/// The two other kinds run no candidate ladder and carry `None`. This doc
+/// used to read "DEFERRED: no `phase` field … a phase field would have no
+/// writer"; plan §33 gave the search a writer.
 #[derive(Debug, Clone)]
 pub struct OptimizeRun {
     pub kind: OptimizeRunKind,
@@ -362,6 +364,135 @@ pub struct OptimizeRun {
     /// still returns a partial outcome, and clearing early would let the
     /// first submit's drain wipe a second submit's run.
     pub cancel_requested: bool,
+    /// What the candidate search publishes about itself (WP29).
+    ///
+    /// `Some` on the `Toolpath` kind, whose handle carries the same `Arc`.
+    /// `None` on the rollup and on the tier-map preview, which run no
+    /// candidate ladder — so `None` means THIS RUN WALKS NO LADDER, and
+    /// the row shows the elapsed seconds alone.
+    pub progress: Option<std::sync::Arc<rs_cam_core::tool_load::optimize::OptimizeProgress>>,
+}
+
+/// How one rung of the search ladder stands, for the Optimize window's
+/// list (WP29).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptimizeStageMark {
+    /// The search passed this rung.
+    Done,
+    /// The search is on this rung now.
+    Current,
+    /// The search has not reached this rung.
+    Pending,
+}
+
+/// One row of the Optimize window's rung list (WP29).
+///
+/// A pure value, so a test reads the window's list without an egui pass.
+/// The draw picks the glyph for the [`OptimizeStageMark`]; this type holds
+/// no colour and no glyph.
+#[derive(Debug, Clone)]
+pub struct OptimizeStageRow {
+    /// Where the search stands on this rung.
+    pub mark: OptimizeStageMark,
+    /// The rung's name, with its place on the ladder.
+    pub name: String,
+    /// The rung's candidate count. `None` means NOT ANNOUNCED — a rung's
+    /// total is unknown until that rung starts, so an unannounced rung
+    /// shows no count rather than a zero.
+    pub count: Option<String>,
+}
+
+impl OptimizeRun {
+    /// The sentence the progress row shows (WP29).
+    ///
+    /// **One builder for the row and for the sentry.** The row used to
+    /// `format!` its own text, so no test could read the sentence the
+    /// operator reads. `ui/workspace_bar.rs` now calls this.
+    ///
+    /// There is NO time-left figure, and this function holds no estimate.
+    /// The whole-run candidate total is not known up front, and a refine
+    /// candidate simulates at a finer cell than a grid candidate, so one
+    /// mean second per candidate mixes two populations.
+    #[must_use]
+    pub fn progress_text(&self, session: &rs_cam_core::session::ProjectSession) -> String {
+        let label = self.kind.label(session);
+        let seconds = self.started_at.elapsed().as_secs();
+        let stage = self.stage_phrase();
+        match (self.cancel_requested, stage) {
+            (true, Some(stage)) => format!("{label} — cancelling · {stage} · {seconds} s"),
+            // The WP24 sentence, kept byte-for-byte for a run that walks
+            // no ladder.
+            (true, None) => format!("{label} — cancelling ({seconds} s)"),
+            (false, Some(stage)) => format!("{label} — {stage} · {seconds} s"),
+            (false, None) => format!("{label} — {seconds} s"),
+        }
+    }
+
+    /// The rung list the Optimize window draws (WP29).
+    ///
+    /// Empty for a run that walks no candidate ladder, so the rollup and
+    /// the tier-map preview list nothing rather than three pending rungs.
+    #[must_use]
+    pub fn stage_rows(&self) -> Vec<OptimizeStageRow> {
+        use rs_cam_core::tool_load::optimize::SearchPhase;
+
+        let Some(progress) = self.progress.as_ref() else {
+            return Vec::new();
+        };
+        let snapshot = progress.snapshot();
+        // A settled run claims no rung, so the mark falls back to the
+        // high-water index. That keeps a cancelled run's window honest:
+        // the rungs it walked still read done.
+        let announced = snapshot.phase_index.max(snapshot.high_water_index);
+        let rungs = snapshot.phase_count;
+        SearchPhase::ALL
+            .into_iter()
+            .map(|phase| {
+                let index = phase.index_from_one();
+                let mark = if index == snapshot.phase_index {
+                    OptimizeStageMark::Current
+                } else if index <= announced {
+                    OptimizeStageMark::Done
+                } else {
+                    OptimizeStageMark::Pending
+                };
+                let count = if index > announced {
+                    None
+                } else {
+                    let (entered, formed) = progress.rung(phase);
+                    if formed == 0 {
+                        Some("no candidates".to_owned())
+                    } else {
+                        Some(format!("{entered} / {formed}"))
+                    }
+                };
+                OptimizeStageRow {
+                    mark,
+                    name: format!("Stage {index}/{rungs} — {}", phase.label()),
+                    count,
+                }
+            })
+            .collect()
+    }
+
+    /// The row's stage half: `stage 2/3 · candidate 3/8`.
+    ///
+    /// `None` when the run walks no ladder, and `None` again when the
+    /// ladder has settled — a finished run must not leave the row claiming
+    /// a rung.
+    fn stage_phrase(&self) -> Option<String> {
+        let snapshot = self.progress.as_ref()?.snapshot();
+        let _ = snapshot.phase?;
+        let index = snapshot.phase_index;
+        let count = snapshot.phase_count;
+        if snapshot.candidate_total == 0 {
+            return Some(format!("stage {index}/{count} · no candidates"));
+        }
+        let candidate = snapshot.candidate;
+        let total = snapshot.candidate_total;
+        let phrase = format!("stage {index}/{count} · candidate {candidate}/{total}");
+        Some(phrase)
+    }
 }
 
 /// Which of the three runs is in flight.
@@ -596,6 +727,7 @@ mod tests {
             job_id: Some(crate::compute::JobRequestId(0)),
             started_at: std::time::Instant::now(),
             cancel_requested: false,
+            progress: None,
         });
         state.optimize_modal = Some(OptimizeModalState {
             toolpath_id: rs_cam_core::ToolpathId(0),

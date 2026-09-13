@@ -31,7 +31,7 @@ use super::context::{
 use super::delta::{GateDeltas, ParamDelta};
 use super::policy::{self, SearchPolicy};
 use super::rank::composite_score;
-use super::{SearchStage, search_policy, tolerance_bands_from_policy};
+use super::{SearchPhase, SearchStage, search_policy, tolerance_bands_from_policy};
 
 /// One candidate's full evaluation record. Populated by the optimizer
 /// during Stage 0/1/2; each field is sim-measured (or, for the baseline
@@ -539,11 +539,20 @@ pub(crate) fn refine_stage2(
     cancel: &AtomicBool,
 ) -> Result<Vec<OptimizeCandidate>, SessionError> {
     use std::sync::atomic::Ordering;
-    let mut refined = Vec::with_capacity(stage1_winners.len());
-    for c in stage1_winners {
+    // WP29 — capture the length before the loop consumes the `Vec`. The
+    // `with_capacity` call below is not a capture: it reads the same
+    // length but the loop then moves the vector.
+    let refine_total = stage1_winners.len();
+    ctx.progress.begin_phase(SearchPhase::Refine, refine_total);
+    let mut refined = Vec::with_capacity(refine_total);
+    for (index, c) in stage1_winners.into_iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
             break;
         }
+        // The tick sits after the cancel break, so a cancelled rung reads
+        // honestly short of its total rather than claiming a candidate it
+        // never entered.
+        ctx.progress.begin_candidate(index);
         match evaluate_candidate(
             guard,
             ctx,

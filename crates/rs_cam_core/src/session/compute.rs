@@ -1764,6 +1764,11 @@ impl ProjectSession {
             index,
             session: self.clone(),
             trace,
+            // WP29 — a SILENT sink at the construction site. A caller that
+            // wants to read the search's progress attaches its own with
+            // `OptimizeToolpathHandle::with_progress`; the MCP route
+            // attaches none and writes nowhere.
+            progress: Arc::new(crate::tool_load::optimize::OptimizeProgress::default()),
         })
     }
 }
@@ -2016,6 +2021,32 @@ pub struct OptimizeToolpathHandle {
     /// trace borrowed from `session.simulation` cannot live across the
     /// mutable borrow of `session`.
     trace: Arc<SimulationCutTrace>,
+    /// Where the search publishes its rung and its candidate count
+    /// (WP29).
+    ///
+    /// The progress rides the HANDLE and not a fifth parameter on
+    /// [`execute_optimize_toolpath`], because that signature is pinned by
+    /// `crates/rs_cam_core/tests/optimize_toolpath_is_a_job_wp14b.rs`:
+    /// the arm coerces the function to
+    /// `fn(&mut OptimizeToolpathHandle, &AtomicBool) -> OptimizeOutcome`,
+    /// and a fifth parameter breaks that coercion.
+    ///
+    /// It starts SILENT. One door attaches a readable one, so the field
+    /// stays private and a handle is still the evidence of one submit.
+    progress: Arc<crate::tool_load::optimize::OptimizeProgress>,
+}
+
+impl OptimizeToolpathHandle {
+    /// Attach the progress sink the caller reads while the search runs
+    /// (WP29).
+    ///
+    /// The GUI builds one `Arc` per submit, attaches it here and clones it
+    /// into `AppState::optimize_run`, so the frame loop reads what the
+    /// worker thread writes. A caller that never calls this keeps the
+    /// silent default and changes nothing.
+    pub fn with_progress(&mut self, progress: Arc<crate::tool_load::optimize::OptimizeProgress>) {
+        self.progress = progress;
+    }
 }
 
 /// Run the optimizer's candidate search from a handle — step (ii) of the
@@ -2041,13 +2072,26 @@ pub struct OptimizeToolpathHandle {
 ///
 /// `cancel` is polled between candidates and between search stages, and
 /// it reaches the generator and the candidate simulation.
+///
+/// The search publishes its rung and its candidate count on the handle's
+/// own progress sink (WP29). The sink rides the HANDLE, so this
+/// signature does not move.
 pub fn execute_optimize_toolpath(
     handle: &mut OptimizeToolpathHandle,
     cancel: &AtomicBool,
 ) -> crate::tool_load::optimize::OptimizeOutcome {
     let index = handle.index;
     let trace = Arc::clone(&handle.trace);
-    crate::tool_load::optimize::optimize_toolpath(&mut handle.session, &trace, index, cancel)
+    // WP29 — clone the progress OUT before the `&mut handle.session`
+    // borrow, the way the trace above already is.
+    let progress = Arc::clone(&handle.progress);
+    crate::tool_load::optimize::optimize_toolpath_observed(
+        &mut handle.session,
+        &trace,
+        index,
+        cancel,
+        &progress,
+    )
 }
 
 /// Strategy-advisor companion to

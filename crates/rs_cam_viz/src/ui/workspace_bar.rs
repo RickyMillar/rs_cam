@@ -49,20 +49,21 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 /// Readiness. With the full-screen placeholder deleted, this row is the one
 /// surface that tells the operator a run is under way in every workspace.
 ///
-/// It reports the run label and the elapsed seconds. It reports no PHASE:
-/// `optimize_toolpath` publishes none, so a phase would be blank on two of
-/// the three kinds — see the doc on [`crate::state::OptimizeRun`].
+/// It reports the run label, the rung of the search ladder, the candidate
+/// inside that rung and the elapsed seconds (WP29, plan §33). The sentence
+/// is built by [`crate::state::OptimizeRun::progress_text`], so the row and
+/// the in-crate sentry read ONE sentence and the draw stays a draw. A run
+/// that walks no candidate ladder — the rollup and the tier-map preview —
+/// keeps the WP24 label-and-seconds text.
+///
+/// It reports NO time left. The whole-run candidate total is not known up
+/// front, and a refine candidate costs more than a grid candidate, so one
+/// mean second per candidate mixes two populations.
 fn optimize_progress_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let Some(run) = state.optimize_run.as_ref() else {
         return;
     };
-    let label = run.kind.label(&state.session);
-    let seconds = run.started_at.elapsed().as_secs();
-    let text = if run.cancel_requested {
-        format!("{label} — cancelling ({seconds} s)")
-    } else {
-        format!("{label} — {seconds} s")
-    };
+    let text = run.progress_text(&state.session);
 
     // The cancel arms THIS submit's flag and closes no window. None of the
     // three older cancels fits: `CancelCompute` cancels every lane, which

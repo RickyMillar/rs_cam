@@ -629,7 +629,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// card the operator already knows.
     fn open_optimize_modal(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
         use rs_cam_core::tool_load::RefuseReason;
-        use rs_cam_core::tool_load::optimize::OptimizeOutcome;
+        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, OptimizeProgress};
 
         let Some(idx) = self
             .state
@@ -665,13 +665,17 @@ impl<B: ComputeBackend> AppController<B> {
 
         // §22 ruling 3: a FRESH flag per submit. The close arm arms it.
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // WP29 — a FRESH progress sink per submit, beside the flag. The
+        // handle writes it on the worker thread and the row reads it on the
+        // frame loop.
+        let progress = std::sync::Arc::new(OptimizeProgress::default());
         let started = self.state.session.start(
             rs_cam_core::session::Job::OptimizeToolpath(
                 rs_cam_core::session::OptimizeToolpathArgs { index: idx },
             ),
             &cancel,
         );
-        let handle = match started {
+        let mut handle = match started {
             Ok(handle) => handle,
             Err(rs_cam_core::session::SessionError::SimulationRequired(_)) => {
                 // Surface the typed Skipped the modal already renders as
@@ -703,10 +707,17 @@ impl<B: ComputeBackend> AppController<B> {
             toolpath_id,
             status: crate::state::OptimizeRunStatus::Loading,
         });
+        // The progress rides the HANDLE, not a parameter on
+        // `execute_optimize_toolpath`: that signature is pinned by
+        // `optimize_toolpath_is_a_job_wp14b.rs`.
+        if let rs_cam_core::session::JobHandle::OptimizeToolpath(optimize) = &mut handle {
+            optimize.with_progress(std::sync::Arc::clone(&progress));
+        }
         self.submit_gui_job(
             handle,
             cancel,
             crate::controller::GuiJobTarget::OptimizeModal { toolpath_id },
+            Some(progress),
         );
     }
 
@@ -1487,6 +1498,12 @@ impl<B: ComputeBackend> AppController<B> {
             job_id: None,
             started_at: std::time::Instant::now(),
             cancel_requested: false,
+            // The rollup runs `optimize_toolpath` per toolpath through its
+            // own lane and attaches no progress sink, so the row shows the
+            // elapsed seconds alone. The follow-on is one line —
+            // `impl ProgressReporter for OptimizeProgress` — and it is
+            // NOT in WP29's scope.
+            progress: None,
         });
         self.state.optimize_project = Some(crate::state::OptimizeProjectState {
             status: crate::state::OptimizeProjectStatus::Loading,
