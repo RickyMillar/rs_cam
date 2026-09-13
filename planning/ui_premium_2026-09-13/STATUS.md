@@ -368,3 +368,55 @@ running process on a **deleted inode**, so every rebuild needs an operator
 `readlink /proc/<pid>/exe` for `(deleted)` before trusting a screenshot —
 this is the hazard `feedback_check_gui_binary_age` records, and it bit once
 already in this programme.
+
+---
+
+## The screenshot loop, 2026-09-14 — what looking actually bought
+
+Four rounds of capture-look-fix. **Every one found something no test had.**
+
+| Round | Found by looking | Cause |
+|---|---|---|
+| 1 | Inspector labels breaking mid-word: "Spoilb / oard:" | UP1's global `wrap_mode = Wrap` |
+| 1 | Operator: *"the tabs, the buttons ... way more out of place"* | UP1 raised everything around un-migrated chrome |
+| 2 | The **viewport ground was still the old violet** | The 3D clear kept `(26, 26, 38)` when the panels left it |
+| 3 | A **second** tab strip with its own invented blue | `properties/mod.rs` used `from_rgb(55, 60, 80)` |
+| 3 | "Dressu / p" had a **second** cause | Its tab was `min_size` 24 on a 26-point floor |
+
+**Measured, not reasoned about.** The viewport clear's colour space was
+settled by sampling `shot_18_stock_panel_up3.png`: a clear of
+`(0.102, 0.102, 0.149)` rendered as exactly `(26, 26, 38)`, so the target
+consumes the value directly and a plain divide by 255 is right. The two
+conventions differ by roughly 3× and a wrong guess would have been visible.
+Verified after: the ground is now exactly `(21, 23, 26)` = `SURFACE_SUNKEN`
+against panels at `(27, 30, 34)` = `SURFACE_BASE`.
+
+**Two tab strips, two invented palettes.** The workspace bar used
+`from_rgb(65, 72, 95)` and the inspector `from_rgb(55, 60, 80)` — one step
+apart, neither matching the product. Both are `ACCENT_QUIET` now, the same
+fill a selected row takes.
+
+**The most destructive control wore hand-mixed colour.** The pre-flight
+"Export Anyway" — which exports G-code past a failed safety check — carried
+`(180, 50, 40)` and `(80, 40, 40)`, the fourth and fifth reds in a palette
+that has one. It is `Button::danger` now, and its armed and unarmed states
+differ by ENABLEMENT rather than a private shade. The enablement condition
+is unchanged.
+
+### The lesson worth keeping
+
+**738 tests, clippy and fmt were all green while the wrap bug shipped.** The
+sentries verified the style was SET, not that it was RIGHT. A screenshot is
+not a nice-to-have on this programme; it is the only instrument that reads
+the thing the operator reads.
+
+### Still open
+
+- The status chips in the toolpath list carry no glyph yet. That is the
+  `status_chip` migration, and it trips the source-text sentry at
+  `tests/freshness_surfaces_g_freshrender.rs:75`. **UP4.**
+- The workspace badges sit AFTER their tab, so "6 PENDING" renders between
+  Toolpaths and Simulation and reads as belonging to neither. Layout, not
+  colour. **UP4 or an IA call (Q4).**
+- `role_for` in `workspace_bar.rs` still reads a colour back to a role. UP4
+  gives the three badge producers roles directly and it goes away.
