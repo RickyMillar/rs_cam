@@ -57,6 +57,15 @@ question (plan §28 ruling 1). Every open package landed on `master`:
   to the builder or `apply`; the 59 `ProjectSession` setters are
   `pub(crate)`. The compile is the completeness proof.
 
+**Independent completeness review** (`REVIEW_COMPLETENESS_2026-09-13.md`,
+pin `61c16b75`): INCOMPLETE, one blocker. The blocker became **WP23**
+(`325f2249`, `07eddc1e`; sentry `151f1c21`): two view rows claimed a GUI
+constructor that did not exist and are deleted; the view sentry now
+censes constructors for every `gui: Reached` view row; and the viz
+crate compiles without the `mcp` feature again. The review's other three
+findings are ruled in plan §29. Open ledgers for the operator:
+G-PERFGOLDEN2D, G-F036B-FLOOR, G-NOMCPTESTS.
+
 **Closing core dev loop** (once, capped, at `15aa896f`): 3863 passed /
 4 failed / 272 ignored. All four reds are pre-existing: the f036b band
 arm (red by design), the f036b floor arm (new ledger G-F036B-FLOOR),

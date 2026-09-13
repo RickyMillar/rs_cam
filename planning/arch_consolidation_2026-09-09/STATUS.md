@@ -458,6 +458,13 @@ only inside a pi session transcript, and were recovered on 2026-09-10.
   arm (c) measured ON 72 vs OFF 114 off-commanded moves on the P0 pocket. WP21 (`4aeaeda3`)
   removed the panic; the plunge-rate overwrite itself stays open.
 
+- **G-NOMCPTESTS (observed 2026-09-13 by the WP23 verifier, not acted on).**
+  `cargo clippy -p rs_cam_viz --no-default-features --all-targets -- -D warnings`
+  cannot pass: the in-crate module `controller/results_parity_tests.rs`
+  (`4bfed4c4`, 2026-08-13) calls the mcp-gated `build_mcp_diagnostics` and
+  `app::mcp::viz_project_evidence` with no feature gate (8 errors, identical
+  at `bf77aac4`). The lib compiles clean without the feature since WP23
+  (`07eddc1e`). Gating that module is WP24-shaped; not started.
 - **G-F036B-FLOOR (observed 2026-09-13 by the closing core dev loop, not acted on).**
   `adaptive_feed_modulation_pipeline_f036b::modulated_path_never_emits_below_min_chipload`
   is RED beside the red-by-design band arm: `21 of 126 modulated moves below the
