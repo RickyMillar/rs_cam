@@ -8,7 +8,7 @@ DECIDED and what is still OPEN.
 
 ## Where things stand — 2026-09-13
 
-**UP0 to UP7 are DONE.** UP8 (the last 4 literals) and UP9 (the final gate) remain.
+**The programme is COMPLETE.** UP0 to UP9 are done. The next phase is SUBTRACTION, and it is a different programme — see the last section.
 
 | Artefact | State |
 |---|---|
@@ -506,3 +506,103 @@ they are restored with their SAFETY comments.
 - **Four alpha washes moved premultiplied → unmultiplied** in the setup
   panels. Their old values were mathematically invalid (rgb exceeding alpha),
   so they will read fainter.
+
+---
+
+## UP8 and UP9 — DONE. The programme is complete
+
+### UP8 — the budget becomes a ban
+
+**368 colour literals → 1**, and the one survivor is named in the test:
+`sim_timeline`'s `desaturate` rebuilds a colour from channels it has just
+computed. There is no colour there to tokenise; the constructor is arithmetic,
+not a choice.
+
+### `NoticeStack` had ZERO production consumers, and that is on me
+
+The operator asked for "a way to handle n number of x". UP2 built the
+component, wrote fifteen sentry arms against it, and **never wired it into the
+product.** The toast stack and the load-warnings window both still iterated
+their whole collection. The thing that was asked for was in the codebase and
+not in the app.
+
+Both consume it now. **Q1 is ruled: the visible toast stack caps at four.**
+TTLs, severities and the `get_notifications` wire are untouched — it is a
+RENDERING bound — and because it goes through `NoticeStack`, §4.11's rules
+come with it: an `ERROR` toast renders however many notices are queued ahead
+of it.
+
+**The lesson: a component with no call site is not a deliverable.** A sentry
+that drives a component directly will pass forever while the product never
+uses it.
+
+### UP9 — the full core gate
+
+`cargo test -p rs_cam_core --features heavy-tests --no-fail-fast` ran for the
+first time in this programme. **3909 tests pass, one fails.**
+
+The failure is **`modulation_raises_cutting_chipload_toward_band`**
+(`adaptive_feed_modulation_pipeline_f036b.rs:469`), and it is **NOT this
+programme's**:
+
+- `git log 704a2f32..HEAD -- crates/rs_cam_core` is **EMPTY**. No commit in
+  this programme touched that crate.
+- `rs_cam_core` does not depend on `rs_cam_viz`, so a viz change cannot reach
+  it.
+- The file's last commit is `610f8a58` (WP26, 2026-09-13), the other lane
+  fixing a SIBLING assertion in the same test. This is their work in flight.
+
+**Not fixed, deliberately.** `project_ui_fix_2026-09` records the rule: a
+pre-existing core red must not be "fixed" inside an unrelated task.
+
+## The final state
+
+| Measure | Before | After |
+|---|---|---|
+| Colour literals outside the token module | 368 | **1**, documented |
+| Distinct grid spacings | **9** | 1 |
+| `TextStyle::Small` | 9 pt | 11 pt |
+| Buttons that say which action a screen is for | 3 of 132 | every screen has one Primary |
+| Bounded notice renderers | 0 | 1, with 2 consumers |
+| `rs_cam_viz` tests | 700 | **741** |
+
+## The next phase is SUBTRACTION, and this programme could not do it
+
+**Operator, 2026-09-14:** *"I wanted this clean up to really unclutter, but
+instead it has just polished the clutter."*
+
+That is correct, and the cause is structural rather than a matter of taste.
+**Rule 1 of `PLAN.md`, applied to every package, was "No behaviour change. No
+control moves, appears or disappears."** Every package was therefore
+forbidden from SUBTRACTING. The programme could only make existing elements
+better, which is exactly what happened — and several changes made the clutter
+denser, because they ADDED channels: glyphs on chips, borders on badges,
+hairlines under headers.
+
+Measured on the 2026-09-14 capture: **one toolpath card carries 13 elements**
+(drag handle, swatch, status chip, MAN badge, name, tool name, play button,
+six icon buttons). A resting card carries 8. Nine cards is about **80
+elements** in one panel. The inspector shows **twelve things above the first
+parameter**, three of them prose paragraphs.
+
+The operator's brief for the next phase: one eye icon (double-click to
+isolate), a shorter card, setup cards all one height, no hover-to-expand,
+everything else behind a `…` menu, drop the "inspect sim" link, one
+stale/fresh/uncomputed indicator, "Generate All" at full section width with a
+spinner on anything generating, the Operations header deleted, the tool
+library as its own tab, and warning prose collapsed to "11 warnings" that
+opens.
+
+**One item flagged for a ruling before it is built.** The `⏻` toggle is not a
+view control like the eye — it changes what gets CUT and EXPORTED. Burying a
+"this operation is off" affordance inside a `…` menu on a CAM application is
+how an operator gets a surprise at the machine. The recommendation is that the
+disabled state stays legible on the card even when the control moves.
+
+## Deferred rather than done, deliberately
+
+**Q3 (a status bar for the Simulation workspace) and Q4 (tab badge placement)
+were approved and are NOT built.** Both are ADDITIVE. Adding a fourth status
+bar for consistency immediately before a phase whose purpose is subtraction is
+work that would likely be deleted. They should be re-decided in that phase,
+with everything else on the table.
