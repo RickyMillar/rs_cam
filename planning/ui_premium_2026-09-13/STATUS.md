@@ -8,7 +8,7 @@ DECIDED and what is still OPEN.
 
 ## Where things stand — 2026-09-13
 
-**UP0 is DONE** (`704a2f32`). UP1 is next.
+**UP0 and UP1 are DONE.** UP2, the component set, is next.
 
 | Artefact | State |
 |---|---|
@@ -130,3 +130,85 @@ once, exhausts memory, and the OOM killer stops the build **and the terminal
 that started it**. There is no readable `dmesg` line. **Run it as
 `nice -n 10 cargo test -p rs_cam_viz -j 2`, in the background, with the
 output going to a file.** Every later package inherits this.
+
+---
+
+## UP1 — DONE, 2026-09-13, commits `d53e2bd9` (red) and `91d83f1e` (green)
+
+Two commits, red first, as the plan requires. The red was observed twice:
+the sentry did not compile, because `ui::tokens` did not exist, and the
+per-arm red was then measured against a headless `Context` driven by the
+pre-UP1 `configure_theme`.
+
+| Field | Pre-UP1 | UP1 |
+|---|---|---|
+| `TextStyle::Small` | 9.0 | **11.0** |
+| `Style::wrap_mode` | unset | `Wrap` |
+| `spacing.interact_size.y` | 18.0 | 26.0 |
+| `spacing.item_spacing` | (6, 4) | (4, 4) |
+| `spacing.extra_text_line_spacing` | 0.0 | 4.0 |
+| `window_shadow` | offset (10, 20), blur 15 | offset (0, 8), blur 24 |
+| widget `corner_radius` | 2 | 4 |
+| colour literals outside the token homes | 382 | 378 |
+
+**Gates.** 707 tests pass in `rs_cam_viz`, fmt passes, and the workspace
+clippy gate with `-D warnings` and `heavy-tests` passes. No call site
+changed: `theme.rs` keeps all 20 public names and re-exports from
+`tokens.rs`.
+
+### The intent count is 41, not 40
+
+The specification's "40 distinct intents" is a census of the EXISTING
+crate's literals, not a declared size for the new token set. Counted twice
+independently — once by hand, once by a scout reading only the spec — the
+set §2 actually names is **41** single-valued colour intents, plus one
+shadow and three scale families. The sentry asserts 41 and says so.
+
+### Three scales the specification named but did not value
+
+§2.9 asks for `SPAN_SCALE` (6), `CHART_SERIES` (4) and `LANE_SCALE` (4) and
+gives no hex for any of them. UP1 derived all three from the stated rule —
+one hue by lightness, never a category wheel — and verified every step
+against the four surfaces. `SPAN_SCALE`'s first draft put its darkest step
+at **2.88**, under the 3:1 WCAG floor for a graphical object; the scale was
+lifted and the darkest now reads 3.44, with adjacent steps separating by
+1.15 to 1.29. **Fold these values back into `DESIGN_SPEC.md` §2.9.**
+
+### `wrap_mode` is `Wrap`, and the choice matters
+
+egui's own `None` default already resolves to `Wrap` in a vertical layout
+and `Extend` in a horizontal one. `Wrap` therefore changes ONLY the
+horizontal rows that carry the D-16 defect. `Truncate` would have cut every
+banner and every sentence to one line, which UP1 must not do. The component
+rule handles the rows that want a fixed line box.
+
+### The fonts are in the repo
+
+Inter (Regular, Medium, SemiBold) and JetBrains Mono (Regular, Medium),
+about 1.75 MB, in `crates/rs_cam_viz/assets/fonts/`. Both SIL OFL 1.1, both
+licence texts beside them, attribution in `CREDITS.md`. They were not in
+the tree; the specification assumed they were.
+
+### A crash class that no other gate caught
+
+`Style::text_styles` asks for `FontFamily::Name("inter_semibold")`, and the
+font loader is what registers it. When those two lists disagree epaint
+panics — `FontFamily::Name("inter_semibold") is not bound to any fonts` —
+at the first galley. That is a **crash on launch**, not a wrong pixel.
+
+The font loader therefore moved out of `app.rs` and into `tokens.rs` as
+`apply_fonts`, beside the constants the `Style` reads, and arm 5 of the
+sentry draws a label in every style and every named family. **The arm was
+verified by deliberately deleting one registration**, which reproduced the
+panic exactly; the registration was then restored.
+
+Note what does NOT work as a guard: renaming the shared constant renames
+both sides at once, so the first attempt at this arm passed a broken tree.
+The drift the arm catches is a MISSING registration, not a renamed one.
+
+### Still outstanding
+
+Acceptance screenshots for UP0 and UP1 together. UP1 changes the ground,
+the type and the radii on every surface, and **nothing has been looked at
+yet.** This is the largest visual change in the programme and it is
+unverified by eye.

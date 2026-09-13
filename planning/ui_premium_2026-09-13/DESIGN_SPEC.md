@@ -275,13 +275,53 @@ Three ordered scales. **A data scale is derived from one hue by lightness,
 never assembled from separate hues**, because a category wheel spends the
 semantic palette (see §7.1 and `AUDIT.md` D-23).
 
-- **`SPAN_SCALE`** — six steps, cool blue to cool cyan. It colours span
-  kinds, which today carry **17 distinct values over 24 sites** and are the
-  worst drift in the product.
-- **`CHART_SERIES`** — four steps. The simulation signal strip and the feeds
-  charts today carry 9 values over 11 sites.
-- **`LANE_SCALE`** — the four compute-lane states. `theme.rs` already has
-  these four and they stay, retuned onto the ramp.
+This section named three scales and gave no values. **UP1 derived them and
+they are now recorded here.** Every step was checked against all four
+surfaces at the 3:1 WCAG floor for a graphical object, because these are
+drawn marks rather than text.
+
+**`SPAN_SCALE`** — six steps, cool blue to cool cyan, hue 210 to 186 with
+lightness rising. It colours span kinds, which today carry **17 distinct
+values over 24 sites** and are the worst drift in the product.
+
+| Step | Hex | Worst ratio |
+|---|---|---|
+| 0 | `#4482C1` | 3.44 |
+| 1 | `#5A98C6` | 4.45 |
+| 2 | `#70ACCB` | 5.59 |
+| 3 | `#86BED1` | 6.81 |
+| 4 | `#9BCDD8` | 8.01 |
+| 5 | `#AFDADE` | 9.19 |
+
+The first draft started at lightness 46 and put step 0 at **2.88**, under
+the 3:1 floor. The scale was lifted. Adjacent steps now separate by 1.15 to
+1.29, which is what makes the order readable rather than merely present.
+
+**`CHART_SERIES`** — four steps, hue 205 to 175. The simulation signal strip
+and the feeds charts today carry 9 values over 11 sites.
+
+| Step | Hex | Worst ratio |
+|---|---|---|
+| 0 | `#3D8BC2` | 3.75 |
+| 1 | `#64B0C9` | 5.68 |
+| 2 | `#89CBD1` | 7.62 |
+| 3 | `#ADDCD8` | 9.25 |
+
+**`LANE_SCALE`** — the four compute-lane states, retuned onto the ramp and
+onto the semantic roles rather than onto four unrelated hues.
+
+| State | Token | Hex |
+|---|---|---|
+| idle | `INK_65` | `#8C959F` |
+| queued | `ACCENT` | `#5B9DD9` |
+| running | `CAUTION` | `#E0A83C` |
+| cancelling | `DANGER` | `#E87B77` |
+
+A lane state is a PROCEDURE state, not a verdict, so reusing `CAUTION` and
+`DANGER` here is the one deliberate exception to §2.6's rule that nothing
+else may use those hues: "running" and "cancelling" are the same escalation
+the roles already encode, and giving them private hues would spend two more
+slots on the same meaning.
 
 ### 2.10 Coverage rule
 
