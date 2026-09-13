@@ -991,11 +991,18 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.102,
-                            g: 0.102,
-                            b: 0.149,
-                            a: 1.0,
+                        load: wgpu::LoadOp::Clear({
+                            // UP3. This was (0.102, 0.102, 0.149) — the old
+                            // violet (26, 26, 38), the same literal the four
+                            // CentralPanel fills carried before UP1. The
+                            // panels moved onto the cold ramp and the
+                            // viewport did not, so the largest area on
+                            // screen fought everything around it.
+                            //
+                            // §2.3 names SURFACE_SUNKEN the viewport ground.
+                            let [r, g, b] =
+                                crate::ui::tokens::as_unit_rgb(crate::ui::tokens::SURFACE_SUNKEN);
+                            wgpu::Color { r, g, b, a: 1.0 }
                         }),
                         store: wgpu::StoreOp::Store,
                     },

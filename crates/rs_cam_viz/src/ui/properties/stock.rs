@@ -328,11 +328,12 @@ fn draw_alignment_pins(
                         if derived_axis.is_some() && ui.small_button("Mirror").clicked() {
                             mirror_idx = Some(i);
                         }
+                        // UP3, §4.5: a control that DELETES something takes
+                        // the Danger variant, not a default button wearing a
+                        // red word. The literal it carried, (200, 100, 100),
+                        // was a fifth red on no scale.
                         if ui
-                            .small_button(
-                                egui::RichText::new("Remove")
-                                    .color(egui::Color32::from_rgb(200, 100, 100)),
-                            )
+                            .add(crate::ui::components::Button::danger("Remove"))
                             .clicked()
                         {
                             remove_idx = Some(i);

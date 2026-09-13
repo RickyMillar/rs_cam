@@ -695,3 +695,20 @@ pub const EMPTY_STATE_MAX_WIDTH: f32 = 280.0;
 
 /// The outline glyph above an empty state's headline (§4.8), in `INK_35`.
 pub const EMPTY_STATE_GLYPH_SIZE: f32 = 24.0;
+
+/// A token's channels as `0.0..=1.0`, for a wgpu clear value.
+///
+/// Measured 2026-09-14: the 3D pass's target consumes this value DIRECTLY as
+/// the 8-bit output — a clear of `(0.102, 0.102, 0.149)` displayed as exactly
+/// `(26, 26, 38)` — so no sRGB transfer is applied and a plain divide by 255
+/// is correct. Sampled from `shot_18_stock_panel_up3.png` rather than
+/// reasoned about, because the two conventions differ by a factor of three
+/// and guessing would have been visible.
+#[must_use]
+pub fn as_unit_rgb(c: Color32) -> [f64; 3] {
+    [
+        f64::from(c.r()) / 255.0,
+        f64::from(c.g()) / 255.0,
+        f64::from(c.b()) / 255.0,
+    ]
+}

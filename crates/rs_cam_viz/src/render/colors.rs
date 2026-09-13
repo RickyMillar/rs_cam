@@ -56,7 +56,12 @@ pub const POLYGON_OUTLINE: [f32; 3] = [0.9, 0.75, 0.2];
 
 // ── Grid & axes ─────────────────────────────────────────────────────────
 
-pub const GRID_BASE: [f32; 3] = [0.25, 0.25, 0.28];
+/// The viewport grid.
+///
+/// Was `[0.25, 0.25, 0.28]`, a violet-leaning grey from the same accidental
+/// family as the old viewport ground. Retuned onto the neutral ramp at
+/// `INK_25` (`#31373E`), which is the hairline token — a grid IS a rule.
+pub const GRID_BASE: [f32; 3] = [0.192, 0.216, 0.243];
 pub const AXIS_X: [f32; 3] = [0.9, 0.2, 0.2];
 pub const AXIS_Y: [f32; 3] = [0.2, 0.9, 0.2];
 pub const AXIS_Z: [f32; 3] = [0.3, 0.4, 0.95];
