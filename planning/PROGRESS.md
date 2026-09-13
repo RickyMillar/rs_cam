@@ -73,6 +73,38 @@ arm (red by design), the f036b floor arm (new ledger G-F036B-FLOOR),
 call), and one stale surfaces arm, fixed at `9a88dfef`. The heavy gate
 did not run.
 
+**Ledger close-out, same day** (plan §30 and §31; the operator answered
+one question per ledger):
+
+- **G-PERFGOLDEN2D**: the 2D perf golden is re-blessed at `7177c139`;
+  the moved fields are in that commit body.
+- **WP25** (`ba5b24af`): the three MCP tests in
+  `controller/results_parity_tests.rs` are gated on the `mcp` feature.
+  The two store-half tests still compile in both configurations. The
+  non-MCP all-targets viz clippy joins the lint gate. G-NOMCPTESTS is
+  closed.
+- **WP26** (`610f8a58`): the f036b floor arm was an instrument defect,
+  not a feeds change. Its proxy counted a move as modulated when the feed
+  differed from nominal, and since WP11b (`4b53576b`) the
+  feed-optimisation dressup writes per-move feeds on the same door. The
+  arm now diffs the pre- and post-modulation IR per index and skips a
+  `PlungeRate`-bound move. No feeds quantity moved. The binary reads
+  9 passed / 1 failed; the band arm stays red by design. G-F036B-FLOOR
+  is closed.
+- **WP24** (`e8c0076b`; sentry `28f5675b`): the full-screen Optimize
+  placeholder is deleted. An Optimize run is `optimize_run:
+  Option<OptimizeRun>` on the view state, the workspace bar draws a
+  progress row with the run label, elapsed time and a Cancel
+  (`UiCommand::CancelOptimizeRun`, a registry row constructed in the
+  view), and the GUI stays usable during a run. A second Optimize request
+  while one runs is refused with a toast. Not decided, recorded in the
+  fix body: the modal exclusivity rule still spares a running Optimize,
+  Apply is not blocked on a stale baseline, and the modal's Cancel
+  discards the partial outcome while the row's Cancel keeps it. Nothing
+  was verified on screen; the release GUI rebuild follows.
+
+The work-package table holds 30 rows, WP1 to WP26 all DONE.
+
 ## Architecture consolidation — 2026-09-12 (reviews and follow-ons)
 
 Two independent Opus reviews ran after the sixteen packages landed
