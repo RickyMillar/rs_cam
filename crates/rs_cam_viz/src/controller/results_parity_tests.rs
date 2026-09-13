@@ -257,6 +257,10 @@ fn gui_mode_toolpath_diagnostics_see_generation_stats() {
 ///
 /// Red before this wave: `build_mcp_diagnostics` hand-built the row and the
 /// keys were absent entirely.
+///
+/// `build_mcp_diagnostics` exists only under the `mcp` feature, so this half
+/// of the module is gated on it (WP25, plan §30 ruling 4).
+#[cfg(feature = "mcp")]
 #[test]
 fn mcp_get_diagnostics_row_publishes_the_core_finding_channels() {
     let mut controller = parity_controller();
@@ -319,6 +323,7 @@ fn mcp_get_diagnostics_row_publishes_the_core_finding_channels() {
 /// The GUI row is allowed to carry MORE (`toolpath_index`, `status`,
 /// `error`, `awaiting_prior_stock`, `stale` have no CLI equivalent — they
 /// describe a live lane, not a finished batch run).
+#[cfg(feature = "mcp")]
 #[test]
 fn mcp_get_diagnostics_row_is_a_superset_of_the_core_diagnostic_wire() {
     let mut controller = parity_controller();
@@ -362,6 +367,7 @@ fn mcp_get_diagnostics_row_is_a_superset_of_the_core_diagnostic_wire() {
 /// though the evidence the same function already builds carries the holder
 /// counts. A zero that was never measured is the X-VAC failure mode on a
 /// surface an agent reads as a safety signal.
+#[cfg(feature = "mcp")]
 #[test]
 fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
     let mut controller = parity_controller();
