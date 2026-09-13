@@ -115,9 +115,9 @@ pub fn draw(
     if ui
         .add(iso_btn)
         .on_hover_text(if is_isolated {
-            "Clear isolation and show all visible toolpaths."
+            "Unpin this toolpath and go back to the viewport's own rule."
         } else {
-            "Show only this toolpath in the viewport; click again to clear isolation."
+            "Pin this toolpath so it stays drawn as the selection moves. Click again to unpin."
         })
         .clicked()
     {

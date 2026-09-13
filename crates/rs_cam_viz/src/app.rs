@@ -1176,7 +1176,8 @@ fn push_dashed_line_vertices(
     }
 }
 
-/// Every upload-time overlay dial, in one comparable value.
+/// Every upload-time overlay dial, in one comparable value — plus the two
+/// inputs of the WP27 draw rule, which is consumed in the same pass.
 ///
 /// The `PartialEq` derive is the whole mechanism: the frame loop compares
 /// this frame's key with the last one and fires exactly one
@@ -1198,6 +1199,17 @@ pub(crate) struct OverlayUploadKey {
     /// The fixture buffer's contents depend on the active setup, which the
     /// workspace can change, and `SwitchWorkspace` fires no upload itself.
     workspace: Workspace,
+    /// WP27 — the viewport draws the selected toolpath only unless this is
+    /// set. The Overlays row and the viewport-bar button both write it.
+    show_all_toolpaths: bool,
+    /// WP27 — the draw SET now depends on the selection, and 39 of the 40
+    /// production selection writers fire no upload of their own. Same reason
+    /// as the `workspace` field above: one field covers every writer, and no
+    /// call site changes.
+    ///
+    /// `Selection` is not `Copy`, so the DERIVED toolpath id is stored here
+    /// and never the enum.
+    selected_toolpath: Option<crate::state::toolpath::ToolpathId>,
 }
 
 pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploadKey {
@@ -1212,5 +1224,10 @@ pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploa
         toolpath_color_mode: state.viewport.toolpath_color_mode,
         stock_viz_mode: state.simulation.stock_viz_mode,
         workspace: state.workspace,
+        show_all_toolpaths: state.viewport.show_all_toolpaths,
+        selected_toolpath: match state.selection {
+            crate::state::selection::Selection::Toolpath(id) => Some(id),
+            _ => None,
+        },
     }
 }

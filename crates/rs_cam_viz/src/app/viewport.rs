@@ -28,7 +28,6 @@ impl RsCamApp {
         };
 
         let workspace = self.controller.state().workspace;
-        let isolate = self.controller.state().viewport.isolate_toolpath;
         let drill_pick = self.active_drill_toolpath();
 
         let hit = {
@@ -39,7 +38,7 @@ impl RsCamApp {
                 &state.gui,
                 self.controller.collision_positions(),
                 workspace,
-                isolate,
+                crate::state::viewport::ToolpathDrawFilter::from_state(state),
                 drill_pick,
             )
         };
@@ -326,7 +325,7 @@ impl RsCamApp {
                     &state.gui,
                     self.controller.collision_positions(),
                     state.workspace,
-                    state.viewport.isolate_toolpath,
+                    crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
                 )
             {
@@ -364,7 +363,7 @@ impl RsCamApp {
                     &state.gui,
                     self.controller.collision_positions(),
                     state.workspace,
-                    state.viewport.isolate_toolpath,
+                    crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
                 )
                 && let Some(tip) = span_path_tooltip(state, id, move_index)

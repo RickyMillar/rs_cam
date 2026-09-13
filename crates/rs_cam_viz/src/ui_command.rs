@@ -418,6 +418,14 @@ macro_rules! for_each_ui_command {
                  mcp: Reach::Skip("no wire tool isolates one toolpath"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
+            (UiCommand, ToggleShowAllToolpaths, "toggle_show_all_toolpaths", NoArgs, (),
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "set_ui_view's overlays map carries the all_toolpaths row instead",
+                 ),
+                 cli: Reach::Skip("the batch CLI draws no viewport"),
+             }),
             (UiCommand, InspectToolpathInSimulation, "inspect_toolpath_in_simulation",
              InspectToolpathInSimulationArgs, (),
              Surfaces {

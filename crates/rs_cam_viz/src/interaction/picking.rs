@@ -3,6 +3,7 @@ use crate::state::Workspace;
 use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId};
 use crate::state::runtime::GuiState;
 use crate::state::toolpath::ToolpathId;
+use crate::state::viewport::{ToolpathDrawFilter, toolpaths_to_draw};
 use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::geo::{BoundingBox3, P3, V3};
 use rs_cam_core::mesh::ray_pick_triangle;
@@ -63,13 +64,17 @@ pub struct PickContext<'a> {
 
 /// Run the picking pipeline for a viewport click.
 /// Returns the highest-priority hit, or `None`.
+///
+/// `draw_filter` is the WP27 draw rule. A toolpath the viewport does not draw
+/// cannot be picked, because the pick and the GPU upload read ONE function
+/// (`state::viewport::toolpaths_to_draw`).
 pub fn pick(
     ctx: &PickContext<'_>,
     session: &ProjectSession,
     gui: &GuiState,
     collision_positions: &[[f32; 3]],
     workspace: Workspace,
-    isolate_toolpath: Option<ToolpathId>,
+    draw_filter: ToolpathDrawFilter,
     drill_pick_toolpath: Option<ToolpathId>,
 ) -> Option<PickHit> {
     // 1. Screen-space picks (small targets first)
@@ -193,7 +198,7 @@ pub fn pick(
 
     // 3. Toolpath screen-space pick (Toolpaths + Simulation)
     if matches!(workspace, Workspace::Toolpaths | Workspace::Simulation)
-        && let Some(hit) = pick_toolpaths(ctx, session, gui, isolate_toolpath)
+        && let Some(hit) = pick_toolpaths(ctx, session, gui, draw_filter)
     {
         return Some(hit);
     }
@@ -298,24 +303,32 @@ fn pick_toolpaths(
     ctx: &PickContext<'_>,
     session: &ProjectSession,
     gui: &GuiState,
-    isolate_toolpath: Option<ToolpathId>,
+    draw_filter: ToolpathDrawFilter,
 ) -> Option<PickHit> {
     let threshold = PICK_THRESHOLD_TOOLPATH;
     let mut best_dist = threshold;
     let mut best: Option<(ToolpathId, usize)> = None;
 
+    // WP27 — the same draw rule the GPU upload reads, through the same
+    // function. The eye button and the "not generated yet" gate ride in it.
+    let draw_set = toolpaths_to_draw(
+        draw_filter,
+        session.toolpath_configs().iter().map(|tc| {
+            let rt = gui.toolpath_rt.get(&tc.id);
+            (
+                tc.id,
+                rt.is_none_or(|r| r.visible),
+                rt.is_some_and(|r| r.result.is_some()),
+            )
+        }),
+    );
+
     for tc in session.toolpath_configs() {
         let tp_id = tc.id;
+        if !draw_set.contains(&tp_id) {
+            continue;
+        }
         let rt = gui.toolpath_rt.get(&tc.id);
-        let visible = rt.is_none_or(|r| r.visible);
-        if !visible {
-            continue;
-        }
-        if let Some(iso_id) = isolate_toolpath
-            && tp_id != iso_id
-        {
-            continue;
-        }
         let result = rt.and_then(|r| r.result.as_ref());
         let Some(result) = result else {
             continue;

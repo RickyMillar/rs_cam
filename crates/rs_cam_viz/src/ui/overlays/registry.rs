@@ -286,6 +286,26 @@ fn rest_heatmap_default(ws: Workspace) -> Option<bool> {
     }
 }
 
+/// Simulation on, Toolpaths and Setup unmanaged — the WP27 draw scope.
+///
+/// Simulation names `Some(true)` because playback reviews every toolpath in
+/// the program. Toolpaths names NO default on purpose: a named default is
+/// re-applied on every entry to that workspace
+/// ([`apply_workspace_defaults`]), so the operator would have to switch
+/// "All toolpaths" on again each time they came back from Simulation. `None`
+/// leaves the choice alone, and `displaced` still restores it across a round
+/// trip.
+///
+/// One consequence the bar button carries instead: a `None` row is not
+/// counted by [`non_default_count`], so the `Overlays (n)` badge does not
+/// flag show-all.
+fn draw_scope_default(ws: Workspace) -> Option<bool> {
+    match ws {
+        Workspace::Simulation => Some(true),
+        Workspace::Setup | Workspace::Toolpaths | Workspace::Readiness => None,
+    }
+}
+
 fn no_default(_ws: Workspace) -> Option<bool> {
     None
 }
@@ -602,6 +622,29 @@ pub const ROWS: &[OverlayRow] = &[
         hover: "The camera-axis triad in the viewport corner.",
     },
     // ── Toolpath ──────────────────────────────────────────────────────────
+    OverlayRow {
+        id: "all_toolpaths",
+        group: OverlayGroup::Toolpath,
+        label: "All toolpaths",
+        surface: OverlaySurface::None,
+        mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
+        flag: Some("viewport.show_all_toolpaths"),
+        radio: false,
+        get: |s| s.viewport.show_all_toolpaths,
+        set: |s, on| s.viewport.show_all_toolpaths = on,
+        precondition: |s| {
+            if any_generated(s) {
+                Precondition::Ready
+            } else {
+                Precondition::no_with(
+                    "no toolpath generated yet".to_owned(),
+                    OverlayAction::GenerateAll,
+                )
+            }
+        },
+        default_for: draw_scope_default,
+        hover: "Draw every generated toolpath. Off draws the selected one only.",
+    },
     OverlayRow {
         id: "cutting_moves",
         group: OverlayGroup::Toolpath,

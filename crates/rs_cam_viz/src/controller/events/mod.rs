@@ -460,6 +460,16 @@ impl<B: ComputeBackend> AppController<B> {
                     self.state.viewport.isolate_toolpath = None;
                     self.pending_upload = true;
                 }
+                UiCommand::ToggleShowAllToolpaths(NoArgs) => {
+                    // WP27 — write through the Overlays funnel, never the
+                    // field: one write door keeps the panel, this button and
+                    // MCP `set_ui_view` on one rule.
+                    if let Some(row) = crate::ui::overlays::registry::row("all_toolpaths") {
+                        let on = (row.get)(&self.state);
+                        crate::ui::overlays::registry::set_overlay(&mut self.state, row, !on);
+                        self.pending_upload = true;
+                    }
+                }
                 UiCommand::InspectToolpathInSimulation(tp_id) => {
                     self.handle_inspect_toolpath_in_simulation(tp_id);
                 }

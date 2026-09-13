@@ -926,9 +926,9 @@ impl RsCamApp {
         // rebuilds at most two.
         //
         // Anything left in `previous` at the end of the loop (a toolpath that
-        // became invisible, was isolated away, moved to another setup, or was
-        // deleted) is dropped with the map, releasing its GPU buffers exactly
-        // as the old unconditional `clear()` did.
+        // became invisible, lost the selection, was isolated away, moved to
+        // another setup, or was deleted) is dropped with the map, releasing
+        // its GPU buffers exactly as the old unconditional `clear()` did.
         let mut previous: HashMap<rs_cam_core::ToolpathId, ToolpathGpuData> = resources
             .toolpath_data
             .drain(..)
@@ -940,8 +940,6 @@ impl RsCamApp {
             Selection::Toolpath(id) => Some(id),
             _ => None,
         };
-        let isolate = self.controller.state().viewport.isolate_toolpath;
-
         // Determine which setup is active for filtering toolpath display
         let active_setup_id = active_setup_ref.as_ref().map(|s| s.id);
 
@@ -991,6 +989,24 @@ impl RsCamApp {
                 edit_counter: gui.edit_counter,
             });
 
+            // WP27 — which toolpaths the viewport draws. One rule, one
+            // function, shared with the click pick (`interaction::picking`):
+            // two predicates drift, and the drift is a click that selects
+            // geometry the viewport does not draw. The setup filter stays in
+            // the loop below, so an id from another setup in this set is
+            // skipped there.
+            let draw_set = crate::state::viewport::toolpaths_to_draw(
+                crate::state::viewport::ToolpathDrawFilter::from_state(state),
+                session.toolpath_configs().iter().map(|tc| {
+                    let rt = gui.toolpath_rt.get(&tc.id);
+                    (
+                        tc.id,
+                        rt.is_none_or(|r| r.visible),
+                        rt.is_some_and(|r| r.result.is_some()),
+                    )
+                }),
+            );
+
             for (i, tc) in session.toolpath_configs().iter().enumerate() {
                 // Find which setup owns this toolpath
                 let tp_setup_id = session
@@ -1004,15 +1020,14 @@ impl RsCamApp {
                 // Get runtime state for this toolpath
                 let rt = gui.toolpath_rt.get(&tc.id);
 
-                // Skip invisible toolpaths; also skip if not the isolated toolpath
+                // Draw only what the WP27 rule named above: the eye button,
+                // the "not generated yet" gate, the selection, the show-all
+                // dial and the isolate pin, in one answer.
                 let tp_id = tc.id;
-                let visible = rt.is_none_or(|r| r.visible)
-                    && match isolate {
-                        Some(iso_id) => tp_id == iso_id,
-                        None => true,
-                    };
                 let result = rt.and_then(|r| r.result.as_ref());
-                if visible && let Some(result) = result {
+                if draw_set.contains(&tp_id)
+                    && let Some(result) = result
+                {
                     let selected = selected_tp_id == Some(tp_id);
                     let color_mode = state.viewport.toolpath_color_mode;
 
