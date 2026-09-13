@@ -308,6 +308,41 @@ The verifier FIXED NOTHING in this step, by instruction. The two
 unledgered reds — the second `f036b` arm and the stale
 `ReplaceToolpathConfig` `cli` claim — are the operator's to rule on.
 
+### Live smoke pass on the release build — 2026-09-13 evening
+
+Operator's request after the programme closed: nothing had been seen on
+screen since 2026-09-11. Driven over MCP against `target/release/rs_cam_gui`
+built 17:30 at `38334997`, project `~/Downloads/wanaka200/wanaka200.toml`
+(2 setups, 9 toolpaths, 661 k triangles). Screenshots in the session
+scratchpad (`smoke_01..15`). Read-mostly; every write went to the scratchpad.
+
+Verified on screen, in order:
+
+- Load: 9 rows, two drills auto-regenerated, load warnings window.
+- Generate Back Rough (24 527 moves) and the Setup 1 rest ladder (Rivers,
+  Lakes, each waiting on simulated stock, as designed).
+- Simulate at 0.5 mm: Simulation workspace, per-op rows, timeline, the
+  advance-per-tooth strip on Back Rough, drill gates on the pin drill.
+- Save to a scratch path: the simulation SURVIVES the save (WP17).
+- Export: combined program written; byte-identical body to the split
+  Setup 1 file (datum header aside).
+- `set_toolpath_param` on Rivers: `stale_toolpaths [4, 5]`, the chain is
+  stamped stale on screen, the MCP toast appears, the GUI selects the row.
+- WP24 on screen: the workspace bar shows `Optimize Back Rough — N s` with
+  a spinner and a Cancel in BOTH the Simulation and Toolpaths workspaces;
+  the status bar reads `JOB running · Optimize toolpath #1 · N s`; a
+  workspace switch during the run applied; a second Optimize request was
+  refused with the warning toast `Optimize Back Rough is already running —
+  one Optimize run at a time.`; the Optimize window is a plain window with
+  its own Cancel. A project_curve run returns at once with `No improvement
+  found` (no geometry knobs), which is correct.
+
+Findings, ledgered below and NOT fixed (operator's word, "a ledger row, not
+a fix"): G-MCPSIMMIRROR, G-EXPORTEMPTYSETUP, G-FRESHNESSDISAGREE,
+G-DIRTYONLOAD. Pre-existing and out of scope: six rapid-through-stock
+flags on Back Rough at the pin and hole columns (Z 33.0 → 11.8), which the
+operator should read before cutting this program.
+
 ## Do these before the phases. They are defects, not refactors.
 
 The rows below retain the original audit evidence. N1/N3's current execution
@@ -508,6 +543,51 @@ only inside a pi session transcript, and were recovered on 2026-09-10.
   red. A re-bless (`UPDATE_PERF_GOLDENS=1`) is an operator decision: it writes
   measured numbers. NOT MEASURED: which commit moved the 2D fixture.
 
+- **G-MCPSIMMIRROR (observed 2026-09-13 in the live smoke pass, not acted on).**
+  The MCP `McpRequestKind::Core` door applies its command at
+  `crates/rs_cam_viz/src/app/mcp.rs:358` (`session.apply(command)` then
+  `describe_core`) and mirrors NEITHER `Effects::simulation_cleared` into
+  `invalidate_simulation()` nor the WP19 sim-clear ruling (§28.1). Measured on
+  wanaka200: `set_toolpath_param(4, feed_rate)` after a simulation. The session
+  DROPPED its simulation (core reports `simulation_cleared` at
+  `command.rs:2695`; the next `generate_toolpath(4)` refused with "no simulated
+  remaining-stock snapshot is available"), while the viewport KEPT the last run
+  with the old "Results may be stale (params changed) — re-run sim" banner,
+  the `SIM` pill and the collision count. The session and the viewport no
+  longer hold ONE simulation on this door (the WP11b / N12 item 10
+  invariant). The same request through the feeds Apply funnel (`apply_feeds`)
+  DID clear the viewport (status bar `SIM` pill and Simulation badge gone, rows
+  fell back to planned times), so the gap is the Core door alone; the three
+  WP19 apply doors (`apply_controller_command`, `apply_quietly`,
+  `apply_panel_command`) are not on this route. `set_toolpath_enabled` shows
+  the same shape (stale banner, sim kept). Fix shape: mirror
+  `outcome.effects.simulation_cleared` at the one apply site, sentry in
+  `crates/rs_cam_viz/tests/` driving the Core door with a session simulation
+  present. NOT MEASURED: whether `set_tool_param`, `set_stock_config` and the
+  other Core rows behave the same (same site, so presumably yes).
+- **G-EXPORTEMPTYSETUP (observed 2026-09-13 in the live smoke pass, not acted
+  on).** `export_gcode(split_setups: true)` with every Setup 2 toolpath
+  DISABLED wrote `..._1_Setup_1.nc` and then refused the whole export:
+  `Export failed (setup 'Setup 2'): No computed toolpaths in setup 'Setup 2'`.
+  The reply says failed; a file is on disk. The single-file export of the same
+  project succeeded and its body is byte-identical to the Setup 1 file. Either
+  a setup with nothing enabled is skipped (the contract says a disabled
+  toolpath is skipped) or the refusal comes before any file is written.
+  Operator's call.
+- **G-FRESHNESSDISAGREE (observed 2026-09-13 in the live smoke pass, not acted
+  on).** With a simulation the inspector called `✓ live` (after a fresh
+  `run_simulation` and a regenerate of the edited row), the Optimize window
+  opened on Back Rough showed `⚠ Results stale (params changed) — re-run sim`
+  (its `FreshnessGate::banner`). Two freshness readings on one screen
+  disagreed. Likely cause: `stale_since` stamps on DISABLED rows (Lakes, 3D
+  Finish 6) that a re-run does not clear; NOT MEASURED.
+- **G-DIRTYONLOAD (observed 2026-09-13 in the live smoke pass, not acted on).**
+  The status bar read `Modified` immediately after `load_project`, before any
+  edit; the load auto-regenerated two drill rows. `GuiState::mark_edited`
+  is the only writer of `dirty`; which caller runs on load is NOT MEASURED.
+  Consequence: a close right after a load prompts for unsaved changes that do
+  not exist, and `load_project` refuses to replace a project that was only
+  loaded.
 
 `planning/ui_fix_2026-09-09/PLAN.md` §11 carries twelve follow-ons opened on
 2026-09-10, several inside these phases: F2.14 (widen the holder check),
