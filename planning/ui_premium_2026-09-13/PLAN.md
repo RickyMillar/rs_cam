@@ -103,15 +103,49 @@ Shaders are inline, not `.wgsl` files. The one mitigation that matters:
 **eframe owns the surface** — `SurfaceConfiguration` appears zero times — so
 the swapchain, where most wgpu breakage lands, is not this crate's problem.
 
-**A toolchain bump is required and it is shared.** eframe 0.36.2 declares
-`rust-version = "1.95"`. The installed stable is **1.92.0** and there is no
-`rust-toolchain.toml`. `rustup update stable` therefore changes the compiler
-for **every session on this machine**. Do not run it while another session
-has a build in flight; agree the moment with the operator first.
+**A toolchain bump is required, it is shared, and it has a measured cost.**
+eframe 0.36.2 declares `rust-version = "1.95"` and the machine's stable was
+**1.92.0**, with no `rust-toolchain.toml`.
+
+**Measured 2026-09-13, and this is the important part.** Updating stable to
+**1.98.1** and running
+`cargo clippy --workspace --all-targets -- -D warnings` against the
+**unchanged** tree produced **14 new findings, every one of them in
+`rs_cam_core`** and none in `rs_cam_viz`:
+
+| Count | Lint |
+|---|---|
+| 5 | `consider using sort_by_key` |
+| 2 | `using chunks_exact with a constant chunk size` |
+| 2 | `using chunks_exact_mut with a constant chunk size` |
+| 2 | `this if can be collapsed into the outer match` |
+| 2 | `manual checked division` |
+| 1 | `useless_conversion` — an `.into_iter()` inside `.zip()` |
+
+All are stylistic and each is a one-line fix, but the repo gates on
+`-D warnings`, so **a toolchain bump alone turns the workspace gate red on
+code this programme never touches.**
+
+**The resolution, applied.** The default toolchain is set back to **1.92.0**,
+so every other session on the machine compiles exactly as before. **1.98.1 is
+installed alongside** and UP0 uses it explicitly with `cargo +1.98.1`. No
+`rust-toolchain.toml` is added, because that would force the new compiler on
+everyone.
+
+**Cost already paid, and it should be stated:** the update and the revert
+each invalidated `target/`, so the next build on the default toolchain is a
+full rebuild.
+
+**Handover, for whoever owns `rs_cam_core`:** those 14 findings are real work
+that the repo needs before it can ever move its default compiler. They are
+NOT this programme's to fix — core is another session's active file set — and
+UP0 must not touch them. Fixing them is what unblocks a machine-wide bump
+later.
 
 **Delivers.**
 
-1. `rustup update stable` to 1.95 or later, at an agreed moment.
+1. ~~A toolchain update.~~ **Done.** 1.98.1 installed alongside; the default
+   stays 1.92.0. Every UP0 command is prefixed `cargo +1.98.1`.
 2. Four version lines in `crates/rs_cam_viz/Cargo.toml`: `eframe`, `egui`,
    `egui-wgpu` to `0.36`, and `egui_plot` to whichever release pairs with
    egui 0.36 — **check this, do not assume**; it is on 0.35 today and its
