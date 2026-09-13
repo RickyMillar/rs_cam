@@ -8,7 +8,7 @@ DECIDED and what is still OPEN.
 
 ## Where things stand — 2026-09-13
 
-**UP0, UP1 and UP2 are DONE.** UP3, the chrome, is next.
+**UP0, UP1, UP2 and UP3 are DONE.** UP4, the inspector, is next.
 
 | Artefact | State |
 |---|---|
@@ -297,3 +297,74 @@ which is worse than no screenshot.
 The binary on disk is current and correct. **The MCP connection needs a
 restart** (`/mcp` in Claude Code) before `shot_03`, `shot_12` and `shot_17`
 can be re-captured. Nothing in UP0 to UP2 has been looked at by eye.
+
+---
+
+## First look by eye, 2026-09-14 — and it found two things
+
+The operator restarted the MCP and the first captures were taken against a
+binary carrying UP0 and UP1. **Looking at it was worth more than any test
+so far.**
+
+### The win the specification predicted
+
+`shot_09_readiness_up1.png`. The cycle-time caution (`AUDIT.md` D-01) is now
+plainly readable, and **no code in that file changed** — it came entirely
+from `TextStyle::Small` moving 9 → 11. The banner, the chips and the amber
+all read. §3.2 called this "the single highest-leverage line in the whole
+specification" and it was right.
+
+### A regression UP1 introduced, caught only by looking
+
+`shot_03_toolpaths_geometry_up1.png` showed the inspector reading
+**"Spoilb / oard:"**, **"Retrac / t (R):"** and **"Dressu / p"**.
+
+The cause was UP1's `Style::wrap_mode = Some(Wrap)`. I chose `Wrap` over
+`Truncate` reasoning it would change only the horizontal rows carrying D-16.
+It does — and it breaks a label in a narrow grid column **mid-word**.
+
+**The global default is unset again.** egui's own `None` resolves per layout,
+`Wrap` in a vertical one and `Extend` in a horizontal one, which is right for
+a label whose column sizes to its content. `Truncate` is no better: it hides
+the end of a word the operator must read. **D-16 is closed per component**,
+where the component knows whether its text is a label or a sentence. The UP1
+sentry arm now asserts the opposite of what it asserted, and says why.
+
+No test would have caught this. It needed a picture.
+
+---
+
+## UP3 — DONE, 2026-09-14, commits `a4fd3b53` (red) and `3a3571d4` (green)
+
+**Operator, on seeing the first capture:** *"ohh, the tabs, the buttons. all
+of that looks way more out of place now"*. Correct, and it is the predictable
+middle of a migration: UP1 raised the ground, type and radii everywhere while
+the chrome kept its own inline styling, so it stopped reading as *plain* and
+started reading as *unfinished*. The fix is to finish the chrome, never to
+soften UP1.
+
+| Thing | Was | Now |
+|---|---|---|
+| Active tab fill | `from_rgb(65, 72, 95)`, a private violet-blue matching nothing | `ACCENT_QUIET` — an active tab is a SELECTED thing |
+| Tab height | 28, on a 26-point scale | `ROW_ACTION` |
+| Tab radius | bare `4` | `RADIUS_SM`, top corners only (§2.2: a tab joins the panel) |
+| Tab badge | a bare `ui.label` floating beside the tab | `StatusChip`, so a count on a tab and a count in a panel are one thing |
+| Readiness actions | "Export G-code…" and "Run simulation" at the SAME weight | one `Primary` (§4.5), and the sentry holds it to one |
+| Readiness banner tints | three hand-mixed literals | `TINT_OK` / `TINT_CAUTION` / `TINT_DANGER` |
+| Status bar "Modified" | `from_rgb(140, 140, 100)`, an olive on no scale | `CAUTION` |
+
+**One deliberate shim.** The three badge producers still hand the bar a
+`Color32`, so `role_for` reads the colour back to the role it meant rather
+than changing three signatures inside UP3. **UP4 gives them roles directly
+and the function goes away.**
+
+738 tests pass; fmt and clippy are green.
+
+## The screenshot loop, and its one friction
+
+The MCP server IS `target/release/rs_cam_gui`. Rebuilding it leaves the
+running process on a **deleted inode**, so every rebuild needs an operator
+`/mcp` restart before the next capture. Check
+`readlink /proc/<pid>/exe` for `(deleted)` before trusting a screenshot —
+this is the hazard `feedback_check_gui_binary_age` records, and it bit once
+already in this programme.
