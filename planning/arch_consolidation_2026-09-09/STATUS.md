@@ -478,6 +478,7 @@ only inside a pi session transcript, and were recovered on 2026-09-10.
   33 in-crate test callers, under `#[allow(dead_code)]`. It stays: it is the one
   place that shows the wrapper and the `apply` door are one route
   (`setters_have_rows_wp15a::every_wrapper_exemption_calls_the_door`).
+- **G-PERFGOLDEN2D — CLOSED by an operator re-bless (2026-09-13).** Operator ruling: re-bless now. `UPDATE_PERF_GOLDENS=1` ran once, capped; the golden moved 41 lines (fields listed in the commit body); the clean re-run reads 5 passed. Which commit moved the fixture stays NOT MEASURED. The original observation follows.
 - **G-PERFGOLDEN2D (observed 2026-09-13 by the WP22 verifier, not acted on).**
   `perf_golden_sim_metrics::sim_metrics_match_golden` is RED at base `61c16b75`
   with 36 fields off the golden (35 with WP22; every plunge field and
