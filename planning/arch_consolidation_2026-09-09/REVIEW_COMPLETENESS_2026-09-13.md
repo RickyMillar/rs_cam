@@ -4,185 +4,265 @@ INCOMPLETE — 1 blocker.
 
 ## A. Scope, method, and definition of done
 
-Pin: `61c16b75c68facf24a806619666486b9cea0a320`. All source paths and lines below are at this pin. HEAD later advanced to `795ac079`; later work is excluded. This report is a static audit. PASS means the pinned source, tree shape, or checked git ancestry met the stated static check. It does not mean a current test run passed. NOT MEASURED means this review did not verify it.
+**Pin and method.** This is a source-and-history audit at
+`61c16b75c68facf24a806619666486b9cea0a320`; HEAD later advanced and is not
+used for conclusions.  Every source path and line below is from that pin.
+Historical evidence was read with `git show` at the named sentry/fix commits;
+for each ordinary pair below I checked `git merge-base --is-ancestor SENTRY FIX`
+and `git merge-base --is-ancestor FIX PIN`, then checked that the named file is
+present at the pin and read its asserted contract.  **RESULT is source/history
+only, not a runtime result.** No Cargo command, test binary, build, or runtime
+injection was executed; those are **NOT MEASURED**. Historical green-gate
+claims belong to the recorded STATUS, not to this audit.
 
-I read, in order at the pin: the adopted ruling, `IMPLEMENTATION_PLAN.md` §7 and §§12–28, the STATUS work-package table, the 2026-09-12 completeness review, and the 2026-09-12 tech-debt review. The older reviews and STATUS are historical claims, not facts by themselves. I checked the primary sentry/fix pairs with `git merge-base --is-ancestor`, their tree files with `git cat-file`, pin content with `git show`/`git grep`, source locations with `rg`, and the pinned tree/inventory with Python. No Cargo command ran in this review.
+### §7 definition of done — source evidence
 
-### §7 definition of done
-
-| Clause | Static result |
+| Criterion | RESULT and source anchor |
 |---|---|
-| Hatch producer calls outside core | PASS: no inter-crate hatch callers; no core public `*_mut` hatch; no viz compute mirror. |
-| `MutationKind` / `compute_stale_set` deletion | NOT DONE, ledgered holdout. This is not a new blocker. |
-| `ResolvedGenInputs` producer | PASS: exactly one, `core/session/compute.rs:2523`. |
-| `ResolvedHeights` | PASS: two distinct types, config `:1656`, diagnostics `:58`. |
-| Public loose generation entries | PASS: `execute.rs:3358,3406,3498` are crate-private. |
-| No viz compute mirror | PASS. |
-| `AppEvent::RemoveSetup` | PASS: deleted; only test comment remains. |
-| Named sentries | PASS for current sources and relocated/renamed sentries. Eight P0 tests have real assertion files, not only STATUS prose. |
-| Runtime gates | NOT MEASURED. The latest closing normal core dev loop is not executed by this review. Heavy gate is not requested. |
+| Hatch producer calls outside core | PASS (source scan scope): no production hatch call in viz/CLI under the corrected hatch pattern. The compiled-privacy sentry is `crates/rs_cam_core/tests/hatches_are_crate_private_wp7.rs:242` (declarations) and `:288` (outside-core names). This does **not** substitute for a build here. |
+| Hatches are not public | PASS (source): the same sentry asserts each retained hatch is `pub(crate)` or absent; no `pub fn *_mut` remains in the session scan. “No public hatch” does not claim every mutating property is covered. |
+| `MutationKind` / `compute_stale_set` deletion | **NOT DONE, ledgered/excluded (WP19)**: producer helper `crates/rs_cam_core/src/session/compute.rs:41-87`; MCP consumer `crates/rs_cam_viz/src/app/mcp.rs:2236`; remaining producers `:2870,3341`. Do not report these greps as zero. |
+| One `ResolvedGenInputs` producer | PASS (source): `crates/rs_cam_core/src/session/compute.rs:2523`; sentry assertion `crates/rs_cam_core/tests/resolved_gen_inputs_has_one_producer.rs:221`. |
+| Two `ResolvedHeights` types understood | PASS (source): configuration type `crates/rs_cam_core/src/compute/config.rs:1656`; diagnostic adapter type `crates/rs_cam_core/src/diagnostics/adapters/from_static_checks.rs:58`. This is deliberately two, not a failed one-type count. |
+| Loose generation entries not public | PASS (source): `execute_operation` `crates/rs_cam_core/src/compute/execute.rs:3358`, annotated `:3406`, regions `:3498`, all crate-private; sentry `crates/rs_cam_core/tests/loose_executor_is_crate_private_wp12.rs:222`. |
+| No viz compute mirror | PASS only for corrected source scope: `session/compute.rs` under `crates/rs_cam_viz/src/compute`, comments excluded, is zero. Sentry/allowlist check: `loose_executor_is_crate_private_wp12.rs:322`. |
+| `AppEvent::RemoveSetup` | PASS (source): variant deleted. The only hit is a test comment at `crates/rs_cam_viz/src/controller/tests.rs:1736`, not a path producer. |
+| Runtime gates | **NOT MEASURED.** No current normal suite, heavy suite, build, or historical gate was re-run. |
 
-The four accepted handwritten MCP residuals are `app/mcp.rs:369` load project, `:383` export, `:433` multitool, and `:441` apply feeds. The stale helper is old `core/session/compute.rs:41-87`; `app/mcp.rs:2236` is the stamp consumer and the actual producers are `:2870,3341`. The advisor loose call at `core/session/compute.rs:1874` remains a named residual. The 14-argument `execute_operation` at `execute.rs:3358` has seven test callers: six in its file at `5230,5263,5297,5331,5364,5399` and `execute/pinned_bottom_z_reaches_motion_g_bottompin.rs:109`. The three session `mem::replace` sites are `events/mod.rs:626,1326` and `planner.rs:176`. The feed-optimisation geometric plunge cap is absent at `feedopt:145-204`. These are recorded residuals or excluded follow-up scope, not further findings.
+**Residuals deliberately not promoted to blockers.** The four accepted handwritten
+MCP residuals are `app/mcp.rs:369` (load), `:383` (export), `:433`
+(multitool), and `:441` (apply feeds). The advisor loose call is
+`core/session/compute.rs:1874`; accepted ignored-Effects wrappers are
+`events/mod.rs:59-66`, `ForgetResult` `compute.rs:184`, debug MCP `:3407`, and
+init IO `:645,751`. The `mem::replace` sites are `events/mod.rs:626,1326` and
+`planner.rs:176`. These are ledgered/excluded scope, not evidence that a
+runtime property holds.
 
-Typed-setter production bypass and hatch scans found zero unledgered same-shaped bypasses. Effects intentionally ignored by permitted wrappers remain `events/mod.rs:59-66`, `ForgetResult` at `compute.rs:184`, debug MCP `:3407`, and init IO `:645,751`. This lexical scan is not a formal proof.
+### Named-sentry mapping (the ten requested old names)
+
+The plan’s old filenames are not all files at the pin. “Exists” alone is not
+coverage: in particular WP13’s B1 constructor census has a known view-
+constructor hole. This maps every requested name to the actual pin source and
+an assertion anchor.
+
+| Old requested sentry name | Actual pin file and assertion anchor | Source-only RESULT |
+|---|---|---|
+| `command_registry_completeness.rs` | `crates/rs_cam_core/tests/command_registry_completeness.rs:80` `every_wire_name_is_unique_and_snake_case`; row identity `:152`, query identity `:186`, answer variants `:214`, Effects parity `:384-487` | present; contracts read |
+| `resolved_gen_inputs_has_one_producer.rs` | `crates/rs_cam_core/tests/resolved_gen_inputs_has_one_producer.rs:167` privacy, `:221` sole producer, `:261` external nameability | present; contracts read |
+| `command_registry_surfaces.rs` | `crates/rs_cam_viz/tests/command_registry_surfaces.rs:48` MCP-reached tool; `:76` positive scan; `:93` skip reason | present; contracts read |
+| `mcp_wire_surface_pin.rs` | `crates/rs_cam_viz/tests/mcp_wire_surface_pin.rs:185` snapshot equality; `:263` every MCP-reached core row | present; contracts read |
+| `adopt_result_rejects_stale_completion.rs` (old viz location) | **relocated:** `crates/rs_cam_core/tests/adopt_result_rejects_stale_completion.rs:231` stale refusal; `:283,:321,:343,:390` independent-edit/absent/producer/enable contracts | present at core, not viz |
+| `inspector_door_is_one_command.rs` | requested file absent; replacement evidence is `crates/rs_cam_core/tests/replace_toolpath_config_gates_on_the_signature.rs:228,:287,:335,:391` | substitute, not a rename claim |
+| `inspector_emits_one_command_per_change.rs` | requested file absent; actual in-crate evidence `crates/rs_cam_viz/src/controller/tests.rs` test `an_open_panel_that_edits_nothing_drops_no_result_wp5` | substitute; source contract only |
+| `cycle_time_query_one_answer.rs` (old viz location) | **renamed/relocated:** `crates/rs_cam_core/tests/query_cycle_time_one_answer.rs:279,:289,:298,:306,:314,:328` | present at core, not viz |
+| `job_steps_hold_no_session_borrow.rs` | requested file absent; replacement `crates/rs_cam_core/tests/job_three_steps_equal_generate_toolpath.rs:164,:222,:276,:312` | substitute, not a rename claim |
+| `command_surface_completeness.rs` | `crates/rs_cam_viz/tests/command_surface_completeness.rs:182` GUI reach, `:208` skip, `:260` reason, `:299` view reach, `:398` no direct write, `:497-547` MCP map | present; B1 limitation remains |
+
+### P0 contracts (eight actual tests; flip status is source/history, not assumed)
+
+| P0 file | Main asserted contract at pin | Flip status recorded/read |
+|---|---|---|
+| `crates/rs_cam_core/tests/mutation_paths_invalidate_alike_p0.rs` | `:415` setter/replacement drop `{0,1}`; `:435` drop equals revision bump; `:460` undo; `:484,:507` drill chains; `:531` `Effects.stale`; `:577` retained narrow divergence | flips WP1/WP5/WP8; source shows post-flip contract |
+| `crates/rs_cam_core/tests/set_param_refuses_absent_field_n5.rs` | `:173` absent field refuses; `:239` refusal preserves result/provenance; `:390` named numeric arms use range helper | recorded unchanged through WP1 |
+| `crates/rs_cam_core/tests/disconnected_finish_retract_structure_p0.rs` | `:256` disconnected islands retract/link safely | no flip claimed here |
+| `crates/rs_cam_core/tests/drill_runtime_survives_retime_n2.rs` | `:444` retimed total includes drill; `:478` published runtimes agree; `:496` drill runtime real | recorded unchanged; WP9 target is query, not this contract |
+| `crates/rs_cam_viz/tests/export_parity_core_vs_gui_p0.rs` | `:488` byte-identical agreeing properties; `:601` coolant equality | recorded unchanged |
+| `crates/rs_cam_viz/tests/feeds_apply_drops_result_n13.rs` | `:298` cached result; `:329` downstream chain; `:346` export stale; `:377,:409` project/MCP routes | recorded unchanged |
+| `crates/rs_cam_viz/tests/ribbon_and_mcp_diagnostic_ids_n4.rs` | `:258,:300,:344,:376,:401,:427` identical diagnostic-ID scenarios | no unverified flip inference |
+| `crates/rs_cam_viz/src/compute/worker/gen_parity_p0_tests.rs` | `:407` geometry with optimisation off; `:428` shipped-default feed identity | test 2 recorded flipped to identity at WP11b; source is post-flip |
+
+### Corrected §7 grep ledger (nine source anchors, not “nine zeroes”)
+
+1. Hatch calls in viz/CLI production scope: zero under the named hatch-call pattern.
+2. `pub fn *_mut` in session sources: zero (the historical `session/mod.rs` scan is too narrow; scan session `*.rs`).
+3. `MutationKind` in viz: **five**, all `app/mcp.rs`; excluded WP19, not zero.
+4. `compute_stale_set` workspace: non-zero; declaration `core/session/compute.rs:54`, live MCP `app/mcp.rs:2238`; excluded WP19, not zero.
+5. `-> Result<ResolvedGenInputs` in core: one, `session/compute.rs:2523` (not the old broad return grep).
+6. `pub struct ResolvedHeights` in core: two, `compute/config.rs:1656` and `diagnostics/adapters/from_static_checks.rs:58`.
+7. Public generation entries with `#[allow(too_many_arguments)]`: zero; five allow sites remain, but the three generation entries are `pub(crate)` and public `apply_dressups` is not a generation entry.
+8. `session/compute.rs` only under viz `src/compute`, comment lines excluded: zero (do not scan all viz source or comments).
+9. `AppEvent::RemoveSetup` in viz: one literal in `controller/tests.rs:1736`, comment only; producer/variant scope is zero.
 
 ## B. Work-package evidence and historical red/green record
 
-The tracker has 25 physical rows: 21 full DONE rows, two partial rows (WP14 and WP15), and two TODO/in-flight rows (WP19 and WP22). The primary-pair ancestry check passed for every ordinary pair listed below. The table distinguishes recorded historical red/green from what this review executed: this review executed no tests.
+**Counting and evidence rule.** The tracker has 25 physical rows: 21 fully
+DONE rows, two partial rows (WP14/WP15), and two TODO rows (WP19/WP22).
+WP11b is one physical row with two completed fix/sentry pairs. The 22 ordinary sentry→fix pairs below all pass both
+ancestor checks described in §A; the sentry file exists at the pin and its
+assertion was read. “Recorded red” means the named historical commit/STATUS
+record contains the red observation, not that this audit re-executed it.
 
-| Package | Recorded red evidence -> fix evidence | Static ancestry at pin |
-|---|---|---|
-| WP1 | `255f6fe3` -> `90c8e90e`; core registry and viz surface sentries | PASS |
-| WP2a | `8f4faf43` -> `ecee1ee5`; wire snapshot | PASS |
-| WP3 | `0d22acaf` -> `25f37b74`; stale completion sentry | PASS |
-| WP4 | `4dfde9cc` -> `1c399a71`; core reach sentry. Viz describe sentry was added by the fix, not by the sentry commit. | PARTIAL pair, recorded exception |
-| WP5 | `973834f7` -> `caf8fbe6`; signature gate | PASS |
-| WP6 | `fd883efa` -> `9b887707`; draw-site scan | PASS |
-| WP6b | `b84f2601` -> `2cfc2b9a`; non-egui and model-adoption sentries | PASS |
-| WP7 | `72e912bf` -> `7dff635b`; hatch sentry | PASS |
-| WP7a | `76dbfb41` -> `084b9b50`; builder sentry | PASS |
-| WP8 | `5c32ced7` -> `e079e192`; restore sentry | PASS |
-| WP9 | `720626b2` -> `5173c923`; cycle-time query sentry | PASS |
-| WP10 | `b952e6ee` -> `3ff3cffa`; three-step job sentry | PASS |
-| WP11a | `181f5c13` -> `a9ef73d6`; one-producer sentry | PASS |
-| WP11b | `df963567` -> `4b53576b` and `bab065ce` -> `276e5c13`; two independent N12 sentries | PASS |
-| WP12 | `89f81cb4` -> `77627c33`; loose-executor sentry | PASS |
-| WP13 | `50f975e2` -> `35ae77ad`; surface sentry | PASS |
-| WP14 | WP14a: `5a43a365` -> `6e9a1326`; Job-row sentry. WP14b is in-flight. | PARTIAL |
-| WP15 | WP15a: `a4c0abd7` -> `ad06c690`; setter-row sentry. WP15b is in-flight. | PARTIAL |
-| WP16 | `ff81b712` -> `183900e2`; shared surface sentry | PASS; historical same-commit requirement was not met. |
-| WP17 | `91bc6c39` -> `525fe504`; save/simulation sentry | PASS |
-| WP18 | `3654826a` and `514fd0fc`; independent sentry-only repair work | PARTIAL; no invented fix/sentry pair |
-| WP19 | No pair at pin | TODO, excluded in-flight work |
-| WP20 | `9b3f75de`; prose pass, no new sentry | PASS, documented exception |
-| WP21 | `10c2ad37` -> `4aeaeda3`; feedopt clamp sentry | PASS |
-| WP22 | No pair at pin | TODO, excluded in-flight work |
+In the table, `core/` means `crates/rs_cam_core/` and `viz/` means
+`crates/rs_cam_viz/`.
 
-WP6 §19.10 is per-widget, not one batch: stock `a86f2df1`, setup `97e4eaf1`, properties `9b887707`, and tool `4a49b434`. WP17's recorded RED-OUTPUT heading has no colon but is still a recorded failure. The prior review's claimed missing-regex issue is not copied: named suites exist at the corrected core or viz paths. The standard labels for seven historical red blocks are metadata only: WP1, WP5, WP6, WP6b, WP7, WP9, and WP11a.
+`S→F; A/P; file:line; red-kind; status` means: sentry then fix ordering checked
+(`A`), fix ancestor of pin (`P`), actual pin assertion anchor, recorded red
+kind, and tracker status. “compile” and “assertion” are historical categories.
 
-## C. Numbered ruling audit
+| Unit | Evidence / main pin assertion / recorded red / status |
+|---|---|
+| WP1 | `255f6fe3→90c8e90e; A/P; core/tests/mutation_paths_invalidate_alike_p0.rs:531; compile; DONE` |
+| WP2a | `8f4faf43→ecee1ee5; A/P; viz/tests/mcp_wire_surface_pin.rs:185; assertion (missing snapshot); DONE` |
+| WP3 | `0d22acaf→25f37b74; A/P; core/tests/adopt_result_rejects_stale_completion.rs:231; compile (14 errors); DONE` |
+| WP4 | `4dfde9cc→1c399a71; A/P; core/tests/mcp_mutation_rows_reach_core.rs:231; compile (9 errors); DONE`. Additional viz `viz/tests/mcp_core_arm_describes_every_row.rs:77` was introduced by the **fix**; it is not falsely described as red-first evidence. |
+| WP5 | `973834f7→caf8fbe6; A/P; core/tests/replace_toolpath_config_gates_on_the_signature.rs:228; compile; DONE` |
+| WP6 | `fd883efa→9b887707; A/P; viz/tests/egui_draw_sites_write_through_commands_wp6.rs:167; assertion (compiled, 1 pass/4 fail); DONE`. Per-widget commits are historical follow-ons, not replacements for this pair; `4a49b434` is the tool widget (verified from git log), alongside stock `a86f2df1`, setup `97e4eaf1`, properties `9b887707`. |
+| WP6b | `b84f2601→2cfc2b9a; A/P; viz/tests/non_egui_sites_write_through_commands_wp6b.rs:206; assertion plus core compile red; DONE` |
+| WP7 | `72e912bf→7dff635b; A/P; core/tests/hatches_are_crate_private_wp7.rs:242; assertion (9 public/17 external names); DONE` |
+| WP7a | `76dbfb41→084b9b50; A/P; core/tests/session_builder_preserves_ids.rs:168; compile (missing builder); DONE` |
+| WP8 | `5c32ced7→e079e192; A/P; core/tests/restore_snapshot_invalidates_like_the_setter_n14.rs:223; compile; DONE` |
+| WP9 | `720626b2→5173c923; A/P; core/tests/query_cycle_time_one_answer.rs:279; compile; DONE` |
+| WP10 | `b952e6ee→3ff3cffa; A/P; core/tests/job_three_steps_equal_generate_toolpath.rs:164; compile; DONE` |
+| WP11a | `181f5c13→a9ef73d6; A/P; core/tests/resolved_gen_inputs_has_one_producer.rs:167; compile; DONE` |
+| WP11b.1 | `df963567→4b53576b; A/P; core/tests/gen_inputs_one_assembly_n12.rs:165; compile plus assertion (28 feed mismatches); DONE` |
+| WP11b.2 | `bab065ce→276e5c13; A/P; core/tests/adopt_simulation_stores_prior_stocks.rs:177; compile plus viz assertion; DONE` |
+| WP12 | `89f81cb4→77627c33; A/P; core/tests/loose_executor_is_crate_private_wp12.rs:182; assertion (arms a/b); DONE` |
+| WP13 | `50f975e2→35ae77ad; A/P; viz/tests/command_surface_completeness.rs:182; compile (13 errors); DONE`. It proves static declaration/reach contracts, not correct handler behavior; B1’s constructor hole remains. |
+| WP14a | `5a43a365→6e9a1326; A/P; core/tests/job_rows_recommend_and_preview_wp14a.rs:181; compile (14 errors); PARTIAL` (WP14b in flight/excluded). |
+| WP15a | `a4c0abd7→ad06c690; A/P; core/tests/setters_have_rows_wp15a.rs:251 and viz/tests/production_writes_go_through_apply_wp15a.rs:456; assertion/source-scan red; PARTIAL` (WP15b in flight/excluded). The core sentry enumerates **24** row-less setters at `:43-52`; a claimed 25th is the `set_toolpath_param` wrapper exemption (`:89-92,:301-322`), not a 25th missing setter. |
+| WP16 | `ff81b712→183900e2; A/P; viz/tests/command_surface_completeness.rs:182; assertion (“set_setup_name” absent constructor); DONE`. The older §19.3 same-commit phrasing is a separate historical caller/diff issue, not an A/B ancestor failure. |
+| WP17 | `91bc6c39→525fe504; A/P; core/tests/save_keeps_the_simulation_wp17.rs:237; assertion; DONE`. The historical header `RED-OUTPUT` is a valid label without a colon. |
+| WP18 | **not an original red→fix pair:** `3654826a` is independent injection repair; `514fd0fc` is coverage work. Actual sources: `core/tests/loose_executor_is_crate_private_wp12.rs:322` (injection-sensitive source scan) and `core/tests/feed_optimization_refusals_wp18.rs:279` (coverage). No invented pair/ancestor claim; DONE as recorded. |
+| WP19 | no sentry/fix pair at pin; TODO, explicitly excluded WP19. |
+| WP20 | `9b3f75de` prose pass; no new sentry. Existing `viz/tests/command_surface_completeness.rs` covers the exemption deletion; prose/toast work is not misreported as a new red pair; DONE. |
+| WP21 | `10c2ad37→4aeaeda3; A/P; core/tests/feedopt_clamp_never_panics_wp21.rs:163; runtime panic red, message anchored in historical status as `min > max, or either was NaN. min = 6000.0, max = 3000.0`; DONE. |
+| WP22 | no sentry/fix pair at pin; TODO, explicitly excluded WP22. |
 
-Every numbered ruling has a separate row. Excluded means the user excluded in-flight/later work; it is not a master-branch gap.
+### Historical red-block qualification
 
-| Ruling | Static state at pin | Path or protocol |
-|---|---|---|
-| §12.1 | PASS | `command.rs:745,762-770` |
-| §12.2 | PASS | one `with_effects` construction site in `command.rs` |
-| §12.3 | PASS | `Effects` is `#[must_use]` |
-| §12.4 | PASS | `AdoptResult` carries revision |
-| §12.5 | PASS | `crates/rs_cam_core/tests/adopt_result_rejects_stale_completion.rs` exists |
-| §12.6 | PASS | recorded producer-return conversion is present |
-| §12.7 | NOT MEASURED | two-writer protocol is source history, not a runtime fact |
-| §13.WP11a.1 | PASS | public bundle, private fields, no `Default` |
-| §13.WP11a.2 | PASS | one producer sentry exists |
-| §13.WP11a.3 | PASS | external naming test exists |
-| §13.WP9.1 | PASS | one registry list and union |
-| §13.WP9.2 | PASS | answer column and `QueryAnswer` |
-| §13.WP9.3 | PASS | `ToolpathCycleTime` row |
-| §13.WP9.4 | PASS | `ui/readiness.rs:400` constructor path |
-| §13.WP9.5 | PASS | `query_cycle_time_one_answer.rs` |
-| §13.WP9.6 | NOT MEASURED | implementation order is historical protocol |
-| §14.1 | PARTIAL | Recommend and Preview are Job rows; Optimize is excluded to WP14b. |
-| §14.2 | PASS | `UiQuery` kind |
-| §14.3 | PASS | post-write events are deleted; `SetPostConfig` is used |
-| §14.4 | NOT DONE | artifact-export Query rows are a ledgered holdout; do not call all export work met. |
-| §15.1 | PASS | per-row core args |
-| §15.2 | PASS | describe step is keyed by `CommandId` |
-| §15.3 | PASS | `Effects.created` |
-| §15.4 | PASS | four hand-written MCP residuals recorded |
-| §15.5 | PASS | direct move row |
-| §15.6 | PASS | separate machine payload rows |
-| §15.7 | PASS | tool parameter and remove-tool effects |
-| §15.8 | PASS | event side effects are in describe |
-| §15.9 | PASS | toast sentry retarget recorded |
-| §15.10 | NOT MEASURED | writer protocol is not independently provable from source |
-| §16.1 | PASS | `start` and job handles |
-| §16.2 | PASS | submit captures the handle |
-| §16.3 | PASS | `execute_job` is core-only |
-| §16.4 | PASS | adopt uses revision |
-| §16.5 | PASS | core convenience and CLI path |
-| §16.6 | PARTIAL | generate-all remains outside this first Job row |
-| §16.7 | PASS | debug options row |
-| §16.8 | PASS | job sentry exists; execution was not rerun here |
-| §17.WP8.1 | PASS | restore snapshot row |
-| §17.WP8.2 | PASS | GUI restore callers and stale stamp path |
-| §17.WP8.3 | PASS | drill pick invalidates chain |
-| §17.WP8.4 | PASS | narrow optimizer helper remains core-only |
-| §17.WP8.5 | PASS | P0 arm retarget is recorded |
-| §17.WP5.1 | PASS | signature gate in core |
-| §17.WP5.2 | PASS | inspector projection path |
-| §17.WP5.3 | PASS | panel stamps `Effects.stale` |
-| §17.WP5.4 | PASS | viz derives panel side effects |
-| §17.WP5.5 | PASS | projection preserves stored fields |
-| §17.WP5.6 | PASS | core and in-crate viz sentries exist |
-| §17.WP5.7 | PASS | ApplyFeeds keeps the core gate |
-| §18 | PASS | builder is present; the operator decision is recorded historical evidence |
-| §19.1 | PASS | producer corrections carried forward |
-| §19.2 | PASS | whole-profile machine row |
-| §19.3 | EXCEPTION | `SetSetupName`: red `ff81b712` is not an ancestor in the same fix commit; caller arrives in `183900e2`. |
-| §19.4 | PASS | free stale helper |
-| §19.5 | PASS | WizardState is viz-owned |
-| §19.6 | PASS | three setup rows |
-| §19.7 | PASS | stock-bbox update invalidates through core |
-| §19.8 | NOT MEASURED | per-widget runtime drag behaviour was not run here |
-| §19.9 | PASS | id handling path present |
-| §19.10 | PASS | per-widget commits: `a86f2df1` stock, `97e4eaf1` setup, `9b887707` properties, `4a49b434` tool. |
-| §20.1 | PASS | builder package |
-| §20.2 | PASS | no export-wizard row |
-| §20.3 | PASS | in-crate reproduction route |
-| §20.4 | PASS | live sites use rows |
-| §20.5 | PASS | hatch sentry and crate-private declarations |
-| §21.1 | PASS | second viz registry |
-| §21.2 | PASS | fifth kind |
-| §21.3 | PASS | GetOperationSchema core Query |
-| §21.4 | DEVIATION, benign | `RsCamApp::ui_query(&self)`, not `AppState`; the receiver is still read-only. |
-| §21.5 | PASS | library/file-store rows classified |
-| §21.6 | NOT MET | seven valid MCP-only UiCommands are GUI Skip: SimScrubToolpath, SimJumpToToolpathStart, SimJumpToToolpathEnd, ScreenshotSimulation, ScreenshotToolpath, ScreenshotGui, SetUiView. STATUS records this deviation but does not amend the adopted wording. |
-| §21.7 | PASS | MCP Ui wrapper |
-| §21.8 | PASS | RemoveSetup deleted |
-| §21.9 | PARTIAL | sentry is static, not runtime; B1 shows its constructor census excludes view rows. |
-| §21.10 | PASS | named optimizer records remain |
-| §22.1 | PASS | `GenObserver` |
-| §22.2 | PASS | lazy index path |
-| §22.3 | PASS | per-submit cancel path |
-| §22.4 | PASS | `execute_generation` |
-| §22.5 | PASS | core assembly wins the mapped branches |
-| §22.6 | PASS | submit-time refusal path |
-| §22.7 | PASS | ComputeRequest handle/viz split |
-| §22.8 | PASS | sentry files exist; not rerun here |
-| §22.9 | NOT MEASURED | package order is historical protocol |
-| §22 addendum | PASS | `Command::AdoptSimulation` `command.rs:794-802`; one common GUI adoption at `controller/events/compute.rs:801` after modulation shares the Arc. The result serves both described branches; it is not a missing second physical site. |
-| §23.1 | PASS | loose executor is crate-private |
-| §23.2 | PASS | tests moved in-crate |
-| §23.3 | RESIDUAL | advisor loose call at `core/session/compute.rs:1874` remains named |
-| §23.4 | PASS | corrected grep contract; two legitimate references are allowlisted by `loose_executor_is_crate_private_wp12.rs:281-301`, scanner `:324-384` includes comments |
-| §23.5 | PASS | crate-private sentry |
-| §23.6 | NOT MEASURED | closing normal suite was not executed by this review |
-| §24.1 | PASS | WP14a Job rows |
-| §24.2 | EXCLUDED | WP14b was in-flight and excluded by scope |
-| §24.3 | NOT MEASURED | timing/cost protocol was not rerun |
-| §25.1 | PASS | WP15a rows and production scan |
-| §25.2 | EXCLUDED | WP15b was in-flight and excluded by scope |
-| §25.3 | PASS | post-config sites ledgered under WP17 |
-| §25.4 | RESIDUAL | compute doors are explicitly later work |
-| §25.5 | NOT MEASURED | order is historical protocol |
-| §26.1 | PASS | no timeout/schema change at pin |
-| §26.2 | PASS | uniform Job answer shape |
-| §26.3 | RESIDUAL | Job lane is not seen by toolpath cancellation/status |
-| §26.4 | EXCLUDED | GUI planner migration is WP14b |
-| §26.5 | PASS | recorded ordering behaviour |
-| §27.1 | EXCLUDED | WP19, WP22, WP14b, WP15b are after the pin or in-flight scope exclusions |
-| §27.2 | NOT MEASURED | closing core dev loop was ordered, not run by this review |
-| §27.3 | EXCLUDED | WP22 is after pin/in-flight |
-| §27.4 | NOT MEASURED | verifier runtime protocol |
-| §28.1 | EXCLUDED | WP19 is after pin/in-flight |
-| §28.2 | EXCLUDED | WP19 helper consolidation is after pin/in-flight |
-| §28.3 | EXCLUDED | WP19 panel side effect is after pin/in-flight |
-| §28.4 | EXCLUDED | WP14b executor signature is after pin/in-flight |
-| §28.5 | EXCLUDED | WP14b trace handling is after pin/in-flight |
-| §28.6 | EXCLUDED | WP14b project rollup change is after pin/in-flight |
-| §28.7 | EXCLUDED | WP14b GUI preview reach is after pin/in-flight |
-| §28.8 | EXCLUDED | policy decision is after pin/in-flight |
+There are **seven literal `RED`-style historical headings/labels** in the
+recorded material: WP1, WP5, WP6, WP6b, WP7, WP9, and WP11a. They are metadata
+labels, not seven extra tests and not runtime evidence from this audit. WP17’s
+parenthetical `RED-OUTPUT` label is also valid historical evidence despite not
+being a literal `RED:` heading. Do not invent eight missing blocks merely to
+meet a literal-heading count: compile-red and assertion-red records above are
+real failed-block evidence under other labels. The additional WP4 viz sentry,
+WP18 injection/coverage evidence, and WP20 prose/existing-test exception are
+recorded separately precisely so none becomes a false blocking pair.
+
+## C. Each binding ruling at the pinned tree
+
+Each PASS below is a source or history check, not a test run. Evidence names the relevant production body or sentry source. Later amendments supersede transitional signatures and ownership rules. In-flight outcomes are excluded, not passed.
+
+| Ruling | Requirement | Result | Pinned evidence |
+|---|---|---|---|
+| §12.1 | Optional surviving same-index revision | PASS | `crates/rs_cam_core/src/session/command.rs:1096` — `pub revision: Option<u64>,`; `crates/rs_cam_core/src/session/command.rs:2646` — `revision: index` |
+| §12.2 | One Effects construction site and shared combinator | PASS | `crates/rs_cam_core/src/session/command.rs:2635` — `pub(crate) fn try_with_effects<E>(`; `crates/rs_cam_core/src/session/command.rs:2657` — `pub(crate) fn with_effects(` |
+| §12.3 | Effects is must-use | PASS | `crates/rs_cam_core/src/session/command.rs:1067` — `#[must_use]` |
+| §12.4 | Required revision and typed stale-adopt refusal | PASS | `crates/rs_cam_core/src/session/command.rs:2265` — `if current != revision {`; `crates/rs_cam_core/src/session/command.rs:888` — `/// [`SessionError::StaleCompletion`], inserting nothing.` |
+| §12.5 | Core stale-adopt sentry; GUI drain adoption | PASS: sentry source; not executed | `crates/rs_cam_core/tests/adopt_result_rejects_stale_completion.rs:54` — `fn tc(` |
+| §12.6 | Sim-only mutations also return Effects | PASS | `crates/rs_cam_core/src/session/mutation.rs:1477` — `pub fn invalidate_machine(&mut self) -> Effects {`; `crates/rs_cam_core/src/session/command.rs:1083` — `pub simulation_cleared: bool,` |
+| §12.7 | Two writers, one worktree, sentry then fix | NOT MEASURED: process | Source and commit ancestry do not establish writer count or worktree discipline. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §12.7. |
+| §13 correction | Public nameable input bundle; private construction | PASS | `crates/rs_cam_core/src/session/compute.rs:202` — `pub struct ResolvedGenInputs {`; `crates/rs_cam_core/src/session/compute.rs:2519` — `pub fn resolve_generation_inputs(` |
+| §13.WP9.1 | One registry list and CommandId union | PASS | `crates/rs_cam_core/src/session/command.rs:121` — `macro_rules! for_each_command {`; `crates/rs_cam_core/src/session/command.rs:2153` — `pub const ALL: &[CommandId] = &[$(CommandId::$id,)+];` |
+| §13.WP9.2 | Sixth answer column and query door | PASS | `crates/rs_cam_core/src/session/command.rs:2085` — `(Command, $id:ident, $wire:literal, $payload:ident, $answer:ty, $surfaces:expr),`; `crates/rs_cam_core/src/session/command.rs:2523` — `pub fn query(&self, query: Query) -> Result<QueryAnswer, SessionError> {` |
+| §13.WP9.3 | Cycle-time Query; explicit surfaces | PASS | `crates/rs_cam_core/src/session/command.rs:442` — `(Query, ToolpathCycleTime, "toolpath_cycle_time", ToolpathCycleTimeArgs,` |
+| §13.WP9.4 | Five viz consumers use the core answer | PASS | `crates/rs_cam_viz/src/ui/readiness.rs:390` — `pub fn toolpath_cycle_time(`; `crates/rs_cam_viz/src/ui/readiness.rs:400` — `let query = Query::ToolpathCycleTime(ToolpathCycleTimeArgs {` |
+| §13.WP9.5 | Frozen-oracle cycle-time and registry sentry | PASS: sentry source; not executed | `crates/rs_cam_core/tests/query_cycle_time_one_answer.rs:67` — `fn oracle_toolpath_cycle_time(` |
+| §13.WP9.6 | WP3 before WP9 | PASS: commit order | Checked `25f37b74` precedes `5173c923` at the pin. This establishes landing order, not when editing began. |
+| §14.1 | Recommend/Preview/Optimize are Jobs | PARTIAL; Optimize is excluded WP14b | `crates/rs_cam_core/src/session/command.rs:804` — `(Job, RecommendClearingStrategy, "recommend_clearing_strategy",`; `crates/rs_cam_core/src/session/command.rs:816` — `(Job, PreviewTierMap, "preview_tier_map", PreviewTierMapArgs,` |
+| §14.2 | Viz-owned reads use UiQuery | PASS | `crates/rs_cam_core/src/session/command.rs:843` — `UiQuery,`; `crates/rs_cam_viz/src/ui_command.rs:913` — `pub enum UiQuery {` |
+| §14.3 | Delete five post-write events; wizard takes SetPostConfig | PASS | `crates/rs_cam_viz/src/app/input.rs:111` — `let command = rs_cam_core::session::Command::SetPostConfig(`; `crates/rs_cam_viz/tests/egui_draw_sites_write_through_commands_wp6.rs:271` — `fn the_app_event_enum_dropped_the_five_post_write_events() {` |
+| §14.4 | Export artifacts use Query; viz writes files | NOT DONE: ledgered export holdout | `crates/rs_cam_viz/src/app/mcp.rs:383` — `McpRequestKind::ExportGcode {`; `crates/rs_cam_viz/src/ui_command.rs:352` — `(UiCommand, ExportGcode, "open_export_preflight", NoArgs, (),` |
+| §15.1 | Core Args payloads; wire conversion stays in viz | PASS | `crates/rs_cam_core/src/session/command.rs:1285` — `pub struct MoveToolpathToSetupArgs {`; `crates/rs_cam_viz/src/app/mcp/commands.rs:493` — `Command::MoveToolpathToSetup(MoveToolpathToSetupArgs {` |
+| §15.2 | Describe by CommandId after apply | PASS | `crates/rs_cam_viz/src/app/mcp/commands.rs:1818` — `pub(crate) fn describe_core(`; `crates/rs_cam_viz/src/app/mcp.rs:359` — `let described = self.describe_core(id, outcome, &before);` |
+| §15.3 | Created identity in Effects for add rows | PASS | `crates/rs_cam_core/src/session/command.rs:1118` — `pub created: Option<usize>,`; `crates/rs_cam_core/src/session/mutation.rs:140` — `effects.created = created;` |
+| §15.4 | Three handwritten holdouts remain | PASS: stated exception; LoadProject is a fourth ledger item | `crates/rs_cam_viz/src/app/mcp.rs:433` — `McpRequestKind::PlanMultitoolFinishing { spec } => {`; `crates/rs_cam_viz/src/app/mcp.rs:441` — `McpRequestKind::ApplyFeeds { index, scope } => {` |
+| §15.5 | Move setup replies with actual mutation Effects | PASS | `crates/rs_cam_viz/src/app/mcp/commands.rs:493` — `Command::MoveToolpathToSetup(MoveToolpathToSetupArgs {`; `crates/rs_cam_viz/src/app/mcp/commands.rs:1745` — `&#124; CommandId::MoveToolpathToSetup` |
+| §15.6 | Separate kinematics and import rows | PASS | `crates/rs_cam_core/src/session/command.rs:373` — `(Command, SetMachineKinematics, "set_machine_kinematics",`; `crates/rs_cam_core/src/session/command.rs:380` — `(Command, ImportMachineSettings, "import_machine_settings",` |
+| §15.7 | Tool setters/removal return Effects | PASS | `crates/rs_cam_core/src/session/compute.rs:1532` — `pub fn set_tool_param(`; `crates/rs_cam_core/src/session/mutation.rs:863` — `pub fn remove_tool(&mut self, index: usize) -> Result<Effects, SessionError> {` |
+| §15.8 | Post-write effects move to describe | PASS for post-write effects; pre-display work is separate | `crates/rs_cam_viz/src/app/mcp/commands.rs:1818` — `pub(crate) fn describe_core(`; `crates/rs_cam_viz/src/app/mcp/commands.rs:194` — `pub(crate) fn mcp_before_core(&mut self, request: &CoreRequest) {` |
+| §15.9 | Retarget the toast sentry | PASS: sentry source; not executed | `crates/rs_cam_viz/tests/mcp_toasts_report_outcome_g_mcptoast.rs:94` — `fn every_command_row_toast_is_returned_not_pushed() {` |
+| §15.10 | Two writers and one fix commit | NOT MEASURED: process | Source and commit ancestry do not establish writer count or worktree discipline. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §15.10. |
+| §16.1 | WP9 before WP10 | PASS: commit order | Checked `5173c923` precedes `3ff3cffa` at the pin.  |
+| §16.2 | start captures inputs/context and revision | PASS as amended by §16 addendum | `crates/rs_cam_core/src/session/command.rs:2597` — `pub fn start(&mut self, job: Job, cancel: &AtomicBool) -> Result<JobHandle, SessionError> {`; `crates/rs_cam_core/src/session/compute.rs:3015` — `pub(crate) fn start_generate_toolpath(` |
+| §16.3 | Session-free executor | PASS as amended by §22 observer parameter | `crates/rs_cam_core/src/session/compute.rs:611` — `pub fn execute_job(` |
+| §16.4 | Adopt uses handle revision | PASS | `crates/rs_cam_core/src/session/compute.rs:3250` — `revision: handle.revision,` |
+| §16.5 | Core and CLI use the inline three steps | PASS | `crates/rs_cam_core/src/session/compute.rs:3227` — `pub fn generate_toolpath(`; `crates/rs_cam_core/src/session/compute.rs:3248` — `let _ = self.apply(Command::AdoptResult(AdoptResultArgs {` |
+| §16.6 | generate_all keeps its control loop | PASS: specified scope | `crates/rs_cam_core/src/session/compute.rs:3730` — `pub fn generate_all(` |
+| §16.7 | Debug options has a Command | PASS | `crates/rs_cam_core/src/session/command.rs:302` — `(Command, SetToolpathDebugOptions, "set_toolpath_debug_options",` |
+| §16.8 | WP10 core-only; WP11b migrates worker assembly | PASS: transitional rule superseded by WP11b | `crates/rs_cam_viz/src/compute/worker/execute/mod.rs:343` — `let outcome = rs_cam_core::session::execute_job(&req.handle, &observer, cancel);` |
+| §16 addendum | Cancellation reaches start; start does not bump revision | PASS: capture body | `crates/rs_cam_core/src/session/compute.rs:3015` — `pub(crate) fn start_generate_toolpath(`; `crates/rs_cam_core/src/session/compute.rs:3205` — `revision: self.toolpath_revision(index),` |
+| §17.WP8.1 | Restore writes and invalidates unconditionally | PASS | `crates/rs_cam_core/src/session/command.rs:2454` — `Command::RestoreToolpathSnapshot(args) => {` |
+| §17.WP8.2 | Undo/redo restore and stamp every returned stale index | PASS | `crates/rs_cam_viz/src/controller/events/undo.rs:181` — `let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(`; `crates/rs_cam_viz/src/state/stale.rs:37` — `for id in ids {` |
+| §17.WP8.3 | Drill picks invalidate the result chain | PASS | `crates/rs_cam_core/src/session/mutation.rs:1167` — `pub fn set_drill_selected_holes(` |
+| §17.WP8.4 | Optimizer retains core-only narrow path | PASS | `crates/rs_cam_core/src/session/mutation.rs:1867` — `pub(crate) fn apply_toolpath_param_snapshot_narrow(` |
+| §17.WP8.5 | Retarget P0 invalidation arms | PASS: sentry source; not executed | `crates/rs_cam_core/tests/mutation_paths_invalidate_alike_p0.rs:136` — `fn tc(` |
+| §17.WP5.1 | Replacement writes config; signature gates invalidation | PASS | `crates/rs_cam_core/src/session/command.rs:2486` — `Command::ReplaceToolpathConfig(args) => {`; `crates/rs_cam_core/src/session/mod.rs:892` — `pub fn generation_inputs_signature(&self) -> String {` |
+| §17.WP5.2 | Inspector applies; core decides whether inputs changed | PASS | `crates/rs_cam_viz/src/ui/properties/mod.rs:4224` — `pub(crate) fn write_entry_config_to_session(` |
+| §17.WP5.3 | Panel stamps Effects.stale | PASS | `crates/rs_cam_viz/src/ui/properties/mod.rs:206` — `crate::state::stale::stamp_stale(state, &effects.stale);`; `crates/rs_cam_viz/src/state/stale.rs:31` — `pub fn stamp_stale(state: &mut AppState, stale: &BTreeSet<usize>) {` |
+| §17.WP5.4 | Field-dependent side effects stay in viz | PASS | `crates/rs_cam_viz/src/state/mod.rs:222` — `pub struct PanelSideEffects {` |
+| §17.WP5.5 | Projection preserves fields absent from inspector | PASS | `crates/rs_cam_viz/src/ui/properties/mod.rs:4146` — `pub(crate) fn project_entry_onto(` |
+| §17.WP5.6 | Core replacement sentry and viz projection checks | PASS: sentry source; not executed | `crates/rs_cam_core/tests/replace_toolpath_config_gates_on_the_signature.rs:67` — `fn tc(` |
+| §17.WP5.7 | Feeds funnel uses the core signature | PASS | `crates/rs_cam_core/src/session/mod.rs:892` — `pub fn generation_inputs_signature(&self) -> String {`; `crates/rs_cam_core/src/session/mutation.rs:2076` — `pub fn invalidate_toolpath_inputs(&mut self, index: usize) -> Effects {` |
+| §18 | Builder for setup; Commands for live edits | PASS | `crates/rs_cam_core/src/session/builder.rs:55` — `pub struct ProjectSessionBuilder {`; `crates/rs_cam_core/src/session/builder.rs:102` — `pub fn model(mut self, model: LoadedModel) -> Self {` |
+| §19.1 | Remaining producers return Effects; adds carry created id | PASS: current command/mutation paths | `crates/rs_cam_core/src/session/command.rs:1118` — `pub created: Option<usize>,`; `crates/rs_cam_core/src/session/mutation.rs:777` — `pub fn add_model(&mut self, model: super::LoadedModel) -> Effects {`; `crates/rs_cam_core/src/session/mutation.rs:126` — `pub fn add_toolpath(` |
+| §19.2 | One whole-machine row | PASS | `crates/rs_cam_core/src/session/command.rs:365` — `(Command, SetMachine, "load_machine_from_library", SetMachineArgs, Effects,`; `crates/rs_cam_core/src/session/mutation.rs:1746` — `pub fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {` |
+| §19.3 | Surface flip and caller in the same commit | HISTORICAL EXCEPTION: ff81b712 flips; 183900e2 adds caller | `crates/rs_cam_core/src/session/command.rs:204` — `(Command, SetSetupName, "set_setup_name", SetSetupNameArgs, Effects,`; `crates/rs_cam_viz/src/controller/events/model.rs:476` — `let command = Command::SetSetupName(SetSetupNameArgs { setup_index, name });` |
+| §19.4 | Free stale helper over AppState | PASS | `crates/rs_cam_viz/src/state/stale.rs:31` — `pub fn stamp_stale(state: &mut AppState, stale: &BTreeSet<usize>) {` |
+| §19.5 | WizardState is viz-owned; wizard hatch is deleted | PASS | `crates/rs_cam_viz/src/state/runtime.rs:330` — `pub wizard: crate::state::wizard::WizardState,` |
+| §19.6 | Name/datum/models have distinct invalidation rules | PASS | `crates/rs_cam_core/src/session/command.rs:214` — `(Command, SetSetupDatum, "set_setup_datum", SetSetupDatumArgs, Effects,`; `crates/rs_cam_core/src/session/mutation.rs:1279` — `pub fn set_setup_models(` |
+| §19.7 | Stock auto-fit invalidates all results | PASS | `crates/rs_cam_core/src/session/mutation.rs:1631` — `pub fn update_stock_from_bbox(&mut self, bbox: &BoundingBox3) -> Effects {` |
+| §19.8 | Drag commits on stop/focus loss; clicks on change | PASS: static guards; runtime NOT MEASURED | `crates/rs_cam_viz/src/ui/properties/mod.rs:445` — `self.committed &#124;= response.drag_stopped() &#124;&#124; response.lost_focus();`; `crates/rs_cam_viz/src/ui/properties/mod.rs:444` — `self.changed &#124;= response.changed();` |
+| §19.9 | Builder precedes final hatch migration | PASS: commit order | Checked `084b9b50` precedes `7dff635b` at the pin.  |
+| §19.10 | Per-widget landing points | PASS: commit order | Checked `a86f2df1` precedes `97e4eaf1` at the pin. Properties follows in `9b887707`; separate file commits remain in history. |
+| §20.1 | Builder preserves supplied IDs/order; no automatic stock fit | PASS: builder methods | `crates/rs_cam_core/src/session/builder.rs:102` — `pub fn model(mut self, model: LoadedModel) -> Self {`; `crates/rs_cam_core/src/session/builder.rs:142` — `pub fn build(mut self) -> ProjectSession {` |
+| §20.2 | No SetExportWizard row; use viz state | PASS: registry census and viz owner | `crates/rs_cam_viz/src/state/runtime.rs:330` — `pub wizard: crate::state::wizard::WizardState,` |
+| §20.3 | Core un-commanded reproduction stays in-crate; viz one removed | PASS: test-only remaining reproduction | `crates/rs_cam_core/src/session/mutation.rs:3299` — `fn arm_inspector_door() -> Observation {` |
+| §20.4 | Remaining hatch users move to commands/builder | PASS: sentry source; not executed | `crates/rs_cam_core/tests/hatches_are_crate_private_wp7.rs:104` — `fn core_root() -> PathBuf {` |
+| §20.5 | Final privacy gate follows builder and migration | PASS: commit order | Checked `2cfc2b9a` precedes `7dff635b` at the pin. Primary privacy sentry is `hatches_are_crate_private_wp7`; no build was rerun here. |
+| §21.1 | Separate viz registry and one union | PASS | `crates/rs_cam_viz/src/ui_command.rs:345` — `macro_rules! for_each_ui_command {`; `crates/rs_cam_viz/src/ui_command.rs:1053` — `pub enum SurfaceId {` |
+| §21.2 | Fifth kind UiQuery | PASS | `crates/rs_cam_core/src/session/command.rs:843` — `UiQuery,` |
+| §21.3 | GetOperationSchema is a core Query | PASS | `crates/rs_cam_core/src/session/command.rs:501` — `(Query, GetOperationSchema, "get_operation_schema", GetOperationSchemaArgs,` |
+| §21.4 | Read-only UI query door | DEVIATION: RsCamApp, not the ruled AppState owner | `crates/rs_cam_viz/src/app/mcp.rs:657` — `fn ui_query(&self, query: UiQuery) -> UiQueryAnswer {` |
+| §21.5 | Library/file-store reads and writes remain view-owned | PASS: scoped per-user-store classification | `crates/rs_cam_viz/src/ui_command.rs:826` — `(UiQuery, ListToolLibrary, "list_tool_library", NoArgs, String,`; `crates/rs_cam_viz/src/ui_command.rs:704` — `(UiCommand, DeleteLibraryTool, "delete_library_tool", DeleteLibraryToolArgs, (),` |
+| §21.6 | All UiCommand rows declare GUI Reached and CLI Skip | NOT MET: seven MCP-only commands; see M1 | `crates/rs_cam_viz/src/ui_command.rs:498` — `(UiCommand, SimScrubToolpath, "sim_scrub_toolpath", SimScrubToolpathArgs, (),` |
+| §21.7 | MCP/UI event wrappers | PASS | `crates/rs_cam_viz/src/app/mcp.rs:513` — `McpRequestKind::Ui(command) => match command {`; `crates/rs_cam_viz/src/controller/events/mod.rs:383` — `AppEvent::Ui(cmd) => match cmd {` |
+| §21.8 | Delete dead AppEvent RemoveSetup | PASS for AppEvent; core Command is a different row | `crates/rs_cam_viz/src/controller/tests.rs:1736` — `// `AppEvent::RemoveSetup`: no control emitted it, no MCP tool named` |
+| §21.9 | Constructing-site/non-vacuity and no-write sentries | PARTIAL: literal core scan present; view construction hole is B1 | `crates/rs_cam_viz/tests/command_surface_completeness.rs:182` — `fn every_gui_reached_core_row_is_constructed_in_the_view() {`; `crates/rs_cam_viz/tests/command_surface_completeness.rs:299` — `fn every_view_row_is_reached_by_some_surface() {` |
+| §21.10 | Explicit optimizer exemption list and package order | PASS: named record; retirement is excluded WP14b | `crates/rs_cam_viz/tests/command_surface_completeness.rs:339` — `const P3_NAMED_EXEMPTIONS: &[&str] = &["CloseOptimizeModal", "CloseOptimizeProject"];` |
+| §22.1 | Observer parameter on session-free executor | PASS for the observer; documented field-placement deviations keep debug options on the handle and artifact writes with the caller | `crates/rs_cam_core/src/session/compute.rs:495` — `pub struct GenObserver<'a> {`; `crates/rs_cam_core/src/session/compute.rs:611` — `pub fn execute_job(` |
+| §22.2 | Session memo keyed by model/revision; shared lazy cell forced off-loop | NOT MET literally: ordinary execution forces lazily, but PlannedTierRegions also forces inside start; cells wrap a global weak-identity cache, not the ruled session-owned shared cell | `crates/rs_cam_core/src/session/compute.rs:225` — `spatial_index: Option<Arc<crate::geom_cache::LazyIndex>>,`; `crates/rs_cam_core/src/geom_cache.rs:345` — `pub fn lazy_auto_index(mesh: &Arc<TriangleMesh>) -> Arc<LazyIndex> {`; `crates/rs_cam_core/src/geom_cache.rs:170` — `static TABLE: OnceLock<Mutex<Vec<Entry>>> = OnceLock::new();`; `crates/rs_cam_core/src/session/compute.rs:2884` — `let tier_index = spatial_index.as_ref().map(&#124;lazy&#124; Arc::clone(lazy.force()));` |
+| §22.3 | Fresh per-submit flag stored on core handle | DEVIATION: fresh flag exists, but VizExtras/JobRequest owns it; core start and execute receive a borrowed flag | `crates/rs_cam_viz/src/compute/worker.rs:90` — `pub cancel: Arc<AtomicBool>,`; `crates/rs_cam_viz/src/controller/events/compute.rs:309` — `let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));`; `crates/rs_cam_core/src/session/compute.rs:388` — `pub struct GenerateToolpathHandle {` |
+| §22.4 | Narrow session executor; private loose implementation | PASS as corrected by §23 | `crates/rs_cam_core/src/session/compute.rs:1035` — `pub fn execute_generation(`; `crates/rs_cam_core/src/compute/execute.rs:3406` — `pub(crate) fn execute_operation_annotated(` |
+| §22.5 | Worker uses core assembly; core wins differences | PASS: shared execution route | `crates/rs_cam_viz/src/compute/worker/execute/mod.rs:343` — `let outcome = rs_cam_core::session::execute_job(&req.handle, &observer, cancel);` |
+| §22.6 | Preconditions/refusals occur at start | PASS | `crates/rs_cam_core/src/session/compute.rs:3015` — `pub(crate) fn start_generate_toolpath(` |
+| §22.7 | Request carries handle and viz extras | PASS | `crates/rs_cam_viz/src/compute/worker.rs:63` — `pub struct ComputeRequest {` |
+| §22.8 | Behavioral N12 check and worker/executor source contract | PASS: sentry source; not executed | `crates/rs_cam_core/tests/gen_inputs_one_assembly_n12.rs:76` — `fn pocket_op() -> OperationConfig {` |
+| §22.9 | WP4 precedes WP11b | PASS: commit order | Checked `1c399a71` precedes `4b53576b` at the pin. Observer and lazy-index changes are in the WP11b package. |
+| §22 addendum | Adopt prior stocks and shared trace after GUI simulation | PASS: one common GUI drain serves both branches | `crates/rs_cam_core/src/session/command.rs:2276` — `Command::AdoptSimulation(args) => {`; `crates/rs_cam_viz/src/controller/events/compute.rs:801` — `let adopt = Command::AdoptSimulation(args);` |
+| §23.1 | Loose generation entries are crate-private | PASS | `crates/rs_cam_core/src/compute/execute.rs:3406` — `pub(crate) fn execute_operation_annotated(`; `crates/rs_cam_core/src/compute/execute.rs:3498` — `pub(crate) fn execute_operation_annotated_with_regions(` |
+| §23.2 | Move raw-output tests in-crate; no external loose callers | PASS: sentry source; not executed | `crates/rs_cam_core/tests/loose_executor_is_crate_private_wp12.rs:89` — `fn is_comment(line: &str) -> bool {` |
+| §23.3 | Advisor loose call remains explicitly ledgered | PRESENT: named residual; Job label alone did not retire it | `crates/rs_cam_core/src/session/compute.rs:1874` — `let result = crate::compute::execute::execute_operation_annotated(` |
+| §23.4 | Use corrected producer/type/allowance/mirror criteria | PASS: sentry source; not executed | `crates/rs_cam_core/tests/loose_executor_is_crate_private_wp12.rs:89` — `fn is_comment(line: &str) -> bool {` |
+| §23.5 | Source-scan declaration privacy and external references | PASS: sentry source; not executed | `crates/rs_cam_core/tests/loose_executor_is_crate_private_wp12.rs:89` — `fn is_comment(line: &str) -> bool {` |
+| §23.6 | Normal suites/lint replace the per-package heavy precondition | NOT MEASURED: no execution in this review | `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md:1521` records the operator waiver; historical results are not new test runs. |
+| §23 addendum | Five allows; no public generation entry; wide wrapper is test-only | PASS: separate generation from dressup entry | `crates/rs_cam_core/src/compute/execute.rs:3358` — `pub(crate) fn execute_operation(`; `crates/rs_cam_core/src/compute/execute.rs:3980` — `pub fn apply_dressups(` |
+| §24.1 | Recommendation and preview are no-adopt Jobs | PASS as amended by §26 wire policy | `crates/rs_cam_core/src/session/command.rs:804` — `(Job, RecommendClearingStrategy, "recommend_clearing_strategy",`; `crates/rs_cam_core/src/session/command.rs:816` — `(Job, PreviewTierMap, "preview_tier_map", PreviewTierMapArgs,` |
+| §24.2 | Optimize cloned-session Job and clone-cost measurement | EXCLUDED: WP14b | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §24.2; no later worktree implementation is assessed. |
+| §24.3 | WP14a then WP14b after setter work | EXCLUDED: WP14b close-out order | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §24.3; no later worktree implementation is assessed. |
+| §25.1 | Rows and production-setter bypass scan | PASS: sentry source; not executed | `crates/rs_cam_viz/tests/production_writes_go_through_apply_wp15a.rs:128` — `fn viz_root() -> PathBuf {` |
+| §25.2 | Narrow typed setters after builder/test migration | EXCLUDED: WP15b | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §25.2; no later worktree implementation is assessed. |
+| §25.3 | Post shadows use SetPostConfig; WP17 owns semantics | PASS | `crates/rs_cam_core/src/session/command.rs:389` — `(Command, SetPostConfig, "set_spindle_strategy", SetPostConfigArgs, Effects,`; `crates/rs_cam_core/src/session/mutation.rs:1717` — `pub fn set_post_config(&mut self, post: ProjectPostConfig) -> Effects {` |
+| §25.4 | Compute doors belong to later Job work | PRESENT: explicitly ledgered scope | `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md:1619-1622`; generation/simulation convenience methods remain, not a claim that all actions are Commands. |
+| §25.5 | WP16 → WP20 → WP14a → WP15a | PASS: commit order | Checked `183900e2` precedes `9b3f75de` at the pin. Also checked `9b3f75de → 6e9a1326 → ad06c690`. |
+| §26.1 | No new timeout wire field; pending oneshot waits | PASS: unchanged parameter types; poll API remains deferred | `crates/rs_cam_mcp/src/server.rs:83` — `pub struct IndexParam {`; `crates/rs_cam_mcp/src/server.rs:862` — `pub struct PreviewTierMapParam {` |
+| §26.2 | Boxed JobAnswer and handle convention | PASS | `crates/rs_cam_core/src/session/command.rs:2063` — `pub enum JobAnswer {`; `crates/rs_cam_core/src/session/command.rs:2217` — `pub enum JobHandle {` |
+| §26.3 | FIFO Job lane; generation status/cancel remains Toolpath-only | PASS for FIFO; stated status/cancel residual remains | `crates/rs_cam_viz/src/compute/worker.rs:605` — `let job_lane = LaneQueue::new(ComputeLane::Job);`; `crates/rs_cam_viz/src/compute/worker.rs:753` — `fn submit_job(&mut self, request: JobRequest) {` |
+| §26.4 | Move the planner off its borrowed-session Optimize lane | EXCLUDED: WP14b | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §26.4; no later worktree implementation is assessed. |
+| §26.5 | Tool resolution precedes mesh check in preview | PASS: capture body | `crates/rs_cam_core/src/session/multitool.rs:588` — `pub(crate) fn capture_preview_tier_map(` |
+| §27.1 | Close-out order WP19 → WP22 → WP14b → WP15b | EXCLUDED: named in-flight packages | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §27.1; no later worktree implementation is assessed. |
+| §27.2 | One capped closing core dev loop after open packages | NOT MEASURED | `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md:1669-1672`; the verifier lane owns execution. This review ran no Cargo command. |
+| §27.3 | Feedopt geometric plunge cap | EXCLUDED: WP22 | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §27.3; no later worktree implementation is assessed. |
+| §27.4 | Verify in debug while release GUI runs | NOT MEASURED for the other verifier | `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md:1678-1680`; this review did not build or touch `target/release`. |
+| §28.1 | Toolpath edits clear the view simulation | EXCLUDED: WP19 | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §28.1; no later worktree implementation is assessed. |
+| §28.2 | Unify stale stamping and catalog defaults | EXCLUDED: WP19 | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §28.2; no later worktree implementation is assessed. |
+| §28.3 | Discharge simulation invalidation once per frame | EXCLUDED: WP19 | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §28.3; no later worktree implementation is assessed. |
+| §28.4 | Mutable optimize handle | EXCLUDED: WP14b | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §28.4; no later worktree implementation is assessed. |
+| §28.5 | Session trace captured at submit; refuse after edit | EXCLUDED: WP14b | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §28.5; no later worktree implementation is assessed. |
+| §28.6 | Project optimization clones; remove session replacement | EXCLUDED: WP14b | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §28.6; no later worktree implementation is assessed. |
+| §28.7 | Planner submits existing preview Job and flips GUI reach | EXCLUDED: WP14b | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §28.7; no later worktree implementation is assessed. |
+| §28.8 | Keep optimizing placeholder until a separate UI ruling | EXCLUDED: WP14b | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §28.8; no later worktree implementation is assessed. |
 
 ## D. Full registry construction map
 
@@ -924,6 +1004,7 @@ The following inline map is the full 141-row construction census at the pin. Cou
 ### MAJOR
 
 - **M1 — §21.6 says every UiCommand has GUI Reached, but seven legitimate MCP-only rows do not.** `crates/rs_cam_viz/src/ui_command.rs:498,506,515,526,535,543,551`. **Fix:** obtain an explicit ruling that narrows the assertion, then amend the adopted text and sentry contract rather than mark real MCP rows falsely Reached.
+- **M2 — §22 ownership and off-loop rules differ from the implementation.** `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md:1459-1465` demands a session-owned model/revision memo, no index build in `start`, and a flag on the handle. `crates/rs_cam_core/src/session/compute.rs:2884,3152` force `LazyIndex` inside the resolver/start path for `PlannedTierRegions`; `crates/rs_cam_core/src/geom_cache.rs:318-348` wraps a process-global weak-identity cache (`static TABLE:170`) and creates a fresh `LazyIndex` for each handle; `crates/rs_cam_viz/src/compute/worker.rs:90,435` puts the flag in `VizExtras`/`JobRequest`, while `crates/rs_cam_core/src/session/compute.rs:388-406` has no flag on `GenerateToolpathHandle`. The normal executor forces work off-loop, but the universal rule that `start` never builds is false. This is a documented implementation departure, not proof of wrong geometry or a cancellation bug; observer-field placement differences are explicit in §C, not a separate bug, and this is outside excluded WP14b/WP19 work. No runtime benchmark is claimed. **Fix:** Record an explicit amendment for these ownership and frame-loop exceptions, or change the implementation to meet §22 and add sentries for the chosen contract.
 
 ### MINOR
 
