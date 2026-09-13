@@ -73,11 +73,11 @@ fn draw_content(
         .resizable(true)
         .default_size(340.0)
         .min_size(280.0)
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             draw_catalog_panel(ui, modal, &mut view, events);
         });
 
-    egui::CentralPanel::default().show_inside(ui, |ui| {
+    egui::CentralPanel::default().show(ui, |ui| {
         draw_detail_panel(ui, modal, &mut view, events);
     });
 

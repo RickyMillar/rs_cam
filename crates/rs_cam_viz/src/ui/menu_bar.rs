@@ -32,7 +32,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         }
     });
 
-    egui::Panel::top("menu_bar").show_inside(ui, |ui| {
+    egui::Panel::top("menu_bar").show(ui, |ui| {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("Import STL...").clicked() {

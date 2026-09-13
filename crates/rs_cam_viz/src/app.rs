@@ -310,7 +310,7 @@ impl RsCamApp {
             .default_size(240.0)
             .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_ref_and_events_mut();
                     crate::ui::setup_panel::draw(ui, state, events);
@@ -322,7 +322,7 @@ impl RsCamApp {
             .default_size(280.0)
             .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::properties::draw(ui, state, events);
@@ -336,7 +336,7 @@ impl RsCamApp {
             .checks
             .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
-        egui::Panel::bottom("status_bar").show_inside(ui, |ui| {
+        egui::Panel::bottom("status_bar").show(ui, |ui| {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
@@ -350,7 +350,7 @@ impl RsCamApp {
                     .fill(egui::Color32::from_rgb(26, 26, 38))
                     .inner_margin(0.0),
             )
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 self.draw_viewport(ui);
             });
     }
@@ -366,7 +366,7 @@ impl RsCamApp {
             .checks
             .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
-        egui::Panel::bottom("status_bar").show_inside(ui, |ui| {
+        egui::Panel::bottom("status_bar").show(ui, |ui| {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
@@ -380,7 +380,7 @@ impl RsCamApp {
                     .fill(egui::Color32::from_rgb(26, 26, 38))
                     .inner_margin(16.0),
             )
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.set_max_width(560.0);
                     let (state, events) = self.controller.state_ref_and_events_mut();
@@ -395,7 +395,7 @@ impl RsCamApp {
             .default_size(240.0)
             .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::toolpath_panel::draw(ui, state, events);
@@ -407,7 +407,7 @@ impl RsCamApp {
             .default_size(280.0)
             .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::properties::draw(ui, state, events);
@@ -421,7 +421,7 @@ impl RsCamApp {
             .checks
             .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
-        egui::Panel::bottom("status_bar").show_inside(ui, |ui| {
+        egui::Panel::bottom("status_bar").show(ui, |ui| {
             crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
@@ -435,7 +435,7 @@ impl RsCamApp {
                     .fill(egui::Color32::from_rgb(26, 26, 38))
                     .inner_margin(0.0),
             )
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 self.draw_viewport(ui);
             });
     }
@@ -456,7 +456,7 @@ impl RsCamApp {
             .max_size(480.0)
             .resizable(true)
             .default_size(360.0)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 let (state, events) = self.controller.state_and_events_mut();
                 crate::ui::sim_timeline::draw(
                     ui,
@@ -472,7 +472,7 @@ impl RsCamApp {
             .default_size(240.0)
             .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::sim_op_list::draw(
@@ -491,7 +491,7 @@ impl RsCamApp {
             .default_size(240.0)
             .max_size(SIDE_PANEL_MAX_WIDTH)
             .resizable(true)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
                     crate::ui::sim_diagnostics::draw(
@@ -511,7 +511,7 @@ impl RsCamApp {
                     .fill(egui::Color32::from_rgb(26, 26, 38))
                     .inner_margin(0.0),
             )
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 self.draw_viewport(ui);
             });
 
@@ -651,7 +651,7 @@ impl RsCamApp {
 impl eframe::App for RsCamApp {
     // eframe 0.34 made `ui` the required entry point (the old `update(ctx)`
     // is deprecated). We draw everything via panels nested in this root
-    // `ui` with `show_inside`, so the whole frame lives in `draw_frame`.
+    // `ui` with `show`, so the whole frame lives in `draw_frame`.
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.draw_frame(&ctx, ui, frame);
@@ -783,7 +783,7 @@ impl RsCamApp {
                     .fill(egui::Color32::from_rgb(34, 34, 42))
                     .inner_margin(egui::Margin::symmetric(8, 2)),
             )
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 let (state, events) = self.controller.state_ref_and_events_mut();
                 crate::ui::workspace_bar::draw(ui, state, events);
             });

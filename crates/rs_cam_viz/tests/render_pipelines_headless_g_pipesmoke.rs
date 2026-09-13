@@ -110,6 +110,12 @@ fn request_any_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, Strin
             power_preference: wgpu::PowerPreference::default(),
             force_fallback_adapter,
             compatible_surface: None,
+            // wgpu 30 added limit bucketing. It exists to stop untrusted
+            // content fingerprinting the adapter, and this is a desktop
+            // binary, so `false` is correct and it is also wgpu's own
+            // default. The smoke test asks for the real adapter limits,
+            // exactly as it did on wgpu 29.
+            apply_limit_buckets: false,
         };
         match block_on(instance.request_adapter(&options)) {
             Ok(adapter) => return Ok(adapter),

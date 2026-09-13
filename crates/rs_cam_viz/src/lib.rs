@@ -50,7 +50,17 @@ pub fn run(mcp_mode: bool) -> eframe::Result {
             // AutoVsync. See `present_mode` for the ruling, the measurement it
             // rests on, and the negotiated-vs-requested distinction that makes
             // this observable rather than assumed.
-            present_mode: present_mode::decide_and_record(mcp_mode),
+            //
+            // UP0 (egui 0.36): `present_mode` moved off `WgpuConfiguration`
+            // into the runtime-mutable `SurfaceConfig`. The frame latency does
+            // not move with it: 0.34 defaulted to `None`, which its own doc
+            // reads as "let wgpu pick a default (currently 2)", and
+            // `HIGH_THROUGHPUT` states that 2 outright. The surface behaves as
+            // it did.
+            surface: egui_wgpu::SurfaceConfig {
+                present_mode: present_mode::decide_and_record(mcp_mode),
+                ..egui_wgpu::SurfaceConfig::HIGH_THROUGHPUT
+            },
             ..Default::default()
         },
         ..Default::default()

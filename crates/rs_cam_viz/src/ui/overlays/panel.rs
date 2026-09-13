@@ -58,7 +58,7 @@ pub fn draw_docked(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<App
                 .fill(theme::CARD_FILL)
                 .inner_margin(egui::Margin::same(6)),
         )
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| body(ui, state, events));
         });
     true

@@ -302,7 +302,7 @@ impl RenderResources {
             vertex: wgpu::VertexState {
                 module: &mesh_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[MeshVertex::layout()],
+                buffers: &[Some(MeshVertex::layout())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -398,7 +398,7 @@ impl RenderResources {
             vertex: wgpu::VertexState {
                 module: &sim_mesh_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[ColoredMeshVertex::layout()],
+                buffers: &[Some(ColoredMeshVertex::layout())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -433,7 +433,7 @@ impl RenderResources {
                 vertex: wgpu::VertexState {
                     module: &sim_mesh_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[ColoredMeshVertex::layout()],
+                    buffers: &[Some(ColoredMeshVertex::layout())],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -468,7 +468,7 @@ impl RenderResources {
                 vertex: wgpu::VertexState {
                     module: &sim_mesh_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[ColoredMeshVertex::layout()],
+                    buffers: &[Some(ColoredMeshVertex::layout())],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -579,7 +579,7 @@ impl RenderResources {
             vertex: wgpu::VertexState {
                 module: &line_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[line_vertex_layout],
+                buffers: &[Some(line_vertex_layout)],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {

@@ -241,7 +241,7 @@ fn draw_toolpath_view(
         .resizable(true)
         .default_size(380.0)
         .min_size(320.0)
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 draw_comparison_card(ui, &current, explain, refusal, toolpath_id, events);
                 ui.add_space(8.0);
@@ -256,7 +256,7 @@ fn draw_toolpath_view(
             });
         });
 
-    egui::CentralPanel::default().show_inside(ui, |ui| {
+    egui::CentralPanel::default().show(ui, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
             draw_chart_c(ui, &current, explain, refusal, toolpath_id, modal, events);
             ui.add_space(12.0);

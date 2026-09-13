@@ -400,21 +400,25 @@ fn render_snapshot(
 ) -> crate::ui::automation::UiAutomationSnapshot {
     let ctx = Context::default();
     ctx.set_fonts(FontDefinitions::empty());
-    let _ = ctx.run_ui(Default::default(), |ui| {
+    // epaint 0.36 asserts in `Drop for TexturesDelta` that the deltas were
+    // either applied or cleared on purpose. eframe applies them in the real
+    // app; this harness has no GPU and never uploads a texture, so it clears
+    // them, which is what the assert's own message prescribes.
+    let mut output = ctx.run_ui(Default::default(), |ui| {
         crate::ui::automation::begin_frame(ui.ctx());
 
-        Panel::right("properties").show_inside(ui, |ui| {
+        Panel::right("properties").show(ui, |ui| {
             let events = &mut controller.events;
             crate::ui::properties::draw(ui, &mut controller.state, events);
         });
 
-        Panel::bottom("status_bar").show_inside(ui, |ui| {
+        Panel::bottom("status_bar").show(ui, |ui| {
             let lanes = controller.lane_snapshots();
             let collision_count = controller.collision_positions.len();
             crate::ui::status_bar::draw(ui, &controller.state, collision_count, &lanes);
         });
 
-        CentralPanel::default().show_inside(ui, |ui| {
+        CentralPanel::default().show(ui, |ui| {
             let lanes = controller.lane_snapshots();
             let events = &mut controller.events;
             crate::ui::viewport_overlay::draw(
@@ -442,6 +446,7 @@ fn render_snapshot(
                 });
         }
     });
+    output.textures_delta.clear();
     crate::ui::automation::snapshot(&ctx)
 }
 
