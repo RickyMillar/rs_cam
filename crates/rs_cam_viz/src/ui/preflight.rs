@@ -267,13 +267,17 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 if has_failures {
                     let confirm_id = egui::Id::new("preflight_export_confirm");
                     let confirmed = ui.data(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
-                    let btn = egui::Button::new(egui::RichText::new("Export Anyway").strong())
-                        .fill(if confirmed {
-                            egui::Color32::from_rgb(180, 50, 40)
-                        } else {
-                            egui::Color32::from_rgb(80, 40, 40)
-                        });
-                    if ui.add_enabled(confirmed && !export_blocked, btn).clicked() {
+                    // Exporting past a failed check is the most destructive
+                    // thing this product does, so it takes the Danger
+                    // variant. It carried two hand-mixed reds,
+                    // (180, 50, 40) and (80, 40, 40), which were the fourth
+                    // and fifth reds in a product whose palette has one.
+                    // The armed and unarmed states now differ by ENABLEMENT,
+                    // which is the channel that already gates the click,
+                    // rather than by a private shade.
+                    let btn = crate::ui::components::Button::danger("Export Anyway")
+                        .enabled(confirmed && !export_blocked);
+                    if ui.add(btn).clicked() {
                         events.push(AppEvent::ExportGcodeConfirmed);
                         still_open = false;
                     }

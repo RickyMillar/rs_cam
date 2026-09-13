@@ -3982,16 +3982,19 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabB
         ui.spacing_mut().item_spacing.x = 0.0;
         for &tab in ToolpathTab::ALL {
             let is_active = *active == tab;
+            // The inspector tab strip takes the same treatment as the
+            // workspace tabs: an active tab is a SELECTED thing, so it takes
+            // ACCENT_QUIET. It used to carry from_rgb(55, 60, 80), a private
+            // blue-violet one step off the workspace bar's own private
+            // violet — two tab strips, two invented palettes, neither
+            // matching the product.
             let (bg, text_color) = if is_active {
                 (
-                    egui::Color32::from_rgb(55, 60, 80),
-                    egui::Color32::from_rgb(220, 225, 240),
+                    crate::ui::tokens::ACCENT_QUIET,
+                    crate::ui::tokens::TEXT_STRONG,
                 )
             } else {
-                (
-                    egui::Color32::TRANSPARENT,
-                    egui::Color32::from_rgb(140, 140, 155),
-                )
+                (egui::Color32::TRANSPARENT, crate::ui::tokens::TEXT_MUTED)
             };
             let label = if let Some(badge_color) = badges.for_tab(tab) {
                 // Prepend a colored dot
@@ -4023,13 +4026,17 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabB
             };
             let button = egui::Button::new(label)
                 .fill(bg)
+                // §2.2: the radius is on the two TOP corners, because a tab
+                // joins the panel below it.
                 .corner_radius(egui::CornerRadius {
-                    nw: 4,
-                    ne: 4,
+                    nw: crate::ui::tokens::RADIUS_SM,
+                    ne: crate::ui::tokens::RADIUS_SM,
                     sw: 0,
                     se: 0,
                 })
-                .min_size(egui::vec2(55.0, 24.0));
+                // Was 24, below the 26-point control floor. That is why the
+                // "Dressup" tab wrapped to "Dressu / p".
+                .min_size(egui::vec2(55.0, crate::ui::tokens::ROW_ACTION));
             let response = ui.add(button);
             if response.clicked() && !is_active {
                 *active = tab;
@@ -4038,10 +4045,10 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabB
                 let rect = response.rect;
                 ui.painter().line_segment(
                     [
-                        egui::pos2(rect.min.x + 2.0, rect.max.y),
-                        egui::pos2(rect.max.x - 2.0, rect.max.y),
+                        egui::pos2(rect.min.x, rect.max.y),
+                        egui::pos2(rect.max.x, rect.max.y),
                     ],
-                    egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(100, 160, 220)),
+                    egui::Stroke::new(2.0_f32, crate::ui::tokens::ACCENT),
                 );
             }
             ui.add_space(2.0);
