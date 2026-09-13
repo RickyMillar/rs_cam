@@ -8,7 +8,7 @@ DECIDED and what is still OPEN.
 
 ## Where things stand — 2026-09-13
 
-**UP0 and UP1 are DONE.** UP2, the component set, is next.
+**UP0, UP1 and UP2 are DONE.** UP3, the chrome, is next.
 
 | Artefact | State |
 |---|---|
@@ -212,3 +212,88 @@ Acceptance screenshots for UP0 and UP1 together. UP1 changes the ground,
 the type and the radii on every surface, and **nothing has been looked at
 yet.** This is the largest visual change in the programme and it is
 unverified by eye.
+
+---
+
+## UP2 — DONE, 2026-09-13, commits `1234ce8a` (red) and `a33fcabf` (green)
+
+Twelve patterns, each existing once, in `ui/components/`. Fifteen sentry
+arms. 731 tests pass; fmt and the workspace clippy gate are green.
+
+**No production panel calls a new component.** UP2 builds the kit; UP3
+onward installs it. Two existing helpers were rerouted so their call sites
+gain the treatment unedited: `UiExt::named_section` calls `SectionHeader`,
+and `theme::card_frame` calls `Card` and keeps its signature.
+
+### The 19 rulings
+
+Reading §4 against §2 and §3 found **six contradictions and thirteen
+underspecified points**. All are ruled in `DESIGN_SPEC.md` §4.13, committed
+at `5b510913`. The ones that changed a shipped value:
+
+- **R1** the overflow row reads `Showing 4 of 293 · Show all` everywhere.
+  §4.10's `+3 more · View` is retired.
+- **R2** a chip's stroke is `BORDER`, not the role text at 40 % alpha.
+- **R6** `BodyStrong` is defined: 13 points, Inter Medium.
+- **R8** `Button::Primary` contrast is computed and published: `INK_05` on
+  `ACCENT` is **6.22**, on `ACCENT_PRESSED` **4.59**. The obvious
+  alternative was tested and rejected — `INK_95` on `ACCENT` reads **2.32**.
+- **R10** `NoticeStack` orders five roles; `OK` was missing and sorts last.
+
+### A defect UP1 introduced, found and fixed here
+
+**R19.** Under the new palette the seven freshness states collapse onto
+three colours: `GEN`, `STALE` and `WAIT` are all `CAUTION`; `PEND` and `OFF`
+are both `INK_50`. Colour alone therefore separated **two** of the seven,
+not seven. §2.6 rule 3 already required a glyph beside every verdict, and
+nothing consumed the four glyphs the tokens shipped. `StatusChip` now does.
+The pure function that maps a `FreshnessState` to its word is untouched, and
+so are the words.
+
+### The focus ring took the global route, and the risk is measured
+
+egui draws **no** focus ring and renders a focused widget in its `active`
+visuals, so a keyboard user cannot tell focus from pressed. One
+`egui::Plugin` registration covers every widget, including the ones UP2 does
+not wrap.
+
+The plan recorded the clipping risk as NOT MEASURED: `StrokeKind::Outside`
+paints beyond the widget rect and clips wherever a parent `Ui` has no
+margin. **Measured and avoided.** The ring draws `Inside` a rect expanded by
+one point — visually identical, and it cannot be clipped by a parent that
+leaves even a single point of margin. No component needed a private ring.
+
+### A PLAN.md correction
+
+UP2's entry claims `SectionHeader` gives "105-plus existing call sites" the
+treatment for free. **Measured: `named_section` has 10 call sites.** The
+other **41** headers are hand-rolled `.small().strong()` and gain nothing
+automatically; §3.3 already schedules them as hand work.
+
+### Four egui API assumptions were wrong
+
+The compiler corrected each, and they are worth knowing for UP3:
+`emath` is reached as `egui::emath`; `Context::screen_rect` is now
+`viewport_rect`; `egui::Plugin` is a **trait**, not a struct taking a
+closure; and `Context::pass_state` is crate-private, so a focused widget's
+rect comes from the public `read_response`.
+
+### A hazard UP3 inherits
+
+`tests/freshness_surfaces_g_freshrender.rs:75` asserts the **source text** of
+`toolpath_panel.rs` contains the literal line
+`let (status_text, status_color, hover) = status_chip(freshness);`.
+UP2 stayed green because it touches no production panel. **UP3 installs the
+chip and will break that sentry** — a source-text pin, not a behaviour pin.
+Plan for it rather than discovering it.
+
+## Acceptance screenshots — BLOCKED, needs the operator
+
+The MCP server IS `target/release/rs_cam_gui`, spawned by Claude Code at
+session start. The running process holds a **deleted inode**: it is the
+binary from before UP0. Any screenshot it takes shows the pre-UP0 interface,
+which is worse than no screenshot.
+
+The binary on disk is current and correct. **The MCP connection needs a
+restart** (`/mcp` in Claude Code) before `shot_03`, `shot_12` and `shot_17`
+can be re-captured. Nothing in UP0 to UP2 has been looked at by eye.
