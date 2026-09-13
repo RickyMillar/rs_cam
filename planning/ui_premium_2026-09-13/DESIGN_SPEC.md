@@ -699,6 +699,121 @@ deliberate row of blanks, not as missing text.
 
 ---
 
+### 4.13 Rulings on the gaps and contradictions §4 left open
+
+UP2 read §4 against §2 and §3 and found **six contradictions and thirteen
+underspecified points**. The operator delegated these on 2026-09-13 ("you
+decide on all the things that need my call"). Each is ruled below with its
+reason, so a later reader can overturn a ruling rather than re-derive it.
+
+#### The six contradictions
+
+**R1. The overflow row reads `Showing 4 of 293 · Show all`, everywhere.**
+§4.10 said `+3 more · View` and §4.11 forbids exactly that form. §4.11 wins,
+including for toasts. A remainder hides the true total, and hiding the true
+total is the defect §4.11 was written to stop. §4.10's wording is retired.
+
+**R2. A chip's stroke is `BORDER`.** §4.3 asked for the role's text colour at
+40 % alpha; §2.4 assigns `INK_35` the use "chip strokes" and §2.7 names it
+`BORDER`. The token wins. A per-role alpha blend is a computed value that the
+literal sentry cannot see and that differs at every call site — the exact
+pattern §2.7 exists to end. The chip already carries its role three times
+over, in fill, text and glyph.
+
+**R3. `CountPill::Actionable` does NOT take the accent on hover.** §2.5 rules
+that the accent carries selection, focus and the primary button fill "and
+nothing else", and a fourth carrier would dilute it. An actionable pill lifts
+its fill one step (R9) and shows a pointer cursor. That is enough.
+
+**R4. The disclosure chevron is PAINTED, not set as type.** §3.2 floors text
+at 11 points and §4.1 wanted a 10-point chevron. A triangle drawn with
+`Painter` is a shape and the floor does not apply to it. This also drops a
+glyph-coverage dependency.
+
+**R5. The hairline token is `HAIRLINE`, never `INK_25`.** Same hex, but a
+component names the semantic token, not the ramp position. §4.1 and §4.7 are
+amended.
+
+**R6. `BodyStrong` is defined: 13 points, Inter Medium.** §4.8 and §4.9 both
+require it and §3.2 never defined it. It is the emphasis rung INSIDE body
+text. Medium rather than SemiBold, because SemiBold at 13 would compete with
+`Heading` at 15 SemiBold and flatten the hierarchy. It is a helper, not an
+egui slot, so the scale is still five built-in slots plus four helpers.
+
+#### The thirteen underspecified points
+
+**R7. A value well has a minimum width of 58 points.** §4.6 requires one and
+gives no number. 58 is the value the drawn specimen used, and the operator
+approved that specimen's density on 2026-09-13.
+
+**R8. `Button::Primary` text is `INK_05`, and the ratios are now published.**
+`INK_05` on `ACCENT` is **6.22**; on `ACCENT_PRESSED` it is **4.59**. Both
+clear the 4.5 floor. The alternative was tested and rejected: `INK_95` on
+`ACCENT` reads **2.32**, so a white-on-blue primary button would have failed
+§9 outright.
+
+**R9. "One ramp step" means the next SURFACE token, not the next ink.** The
+ramp is unevenly spaced, so a lightness delta and a token step differ. The
+lift is defined over the surface ladder only:
+`SUNKEN → BASE → RAISED → OVERLAY → OVERLAY` (it clamps), and a transparent
+fill lifts to `SURFACE_RAISED`. Any other fill does not lift; a tinted chip
+signals hover with its stroke instead.
+
+**R10. `NoticeStack` orders five roles, and `OK` sorts last.**
+`DANGER`, `CAUTION`, `UNKNOWN`, `INFO`, `OK`. §4.11 listed four and omitted
+`OK`. An `OK` notice may enter a stack — "this one passed" is a legitimate
+notice — and it needs the least attention, so it sorts behind everything.
+
+**R11. Toast-out easing is `cubic_in`.** §5 names `cubic_out` for ease-out and
+says only "ease-in" for the toast leaving. `cubic_in` is the symmetric
+partner.
+
+**R12. `NoticeStack` expands INLINE and lifts its cap when expanded.**
+`Show all` renders every item in place, still ordered and still deduplicated.
+Expanding a `×N` group behaves the same way. No separate surface, and no new
+control: UP2 to UP8 add none, and a new surface would need a registry row.
+
+**R13. `NoticeStack` row geometry.** A row is at least `ROW_DENSE` and grows
+when its text wraps. Padding is `SPACE_2` vertical and `SPACE_3` horizontal.
+The severity glyph leads, then the text at `Body`. The row's ground is the
+severity's `TINT_*`. A group header is `Subhead` in `TEXT_MUTED`. The
+overflow row is `Caption` in `TEXT_MUTED` on no fill.
+
+**R14. A card that is both selected and hovered keeps `ACCENT_QUIET` and
+gains a 1-point `ACCENT` stroke.** Selection owns the fill, because selection
+is state and hover is transient. The stroke is the hover channel, and it is
+the accent because the card is already selected, so no fourth carrier is
+introduced.
+
+**R15. `CountPill`'s two families are separated by ground, not by hue.** A
+`Verdict` pill takes the role's `TINT_*` ground, the role's text and the
+role's glyph. An `Observation` pill takes `SURFACE_RAISED`, `TEXT_MUTED` and
+no glyph. An observation therefore cannot borrow a verdict colour, which is
+§2.6 principle 1 applied to the pill.
+
+**R16. `CountPill` moves onto the grid.** It currently synthesises its fill
+with `linear_multiply(0.10)` and its stroke with `linear_multiply(0.55)`, and
+uses `corner_radius(6)` and `Margin::symmetric(5, 1)` — none of which is a
+token. It takes `TINT_*`, `BORDER`, `RADIUS_SM` and `SPACE_1` / `SPACE_2`.
+
+**R17. `DataTable`'s header rule is `HAIRLINE`.** Follows R5.
+
+**R18. A row-shaped component states whether it calls `end_row`.** Three
+existing components (`ValueRow`, `PrecedenceField`, `CompareRow`) call
+`ui.end_row()` themselves and therefore only work inside a `Grid`.
+`KeyValueRow` does NOT call it, so it works in a plain vertical layout, and
+`DataTable` owns row termination for its own rows. The rule: a component
+named `*Row` that is a grid cell calls `end_row`; one that is a standalone
+line does not, and its doc comment says which it is.
+
+**R19. `StatusChip` adds the glyph channel.** `status_chip`'s seven states
+collapsed onto three colours under UP1's palette — `GEN`, `STALE` and `WAIT`
+are all `CAUTION`, and `PEND` and `OFF` are both `INK_50` — so colour alone
+no longer separates five of the seven. §2.6 rule 3 already requires a glyph
+beside every verdict, and the chip is where it lands. `PEND` additionally
+moves to `UNKNOWN`, which the plan already called for. The WORDS do not
+change, and neither does the pure function that produces them.
+
 ## 5. Motion
 
 `ctx.animate_bool_with_time_and_easing` and `ctx.animate_value_with_time`
