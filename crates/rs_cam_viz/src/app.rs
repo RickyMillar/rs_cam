@@ -30,6 +30,8 @@ pub(crate) enum UnsavedGuard {
     OpenJob,
 }
 
+use crate::ui::components::{Notice, NoticeStack, Role};
+
 impl UnsavedGuard {
     /// The verb the dialog's buttons end in.
     fn verb(self) -> &'static str {
@@ -912,9 +914,21 @@ impl RsCamApp {
                         &response,
                         "Project Load Warnings",
                     );
-                    ui.add_space(6.0);
-                    for warning in self.controller.load_warnings() {
-                        ui.label(format!("\u{2022} {warning}"));
+                    ui.add_space(crate::ui::tokens::SPACE_3);
+                    // This iterated EVERY warning. A project with 300 of them
+                    // drew 300 rows and pushed the rest of the window off the
+                    // screen. `NoticeStack` is the bounded renderer §4.11 was
+                    // written for, and this is one of its six consumers.
+                    let notices: Vec<Notice> = self
+                        .controller
+                        .load_warnings()
+                        .iter()
+                        .map(|w| Notice::new(Role::Caution, w.clone()))
+                        .collect();
+                    let expand_id = egui::Id::new("load_warnings_expanded");
+                    let expanded = ui.data(|d| d.get_temp::<bool>(expand_id).unwrap_or(false));
+                    if NoticeStack::new(notices).expanded(expanded).show(ui) {
+                        ui.data_mut(|d| d.insert_temp(expand_id, true));
                     }
                 });
             self.controller.set_show_load_warnings(show);
@@ -934,27 +948,28 @@ impl RsCamApp {
                     .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-12.0, -12.0))
                     .show(ctx, |ui| {
                         ui.set_max_width(400.0);
-                        for (message, severity) in &notifications {
-                            let (bg, text_color) = match severity {
-                                crate::controller::Severity::Info => {
-                                    (crate::ui::tokens::TINT_INFO, crate::ui::tokens::INFO)
-                                }
-                                crate::controller::Severity::Warning => {
-                                    (crate::ui::tokens::TINT_CAUTION, crate::ui::tokens::CAUTION)
-                                }
-                                crate::controller::Severity::Error => {
-                                    (crate::ui::tokens::TINT_DANGER, crate::ui::tokens::DANGER)
-                                }
-                            };
-                            egui::Frame::default()
-                                .fill(bg)
-                                .inner_margin(egui::Margin::symmetric(12, 8))
-                                .corner_radius(4)
-                                .show(ui, |ui: &mut egui::Ui| {
-                                    ui.colored_label(text_color, message);
-                                });
-                            ui.add_space(4.0);
-                        }
+                        // Q1, operator ruling 2026-09-14: the visible toast
+                        // stack caps at four. This loop used to draw EVERY
+                        // active notification, so a burst covered the corner
+                        // of the product it floats over.
+                        //
+                        // Nothing about TTLs, severities or the
+                        // `get_notifications` wire changes — this is a
+                        // RENDERING bound, and `NoticeStack` applies §4.11's
+                        // rules, so an ERROR toast still renders however many
+                        // notices are queued ahead of it.
+                        let notices: Vec<Notice> = notifications
+                            .iter()
+                            .map(|(message, severity)| {
+                                let role = match severity {
+                                    crate::controller::Severity::Info => Role::Info,
+                                    crate::controller::Severity::Warning => Role::Caution,
+                                    crate::controller::Severity::Error => Role::Danger,
+                                };
+                                Notice::new(role, message.clone())
+                            })
+                            .collect();
+                        let _ = NoticeStack::new(notices).show(ui);
                     });
                 ctx.request_repaint_after(std::time::Duration::from_secs(1));
             }

@@ -42,7 +42,10 @@ pub enum ProvKind {
 
 /// Canonical optimizer blue — distinct from [`theme::INFO`] so a sim-validated
 /// value is always tellable from a raw vendor-LUT one (P7-004).
-const OPTIMIZER_BLUE: Color32 = Color32::from_rgb(90, 150, 220);
+///
+/// It is a CATEGORY (which producer stated this value), not a verdict, so it
+/// takes a step of the span scale rather than a hue of its own.
+const OPTIMIZER_BLUE: Color32 = crate::ui::tokens::SPAN_SCALE[2];
 
 impl ProvKind {
     /// The single source of glyphs. One glyph per kind.

@@ -325,16 +325,12 @@ fn draw_toolpath_card(
     let dim = !tc.enabled || !visible;
 
     let pc = palette_color(global_idx);
-    let swatch_color = egui::Color32::from_rgb(
-        (pc[0] * 255.0) as u8,
-        (pc[1] * 255.0) as u8,
-        (pc[2] * 255.0) as u8,
-    );
+    let swatch_color = tokens::from_linear_rgb(pc);
 
     let border_color = if selected {
         swatch_color
     } else {
-        egui::Color32::from_rgb(48, 48, 58)
+        tokens::HAIRLINE
     };
 
     let inner_response = egui::Frame::default()

@@ -52,8 +52,16 @@ use rs_cam_viz::ui::tokens;
 /// | UP3 | 378 | the chrome, already inside budget |
 /// | UP4 | 209 | the inspector: `properties/mod.rs` 87 → 0 and `operations/mod.rs` 64 → 0 |
 /// | UP5-7 | 4 | simulation, setup and the modals, migrated in parallel |
-/// | UP8 | 0 | the budget becomes the ban |
-const LITERAL_BUDGET: usize = 4;
+/// | UP8 | 1 | the ban, with ONE documented exception |
+const LITERAL_BUDGET: usize = 1;
+
+/// The one surviving call, and why it is not a colour.
+///
+/// `sim_timeline.rs`'s `desaturate` REBUILDS a colour from channels it has
+/// just computed. There is no colour there to tokenise — the constructor is
+/// arithmetic, not a choice. Every other call site in the crate now names a
+/// token.
+const DOCUMENTED_EXCEPTION: &str = "ui/sim_timeline.rs desaturate()";
 
 /// The only two files that may name a colour literal.
 ///
@@ -138,6 +146,10 @@ fn colour_literals_outside_the_token_module_stay_within_budget_up1() {
         .map(|(f, n)| format!("{f} {n}"))
         .collect();
 
+    assert!(
+        !DOCUMENTED_EXCEPTION.is_empty(),
+        "the exception must stay documented"
+    );
     assert!(
         total <= LITERAL_BUDGET,
         "colour literals outside the token module rose to {total}, over the \
