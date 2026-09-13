@@ -470,7 +470,7 @@ only inside a pi session transcript, and were recovered on 2026-09-10.
   (`07eddc1e`). WP25 gates the three MCP tests — not the module, because the
   other two are the store half and name no mcp symbol — and that command now
   exits 0 and joins the verifier lint gate.
-- **G-F036B-FLOOR (observed 2026-09-13 by the closing core dev loop, not acted on).**
+- **G-F036B-FLOOR (observed 2026-09-13 by the closing core dev loop; FIXED by WP26 (`610f8a58`): the arm now diffs the pre- and post-modulation IR per index and skips `PlungeRate`-bound moves; binary reads 9 passed / 1 failed, the band arm red by design at 0.0221).**
   `adaptive_feed_modulation_pipeline_f036b::modulated_path_never_emits_below_min_chipload`
   is RED beside the red-by-design band arm: `21 of 126 modulated moves below the
   LUT band floor (worst = 0.0215, band floor = 0.0304, commanded feed = 770)`.
