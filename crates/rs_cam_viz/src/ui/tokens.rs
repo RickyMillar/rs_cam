@@ -670,3 +670,25 @@ pub const MOTION_FAST: f32 = 0.12;
 pub const MOTION_BASE: f32 = 0.18;
 /// A toast arriving, a modal scrim fading in.
 pub const MOTION_SLOW: f32 = 0.24;
+
+// ---- Component dimensions (ruling R20) ---------------------------------
+//
+// §4 gives these as bare numbers. They are named here for the same reason
+// every colour is: a number repeated at call sites drifts, and a reader
+// cannot tell a considered 34 from a typed one. §2.10's sentry counts only
+// COLOUR literals, so nothing forced this — it is consistency, not a gate.
+
+/// A chip's minimum width, so a COLUMN of chips aligns (§4.3).
+pub const CHIP_MIN_WIDTH: f32 = 34.0;
+
+/// The height of a value well INSIDE a `ROW_DENSE` row (§4.6).
+///
+/// 18 inside 22 leaves 2 points of air above and below, so a column of wells
+/// reads as a stack rather than as a list of boxes.
+pub const WELL_HEIGHT: f32 = 18.0;
+
+/// The widest an empty state may be (§4.8). Centred in the available space.
+pub const EMPTY_STATE_MAX_WIDTH: f32 = 280.0;
+
+/// The outline glyph above an empty state's headline (§4.8), in `INK_35`.
+pub const EMPTY_STATE_GLYPH_SIZE: f32 = 24.0;

@@ -25,7 +25,7 @@
 
 use egui::Color32;
 
-use crate::ui::theme;
+use crate::ui::{components::chip::Role, theme, tokens};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PillFamily {
@@ -52,6 +52,7 @@ pub struct CountPill<'a> {
     role: PillRole,
     hover: &'a str,
     hide_when_zero: bool,
+    semantic: Option<Role>,
 }
 
 impl<'a> CountPill<'a> {
@@ -75,7 +76,23 @@ impl<'a> CountPill<'a> {
             role: PillRole::ReadOnly,
             hover: "",
             hide_when_zero: false,
+            semantic: None,
         }
+    }
+
+    /// Bind the pill to a semantic role (ruling R15).
+    ///
+    /// With a role, the pill takes the role's `TINT_*` ground and text, and a
+    /// `Verdict` additionally takes the role's glyph — so a verdict carries
+    /// three channels and an `Observation` cannot borrow a verdict colour,
+    /// which is §2.6 principle 1 applied to the pill.
+    ///
+    /// Without one the pill keeps its legacy caller-supplied colour. UP3
+    /// migrates the call sites; UP2 must not touch a production panel.
+    #[must_use]
+    pub fn semantic(mut self, role: Role) -> Self {
+        self.semantic = Some(role);
+        self
     }
 
     /// Render the `/T` denominator (proof both counts share one universe).
@@ -121,23 +138,54 @@ impl egui::Widget for CountPill<'_> {
         } else {
             ""
         };
-        let text = format!("{} {count_text}{arrow}", self.label);
-        let rich = egui::RichText::new(text).small().color(self.color);
+        // Ruling R15: with a role, a Verdict leads with the role's glyph.
+        let glyph = match (self.semantic, self.family) {
+            (Some(role), PillFamily::Verdict) => role
+                .glyph()
+                .map(|g| format!("{g}\u{2009}"))
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        let text = format!("{glyph}{} {count_text}{arrow}", self.label);
+
+        // Ruling R15: an Observation never borrows a verdict colour.
+        let fg = match (self.semantic, self.family) {
+            (Some(role), PillFamily::Verdict) => role.text(),
+            (Some(_), PillFamily::Observation) => tokens::TEXT_MUTED,
+            (None, _) => self.color,
+        };
+        let rich = egui::RichText::new(text).small().color(fg);
         let resp = match self.role {
             PillRole::ReadOnly => {
                 // Styled pill: tinted fill, verdicts additionally stroked.
+                // Ruling R2 / R16: the stroke is the BORDER token, never a
+                // colour synthesised with `linear_multiply`. A per-call blend
+                // is a computed value the literal sentry cannot see.
                 let stroke = match self.family {
-                    PillFamily::Verdict => {
-                        egui::Stroke::new(1.0_f32, self.color.linear_multiply(0.55))
-                    }
+                    PillFamily::Verdict => egui::Stroke::new(1.0_f32, tokens::BORDER),
                     PillFamily::Observation => egui::Stroke::NONE,
                 };
+                let fill = match (self.semantic, self.family) {
+                    (Some(role), PillFamily::Verdict) => role.tint(),
+                    (Some(_), PillFamily::Observation) => tokens::SURFACE_RAISED,
+                    // Legacy path, until UP3 migrates the call sites.
+                    (None, _) => self.color.linear_multiply(0.10),
+                };
                 egui::Frame::default()
-                    .fill(self.color.linear_multiply(0.10))
+                    .fill(fill)
                     .stroke(stroke)
-                    .inner_margin(egui::Margin::symmetric(5, 1))
-                    .corner_radius(6)
-                    .show(ui, |ui| ui.label(rich))
+                    // Ruling R16: on the grid. `corner_radius(6)` was neither
+                    // RADIUS_SM nor RADIUS_MD, and `Margin::symmetric(5, 1)`
+                    // was off the 4-point scale entirely.
+                    .inner_margin(egui::Margin::symmetric(
+                        tokens::SPACE_2 as i8,
+                        tokens::SPACE_1 as i8,
+                    ))
+                    .corner_radius(tokens::RADIUS_SM)
+                    .show(ui, |ui| {
+                        ui.set_min_width(tokens::CHIP_MIN_WIDTH);
+                        ui.label(rich)
+                    })
                     .response
             }
             PillRole::Actionable => ui.add(egui::Button::new(rich).small()),

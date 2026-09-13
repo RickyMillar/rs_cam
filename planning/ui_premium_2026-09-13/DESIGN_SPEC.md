@@ -740,6 +740,27 @@ text. Medium rather than SemiBold, because SemiBold at 13 would compete with
 `Heading` at 15 SemiBold and flatten the hierarchy. It is a helper, not an
 egui slot, so the scale is still five built-in slots plus four helpers.
 
+**R20. The component dimensions are named constants.** §4 gives
+`StatusChip`'s 34-point minimum, `KeyValueRow`'s 18-point well,
+`EmptyState`'s 280-point width and its 24-point glyph as bare numbers. They
+become `CHIP_MIN_WIDTH`, `WELL_HEIGHT`, `EMPTY_STATE_MAX_WIDTH` and
+`EMPTY_STATE_GLYPH_SIZE`. §2.10's sentry counts only COLOUR literals, so
+nothing forced this; a number repeated at call sites drifts, and a reader
+cannot tell a considered 34 from a typed one.
+
+**R21. Two diagram tokens share a value with a text token, deliberately.**
+`DIAGRAM_DIM` is `INK_35`, the same hex as `BORDER`; `DIAGRAM_TOOL` is
+`INK_65`, the same hex as `TEXT_MUTED`. §2.8 exists because `TEXT_FAINT`
+collided with an op-diagram dim colour at 11 sites, so this looks like the
+same defect and is not. The defect was that **one constant served two
+intents**, so moving the diagram moved the text. These are separate named
+constants that happen to start at the same value, and either can move
+without the other. They are NOT in §2.10's collision table because nothing
+load-bearing rests on telling a cutter body from secondary text.
+
+Note also that `DIAGRAM_CANVAS` `#14171A` and `INK_05` `#15171A` are one
+digit apart and are NOT the same value. Do not merge them.
+
 #### The thirteen underspecified points
 
 **R7. A value well has a minimum width of 58 points.** §4.6 requires one and

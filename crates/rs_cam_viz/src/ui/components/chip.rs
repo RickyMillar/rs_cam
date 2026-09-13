@@ -140,6 +140,9 @@ impl egui::Widget for StatusChip {
                 tokens::SPACE_1 as i8,
             ))
             .show(ui, |ui| {
+                // §4.3: a minimum width, so a COLUMN of chips aligns rather
+                // than each one hugging its own word.
+                ui.set_min_width(tokens::CHIP_MIN_WIDTH);
                 ui.add(egui::Label::new(
                     text::micro(&label).color(self.role.text()),
                 ));

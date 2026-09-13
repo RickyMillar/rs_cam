@@ -159,6 +159,11 @@ impl egui::Widget for KeyValueRow {
                             // values with different digit counts keeps
                             // one right edge.
                             ui.set_min_width(tokens::WELL_MIN_WIDTH);
+                            // §4.6: 18 points inside the 22-point row, so a
+                            // column of wells keeps 2 points of air above and
+                            // below and reads as a stack, not a list of boxes.
+                            ui.set_min_height(tokens::WELL_HEIGHT);
+                            ui.set_max_height(tokens::WELL_HEIGHT);
                             draw_value(ui);
                         });
                 } else {

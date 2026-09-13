@@ -314,6 +314,7 @@ pub struct EmptyState {
     headline: String,
     detail: Option<String>,
     action: Option<String>,
+    glyph: Option<String>,
 }
 
 impl EmptyState {
@@ -322,7 +323,15 @@ impl EmptyState {
             headline: headline.into(),
             detail: None,
             action: None,
+            glyph: None,
         }
+    }
+
+    /// A 24-point outline glyph above the headline, in `INK_35` (§4.8).
+    #[must_use]
+    pub fn glyph(mut self, glyph: impl Into<String>) -> Self {
+        self.glyph = Some(glyph.into());
+        self
     }
 
     #[must_use]
@@ -349,7 +358,18 @@ impl EmptyState {
     pub fn show(self, ui: &mut egui::Ui) -> bool {
         let mut clicked = false;
         ui.vertical_centered(|ui| {
+            // §4.8: centred, and at most 280 points wide. An empty state that
+            // runs the full panel width reads as a broken layout.
+            ui.set_max_width(tokens::EMPTY_STATE_MAX_WIDTH);
             ui.add_space(tokens::SPACE_6);
+            if let Some(glyph) = &self.glyph {
+                ui.label(
+                    egui::RichText::new(glyph)
+                        .size(tokens::EMPTY_STATE_GLYPH_SIZE)
+                        .color(tokens::INK_35),
+                );
+                ui.add_space(tokens::SPACE_2);
+            }
             ui.label(text::body_strong(&self.headline));
             if let Some(detail) = &self.detail {
                 ui.add_space(tokens::SPACE_2);

@@ -502,3 +502,62 @@ fn the_motion_helpers_are_not_linear_up2() {
     const _: () = assert!(tokens::MOTION_FAST < tokens::MOTION_BASE);
     const _: () = assert!(tokens::MOTION_BASE < tokens::MOTION_SLOW);
 }
+
+/// Arm 6 — the dimensions §4 states as bare numbers are honoured.
+///
+/// Each of these was MISSED in UP2's first draft and caught by reading §4
+/// against the implementation. They are named constants now (ruling R20), so
+/// the next reader can tell a considered 34 from a typed one.
+#[test]
+fn the_component_dimensions_match_the_spec_up2() {
+    use components::{KeyValueRow, Role, StatusChip};
+
+    const _: () = assert!(tokens::CHIP_MIN_WIDTH == 34.0);
+    const _: () = assert!(tokens::WELL_HEIGHT == 18.0);
+    const _: () = assert!(tokens::EMPTY_STATE_MAX_WIDTH == 280.0);
+    const _: () = assert!(tokens::EMPTY_STATE_GLYPH_SIZE == 24.0);
+
+    // The well leaves 2 points of air above and below inside the row, so a
+    // column of wells reads as a stack rather than a list of boxes.
+    const _: () = assert!(tokens::ROW_DENSE - tokens::WELL_HEIGHT == 4.0);
+
+    let ctx = ctx();
+    in_pass(&ctx, |ui| {
+        // A column of chips aligns because each clears the minimum width.
+        for word in ["OK", "GENERATING"] {
+            let r = ui.add(StatusChip::new(word, Role::Ok));
+            assert!(
+                r.rect.width() >= tokens::CHIP_MIN_WIDTH,
+                "{word} chip is {} wide, under the {} minimum, so a column of \
+                 chips would not align",
+                r.rect.width(),
+                tokens::CHIP_MIN_WIDTH
+            );
+        }
+
+        // An editable-looking row keeps its well inside the row's line box.
+        let r = ui.add(KeyValueRow::measured("Stepover", "1.50", "mm").editable_look(true));
+        assert!(
+            r.rect.height() >= tokens::ROW_DENSE - 0.5,
+            "an editable row still holds the dense rhythm, got {}",
+            r.rect.height()
+        );
+    });
+}
+
+/// Arm 7 — `CountPill` is on the grid, and an observation cannot borrow a
+/// verdict colour.
+#[test]
+fn a_count_pill_is_on_the_grid_up2() {
+    use components::{CountPill, Role};
+
+    let ctx = ctx();
+    in_pass(&ctx, |ui| {
+        let r = ui.add(CountPill::verdict("exceeding", 3).semantic(Role::Danger));
+        assert!(
+            r.rect.width() >= tokens::CHIP_MIN_WIDTH,
+            "a pill shares the chip's minimum width so the two families align"
+        );
+        let _ = ui.add(CountPill::observation("traces", 12).semantic(Role::Info));
+    });
+}
