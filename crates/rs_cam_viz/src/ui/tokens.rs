@@ -433,20 +433,23 @@ pub fn apply_to_style(style: &mut egui::Style) {
     style.spacing.interact_size.y = ROW_ACTION;
     style.spacing.extra_text_line_spacing = EXTRA_LINE_SPACING;
 
-    // ---- `AUDIT.md` D-16, the cheap half ----
+    // ---- `AUDIT.md` D-16: NOT closed globally, and here is why ----
     //
-    // `TextWrapMode::Extend` sets an infinite max width and grows the `Ui`
-    // past its panel, and the panel then clips it. That is the root cause of
-    // the clipping class, and one global default reaches the whole class
-    // (`DESIGN_SPEC.md` §10.7).
+    // UP1 set `wrap_mode = Some(Wrap)` to stop `Extend` growing a `Ui` past
+    // its panel. It was WRONG and the screenshots showed it: a label in a
+    // narrow grid column wraps MID-WORD. The inspector read "Spoilb / oard:",
+    // "Retrac / t (R):" and "Dressu / p".
     //
-    // The value is `Wrap`, not `Truncate`. egui's own `None` default already
-    // resolves to `Wrap` in a vertical layout and `Extend` in a horizontal
-    // one, so `Wrap` changes ONLY the horizontal rows that carry the defect
-    // and leaves every wrapped paragraph as it is. `Truncate` would have cut
-    // every banner and every sentence to one line, which UP1 must not do.
-    // The component rule handles the rows that want a fixed line box.
-    style.wrap_mode = Some(egui::TextWrapMode::Wrap);
+    // egui's own `None` resolves per layout — `Wrap` in a vertical one,
+    // `Extend` in a horizontal one — and that default is right for a label
+    // whose column sizes to its content. `Truncate` is no better: it hides
+    // the end of a word the operator has to read.
+    //
+    // So the global default stays UNSET and D-16 is closed per component
+    // instead, where the component knows whether its text is a label (never
+    // wraps) or a sentence (always does). `KeyValueRow`'s trailing slot is
+    // the worked example.
+    style.wrap_mode = None;
 
     let v = &mut style.visuals;
 

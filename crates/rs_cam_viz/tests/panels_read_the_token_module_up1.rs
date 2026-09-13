@@ -212,11 +212,17 @@ fn configure_theme_sets_spacing_wrap_and_shadows_up1() {
     tokens::apply(&ctx);
     let style = ctx.global_style();
 
-    assert!(
-        style.wrap_mode.is_some(),
-        "Style::wrap_mode is unset, so egui defaults to Extend in a \
-         horizontal layout. Extend grows the Ui past its panel and the panel \
-         clips it, which is the mechanism behind AUDIT.md D-16."
+    // UP1 originally asserted `wrap_mode.is_some()`. That was wrong and the
+    // screenshots proved it: a global `Wrap` breaks a label in a narrow grid
+    // column MID-WORD ("Spoilb / oard:"). The global default stays UNSET —
+    // egui's per-layout default is correct for labels — and D-16 is closed
+    // per component, where the component knows whether its text is a label
+    // or a sentence.
+    assert_eq!(
+        style.wrap_mode, None,
+        "the global wrap mode must stay unset. A global Wrap breaks labels \
+         mid-word; a global Truncate hides the end of a word the operator \
+         has to read."
     );
 
     assert_eq!(
