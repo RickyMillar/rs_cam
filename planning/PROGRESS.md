@@ -126,7 +126,15 @@ G-OPTCANCELPARTIAL from the WP29 scout):
   front. The window's "keep partial results" sentence is untouched and
   ledgered as G-OPTCANCELPARTIAL, because both cancel routes discard them.
 
-The table holds 32 rows; WP28 (one GUI apply function that mirrors every
+- **WP30** (`f092cd67`): the toolchain moved to Rust 1.98.1 (operator ruling;
+  pinned by `rust-toolchain.toml` at `89268d49`). The new compiler raised
+  156 findings, not the 14 a partial measurement had counted: 20 clippy
+  findings in core, 132 `float_literal_f32_fallback` future-incompatibility
+  warnings and 4 clippy findings in viz, none in CLI or MCP. All fixed, no
+  `#[allow]`, no behaviour change; the workspace clippy gate and the
+  no-default-features viz gate both exit 0 on 1.98.1.
+
+The table holds 33 rows; WP28 (one GUI apply function that mirrors every
 `Effects` field, closing G-MCPSIMMIRROR) is the open one.
 
 ## Architecture consolidation — 2026-09-12 (reviews and follow-ons)
