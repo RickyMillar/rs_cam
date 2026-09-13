@@ -128,7 +128,7 @@ fn colour_literals_outside_the_token_module_stay_within_budget_up1() {
         }
     }
 
-    per_file.sort_by(|a, b| b.1.cmp(&a.1));
+    per_file.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
     let worst: Vec<String> = per_file
         .iter()
         .take(8)
@@ -308,11 +308,7 @@ fn every_intent_in_section_two_has_a_constant_up1() {
         tokens::SURFACE_RAISED,
         tokens::SURFACE_OVERLAY,
     ];
-    let accent = [
-        tokens::ACCENT,
-        tokens::ACCENT_QUIET,
-        tokens::ACCENT_PRESSED,
-    ];
+    let accent = [tokens::ACCENT, tokens::ACCENT_QUIET, tokens::ACCENT_PRESSED];
     let semantic = [
         tokens::OK,
         tokens::CAUTION,

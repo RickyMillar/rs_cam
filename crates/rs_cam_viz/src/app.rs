@@ -347,7 +347,7 @@ impl RsCamApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(26, 26, 38))
+                    .fill(crate::ui::tokens::SURFACE_SUNKEN)
                     .inner_margin(0.0),
             )
             .show(ui, |ui| {
@@ -377,7 +377,7 @@ impl RsCamApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(26, 26, 38))
+                    .fill(crate::ui::tokens::SURFACE_SUNKEN)
                     .inner_margin(16.0),
             )
             .show(ui, |ui| {
@@ -432,7 +432,7 @@ impl RsCamApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(26, 26, 38))
+                    .fill(crate::ui::tokens::SURFACE_SUNKEN)
                     .inner_margin(0.0),
             )
             .show(ui, |ui| {
@@ -508,7 +508,7 @@ impl RsCamApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(26, 26, 38))
+                    .fill(crate::ui::tokens::SURFACE_SUNKEN)
                     .inner_margin(0.0),
             )
             .show(ui, |ui| {
@@ -1058,54 +1058,100 @@ impl RsCamApp {
 }
 
 fn configure_theme(ctx: &egui::Context) {
-    let mut visuals = egui::Visuals::dark();
-
-    visuals.panel_fill = egui::Color32::from_rgb(30, 30, 36);
-    visuals.window_fill = egui::Color32::from_rgb(30, 30, 36);
-    visuals.extreme_bg_color = egui::Color32::from_rgb(22, 22, 28);
-    visuals.faint_bg_color = egui::Color32::from_rgb(38, 38, 46);
-
-    visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(38, 38, 46);
-    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(45, 45, 56);
-    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(55, 55, 68);
-    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(65, 75, 95);
-
-    visuals.selection.bg_fill = egui::Color32::from_rgb(50, 60, 90);
-    visuals.selection.stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(100, 140, 210));
-
-    ctx.set_visuals(visuals);
-
-    let mut style = (*ctx.global_style()).clone();
-    style.spacing.item_spacing = egui::vec2(6.0, 4.0);
-    ctx.set_global_style(style);
+    // The whole token set, both themes. `ui::tokens::apply` uses
+    // `all_styles_mut`; the `set_visuals` / `set_global_style` pair this
+    // replaced wrote one theme only (`DESIGN_SPEC.md` §10.3).
+    crate::ui::tokens::apply(ctx);
 
     configure_fonts(ctx);
 }
 
 /// Add symbol fallback fonts so Unicode glyphs (▶, ⠿, ✓, ⚠, etc.) render correctly.
 fn configure_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
+    use egui::{FontData, FontDefinitions, FontFamily};
+    use std::sync::Arc;
 
-    // NotoSansSymbols covers geometric shapes (▶●○), arrows (→), math (≤), checkmarks (✓)
-    fonts.font_data.insert(
-        "noto_symbols".to_owned(),
-        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
-            "../assets/fonts/NotoSansSymbols-Regular.ttf"
-        ))),
-    );
+    let mut fonts = FontDefinitions::default();
 
-    // NotoSansSymbols2 covers braille (⠿), dingbats (✗✅❌), and extended symbols
-    fonts.font_data.insert(
-        "noto_symbols2".to_owned(),
-        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
-            "../assets/fonts/NotoSansSymbols2-Regular.ttf"
-        ))),
-    );
+    // `DESIGN_SPEC.md` §3.1. Inter carries the prose and JetBrains Mono
+    // carries every measured value. Both are SIL OFL 1.1 and both ship as
+    // `.ttf` in `assets/fonts/`, loaded the same way the two Noto symbol
+    // fonts already were. Neither adds a Cargo dependency.
+    //
+    // egui reaches a WEIGHT through a named family, not a weight axis, so
+    // Medium and SemiBold are registered as families of their own. Inter
+    // replaces Ubuntu-Light because a light face has no room below it and
+    // `.strong()` then has to do all the work.
+    for (name, bytes) in [
+        (
+            "inter_regular",
+            &include_bytes!("../assets/fonts/Inter-Regular.ttf")[..],
+        ),
+        (
+            "inter_medium",
+            &include_bytes!("../assets/fonts/Inter-Medium.ttf")[..],
+        ),
+        (
+            "inter_semibold",
+            &include_bytes!("../assets/fonts/Inter-SemiBold.ttf")[..],
+        ),
+        (
+            "mono_regular",
+            &include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")[..],
+        ),
+        (
+            "mono_medium",
+            &include_bytes!("../assets/fonts/JetBrainsMono-Medium.ttf")[..],
+        ),
+        // NotoSansSymbols covers geometric shapes (▶●○), arrows (→),
+        // math (≤), checkmarks (✓)
+        (
+            "noto_symbols",
+            &include_bytes!("../assets/fonts/NotoSansSymbols-Regular.ttf")[..],
+        ),
+        // NotoSansSymbols2 covers braille (⠿), dingbats (✗✅❌), and
+        // extended symbols
+        (
+            "noto_symbols2",
+            &include_bytes!("../assets/fonts/NotoSansSymbols2-Regular.ttf")[..],
+        ),
+    ] {
+        fonts
+            .font_data
+            .insert(name.to_owned(), Arc::new(FontData::from_static(bytes)));
+    }
 
-    // Append as fallbacks (after egui's default fonts) for proportional text
-    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
-        family.push("noto_symbols".to_owned());
-        family.push("noto_symbols2".to_owned());
+    // The symbol fonts are the tail of EVERY family, in their original
+    // order. egui's own defaults stay behind our faces rather than being
+    // replaced, so nothing that rendered before loses its glyph.
+    let symbols = ["noto_symbols".to_owned(), "noto_symbols2".to_owned()];
+
+    if let Some(family) = fonts.families.get_mut(&FontFamily::Proportional) {
+        family.insert(0, "inter_regular".to_owned());
+        family.extend(symbols.iter().cloned());
+    }
+    if let Some(family) = fonts.families.get_mut(&FontFamily::Monospace) {
+        family.insert(0, "mono_regular".to_owned());
+        family.extend(symbols.iter().cloned());
+    }
+
+    // The three named weight families. Each falls back through the
+    // proportional stack, so a glyph Inter lacks still renders.
+    let proportional = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    for (family_name, head) in [
+        (crate::ui::tokens::FAMILY_MEDIUM, "inter_medium"),
+        (crate::ui::tokens::FAMILY_SEMIBOLD, "inter_semibold"),
+        (crate::ui::tokens::FAMILY_MONO_MEDIUM, "mono_medium"),
+    ] {
+        let mut stack = vec![head.to_owned()];
+        stack.extend(proportional.iter().cloned());
+        fonts
+            .families
+            .insert(FontFamily::Name(family_name.into()), stack);
     }
 
     ctx.set_fonts(fonts);

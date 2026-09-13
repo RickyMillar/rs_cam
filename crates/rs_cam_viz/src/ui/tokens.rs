@@ -1,0 +1,511 @@
+//! The design tokens. One module owns every colour, space, radius, elevation
+//! and text style in the GUI.
+//!
+//! This is `planning/ui_premium_2026-09-13/DESIGN_SPEC.md` §2 and §3.2 as
+//! code. Read the specification for why a value is what it is; this file
+//! records only what the value IS.
+//!
+//! Three rules govern this module.
+//!
+//! 1. **Every colour in the product is a token or it does not ship**
+//!    (`DESIGN_SPEC.md` §2.10). `Color32::from_rgb` belongs here and in
+//!    `render/colors.rs`, and nowhere else. The sentry
+//!    `tests/panels_read_the_token_module_up1.rs` counts the rest and drives
+//!    the count down package by package.
+//! 2. **A verdict colour never carries category, order or decoration**
+//!    (§2.6). The diagram palette and the data scales exist so a drawing
+//!    never has to borrow `OK` or `DANGER`.
+//! 3. **Colour is never the only channel** (§2.6). Every verdict also carries
+//!    a glyph, which is why [`glyph_ok`] and its siblings live beside the
+//!    colours rather than in a component.
+//!
+//! `ui/theme.rs` keeps its original public names and re-exports from here, so
+//! no call site had to change when this module arrived.
+
+use egui::{Color32, FontFamily, FontId, TextStyle, epaint::Shadow};
+
+// ===========================================================================
+// §2.1 Grid
+// ===========================================================================
+
+/// The base unit. Every spacing step is a multiple of this, except the two
+/// row-rhythm tokens below, which are deliberately off the scale.
+pub const GRID: f32 = 4.0;
+
+/// Flush.
+pub const SPACE_0: f32 = 0.0;
+/// Inside a chip, between a glyph and its word.
+pub const SPACE_1: f32 = 2.0;
+/// Between rows of one group. Also `item_spacing`.
+pub const SPACE_2: f32 = 4.0;
+/// Between groups, and panel side padding.
+pub const SPACE_3: f32 = 8.0;
+/// Between sections.
+pub const SPACE_4: f32 = 12.0;
+/// Panel top padding, window inner margin.
+pub const SPACE_5: f32 = 16.0;
+/// Between major blocks on a page.
+pub const SPACE_6: f32 = 24.0;
+/// Above a page-level action row.
+pub const SPACE_7: f32 = 32.0;
+
+/// A parameter row, a key-value row, a table row.
+///
+/// A parameter row sets a FIXED line box of 22 points. It does not derive its
+/// height from `item_spacing` plus a text ascent, because that drifts with the
+/// font and with any caption inside the row. Eight parameter rows occupy
+/// exactly 176 points.
+///
+/// Operator ruling 2026-09-13: at 26 points an inspector reads as a settings
+/// dialog; at 22 it reads as a control panel.
+pub const ROW_DENSE: f32 = 22.0;
+
+/// A row carrying a control, and the minimum height of any control.
+pub const ROW_ACTION: f32 = 26.0;
+
+// ===========================================================================
+// §2.2 Radius
+// ===========================================================================
+
+/// Chips, buttons, inputs, combo boxes, swatches.
+pub const RADIUS_SM: u8 = 4;
+/// Cards, windows, popovers, banners.
+pub const RADIUS_MD: u8 = 8;
+
+// ===========================================================================
+// §2.4 The neutral ramp
+// ===========================================================================
+//
+// The bias is cold, toward blue-green, at very low chroma (HSL saturation 6 %
+// to 10 %, hue 205). It replaces the accidental violet that came from two
+// unrelated literals (`AUDIT.md` D-07).
+//
+// Contrast is COMPUTED, not estimated (WCAG 2.1 relative luminance). The
+// four text rungs and their worst ratio over the four surfaces:
+//
+//   INK_50  TEXT_FAINT   3.28
+//   INK_65  TEXT_MUTED   4.57
+//   INK_80  TEXT_BODY    7.23
+//   INK_95  TEXT_STRONG  11.15
+
+/// Pure ground, behind the scrim.
+pub const INK_00: Color32 = Color32::from_rgb(0x0F, 0x11, 0x13);
+/// [`SURFACE_SUNKEN`].
+pub const INK_05: Color32 = Color32::from_rgb(0x15, 0x17, 0x1A);
+/// [`SURFACE_BASE`].
+pub const INK_10: Color32 = Color32::from_rgb(0x1B, 0x1E, 0x22);
+/// [`SURFACE_RAISED`].
+pub const INK_15: Color32 = Color32::from_rgb(0x22, 0x26, 0x2B);
+/// [`SURFACE_OVERLAY`].
+pub const INK_20: Color32 = Color32::from_rgb(0x28, 0x2D, 0x33);
+/// Hairline rules, disabled fills.
+pub const INK_25: Color32 = Color32::from_rgb(0x31, 0x37, 0x3E);
+/// Control borders, chip strokes.
+pub const INK_35: Color32 = Color32::from_rgb(0x45, 0x4D, 0x56);
+/// [`TEXT_FAINT`] — units, provenance.
+pub const INK_50: Color32 = Color32::from_rgb(0x73, 0x7C, 0x87);
+/// [`TEXT_MUTED`] — secondary text, labels.
+pub const INK_65: Color32 = Color32::from_rgb(0x8C, 0x95, 0x9F);
+/// [`TEXT_BODY`] — default label text.
+pub const INK_80: Color32 = Color32::from_rgb(0xB4, 0xBC, 0xC5);
+/// [`TEXT_STRONG`] — values, names, headings.
+pub const INK_95: Color32 = Color32::from_rgb(0xE2, 0xE7, 0xEC);
+
+// ---- Text rungs, named by role rather than by ramp position --------------
+
+/// Units and provenance only.
+///
+/// FORBIDDEN below 12 points and FORBIDDEN for any sentence. It exists for a
+/// unit suffix beside the number it belongs to.
+pub const TEXT_FAINT: Color32 = INK_50;
+/// Secondary text and labels.
+pub const TEXT_MUTED: Color32 = INK_65;
+/// The default label text.
+pub const TEXT_BODY: Color32 = INK_80;
+/// Values, names and headings.
+pub const TEXT_STRONG: Color32 = INK_95;
+
+// ===========================================================================
+// §2.3 Elevation
+// ===========================================================================
+//
+// Four planes. Elevation is carried by FILL and SHADOW, never by a border
+// alone.
+
+/// Viewport ground, text-input wells, timeline track.
+pub const SURFACE_SUNKEN: Color32 = INK_05;
+/// Panels, status bar, menu bar.
+pub const SURFACE_BASE: Color32 = INK_10;
+/// Cards, list rows, grouped fields.
+pub const SURFACE_RAISED: Color32 = INK_15;
+/// Windows, popovers, toasts, menus. The only surface that casts a shadow.
+pub const SURFACE_OVERLAY: Color32 = INK_20;
+
+/// The product's ONLY shadow.
+pub const SHADOW_OVERLAY: Shadow = Shadow {
+    offset: [0, 8],
+    blur: 24,
+    spread: 0,
+    color: Color32::from_rgba_premultiplied(0, 0, 0, 110),
+};
+
+/// The full-viewport rect a modal paints behind its window.
+pub const SCRIM: Color32 = Color32::from_rgba_premultiplied(8, 9, 11, 140);
+
+// ===========================================================================
+// §2.5 The accent
+// ===========================================================================
+//
+// ONE accent. It carries selection, keyboard focus and the primary button
+// fill, and nothing else. The accent must NEVER carry a verdict.
+
+/// Selection, keyboard focus, primary button fill.
+pub const ACCENT: Color32 = Color32::from_rgb(0x5B, 0x9D, 0xD9);
+/// Selected row fill, active tab fill.
+pub const ACCENT_QUIET: Color32 = Color32::from_rgb(0x2C, 0x44, 0x59);
+/// Primary button, pressed.
+pub const ACCENT_PRESSED: Color32 = Color32::from_rgb(0x4A, 0x85, 0xBB);
+
+// ===========================================================================
+// §2.6 Semantic colours
+// ===========================================================================
+//
+// Five roles. Nothing else in the product may use these hues. Each role has a
+// text tone here and a quiet chip fill in the TINT_* family below; §2.7 rules
+// that the two are one family, because a chip is a small tinted surface.
+
+/// Within a band, current, clear, pass. Glyph `✓`.
+pub const OK: Color32 = Color32::from_rgb(0x5F, 0xBF, 0x7A);
+/// Stale, waiting, elevated, review. Glyph `!`.
+///
+/// CAUTION means a measurement came back and it needs review. "Not run" is
+/// [`UNKNOWN`], never this.
+pub const CAUTION: Color32 = Color32::from_rgb(0xE0, 0xA8, 0x3C);
+/// Exceeds, collision, error, refusal. Glyph `✕`.
+pub const DANGER: Color32 = Color32::from_rgb(0xE8, 0x7B, 0x77);
+/// Informational. The accent reused. Glyph none.
+pub const INFO: Color32 = ACCENT;
+/// NOT MEASURED. Glyph `—`, and never with a number.
+///
+/// The most important addition in this section. Today "not measured" is drawn
+/// as an em dash in whatever grey is nearby, so a gate that abstained and a
+/// gate that passed look alike at a glance.
+pub const UNKNOWN: Color32 = Color32::from_rgb(0x8D, 0x9A, 0xA8);
+
+// ---- §2.6 / §2.7 the chip fills, which are also the surface tints --------
+
+/// Chip fill and tinted ground for [`OK`].
+pub const TINT_OK: Color32 = Color32::from_rgb(0x1C, 0x33, 0x23);
+/// Chip fill and tinted ground for [`CAUTION`].
+pub const TINT_CAUTION: Color32 = Color32::from_rgb(0x3A, 0x2E, 0x12);
+/// Chip fill and tinted ground for [`DANGER`].
+pub const TINT_DANGER: Color32 = Color32::from_rgb(0x3A, 0x1D, 0x1E);
+/// Chip fill and tinted ground for [`INFO`].
+pub const TINT_INFO: Color32 = Color32::from_rgb(0x1E, 0x2E, 0x3D);
+/// Chip fill and tinted ground for [`UNKNOWN`].
+pub const TINT_UNKNOWN: Color32 = Color32::from_rgb(0x23, 0x28, 0x2E);
+
+// ---- §2.6 rule 3: colour is never the only channel -----------------------
+
+/// The glyph that accompanies [`OK`].
+pub const GLYPH_OK: &str = "✓";
+/// The glyph that accompanies [`CAUTION`].
+pub const GLYPH_CAUTION: &str = "!";
+/// The glyph that accompanies [`DANGER`].
+pub const GLYPH_DANGER: &str = "✕";
+/// The glyph that accompanies [`UNKNOWN`].
+pub const GLYPH_UNKNOWN: &str = "—";
+
+// ===========================================================================
+// §2.7 Structure
+// ===========================================================================
+
+/// Every rule and separator. Replaces 11 different values over 20 sites.
+pub const HAIRLINE: Color32 = INK_25;
+/// Control borders and chip strokes.
+pub const BORDER: Color32 = INK_35;
+/// The ground inside a text input or a read-only value well.
+pub const INPUT_WELL: Color32 = INK_05;
+
+// ===========================================================================
+// §2.8 The diagram palette
+// ===========================================================================
+//
+// The operation preview thumbnails, the entry diagram and the height diagram
+// are DRAWINGS, not UI. They carry 41 literals over 5 intents today, all
+// outside `theme.rs`, and they are why TEXT_FAINT collides with an op-diagram
+// dim colour at 11 sites.
+
+/// The drawing's ground.
+pub const DIAGRAM_CANVAS: Color32 = Color32::from_rgb(0x14, 0x17, 0x1A);
+/// The path being described.
+///
+/// Takes the accent because a diagram is explanatory, not a verdict. It must
+/// never take [`OK`] or [`DANGER`].
+pub const DIAGRAM_INK: Color32 = ACCENT;
+/// Stock or material body.
+pub const DIAGRAM_MATERIAL: Color32 = Color32::from_rgb(0x2A, 0x2F, 0x36);
+/// The cutter body.
+pub const DIAGRAM_TOOL: Color32 = INK_65;
+/// Construction lines and retired geometry.
+pub const DIAGRAM_DIM: Color32 = INK_35;
+
+// ===========================================================================
+// §2.9 Data scales
+// ===========================================================================
+//
+// A data scale is derived from ONE hue by lightness, never assembled from
+// separate hues, because a category wheel spends the semantic palette.
+//
+// §2.9 names these three scales and their step counts but gives no values.
+// UP1 derived them from the stated rule and verified every step against the
+// four surfaces. The derivation is in the commit that added this file.
+
+/// Six steps, cool blue to cool cyan, hue 210 to 186 with lightness rising.
+///
+/// Colours span kinds, which today carry 17 distinct values over 24 sites and
+/// are the worst drift in the product.
+///
+/// Every step clears 3:1 against all four surfaces — the WCAG floor for a
+/// graphical object — with the darkest at 3.44. Adjacent steps separate by
+/// 1.15 to 1.29.
+pub const SPAN_SCALE: [Color32; 6] = [
+    Color32::from_rgb(0x44, 0x82, 0xC1),
+    Color32::from_rgb(0x5A, 0x98, 0xC6),
+    Color32::from_rgb(0x70, 0xAC, 0xCB),
+    Color32::from_rgb(0x86, 0xBE, 0xD1),
+    Color32::from_rgb(0x9B, 0xCD, 0xD8),
+    Color32::from_rgb(0xAF, 0xDA, 0xDE),
+];
+
+/// Four steps, hue 205 to 175 with lightness rising.
+///
+/// The simulation signal strip and the feeds charts today carry 9 values over
+/// 11 sites. Every step clears 3:1 on all four surfaces; the darkest is 3.75.
+pub const CHART_SERIES: [Color32; 4] = [
+    Color32::from_rgb(0x3D, 0x8B, 0xC2),
+    Color32::from_rgb(0x64, 0xB0, 0xC9),
+    Color32::from_rgb(0x89, 0xCB, 0xD1),
+    Color32::from_rgb(0xAD, 0xDC, 0xD8),
+];
+
+/// The compute lane is idle.
+pub const LANE_IDLE: Color32 = INK_65;
+/// The compute lane is queued.
+pub const LANE_QUEUED: Color32 = ACCENT;
+/// The compute lane is running.
+pub const LANE_RUNNING: Color32 = CAUTION;
+/// The compute lane is cancelling.
+pub const LANE_CANCELLING: Color32 = DANGER;
+
+/// The four lane states in their natural order, retuned onto the ramp.
+pub const LANE_SCALE: [Color32; 4] = [LANE_IDLE, LANE_QUEUED, LANE_RUNNING, LANE_CANCELLING];
+
+// ===========================================================================
+// §3.2 The type scale
+// ===========================================================================
+//
+// Eight rungs. FIVE map onto egui's built-in `TextStyle` slots and apply
+// automatically. THREE do not exist as global styles and are helpers here,
+// because a custom `TextStyle::Name` is a legal map key that `ui.label()`
+// never reads (`DESIGN_SPEC.md` §10.3).
+
+/// `TextStyle::Heading`. Panel title, modal step title.
+pub const SIZE_HEADING: f32 = 15.0;
+/// `TextStyle::Body`. Default label and sentence.
+pub const SIZE_BODY: f32 = 13.0;
+/// `TextStyle::Button`. Every button.
+pub const SIZE_BUTTON: f32 = 13.0;
+/// `TextStyle::Monospace`. EVERY measured value.
+pub const SIZE_NUMERIC: f32 = 13.0;
+/// `TextStyle::Small`. Units, provenance, supporting sentence.
+///
+/// Raising this slot from 9 to 11 is the single highest-leverage line in the
+/// whole specification. All 516 `.small()` call sites read it, so one
+/// assignment in [`apply`] lifts the product's entire caption layer off the
+/// floor without editing a single call site.
+pub const SIZE_CAPTION: f32 = 11.0;
+/// Helper rung. A window title, a page title. Rare.
+pub const SIZE_DISPLAY: f32 = 20.0;
+/// Helper rung. A section header.
+pub const SIZE_SUBHEAD: f32 = 12.0;
+/// Helper rung. Chip text ONLY. The one rung allowed below 11 points.
+pub const SIZE_MICRO: f32 = 10.0;
+
+/// Extra tracking on [`SIZE_MICRO`], in points. Applied per call site.
+pub const MICRO_TRACKING: f32 = 0.8;
+
+/// Additional leading, in points, applied globally by [`apply`].
+///
+/// The specification asks for a 17-point line on 13-point body and a 15-point
+/// line on 11-point caption. Both are the same `+4`, so one global value
+/// serves both. This field arrived in egui 0.36 and is why UP0 came first;
+/// `DESIGN_SPEC.md` §10.2 records the per-call-site workaround it replaces.
+pub const EXTRA_LINE_SPACING: f32 = 4.0;
+
+// ---- Font family names ---------------------------------------------------
+//
+// egui reaches a weight through a NAMED family, not through a weight axis.
+// `app.rs::configure_fonts` registers these names.
+
+/// Inter Medium. Buttons.
+pub const FAMILY_MEDIUM: &str = "inter_medium";
+/// Inter SemiBold. Headings, subheads and chips.
+pub const FAMILY_SEMIBOLD: &str = "inter_semibold";
+/// JetBrains Mono Medium. An emphasised measured value.
+pub const FAMILY_MONO_MEDIUM: &str = "mono_medium";
+
+/// The `Display` rung: 20 points, SemiBold.
+#[must_use]
+pub fn font_display() -> FontId {
+    FontId::new(SIZE_DISPLAY, FontFamily::Name(FAMILY_SEMIBOLD.into()))
+}
+
+/// The `Subhead` rung: 12 points, SemiBold. Use it for a section header.
+#[must_use]
+pub fn font_subhead() -> FontId {
+    FontId::new(SIZE_SUBHEAD, FontFamily::Name(FAMILY_SEMIBOLD.into()))
+}
+
+/// The `Micro` rung: 10 points, SemiBold. Chip text only.
+///
+/// The caller adds [`MICRO_TRACKING`] and upper-cases the string; neither is
+/// expressible in a `FontId`.
+#[must_use]
+pub fn font_micro() -> FontId {
+    FontId::new(SIZE_MICRO, FontFamily::Name(FAMILY_SEMIBOLD.into()))
+}
+
+/// The `Numeric` rung: 13 points, JetBrains Mono. EVERY measured value.
+#[must_use]
+pub fn font_numeric() -> FontId {
+    FontId::new(SIZE_NUMERIC, FontFamily::Monospace)
+}
+
+// ===========================================================================
+// Applying the tokens
+// ===========================================================================
+
+/// Write the whole token set onto a context's `Style`.
+///
+/// This sets BOTH themes through `all_styles_mut`. The pair this replaced set
+/// `Visuals` and `Style` separately, which writes one theme only
+/// (`DESIGN_SPEC.md` §10.3).
+///
+/// It does NOT load fonts. `app.rs::configure_fonts` owns that, because the
+/// font data is `include_bytes!` from the binary and belongs beside the
+/// other asset loading.
+pub fn apply(ctx: &egui::Context) {
+    ctx.all_styles_mut(|style| {
+        apply_to_style(style);
+    });
+}
+
+/// The body of [`apply`], separated so a test can drive it on a bare `Style`.
+pub fn apply_to_style(style: &mut egui::Style) {
+    // ---- §3.2 the five built-in text styles ----
+    style.text_styles = [
+        (
+            TextStyle::Heading,
+            FontId::new(SIZE_HEADING, FontFamily::Name(FAMILY_SEMIBOLD.into())),
+        ),
+        (
+            TextStyle::Body,
+            FontId::new(SIZE_BODY, FontFamily::Proportional),
+        ),
+        (
+            TextStyle::Button,
+            FontId::new(SIZE_BUTTON, FontFamily::Name(FAMILY_MEDIUM.into())),
+        ),
+        (
+            TextStyle::Monospace,
+            FontId::new(SIZE_NUMERIC, FontFamily::Monospace),
+        ),
+        (
+            TextStyle::Small,
+            FontId::new(SIZE_CAPTION, FontFamily::Proportional),
+        ),
+    ]
+    .into();
+
+    // ---- §2.1 grid ----
+    style.spacing.item_spacing = egui::vec2(SPACE_2, SPACE_2);
+    style.spacing.interact_size.y = ROW_ACTION;
+    style.spacing.extra_text_line_spacing = EXTRA_LINE_SPACING;
+
+    // ---- `AUDIT.md` D-16, the cheap half ----
+    //
+    // `TextWrapMode::Extend` sets an infinite max width and grows the `Ui`
+    // past its panel, and the panel then clips it. That is the root cause of
+    // the clipping class, and one global default reaches the whole class
+    // (`DESIGN_SPEC.md` §10.7).
+    //
+    // The value is `Wrap`, not `Truncate`. egui's own `None` default already
+    // resolves to `Wrap` in a vertical layout and `Extend` in a horizontal
+    // one, so `Wrap` changes ONLY the horizontal rows that carry the defect
+    // and leaves every wrapped paragraph as it is. `Truncate` would have cut
+    // every banner and every sentence to one line, which UP1 must not do.
+    // The component rule handles the rows that want a fixed line box.
+    style.wrap_mode = Some(egui::TextWrapMode::Wrap);
+
+    let v = &mut style.visuals;
+
+    // ---- §2.3 elevation ----
+    v.panel_fill = SURFACE_BASE;
+    v.window_fill = SURFACE_OVERLAY;
+    v.extreme_bg_color = SURFACE_SUNKEN;
+    v.faint_bg_color = SURFACE_RAISED;
+    v.window_shadow = SHADOW_OVERLAY;
+    v.popup_shadow = SHADOW_OVERLAY;
+
+    // ---- §2.2 radius ----
+    v.window_corner_radius = RADIUS_MD.into();
+    v.menu_corner_radius = RADIUS_MD.into();
+
+    // ---- §2.4 / §2.7 widget states ----
+    for w in [
+        &mut v.widgets.noninteractive,
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+    ] {
+        w.corner_radius = RADIUS_SM.into();
+    }
+
+    v.widgets.noninteractive.bg_fill = SURFACE_RAISED;
+    v.widgets.noninteractive.weak_bg_fill = SURFACE_RAISED;
+    v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, HAIRLINE);
+    v.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, TEXT_BODY);
+
+    v.widgets.inactive.bg_fill = SURFACE_RAISED;
+    v.widgets.inactive.weak_bg_fill = SURFACE_RAISED;
+    v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, BORDER);
+    v.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, TEXT_BODY);
+
+    v.widgets.hovered.bg_fill = SURFACE_OVERLAY;
+    v.widgets.hovered.weak_bg_fill = SURFACE_OVERLAY;
+    v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, INK_50);
+    v.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, TEXT_STRONG);
+
+    v.widgets.active.bg_fill = ACCENT_QUIET;
+    v.widgets.active.weak_bg_fill = ACCENT_QUIET;
+    v.widgets.active.bg_stroke = egui::Stroke::new(1.0, ACCENT);
+    v.widgets.active.fg_stroke = egui::Stroke::new(1.0, TEXT_STRONG);
+
+    v.widgets.open.bg_fill = SURFACE_OVERLAY;
+    v.widgets.open.weak_bg_fill = SURFACE_OVERLAY;
+    v.widgets.open.bg_stroke = egui::Stroke::new(1.0, BORDER);
+    v.widgets.open.fg_stroke = egui::Stroke::new(1.0, TEXT_STRONG);
+
+    // ---- §2.5 the accent, and only these three things ----
+    v.selection.bg_fill = ACCENT_QUIET;
+    v.selection.stroke = egui::Stroke::new(1.0, ACCENT);
+    v.hyperlink_color = ACCENT;
+
+    // ---- §2.7 structure ----
+    v.window_stroke = egui::Stroke::new(1.0, BORDER);
+    v.override_text_color = None;
+    v.warn_fg_color = CAUTION;
+    v.error_fg_color = DANGER;
+}

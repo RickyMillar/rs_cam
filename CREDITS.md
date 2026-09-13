@@ -814,6 +814,26 @@ The HTML visualization path loads `three.js` from jsDelivr:
 
 Those viewer templates should be considered part of the third-party runtime surface when packaging or redistributing exported HTML.
 
+### Fonts
+
+The desktop GUI embeds five typefaces with `include_bytes!`, so they are
+compiled into the `rs_cam_gui` binary and redistributed with it. All are
+**SIL Open Font License 1.1**, which permits bundling and redistribution.
+The licence text ships beside each family in
+`crates/rs_cam_viz/assets/fonts/`.
+
+| Family | Faces | Copyright | Licence file | Use |
+|---|---|---|---|---|
+| **Inter** | Regular, Medium, SemiBold | © 2016 The Inter Project Authors, https://github.com/rsms/inter | `assets/fonts/Inter-OFL.txt` | All prose, labels, headings and buttons. |
+| **JetBrains Mono** | Regular, Medium | © 2020 The JetBrains Mono Project Authors, https://github.com/JetBrains/JetBrainsMono | `assets/fonts/JetBrainsMono-OFL.txt` | Every measured value, and every code and G-code string. |
+| **Noto Sans Symbols** | Regular | Google, SIL OFL 1.1 | — | Fallback: geometric shapes, arrows, maths, checkmarks. |
+| **Noto Sans Symbols 2** | Regular | Google, SIL OFL 1.1 | — | Fallback: braille, dingbats, extended symbols. |
+
+Inter and JetBrains Mono arrived with the premium GUI pass (UP1,
+2026-09-13); the two Noto symbol fonts predate it. `DESIGN_SPEC.md` §3.1
+records why the pair was chosen. Under the OFL none of these faces may be
+sold on its own, and a modified face must not use the reserved family name.
+
 ## Internal docs that should stay aligned with these credits
 
 - `README.md`

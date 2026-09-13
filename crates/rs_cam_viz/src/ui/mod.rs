@@ -22,6 +22,7 @@ pub mod sim_op_list;
 pub mod sim_timeline;
 pub mod status_bar;
 pub mod theme;
+pub mod tokens;
 pub mod tool_library_modal;
 pub mod toolpath_panel;
 pub mod toolpath_row_controls;
