@@ -163,20 +163,27 @@ pub struct AppState {
     /// the rollup view renders the report. Mirrors the per-toolpath
     /// modal's lifecycle so the UI shapes stay consistent.
     pub optimize_project: Option<OptimizeProjectState>,
-    /// `true` while an Optimize run or a tier-map preview is in flight.
+    /// The Optimize run in flight, or `None` when none is.
     ///
-    /// **A POLICY since WP14b, not a necessity** (§28 ruling 8): one
-    /// Optimize run at a time. The flag used to mean "the worker thread
-    /// HOLDS the session", and the main thread then rendered against an
-    /// empty placeholder. Every route now runs over a clone or a handle,
-    /// so `state.session` is the real project throughout. The
-    /// full-screen "Optimize running…" view and the modal-only
-    /// interaction stay until an operator decides otherwise.
+    /// It was a bare `is_optimizing: bool` until WP24. The flag once meant
+    /// "the worker thread HOLDS the session", and the main thread then
+    /// rendered a full-screen placeholder. WP14b gave every route a clone
+    /// or a handle, so `state.session` is the real project throughout, and
+    /// WP24 deleted the placeholder on the operator's ruling of
+    /// 2026-09-13 (§30 item 3). What is left is a POLICY (§28 ruling 8):
+    /// one Optimize run at a time, refused with a toast.
     ///
-    /// One writer sets it — the three submit sites — and two clear it:
+    /// The run is now a value rather than a flag, because the workspace
+    /// bar's progress row has to NAME what is running and offer a cancel
+    /// for that one submit. [`AppState::is_optimizing`] answers the
+    /// policy question the three refusal sites ask.
+    ///
+    /// One writer stamps it — `AppController::submit_gui_job` for the two
+    /// `Job` rows and `AppController::open_optimize_project` for the
+    /// rollup — and two clear it:
     /// `AppController::deliver_gui_job` for the two `Job` rows, and
     /// `AppController::handle_optimize_result` for the project rollup.
-    pub is_optimizing: bool,
+    pub optimize_run: Option<OptimizeRun>,
     /// Set after the user clicks Apply selected on the Optimize-project
     /// rollup. Holds the toolpath ids that need to finish regenerating
     /// before we kick the reconciliation sim. Empty otherwise.
@@ -332,6 +339,74 @@ pub enum OptimizeRunStatus {
     Failed(String),
 }
 
+/// The Optimize run in flight, as the progress row sees it (WP24).
+///
+/// The workspace bar draws one row per run: the label this carries, the
+/// elapsed time, and a Cancel that arms THIS submit. The row replaces the
+/// full-screen placeholder, so it is the only thing that tells the
+/// operator a run is under way.
+///
+/// DEFERRED: no `phase` field. `optimize_toolpath` reports no progress at
+/// all today, so a phase field would have no writer on two of the three
+/// kinds; the row carries the label and the elapsed time instead.
+#[derive(Debug, Clone)]
+pub struct OptimizeRun {
+    pub kind: OptimizeRunKind,
+    /// `Some` for the two `Job` rows; `None` for the rollup, which rides
+    /// `ComputeLane::Optimize` and carries no `Job` id.
+    pub job_id: Option<crate::compute::JobRequestId>,
+    pub started_at: std::time::Instant,
+    /// Set when a cancel was armed. The row then reads "cancelling".
+    ///
+    /// It does NOT clear the run — the drain does. A cancelled Optimize
+    /// still returns a partial outcome, and clearing early would let the
+    /// first submit's drain wipe a second submit's run.
+    pub cancel_requested: bool,
+}
+
+/// Which of the three runs is in flight.
+///
+/// They are three submits on two lanes, and the field covered all three
+/// before WP24 named them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptimizeRunKind {
+    /// `AppController::open_optimize_modal` — the `optimize_toolpath`
+    /// `Job` row.
+    Toolpath {
+        toolpath_id: rs_cam_core::ToolpathId,
+    },
+    /// `AppController::open_optimize_project` — the rollup on
+    /// `ComputeLane::Optimize`.
+    Project,
+    /// `AppController::request_multitool_preview` — the
+    /// `preview_tier_map` `Job` row.
+    MultitoolPreview,
+}
+
+impl OptimizeRunKind {
+    /// Name the run for the progress row and for a refusal toast.
+    ///
+    /// One function serves both, so the sentence the operator reads when
+    /// a second request is refused names the run the row is showing.
+    #[must_use]
+    pub fn label(&self, session: &rs_cam_core::session::ProjectSession) -> String {
+        match self {
+            Self::Toolpath { toolpath_id } => {
+                let config = session
+                    .toolpath_configs()
+                    .iter()
+                    .find(|tc| tc.id == *toolpath_id);
+                match config {
+                    Some(tc) => format!("Optimize {}", tc.name),
+                    None => format!("Optimize toolpath {toolpath_id}"),
+                }
+            }
+            Self::Project => "Optimize project".to_owned(),
+            Self::MultitoolPreview => "Tier-map preview".to_owned(),
+        }
+    }
+}
+
 /// Persistent state for the project-level Optimize rollup (U3).
 /// Mirrors `OptimizeModalState`'s lifecycle but without a single
 /// toolpath_id — the rollup spans every enabled toolpath.
@@ -382,7 +457,7 @@ impl AppState {
             wizard_active_step: 0,
             optimize_modal: None,
             optimize_project: None,
-            is_optimizing: false,
+            optimize_run: None,
             pending_reconciliation_for_ids: Vec::new(),
             pending_apply_resim: None,
             feeds_modal: None,
@@ -423,6 +498,17 @@ impl AppState {
         }
     }
 
+    /// Is an Optimize run in flight?
+    ///
+    /// The policy question (§28 ruling 8): one Optimize run at a time. The
+    /// three submit sites ask it and refuse with a toast, and the two menu
+    /// entries disable on it. It is NOT a drawing question any more — WP24
+    /// deleted the full-screen placeholder that made it one.
+    #[must_use]
+    pub fn is_optimizing(&self) -> bool {
+        self.optimize_run.is_some()
+    }
+
     /// Modal exclusivity (density pass Batch 2): every modal-open path
     /// calls this first, so opening one modal closes the others — the
     /// 2026-06-11 capture sweep produced a 3-deep stack (Optimize
@@ -437,7 +523,7 @@ impl AppState {
         self.show_export_wizard = false;
         self.show_preflight = false;
         self.show_shortcuts = false;
-        if !self.is_optimizing {
+        if !self.is_optimizing() {
             self.optimize_modal = None;
             self.optimize_project = None;
             // Closed, not discarded — see the field doc. A planner whose
@@ -503,7 +589,14 @@ mod tests {
     #[test]
     fn close_modals_for_exclusivity_spares_running_optimize() {
         let mut state = AppState::new();
-        state.is_optimizing = true;
+        state.optimize_run = Some(OptimizeRun {
+            kind: OptimizeRunKind::Toolpath {
+                toolpath_id: rs_cam_core::ToolpathId(0),
+            },
+            job_id: Some(crate::compute::JobRequestId(0)),
+            started_at: std::time::Instant::now(),
+            cancel_requested: false,
+        });
         state.optimize_modal = Some(OptimizeModalState {
             toolpath_id: rs_cam_core::ToolpathId(0),
             status: OptimizeRunStatus::Loading,

@@ -1056,6 +1056,13 @@ impl<B: ComputeBackend> AppController<B> {
     /// the two maps never key one submit twice. The flag is this submit's
     /// own: a close arm arms it, and the lane's shared FIFO flag is left
     /// alone so an MCP caller's job behind this one survives.
+    ///
+    /// **This is the ONE stamp site for `AppState::optimize_run` on the two
+    /// `Job` rows** (WP24). The `target` parameter already names the kind
+    /// and the id is in scope, so neither caller needs the id back. The
+    /// caller must run `AppState::close_modals_for_exclusivity` BEFORE this
+    /// call: that rule spares a RUNNING Optimize, so a stamp ahead of it
+    /// would spare the previous settled modal instead of closing it.
     pub(crate) fn submit_gui_job(
         &mut self,
         handle: rs_cam_core::session::JobHandle,
@@ -1064,6 +1071,22 @@ impl<B: ComputeBackend> AppController<B> {
     ) {
         let id = crate::compute::JobRequestId(self.next_job_request_id);
         self.next_job_request_id = self.next_job_request_id.saturating_add(1);
+        let kind = match &target {
+            crate::controller::GuiJobTarget::OptimizeModal { toolpath_id } => {
+                crate::state::OptimizeRunKind::Toolpath {
+                    toolpath_id: *toolpath_id,
+                }
+            }
+            crate::controller::GuiJobTarget::MultitoolPreview => {
+                crate::state::OptimizeRunKind::MultitoolPreview
+            }
+        };
+        self.state.optimize_run = Some(crate::state::OptimizeRun {
+            kind,
+            job_id: Some(id),
+            started_at: std::time::Instant::now(),
+            cancel_requested: false,
+        });
         self.gui_jobs.insert(
             id,
             crate::controller::PendingGuiJob {
@@ -1083,8 +1106,9 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// **The GUI map is read FIRST and outside the feature gate.**
     /// `pending_mcp` is `None` in every build launched without `--mcp`,
-    /// so a lookup behind the gate would never clear `is_optimizing` and
-    /// the GUI would stay on the placeholder for good.
+    /// so a lookup behind the gate would never clear
+    /// `AppState::optimize_run` and the progress row would stay up for
+    /// good, with every Optimize entry point refused behind it.
     fn handle_job_result(&mut self, result: crate::compute::JobResult) {
         // Destructured here, above the feature gate: the answer is consumed
         // by value, which is what the gate's `needless_pass_by_value` rule
@@ -1118,10 +1142,11 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Land one GUI-started `Job` answer on the view that asked for it.
     ///
-    /// `is_optimizing` clears HERE for both targets, on every outcome —
-    /// the answer, a cancel and a panic alike. It is the only place a
-    /// GUI-started job can clear it, so an early return above this line
-    /// leaves the operator on the placeholder.
+    /// `AppState::optimize_run` clears HERE for both targets, on every
+    /// outcome — the answer, a cancel and a panic alike. It is the only
+    /// place a GUI-started job can clear it, so an early return above this
+    /// line leaves the progress row up and every Optimize entry point
+    /// refused behind it.
     fn deliver_gui_job(
         &mut self,
         target: &crate::controller::GuiJobTarget,
@@ -1129,7 +1154,7 @@ impl<B: ComputeBackend> AppController<B> {
     ) {
         use rs_cam_core::session::JobAnswer;
 
-        self.state.is_optimizing = false;
+        self.state.optimize_run = None;
         match target {
             crate::controller::GuiJobTarget::OptimizeModal { toolpath_id } => {
                 let status = match answer {
@@ -1251,13 +1276,13 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// The lane no longer carries a session back: WP14b gives it a CLONE,
     /// so the main thread never lost its own and there is nothing to
-    /// restore. `is_optimizing` still clears here, because the rollup is
-    /// the one arm left on this lane; the two `Job` rows clear it in
-    /// [`Self::deliver_gui_job`].
+    /// restore. `AppState::optimize_run` still clears here, because the
+    /// rollup is the one arm left on this lane; the two `Job` rows clear it
+    /// in [`Self::deliver_gui_job`].
     fn handle_optimize_result(&mut self, result: crate::compute::OptimizeResult) {
         use crate::compute::OptimizeResultKind;
 
-        self.state.is_optimizing = false;
+        self.state.optimize_run = None;
 
         match result.kind {
             OptimizeResultKind::Project { report } => {

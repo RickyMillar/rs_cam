@@ -5,8 +5,16 @@
 //! a rationale section. Driven by the cached
 //! `AppState::optimize_modal` state — the modal does not recompute
 //! the outcome on every frame (Optimize is expensive — minutes per
-//! toolpath). The controller's `OpenOptimizeModal` handler runs
-//! `optimize_toolpath` synchronously and stashes the outcome here.
+//! toolpath).
+//!
+//! The controller's `OpenOptimizeModal` handler submits the
+//! `optimize_toolpath` `Job` row on `ComputeLane::Job` (WP14b) and the
+//! compute drain stashes the outcome here. It ran synchronously until
+//! WP14b; this doc said so for longer.
+//!
+//! This is an `egui::Window` and has never blocked input. What made it
+//! modal was the full-screen placeholder `app.rs` drew during a run, and
+//! WP24 deleted that, so the hint below is true.
 
 use rs_cam_core::tool_load::optimize::{
     BaselineTraceAssumptions, EntryAdvisory, GateKind, KinematicsSource, KnobAxis, LimitingGate,
@@ -80,8 +88,11 @@ fn draw_status(
                 .small()
                 .color(theme::TEXT_MUTED),
             );
-            // U3 wires Cancel through the worker thread. For U2,
-            // closing the modal stops the (non-existent) worker too.
+            // Close IS the cancel here, and that pairing is deliberate:
+            // the close arm arms this submit's flag AND closes the window,
+            // so `land_optimize_outcome` discards the partial outcome
+            // against a closed modal. WP24's workspace-bar row cancels
+            // WITHOUT closing, so there the partial outcome lands.
             if ui.button("Cancel").clicked() {
                 events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
             }

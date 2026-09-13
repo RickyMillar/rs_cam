@@ -479,6 +479,9 @@ impl<B: ComputeBackend> AppController<B> {
                     self.handle_sim_jump_to_op_start(boundary_index);
                 }
                 UiCommand::CancelCompute(NoArgs) => self.compute.cancel_all(),
+                UiCommand::CancelOptimizeRun(NoArgs) => {
+                    self.cancel_optimize_run();
+                }
                 UiCommand::CloseOptimizeModal(NoArgs) => {
                     // WP14b: the run is a `Job` on the SHARED FIFO Job
                     // lane, so a lane cancel would also kill an MCP
@@ -486,8 +489,15 @@ impl<B: ComputeBackend> AppController<B> {
                     // own flag instead, and leave the entry in the map:
                     // the job still completes, the drain discards the
                     // outcome against a closed modal, and the drain is
-                    // where `is_optimizing` flips back to false.
-                    if self.state.is_optimizing {
+                    // where `optimize_run` goes back to `None`.
+                    //
+                    // This arm KEEPS arm-and-close. WP24's progress row
+                    // cancels without closing, which is a different
+                    // thing: if close stopped cancelling,
+                    // `land_optimize_outcome` would discard the answer
+                    // against a closed modal and the operator would pay
+                    // for a search whose result nothing shows.
+                    if self.state.is_optimizing() {
                         self.cancel_gui_optimize_jobs();
                     }
                     self.state.optimize_modal = None;
@@ -497,7 +507,7 @@ impl<B: ComputeBackend> AppController<B> {
                     // ruling 6): it has no registry row, so it is still
                     // the only thing on that lane and a lane cancel
                     // reaches nobody else.
-                    if self.state.is_optimizing {
+                    if self.state.is_optimizing() {
                         self.compute
                             .cancel_lane(crate::compute::ComputeLane::Optimize);
                     }
@@ -625,12 +635,21 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         };
 
-        // Refuse to start a second Optimize run while one is already
-        // in flight. The button that fires this event is hidden by
-        // the GUI lockout, but a stray automation hit could still
-        // reach here.
-        if self.state.is_optimizing {
-            tracing::warn!("Ignored OpenOptimizeModal — Optimize lane already running");
+        // Refuse to start a second Optimize run while one is already in
+        // flight (§28 ruling 8).
+        //
+        // WP24 deleted the full-screen placeholder, so the buttons that
+        // fire this event are CLICKABLE during a run and the refusal is
+        // reachable by hand. A `tracing::warn!` alone is invisible to the
+        // operator, so the refusal pushes a toast that NAMES the run
+        // holding the policy.
+        if self.state.is_optimizing() {
+            let busy = self.optimize_run_label();
+            tracing::warn!("Ignored OpenOptimizeModal — {busy} is already running");
+            self.push_notification(
+                format!("{busy} is already running — one Optimize run at a time."),
+                crate::controller::Severity::Warning,
+            );
             return;
         }
 
@@ -665,8 +684,11 @@ impl<B: ComputeBackend> AppController<B> {
             }
         };
 
+        // `submit_gui_job` stamps `AppState::optimize_run`, so the stamp
+        // runs AFTER this call. `close_modals_for_exclusivity` SPARES a
+        // running Optimize, and a stamp before it would make the rule
+        // spare the previous settled modal instead of closing it.
         self.state.close_modals_for_exclusivity();
-        self.state.is_optimizing = true;
         self.state.optimize_modal = Some(crate::state::OptimizeModalState {
             toolpath_id,
             status: crate::state::OptimizeRunStatus::Loading,
@@ -678,13 +700,66 @@ impl<B: ComputeBackend> AppController<B> {
         );
     }
 
+    /// Name the Optimize run in flight, for a refusal toast and a log line.
+    ///
+    /// One function serves both, so the sentence the operator reads names
+    /// the same run the workspace bar's progress row is showing. The
+    /// fallback answers the caller that asks with no run in flight; such a
+    /// caller has already tested [`crate::state::AppState::is_optimizing`].
+    pub(crate) fn optimize_run_label(&self) -> String {
+        self.state.optimize_run.as_ref().map_or_else(
+            || "An Optimize run".to_owned(),
+            |run| run.kind.label(&self.state.session),
+        )
+    }
+
+    /// Cancel the Optimize run in flight, and close no window (WP24).
+    ///
+    /// The workspace bar's progress row is the caller. It arms the ONE
+    /// submit that is running — not every entry in `gui_jobs`, and not a
+    /// whole lane. The `Job` lane is FIFO and shared with the MCP surface,
+    /// so `cancel_lane(ComputeLane::Job)` would also kill an MCP caller's
+    /// job queued behind this one. An exact cancel is possible because
+    /// `OptimizeRun` carries the submit's id.
+    ///
+    /// The run STATE stays. The drain is the one clearing site, and a
+    /// cancelled Optimize still returns a partial outcome.
+    fn cancel_optimize_run(&mut self) {
+        let Some(run) = self.state.optimize_run.as_ref() else {
+            return;
+        };
+        let kind = run.kind;
+        let job_id = run.job_id;
+        match kind {
+            crate::state::OptimizeRunKind::Toolpath { .. }
+            | crate::state::OptimizeRunKind::MultitoolPreview => {
+                if let Some(job) = job_id.and_then(|id| self.gui_jobs.get(&id)) {
+                    job.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+            }
+            crate::state::OptimizeRunKind::Project => {
+                // The rollup is the only arm left on the Optimize lane
+                // (§28 ruling 6), so a lane cancel reaches nobody else.
+                self.compute
+                    .cancel_lane(crate::compute::ComputeLane::Optimize);
+            }
+        }
+        if let Some(run) = self.state.optimize_run.as_mut() {
+            run.cancel_requested = true;
+        }
+    }
+
     /// Arm the cancel flag of every `Job` this GUI started for the
     /// Optimize modal or the planner dialog.
     ///
     /// The entries STAY in the map. The lane still reports the job, and
     /// the drain is the one place a GUI-started job clears
-    /// `is_optimizing`. Removing the entry here would strand the flag on
-    /// the placeholder.
+    /// `AppState::optimize_run`. Removing the entry here would strand the
+    /// run on the state with nothing left to clear it.
+    ///
+    /// This helper is the CLOSE arms' cancel, and it is deliberately broad.
+    /// WP24's [`Self::cancel_optimize_run`] arms one entry instead, because
+    /// the progress row knows which submit is running.
     fn cancel_gui_optimize_jobs(&self) {
         for job in self.gui_jobs.values() {
             job.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1377,16 +1452,32 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         };
 
-        if self.state.is_optimizing {
-            tracing::warn!("Ignored OpenOptimizeProject — Optimize lane already running");
+        if self.state.is_optimizing() {
+            let busy = self.optimize_run_label();
+            tracing::warn!("Ignored OpenOptimizeProject — {busy} is already running");
+            self.push_notification(
+                format!("{busy} is already running — one Optimize run at a time."),
+                crate::controller::Severity::Warning,
+            );
             return;
         }
 
         // The walk mutates what it scores, so it needs a session of its
         // own. It takes a COPY; the view keeps the original.
         let session = self.state.session.clone();
+        // The stamp runs AFTER the exclusivity call, for the reason
+        // `open_optimize_modal` records: the rule spares a RUNNING
+        // Optimize, so a stamp before it would spare the previous settled
+        // modal. The rollup stamps itself rather than going through
+        // `submit_gui_job`, because it rides `ComputeLane::Optimize` and
+        // carries no `Job` id.
         self.state.close_modals_for_exclusivity();
-        self.state.is_optimizing = true;
+        self.state.optimize_run = Some(crate::state::OptimizeRun {
+            kind: crate::state::OptimizeRunKind::Project,
+            job_id: None,
+            started_at: std::time::Instant::now(),
+            cancel_requested: false,
+        });
         self.state.optimize_project = Some(crate::state::OptimizeProjectState {
             status: crate::state::OptimizeProjectStatus::Loading,
             row_selected: Vec::new(),

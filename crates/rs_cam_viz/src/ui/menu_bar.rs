@@ -170,7 +170,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     ui.close();
                     events.push(AppEvent::GenerateAll);
                 }
-                let optimize_enabled = state.simulation.has_results() && !state.is_optimizing;
+                let optimize_enabled = state.simulation.has_results() && !state.is_optimizing();
                 if ui
                     .add_enabled(optimize_enabled, egui::Button::new("Optimize project…"))
                     .on_disabled_hover_text(
@@ -186,7 +186,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 // accepts or rejects.
                 let planner_enabled = state.session.tools().len() >= 2
                     && state.session.models().iter().any(|m| m.mesh.is_some())
-                    && !state.is_optimizing;
+                    && !state.is_optimizing();
                 if ui
                     .add_enabled(
                         planner_enabled,

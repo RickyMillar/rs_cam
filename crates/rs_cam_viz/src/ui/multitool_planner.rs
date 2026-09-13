@@ -47,7 +47,7 @@ use crate::ui_command::{NoArgs, UiCommand};
 
 /// Draw the planner dialog if it is open.
 pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent>) {
-    let lane_busy = state.is_optimizing;
+    let lane_busy = state.is_optimizing();
     let Some(planner) = state.multitool_planner.as_mut() else {
         return;
     };

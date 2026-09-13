@@ -1,8 +1,9 @@
 use super::AppEvent;
 use crate::state::AppState;
 use crate::state::Workspace;
+use crate::ui::automation;
 use crate::ui::theme;
-use crate::ui_command::UiCommand;
+use crate::ui_command::{NoArgs, UiCommand};
 
 /// Draw the workspace switcher bar. Sits below the menu bar, always visible.
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -29,6 +30,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         // Right-aligned workspace context info
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
+            optimize_progress_row(ui, state, events);
             // Show current workspace hint
             ui.label(
                 egui::RichText::new(current.hint())
@@ -37,6 +39,46 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             );
         });
     });
+}
+
+/// The Optimize progress row (WP24), or nothing when no run is in flight.
+///
+/// This bar is where the row belongs, because `draw` runs for EVERY
+/// workspace: the status bar has three call sites and none of them is the
+/// Simulation layout, and the viewport overlay has one and never renders on
+/// Readiness. With the full-screen placeholder deleted, this row is the one
+/// surface that tells the operator a run is under way in every workspace.
+///
+/// It reports the run label and the elapsed seconds. It reports no PHASE:
+/// `optimize_toolpath` publishes none, so a phase would be blank on two of
+/// the three kinds — see the doc on [`crate::state::OptimizeRun`].
+fn optimize_progress_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    let Some(run) = state.optimize_run.as_ref() else {
+        return;
+    };
+    let label = run.kind.label(&state.session);
+    let seconds = run.started_at.elapsed().as_secs();
+    let text = if run.cancel_requested {
+        format!("{label} — cancelling ({seconds} s)")
+    } else {
+        format!("{label} — {seconds} s")
+    };
+
+    // The cancel arms THIS submit's flag and closes no window. None of the
+    // three older cancels fits: `CancelCompute` cancels every lane, which
+    // kills an MCP caller's queued job, and both Close arms close a window
+    // the operator may not have open.
+    let cancel = ui.add_enabled(
+        !run.cancel_requested,
+        egui::Button::new(egui::RichText::new("Cancel").small()),
+    );
+    automation::record(ui, "workspace_bar_cancel_optimize", &cancel, "Cancel");
+    if cancel.clicked() {
+        events.push(AppEvent::Ui(UiCommand::CancelOptimizeRun(NoArgs)));
+    }
+    ui.label(egui::RichText::new(text).small().color(theme::WARNING));
+    ui.spinner();
+    ui.separator();
 }
 
 fn workspace_tab(

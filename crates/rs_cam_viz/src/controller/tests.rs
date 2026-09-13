@@ -3974,8 +3974,8 @@ fn the_dialogs_dials_reach_the_submitted_spec() {
     controller.handle_internal_event(crate::ui::AppEvent::PreviewMultitoolPlan);
 
     assert!(
-        controller.state.is_optimizing,
-        "one Optimize run at a time — the walk holds the policy flag"
+        controller.state.optimize_run.is_some(),
+        "one Optimize run at a time — the walk holds the policy state"
     );
     assert!(
         controller
@@ -4101,7 +4101,7 @@ fn a_one_tool_ladder_never_reaches_the_worker() {
     controller.handle_internal_event(crate::ui::AppEvent::PreviewMultitoolPlan);
 
     assert!(controller.compute.job_requests.is_empty());
-    assert!(!controller.state.is_optimizing);
+    assert!(controller.state.optimize_run.is_none());
 }
 
 /// The tier preview's setup gate (operator-observed 2026-08-27): the map is
@@ -5959,6 +5959,14 @@ fn a_toolpath_edit_clears_the_view_simulation_wp19() {
 /// RED at the parent revision: COMPILE-red. The arm names
 /// `AppState::optimize_run`, which does not exist there — the state is a
 /// bare `is_optimizing: bool`.
+///
+/// The probe is `UiCommand::ToggleSimPlayback`, and NOT
+/// `UiCommand::SwitchWorkspace`. The controller's arm for a workspace
+/// switch is a no-op (`controller/events/mod.rs:586`); `RsCamApp` applies
+/// that command in `app/input.rs`, because the switch also moves the
+/// camera and the overlay set. So a controller test cannot read a
+/// workspace switch at all, and the probe has to be a command the
+/// controller itself applies.
 #[test]
 fn a_view_command_still_applies_while_an_optimize_run_is_in_flight() {
     let mut controller = planner_controller();
@@ -5971,14 +5979,15 @@ fn a_view_command_still_applies_while_an_optimize_run_is_in_flight() {
         "the preview is in flight, so the run is on the state"
     );
     assert_eq!(controller.compute.job_requests.len(), 1);
+    assert!(
+        !controller.state.simulation.playback.playing,
+        "the probe must flip a value, so read it first"
+    );
 
-    controller.handle_internal_event(AppEvent::Ui(UiCommand::SwitchWorkspace(
-        crate::state::Workspace::Setup,
-    )));
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::ToggleSimPlayback(NoArgs)));
 
-    assert_eq!(
-        controller.state.workspace,
-        crate::state::Workspace::Setup,
+    assert!(
+        controller.state.simulation.playback.playing,
         "a view command applies during a run — the GUI stays usable"
     );
     assert!(

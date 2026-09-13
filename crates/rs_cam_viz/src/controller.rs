@@ -167,10 +167,10 @@ pub(crate) struct PendingGuiJob {
     ///
     /// NOT the lane's flag. The `Job` lane is FIFO and shared, so a
     /// `cancel_lane(ComputeLane::Job)` from a modal would also kill an
-    /// MCP caller's in-flight `recommend_clearing_strategy`. A close arm
-    /// arms this flag and leaves the entry in the map: the job still
-    /// completes, and the drain is the one place that clears
-    /// `is_optimizing`.
+    /// MCP caller's in-flight `recommend_clearing_strategy`. A close arm —
+    /// and WP24's progress row — arms this flag and leaves the entry in the
+    /// map: the job still completes, and the drain is the one place that
+    /// clears `AppState::optimize_run`.
     pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 

@@ -665,6 +665,14 @@ macro_rules! for_each_ui_command {
              }),
 
             // ── Optimizer modal view state ──────────────────────────
+            (UiCommand, CancelOptimizeRun, "cancel_optimize_run", NoArgs, (),
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "an MCP caller cancels its own job and draws no progress row",
+                 ),
+                 cli: Reach::Skip("the batch CLI draws no progress row"),
+             }),
             (UiCommand, CloseOptimizeModal, "close_optimize_modal", NoArgs, (),
              Surfaces {
                  gui: Reach::Reached,

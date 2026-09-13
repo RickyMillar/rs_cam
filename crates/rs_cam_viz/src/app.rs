@@ -788,61 +788,24 @@ impl RsCamApp {
                 crate::ui::workspace_bar::draw(ui, state, events);
             });
 
-        // Draw workspace-specific layout. The full-screen placeholder is
-        // a POLICY since WP14b, not a necessity (§28 ruling 8): one
-        // Optimize run at a time. Before it the lane OWNED the session —
-        // `mem::replace` pulled it into the worker request — and the
-        // panels would have rendered against an empty one. Every route
-        // now runs over a clone, so the panels would read the real
-        // project. Removing the placeholder is a separate operator
-        // decision; the modal / rollup window stays the only interactive
-        // surface until then.
-        if self.controller.state().is_optimizing {
-            // The lane is shared, so name what is actually on it: an operator
-            // told "Optimize is running" while waiting on a tier-map preview
-            // would reasonably think they had clicked the wrong thing.
-            let previewing = self
-                .controller
-                .state()
-                .multitool_planner
-                .as_ref()
-                .is_some_and(crate::state::multitool_planner::MultitoolPlannerState::is_loading);
-            let (heading, hint) = if previewing {
-                (
-                    "Building the tier map…",
-                    "Use the planner window to cancel or wait for the preview.",
-                )
-            } else {
-                (
-                    "Optimize is running…",
-                    "Use the Optimize window to cancel or wait for the result.",
-                )
-            };
-            egui::CentralPanel::default().show_inside(ui, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(80.0);
-                    ui.spinner();
-                    ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(heading)
-                            .heading()
-                            .color(crate::ui::theme::TEXT_MUTED),
-                    );
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new(hint)
-                            .small()
-                            .color(crate::ui::theme::TEXT_DIM),
-                    );
-                });
-            });
-        } else {
-            match self.controller.state().workspace {
-                Workspace::Setup => self.draw_setup_layout(ui),
-                Workspace::Toolpaths => self.draw_toolpath_layout(ui),
-                Workspace::Simulation => self.draw_simulation_layout(ui),
-                Workspace::Readiness => self.draw_readiness_layout(ui),
-            }
+        // Draw workspace-specific layout.
+        //
+        // WP24, operator ruling 2026-09-13 (§30 item 3): the full-screen
+        // Optimize placeholder is DELETED. It was a POLICY and never a
+        // necessity. Before WP14b the lane OWNED the session — a
+        // `mem::replace` pulled it into the worker request — so the panels
+        // would have drawn against an empty one. Every route now runs over
+        // a clone, and the operator keeps the whole GUI during a run.
+        //
+        // What tells the operator a run is in flight is the progress row in
+        // `ui::workspace_bar`, which also cancels it. One run at a time
+        // stays the policy (§28 ruling 8), and the three submit sites now
+        // refuse with a toast rather than a log line.
+        match self.controller.state().workspace {
+            Workspace::Setup => self.draw_setup_layout(ui),
+            Workspace::Toolpaths => self.draw_toolpath_layout(ui),
+            Workspace::Simulation => self.draw_simulation_layout(ui),
+            Workspace::Readiness => self.draw_readiness_layout(ui),
         }
 
         // Pre-flight checklist modal (shown on top of either layout)
