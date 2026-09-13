@@ -291,8 +291,14 @@ components already in `ui/components/` are extended rather than duplicated.
 - `KeyValueRow` — the four-slot geometry added to `value_row.rs`, with the
   per-panel label width and the wrapping trailing slot.
 - `DataTable` (new), a wrapper over `egui::Grid`.
-- `EmptyState`, `Banner`, `NotMeasured` (new). `EmptyState` generalises the
-  one good empty state the product already has, `ui/sim_op_list.rs:128-170`.
+- `EmptyState`, `Banner`, `NoticeStack`, `NotMeasured` (new). `EmptyState`
+  generalises the one good empty state the product already has,
+  `ui/sim_op_list.rs:128-170`. **`NoticeStack` is the bounded renderer for N
+  of anything** (`DESIGN_SPEC.md` §4.11) and it has six consumers: the toast
+  stack, the load-warnings window, triage advisories, simulation hotspots, the
+  per-toolpath finding set and inspector cautions. Two of those are unbounded
+  in code today — `app.rs:932` iterates every active notification and
+  `app.rs:911` every load warning.
 - `CountPill` extended per spec §4.4.
 - `motion.rs` (new): the durations in spec §5 as named helpers over
   `ctx.animate_bool_with_time_and_easing` with `emath::easing::cubic_out`.
@@ -324,6 +330,11 @@ test with a headless `egui::Context`:
 3. `EmptyState` renders at most one button.
 4. `KeyValueRow`'s trailing slot wraps instead of clipping at a panel width
    of 240.
+4b. `NoticeStack` drives the §4.11 rules from a synthetic population of 3
+   `DANGER` and 40 `CAUTION` with a cap of 4: **all three dangers render**,
+   one caution renders, the overflow row states `43` and not `39`, and
+   identical items collapse with a `×N` multiplier. The severity-outranks-cap
+   arm is the one that matters — it is a safety rule, not a layout rule.
 5. Non-vacuity: each assertion names the component it exercised, and the
    test fails if the component list is shorter than the spec's.
 
@@ -359,6 +370,13 @@ package. UP2 builds the kit. UP3 onward installs it.
   the operator. UP3 records the question in `STATUS.md`.
 - `app.rs:918-957`: toasts become the `Toast` component — shadow, left rule,
   slide and fade, and `request_repaint_after(16 ms)` while any toast lives.
+  The visible stack caps at four through `NoticeStack`; a fifth arrival
+  coalesces the oldest non-danger toasts into one counter row, and a `DANGER`
+  toast never coalesces. **TTLs, severities and the `get_notifications` wire
+  are untouched**, so `get_notifications_g_toastread.rs` must still pass
+  unchanged — if it does not, the change went too far.
+- `app.rs:895-915`: the load-warnings window takes `NoticeStack` too. It
+  iterates every warning today.
 - All twelve `egui::Window` sites get `SURFACE_OVERLAY`, `SHADOW_OVERLAY`,
   `RADIUS_MD` and the §6 footer order.
 - **The scrim is an operator decision and UP3 does not take it.**

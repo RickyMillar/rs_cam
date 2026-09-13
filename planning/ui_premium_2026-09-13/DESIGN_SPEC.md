@@ -578,6 +578,12 @@ readiness cycle-time note and the load warnings are all sentences, and
 The Readiness banner, the `NOT MEASURED` strip and the load warnings all
 become `Banner`.
 
+**One banner per surface, whatever N is.** When more than one condition holds,
+the banner takes the **worst** severity and its title names the population:
+`3 problems — 1 collision, 2 cautions`. It carries at most two lines of
+detail. Everything else goes to a `NoticeStack` beneath it. Two stacked
+banners is a defect; the second one is always a stack row.
+
 ### 4.10 `Toast`
 
 `SURFACE_OVERLAY` fill, `SHADOW_OVERLAY`, `RADIUS_MD`, a 3-point left rule
@@ -587,7 +593,65 @@ It slides in from the right over 140 ms with an opacity ramp, and fades out
 over 200 ms. The repaint interval drops from 1 s to 16 ms while any toast is
 alive, so a toast leaves when its TTL says so (`AUDIT.md` D-05).
 
-### 4.11 `NotMeasured`
+**The visible stack caps at four**, per `NoticeStack`. A fifth arrival
+coalesces the oldest non-danger toasts into one counter row reading
+`+3 more · View`, which opens the notification list. A `DANGER` toast never
+coalesces. A burst from one operation — nine toasts from one `generate_all` —
+collapses to one row with a `×9` multiplier rather than filling the corner.
+
+Two things this does **not** change: every toast keeps its own TTL and
+severity exactly as today, and `get_notifications` keeps publishing the whole
+stack. This is a rendering cap on one surface, not a change to the
+notification model, and a test asserting what the operator saw still reads the
+full stack.
+
+### 4.11 `NoticeStack` — the bounded renderer for N of anything
+
+**No surface in this product renders an unbounded list.** Six places can carry
+an arbitrary number of items, and two of them are unbounded in code today:
+the toast stack iterates every active notification (`app.rs:932`) and the load
+warnings window iterates every warning (`app.rs:911`). The others are triage
+advisories, simulation hotspots (293 on the reference job), the per-toolpath
+finding set, and inspector cautions.
+
+Core already solved this once and solved it well. `SimulationTriage` caps
+advisories at 10 per toolpath and 50 per project, dedupes on a spatial key,
+and publishes `truncated` alongside a **true pre-cap** `total_matching`.
+`NoticeStack` is that discipline made visual, and every one of the six
+surfaces uses it.
+
+**Ordering.** Severity first — `DANGER`, `CAUTION`, `UNKNOWN`, `INFO` — then
+stable within a severity: newest first for toasts, subject order for
+findings. Ordering never depends on arrival order across severities.
+
+**Collapsing.** Items sharing an id and a dedupe key render as one row with a
+`×N` multiplier, expandable to the individual items. Five rapid collisions at
+five different moves are one row reading `Rapid collision ×5`, not five rows.
+
+**The cap, and the one rule that outranks it.** A stack renders at most
+`visible_cap` rows — 4 in a panel, 3 in a window, 4 for toasts.
+**Every `DANGER` item renders, always, past the cap.** The cap applies to
+`CAUTION` and below. A stack of 3 dangers and 40 cautions with a cap of 4
+shows all 3 dangers, 1 caution and an overflow row — never 4 cautions. On a
+machine that cuts real material, a count may be truncated and a severity may
+not.
+
+**The overflow row states the true total.** It reads
+`Showing 4 of 293 · Show all`, and 293 is the pre-cap population, not the
+rendered count and not a remainder. This product has already been bitten by a
+count that meant three different things under one name; an overflow row that
+says `+289 more` invites the same error. Where the population is itself
+capped upstream, the row says so: `Showing 4 of 50+ · Show all`.
+
+**Grouping.** Above 20 items the stack groups by subject — by operation, by
+setup — and each group header carries its own count. 293 hotspots is not a
+list, it is a distribution, and it reads as one line per operation.
+
+**Empty is nothing.** A stack with no items renders no header, no frame and no
+height. It does not become an `EmptyState`; an absent problem is not an empty
+screen.
+
+### 4.12 `NotMeasured`
 
 The rendered form of principle 3. An inline run of `—` in `UNKNOWN` at
 `Numeric` size, with a hover that names the reason. A row of them reads as a
@@ -789,9 +853,15 @@ produced. The product must not paraphrase a refusal, and it must not shorten
 one. Where the refusal names a fix, the banner carries a `Default` button
 that performs it — the Overlays rule again.
 
+### Many
+
+`NoticeStack`, per §4.11. The question "what happens at N = 300?" has an
+answer on every surface that can reach it, and the answer is never "render
+them all" and never "silently show the first few".
+
 ### Not measured
 
-`NotMeasured`, per §4.11. A gate that abstained, a metric below its
+`NotMeasured`, per §4.12. A gate that abstained, a metric below its
 measurability floor, a figure not yet computed. Never a zero, never a blank,
 never a green tick.
 
