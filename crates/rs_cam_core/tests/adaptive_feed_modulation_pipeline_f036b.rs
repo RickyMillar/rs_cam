@@ -530,19 +530,68 @@ fn modulated_cycle_time_lower_than_unmodulated() {
 /// `move_type.feed_rate()` carries the post-modulation feed; chipload
 /// at the move is then `feed / (rpm * flute_count)`.
 ///
-/// Filter scope: only moves the modulator **actually touched** — i.e.
-/// moves whose `feed_rate` differs from the toolpath's commanded
-/// feed by more than 0.5 mm/min. Moves the algorithm skipped (zero
-/// aggregated engagement, non-clearing/finishing intent, plunge /
-/// retract / drilling) keep the commanded feed by design; if the
-/// commanded feed itself is below the LUT band, that's a user
-/// parameter choice the modulator doesn't override. The
-/// algorithm-layer floor-clamp on modulated moves is what AB5 pins.
+/// Filter scope: only moves the modulator **actually touched**. The arm
+/// reads that from EVIDENCE, not from a proxy. It keeps the
+/// pre-modulation per-move feeds after `generate_toolpath`, runs the
+/// simulation with the flag ON, and diffs the two move lists by index. A
+/// move whose feed moved is a move the modulator wrote. Moves the
+/// algorithm skipped (zero aggregated engagement, non-clearing /
+/// finishing intent, plunge / retract / drilling) keep their
+/// pre-modulation feed by design; if that feed is below the LUT band,
+/// that is a generator or user parameter choice the modulator does not
+/// override. The algorithm-layer floor-clamp on modulated moves is what
+/// AB5 pins.
+///
+/// **WP26 (2026-09-13) — why the old proxy broke.** The arm used to keep
+/// a move whose feed differs from the operation's own `feed_rate()` by
+/// 0.5 mm/min or more. That proxy holds only while the modulator is the
+/// one pass that writes a per-move feed. Since WP11b (`4b53576b`,
+/// 2026-09-11) the feed-optimisation dressup writes per-move feeds on
+/// the same generation door, so the proxy counted 21 of 126 moves the
+/// modulator never touched and read a feed-optimisation value as a
+/// modulator value. The solver's own floor
+/// (`feed_modulation.rs:518-529`) puts every move it writes at
+/// `band.min × rpm × flutes`, or at the machine cutting-feed ceiling
+/// when that ceiling is lower. A below-floor move is therefore always a
+/// pass-through at its generated feed: the zero-engagement arm returns
+/// the MOVE's own feed (`:663-670`), and the writer rewrites a move only
+/// when the new feed differs from it (`:706-710`). The diff cannot make
+/// the proxy's mistake, and it also keeps a move the modulator LOWERED,
+/// which any feed-value threshold drops.
+///
+/// The arm skips a move whose stamped `BindingConstraint` is
+/// `PlungeRate`. The Phase 3 geometric plunge guard caps a
+/// vertical-dominant move at the operation's own `plunge_rate`, which
+/// sits below the band floor by construction, so AB5 does not pin it.
 #[test]
 fn modulated_path_never_emits_below_min_chipload() {
+    use rs_cam_core::tool_load::BindingConstraint;
     use rs_cam_core::toolpath::MoveIntent;
 
-    let session = run_session(true, true);
+    // One session. `generate_toolpath` adopts the pre-modulation IR into
+    // `session.results`, and `run_simulation` reads that result without
+    // regenerating it, so these feeds are the feeds the modulator was
+    // handed. The post-pass swaps a NEW `Arc` into the result slot and
+    // never mutates through the old one
+    // (`session/compute.rs:4253-4258`, `:4382-4405`).
+    let mut session = build_as001_pocket_session(true);
+    let cancel = AtomicBool::new(false);
+    session
+        .generate_toolpath(0, &cancel)
+        .expect("generate pocket toolpath");
+    let pre_feeds: Vec<Option<f64>> = session
+        .get_result(0)
+        .expect("session result before the simulation")
+        .annotated()
+        .toolpath
+        .moves
+        .iter()
+        .map(|mv| mv.move_type.feed_rate())
+        .collect();
+    session
+        .run_simulation(&opts(true), &cancel)
+        .expect("simulation completes");
+
     let trace = session
         .simulation_result()
         .and_then(|s| s.cut_trace.as_ref())
@@ -581,7 +630,19 @@ fn modulated_path_never_emits_below_min_chipload() {
     let mut worst_below = f64::INFINITY;
     let floor = band.start * 0.95;
 
-    for mv in &toolpath.moves {
+    // The diff needs one move list. A length change means the
+    // simulation regenerated the toolpath, and a silent `.get(i)` miss
+    // would then drop moves and make the arm vacuous.
+    assert_eq!(
+        pre_feeds.len(),
+        toolpath.moves.len(),
+        "F-036b AB5: the modulated IR carries {post} moves against {pre} before the \
+         simulation. The per-index diff reads one move list, not two.",
+        post = toolpath.moves.len(),
+        pre = pre_feeds.len()
+    );
+
+    for (i, mv) in toolpath.moves.iter().enumerate() {
         if !matches!(
             mv.intent,
             MoveIntent::ClearingCut | MoveIntent::FinishingCut
@@ -591,11 +652,26 @@ fn modulated_path_never_emits_below_min_chipload() {
         let Some(feed) = mv.move_type.feed_rate() else {
             continue;
         };
-        // Only check moves the modulator actually touched. Skipped
-        // moves (zero engagement aggregation) keep the commanded feed
-        // by design — if that's below band, it's a user parameter
-        // choice, not a modulator bug.
-        if (feed - commanded_feed).abs() < 0.5 {
+        // Only check moves the modulator actually touched, and read that
+        // off the pre-modulation IR. Skipped moves (zero engagement
+        // aggregation) keep their generated feed by design — if that is
+        // below band, it is a user or generator choice, not a modulator
+        // bug. The comparison is exact: a tolerance is the old proxy
+        // coming back.
+        let Some(pre_feed) = pre_feeds.get(i).copied().flatten() else {
+            continue;
+        };
+        let modulator_wrote_it = (feed - pre_feed).abs() > 0.0;
+        if !modulator_wrote_it {
+            continue;
+        }
+        // The Phase 3 geometric plunge guard writes the operation's own
+        // plunge rate, which sits below the band floor by construction.
+        let binding = trace
+            .modulated_feeds
+            .get(&(ToolpathId(0), i))
+            .map(|(_, constraint)| *constraint);
+        if matches!(binding, Some(BindingConstraint::PlungeRate)) {
             continue;
         }
         modulated_moves += 1;
@@ -609,6 +685,14 @@ fn modulated_path_never_emits_below_min_chipload() {
             if chipload < worst_below {
                 worst_below = chipload;
             }
+            // Name every counted move, so a red reports which moves it
+            // counted and which constraint bound each one.
+            eprintln!(
+                "F-036b AB5 below floor: move {i}, intent {intent:?}, pre-modulation feed \
+                 {pre_feed:.1}, modulated feed {feed:.1}, chipload {chipload:.4} mm/tooth, \
+                 binding {binding:?}",
+                intent = mv.intent
+            );
         }
     }
 
