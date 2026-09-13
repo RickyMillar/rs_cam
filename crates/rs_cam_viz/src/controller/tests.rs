@@ -6138,3 +6138,134 @@ fn a_second_optimize_request_is_refused_with_a_toast() {
          {warnings:?}"
     );
 }
+
+// ── WP29 — the Optimize run reports its stage and its candidate count ─
+//
+// Programme: `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md`
+// §33 (operator ruling, 2026-09-13). The row and the window showed a
+// spinner, a label and the elapsed seconds. They now name the rung of the
+// search ladder and the candidate inside it.
+//
+// The DRAW half is two source scans in
+// `crates/rs_cam_viz/tests/optimize_run_is_non_modal_wp24.rs`. These two
+// arms are the TEXT half: one pure builder serves the row and the window,
+// so a test reads the sentence the operator reads without an egui pass.
+//
+// **The WP24 limit still stands.** No controller fixture in this crate
+// holds a cut trace, and `capture_optimize_toolpath` refuses without one,
+// so the `Toolpath` kind of `OptimizeRun` cannot be DRIVEN in-crate. Arm 1
+// therefore fabricates the run and writes the progress by hand, and arm 2
+// drives the tier-map preview for the `None` branch. A tier-map preview
+// runs no optimizer, so its progress is `None` by construction and it can
+// never prove a count.
+//
+// RED at the parent revision: COMPILE-red. Both arms name
+// `OptimizeRun::progress_text`, `OptimizeRun::progress` and
+// `rs_cam_core::tool_load::optimize::OptimizeProgress`, and none of the
+// three exists there.
+
+/// A run with progress names the rung, the candidate and the list.
+///
+/// Three claims in one arm, because one builder answers all three: the
+/// row's sentence, the window's three-row list, and the mark that says
+/// which rung is running. A second arm would fabricate the same run twice.
+#[test]
+fn a_running_optimize_reports_its_stage_and_its_candidate_count() {
+    use rs_cam_core::tool_load::optimize::{OptimizeProgress, SearchPhase};
+
+    let state = AppState::new();
+    let progress = Arc::new(OptimizeProgress::default());
+    progress.begin_phase(SearchPhase::FeedRpm, 1);
+    progress.begin_candidate(0);
+    progress.begin_phase(SearchPhase::AxisGrid, 8);
+    progress.begin_candidate(2);
+
+    let run = crate::state::OptimizeRun {
+        kind: crate::state::OptimizeRunKind::Toolpath {
+            toolpath_id: rs_cam_core::ToolpathId(0),
+        },
+        job_id: Some(crate::compute::JobRequestId(0)),
+        started_at: std::time::Instant::now(),
+        cancel_requested: false,
+        progress: Some(Arc::clone(&progress)),
+    };
+
+    let text = run.progress_text(&state.session);
+    assert!(
+        text.contains("stage 2/3"),
+        "the row must name the rung and the ladder length, got {text:?}"
+    );
+    assert!(
+        text.contains("candidate 3/8"),
+        "the row must name the candidate now running and the count the \
+         rung formed, got {text:?}"
+    );
+
+    let rows = run.stage_rows();
+    assert_eq!(
+        rows.len(),
+        3,
+        "the window lists every rung of the ladder, not only the running \
+         one"
+    );
+    let marks: Vec<crate::state::OptimizeStageMark> = rows.iter().map(|row| row.mark).collect();
+    assert_eq!(
+        marks,
+        vec![
+            crate::state::OptimizeStageMark::Done,
+            crate::state::OptimizeStageMark::Current,
+            crate::state::OptimizeStageMark::Pending,
+        ],
+        "the finished rung reads done, the running rung reads current, \
+         and the rung the search has not reached reads pending"
+    );
+    assert!(
+        rows.iter()
+            .filter_map(|row| row.count.as_deref())
+            .any(|count| count.contains("3 / 8")),
+        "the running rung's row carries its own count, got {rows:?}"
+    );
+    assert!(
+        rows.last().is_some_and(|row| row.count.is_none()),
+        "a rung the search has not announced reports NO count, because \
+         its total is not known until it starts: {rows:?}"
+    );
+}
+
+/// A run with no progress keeps the WP24 sentence.
+///
+/// The rollup and the tier-map preview run no candidate ladder, so they
+/// carry no progress and the row must not invent a rung for them. This is
+/// the branch the planner fixture CAN drive.
+#[test]
+fn a_run_without_progress_keeps_the_elapsed_only_text() {
+    let mut controller = planner_controller();
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::OpenMultitoolPlanner(NoArgs)));
+    tick_ball_tools(&mut controller);
+    controller.handle_internal_event(AppEvent::PreviewMultitoolPlan);
+
+    let run = controller
+        .state
+        .optimize_run
+        .as_ref()
+        .expect("the preview is in flight, so the run is on the state");
+    assert!(
+        run.progress.is_none(),
+        "a tier-map preview runs no candidate ladder, so it carries no \
+         progress"
+    );
+
+    let text = run.progress_text(&controller.state.session);
+    assert!(
+        !text.contains("stage"),
+        "a run with no progress must not claim a rung, got {text:?}"
+    );
+    assert!(
+        text.contains("Tier-map preview"),
+        "and it keeps the WP24 label, got {text:?}"
+    );
+    assert!(
+        run.stage_rows().is_empty(),
+        "the window lists no rung for a run that walks no ladder"
+    );
+}

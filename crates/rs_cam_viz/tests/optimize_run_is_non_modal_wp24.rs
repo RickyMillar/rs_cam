@@ -42,12 +42,18 @@
 //! COMPILE-red instead, because they name `AppState::optimize_run` and
 //! `UiCommand::CancelOptimizeRun`.
 //!
+//! Arms 4 and 5 (WP29) hold to the same rule. Both needles are strings,
+//! so both are ASSERTION-red at WP29's parent revision.
+//!
 //! # What this file does NOT measure
 //!
 //! - Anything on screen. No cargo ran and no screenshot was taken.
-//! - The progress observer. `optimize_toolpath` reports no phase, so the
-//!   row carries the run label and the elapsed time alone. A phase field
-//!   with no writer is noise; see the doc on `state::OptimizeRun`.
+//! - What the row and the window SAY about a rung. Arms 4 and 5 check
+//!   that each file reads the shared text builder; the sentence itself is
+//!   measured in-crate, under the heading "WP29 — the Optimize run
+//!   reports its stage and its candidate count". This entry used to read
+//!   "the progress observer … a phase field with no writer is noise",
+//!   which WP29 made false: §33 gave the search a writer.
 //! - That the three refusal toasts reach the operator's eye. The toast
 //!   stack itself is measured in-crate.
 //! - Whether every Optimize entry point is DISABLED during a run. Four
@@ -66,6 +72,7 @@
 const APP_SRC: &str = include_str!("../src/app.rs");
 const BAR_SRC: &str = include_str!("../src/ui/workspace_bar.rs");
 const REGISTRY_SRC: &str = include_str!("../src/ui_command.rs");
+const MODAL_SRC: &str = include_str!("../src/ui/optimize_modal.rs");
 
 /// Strip every `//` comment from one source text.
 ///
@@ -166,6 +173,46 @@ fn the_registry_declares_the_cancel_optimize_run_row() {
     );
 }
 
+// ── arm 4 — the row reads the shared text builder (WP29) ─────────────
+
+/// `ui/workspace_bar.rs` builds its sentence with `progress_text`.
+///
+/// §33 (operator, 2026-09-13) asks the row for the stage boundaries and
+/// the candidate count. The row must not `format!` those itself: one pure
+/// builder on `state::OptimizeRun` serves the row and the in-crate arm, so
+/// the sentence a test reads is the sentence the operator reads, and the
+/// draw stays a draw.
+#[test]
+fn the_workspace_bar_reads_the_shared_progress_text() {
+    let bar = strip_comments(BAR_SRC);
+    assert!(
+        bar.contains("progress_text("),
+        "ui/workspace_bar.rs still builds the row's sentence itself, so \
+         it reports no stage and no candidate count. Call \
+         state::OptimizeRun::progress_text instead — one builder for the \
+         row and for the in-crate arm, per §33."
+    );
+}
+
+// ── arm 5 — the window lists the rungs (WP29) ────────────────────────
+
+/// `ui/optimize_modal.rs` draws the rung list while a run is loading.
+///
+/// The needle is `stage_rows(`, and it is deliberately NOT `optimize_run`
+/// or `OptimizeRun`: that file already carries `optimize_run_provenance`
+/// and `OptimizeRunStatus`, so either of those would match at the parent
+/// revision and this arm would assert nothing.
+#[test]
+fn the_optimize_window_lists_the_search_rungs() {
+    let modal = strip_comments(MODAL_SRC);
+    assert!(
+        modal.contains("stage_rows("),
+        "the Optimize window still shows a bare spinner. §33 asks for the \
+         rung list with the running rung marked and its candidate count; \
+         read state::OptimizeRun::stage_rows in the Loading arm."
+    );
+}
+
 // ── arm 6 — non-vacuity ──────────────────────────────────────────────
 
 /// Each scanned file is the file this suite thinks it is.
@@ -174,6 +221,11 @@ fn the_registry_declares_the_cancel_optimize_run_row() {
 /// turns all of them green by finding nothing. This pins one control per
 /// scanned source. Precedent:
 /// `command_surface_completeness::the_p2_view_locator_finds_a_known_construction`.
+///
+/// Arms 4 and 5 are presence assertions, so a renamed file turns them RED
+/// rather than green. They are covered here all the same, because a
+/// writer who reads a red arm needs to know whether the needle moved or
+/// the file did.
 #[test]
 fn the_source_scans_find_a_known_control() {
     let app = strip_comments(APP_SRC);
@@ -193,5 +245,11 @@ fn the_source_scans_find_a_known_control() {
         registry.contains("CloseOptimizeModal, \"close_optimize_modal\""),
         "ui_command.rs no longer declares the neighbouring Optimize row, \
          so the registry arm asserts nothing"
+    );
+    let modal = strip_comments(MODAL_SRC);
+    assert!(
+        modal.contains("OptimizeRunStatus::Loading"),
+        "ui/optimize_modal.rs no longer draws the Loading arm, so the \
+         rung-list arm scans the wrong file"
     );
 }
