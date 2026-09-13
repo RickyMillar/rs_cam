@@ -373,8 +373,9 @@ suggest pill. It gains a fixed four-slot geometry.
 
 ### 4.7 `DataTable`
 
-A thin wrapper over `egui::Grid`. The crate has 89 `Grid::new` sites and no
-`egui_extras`, so this is a styling wrapper and not a new dependency.
+A thin wrapper over `egui::Grid`. The crate has 89 `Grid::new` sites, no
+`egui_extras` and no `TableBuilder`, so this is a styling wrapper and not a
+new dependency.
 
 - Header row: `Subhead` in `TEXT_MUTED`, hairline below.
 - Zebra: even rows at `SURFACE_RAISED`, odd rows transparent.
@@ -388,7 +389,10 @@ comparison in the product uses the same form.
 
 ### 4.8 `EmptyState`
 
-Replaces the 49 italic one-liners.
+Replaces the 49 italic one-liners. **The reference implementation already
+exists** at `ui/sim_op_list.rs:128-170`: a filled frame, a strong headline,
+and guidance that branches on the situation. This component generalises it.
+
 
 Centred in the available space, at most 280 points wide:
 
@@ -410,6 +414,10 @@ The full-width message block. One per surface, at the top of it.
 `RADIUS_MD`, `SPACE_3` inner margin, the role's chip fill, a **3-point left
 rule** in the role's text colour, a leading glyph, `BodyStrong` title, and
 an optional `Caption` line. An optional trailing `Button::Quiet`.
+
+A `Banner` never renders below 11 points. The tool-load caution, the
+readiness cycle-time note and the load warnings are all sentences, and
+§3.3 puts every sentence at `Body` or `Caption`.
 
 The Readiness banner, the `NOT MEASURED` strip and the load warnings all
 become `Banner`.
@@ -500,6 +508,12 @@ else is `Default` or `Quiet`.
   first at `Body`, the rest at `Caption` (`AUDIT.md` D-29).
 - The `View` help paragraph moves into the hover of an `Overlays` button
   (`AUDIT.md` D-27).
+- The Inspector's pre-simulation state (`ui/sim_diagnostics.rs:41-48`, one
+  9-point italic line for a full-height panel) becomes an `EmptyState`.
+- **Open question, operator's to answer:** this is the one workspace with no
+  status bar (`AUDIT.md` D-42). The bar carries an actionable collisions
+  chip, so adding it is a behaviour decision. This specification does not
+  make it.
 
 ### Readiness
 
@@ -518,7 +532,9 @@ else is `Default` or `Quiet`.
 ### Windows
 
 - Every window gets `SURFACE_OVERLAY`, `SHADOW_OVERLAY`, `RADIUS_MD` and a
-  scrim.
+  scrim. The crate uses `egui::Window` for all twelve and never
+  `egui::Modal`, so the scrim is a *visual* statement of focus and changes
+  no input handling.
 - A window title is `Heading`, left-aligned, with the close control right.
 - A window's footer is one row: `Quiet` cancel on the left, `Default` and
   then `Primary` on the right, in that order.

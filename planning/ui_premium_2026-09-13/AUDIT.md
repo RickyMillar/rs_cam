@@ -20,6 +20,12 @@ Two kinds of evidence appear below. The words are exact.
 The window measured 1600 x 1000 logical points, except `shot_15` and
 `shot_16`, which measured 1400 x 900.
 
+Two read-only source scouts produced independent inventories of the styling
+layer and the screen structure. Where their counts differ from a first pass,
+the number in this document is the one I re-measured myself. Three counts
+moved: the colour total, the overlay row count and the status-bar call
+sites. Each is flagged at its finding.
+
 ### Screenshot index
 
 | File | Surface |
@@ -73,12 +79,26 @@ every finding in this audit.
   **nine components**: `CompareRow`, `Freshness`, `FreshnessGate`,
   `CountPill`, `PrecedenceField`, `ProvenanceBadge`, `SummaryCard`,
   `UiExt`, `SuggestButton`, `ValueRow`.
-- `grep -c Color32:: crates/rs_cam_viz/src` returns **473**. The theme
-  module holds 20 of them. **453 colour literals sit outside the token
-  module.** The three heaviest files are
-  `ui/properties/mod.rs` (96), `ui/properties/operations/mod.rs` (72) and
-  `ui/sim_timeline.rs` (54).
-- 31 of the crate's 128 source files name `theme::` at all.
+- `Color32::` appears **474** times in `crates/rs_cam_viz/src`. Of those,
+  **412 are `Color32::from_rgb(` call sites** carrying **201 distinct
+  triples**, plus **41 distinct `from_rgba_*` values**. The crate therefore
+  carries about **242 distinct colour values against a 20-constant theme.**
+- Only two named egui constants are used anywhere: `TRANSPARENT` (10 sites)
+  and `WHITE` (6). Every other colour is a raw triple.
+- 31 of the crate's 128 source files name `theme::` at all, and adoption is
+  bimodal — the component layer landed on two files and missed the two
+  largest:
+
+| File | Raw `Color32::` | `theme::` |
+|---|---|---|
+| `ui/properties/mod.rs` (6 440 lines) | 96 | **7** |
+| `ui/properties/operations/mod.rs` (2 691 lines) | 72 | **0** |
+| `ui/sim_timeline.rs` | 54 | 7 |
+| `ui/feeds_modal.rs` | 48 | **100** |
+| `ui/sim_diagnostics.rs` | 9 | **60** |
+
+  The two files that draw the toolpath inspector — the product's busiest
+  screen — name the theme module seven times and zero times.
 
 So the work is not "invent a design system". The work is **finish the one
 that exists, widen it to cover type, spacing, elevation and motion, and
@@ -272,9 +292,15 @@ I read the draw site at `ui/properties/mod.rs:594-598`. It is one
 The sentence is correct — F1.13 fixed its wording — but an empty state is
 not a sentence. On the product's largest resting surface the reader gets no
 title, no icon, no shape and no next action. I counted 49 `.italics()` sites
-across the crate; the same pattern repeats in `setup_panel.rs:100`, `:227`,
-`:238` and `toolpath_panel.rs:107` ("No toolpaths"), `:203` ("No tools
-defined").
+across the crate; the same pattern repeats in `setup_panel.rs:100`
+("No models imported"), `:227`, `:238` and `toolpath_panel.rs:107`
+("No toolpaths"), `:203` ("No tools defined").
+
+The worst instance is not in this workspace. I read
+`ui/sim_diagnostics.rs:41-48`: before a simulation runs, **the entire right
+Inspector of the Simulation workspace — 240 points wide and the full window
+height — collapses to one 9-point italic line**, "Run simulation to see the
+cut overview here." No section headers, no placeholder rows, no button.
 
 **Empty is the first state every operator meets, and the product treats it
 as an error message.**
@@ -600,6 +626,10 @@ I read twelve `egui::Window::new` sites outside tests:
 
 ### D-34 No window is visually modal
 
+`grep -c "egui::Modal\|Modal::new" crates/rs_cam_viz/src` returns **0**.
+Every one of the twelve is an `egui::Window`, so **no window in this product
+blocks input**, and none of them is modal in behaviour either.
+
 I saw `shot_10_tool_library_modal.png` and `shot_11_export_wizard.png`. Both
 windows float over a fully lit viewport with a pure-green toolpath behind
 them. Neither dims the background. Neither carries a shadow — `grep Shadow`
@@ -660,8 +690,9 @@ trapped inside one modal.
 
 ### D-38 The Overlays panel is the product's own best pattern
 
-I read `ui/overlays/registry.rs:43-48` and counted **40 `OverlayRow`
-entries** in four groups: Geometry, Toolpath, Regions, Analysis.
+I read `ui/overlays/registry.rs:43-48` and `:403`. The `ROWS` table holds
+**39 entries** in four groups: Geometry 12, Toolpath 10, Regions 5,
+Analysis 12.
 
 I could not photograph the panel — it opens from a viewport button and from
 the `O` key, and neither is reachable over MCP. I record it from source
@@ -706,12 +737,31 @@ collisions`. `661212` is printed without digit grouping. `5 collisions` is
 red, next to `Modified` in italic on the far right (`shot_16`). Five
 different meanings share one type size and one baseline.
 
-### D-41 The status bar block is copied four times
+### D-41 The status bar block is copied three times
 
-I read `app.rs:336-344`, `:364-372`, `:414-422` and the simulation layout.
-The same eight lines — lane snapshot, collision count, `status_bar::draw`,
-separator, status message in `Color32::from_rgb(255, 200, 80)` — appear four
-times, once per workspace, with the colour literal spelled out each time.
+I read `app.rs:340`, `:370` and `:425`. The same eight lines — lane
+snapshot, collision count, `status_bar::draw`, separator, status message in
+`Color32::from_rgb(255, 200, 80)` — appear three times, with the colour
+literal spelled out each time. `grep -n "status_bar::draw"` returns those
+three production sites and one test site.
+
+### D-42 One workspace of four has no status bar
+
+The three sites above are Setup, Readiness and Toolpaths.
+`draw_simulation_layout` has none. I saw the consequence in `shot_12`,
+`shot_13` and `shot_14`: in the Simulation workspace the bottom of the
+window is the timeline, and the model count, the triangle count, the
+toolpath count, the five compute-lane chips, the SIM chip, the collisions
+chip and the `Modified` mark are all absent.
+
+The timeline's own badge row partly covers the same ground, which is how
+the duplication in D-28 arose. The result is that the product's persistent
+footer is not persistent: the operator loses it on the one screen where a
+long-running job is most likely to be in flight.
+
+**Whether Simulation should gain the status bar is an operator decision,
+not a visual one**, because the bar carries an actionable collisions chip.
+This audit records the inconsistency and proposes no change.
 
 ---
 
@@ -730,7 +780,13 @@ A redesign that breaks these would be a regression.
 4. **The Overlays registry rule** — always list, grey with a reason, carry
    the fix (`ui/overlays/registry.rs`).
 5. **The `Current / Recommended / Δ` table in the Feeds modal.**
-6. **Honest absence.** The product prints `—` for a value it did not
+6. **One empty state is already designed.** I read
+   `ui/sim_op_list.rs:128-170`. When the simulation has no boundaries it
+   draws a `CARD_FILL` frame with a strong headline — "Ready to simulate" —
+   and branches on whether any toolpath is computed, so the guidance matches
+   the situation. It is the only rich empty state in the product and it is
+   the model the other 49 should follow.
+7. **Honest absence.** The product prints `—` for a value it did not
    measure, `NOT MEASURED` strips, and `Tool load: advance/tooth — power —
    L/D —`. That discipline is rare and valuable. The spec must give absence
    a *designed* form rather than remove it.
@@ -750,4 +806,6 @@ A redesign that breaks these would be a regression.
 | 7 | D-14, D-16, D-17 the inspector | Flat 25-row list, clipped comparison values, layout jump on Generate. |
 | 8 | D-24, D-25 simulation readout | The richest dataset drawn as a progress bar and an unlabelled chart. |
 | 9 | D-35 load-warnings window | Covers the workspace switcher in all 16 captures. |
-| 10 | D-06, D-07, D-08, D-09 token drift | 12 spacing values, 6 radii, 2 backgrounds, 3 text greys, 4 header forms. |
+| 10 | D-06, D-07, D-08, D-09 token drift | 242 distinct colour values, 12 spacing values, 6 radii, 2 backgrounds, 3 text greys, 4 header forms. |
+| 11 | D-34, D-35, D-36 windows | No window is modal in look or in behaviour. `egui::Modal` is never used. |
+| 12 | D-41, D-42 the footer | The status bar is copied three times and is absent from the fourth workspace. |

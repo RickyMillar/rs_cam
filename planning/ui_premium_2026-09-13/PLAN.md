@@ -91,8 +91,9 @@ style. `configure_theme` sets a complete `Style`, not ten colours.
 A source scan over `crates/rs_cam_viz/src/ui/` and `src/app.rs`:
 
 1. No file outside `ui/tokens.rs` and `render/colors.rs` names
-   `Color32::from_rgb(`. The count today is 453; the assertion carries the
-   number and the file list so the red is legible.
+   `Color32::from_rgb(`. The count today is **412 call sites carrying 201
+   distinct triples**, plus 41 distinct `from_rgba_*` values. The assertion
+   carries the number and the file list so the red is legible.
 2. `configure_theme` sets every one of the eight `TextStyle` entries the
    spec names. The scan looks for each name.
 3. Non-vacuity: the scan visited at least 40 files, and `theme.rs` still
@@ -106,20 +107,24 @@ radii move.
 
 **Must not change.** Any layout, any string, any control.
 
-**Note on the 453 sites.** UP1 does not migrate them. It adds the module and
+**Note on the 412 sites.** UP1 does not migrate them. It adds the module and
 the sentry, and the sentry's first arm therefore stays RED until UP8. Split
 it: arm 1 asserts a **descending budget** that each later package lowers, so
 every package's commit shows the number falling. UP8 sets it to zero.
 Record the budget in this file's table, not in the test's own history.
 
-| After | `Color32::from_rgb` sites outside the token modules |
+Two files dominate and they belong to UP4: `ui/properties/mod.rs` holds 96
+colour literals against 7 `theme::` references, and
+`ui/properties/operations/mod.rs` holds 72 against **zero**.
+
+| After | `Color32::from_rgb` call sites outside the token modules |
 |---|---|
-| UP1 | 453 (baseline recorded) |
-| UP3 | ≤ 360 |
-| UP4 | ≤ 240 |
-| UP5 | ≤ 200 |
-| UP6 | ≤ 90 |
-| UP7 | ≤ 30 |
+| UP1 | 412 (baseline recorded) |
+| UP3 | ≤ 330 |
+| UP4 | ≤ 200 |
+| UP5 | ≤ 160 |
+| UP6 | ≤ 70 |
+| UP7 | ≤ 20 |
 | UP8 | 0 |
 
 ---
@@ -144,7 +149,8 @@ components already in `ui/components/` are extended rather than duplicated.
 - `KeyValueRow` — the four-slot geometry added to `value_row.rs`, with the
   per-panel label width and the wrapping trailing slot.
 - `DataTable` (new), a wrapper over `egui::Grid`.
-- `EmptyState`, `Banner`, `NotMeasured` (new).
+- `EmptyState`, `Banner`, `NotMeasured` (new). `EmptyState` generalises the
+  one good empty state the product already has, `ui/sim_op_list.rs:128-170`.
 - `CountPill` extended per spec §4.4.
 - `motion.rs` (new): the durations in spec §5 as named helpers over
   `ctx.animate_bool_with_time`.
@@ -186,8 +192,12 @@ package. UP2 builds the kit. UP3 onward installs it.
 - `ui/status_bar.rs`: the pipe-separated string at `:24-28` becomes discrete
   slots with one separator kind; thousands grouped with a thin space;
   every count in `Numeric`.
-- The four copies of the status-bar block in `app.rs` collapse to one
-  helper, and the `rgb(255, 200, 80)` literal goes to tokens.
+- The three copies of the status-bar block in `app.rs` (`:340`, `:370`,
+  `:425`) collapse to one helper, and the `rgb(255, 200, 80)` literal goes
+  to tokens. **UP3 does not add the bar to the Simulation workspace**, which
+  has none today (`AUDIT.md` D-42). That bar carries an actionable
+  collisions chip, so adding it is a behaviour decision and it belongs to
+  the operator. UP3 records the question in `STATUS.md`.
 - `app.rs:918-957`: toasts become the `Toast` component — shadow, left rule,
   slide and fade, and `request_repaint_after(16 ms)` while any toast lives.
 - All twelve `egui::Window` sites get `SURFACE_OVERLAY`, `SHADOW_OVERLAY`,
@@ -199,7 +209,9 @@ package. UP2 builds the kit. UP3 onward installs it.
 
 1. A source scan: every `egui::Window::new` site in `src/` is inside a
    helper that applies the overlay frame. The scan lists the twelve sites
-   from `AUDIT.md` §6 by file and fails on any that is not.
+   from `AUDIT.md` §6 by file and fails on any that is not. The crate uses
+   `egui::Modal` zero times and UP3 keeps it that way — the scrim is
+   visual, and no window's input handling changes.
 2. A headless render of the status bar asserts one separator kind and no
    literal `"|"` in its format strings.
 3. Non-vacuity: the window list is non-empty and matches the twelve files.
@@ -297,7 +309,8 @@ once.
   Findings badges become `CountPill`s, with `collisions N` a `Verdict` pill
   at `DANGER` (`AUDIT.md` D-28); the `View` help paragraph moves to a button
   hover (D-27); the nine `.italics()` sites become `EmptyState` or
-  `NotMeasured`.
+  `NotMeasured`, starting with `:41-48`, where the whole Inspector is one
+  9-point italic line before a run.
 - `ui/sim_op_list.rs`: the card becomes `Card`; the three-facts line splits
   into three `KeyValueRow`s with safety first (D-29).
 - `ui/sim_timeline.rs` (54 colour literals): the transport keeps the
