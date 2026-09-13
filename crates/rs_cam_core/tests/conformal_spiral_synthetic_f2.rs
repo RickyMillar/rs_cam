@@ -2978,7 +2978,7 @@ fn rasterise_polygons(polygons: &[Polygon2], size_mm: f64, cells: usize) -> Vec<
             }
         }
         crossings.sort_by(f64::total_cmp);
-        for pair in crossings.chunks_exact(2) {
+        for pair in crossings.as_chunks::<2>().0 {
             let lo = ((pair[0] + half) / cell - 0.5).ceil();
             let hi = ((pair[1] + half) / cell - 0.5).floor();
             if !lo.is_finite() || !hi.is_finite() {

@@ -1457,7 +1457,7 @@ pub fn cycle_surface(state: &mut AppState, surface: OverlaySurface) {
     let current = members.iter().position(|r| (r.get)(state));
     // Stops are the members, plus a trailing "none" stop where one exists.
     let stops = members.len() + usize::from(has_none_state);
-    let start = current.map_or(members.len(), |i| i);
+    let start = current.unwrap_or(members.len());
     for step in 1..=stops {
         let next = (start + step) % stops;
         match members.get(next) {

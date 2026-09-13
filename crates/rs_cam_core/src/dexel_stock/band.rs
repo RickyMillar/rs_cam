@@ -154,7 +154,7 @@ impl DexelGrid {
             .skip(skip)
             .take(take)
             .map(move |(i, (rays, conservative_top))| GridBand {
-                rows: if cols == 0 { 0 } else { rays.len() / cols },
+                rows: rays.len().checked_div(cols).unwrap_or(0),
                 grid_rows,
                 row_offset: i * BAND_ROWS,
                 cols,
@@ -187,7 +187,7 @@ impl DexelGrid {
             .skip(skip)
             .take(take)
             .map(move |(i, (rays, conservative_top))| GridBand {
-                rows: if cols == 0 { 0 } else { rays.len() / cols },
+                rows: rays.len().checked_div(cols).unwrap_or(0),
                 grid_rows,
                 row_offset: i * BAND_ROWS,
                 cols,

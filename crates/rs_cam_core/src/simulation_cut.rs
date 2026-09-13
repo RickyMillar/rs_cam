@@ -1340,7 +1340,7 @@ pub fn finalize_per_kinematics(
     accs: [KinematicsAccumulator; CutKinematics::COUNT],
 ) -> BTreeMap<CutKinematics, KinematicsSummary> {
     let mut out = BTreeMap::new();
-    for (kind, acc) in CutKinematics::ALL.into_iter().zip(accs.into_iter()) {
+    for (kind, acc) in CutKinematics::ALL.into_iter().zip(accs) {
         if acc.sample_count > 0 {
             out.insert(kind, acc.finish());
         }

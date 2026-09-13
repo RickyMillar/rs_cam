@@ -575,19 +575,18 @@ pub fn validate_machine_safety(gcode: &str, cfg: MachineSafety) -> Vec<Finding> 
                 }
             }
             Some(Motion::Feed) | Some(Motion::Arc) => {
-                if !first_cut_checked {
-                    first_cut_checked = true;
-                    if !spindle_on {
-                        findings.push(Finding {
-                            severity: Severity::Error,
-                            kind: FindingKind::SpindleNotRunningAtCut,
-                            line: line_no,
-                            message: "First cutting move (G1/G2/G3) reached with the spindle off \
-                                 (no preceding M3/M4). Cutting with a stopped spindle stalls \
-                                 the motor or snaps the bit."
-                                .to_owned(),
-                        });
-                    }
+                let first_cut = !first_cut_checked;
+                first_cut_checked = true;
+                if first_cut && !spindle_on {
+                    findings.push(Finding {
+                        severity: Severity::Error,
+                        kind: FindingKind::SpindleNotRunningAtCut,
+                        line: line_no,
+                        message: "First cutting move (G1/G2/G3) reached with the spindle off \
+                             (no preceding M3/M4). Cutting with a stopped spindle stalls \
+                             the motor or snaps the bit."
+                            .to_owned(),
+                    });
                 }
             }
             None => {}

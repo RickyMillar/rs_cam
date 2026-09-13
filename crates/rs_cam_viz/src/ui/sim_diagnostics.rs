@@ -215,7 +215,7 @@ fn draw_focused_hotspot_card(
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(50, 38, 28))
         .stroke(egui::Stroke::new(
-            1.5,
+            1.5_f32,
             egui::Color32::from_rgb(255, 170, 90),
         ))
         .inner_margin(6.0)
@@ -290,7 +290,7 @@ fn draw_focused_issue_card(
     // visually unlike the filled hotspot card even though they share the slot.
     egui::Frame::default()
         .stroke(egui::Stroke::new(
-            1.5,
+            1.5_f32,
             egui::Color32::from_rgb(210, 170, 80),
         ))
         .inner_margin(6.0)

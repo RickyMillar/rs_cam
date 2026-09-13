@@ -421,12 +421,12 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
     painter.rect_stroke(
         wp,
         2.0,
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 95)),
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(80, 80, 95)),
         egui::StrokeKind::Middle,
     );
 
     let path_color = egui::Color32::from_rgb(50, 200, 180);
-    let path_stroke = egui::Stroke::new(1.2, path_color);
+    let path_stroke = egui::Stroke::new(1.2_f32, path_color);
     let dim_color = egui::Color32::from_rgb(100, 100, 115);
 
     match pattern {
@@ -538,7 +538,7 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
                     r,
                     1.0,
                     egui::Stroke::new(
-                        1.2,
+                        1.2_f32,
                         egui::Color32::from_rgba_premultiplied(
                             (path_color.r() as f32 * alpha) as u8,
                             (path_color.g() as f32 * alpha) as u8,
@@ -619,8 +619,8 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
     ));
 
     // Edges
-    painter.line_segment([a, corner], egui::Stroke::new(2.0, path_color));
-    painter.line_segment([corner, c], egui::Stroke::new(2.0, path_color));
+    painter.line_segment([a, corner], egui::Stroke::new(2.0_f32, path_color));
+    painter.line_segment([corner, c], egui::Stroke::new(2.0_f32, path_color));
 
     // Direction arrows on edges
     let arrow_color = egui::Color32::from_rgb(80, 140, 80);
@@ -630,7 +630,7 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
     painter.circle_filled(mid_c, 2.0, arrow_color);
 
     // Tool circle at corner (where tool is when it reaches corner B)
-    painter.circle_stroke(corner, tool_r, egui::Stroke::new(1.0, tool_color));
+    painter.circle_stroke(corner, tool_r, egui::Stroke::new(1.0_f32, tool_color));
 
     // Compute dogbone overcut direction (from the actual algorithm):
     // u1 = forward of edge A = (1, 0) (rightward)
@@ -650,7 +650,10 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
     let overcut_pt = egui::pos2(cx + dx * tool_r, cy + dy * tool_r);
 
     // Overcut line and point
-    painter.line_segment([corner, overcut_pt], egui::Stroke::new(1.5, overcut_color));
+    painter.line_segment(
+        [corner, overcut_pt],
+        egui::Stroke::new(1.5_f32, overcut_color),
+    );
     painter.circle_filled(overcut_pt, 3.0, overcut_color);
 
     // Ghost tool at overcut position
@@ -658,7 +661,7 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
         overcut_pt,
         tool_r,
         egui::Stroke::new(
-            0.8,
+            0.8_f32,
             egui::Color32::from_rgba_premultiplied(220, 160, 50, 80),
         ),
     );
@@ -678,7 +681,7 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
     }
     painter.add(egui::Shape::line(
         arc_pts,
-        egui::Stroke::new(0.8, dim_color),
+        egui::Stroke::new(0.8_f32, dim_color),
     ));
 
     // Labels
@@ -721,7 +724,7 @@ pub(super) fn draw_lead_in_out_diagram(ui: &mut egui::Ui, radius: f64) {
     let cut_right = rect.right() - 30.0;
     painter.line_segment(
         [egui::pos2(cut_left, cy), egui::pos2(cut_right, cy)],
-        egui::Stroke::new(2.0, path_color),
+        egui::Stroke::new(2.0_f32, path_color),
     );
 
     // Lead-in arc (left side): quarter-circle approaching from below-left
@@ -737,7 +740,7 @@ pub(super) fn draw_lead_in_out_diagram(ui: &mut egui::Ui, radius: f64) {
     }
     painter.add(egui::Shape::line(
         in_pts,
-        egui::Stroke::new(2.0, lead_color),
+        egui::Stroke::new(2.0_f32, lead_color),
     ));
 
     // Lead-out arc (right side): quarter-circle departing upward-right
@@ -753,7 +756,7 @@ pub(super) fn draw_lead_in_out_diagram(ui: &mut egui::Ui, radius: f64) {
     }
     painter.add(egui::Shape::line(
         out_pts,
-        egui::Stroke::new(2.0, lead_color),
+        egui::Stroke::new(2.0_f32, lead_color),
     ));
 
     // Entry/exit markers
@@ -815,7 +818,7 @@ pub(super) fn draw_tab_diagram(
     painter.rect_stroke(
         pr,
         2.0,
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(80, 80, 95)),
+        egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(80, 80, 95)),
         egui::StrokeKind::Middle,
     );
 
@@ -852,7 +855,7 @@ pub(super) fn draw_tab_diagram(
                 egui::pos2(px, py),
                 egui::pos2(px + nx * tab_marker_len, py + ny * tab_marker_len),
             ],
-            egui::Stroke::new(3.0, tab_color),
+            egui::Stroke::new(3.0_f32, tab_color),
         );
         // Small dot at the base
         painter.circle_filled(egui::pos2(px, py), 2.5, tab_color);
@@ -895,7 +898,7 @@ pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: 
     painter.rect_stroke(
         wp,
         2.0,
-        egui::Stroke::new(2.0, path_color),
+        egui::Stroke::new(2.0_f32, path_color),
         egui::StrokeKind::Middle,
     );
 
@@ -927,7 +930,7 @@ pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: 
         painter.rect_stroke(
             offset_rect,
             1.0,
-            egui::Stroke::new(1.0, offset_color),
+            egui::Stroke::new(1.0_f32, offset_color),
             egui::StrokeKind::Middle,
         );
     }
@@ -962,7 +965,7 @@ pub(super) fn draw_spiral_diagram(ui: &mut egui::Ui, stepover: f64, outward: boo
     painter.rect_stroke(
         egui::Rect::from_center_size(egui::pos2(cx, cy), egui::vec2(max_r * 2.1, max_r * 2.1)),
         2.0,
-        egui::Stroke::new(0.5, egui::Color32::from_rgb(50, 50, 60)),
+        egui::Stroke::new(0.5_f32, egui::Color32::from_rgb(50, 50, 60)),
         egui::StrokeKind::Middle,
     );
 
@@ -978,7 +981,10 @@ pub(super) fn draw_spiral_diagram(ui: &mut egui::Ui, stepover: f64, outward: boo
         let theta = turns * std::f32::consts::TAU * t;
         pts.push(egui::pos2(cx + r * theta.cos(), cy + r * theta.sin()));
     }
-    painter.add(egui::Shape::line(pts, egui::Stroke::new(1.2, path_color)));
+    painter.add(egui::Shape::line(
+        pts,
+        egui::Stroke::new(1.2_f32, path_color),
+    ));
 
     // Center dot
     painter.circle_filled(egui::pos2(cx, cy), 2.5, path_color);
@@ -1030,7 +1036,7 @@ pub(super) fn draw_radial_diagram(ui: &mut egui::Ui, angular_step: f64) {
         let end = egui::pos2(cx + max_r * angle.cos(), cy + max_r * angle.sin());
         painter.line_segment(
             [egui::pos2(cx, cy), end],
-            egui::Stroke::new(1.0, path_color),
+            egui::Stroke::new(1.0_f32, path_color),
         );
         // Alternating direction dots
         if i % 2 == 0 {
@@ -1084,11 +1090,11 @@ pub(super) fn draw_point_set_diagram(ui: &mut egui::Ui, label: &str) {
         let s = 4.0;
         painter.line_segment(
             [egui::pos2(x - s, y), egui::pos2(x + s, y)],
-            egui::Stroke::new(1.0, path_color),
+            egui::Stroke::new(1.0_f32, path_color),
         );
         painter.line_segment(
             [egui::pos2(x, y - s), egui::pos2(x, y + s)],
-            egui::Stroke::new(1.0, path_color),
+            egui::Stroke::new(1.0_f32, path_color),
         );
         painter.circle_filled(egui::pos2(x, y), 2.0, path_color);
     }
@@ -1129,7 +1135,7 @@ pub(super) fn draw_pencil_diagram(ui: &mut egui::Ui, num_offsets: usize, offset_
     }
     painter.add(egui::Shape::line(
         center_pts.clone(),
-        egui::Stroke::new(2.0, path_color),
+        egui::Stroke::new(2.0_f32, path_color),
     ));
 
     // Offset passes
@@ -1145,7 +1151,7 @@ pub(super) fn draw_pencil_diagram(ui: &mut egui::Ui, num_offsets: usize, offset_
             painter.add(egui::Shape::line(
                 offset_pts,
                 egui::Stroke::new(
-                    1.0,
+                    1.0_f32,
                     egui::Color32::from_rgba_premultiplied(
                         offset_color.r(),
                         offset_color.g(),
@@ -1206,7 +1212,7 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
                     egui::pos2(steep_rect.right() - inset, steep_rect.bottom() - inset),
                 ),
                 1.0,
-                egui::Stroke::new(0.8, steep_color),
+                egui::Stroke::new(0.8_f32, steep_color),
                 egui::StrokeKind::Middle,
             );
         }
@@ -1227,7 +1233,7 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
                 egui::pos2(shallow_rect.left() + 2.0, y),
                 egui::pos2(shallow_rect.right() - 2.0, y),
             ],
-            egui::Stroke::new(0.8, shallow_color),
+            egui::Stroke::new(0.8_f32, shallow_color),
         );
         y += line_step;
     }
@@ -1235,7 +1241,7 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
     // Divider line
     painter.line_segment(
         [egui::pos2(div_x, wp.top()), egui::pos2(div_x, wp.bottom())],
-        egui::Stroke::new(1.5, dim_color),
+        egui::Stroke::new(1.5_f32, dim_color),
     );
 
     // Labels
@@ -1310,7 +1316,7 @@ pub(super) fn draw_inlay_diagram(
             egui::pos2(rect.left() + 8.0, surface_y),
             egui::pos2(rect.right() - 8.0, surface_y),
         ],
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 70, 85)),
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(70, 70, 85)),
     );
 
     // Female pocket (V cavity cut into material)
@@ -1327,7 +1333,7 @@ pub(super) fn draw_inlay_diagram(
     ));
     painter.add(egui::Shape::line(
         pocket_pts,
-        egui::Stroke::new(1.5, female_color),
+        egui::Stroke::new(1.5_f32, female_color),
     ));
 
     // Male plug (flipped V, hovering above the pocket, about to drop in)
@@ -1359,7 +1365,7 @@ pub(super) fn draw_inlay_diagram(
     ];
     painter.add(egui::Shape::line(
         plug_outline,
-        egui::Stroke::new(1.5, male_color),
+        egui::Stroke::new(1.5_f32, male_color),
     ));
 
     // Drop arrow (shows the plug goes down into the pocket)
@@ -1371,7 +1377,7 @@ pub(super) fn draw_inlay_diagram(
             egui::pos2(arrow_x, arrow_top),
             egui::pos2(arrow_x, arrow_bottom),
         ],
-        egui::Stroke::new(1.0, dim_color),
+        egui::Stroke::new(1.0_f32, dim_color),
     );
     painter.add(egui::Shape::line(
         vec![
@@ -1379,7 +1385,7 @@ pub(super) fn draw_inlay_diagram(
             egui::pos2(arrow_x, arrow_bottom),
             egui::pos2(arrow_x + 3.0, arrow_bottom - 6.0),
         ],
-        egui::Stroke::new(1.0, dim_color),
+        egui::Stroke::new(1.0_f32, dim_color),
     ));
 
     // Glue gap annotation
@@ -1444,7 +1450,7 @@ pub(super) fn draw_ramp_finish_diagram(ui: &mut egui::Ui, max_stepdown: f64) {
         // Contour at this Z level
         painter.line_segment(
             [egui::pos2(x_start, y), egui::pos2(x_end, y)],
-            egui::Stroke::new(1.5, path_color),
+            egui::Stroke::new(1.5_f32, path_color),
         );
         // Ramp down to next level
         if i < num_levels - 1 {
@@ -1452,7 +1458,7 @@ pub(super) fn draw_ramp_finish_diagram(ui: &mut egui::Ui, max_stepdown: f64) {
             painter.line_segment(
                 [egui::pos2(x_end, y), egui::pos2(x_start, next_y)],
                 egui::Stroke::new(
-                    1.0,
+                    1.0_f32,
                     egui::Color32::from_rgba_premultiplied(50, 200, 180, 120),
                 ),
             );
@@ -1465,7 +1471,7 @@ pub(super) fn draw_ramp_finish_diagram(ui: &mut egui::Ui, max_stepdown: f64) {
             egui::pos2(x_end + 8.0, y_top),
             egui::pos2(x_end + 8.0, y_top + level_step),
         ],
-        egui::Stroke::new(1.0, dim_color),
+        egui::Stroke::new(1.0_f32, dim_color),
     );
     painter.text(
         egui::pos2(x_end + 10.0, y_top + level_step / 2.0),
@@ -1592,7 +1598,7 @@ pub(super) fn draw_height_diagram(
             egui::pos2(stock_right, stock_bottom_y),
         ),
         2.0,
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 95)),
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(80, 80, 95)),
         egui::StrokeKind::Middle,
     );
 
@@ -1617,7 +1623,7 @@ pub(super) fn draw_height_diagram(
                 egui::pos2(model_right, model_bottom_y),
             ),
             1.0,
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 90, 120)),
+            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(90, 90, 120)),
             egui::StrokeKind::Middle,
         );
     }
@@ -1647,7 +1653,7 @@ pub(super) fn draw_height_diagram(
         let is_hovered = nearest_line.is_some_and(|(idx, _)| idx == line.index);
 
         // Line
-        let stroke_width = if is_hovered { 2.5 } else { 1.5 };
+        let stroke_width = if is_hovered { 2.5_f32 } else { 1.5_f32 };
         painter.line_segment(
             [
                 egui::pos2(rect.left() + 2.0, y),

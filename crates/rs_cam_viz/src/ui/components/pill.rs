@@ -127,7 +127,9 @@ impl egui::Widget for CountPill<'_> {
             PillRole::ReadOnly => {
                 // Styled pill: tinted fill, verdicts additionally stroked.
                 let stroke = match self.family {
-                    PillFamily::Verdict => egui::Stroke::new(1.0, self.color.linear_multiply(0.55)),
+                    PillFamily::Verdict => {
+                        egui::Stroke::new(1.0_f32, self.color.linear_multiply(0.55))
+                    }
                     PillFamily::Observation => egui::Stroke::NONE,
                 };
                 egui::Frame::default()

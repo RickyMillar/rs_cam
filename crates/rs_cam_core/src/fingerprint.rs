@@ -1011,7 +1011,7 @@ pub fn composite_panel_layout(width: u32, height: u32) -> Vec<CompositePanel> {
 
 /// Dark-gray background, opaque.
 fn fill_background(buf: &mut [u8]) {
-    for px in buf.chunks_exact_mut(4) {
+    for px in buf.as_chunks_mut::<4>().0 {
         px.fill(42);
         if let Some(a) = px.get_mut(3) {
             *a = 255;
@@ -1044,7 +1044,7 @@ fn composite_camera_frame(
         any = true;
     }
 
-    for v in mesh.vertices.chunks_exact(3) {
+    for v in mesh.vertices.as_chunks::<3>().0 {
         let (Some(&x), Some(&y), Some(&z)) = (v.first(), v.get(1), v.get(2)) else {
             continue;
         };

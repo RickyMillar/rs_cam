@@ -1071,7 +1071,7 @@ fn configure_theme(ctx: &egui::Context) {
     visuals.widgets.active.bg_fill = egui::Color32::from_rgb(65, 75, 95);
 
     visuals.selection.bg_fill = egui::Color32::from_rgb(50, 60, 90);
-    visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 140, 210));
+    visuals.selection.stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(100, 140, 210));
 
     ctx.set_visuals(visuals);
 

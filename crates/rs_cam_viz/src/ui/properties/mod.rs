@@ -3140,7 +3140,7 @@ fn draw_engagement_diagram(
             egui::pos2(mid_x, rect.top() + 4.0),
             egui::pos2(mid_x, rect.bottom() - 4.0),
         ],
-        egui::Stroke::new(0.5, egui::Color32::from_rgb(40, 40, 50)),
+        egui::Stroke::new(0.5_f32, egui::Color32::from_rgb(40, 40, 50)),
     );
 
     // ── LEFT: Top-down WOC view ────────────────────────────────────
@@ -3193,7 +3193,11 @@ fn draw_engagement_diagram(
         }
     }
 
-    painter.circle_stroke(egui::pos2(cx, cy), tr, egui::Stroke::new(1.5, tool_color));
+    painter.circle_stroke(
+        egui::pos2(cx, cy),
+        tr,
+        egui::Stroke::new(1.5_f32, tool_color),
+    );
     painter.circle_filled(egui::pos2(cx, cy), 1.5, tool_color);
 
     // WOC label
@@ -3246,7 +3250,7 @@ fn draw_engagement_diagram(
             egui::pos2(right_rect.left(), surface_y),
             egui::pos2(right_rect.right(), surface_y),
         ],
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 95)),
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(80, 80, 95)),
     );
 
     // DOC shaded region (where tool cuts)
@@ -3274,7 +3278,7 @@ fn draw_engagement_diagram(
                     egui::pos2(scx + tool_hw, tool_top),
                     egui::pos2(scx + tool_hw, ball_cy),
                 ],
-                egui::Stroke::new(1.5, tool_color),
+                egui::Stroke::new(1.5_f32, tool_color),
             ));
             let mut arc_pts = vec![egui::pos2(scx + tool_hw, ball_cy)];
             for i in 0..=16 {
@@ -3286,7 +3290,7 @@ fn draw_engagement_diagram(
             }
             painter.add(egui::Shape::line(
                 arc_pts,
-                egui::Stroke::new(1.5, tool_color),
+                egui::Stroke::new(1.5_f32, tool_color),
             ));
         }
         _ => {
@@ -3299,7 +3303,7 @@ fn draw_engagement_diagram(
                     egui::pos2(scx + tool_hw, tool_bottom),
                     egui::pos2(scx - tool_hw, tool_bottom),
                 ],
-                egui::Stroke::new(1.5, tool_color),
+                egui::Stroke::new(1.5_f32, tool_color),
             ));
         }
     }
@@ -3311,7 +3315,7 @@ fn draw_engagement_diagram(
             egui::pos2(dim_x, surface_y),
             egui::pos2(dim_x, surface_y + doc_px),
         ],
-        egui::Stroke::new(1.0, dim_color),
+        egui::Stroke::new(1.0_f32, dim_color),
     );
     // Ticks
     painter.line_segment(
@@ -3319,14 +3323,14 @@ fn draw_engagement_diagram(
             egui::pos2(dim_x - 3.0, surface_y),
             egui::pos2(dim_x + 3.0, surface_y),
         ],
-        egui::Stroke::new(1.0, dim_color),
+        egui::Stroke::new(1.0_f32, dim_color),
     );
     painter.line_segment(
         [
             egui::pos2(dim_x - 3.0, surface_y + doc_px),
             egui::pos2(dim_x + 3.0, surface_y + doc_px),
         ],
-        egui::Stroke::new(1.0, dim_color),
+        egui::Stroke::new(1.0_f32, dim_color),
     );
     painter.text(
         egui::pos2(dim_x + 2.0, surface_y + doc_px / 2.0),
@@ -3401,7 +3405,7 @@ fn draw_entry_preview_diagram(
     let scale_x = rect.left() + 3.0;
     painter.line_segment(
         [egui::pos2(scale_x, feed_y), egui::pos2(scale_x, top_y)],
-        egui::Stroke::new(1.0, scale_color),
+        egui::Stroke::new(1.0_f32, scale_color),
     );
     // Ticks + values at feed_z and top_z
     painter.line_segment(
@@ -3409,11 +3413,11 @@ fn draw_entry_preview_diagram(
             egui::pos2(scale_x, feed_y),
             egui::pos2(scale_x + 4.0, feed_y),
         ],
-        egui::Stroke::new(1.0, scale_color),
+        egui::Stroke::new(1.0_f32, scale_color),
     );
     painter.line_segment(
         [egui::pos2(scale_x, top_y), egui::pos2(scale_x + 4.0, top_y)],
-        egui::Stroke::new(1.0, scale_color),
+        egui::Stroke::new(1.0_f32, scale_color),
     );
     // Z drop distance label
     painter.text(
@@ -3435,7 +3439,7 @@ fn draw_entry_preview_diagram(
             let end_x = (x + dash_len).min(rect.right() - 50.0);
             painter.line_segment(
                 [egui::pos2(x, y), egui::pos2(end_x, y)],
-                egui::Stroke::new(0.5, dim_color),
+                egui::Stroke::new(0.5_f32, dim_color),
             );
             x += dash_len + gap_len;
         }
@@ -3449,7 +3453,7 @@ fn draw_entry_preview_diagram(
     }
 
     let entry_color = egui::Color32::from_rgb(50, 230, 230);
-    let stroke = egui::Stroke::new(2.0, entry_color);
+    let stroke = egui::Stroke::new(2.0_f32, entry_color);
     let cx = rect.center().x;
 
     match dressups.entry_style {
@@ -3485,7 +3489,7 @@ fn draw_entry_preview_diagram(
             }
             painter.add(egui::Shape::line(
                 arc_pts,
-                egui::Stroke::new(1.0, entry_color),
+                egui::Stroke::new(1.0_f32, entry_color),
             ));
             painter.text(
                 egui::pos2(start_x + arc_r + 4.0, feed_y - 8.0),
@@ -3542,7 +3546,7 @@ fn draw_entry_preview_diagram(
                     egui::pos2(cx, z_to_y(feed_z)),
                     egui::pos2(cx + r_pixels, z_to_y(feed_z)),
                 ],
-                egui::Stroke::new(1.0, dim_color),
+                egui::Stroke::new(1.0_f32, dim_color),
             );
             painter.text(
                 egui::pos2(cx + r_pixels / 2.0, z_to_y(feed_z) - 8.0),
@@ -4037,7 +4041,7 @@ fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabB
                         egui::pos2(rect.min.x + 2.0, rect.max.y),
                         egui::pos2(rect.max.x - 2.0, rect.max.y),
                     ],
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 160, 220)),
+                    egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(100, 160, 220)),
                 );
             }
             ui.add_space(2.0);
@@ -4856,7 +4860,7 @@ fn draw_toolpath_panel(
                 egui::Frame::group(ui.style())
                     .fill(egui::Color32::from_rgb(50, 38, 22))
                     .stroke(egui::Stroke::new(
-                        1.0,
+                        1.0_f32,
                         egui::Color32::from_rgb(200, 150, 60),
                     ))
                     .inner_margin(egui::Margin::same(6))

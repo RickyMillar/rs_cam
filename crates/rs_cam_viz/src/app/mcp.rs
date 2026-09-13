@@ -4983,7 +4983,7 @@ fn build_per_depth_pass_summary(
 
         let entries: Vec<serde_json::Value> = depth_pass_meta
             .iter()
-            .zip(accs.into_iter())
+            .zip(accs)
             .map(|((span_id, z, pass_idx), acc)| {
                 serde_json::json!({
                     "span_id": *span_id,

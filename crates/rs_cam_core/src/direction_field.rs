@@ -1121,7 +1121,7 @@ pub(crate) fn assemble_poisson(region: &RegionMesh, target: &[V3]) -> (SparseLap
     let mut nbr: Vec<Vec<(usize, f64)>> = vec![Vec::new(); nv];
     let mut diag = vec![0.0_f64; nv];
     let mut edges: Vec<((usize, usize), f64)> = weights.into_iter().collect();
-    edges.sort_by(|a, b| a.0.cmp(&b.0));
+    edges.sort_by_key(|a| a.0);
     for ((a, b), w) in edges {
         if a >= nv || b >= nv || a == b {
             continue;
@@ -1132,7 +1132,7 @@ pub(crate) fn assemble_poisson(region: &RegionMesh, target: &[V3]) -> (SparseLap
         diag[b] += w;
     }
     for list in &mut nbr {
-        list.sort_by(|x, y| x.0.cmp(&y.0));
+        list.sort_by_key(|x| x.0);
     }
     // `Σ_j w_ij (φ_i − φ_j) = −(integrated divergence)_i` — see the sign
     // derivation in the doc comment.

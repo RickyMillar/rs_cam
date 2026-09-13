@@ -35,7 +35,7 @@ where
         .into_iter()
         .filter(|(move_index, _)| *move_index < n_moves)
         .collect();
-    starts.sort_by(|left, right| left.0.cmp(&right.0));
+    starts.sort_by_key(|left| left.0);
 
     for (event_index, (start, label)) in starts.iter().enumerate() {
         let end = starts

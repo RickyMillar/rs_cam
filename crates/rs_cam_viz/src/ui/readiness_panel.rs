@@ -240,7 +240,7 @@ fn draw_verdict_banner(ui: &mut egui::Ui, status: CheckStatus) {
     };
     egui::Frame::default()
         .fill(fill)
-        .stroke(egui::Stroke::new(1.5, stroke))
+        .stroke(egui::Stroke::new(1.5_f32, stroke))
         .inner_margin(10.0)
         .corner_radius(6)
         .show(ui, |ui| {

@@ -1558,7 +1558,7 @@ fn draw_chart_c(
                     Polygon::new("", band_poly)
                         .fill_color(egui::Color32::from_rgba_unmultiplied(80, 180, 80, 50))
                         .stroke(egui::Stroke::new(
-                            1.0,
+                            1.0_f32,
                             egui::Color32::from_rgba_unmultiplied(80, 180, 80, 120),
                         ))
                         .name(format!("Vendor band {lo:.4}–{hi:.4} mm/tooth")),
@@ -1605,13 +1605,13 @@ fn draw_chart_c(
                 plot_ui.polygon(
                     Polygon::new("", low_admit)
                         .fill_color(warn)
-                        .stroke(egui::Stroke::new(1.0, warn_edge))
+                        .stroke(egui::Stroke::new(1.0_f32, warn_edge))
                         .name("Band-admitted (low)"),
                 );
                 plot_ui.polygon(
                     Polygon::new("", high_admit)
                         .fill_color(warn)
-                        .stroke(egui::Stroke::new(1.0, warn_edge))
+                        .stroke(egui::Stroke::new(1.0_f32, warn_edge))
                         .name("Band-admitted (high)"),
                 );
             }
@@ -1631,7 +1631,7 @@ fn draw_chart_c(
                     plot_ui.line(
                         Line::new("", PlotPoints::from(line_pts.clone()))
                             .color(color)
-                            .width(1.5)
+                            .width(1.5_f32)
                             .name(format!("chipload {prefix} {cl:.4} mm/tooth")),
                     );
                     // Drop an inline value tag at the last point of the
@@ -1670,7 +1670,7 @@ fn draw_chart_c(
                     )
                     .fill_color(egui::Color32::from_rgba_unmultiplied(100, 160, 200, 25))
                     .stroke(egui::Stroke::new(
-                        1.0,
+                        1.0_f32,
                         egui::Color32::from_rgba_unmultiplied(100, 160, 200, 80),
                     ))
                     .name("Vendor RPM range"),
@@ -1683,7 +1683,7 @@ fn draw_chart_c(
                     Points::new("", vec![[f64::from(rpm), current.feed_rate_mm_min]])
                         .shape(MarkerShape::Circle)
                         .filled(true)
-                        .radius(6.0)
+                        .radius(6.0_f32)
                         .color(theme::ERROR)
                         .name("Current"),
                 );
@@ -1701,7 +1701,7 @@ fn draw_chart_c(
                         Points::new("", vec![[explain.recommended.rpm, target_feed]])
                             .shape(MarkerShape::Circle)
                             .filled(false)
-                            .radius(7.0)
+                            .radius(7.0_f32)
                             .color(egui::Color32::from_rgb(100, 160, 240))
                             .name(format!("Target pre-derate ({target_chipload:.4} mm/tooth)")),
                     );
@@ -1719,7 +1719,7 @@ fn draw_chart_c(
                         )
                         .color(egui::Color32::from_rgba_unmultiplied(100, 160, 240, 180))
                         .style(egui_plot::LineStyle::Dashed { length: 4.0 })
-                        .width(1.5)
+                        .width(1.5_f32)
                         .name("derate chain"),
                     );
                     // Inline label on the derate arrow.
@@ -1749,7 +1749,7 @@ fn draw_chart_c(
                 )
                 .shape(MarkerShape::Diamond)
                 .filled(true)
-                .radius(6.0)
+                .radius(6.0_f32)
                 .color(egui::Color32::from_rgb(100, 160, 240))
                 .name("Recommended (after derates)"),
             );
@@ -1760,7 +1760,7 @@ fn draw_chart_c(
                     Points::new("", vec![[display_point.rpm, display_point.feed_mm_min]])
                         .shape(MarkerShape::Cross)
                         .filled(true)
-                        .radius(8.0)
+                        .radius(8.0_f32)
                         .color(egui::Color32::from_rgb(220, 200, 80))
                         .name("Explore"),
                 );
@@ -1776,7 +1776,7 @@ fn draw_chart_c(
                         )
                         .color(egui::Color32::from_rgba_unmultiplied(220, 200, 80, 180))
                         .style(egui_plot::LineStyle::Dashed { length: 5.0 })
-                        .width(1.2)
+                        .width(1.2_f32)
                         .name("proposal"),
                     );
                 }
@@ -2048,7 +2048,7 @@ fn draw_legend_swatch(ui: &mut egui::Ui, swatch: LegendSwatch, color: egui::Colo
             painter.rect_stroke(
                 rect,
                 2.0,
-                egui::Stroke::new(0.5, color.linear_multiply(1.4)),
+                egui::Stroke::new(0.5_f32, color.linear_multiply(1.4)),
                 egui::StrokeKind::Middle,
             );
         }
@@ -2059,7 +2059,7 @@ fn draw_legend_swatch(ui: &mut egui::Ui, swatch: LegendSwatch, color: egui::Colo
                     egui::pos2(rect.left() + 1.0, y),
                     egui::pos2(rect.right() - 1.0, y),
                 ],
-                egui::Stroke::new(2.0, color),
+                egui::Stroke::new(2.0_f32, color),
             );
         }
         LegendSwatch::Circle => {
@@ -2396,32 +2396,32 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                 plot_ui.polygon(
                     Polygon::new("", PlotPoints::from(band_poly))
                         .fill_color(band_color)
-                        .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
+                        .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
                         .name("vendor band (this material)"),
                 );
             }
             plot_ui.line(
                 Line::new("", PlotPoints::from(min_pts.clone()))
                     .color(min_color)
-                    .width(1.5)
+                    .width(1.5_f32)
                     .name("vendor min"),
             );
             plot_ui.line(
                 Line::new("", PlotPoints::from(max_pts.clone()))
                     .color(max_color)
-                    .width(1.5)
+                    .width(1.5_f32)
                     .name("vendor max"),
             );
             plot_ui.points(
                 Points::new("", min_pts.clone())
                     .shape(MarkerShape::Square)
-                    .radius(3.0)
+                    .radius(3.0_f32)
                     .color(min_color),
             );
             plot_ui.points(
                 Points::new("", max_pts.clone())
                     .shape(MarkerShape::Square)
-                    .radius(3.0)
+                    .radius(3.0_f32)
                     .color(max_color),
             );
             // Inline value labels next to each calibrated diameter so
@@ -2481,7 +2481,7 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                 Points::new("", vec![[explain.tool_diameter_mm, current.chipload_mm()]])
                     .shape(MarkerShape::Circle)
                     .filled(true)
-                    .radius(5.0)
+                    .radius(5.0_f32)
                     .color(theme::ERROR)
                     .name("Current"),
             );
@@ -2492,7 +2492,7 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                 )
                 .shape(MarkerShape::Diamond)
                 .filled(true)
-                .radius(5.0)
+                .radius(5.0_f32)
                 .color(egui::Color32::from_rgb(100, 160, 240))
                 .name("Recommended"),
             );
@@ -2647,32 +2647,32 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                 plot_ui.polygon(
                     Polygon::new("", PlotPoints::from(band_poly))
                         .fill_color(band_color)
-                        .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
+                        .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
                         .name("vendor band (this diameter)"),
                 );
             }
             plot_ui.line(
                 Line::new("", PlotPoints::from(min_pts.clone()))
                     .color(min_color)
-                    .width(1.5)
+                    .width(1.5_f32)
                     .name("vendor min"),
             );
             plot_ui.line(
                 Line::new("", PlotPoints::from(max_pts.clone()))
                     .color(max_color)
-                    .width(1.5)
+                    .width(1.5_f32)
                     .name("vendor max"),
             );
             plot_ui.points(
                 Points::new("", min_pts.clone())
                     .shape(MarkerShape::Square)
-                    .radius(3.0)
+                    .radius(3.0_f32)
                     .color(min_color),
             );
             plot_ui.points(
                 Points::new("", max_pts.clone())
                     .shape(MarkerShape::Square)
-                    .radius(3.0)
+                    .radius(3.0_f32)
                     .color(max_color),
             );
             // Inline value tags.
@@ -2729,7 +2729,7 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                 Points::new("", vec![[q_hardness, current.chipload_mm()]])
                     .shape(MarkerShape::Circle)
                     .filled(true)
-                    .radius(5.0)
+                    .radius(5.0_f32)
                     .color(theme::ERROR)
                     .name("Current"),
             );
@@ -2737,7 +2737,7 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
                 Points::new("", vec![[q_hardness, explain.recommended.chip_load_mm]])
                     .shape(MarkerShape::Diamond)
                     .filled(true)
-                    .radius(5.0)
+                    .radius(5.0_f32)
                     .color(egui::Color32::from_rgb(100, 160, 240))
                     .name("Recommended"),
             );
@@ -3161,13 +3161,13 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                     plot_ui.line(
                         Line::new("", PlotPoints::from(vec![c, rec]))
                             .color(egui::Color32::from_rgba_unmultiplied(140, 140, 160, 140))
-                            .width(1.0),
+                            .width(1.0_f32),
                     );
                     plot_ui.points(
                         Points::new("", vec![c])
                             .shape(MarkerShape::Circle)
                             .filled(true)
-                            .radius(4.0)
+                            .radius(4.0_f32)
                             .color(theme::ERROR),
                     );
                 }
@@ -3175,7 +3175,7 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                     Points::new("", vec![rec])
                         .shape(MarkerShape::Diamond)
                         .filled(true)
-                        .radius(4.5)
+                        .radius(4.5_f32)
                         .color(egui::Color32::from_rgb(100, 160, 240)),
                 );
             }
@@ -3207,7 +3207,7 @@ fn draw_machine_envelope(
                 ]),
             )
             .fill_color(forbidden_fill)
-            .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
+            .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
             .name(format!(
                 "Past machine cap ({} RPM)",
                 env.spindle_max_rpm as i64
@@ -3226,7 +3226,7 @@ fn draw_machine_envelope(
                 ]),
             )
             .fill_color(forbidden_fill)
-            .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
+            .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
             .name(format!(
                 "Past machine feed ({} mm/min)",
                 env.max_feed_mm_min as i64
@@ -3245,7 +3245,7 @@ fn draw_machine_envelope(
                 ]),
             )
             .fill_color(egui::Color32::from_rgba_unmultiplied(150, 150, 160, 25))
-            .stroke(egui::Stroke::new(0.0, egui::Color32::TRANSPARENT))
+            .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
             .name(format!(
                 "Below spindle min ({} RPM)",
                 env.spindle_min_rpm as i64
@@ -3260,7 +3260,7 @@ fn draw_machine_envelope(
                 ]),
             )
             .color(egui::Color32::from_rgb(150, 150, 160))
-            .width(1.5)
+            .width(1.5_f32)
             .name(format!("spindle min {} RPM", env.spindle_min_rpm as i64)),
         );
     }
@@ -3273,7 +3273,7 @@ fn draw_machine_envelope(
             ]),
         )
         .color(forbidden_edge)
-        .width(2.0)
+        .width(2.0_f32)
         .name(format!("machine max {} RPM", env.spindle_max_rpm as i64)),
     );
     plot_ui.line(
@@ -3285,7 +3285,7 @@ fn draw_machine_envelope(
             ]),
         )
         .color(forbidden_edge)
-        .width(2.0)
+        .width(2.0_f32)
         .name(format!(
             "machine max feed {} mm/min",
             env.max_feed_mm_min as i64

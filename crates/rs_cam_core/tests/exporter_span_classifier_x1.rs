@@ -101,7 +101,9 @@ fn annotated(n: usize, spans: Vec<Span>) -> AnnotatedToolpath {
 fn distinct_colors(mesh: &StockMesh) -> Vec<[i64; 3]> {
     let mut out: Vec<[i64; 3]> = mesh
         .colors
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|c| {
             [
                 (f64::from(c[0]) * 1e6).round() as i64,
@@ -587,7 +589,7 @@ fn exported_geometry_stays_inside_the_toolpath_envelope() {
     // tighter than an auto-fit-destroying envelope explosion, which is the
     // failure class this guards.
     let slack = f64::from(RIBBON) * 2.5 + 1e-6;
-    for v in mesh.vertices.chunks_exact(3) {
+    for v in mesh.vertices.as_chunks::<3>().0 {
         for i in 0..3 {
             let x = f64::from(v[i]);
             assert!(

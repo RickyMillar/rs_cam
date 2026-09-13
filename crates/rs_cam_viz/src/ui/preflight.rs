@@ -233,7 +233,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 let error_color = egui::Color32::from_rgb(220, 80, 80);
                 egui::Frame::default()
                     .fill(egui::Color32::from_rgb(60, 25, 25))
-                    .stroke(egui::Stroke::new(1.5, error_color))
+                    .stroke(egui::Stroke::new(1.5_f32, error_color))
                     .inner_margin(8.0)
                     .corner_radius(4)
                     .show(ui, |ui| {
@@ -396,7 +396,7 @@ fn draw_stale_export_acceptance(ui: &mut egui::Ui, state: &AppState, events: &mu
 
     egui::Frame::default()
         .fill(egui::Color32::from_rgb(50, 45, 25))
-        .stroke(egui::Stroke::new(1.5, theme::WARNING))
+        .stroke(egui::Stroke::new(1.5_f32, theme::WARNING))
         .inner_margin(8.0)
         .corner_radius(4)
         .show(ui, |ui| {
@@ -457,7 +457,7 @@ fn draw_tool_load_overrides(
     };
     egui::Frame::default()
         .fill(frame_color)
-        .stroke(egui::Stroke::new(1.5, stroke_color))
+        .stroke(egui::Stroke::new(1.5_f32, stroke_color))
         .inner_margin(8.0)
         .corner_radius(4)
         .show(ui, |ui| {

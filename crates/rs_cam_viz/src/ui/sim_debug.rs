@@ -22,7 +22,7 @@ pub fn draw_trace_badge(ui: &mut egui::Ui, availability: ToolpathTraceAvailabili
     if let Some((label, color)) = trace_availability_badge(availability) {
         egui::Frame::default()
             .fill(color.linear_multiply(0.12))
-            .stroke(egui::Stroke::new(1.0, color.linear_multiply(0.75)))
+            .stroke(egui::Stroke::new(1.0_f32, color.linear_multiply(0.75)))
             .inner_margin(egui::Margin::symmetric(4, 1))
             .corner_radius(3)
             .show(ui, |ui| {

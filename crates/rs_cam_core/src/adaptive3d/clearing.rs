@@ -252,7 +252,7 @@ pub(super) fn detect_material_regions(
     }
 
     // Sort largest first
-    regions.sort_by(|a, b| b.cell_count.cmp(&a.cell_count));
+    regions.sort_by_key(|a| std::cmp::Reverse(a.cell_count));
     regions
 }
 

@@ -412,9 +412,9 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     let scale_y = draw_h / total_h.max(0.1);
     let scale = scale_x.min(scale_y);
 
-    let cutter_stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(160, 170, 190));
-    let shank_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(120, 125, 135));
-    let holder_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(90, 92, 100));
+    let cutter_stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(160, 170, 190));
+    let shank_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(120, 125, 135));
+    let holder_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(90, 92, 100));
 
     // --- Cutter cross-section from profile_points ---
     let profile = tool_def.profile_points(32);
@@ -490,7 +490,7 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     painter.line_segment(
         [egui::pos2(cx, rect.top() + 5.0), egui::pos2(cx, bottom)],
         egui::Stroke::new(
-            0.5,
+            0.5_f32,
             egui::Color32::from_rgba_premultiplied(80, 80, 100, 100),
         ),
     );

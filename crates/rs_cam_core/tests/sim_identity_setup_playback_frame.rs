@@ -308,7 +308,7 @@ fn composite_mesh_frames_both_group_classes_alike() {
 
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
-    for chunk in verts.chunks_exact(3) {
+    for chunk in verts.as_chunks::<3>().0 {
         for axis in 0..3 {
             min[axis] = min[axis].min(chunk[axis]);
             max[axis] = max[axis].max(chunk[axis]);

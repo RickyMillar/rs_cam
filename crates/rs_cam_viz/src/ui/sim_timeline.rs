@@ -767,7 +767,7 @@ fn draw_signal_track(
             if !pass_bands.is_empty() {
                 let band_y_min = min_y - (max_y - min_y).abs() * 0.1;
                 let band_y_max = max_y + (max_y - min_y).abs() * 0.1;
-                let band_stroke = egui::Stroke::new(0.0, egui::Color32::TRANSPARENT);
+                let band_stroke = egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT);
                 for (idx, (g_start, g_end, selected)) in pass_bands.iter().enumerate() {
                     let fill = if *selected {
                         egui::Color32::from_rgba_premultiplied(70, 95, 160, 28)
@@ -852,7 +852,7 @@ fn draw_signal_track(
                 // Only a track whose values are in the band's own unit may
                 // pass an envelope (Checkpoint H3) — today that is the
                 // normalised advance/tooth summary track alone.
-                let transparent = egui::Stroke::new(0.0, egui::Color32::TRANSPARENT);
+                let transparent = egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT);
                 if cl_max < max_y {
                     let breakage_top = max_y.max(cl_max);
                     plot_ui.polygon(
@@ -938,7 +938,7 @@ fn draw_signal_track(
                     plot_ui.points(
                         egui_plot::Points::new("", PlotPoints::from(hotspot_pts))
                             .color(super::theme::ERROR)
-                            .radius(4.0)
+                            .radius(4.0_f32)
                             .name("gate trips"),
                     );
                 }
@@ -1277,7 +1277,7 @@ fn draw_boundary_timeline(
     painter.rect_stroke(
         op_rect,
         rounding,
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 65)),
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 55, 65)),
         egui::StrokeKind::Middle,
     );
     for (i, boundary) in sim.boundaries().iter().enumerate() {
@@ -1336,7 +1336,7 @@ fn draw_boundary_timeline(
             let x = global_x(col.move_idx);
             painter.line_segment(
                 [egui::pos2(x, op_rect.min.y), egui::pos2(x, op_rect.max.y)],
-                egui::Stroke::new(2.0, holder_color),
+                egui::Stroke::new(2.0_f32, holder_color),
             );
         }
     }
@@ -1348,7 +1348,7 @@ fn draw_boundary_timeline(
         let x = global_x(idx);
         painter.line_segment(
             [egui::pos2(x, op_rect.min.y), egui::pos2(x, op_rect.max.y)],
-            egui::Stroke::new(1.5, rapid_color),
+            egui::Stroke::new(1.5_f32, rapid_color),
         );
     }
     draw_tool_load_timeline_markers(
@@ -1399,7 +1399,7 @@ fn draw_boundary_timeline(
             egui::pos2(pos_x, rect.min.y - 1.0),
             egui::pos2(pos_x, rect.max.y + 1.0),
         ],
-        egui::Stroke::new(2.0, egui::Color32::WHITE),
+        egui::Stroke::new(2.0_f32, egui::Color32::WHITE),
     );
     let diamond_center = egui::pos2(pos_x, rect.min.y);
     let diamond_size = 4.0;
@@ -1664,7 +1664,7 @@ fn paint_span_subband(
             painter.rect_stroke(
                 block,
                 0.0,
-                egui::Stroke::new(1.5, COLOR_HOVER_OUTLINE),
+                egui::Stroke::new(1.5_f32, COLOR_HOVER_OUTLINE),
                 egui::StrokeKind::Middle,
             );
         }
@@ -1672,7 +1672,7 @@ fn paint_span_subband(
         // Thin separator on the right edge so consecutive passes don't blur.
         painter.line_segment(
             [egui::pos2(x_end, rect.min.y), egui::pos2(x_end, rect.max.y)],
-            egui::Stroke::new(0.5, egui::Color32::from_rgb(15, 17, 24)),
+            egui::Stroke::new(0.5_f32, egui::Color32::from_rgb(15, 17, 24)),
         );
 
         if hovered {
@@ -1853,7 +1853,7 @@ fn draw_tool_load_timeline_markers(
             let x = rect.min.x + (global_move as f32 / total_moves) * total_width;
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(230, 60, 70)),
+                egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(230, 60, 70)),
             );
         } else if verdict.any_unmodeled()
             && let Some(boundary) = sim
@@ -1864,7 +1864,7 @@ fn draw_tool_load_timeline_markers(
             let x = rect.min.x + (boundary.start_move as f32 / total_moves) * total_width;
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.center().y)],
-                egui::Stroke::new(1.5, egui::Color32::from_rgb(250, 200, 80)),
+                egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(250, 200, 80)),
             );
         }
     }
@@ -2138,7 +2138,7 @@ fn paint_semantic_subband(
             painter.rect_stroke(
                 seg_rect,
                 1.0,
-                egui::Stroke::new(1.5, egui::Color32::WHITE),
+                egui::Stroke::new(1.5_f32, egui::Color32::WHITE),
                 egui::StrokeKind::Middle,
             );
         }
@@ -2149,7 +2149,7 @@ fn paint_semantic_subband(
             let x = global_x(annotation.move_index);
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(255, 210, 120)),
+                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(255, 210, 120)),
             );
         }
     }

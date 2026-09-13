@@ -285,7 +285,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn drain_events(&mut self) -> Vec<AppEvent> {
-        self.events.drain(..).collect()
+        std::mem::take(&mut self.events)
     }
 
     pub fn take_pending_upload(&mut self) -> bool {

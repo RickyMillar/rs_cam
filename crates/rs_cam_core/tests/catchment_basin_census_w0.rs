@@ -340,7 +340,7 @@ impl FieldExt for Field {
         let mut ranked: Vec<(usize, usize, bool)> = (0..sizes.len())
             .map(|k| (sizes[k], k, touches_border[k]))
             .collect();
-        ranked.sort_by(|a, b| b.0.cmp(&a.0));
+        ranked.sort_by_key(|a| std::cmp::Reverse(a.0));
         ranked.truncate(6);
         let report = SeaReport {
             bodies: sizes.len(),

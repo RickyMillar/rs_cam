@@ -604,7 +604,7 @@ mod tests {
             })
             .collect();
         let mut edges: HashMap<Edge, u32> = HashMap::new();
-        for tri in mesh.indices.chunks_exact(3) {
+        for tri in mesh.indices.as_chunks::<3>().0 {
             let p0 = pos[tri[0] as usize];
             let p1 = pos[tri[1] as usize];
             let p2 = pos[tri[2] as usize];

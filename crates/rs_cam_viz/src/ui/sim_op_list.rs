@@ -184,7 +184,7 @@ pub fn draw(
     if sim.is_stale(gui.edit_counter) {
         egui::Frame::default()
             .fill(egui::Color32::from_rgb(50, 42, 20))
-            .stroke(egui::Stroke::new(1.5, theme::WARNING))
+            .stroke(egui::Stroke::new(1.5_f32, theme::WARNING))
             .inner_margin(8.0)
             .corner_radius(4)
             .show(ui, |ui| {
@@ -261,7 +261,7 @@ pub fn draw(
         let frame = if is_focused {
             egui::Frame::default()
                 .fill(theme::CARD_FILL_SELECTED)
-                .stroke(egui::Stroke::new(1.0, color))
+                .stroke(egui::Stroke::new(1.0_f32, color))
                 .inner_margin(4.0)
                 .corner_radius(3)
         } else {

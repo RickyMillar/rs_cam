@@ -1448,7 +1448,7 @@ fn shift_stock_mesh(
         return mesh;
     }
     let delta = [shift.x as f32, shift.y as f32, shift.z as f32];
-    for vertex in mesh.vertices.chunks_exact_mut(3) {
+    for vertex in mesh.vertices.as_chunks_mut::<3>().0 {
         for (component, offset) in vertex.iter_mut().zip(delta) {
             *component += offset;
         }

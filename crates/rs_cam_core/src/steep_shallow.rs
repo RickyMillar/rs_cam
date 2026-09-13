@@ -1078,12 +1078,10 @@ mod tests {
                     contour_z_values.clear();
                     in_contour = false;
                 }
-                crate::toolpath::MoveType::Linear { .. } => {
-                    if m.target.z < 29.0 {
-                        // Below safe_z → cutting
-                        contour_z_values.push(m.target.z);
-                        in_contour = true;
-                    }
+                crate::toolpath::MoveType::Linear { .. } if m.target.z < 29.0 => {
+                    // Below safe_z → cutting
+                    contour_z_values.push(m.target.z);
+                    in_contour = true;
                 }
                 _ => {}
             }

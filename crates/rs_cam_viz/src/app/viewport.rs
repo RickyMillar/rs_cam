@@ -573,7 +573,7 @@ impl RsCamApp {
                         egui::Frame::default()
                             .fill(egui::Color32::from_rgba_premultiplied(40, 50, 70, 220))
                             .stroke(egui::Stroke::new(
-                                1.0,
+                                1.0_f32,
                                 egui::Color32::from_rgb(110, 140, 200),
                             ))
                             .corner_radius(6)
@@ -686,7 +686,7 @@ impl RsCamApp {
         axis_data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
         for (_, end, color, label) in &axis_data {
-            painter.line_segment([gizmo_center, *end], egui::Stroke::new(2.0, *color));
+            painter.line_segment([gizmo_center, *end], egui::Stroke::new(2.0_f32, *color));
             painter.text(
                 *end,
                 egui::Align2::CENTER_CENTER,
@@ -750,7 +750,7 @@ impl RsCamApp {
         let painter = ui.painter();
         for (start_idx, end_idx) in edges {
             if let (Some(start), Some(end)) = (projected[start_idx], projected[end_idx]) {
-                painter.line_segment([start, end], egui::Stroke::new(1.5, color));
+                painter.line_segment([start, end], egui::Stroke::new(1.5_f32, color));
             }
         }
 
@@ -787,7 +787,7 @@ impl RsCamApp {
         painter.rect_stroke(
             panel_rect,
             6.0,
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 74, 84)),
+            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(70, 74, 84)),
             egui::StrokeKind::Middle,
         );
 
@@ -816,9 +816,9 @@ impl RsCamApp {
 
         painter.line_segment(
             [body_top, body_bottom],
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 105, 112)),
+            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(100, 105, 112)),
         );
-        painter.line_segment([body_top, deflected_tip], egui::Stroke::new(2.0, color));
+        painter.line_segment([body_top, deflected_tip], egui::Stroke::new(2.0_f32, color));
         painter.circle_filled(body_top, 3.0, egui::Color32::from_rgb(130, 135, 145));
         painter.circle_filled(deflected_tip, 3.5, color);
 
@@ -832,7 +832,7 @@ impl RsCamApp {
         painter.rect_stroke(
             cutter_rect,
             2.0,
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(150, 150, 95)),
+            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(150, 150, 95)),
             egui::StrokeKind::Middle,
         );
 

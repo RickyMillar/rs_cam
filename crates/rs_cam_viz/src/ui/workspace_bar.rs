@@ -125,7 +125,7 @@ fn workspace_tab(
                 egui::pos2(rect.min.x + 2.0, rect.max.y),
                 egui::pos2(rect.max.x - 2.0, rect.max.y),
             ],
-            egui::Stroke::new(2.0, theme::ACCENT),
+            egui::Stroke::new(2.0_f32, theme::ACCENT),
         );
     }
 

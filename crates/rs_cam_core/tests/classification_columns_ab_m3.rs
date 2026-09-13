@@ -437,7 +437,7 @@ fn region_mix(session: &ProjectSession) -> Vec<(String, String, usize, usize, f6
         .into_iter()
         .map(|((band, strategy), (regions, moves, area))| (band, strategy, regions, moves, area))
         .collect();
-    rows.sort_by(|a, b| b.3.cmp(&a.3));
+    rows.sort_by_key(|a| std::cmp::Reverse(a.3));
     rows
 }
 

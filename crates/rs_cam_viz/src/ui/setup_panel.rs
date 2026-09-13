@@ -138,7 +138,7 @@ fn draw_setup_card(
 
     let card_response = egui::Frame::default()
         .fill(egui::Color32::from_rgb(38, 40, 50))
-        .stroke(egui::Stroke::new(1.0, base_border))
+        .stroke(egui::Stroke::new(1.0_f32, base_border))
         .inner_margin(8.0)
         .corner_radius(4)
         .show(ui, |ui| {
@@ -268,7 +268,7 @@ fn draw_setup_card(
         ui.painter().rect_stroke(
             card_response.rect,
             4.0,
-            egui::Stroke::new(1.0, hover_border),
+            egui::Stroke::new(1.0_f32, hover_border),
             egui::StrokeKind::Middle,
         );
     }

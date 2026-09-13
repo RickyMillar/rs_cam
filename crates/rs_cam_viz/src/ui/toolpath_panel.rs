@@ -326,7 +326,7 @@ fn draw_toolpath_card(
         } else {
             egui::Color32::TRANSPARENT
         })
-        .stroke(egui::Stroke::new(1.0, border_color))
+        .stroke(egui::Stroke::new(1.0_f32, border_color))
         .inner_margin(4.0)
         .corner_radius(3)
         .show(ui, |ui| {
@@ -645,7 +645,7 @@ fn draw_toolpath_card(
         // Draw a thin line at the bottom to indicate drop position
         painter.line_segment(
             [rect.left_bottom(), rect.right_bottom()],
-            egui::Stroke::new(2.0, theme::ACCENT),
+            egui::Stroke::new(2.0_f32, theme::ACCENT),
         );
     }
 }

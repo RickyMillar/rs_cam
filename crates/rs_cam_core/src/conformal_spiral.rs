@@ -1474,7 +1474,7 @@ fn mean_value_weights(region: &RegionMesh) -> MeanValueWeights {
     let mut max_weight = 0.0_f64;
     let mut nonpositive = 0usize;
     let mut edges: Vec<((usize, usize), f64)> = acc.into_iter().collect();
-    edges.sort_by(|a, b| a.0.cmp(&b.0));
+    edges.sort_by_key(|a| a.0);
     for ((i, j), w) in edges {
         if i >= nv || j >= nv || i == j {
             continue;
