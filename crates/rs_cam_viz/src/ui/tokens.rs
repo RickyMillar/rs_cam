@@ -770,3 +770,16 @@ pub const AXIS_X: Color32 = Color32::from_rgb(0xD6, 0x5C, 0x55);
 pub const AXIS_Y: Color32 = Color32::from_rgb(0x6F, 0xBF, 0x4A);
 /// The Z axis. 5.41 on the viewport ground.
 pub const AXIS_Z: Color32 = Color32::from_rgb(0x5B, 0x8D, 0xE0);
+
+/// The label column of a parameter row, in points (§4.6).
+///
+/// §4.6 asks for "one value per panel, computed once from the longest label".
+/// A fixed token is the cheaper form of the same rule and it is what stops
+/// the column COLLAPSING: a truncating `Label` reports a minimal desired
+/// width, so an `egui::Grid` sized to content gives it almost nothing and
+/// every label turns into "Stock to L…". Seen on screen 2026-09-14.
+///
+/// 116 holds the longest label the inspector actually carries — "Min Cut
+/// Radius:" and "Fine Stepdown:" — at `SIZE_BODY` in Inter, and it is on the
+/// 4-point grid.
+pub const LABEL_COL_WIDTH: f32 = 116.0;

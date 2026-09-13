@@ -141,11 +141,18 @@ impl<'a> ValueRow<'a> {
         // The label never wraps and never breaks mid-word. A parameter label
         // is read as a name, not as prose, so when the column is tight it
         // truncates with an ellipsis and the hover carries the rest.
-        let label_response = ui.add(
-            egui::Label::new(self.label)
-                .truncate()
-                .wrap_mode(egui::TextWrapMode::Truncate),
-        );
+        let label_response = ui
+            .add_sized(
+                [
+                    crate::ui::tokens::LABEL_COL_WIDTH,
+                    crate::ui::tokens::ROW_DENSE,
+                ],
+                egui::Label::new(self.label)
+                    .truncate()
+                    .wrap_mode(egui::TextWrapMode::Truncate)
+                    .halign(egui::Align::LEFT),
+            )
+            .on_hover_text(self.label);
         let mut suggested = false;
         let mut value_response = None;
         ui.horizontal(|ui| {
