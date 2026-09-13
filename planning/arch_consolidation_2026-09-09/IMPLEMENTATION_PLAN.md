@@ -1771,3 +1771,28 @@ blocker). Rulings:
    gated on the `mcp` feature (module or call sites), and the verifier lint
    gate gains `cargo clippy -p rs_cam_viz --no-default-features --all-targets
    -- -D warnings`. The compile is the proof; no separate sentry.
+
+---
+
+## §31 Operator ruling on G-F036B-FLOOR after the scout (2026-09-13)
+
+**Fix the test arm (option c of the scout brief) → WP26.** The red is an
+instrument defect. The arm's proxy for "the modulator touched this move" is
+"the feed differs from nominal". Since WP11b (`4b53576b`) the
+feed-optimisation dressup writes per-move feeds on the same door, so the arm
+counts moves the modulator never touched. The fix is test-only:
+
+1. The arm keeps a clone of the pre-modulation IR after `generate_toolpath`,
+   runs the simulation with the flag ON, and diffs the two move lists by
+   index. A move whose feed moved is a move the modulator wrote.
+2. The arm skips a move whose stamped `BindingConstraint` is `PlungeRate`
+   (`SimulationCutTrace::modulated_feeds`). The plunge guard writes the
+   operation's plunge rate, which sits below the band floor by construction.
+3. `floor = band.start × 0.95`, the intent filter, the assertion text shape
+   and the non-vacuity arm stay. No feeds constant, band or threshold moves.
+   No core file changes.
+
+Expected read after the fix: 9 passed / 1 failed, the band arm red by design
+(J2 §4c). Ten of ten is NOT the expected read. The G-F036B-FLOOR ledger row
+in STATUS.md carries the scout's two corrections (first appearance bracketed
+to `4b53576b`; not the same finding as the band arm).
