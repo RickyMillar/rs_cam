@@ -1754,3 +1754,20 @@ blocker). Rulings:
    History is not rewritten.
 4. **N2: closed by WP14b** (`2abf78aa`), which flipped `PreviewTierMap`'s
    `gui` column to `Reached` and removed the forward-promise wording.
+
+---
+
+## §30 Operator rulings on the four close-out ledgers (2026-09-13)
+
+1. **G-PERFGOLDEN2D: re-bless now.** Done at `7177c139`; the moved fields are
+   in that commit body. Which commit moved the 2D fixture stays NOT MEASURED.
+2. **G-F036B-FLOOR: scout it, no code change.** A read-only scout reports the
+   mechanism and the first appearance; the operator decides after.
+3. **The Optimize placeholder becomes WP24.** The full-screen block is
+   replaced by a non-modal progress row with a cancel; the GUI stays usable
+   during a run. One run at a time may stay as a refusal with a toast. Every
+   new control is a registry row constructed in a view file (WP23 census).
+4. **G-NOMCPTESTS becomes WP25.** `controller/results_parity_tests.rs` is
+   gated on the `mcp` feature (module or call sites), and the verifier lint
+   gate gains `cargo clippy -p rs_cam_viz --no-default-features --all-targets
+   -- -D warnings`. The compile is the proof; no separate sentry.
