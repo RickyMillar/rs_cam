@@ -1,0 +1,371 @@
+//! WP27 — the viewport draws the SELECTED toolpath only, by default.
+//!
+//! Programme: `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md`
+//! §32. The operator ruling names the cost: a project with many toolpaths
+//! draws every one of them every frame, and the viewport gets slow. The rule
+//! is one selected toolpath by default, and "show all" one click away.
+//!
+//! ## What this file measures
+//!
+//! One pure function, `state::viewport::toolpaths_to_draw`, answers which
+//! toolpaths the viewport draws. It takes no GPU, no `eframe` context and no
+//! `RenderResources`, so every behaviour arm here is a direct call.
+//!
+//! Three arms read SOURCE instead. Two code paths must ask the one function —
+//! the GPU upload and the click pick — because a click that selects geometry
+//! the viewport does not draw is the drift a second predicate produces. And
+//! the upload key must carry both new dials: the selection decides the draw
+//! SET now, and 39 of the 40 production selection writers fire no upload of
+//! their own.
+//!
+//! ## The rule, and why the pin short-circuits
+//!
+//! ```text
+//! match isolate {
+//!     Some(pinned) => id == pinned,
+//!     None => show_all || selected == Some(id),
+//! }
+//! ```
+//!
+//! The isolate pin is set ONCE from the selection and then stays put while
+//! the selection moves. An AND of the three dials therefore draws NOTHING as
+//! soon as the operator pins toolpath A and clicks row B. The pin is an
+//! explicit operator override of the whole rule, so it wins.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
+use std::path::Path;
+
+use rs_cam_viz::state::toolpath::ToolpathId;
+use rs_cam_viz::state::viewport::{ToolpathDrawFilter, ViewportState, toolpaths_to_draw};
+use rs_cam_viz::state::{AppState, Workspace};
+use rs_cam_viz::ui::overlays::registry;
+
+// ── fixtures ─────────────────────────────────────────────────────────
+
+/// Read one source file, relative to this crate's manifest.
+fn source(relative: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
+    assert!(
+        path.is_file(),
+        "scanned path {} no longer exists",
+        path.display()
+    );
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    assert!(
+        text.len() > 500,
+        "{} is too short to be the file this scan means",
+        path.display()
+    );
+    text
+}
+
+/// Strip every `//` comment from one source text.
+///
+/// A scan that matches a doc comment reports a reader that does not exist.
+/// The upload pass describes the old gate in its own comments, so the strip
+/// is what keeps the two retirement arms honest.
+fn strip_comments(text: &str) -> String {
+    text.lines()
+        .map(|line| match line.find("//") {
+            Some(at) => &line[..at],
+            None => line,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+const A: ToolpathId = ToolpathId(1);
+const B: ToolpathId = ToolpathId(2);
+const C: ToolpathId = ToolpathId(3);
+
+/// Three generated, visible toolpaths, in config order.
+fn three_rows() -> Vec<(ToolpathId, bool, bool)> {
+    let rows = vec![(A, true, true), (B, true, true), (C, true, true)];
+    assert_eq!(rows.len(), 3, "the fixture must carry three rows");
+    rows
+}
+
+/// The registry row must exist before any draw-set claim is read as the
+/// shipped rule: the panel, `set_ui_view` and the per-workspace default table
+/// all reach the dial through it.
+fn assert_the_row_exists() {
+    assert!(
+        registry::row("all_toolpaths").is_some(),
+        "the Overlays registry carries no `all_toolpaths` row, so no control \
+         and no MCP call reaches the draw scope"
+    );
+}
+
+// ── (i) the shipped default ──────────────────────────────────────────
+
+/// The measurement the ruling asked for: a fresh viewport draws ONE toolpath.
+///
+/// The flag is read off `ViewportState::new()` rather than written as a
+/// literal `false`, so this arm measures the shipped default instead of
+/// restating it.
+#[test]
+fn a_fresh_viewport_draws_the_selected_toolpath_only() {
+    assert_the_row_exists();
+    let filter = ToolpathDrawFilter {
+        selected: Some(B),
+        isolate: None,
+        show_all: ViewportState::new().show_all_toolpaths,
+    };
+    let drawn = toolpaths_to_draw(filter, three_rows());
+    assert_eq!(
+        drawn,
+        vec![B],
+        "a fresh viewport drew {} toolpaths; the §32 rule is the selected one \
+         only, and the shipped default for `show_all_toolpaths` is what this \
+         arm reads",
+        drawn.len()
+    );
+}
+
+// ── (ii) show-all is the escape hatch ────────────────────────────────
+
+#[test]
+fn show_all_draws_every_toolpath_in_config_order() {
+    let filter = ToolpathDrawFilter {
+        selected: Some(B),
+        isolate: None,
+        show_all: true,
+    };
+    assert_eq!(
+        toolpaths_to_draw(filter, three_rows()),
+        vec![A, B, C],
+        "show-all must draw every row, in config order — the order is what \
+         keeps each toolpath's palette colour"
+    );
+}
+
+// ── (iii) the selection steers, and the pin wins ─────────────────────
+
+#[test]
+fn the_draw_set_follows_the_selection_and_the_pin_wins() {
+    let selected_only = |selected: Option<ToolpathId>| ToolpathDrawFilter {
+        selected,
+        isolate: None,
+        show_all: false,
+    };
+    assert_eq!(
+        toolpaths_to_draw(selected_only(Some(A)), three_rows()),
+        vec![A]
+    );
+    assert_eq!(
+        toolpaths_to_draw(selected_only(Some(C)), three_rows()),
+        vec![C]
+    );
+
+    // The pin beats the selection. A naive AND of the three dials draws
+    // NOTHING here, which is the defect this sub-assertion exists for.
+    let pinned = ToolpathDrawFilter {
+        selected: Some(C),
+        isolate: Some(A),
+        show_all: false,
+    };
+    assert_eq!(
+        toolpaths_to_draw(pinned, three_rows()),
+        vec![A],
+        "the pin is an explicit override and does not follow the selection, \
+         so it must win rather than AND"
+    );
+
+    // And it beats show-all, in the other direction.
+    let pinned_with_all = ToolpathDrawFilter {
+        selected: Some(C),
+        isolate: Some(A),
+        show_all: true,
+    };
+    assert_eq!(
+        toolpaths_to_draw(pinned_with_all, three_rows()),
+        vec![A],
+        "the pin must narrow show-all, not be swallowed by it"
+    );
+}
+
+// ── (iv) the two older gates keep working ────────────────────────────
+
+/// The eye button (`ToolpathRuntime::visible`) and the "not generated yet"
+/// gate are unchanged by WP27, and the one function carries both.
+#[test]
+fn an_ungenerated_or_hidden_toolpath_is_never_drawn() {
+    let filter = ToolpathDrawFilter {
+        selected: Some(B),
+        isolate: None,
+        show_all: false,
+    };
+    let ungenerated = vec![(A, true, true), (B, true, false), (C, true, true)];
+    assert!(
+        toolpaths_to_draw(filter, ungenerated).is_empty(),
+        "a toolpath with no result has no geometry to draw"
+    );
+    let hidden = vec![(A, true, true), (B, false, true), (C, true, true)];
+    assert!(
+        toolpaths_to_draw(filter, hidden).is_empty(),
+        "the eye button must still hide the selected toolpath"
+    );
+}
+
+// ── (v) the §2.2 ruling ──────────────────────────────────────────────
+
+/// With nothing selected the viewport draws NO toolpath. The model and the
+/// stock still draw, and the operations list is the picker.
+///
+/// This arm is here so a later reader cannot mistake the empty post-load
+/// viewport for a defect: `controller/io.rs` sets `Selection::None` on a
+/// project load, so that state is reached on every load.
+#[test]
+fn nothing_selected_draws_nothing() {
+    let filter = ToolpathDrawFilter {
+        selected: None,
+        isolate: None,
+        show_all: false,
+    };
+    assert!(
+        toolpaths_to_draw(filter, three_rows()).is_empty(),
+        "nothing selected must draw nothing — the operator ruling, not a \
+         fallback to draw-all"
+    );
+}
+
+// ── (vi) one rule, two readers ───────────────────────────────────────
+
+/// The upload pass and the pick path ask the SAME function.
+///
+/// Two predicates drift, and the drift is a click that selects geometry the
+/// viewport does not draw. The arm also asserts the retired inline gates are
+/// gone from both files, so a second rule cannot sit beside the first.
+#[test]
+fn the_upload_and_the_pick_read_one_draw_rule() {
+    let upload = strip_comments(&source("src/app/gpu_upload.rs"));
+    let pick = strip_comments(&source("src/interaction/picking.rs"));
+    assert!(
+        upload.contains("toolpaths_to_draw"),
+        "src/app/gpu_upload.rs no longer asks `toolpaths_to_draw`"
+    );
+    assert!(
+        pick.contains("toolpaths_to_draw"),
+        "src/interaction/picking.rs no longer asks `toolpaths_to_draw`; a \
+         click can now select a toolpath the viewport does not draw"
+    );
+    assert!(
+        !upload.contains("match isolate"),
+        "src/app/gpu_upload.rs still carries its own inline isolate gate \
+         beside the shared rule"
+    );
+    assert!(
+        !pick.contains("isolate_toolpath"),
+        "src/interaction/picking.rs still reads the isolate pin itself \
+         instead of taking the shared filter"
+    );
+}
+
+// ── (vii) the CPU rasteriser is untouched ────────────────────────────
+
+/// MCP `screenshot_toolpath` renders ONE result on the CPU. It reads neither
+/// the draw set nor the pin, so WP27 does not change what it photographs.
+/// `screenshot_gui` captures the live window and DOES change — that is the
+/// one MCP behaviour change, and it is a doc note, not a code path here.
+#[test]
+fn mcp_screenshot_toolpath_does_not_read_the_draw_set() {
+    let mcp = strip_comments(&source("src/app/mcp.rs"));
+    let marker = "fn mcp_screenshot_toolpath";
+    let start = mcp
+        .find(marker)
+        .unwrap_or_else(|| panic!("`{marker}` no longer exists in app/mcp.rs"));
+    let rest = &mcp[start..];
+    let end = rest.find("\n    fn ").unwrap_or(rest.len());
+    let body = &rest[..end];
+    assert!(
+        body.len() > 200,
+        "the body locator returned {} bytes, so this arm asserts nothing",
+        body.len()
+    );
+    for needle in [
+        "toolpaths_to_draw",
+        "isolate_toolpath",
+        "show_all_toolpaths",
+    ] {
+        assert!(
+            !body.contains(needle),
+            "mcp_screenshot_toolpath now reads `{needle}`; it rasterises one \
+             result on the CPU and must stay independent of the viewport's \
+             draw set"
+        );
+    }
+}
+
+// ── (vii-b) both new dials reach the screen ──────────────────────────
+
+/// The composite upload key carries the draw scope AND the selection.
+///
+/// The scope half duplicates the overlays sentry on purpose — it reads the
+/// same source for the same reason. The selection half has no other sentry
+/// and is the load-bearing one: 39 of the 40 production selection writers
+/// set no `pending_upload`, so without this field an operator deselects a
+/// toolpath and keeps seeing it, and `set_ui_view(toolpath_index: N)`
+/// followed by `screenshot_gui` photographs the PREVIOUS toolpath.
+#[test]
+fn the_upload_key_carries_the_scope_and_the_selection() {
+    let app = strip_comments(&source("src/app.rs"));
+    let marker = "pub(crate) fn overlay_upload_key";
+    let start = app
+        .find(marker)
+        .unwrap_or_else(|| panic!("`{marker}` no longer exists in app.rs"));
+    let rest = &app[start..];
+    let end = rest.find("\n}").unwrap_or(rest.len());
+    let body = &rest[..end];
+    assert!(
+        body.len() > 200,
+        "the key body locator returned {} bytes, so this arm asserts nothing",
+        body.len()
+    );
+    assert!(
+        body.contains("show_all_toolpaths"),
+        "`overlay_upload_key` does not read `show_all_toolpaths`, so the \
+         Overlays checkbox does nothing until an unrelated event fires an \
+         upload — the tool-profile ghost defect class"
+    );
+    assert!(
+        body.contains("state.selection"),
+        "`overlay_upload_key` does not read `state.selection`, so a \
+         selection change leaves the viewport drawing the previous toolpath"
+    );
+}
+
+// ── (viii) the Simulation workspace draws all ────────────────────────
+
+/// Playback reviews every toolpath in the program, so the Simulation
+/// workspace names `Some(true)`. The Toolpaths workspace names NO default on
+/// purpose: a named default is re-applied on every entry, so an operator who
+/// switched show-all on would have to switch it on again each time they came
+/// back from Simulation. `displaced` restores the round trip instead.
+#[test]
+fn the_simulation_workspace_still_draws_every_toolpath() {
+    assert_the_row_exists();
+    let mut state = AppState::new();
+    assert_eq!(state.workspace, Workspace::Toolpaths);
+    assert!(
+        !state.viewport.show_all_toolpaths,
+        "the app opens in Toolpaths and must start at the selected-only rule"
+    );
+    registry::switch_workspace(&mut state, Workspace::Simulation);
+    assert!(
+        state.viewport.show_all_toolpaths,
+        "the Simulation workspace reviews the whole program, so its default \
+         draws every toolpath"
+    );
+    registry::switch_workspace(&mut state, Workspace::Toolpaths);
+    assert!(
+        !state.viewport.show_all_toolpaths,
+        "leaving Simulation must restore what its default displaced"
+    );
+}
