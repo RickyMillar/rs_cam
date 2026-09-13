@@ -123,10 +123,17 @@ fn a_workspace_badge_is_a_chip_not_a_loose_label_up3() {
     let root = src_root();
     let src = std::fs::read_to_string(root.join("ui/workspace_bar.rs")).unwrap();
     assert!(
-        src.contains("StatusChip") || src.contains("CountPill"),
-        "the tab badges were bare `ui.label` calls floating beside the tab, \
-         which is why '6 pending' read as debris rather than as a count. They \
-         must use the component set."
+        src.contains("StatusChip"),
+        "a SAFETY badge on the tab bar must use the component set"
+    );
+    // Operator, 2026-09-14: the chipped badges were "way too in your face".
+    // §4.4 agrees — a count on a tab is an OBSERVATION and must not wear the
+    // verdict treatment. Only Danger keeps the chip.
+    assert!(
+        src.contains("badge_role == Role::Danger"),
+        "only a DANGER badge may render as a verdict chip. Every other count \
+         is a quiet tally, because a tab strip is a place you navigate from, \
+         not a place that shouts."
     );
 }
 

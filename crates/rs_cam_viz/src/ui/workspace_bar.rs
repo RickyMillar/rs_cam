@@ -133,9 +133,24 @@ fn workspace_tab(
     // UP3. The badge was a bare `ui.label` floating beside the tab, which is
     // why "6 pending" read as debris rather than as a count. It is a pill
     // now, so a count on a tab and a count in a panel are one thing.
+    // A count on a tab is an OBSERVATION, not a verdict (§4.4, ruling R15),
+    // and UP3 got this wrong: it used the verdict chip, so "6 PENDING" and
+    // "6 UNCOMPUTED" arrived tinted, bordered, glyphed and upper-cased on a
+    // bar that is meant to be chrome. The operator's words were "way too in
+    // your face", and they were right — a tab strip is a place you navigate
+    // from, not a place that shouts.
+    //
+    // The rule is SAFETY KEEPS ITS VOICE. A collision count stays a verdict
+    // chip, because that is the one badge on this bar worth interrupting
+    // for. Everything else is a quiet tally: no fill, no border, no glyph,
+    // muted text at caption size.
     if let Some((badge_text, badge_role)) = badge {
         ui.add_space(tokens::SPACE_1);
-        ui.add(StatusChip::new(&badge_text, badge_role));
+        if badge_role == Role::Danger {
+            ui.add(StatusChip::new(&badge_text, badge_role));
+        } else {
+            ui.label(crate::ui::components::text::caption(badge_text.trim()));
+        }
     }
 
     ui.add_space(tokens::SPACE_1);

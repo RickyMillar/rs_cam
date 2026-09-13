@@ -2566,13 +2566,18 @@ fn draw_feeds_card(
         let card_row = |label: &str| card_rows.iter().find(|r| r.label == label);
         let draw_card_row = |ui: &mut egui::Ui, row: &feeds_rows::FeedsCardRow| {
             ui.label(row.label);
-            ui.horizontal(|ui| {
+            // The trailing annotation WRAPS rather than extending the Ui.
+            // `TextWrapMode::Extend` sets an infinite max width, so a long
+            // "configured 0.1313 mm/tooth" grew the inspector past its own
+            // panel and the panel clipped it — `AUDIT.md` D-16, seen on the
+            // Feeds tab where the panel's whole content shifted off its left
+            // edge. §4.6 makes the trailing slot wrap for exactly this.
+            ui.horizontal_wrapped(|ui| {
                 ui.label(&row.recommended).on_hover_text(&row.hover);
                 if let Some(configured) = &row.configured {
-                    ui.label(
-                        egui::RichText::new(configured)
-                            .small()
-                            .color(theme::TEXT_DIM),
+                    ui.add(
+                        egui::Label::new(crate::ui::components::text::caption(configured.clone()))
+                            .wrap_mode(egui::TextWrapMode::Wrap),
                     )
                     .on_hover_text(&row.hover);
                 }

@@ -11,6 +11,7 @@ use crate::state::selection::Selection;
 use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::ui::theme;
+use crate::ui::tokens;
 use crate::ui_command::{NoArgs, UiCommand};
 use rs_cam_core::compute::config::ToolpathStats;
 
@@ -39,17 +40,37 @@ struct RuntimeSnapshot {
 
 /// Left panel for the Toolpath workspace: operation queue with status chips.
 pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
-    ui.heading("Operations");
-    ui.separator();
+    // The panel title, then its rule, then the one action this panel is FOR.
+    //
+    // This stack read as three unrelated things — a heading, egui's own
+    // separator, and a default button floating in a bare horizontal. The
+    // operator's words were that it "looks a bit out of place". The heading
+    // and the rule are now one unit, the rule is the HAIRLINE token rather
+    // than egui's separator, and the button says what it is.
+    ui.add_space(tokens::SPACE_2);
+    ui.label(
+        egui::RichText::new("Operations")
+            .text_style(egui::TextStyle::Heading)
+            .color(tokens::TEXT_STRONG),
+    );
+    ui.add_space(tokens::SPACE_2);
+    {
+        let y = ui.cursor().top();
+        let x = ui.max_rect().x_range();
+        ui.painter()
+            .hline(x, y, egui::Stroke::new(1.0, tokens::HAIRLINE));
+    }
+    ui.add_space(tokens::SPACE_3);
 
-    // Action bar: generate all
-    ui.horizontal(|ui| {
-        if ui.button("Generate All").clicked() {
-            events.push(AppEvent::GenerateAll);
-        }
-    });
+    // §4.5: generating every stale operation is what this workspace is FOR.
+    if ui
+        .add(crate::ui::components::Button::primary("Generate All"))
+        .clicked()
+    {
+        events.push(AppEvent::GenerateAll);
+    }
 
-    ui.add_space(6.0);
+    ui.add_space(tokens::SPACE_4);
 
     // Clone per-setup metadata up front so we can borrow `state.viewport`
     // mutably inside the draw loop without fighting the borrow checker.
