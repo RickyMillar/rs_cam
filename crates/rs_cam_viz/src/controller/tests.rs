@@ -5931,3 +5931,201 @@ fn a_toolpath_edit_clears_the_view_simulation_wp19() {
     );
     assert!(controller.state.simulation.last_run.is_none());
 }
+
+// ── WP24 — the Optimize run is state, not a lockout ──────────────────
+//
+// Programme: `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md`
+// §30 ruling 3 (operator, 2026-09-13). The draw half of this finding is
+// `crates/rs_cam_viz/tests/optimize_run_is_non_modal_wp24.rs`; these three
+// arms are the state half, and they need `ScriptedBackend` plus the
+// `pub(crate)` drain, so they live here.
+//
+// All three arms drive the run with the TIER-MAP PREVIEW. It is the same
+// `OptimizeRun` the per-toolpath Optimize carries, and it needs no cut
+// trace: no controller fixture in this crate holds one
+// (`cut_trace: None` on every one of them), and
+// `capture_optimize_toolpath` refuses without one. So the `Toolpath` kind
+// of `OptimizeRun` is NOT exercised in-crate, and this heading says so
+// rather than hiding it.
+
+/// The event loop never blocked, and a run no longer blocks the drawing.
+///
+/// The placeholder replaced the central panel; it never stopped an event
+/// reaching the controller. So the BEHAVIOURAL half of this arm already
+/// held before WP24, and the arm is a regression guard: it bites a future
+/// writer who puts the lockout back into the event loop instead of into
+/// the draw.
+///
+/// RED at the parent revision: COMPILE-red. The arm names
+/// `AppState::optimize_run`, which does not exist there — the state is a
+/// bare `is_optimizing: bool`.
+#[test]
+fn a_view_command_still_applies_while_an_optimize_run_is_in_flight() {
+    let mut controller = planner_controller();
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::OpenMultitoolPlanner(NoArgs)));
+    tick_ball_tools(&mut controller);
+    controller.handle_internal_event(AppEvent::PreviewMultitoolPlan);
+
+    assert!(
+        controller.state.optimize_run.is_some(),
+        "the preview is in flight, so the run is on the state"
+    );
+    assert_eq!(controller.compute.job_requests.len(), 1);
+
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::SwitchWorkspace(
+        crate::state::Workspace::Setup,
+    )));
+
+    assert_eq!(
+        controller.state.workspace,
+        crate::state::Workspace::Setup,
+        "a view command applies during a run — the GUI stays usable"
+    );
+    assert!(
+        controller.state.optimize_run.is_some(),
+        "and the unrelated command leaves the run alone"
+    );
+}
+
+/// Cancel arms THIS submit's flag, closes no window, and clears nothing.
+///
+/// Three claims in one arm, because they are one design decision:
+///
+/// * the flag that moves is the per-submit `Arc<AtomicBool>`, not a lane.
+///   The `Job` lane is FIFO and shared with the MCP surface, so
+///   `cancel_lane(ComputeLane::Job)` would also kill an MCP caller's job
+///   queued behind this one — which is why none of the three existing
+///   cancels fits the progress row;
+/// * the run STAYS on the state with `cancel_requested` set. The drain is
+///   the one clearing site, and a cancelled Optimize still returns a
+///   partial outcome;
+/// * the arm closes no window. The brief names `optimize_modal` here; this
+///   fixture has none, so the dialog that must survive is the planner's.
+///
+/// RED at the parent revision: COMPILE-red. The arm names
+/// `UiCommand::CancelOptimizeRun` and `AppState::optimize_run`, and
+/// neither exists there.
+#[test]
+fn cancelling_the_run_arms_one_flag_and_clears_nothing() {
+    let mut controller = planner_controller();
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::OpenMultitoolPlanner(NoArgs)));
+    tick_ball_tools(&mut controller);
+    controller.handle_internal_event(AppEvent::PreviewMultitoolPlan);
+
+    let request = controller
+        .compute
+        .job_requests
+        .first()
+        .expect("a preview was submitted");
+    let job_id = request.id;
+    let cancel = Arc::clone(&request.cancel);
+    assert!(!cancel.load(std::sync::atomic::Ordering::SeqCst));
+
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::CancelOptimizeRun(NoArgs)));
+
+    assert!(
+        cancel.load(std::sync::atomic::Ordering::SeqCst),
+        "the cancel arms the flag of the submit that is running"
+    );
+    assert_eq!(
+        controller.compute.job_lane.state,
+        LaneState::Idle,
+        "and it does NOT cancel the shared Job lane, which would kill an \
+         MCP caller's job queued behind this one"
+    );
+    assert_eq!(
+        controller.compute.optimize_lane.state,
+        LaneState::Idle,
+        "nor the Optimize lane, which this run does not ride"
+    );
+    assert_eq!(
+        controller.compute.job_requests.len(),
+        1,
+        "and it submits nothing"
+    );
+    let run = controller
+        .state
+        .optimize_run
+        .as_ref()
+        .expect("the cancel does not clear the run — the drain does");
+    assert!(
+        run.cancel_requested,
+        "the row reads 'cancelling' off this flag"
+    );
+    assert!(
+        controller
+            .state
+            .multitool_planner
+            .as_ref()
+            .is_some_and(|planner| planner.open),
+        "the cancel closes no window"
+    );
+
+    // The answer still lands, and the drain is the one clearing site.
+    let result = crate::compute::JobResult {
+        id: job_id,
+        answer: Err(crate::compute::ComputeError::Cancelled),
+    };
+    let message = ComputeMessage::Job(Box::new(result));
+    controller.compute.drained.push(message);
+    controller.drain_compute_results();
+
+    assert!(
+        controller.state.optimize_run.is_none(),
+        "the drain clears the run on every outcome, a cancel included"
+    );
+}
+
+/// A second Optimize request is refused, and the refusal is VISIBLE.
+///
+/// One run at a time is the policy (§28 ruling 8), and the operator kept
+/// it as a refusal. With the placeholder gone the buttons are clickable,
+/// so the refusal is reachable and a `tracing::warn!` is not enough: a log
+/// line tells the operator nothing about why their click did nothing.
+///
+/// `open_optimize_modal` refuses BEFORE it calls `ProjectSession::start`,
+/// so this arm needs no cut trace either.
+///
+/// RED at the parent revision: ASSERTION-red — the refusal site reports
+/// with `tracing::warn!` and pushes no notification, so the submit-count
+/// assertion passes and the toast assertion finds nothing. That red is
+/// MASKED in practice: the two arms above it are compile-red in the same
+/// test target, so the verifier reads a compile error for the whole
+/// `--lib` run.
+#[test]
+fn a_second_optimize_request_is_refused_with_a_toast() {
+    let mut controller = planner_controller();
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::OpenMultitoolPlanner(NoArgs)));
+    tick_ball_tools(&mut controller);
+    controller.handle_internal_event(AppEvent::PreviewMultitoolPlan);
+    assert_eq!(controller.compute.job_requests.len(), 1);
+    assert_eq!(
+        controller.active_notifications().count(),
+        0,
+        "the control: starting one run says nothing"
+    );
+
+    let toolpath_id = controller.state.session.toolpath_configs()[0].id;
+    controller.handle_internal_event(AppEvent::OpenOptimizeModal(toolpath_id));
+
+    assert_eq!(
+        controller.compute.job_requests.len(),
+        1,
+        "the second request submits nothing"
+    );
+    let warnings: Vec<&str> = controller
+        .active_notifications()
+        .filter(|note| matches!(note.severity, Severity::Warning))
+        .map(|note| note.message.as_str())
+        .collect();
+    assert_eq!(
+        warnings.len(),
+        1,
+        "the refusal must push exactly one Warning toast, got {warnings:?}"
+    );
+    assert!(
+        warnings[0].contains("Tier-map preview"),
+        "and the toast must NAME the run that is holding the policy, got \
+         {warnings:?}"
+    );
+}
