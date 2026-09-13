@@ -103,49 +103,51 @@ Shaders are inline, not `.wgsl` files. The one mitigation that matters:
 **eframe owns the surface** — `SurfaceConfiguration` appears zero times — so
 the swapchain, where most wgpu breakage lands, is not this crate's problem.
 
-**A toolchain bump is required, it is shared, and it has a measured cost.**
+**The toolchain moves to 1.98.1 for everyone. Operator ruling, 2026-09-13.**
+
 eframe 0.36.2 declares `rust-version = "1.95"` and the machine's stable was
-**1.92.0**, with no `rust-toolchain.toml`.
+**1.92.0**. Updating to **1.98.1** and linting the *unchanged* tree produced
+**14 new clippy findings, every one in `rs_cam_core`** and none in
+`rs_cam_viz`: 5 `sort_by_key`, 2 `chunks_exact`, 2 `chunks_exact_mut`, 2
+collapsible if-in-match, 2 manual checked division, 1 `useless_conversion`.
+Each is a one-line fix, and the repo gates on `-D warnings`, so they are
+blocking.
 
-**Measured 2026-09-13, and this is the important part.** Updating stable to
-**1.98.1** and running
-`cargo clippy --workspace --all-targets -- -D warnings` against the
-**unchanged** tree produced **14 new findings, every one of them in
-`rs_cam_core`** and none in `rs_cam_viz`:
+This package first proposed keeping the default at 1.92.0 and building UP0
+alone on `cargo +1.98.1`. **The operator overruled that and directed the core
+session to move to 1.98.1 and fix the fourteen. That is the better call** and
+this plan adopts it:
 
-| Count | Lint |
-|---|---|
-| 5 | `consider using sort_by_key` |
-| 2 | `using chunks_exact with a constant chunk size` |
-| 2 | `using chunks_exact_mut with a constant chunk size` |
-| 2 | `this if can be collapsed into the outer match` |
-| 2 | `manual checked division` |
-| 1 | `useless_conversion` — an `.into_iter()` inside `.zip()` |
+- The repo must reach 1.95 or higher anyway, because egui 0.36 requires it.
+  A split toolchain only defers the same work.
+- Two toolchains mean two target directories, and `target/` is already 79 GB.
+- Two toolchains mean two lint verdicts, and only one can be the gate.
 
-All are stylistic and each is a one-line fix, but the repo gates on
-`-D warnings`, so **a toolchain bump alone turns the workspace gate red on
-code this programme never touches.**
+**Consequences for this plan.** UP0 no longer installs anything, no longer
+prefixes `cargo +1.98.1`, and no longer needs a private target directory. It
+uses the default toolchain like every other package.
 
-**The resolution, applied.** The default toolchain is set back to **1.92.0**,
-so every other session on the machine compiles exactly as before. **1.98.1 is
-installed alongside** and UP0 uses it explicitly with `cargo +1.98.1`. No
-`rust-toolchain.toml` is added, because that would force the new compiler on
-everyone.
+**Recommended, not yet done:** add a `rust-toolchain.toml` pinning 1.98.1, so
+the version is declared in the repo rather than held in each machine's rustup
+state. Without it this can drift silently again, and the drift is invisible
+until a gate goes red on untouched code. It is a repo-wide file, so it is the
+operator's to approve.
 
-**Cost already paid, and it should be stated:** the update and the revert
-each invalidated `target/`, so the next build on the default toolchain is a
-full rebuild.
+**Sequencing, and this is the one real hazard.** The fourteen core fixes and
+UP0's dependency bump must not be in flight together. They share `Cargo.lock`
+and `target/`, and UP0 changes the lock for the whole workspace, so a core
+gate run mid-bump would show `rs_cam_viz` failures that are not core's and a
+red result would be ambiguous. **The core fixes land first.** They are small.
+UP0 takes the lane afterwards.
 
-**Handover, for whoever owns `rs_cam_core`:** those 14 findings are real work
-that the repo needs before it can ever move its default compiler. They are
-NOT this programme's to fix — core is another session's active file set — and
-UP0 must not touch them. Fixing them is what unblocks a machine-wide bump
-later.
+**Reclaimable:** once nothing builds on 1.92 any more, `target/` holds 79 GB
+of stale artifacts.
 
 **Delivers.**
 
-1. ~~A toolchain update.~~ **Done.** 1.98.1 installed alongside; the default
-   stays 1.92.0. Every UP0 command is prefixed `cargo +1.98.1`.
+1. ~~A toolchain update.~~ **Done and out of UP0's hands.** The default is
+   1.98.1 for every session, and the core lane owns the fourteen lint fixes
+   that came with it. UP0 waits for those to land.
 2. Four version lines in `crates/rs_cam_viz/Cargo.toml`: `eframe`, `egui`,
    `egui-wgpu` to `0.36`, and `egui_plot` to whichever release pairs with
    egui 0.36 — **check this, do not assume**; it is on 0.35 today and its
