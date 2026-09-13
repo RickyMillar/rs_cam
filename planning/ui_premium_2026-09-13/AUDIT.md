@@ -95,6 +95,31 @@ every finding in this audit.
   carries about **242 distinct colour values against a 20-constant theme.**
 - Only two named egui constants are used anywhere: `TRANSPARENT` (10 sites)
   and `WHITE` (6). Every other colour is a raw triple.
+- A colour census resolved those values to **40 distinct intents**, of which
+  `theme.rs`'s 20 constants cover **13**. **Twenty-seven intents have no
+  token at all**: the span-kind scale, hairlines and separators, the diagram
+  palette, the surface tints, the chart series, the scrim, the input well
+  and the widget-state fills among them.
+- **The drift is worst on the colours that matter most.** One intent is
+  served by many near-identical values:
+
+| Intent | Call sites | Distinct values serving it |
+|---|---|---|
+| warning | 56 | **17** |
+| span-kind scale | 24 | **17** |
+| error | 41 | **16** |
+| success | 26 | **16** |
+| hairline / separator | 20 | **11** |
+| info / accent | 29 | **10** |
+| text-muted | 32 | 9 |
+
+- **Twelve values each serve two unrelated intents.** Four are load bearing.
+  `#DC3C3C` is both error text and the viewport's X-axis gizmo. `#DC5A5A` is
+  the `exceeding` verdict pill, the chipload band-max line and the
+  Confirm-delete button. `#50B450` is `SUCCESS_BRIGHT` and the feeds
+  vendor-band fill. `#787882` is `TEXT_DIM` and `SpanKind::RapidOrderBarrier`.
+  An axis gizmo drawn in the error red, and a vendor band drawn in the pass
+  green, are why colour has stopped carrying meaning here.
 - 31 of the crate's 128 source files name `theme::` at all, and adoption is
   bimodal — the component layer landed on two files and missed the two
   largest:
@@ -416,6 +441,13 @@ under the cursor as a side effect of a tab click.
 
 F1.15 wrapped the inspector *header*. These are value-row trailing notes and
 they are a different site.
+
+**The mechanism is now known.** `TextWrapMode::Extend` sets an infinite max
+width and grows the parent `Ui`
+(`egui-0.34.3/src/widgets/label.rs:232-247`). The label does not wrap, the
+`Ui` grows past the panel, and the panel clips it. egui exposes a global
+default, `Style::wrap_mode` (`style.rs:317`), which the crate never sets, so
+this is one setting away from being fixed as a class rather than a site.
 
 ### D-17 The layout jumps when generation starts
 
@@ -847,7 +879,7 @@ A redesign that breaks these would be a regression.
 | 7 | D-14, D-16, D-17 the inspector | Flat 25-row list, clipped comparison values, layout jump on Generate. |
 | 8 | D-24, D-25 simulation readout | The richest dataset drawn as a progress bar and an unlabelled chart. |
 | 9 | D-35 load-warnings window | Covers the workspace switcher in all 16 captures. |
-| 10 | D-06, D-07, D-08, D-09 token drift | 242 distinct colour values, 12 spacing values, 6 radii, 2 backgrounds, 3 text greys, 4 header forms. |
+| 10 | D-06, D-07, D-08, D-09 token drift | 40 colour intents, 13 with a token. 17 values for "warning" alone, and 12 values serving two intents each. Plus 12 spacing values, 6 radii, 2 backgrounds, 4 header forms. |
 | 11 | D-34, D-35, D-36 windows | No window is modal in look or in behaviour. `egui::Modal` is never used. |
 | 12 | D-41, D-42 the footer | The status bar is copied three times and is absent from the fourth workspace. |
 | 13 | D-20a height planes | On a small 2.5D part the planes are the whole picture and the part is an outline over them. |

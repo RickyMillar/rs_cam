@@ -156,7 +156,13 @@ style. `configure_theme` sets a complete `Style`, not ten colours.
 **Delivers.**
 
 - `crates/rs_cam_viz/src/ui/tokens.rs` — `DESIGN_SPEC.md` §2 and §3.2 as
-  constants and one `apply(ctx)` function.
+  constants and one `apply(ctx)` function. **It must cover 40 intents, not
+  16.** The census behind §2.7 to §2.9 found 40 in use and `theme.rs` covers
+  13; a token module that ships only the neutral ramp and five semantic
+  roles will be worked around 27 times. The families that do not exist today
+  are the span-kind scale, the hairline, the diagram palette, the surface
+  tints, the chart series, the scrim, the input well and the widget-state
+  fills.
 - `crates/rs_cam_viz/src/ui/theme.rs` keeps every existing public name and
   re-exports from `tokens.rs`. **No call site changes in this package.**
   The 20 constants get the spec's values; `TEXT_DIM` and `TEXT_FAINT`
@@ -189,6 +195,11 @@ A source scan over `crates/rs_cam_viz/src/ui/` and `src/app.rs`:
    the resolved size rather than scanning for a literal, so the arm cannot
    be satisfied by a comment.
 3. `Style::wrap_mode`, `spacing.interact_size.y` and both shadows are set.
+   `wrap_mode` is the cheap half of `AUDIT.md` D-16: `Extend` grows the `Ui`
+   past the panel and the panel clips it, so one global default reaches the
+   whole class (`DESIGN_SPEC.md` §10.7).
+3b. Every one of the 40 intents in `DESIGN_SPEC.md` §2 has a named constant.
+   The test lists the intent names and fails on a missing one.
 4. Non-vacuity: the scan visited at least 40 files, and `theme.rs` still
    exports all 20 original names.
 
@@ -257,10 +268,13 @@ components already in `ui/components/` are extended rather than duplicated.
   tracking through `RichText::extra_letter_spacing`, and `Body` and
   `Caption` apply line height through `RichText::line_height`; neither is
   settable globally on 0.34 (§10.2, §10.8).
-- **The focus ring is a component-layer guarantee.** egui 0.34 draws no
-  focus indicator and renders a focused widget in its `active` visuals
-  (§10.5), so every interactive component in this module draws its own
-  2-point `ACCENT` ring outside its rect.
+- **The focus ring.** egui draws none and renders a focused widget in its
+  `active` visuals (§10.5). Try the global route FIRST: a `Plugin` on
+  `Context::add_plugin` painting from `Memory::focused` in `on_end_pass`
+  with `StrokeKind::Outside` covers every widget from one registration. It
+  draws outside the widget rect, so it clips wherever a parent `Ui` has no
+  margin, and whether this GUI's layouts leave that margin is NOT MEASURED.
+  Measure it; fall back to per-component rings only where it clips.
 
 **Sentry.** `crates/rs_cam_viz/tests/component_contracts_up2.rs`, a unit
 test with a headless `egui::Context`:

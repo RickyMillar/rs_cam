@@ -200,6 +200,83 @@ Three rules follow.
 3. Colour is never the only channel. Every verdict also carries a glyph:
    `✓` OK, `!` CAUTION, `✕` DANGER, `—` UNKNOWN.
 
+### 2.7 Structure, surfaces and tints
+
+Derived from the call sites, not invented. A colour census of the crate found
+**40 distinct intents** across 445 literals, and `theme.rs`'s 20 constants
+cover **13**. Everything in §2.7 to §2.9 exists to close the other 27.
+
+| Token | Hex | Sites today | Values today |
+|---|---|---|---|
+| `HAIRLINE` | `#31373E` | 20 | **11** |
+| `BORDER` | `#454D56` | — | — |
+| `INPUT_WELL` | `#15171A` | 2 | 1 |
+| `SCRIM` | `rgba(8, 9, 11, 140)` | 4 | 4 |
+
+**Surface tints.** A `Banner`, a table row and a readiness row all need a
+tinted ground, and today four of those are hand-mixed per site.
+
+| Token | Hex | Sites today | Values today |
+|---|---|---|---|
+| `TINT_OK` | `#1C3323` | 1 | 1 |
+| `TINT_CAUTION` | `#3A2E12` | 9 | **8** |
+| `TINT_DANGER` | `#3A1D1E` | 6 | **5** |
+| `TINT_INFO` | `#1E2E3D` | — | — |
+| `TINT_UNKNOWN` | `#23282E` | — | — |
+
+These are the same five values §2.6 uses as chip fills. One family serves
+both; a chip is a small tinted surface.
+
+### 2.8 The diagram palette
+
+The operation preview thumbnails, the entry diagram and the height diagram
+are drawings, not UI. They carry **41 literals over 5 intents** today, all
+outside `theme.rs`, and they are the reason `TEXT_FAINT` collides with an
+op-diagram dim colour at 11 sites.
+
+| Token | Hex | Means |
+|---|---|---|
+| `DIAGRAM_CANVAS` | `#14171A` | the drawing's ground |
+| `DIAGRAM_INK` | `#5B9DD9` | the path being described |
+| `DIAGRAM_MATERIAL` | `#2A2F36` | stock or material body |
+| `DIAGRAM_TOOL` | `#8C959F` | the cutter body |
+| `DIAGRAM_DIM` | `#454D56` | construction lines, retired geometry |
+
+`DIAGRAM_INK` takes the accent because a diagram is explanatory, not a
+verdict. It must never take `OK` or `DANGER`.
+
+### 2.9 Data scales
+
+Three ordered scales. **A data scale is derived from one hue by lightness,
+never assembled from separate hues**, because a category wheel spends the
+semantic palette (see §7.1 and `AUDIT.md` D-23).
+
+- **`SPAN_SCALE`** — six steps, cool blue to cool cyan. It colours span
+  kinds, which today carry **17 distinct values over 24 sites** and are the
+  worst drift in the product.
+- **`CHART_SERIES`** — four steps. The simulation signal strip and the feeds
+  charts today carry 9 values over 11 sites.
+- **`LANE_SCALE`** — the four compute-lane states. `theme.rs` already has
+  these four and they stay, retuned onto the ramp.
+
+### 2.10 Coverage rule
+
+**Every new colour is a token or it does not ship.** UP1's sentry counts
+literals outside the token modules and UP8 drives that count to zero.
+
+Twelve values currently serve two intents each. Four of those are load
+bearing and the token set separates them:
+
+| Value | Intent A | Intent B |
+|---|---|---|
+| `#DC3C3C` | error text | the viewport X-axis gizmo |
+| `#DC5A5A` | the `exceeding` verdict pill | the chipload band-max line, and the Confirm-delete button |
+| `#50B450` | `SUCCESS_BRIGHT` | the feeds vendor-band fill |
+| `#787882` | `TEXT_DIM` | `SpanKind::RapidOrderBarrier` |
+
+An axis gizmo that is the same red as an error, and a vendor band that is the
+same green as a pass, are exactly what principle 2 exists to stop.
+
 ---
 
 ## 3. Type
@@ -752,23 +829,43 @@ light theme is entirely unstyled. `ctx.style_mut` is deprecated in 0.34.
 functions. `Context::animate_bool_with_time` hardcodes
 `emath::easing::linear` (`context.rs:3220-3224`). Use
 `animate_bool_with_time_and_easing` (`:3236`) or `animate_bool_with_easing`
-(`:3212`).
+(`:3212`). `animate_bool_responsive` (`:3206`) already applies `cubic_out`.
+The easing flips when the target goes false (`:3258-3260`), so a curve is
+symmetric in both directions and no separate ease-in is needed.
 
-**10.5 There is no default focus indicator** — `Visuals::show_focused_widget`
-defaults to `false` (`style.rs:1390`) and is a debugging aid. A focused
-widget otherwise renders in its `active` visuals (`style.rs:1255`), so it
-looks pressed. A consistent outside ring must be drawn by the component
-layer. *First draft implied a theme setting; wrong.*
+**10.5 There is no default focus indicator, but a global route exists** —
+`Visuals::show_focused_widget` defaults to `false` (`style.rs:1390`) and is a
+debugging aid. A focused widget otherwise renders in its `active` visuals
+(`style.rs:1255`), so it looks pressed, and `Visuals` carries no focus field.
+*First draft implied a theme setting; wrong.* **But it need not be per call
+site either**: a `Plugin` (`egui-0.34.3/src/plugin.rs:13`) registered with
+`Context::add_plugin` (`context.rs:1968`) can paint the ring in `on_end_pass`
+from `Memory::focused`, using `StrokeKind::Outside`
+(`epaint-0.34.3/src/stroke.rs:109`). One registration covers every widget.
+**Caveat, and UP2 must measure it:** the ring lands outside the widget rect,
+so a parent `Ui` with no margin clips it. Whether this GUI's layouts leave
+that margin everywhere is NOT MEASURED. UP2 tries the plugin first and falls
+back to per-component rings where it clips.
 
 **10.6 Minimum control height is global** — `Style::spacing::interact_size`
 is a `Vec2` and its `y` is documented as the default height of a button,
-slider and similar (`style.rs:417-420`). One assignment covers every button.
-*First draft called for `.min_size()` on every button; unnecessary.*
+slider and similar (`style.rs:417-420`). `Button` floors its height there
+(`widgets/button.rs:299`), so one assignment covers every button. *First
+draft called for `.min_size()` on every button; unnecessary.* Two exceptions:
+`Button::small()` skips the floor (`button.rs:298`), which is correct for
+the row-action squares only if they are re-sized deliberately; and the same
+field raises sliders, drag values and colour pickers, which its own doc calls
+intended.
 
-**10.7 A global default wrap mode exists** — `Style::wrap_mode:
-Option<TextWrapMode>` (`style.rs:317`). Setting it changes the default for
-every label, which reaches the trailing-text clipping in `AUDIT.md` D-16
-far more cheaply than a per-site fix.
+**10.7 A global default wrap mode exists, and it names the clipping cause** —
+`Style::wrap_mode: Option<TextWrapMode>` (`style.rs:317`), read by
+`Ui::wrap_mode()` (`ui.rs:696`); the older `Style::wrap` (`style.rs:309`) is
+deprecated. `Label` also takes `wrap_mode`, `wrap`, `truncate` and `extend`
+(`widgets/label.rs:56-79`). **`Extend` sets an infinite max width and grows
+the `Ui`** (`label.rs:232-247`), which is the likely mechanism behind the
+trailing text clipped at the panel edge in `AUDIT.md` D-16: the label does
+not wrap, the `Ui` grows past the panel, and the panel clips it. Setting the
+global default reaches the whole class at once.
 
 **10.8 Letter spacing is per call site, in points** —
 `TextFormat::extra_letter_spacing`
