@@ -1796,3 +1796,20 @@ Expected read after the fix: 9 passed / 1 failed, the band arm red by design
 (J2 §4c). Ten of ten is NOT the expected read. The G-F036B-FLOOR ledger row
 in STATUS.md carries the scout's two corrections (first appearance bracketed
 to `4b53576b`; not the same finding as the band arm).
+
+---
+
+## §32 Operator ruling after the live smoke pass (2026-09-13)
+
+**Show fewer toolpaths by default → WP27.** Operator's words: "make a rule
+to minimise the amount of toolpaths showing by default. maybe default only
+show the selected one. When we have many toolpaths the viewport gets pretty
+slow." The default viewport draws every generated toolpath, and on a project
+with many rows the frame loop slows. The new default draws the SELECTED
+toolpath only; the operator can still show all. The scout measures the
+existing `visible` flag, the `ToggleIsolateToolpath` row and the Isolate
+button, then proposes the smallest change that makes "selected only" the
+default without a second visibility mechanism. The choice persists per
+project only if the scout finds an existing home for it; a new project-file
+field is not in scope. Every new control is a registry row constructed in a
+view file (WP23 census).
