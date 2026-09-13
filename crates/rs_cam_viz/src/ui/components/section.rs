@@ -10,7 +10,7 @@
 //! optional badge over a body hidden behind a disclosure — the summary-first
 //! pattern the redesign applies to every dense panel.
 
-use crate::ui::theme;
+use crate::ui::components::card::SectionHeader;
 
 /// Layout helpers on `egui::Ui`. The canonical homes for the section-header
 /// and param-grid idioms the audit found copy-pasted across the GUI.
@@ -33,12 +33,11 @@ pub trait UiExt {
 
 impl UiExt for egui::Ui {
     fn named_section(&mut self, title: &str, add: impl FnOnce(&mut egui::Ui)) {
-        self.label(
-            egui::RichText::new(title)
-                .small()
-                .strong()
-                .color(theme::TEXT_HEADING),
-        );
+        // UP2: one implementation, in `components::card::SectionHeader`.
+        // These 10 call sites gain the treatment without being edited. The
+        // 41 hand-rolled `.small().strong()` headers do not, and
+        // `DESIGN_SPEC.md` §3.3 schedules them as hand work.
+        SectionHeader::new(title).show(self);
         add(self);
     }
 
@@ -58,7 +57,8 @@ impl UiExt for egui::Ui {
     fn param_grid(&mut self, id_salt: &str, add: impl FnOnce(&mut egui::Ui)) {
         egui::Grid::new(id_salt)
             .num_columns(2)
-            .spacing([8.0, 4.0])
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(self, add);
     }
 }

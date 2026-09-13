@@ -608,3 +608,65 @@ pub fn apply_fonts(ctx: &egui::Context) {
 
     ctx.set_fonts(fonts);
 }
+
+// ===========================================================================
+// §4.13 rulings — values the component set needs and §4 did not give
+// ===========================================================================
+
+/// The minimum width of a value well, in points (ruling R7).
+///
+/// §4.6 requires a minimum so a column of values with different digit counts
+/// keeps one right edge, and gives no number. 58 is the value the drawn
+/// specimen used, and the operator approved that specimen's density.
+pub const WELL_MIN_WIDTH: f32 = 58.0;
+
+/// The `BodyStrong` rung: 13 points, Inter Medium (ruling R6).
+///
+/// The emphasis rung INSIDE body text. Medium rather than SemiBold, because
+/// SemiBold at 13 would compete with `Heading` at 15 SemiBold and flatten the
+/// hierarchy.
+#[must_use]
+pub fn font_body_strong() -> FontId {
+    FontId::new(SIZE_BODY, FontFamily::Name(FAMILY_MEDIUM.into()))
+}
+
+/// Lift a surface one step for hover (ruling R9).
+///
+/// "One ramp step" is the next SURFACE token, not the next ink: the ramp is
+/// unevenly spaced, so a lightness delta and a token step are different
+/// things. The ladder clamps at `SURFACE_OVERLAY`, and a transparent fill —
+/// a quiet button, an odd zebra row — lifts to `SURFACE_RAISED`.
+///
+/// Any other fill is returned unchanged. A tinted chip signals hover with its
+/// stroke instead, because lifting a tint would walk it off its own hue.
+#[must_use]
+pub fn hover_lift(fill: Color32) -> Color32 {
+    if fill == Color32::TRANSPARENT {
+        return SURFACE_RAISED;
+    }
+    match fill {
+        c if c == SURFACE_SUNKEN => SURFACE_BASE,
+        c if c == SURFACE_BASE => SURFACE_RAISED,
+        c if c == SURFACE_RAISED => SURFACE_OVERLAY,
+        c if c == SURFACE_OVERLAY => SURFACE_OVERLAY,
+        other => other,
+    }
+}
+
+// ===========================================================================
+// §5 Motion
+// ===========================================================================
+//
+// Durations in SECONDS, because that is what `animate_bool_with_time` takes.
+//
+// Every helper in `components::motion` uses
+// `animate_bool_with_time_and_easing`. The plain `_with_time` call is
+// hardcoded to linear (`DESIGN_SPEC.md` §10.4), and linear motion is the
+// single most recognisable sign that nobody chose the easing.
+
+/// A hover or press state change.
+pub const MOTION_FAST: f32 = 0.12;
+/// A disclosure opening, a panel swapping, a chip changing verdict.
+pub const MOTION_BASE: f32 = 0.18;
+/// A toast arriving, a modal scrim fading in.
+pub const MOTION_SLOW: f32 = 0.24;

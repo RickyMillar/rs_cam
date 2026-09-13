@@ -2,10 +2,15 @@
 //!
 //! The audit's root cause was the same widget reimplemented per surface — the
 //! provenance pill 3× (three colours for one signal), the labelled input as
-//! `dv`/`dv_pill`, the suggest action hand-rolled in several places, 105+
+//! `dv`/`dv_pill`, the suggest action hand-rolled in several places, the
 //! inline section headers, the compare/power/MRR rows trapped private inside
 //! `feeds_modal.rs`. This module is the single home for each concept, so a
 //! concept has one implementation, therefore one behaviour and one look.
+//!
+//! This doc used to claim "105+ inline section headers". Measured 2026-09-13:
+//! `UiExt::named_section` has **10** call sites and there are **41**
+//! hand-rolled `.small().strong()` headers. The 10 gain UP2's treatment for
+//! free; the 41 are hand work and `DESIGN_SPEC.md` §3.3 schedules them.
 //!
 //! Convention (matches the rest of the crate): leaf widgets impl
 //! [`egui::Widget`] so callers use `ui.add(Thing::new(..))`; layout helpers are
@@ -15,17 +20,30 @@
 //!
 //! See `planning/ui_audit/ARCHITECTURE.md` for the full contract map.
 
+pub mod button;
+pub mod card;
+pub mod chip;
 pub mod compare;
+pub mod focus_ring;
 pub mod freshness;
+pub mod kv_row;
+pub mod motion;
+pub mod notice;
 pub mod pill;
 pub mod precedence;
 pub mod provenance;
 pub mod section;
 pub mod suggest;
+pub mod text;
 pub mod value_row;
 
+pub use button::{Button, Variant as ButtonVariant};
+pub use card::{Card, SectionHeader, scrim};
+pub use chip::{Role, StatusChip};
 pub use compare::{CompareRow, delta_tag, format_optional, mrr_row, power_bar};
 pub use freshness::{Freshness, FreshnessGate};
+pub use kv_row::{DataTable, KeyValueRow, Value as KeyValue};
+pub use notice::{Banner, CollapsedNotice, EmptyState, NotMeasured, Notice, NoticeStack, Resolved};
 pub use pill::{CountPill, PillFamily, PillRole};
 pub use precedence::PrecedenceField;
 pub use provenance::{ProvKind, ProvenanceBadge};

@@ -70,13 +70,9 @@ pub const LANE_CANCELLING: Color32 = tokens::LANE_CANCELLING;
 // `theme::stale_banner` free function was superseded and removed.
 
 /// Standard card frame for list items and info panels.
+///
+/// UP2: one implementation, in `components::Card`. The five call sites keep
+/// this signature and gain the treatment without being edited.
 pub fn card_frame(selected: bool) -> egui::Frame {
-    egui::Frame::default()
-        .fill(if selected {
-            CARD_FILL_SELECTED
-        } else {
-            CARD_FILL
-        })
-        .inner_margin(tokens::SPACE_3)
-        .corner_radius(tokens::RADIUS_SM)
+    super::components::Card::new().selected(selected).frame()
 }
