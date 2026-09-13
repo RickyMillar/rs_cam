@@ -3,7 +3,7 @@ use crate::state::AppState;
 use crate::state::Workspace;
 use crate::ui::automation;
 use crate::ui::components::{Role, StatusChip};
-use crate::ui::{theme, tokens};
+use crate::ui::tokens;
 use crate::ui_command::{NoArgs, UiCommand};
 
 /// Draw the workspace switcher bar. Sits below the menu bar, always visible.
@@ -82,7 +82,7 @@ fn workspace_tab(
     label: &str,
     target: Workspace,
     current: Workspace,
-    badge: Option<(String, egui::Color32)>,
+    badge: Option<(String, Role)>,
     events: &mut Vec<AppEvent>,
 ) {
     let is_active = current == target;
@@ -133,29 +133,12 @@ fn workspace_tab(
     // UP3. The badge was a bare `ui.label` floating beside the tab, which is
     // why "6 pending" read as debris rather than as a count. It is a pill
     // now, so a count on a tab and a count in a panel are one thing.
-    if let Some((badge_text, badge_color)) = badge {
+    if let Some((badge_text, badge_role)) = badge {
         ui.add_space(tokens::SPACE_1);
-        ui.add(StatusChip::new(&badge_text, role_for(badge_color)));
+        ui.add(StatusChip::new(&badge_text, badge_role));
     }
 
     ui.add_space(tokens::SPACE_1);
-}
-
-/// Map a caller's legacy badge colour onto a semantic role.
-///
-/// The three badge producers still hand this bar a `Color32`. Rather than
-/// change their signatures inside UP3, the colour is read back to the role it
-/// meant. UP4 gives them roles directly and this function goes away.
-fn role_for(colour: egui::Color32) -> Role {
-    if colour == theme::ERROR || colour == tokens::DANGER {
-        Role::Danger
-    } else if colour == theme::SUCCESS || colour == tokens::OK {
-        Role::Ok
-    } else if colour == theme::WARNING || colour == tokens::CAUTION {
-        Role::Caution
-    } else {
-        Role::Info
-    }
 }
 
 /// Badge for the Toolpaths tab: stale operations, else pending ones.
@@ -166,19 +149,19 @@ fn role_for(colour: egui::Color32) -> Role {
 /// WRONG one that every other surface is still drawing and counting. Folding
 /// them into one "N pending" would have gone on reading zero on a project
 /// where every operation was edited after generation.
-pub(crate) fn toolpath_badge(state: &AppState) -> Option<(String, egui::Color32)> {
+pub(crate) fn toolpath_badge(state: &AppState) -> Option<(String, Role)> {
     let (stale, pending) = crate::ui::readiness::freshness_counts(state);
     if stale > 0 {
-        Some((format!("{stale} stale"), theme::WARNING))
+        Some((format!("{stale} stale"), Role::Caution))
     } else if pending > 0 {
-        Some((format!("{pending} pending"), theme::WARNING))
+        Some((format!("{pending} pending"), Role::Caution))
     } else {
         None
     }
 }
 
 /// Badge for the Simulation tab: stale, collisions, or empty.
-fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
+fn simulation_badge(state: &AppState) -> Option<(String, Role)> {
     let sim = &state.simulation;
 
     if !sim.has_results() {
@@ -189,19 +172,19 @@ fn simulation_badge(state: &AppState) -> Option<(String, egui::Color32)> {
     // the yellow "stale" warning (SHE-003 — mirror readiness_badge's order).
     let collision_count = sim.checks.total_collision_count();
     if collision_count > 0 {
-        return Some((format!(" {collision_count}!"), theme::ERROR));
+        return Some((format!(" {collision_count}!"), Role::Danger));
     }
 
     if sim.is_stale(state.gui.edit_counter) {
-        return Some((" stale".to_owned(), theme::WARNING));
+        return Some((" stale".to_owned(), Role::Caution));
     }
 
-    Some((" \u{2713}".to_owned(), theme::SUCCESS))
+    Some((" \u{2713}".to_owned(), Role::Ok))
 }
 
 /// Badge for the Setup tab: aggregate export readiness.
 /// Shows issues that would prevent a clean export.
-pub(crate) fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32)> {
+pub(crate) fn readiness_badge(state: &AppState) -> Option<(String, Role)> {
     let sim = &state.simulation;
 
     // F2.2 — from the one freshness model. This used to ask
@@ -223,15 +206,17 @@ pub(crate) fn readiness_badge(state: &AppState) -> Option<(String, egui::Color32
     // the Toolpaths chip — one of the two is currently showing a wrong
     // answer rather than no answer.
     if collisions > 0 {
-        Some((format!("{collisions} collision(s)"), theme::ERROR))
+        Some((format!("{collisions} collision(s)"), Role::Danger))
     } else if stale_ops > 0 {
-        Some((format!("{stale_ops} stale"), theme::WARNING))
+        Some((format!("{stale_ops} stale"), Role::Caution))
     } else if uncomputed > 0 {
-        Some((format!("{uncomputed} uncomputed"), theme::WARNING))
+        Some((format!("{uncomputed} uncomputed"), Role::Caution))
     } else if stale {
-        Some(("sim stale".to_owned(), theme::WARNING))
+        Some(("sim stale".to_owned(), Role::Caution))
     } else if !sim.has_results() && state.session.toolpath_configs().iter().any(|tc| tc.enabled) {
-        Some(("not simulated".to_owned(), theme::TEXT_DIM))
+        // "not simulated" is an ABSTENTION, not a caution: nothing was
+        // measured, so there is nothing to review.
+        Some(("not simulated".to_owned(), Role::Unknown))
     } else {
         None
     }

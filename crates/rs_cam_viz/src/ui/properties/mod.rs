@@ -79,11 +79,8 @@ pub fn mcp_highlight_effect(ui: &mut egui::Ui, gui: &crate::state::runtime::GuiS
             #[allow(clippy::indexing_slicing)]
             let alpha = ((1.0 - elapsed / duration) * 80.0) as u8;
             let rect = ui.max_rect();
-            ui.painter().rect_filled(
-                rect,
-                4.0,
-                egui::Color32::from_rgba_unmultiplied(100, 180, 255, alpha),
-            );
+            ui.painter()
+                .rect_filled(rect, 4.0, crate::ui::tokens::accent_wash(alpha));
         }
     }
 }
@@ -573,7 +570,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 ui.label(
                     egui::RichText::new("Getting started:")
                         .strong()
-                        .color(egui::Color32::from_rgb(180, 180, 195)),
+                        .color(crate::ui::tokens::TEXT_STRONG),
                 );
                 ui.add_space(4.0);
                 ui.label("1. Import a model (File > Import)");
@@ -595,7 +592,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     // actually be selected (G-WSMENU, 2026-09-10).
                     egui::RichText::new("Select an operation, tool, setup or model")
                         .italics()
-                        .color(egui::Color32::from_rgb(120, 120, 130)),
+                        .color(crate::ui::tokens::TEXT_FAINT),
                 );
             }
         }
@@ -1268,7 +1265,7 @@ fn draw_model_properties(
             egui::Label::new(
                 egui::RichText::new(format!("Not loaded: {detail}"))
                     .small()
-                    .color(egui::Color32::from_rgb(220, 150, 60)),
+                    .color(crate::ui::tokens::CAUTION),
             )
             .wrap(),
         );
@@ -1303,7 +1300,7 @@ fn draw_model_properties(
         ui.label(
             egui::RichText::new("Dimensions (after scaling)")
                 .strong()
-                .color(egui::Color32::from_rgb(180, 180, 195)),
+                .color(crate::ui::tokens::TEXT_STRONG),
         );
         egui::Grid::new("mesh_dims")
             .num_columns(2)
@@ -1336,13 +1333,12 @@ fn draw_model_properties(
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new("Very small! Probably in meters - try scaling x1000")
-                    .color(egui::Color32::from_rgb(220, 170, 60)),
+                    .color(crate::ui::tokens::CAUTION),
             );
         } else if min_dim > 5000.0 {
             ui.add_space(4.0);
             ui.label(
-                egui::RichText::new("Very large! Check units")
-                    .color(egui::Color32::from_rgb(220, 170, 60)),
+                egui::RichText::new("Very large! Check units").color(crate::ui::tokens::CAUTION),
             );
         }
 
@@ -1356,7 +1352,7 @@ fn draw_model_properties(
                     "\u{26A0} {:.1}% inconsistent normals detected (auto-fixed on load)",
                     report
                 ))
-                .color(egui::Color32::from_rgb(220, 190, 60)),
+                .color(crate::ui::tokens::CAUTION),
             );
         }
 
@@ -1366,7 +1362,7 @@ fn draw_model_properties(
             ui.label(
                 egui::RichText::new("Units / Scale")
                     .strong()
-                    .color(egui::Color32::from_rgb(180, 180, 195)),
+                    .color(crate::ui::tokens::TEXT_STRONG),
             );
 
             let current_units = model.units.unwrap_or(ModelUnits::Millimeters);
@@ -1426,7 +1422,7 @@ fn draw_model_properties(
                     ui.label(
                         egui::RichText::new("Mesh Info")
                             .strong()
-                            .color(egui::Color32::from_rgb(180, 180, 195)),
+                            .color(crate::ui::tokens::TEXT_STRONG),
                     );
                     egui::Grid::new("mesh_info")
                         .num_columns(2)
@@ -1447,7 +1443,7 @@ fn draw_model_properties(
                     ui.label(
                         egui::RichText::new("BREP Topology")
                             .strong()
-                            .color(egui::Color32::from_rgb(180, 180, 195)),
+                            .color(crate::ui::tokens::TEXT_STRONG),
                     );
                     egui::Grid::new("brep_info")
                         .num_columns(2)
@@ -1515,7 +1511,7 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut V
     ui.label(
         egui::RichText::new("Included Toolpaths")
             .strong()
-            .color(egui::Color32::from_rgb(180, 180, 195)),
+            .color(crate::ui::tokens::TEXT_STRONG),
     );
 
     // Snapshot boundary data to avoid borrow conflicts with playback mutation below.
@@ -1537,11 +1533,7 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut V
 
     for (i, (id, name, tool_name, start_move, end_move)) in boundary_snapshots.iter().enumerate() {
         let pc = crate::render::toolpath_render::palette_color(i);
-        let color = egui::Color32::from_rgb(
-            (pc[0] * 255.0) as u8,
-            (pc[1] * 255.0) as u8,
-            (pc[2] * 255.0) as u8,
-        );
+        let color = crate::ui::tokens::from_linear_rgb(pc);
         let is_current = current_boundary_id == Some(*id);
 
         ui.horizontal(|ui| {
@@ -1551,13 +1543,13 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut V
                     .strong()
                     .color(egui::Color32::WHITE)
             } else {
-                egui::RichText::new(name).color(egui::Color32::from_rgb(180, 180, 190))
+                egui::RichText::new(name).color(crate::ui::tokens::TEXT_STRONG)
             };
             ui.label(text);
             ui.label(
                 egui::RichText::new(tool_name)
                     .small()
-                    .color(egui::Color32::from_rgb(130, 130, 140)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
             );
         });
 
@@ -1618,7 +1610,7 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut V
         ui.label(
             egui::RichText::new("Tool Position")
                 .strong()
-                .color(egui::Color32::from_rgb(180, 180, 195)),
+                .color(crate::ui::tokens::TEXT_STRONG),
         );
         egui::Grid::new("sim_tool_pos")
             .num_columns(2)
@@ -1644,7 +1636,7 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut V
         ui.label(
             egui::RichText::new("Current Operation")
                 .strong()
-                .color(egui::Color32::from_rgb(180, 180, 195)),
+                .color(crate::ui::tokens::TEXT_STRONG),
         );
         ui.label(format!("{} ({})", boundary.name, boundary.tool_name));
         ui.label(format!("Move {}/{}", within, total));
@@ -1855,7 +1847,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             "Balanced — good for most work"
         })
         .small()
-        .color(egui::Color32::from_rgb(140, 140, 150)),
+        .color(crate::ui::tokens::TEXT_MUTED),
     );
 
     // One `SetMachine` for the whole profile. `set_machine` writes the
@@ -1924,7 +1916,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             }
         })
         .small()
-        .color(egui::Color32::from_rgb(140, 140, 150)),
+        .color(crate::ui::tokens::TEXT_MUTED),
     );
 }
 
@@ -1942,7 +1934,7 @@ fn draw_machine_kinematics(
     ui.label(
         egui::RichText::new("Kinematics (cycle-time model)")
             .strong()
-            .color(egui::Color32::from_rgb(180, 180, 195)),
+            .color(crate::ui::tokens::TEXT_STRONG),
     );
 
     if state.session.machine().kinematics.is_none() {
@@ -1952,7 +1944,7 @@ fn draw_machine_kinematics(
                  acceleration-aware cycle-time model for this machine.",
             )
             .small()
-            .color(egui::Color32::from_rgb(200, 170, 90)),
+            .color(crate::ui::tokens::CAUTION),
         );
     }
 
@@ -2114,7 +2106,7 @@ fn draw_grbl_import(
                 ui.label(
                     egui::RichText::new("No GRBL settings recognised in this text.")
                         .small()
-                        .color(egui::Color32::from_rgb(220, 120, 120)),
+                        .color(crate::ui::tokens::DANGER),
                 );
             } else {
                 ui.add_space(4.0);
@@ -2248,10 +2240,7 @@ fn calculate_and_apply_feeds(
             // why no recipe is offered.
             entry.feeds_result = None;
             ui.add_space(8.0);
-            ui.colored_label(
-                egui::Color32::from_rgb(220, 80, 80),
-                format!("Feeds unavailable: {e}"),
-            );
+            ui.colored_label(crate::ui::tokens::DANGER, format!("Feeds unavailable: {e}"));
             // No LUT recipe, but feed/plunge moved off the Geometry tab in
             // W3.2, so this is the only place to set them by hand. (Drill
             // keeps its feed on the Geometry tab next to the drill cycle.)
@@ -2878,7 +2867,7 @@ fn draw_feeds_card(
                 ui.label(
                     egui::RichText::new(format!("! {text}"))
                         .small()
-                        .color(egui::Color32::from_rgb(220, 170, 60)),
+                        .color(crate::ui::tokens::CAUTION),
                 );
             }
         }
@@ -2954,7 +2943,7 @@ fn draw_vendor_lut_viewer(
 
     let header = egui::RichText::new("Vendor Cutting Data")
         .strong()
-        .color(egui::Color32::from_rgb(180, 180, 195));
+        .color(crate::ui::tokens::TEXT_STRONG);
 
     egui::CollapsingHeader::new(header)
         .default_open(false)
@@ -2974,7 +2963,7 @@ fn draw_vendor_lut_viewer(
                 ui.label(
                     egui::RichText::new("No matching vendor data for this tool type")
                         .small()
-                        .color(egui::Color32::from_rgb(160, 140, 100)),
+                        .color(crate::ui::tokens::CAUTION),
                 );
                 return;
             }
@@ -2987,14 +2976,14 @@ fn draw_vendor_lut_viewer(
                     tool_diameter,
                 ))
                 .small()
-                .color(egui::Color32::from_rgb(140, 140, 155)),
+                .color(crate::ui::tokens::TEXT_MUTED),
             );
             ui.add_space(4.0);
 
             // Table header
-            let dim = egui::Color32::from_rgb(120, 125, 140);
-            let val = egui::Color32::from_rgb(170, 170, 185);
-            let highlight = egui::Color32::from_rgb(100, 180, 140);
+            let dim = crate::ui::tokens::TEXT_MUTED;
+            let val = crate::ui::tokens::TEXT_STRONG;
+            let highlight = crate::ui::tokens::OK;
             let header_font = egui::FontId::proportional(9.0);
             let body_font = egui::FontId::proportional(9.0);
 
@@ -3123,15 +3112,15 @@ fn draw_engagement_diagram(
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let tool_r = tool_diameter / 2.0;
     let woc = result.radial_width_mm;
     let doc = result.axial_depth_mm;
-    let tool_color = egui::Color32::from_rgb(160, 170, 190);
-    let mat_color = egui::Color32::from_rgb(50, 50, 65);
-    let dim_color = egui::Color32::from_rgb(100, 160, 220);
-    let info_color = egui::Color32::from_rgb(140, 140, 155);
+    let tool_color = crate::ui::tokens::TEXT_STRONG;
+    let mat_color = crate::ui::tokens::HAIRLINE;
+    let dim_color = crate::ui::tokens::ACCENT;
+    let info_color = crate::ui::tokens::TEXT_MUTED;
 
     // Divider: split canvas at ~55%
     let mid_x = rect.left() + rect.width() * 0.52;
@@ -3140,7 +3129,7 @@ fn draw_engagement_diagram(
             egui::pos2(mid_x, rect.top() + 4.0),
             egui::pos2(mid_x, rect.bottom() - 4.0),
         ],
-        egui::Stroke::new(0.5_f32, egui::Color32::from_rgb(40, 40, 50)),
+        egui::Stroke::new(0.5_f32, crate::ui::tokens::SURFACE_OVERLAY),
     );
 
     // ── LEFT: Top-down WOC view ────────────────────────────────────
@@ -3187,7 +3176,7 @@ fn draw_engagement_diagram(
             pts.push(egui::pos2(mat_left, first_y));
             painter.add(egui::Shape::convex_polygon(
                 pts,
-                egui::Color32::from_rgba_premultiplied(60, 140, 200, 50),
+                crate::ui::tokens::accent_wash(50),
                 egui::Stroke::NONE,
             ));
         }
@@ -3250,7 +3239,7 @@ fn draw_engagement_diagram(
             egui::pos2(right_rect.left(), surface_y),
             egui::pos2(right_rect.right(), surface_y),
         ],
-        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(80, 80, 95)),
+        egui::Stroke::new(1.0_f32, crate::ui::tokens::BORDER),
     );
 
     // DOC shaded region (where tool cuts)
@@ -3260,7 +3249,7 @@ fn draw_engagement_diagram(
             egui::pos2(scx + tool_hw, surface_y + doc_px),
         ),
         0.0,
-        egui::Color32::from_rgba_premultiplied(60, 140, 200, 40),
+        crate::ui::tokens::accent_wash(40),
     );
 
     // Tool profile (simplified side view)
@@ -3385,7 +3374,7 @@ fn draw_entry_preview_diagram(
     let painter = ui.painter_at(rect);
 
     // Background
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     // Z range with margin
     let z_min = top_z - z_drop * 0.15;
@@ -3398,8 +3387,8 @@ fn draw_entry_preview_diagram(
 
     let feed_y = z_to_y(feed_z);
     let top_y = z_to_y(top_z);
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
-    let scale_color = egui::Color32::from_rgb(70, 70, 85);
+    let dim_color = crate::ui::tokens::TEXT_FAINT;
+    let scale_color = crate::ui::tokens::BORDER;
 
     // Z-axis scale bar on the left edge
     let scale_x = rect.left() + 3.0;
@@ -3452,7 +3441,7 @@ fn draw_entry_preview_diagram(
         );
     }
 
-    let entry_color = egui::Color32::from_rgb(50, 230, 230);
+    let entry_color = crate::ui::tokens::DIAGRAM_INK;
     let stroke = egui::Stroke::new(2.0_f32, entry_color);
     let cx = rect.center().x;
 
@@ -3666,9 +3655,9 @@ fn compute_tab_badges(
     let heights_badge = if let Some(hctx) = height_ctx {
         let h = entry.heights.resolve(hctx);
         if h.bottom_z > h.top_z || h.clearance_z < h.retract_z {
-            Some(egui::Color32::from_rgb(220, 100, 80)) // red
+            Some(crate::ui::tokens::DANGER) // red
         } else if h.feed_z < h.top_z || h.retract_z < h.feed_z {
-            Some(egui::Color32::from_rgb(220, 180, 60)) // yellow
+            Some(crate::ui::tokens::CAUTION) // yellow
         } else {
             None
         }
@@ -3681,9 +3670,9 @@ fn compute_tab_badges(
         if r.warnings.is_empty() {
             None
         } else if r.power_limited {
-            Some(egui::Color32::from_rgb(220, 180, 60))
+            Some(crate::ui::tokens::CAUTION)
         } else {
-            Some(egui::Color32::from_rgb(100, 180, 220))
+            Some(crate::ui::tokens::INFO)
         }
     });
 
@@ -3707,9 +3696,9 @@ fn compute_tab_badges(
         }
     }
     let dressup_badge = if has_critical {
-        Some(egui::Color32::from_rgb(220, 100, 80))
+        Some(crate::ui::tokens::DANGER)
     } else if has_caution {
-        Some(egui::Color32::from_rgb(220, 180, 60))
+        Some(crate::ui::tokens::CAUTION)
     } else {
         None
     };
@@ -3809,12 +3798,12 @@ fn render_diagnostic_row(
     };
     let color = match tier {
         RowTier::Actionable => match d.severity {
-            Severity::Blocking | Severity::Critical => egui::Color32::from_rgb(220, 100, 80),
-            Severity::Caution => egui::Color32::from_rgb(220, 180, 60),
-            _ => egui::Color32::from_rgb(100, 180, 220),
+            Severity::Blocking | Severity::Critical => crate::ui::tokens::DANGER,
+            Severity::Caution => crate::ui::tokens::CAUTION,
+            _ => crate::ui::tokens::INFO,
         },
-        RowTier::Stateful => egui::Color32::from_rgb(140, 145, 150),
-        RowTier::Hint => egui::Color32::from_rgb(130, 140, 150),
+        RowTier::Stateful => crate::ui::tokens::TEXT_MUTED,
+        RowTier::Hint => crate::ui::tokens::TEXT_MUTED,
     };
 
     // Evidence (sample ranges, observed-vs-threshold, locality tags) is
@@ -3857,7 +3846,7 @@ fn render_diagnostic_row(
                     egui::RichText::new(chip_text)
                         .small()
                         .italics()
-                        .color(egui::Color32::from_rgb(110, 115, 125)),
+                        .color(crate::ui::tokens::TEXT_FAINT),
                 );
             }
         }
@@ -4455,7 +4444,7 @@ fn draw_toolpath_panel(
                 ui.label("Computing...");
             }
             FreshnessState::Current => {
-                ui.label(egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)));
+                ui.label(egui::RichText::new("Done").color(crate::ui::tokens::OK));
             }
             // NOT green, and it says both halves: the generation finished,
             // AND what it produced no longer answers the configuration on
@@ -4466,7 +4455,7 @@ fn draw_toolpath_panel(
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new("Done \u{00B7} edited since \u{2014} regenerate")
-                            .color(egui::Color32::from_rgb(220, 180, 60)),
+                            .color(crate::ui::tokens::CAUTION),
                     )
                     .wrap(),
                 )
@@ -4482,22 +4471,19 @@ fn draw_toolpath_panel(
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new("Waiting on upstream stock")
-                            .color(egui::Color32::from_rgb(220, 170, 70)),
+                            .color(crate::ui::tokens::CAUTION),
                     )
                     .wrap(),
                 )
                 .on_hover_text(&block.message);
             }
             FreshnessState::Disabled => {
-                ui.label(
-                    egui::RichText::new("Disabled").color(egui::Color32::from_rgb(140, 140, 150)),
-                );
+                ui.label(egui::RichText::new("Disabled").color(crate::ui::tokens::TEXT_MUTED));
             }
             FreshnessState::Error(e) => {
                 ui.add(
                     egui::Label::new(
-                        egui::RichText::new(format!("Error: {e}"))
-                            .color(egui::Color32::from_rgb(220, 80, 80)),
+                        egui::RichText::new(format!("Error: {e}")).color(crate::ui::tokens::DANGER),
                     )
                     .wrap(),
                 )
@@ -4508,7 +4494,7 @@ fn draw_toolpath_panel(
             ui.label(
                 egui::RichText::new(format!("{} moves", result.stats.move_count))
                     .small()
-                    .color(egui::Color32::from_rgb(120, 120, 130)),
+                    .color(crate::ui::tokens::TEXT_FAINT),
             );
         }
     });
@@ -4517,7 +4503,7 @@ fn draw_toolpath_panel(
             // A sentence, so it wraps explicitly rather than inheriting a
             // wrap mode from whatever layout encloses this panel
             // (G-REACHWRAP).
-            wrapped_small_label(ui, err.clone(), egui::Color32::from_rgb(220, 150, 60));
+            wrapped_small_label(ui, err.clone(), crate::ui::tokens::CAUTION);
         }
     }
 
@@ -4550,7 +4536,7 @@ fn draw_toolpath_panel(
                     ui.label(
                         egui::RichText::new("reach: computing…")
                             .small()
-                            .color(egui::Color32::from_rgb(150, 150, 160)),
+                            .color(crate::ui::tokens::TEXT_MUTED),
                     );
                 }
                 // A zero percentage over an empty population is
@@ -4560,7 +4546,7 @@ fn draw_toolpath_panel(
                     ui.label(
                         egui::RichText::new("reach: not measured")
                             .small()
-                            .color(egui::Color32::from_rgb(180, 170, 120)),
+                            .color(crate::ui::tokens::CAUTION),
                     );
                 }
                 ReachPanelSummary::Measured { .. }
@@ -4600,15 +4586,15 @@ fn draw_toolpath_panel(
                         "unreachable {unreachable_pct:.1} % {area_basis_note} · \
                          max gap {max_gap_mm:.2} mm"
                     ),
-                    egui::Color32::from_rgb(180, 180, 190),
+                    crate::ui::tokens::TEXT_STRONG,
                 );
                 wrapped_small_label(
                     ui,
                     grid_note.clone(),
                     if *tolerance_below_floor {
-                        egui::Color32::from_rgb(220, 180, 60)
+                        crate::ui::tokens::CAUTION
                     } else {
-                        egui::Color32::from_rgb(140, 140, 150)
+                        crate::ui::tokens::TEXT_MUTED
                     },
                 );
                 if *tolerance_below_floor {
@@ -4617,16 +4603,12 @@ fn draw_toolpath_panel(
                     wrapped_small_label(
                         ui,
                         over_statement_note.clone(),
-                        egui::Color32::from_rgb(220, 180, 60),
+                        crate::ui::tokens::CAUTION,
                     );
                 }
             }
             ReachPanelSummary::Failed(message) => {
-                wrapped_small_label(
-                    ui,
-                    format!("reach: {message}"),
-                    egui::Color32::from_rgb(220, 150, 60),
-                );
+                wrapped_small_label(ui, format!("reach: {message}"), crate::ui::tokens::CAUTION);
             }
             ReachPanelSummary::Computing
             | ReachPanelSummary::NotMeasured
@@ -4772,7 +4754,7 @@ fn draw_toolpath_panel(
                     egui::RichText::new(
                         "⚠ BREP topology not loaded — face picker unavailable. Reload model.",
                     )
-                    .color(egui::Color32::from_rgb(220, 160, 60))
+                    .color(crate::ui::tokens::CAUTION)
                     .strong(),
                 );
             }
@@ -4783,7 +4765,7 @@ fn draw_toolpath_panel(
                 ui.label(
                     egui::RichText::new("Face Selection")
                         .strong()
-                        .color(egui::Color32::from_rgb(180, 180, 195)),
+                        .color(crate::ui::tokens::TEXT_STRONG),
                 );
                 // SHE-005 — one affordance, not two stacked sentences. Zero
                 // selected: a single muted placeholder. ≥1 selected: count +
@@ -4806,7 +4788,7 @@ fn draw_toolpath_panel(
                 } else {
                     ui.label(
                         egui::RichText::new("Pick faces in viewport \u{2197}")
-                            .color(egui::Color32::from_rgb(120, 120, 130)),
+                            .color(crate::ui::tokens::TEXT_FAINT),
                     );
                 }
             }
@@ -4865,17 +4847,14 @@ fn draw_toolpath_panel(
             // disappears as soon as the fix takes effect.
             for defect in stale_default_defects {
                 egui::Frame::group(ui.style())
-                    .fill(egui::Color32::from_rgb(50, 38, 22))
-                    .stroke(egui::Stroke::new(
-                        1.0_f32,
-                        egui::Color32::from_rgb(200, 150, 60),
-                    ))
+                    .fill(crate::ui::tokens::TINT_CAUTION)
+                    .stroke(egui::Stroke::new(1.0_f32, crate::ui::tokens::CAUTION))
                     .inner_margin(egui::Margin::same(6))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.label(
                                 egui::RichText::new("\u{26A0}")
-                                    .color(egui::Color32::from_rgb(220, 180, 60))
+                                    .color(crate::ui::tokens::CAUTION)
                                     .strong(),
                             );
                             ui.label(egui::RichText::new(&defect.title).strong());
@@ -4883,7 +4862,7 @@ fn draw_toolpath_panel(
                         ui.label(
                             egui::RichText::new(&defect.detail)
                                 .small()
-                                .color(egui::Color32::from_rgb(180, 180, 180)),
+                                .color(crate::ui::tokens::TEXT_STRONG),
                         );
                         if ui
                             .small_button(format!("\u{2713} Fix (set to {:.3})", defect.new_value))
@@ -4946,7 +4925,7 @@ fn draw_toolpath_panel(
             ui.label(
                 egui::RichText::new(spec.description)
                     .italics()
-                    .color(egui::Color32::from_rgb(150, 150, 130)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
             );
             ui.add_space(2.0);
             // PR-2D Phase 2 — pass the per-field pill suggestions to every
@@ -5179,7 +5158,7 @@ fn draw_toolpath_panel(
                 egui::RichText::new("Machining Boundary")
                     .small()
                     .strong()
-                    .color(egui::Color32::from_rgb(150, 155, 170)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
             );
             ui.checkbox(&mut entry.boundary.enabled, "Enable boundary")
                 .on_hover_text(
@@ -5196,7 +5175,7 @@ fn draw_toolpath_panel(
                 ui.label(
                     egui::RichText::new(boundary_summary_line(&entry.boundary, false))
                         .small()
-                        .color(egui::Color32::from_rgb(150, 150, 130)),
+                        .color(crate::ui::tokens::TEXT_MUTED),
                 );
                 // Source selector
                 ui.horizontal(|ui| {
@@ -5355,7 +5334,7 @@ fn draw_toolpath_panel(
                         ui.label(
                             egui::RichText::new(rest_region_pathology_caption(pathology))
                                 .small()
-                                .color(egui::Color32::from_rgb(220, 160, 60)),
+                                .color(crate::ui::tokens::CAUTION),
                         );
                     }
                 }
@@ -5436,14 +5415,14 @@ fn draw_toolpath_panel(
                         "Rest heatmap & regions: produced by the Rest depth detector.",
                     )
                     .small()
-                    .color(egui::Color32::from_rgb(150, 150, 130)),
+                    .color(crate::ui::tokens::TEXT_MUTED),
                 );
             } else {
                 ui.label(
                     egui::RichText::new("Rest Analysis")
                         .small()
                         .strong()
-                        .color(egui::Color32::from_rgb(150, 155, 170)),
+                        .color(crate::ui::tokens::TEXT_MUTED),
                 );
                 if rest_region_consumers.is_empty() {
                     ui.checkbox(
@@ -5576,7 +5555,7 @@ fn draw_toolpath_panel(
                 ui.label(
                     egui::RichText::new(rest_region_pathology_caption(pathology))
                         .small()
-                        .color(egui::Color32::from_rgb(220, 160, 60)),
+                        .color(crate::ui::tokens::CAUTION),
                 );
             }
         }
@@ -5636,7 +5615,7 @@ fn draw_toolpath_panel(
                             .find(|(id, _)| *id == entry.tool_id)
                             .map(|(_, t)| t.flute_count)
                             .unwrap_or(2);
-                        let val = egui::Color32::from_rgb(170, 170, 185);
+                        let val = crate::ui::tokens::TEXT_STRONG;
                         let font = egui::FontId::proportional(9.5);
 
                         ui.label(egui::RichText::new(format!(
@@ -5664,7 +5643,7 @@ fn draw_toolpath_panel(
                                     "Feed was reduced to stay within spindle power",
                                 )
                                 .font(font.clone())
-                                .color(egui::Color32::from_rgb(220, 170, 60)),
+                                .color(crate::ui::tokens::CAUTION),
                             );
                         }
 
@@ -5715,9 +5694,9 @@ fn draw_toolpath_panel(
                     egui::RichText::new(format!("{active}/{total} dressups active"))
                         .small()
                         .color(if active > 0 {
-                            egui::Color32::from_rgb(100, 170, 140)
+                            crate::ui::tokens::OK
                         } else {
-                            egui::Color32::from_rgb(140, 140, 155)
+                            crate::ui::tokens::TEXT_MUTED
                         }),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -5782,7 +5761,7 @@ fn depth_caution_row(ui: &mut egui::Ui, caution: Option<&operations::DepthBeyond
     ui.label(
         egui::RichText::new(caution.message())
             .small()
-            .color(egui::Color32::from_rgb(220, 180, 60)),
+            .color(crate::ui::tokens::CAUTION),
     )
     // F1.18: the last clause used to name the Bottom Z on the Heights tab as
     // a third thing to check. The rule no longer reads that field, and on
@@ -6063,7 +6042,7 @@ fn draw_linking_params(
         .then_some("This operation sets its entry move directly — the dressup entry style isn't used here.")
     });
     let cfg = &mut entry.dressups;
-    let section_color = egui::Color32::from_rgb(150, 155, 170);
+    let section_color = crate::ui::tokens::TEXT_MUTED;
 
     // ── Entry & Exit ──────────────────────────────────────────
     ui.label(
@@ -6277,7 +6256,7 @@ fn draw_linking_params(
 /// overcuts. Entry/exit + optimization + retract live on the Linking tab
 /// ([`draw_linking_params`]); the machining boundary lives on Geometry.
 fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
-    let section_color = egui::Color32::from_rgb(150, 155, 170);
+    let section_color = crate::ui::tokens::TEXT_MUTED;
 
     // ── Path Quality ──────────────────────────────────────────
     ui.label(

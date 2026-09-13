@@ -161,7 +161,7 @@ fn draw_height_row(
     ui.label(
         egui::RichText::new(hint)
             .small()
-            .color(egui::Color32::from_rgb(100, 100, 115)),
+            .color(crate::ui::tokens::DIAGRAM_DIM),
     );
 
     ui.end_row();
@@ -342,7 +342,7 @@ pub(super) fn draw_heights_params(
             egui::RichText::new(format!("Bottom: {note}"))
                 .small()
                 .italics()
-                .color(egui::Color32::from_rgb(150, 150, 170)),
+                .color(crate::ui::tokens::TEXT_MUTED),
         );
     }
 }
@@ -410,7 +410,7 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
     let painter = ui.painter_at(rect);
 
     // Background
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     // Workpiece rectangle (80% of canvas, centered)
     let margin = 14.0;
@@ -421,13 +421,13 @@ pub(super) fn draw_stepover_diagram(ui: &mut egui::Ui, pattern: &StepoverPattern
     painter.rect_stroke(
         wp,
         2.0,
-        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(80, 80, 95)),
+        egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_MATERIAL),
         egui::StrokeKind::Middle,
     );
 
-    let path_color = egui::Color32::from_rgb(50, 200, 180);
+    let path_color = crate::ui::tokens::DIAGRAM_INK;
     let path_stroke = egui::Stroke::new(1.2_f32, path_color);
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
 
     match pattern {
         StepoverPattern::Zigzag { stepover, angle } => {
@@ -579,15 +579,15 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let cx = rect.center().x;
     let cy = rect.center().y + 5.0;
-    let path_color = egui::Color32::from_rgb(120, 120, 140);
-    let overcut_color = egui::Color32::from_rgb(220, 160, 50);
-    let tool_color = egui::Color32::from_rgb(160, 170, 190);
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
-    let mat_color = egui::Color32::from_rgb(40, 40, 52);
+    let path_color = crate::ui::tokens::TEXT_FAINT;
+    let overcut_color = crate::ui::tokens::CAUTION;
+    let tool_color = crate::ui::tokens::TEXT_STRONG;
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
+    let mat_color = crate::ui::tokens::SURFACE_OVERLAY;
 
     let corner = egui::pos2(cx, cy);
     let arm_len = 35.0;
@@ -623,7 +623,7 @@ pub(super) fn draw_dogbone_diagram(ui: &mut egui::Ui, max_angle: f64) {
     painter.line_segment([corner, c], egui::Stroke::new(2.0_f32, path_color));
 
     // Direction arrows on edges
-    let arrow_color = egui::Color32::from_rgb(80, 140, 80);
+    let arrow_color = crate::ui::tokens::OK;
     let mid_a = egui::pos2((a.x + cx) / 2.0, cy);
     painter.circle_filled(egui::pos2(mid_a.x + 4.0, mid_a.y), 2.0, arrow_color);
     let mid_c = egui::pos2((cx + c.x) / 2.0, (cy + c.y) / 2.0);
@@ -709,12 +709,12 @@ pub(super) fn draw_lead_in_out_diagram(ui: &mut egui::Ui, radius: f64) {
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let cy = rect.center().y;
-    let path_color = egui::Color32::from_rgb(80, 80, 95);
-    let lead_color = egui::Color32::from_rgb(50, 200, 230);
-    let dim_color = egui::Color32::from_rgb(140, 140, 155);
+    let path_color = crate::ui::tokens::DIAGRAM_MATERIAL;
+    let lead_color = crate::ui::tokens::DIAGRAM_INK;
+    let dim_color = crate::ui::tokens::TEXT_MUTED;
 
     // Scale radius to fit
     let r_px = (radius as f32 * 3.0).clamp(15.0, 35.0);
@@ -807,7 +807,7 @@ pub(super) fn draw_tab_diagram(
     let painter = ui.painter_at(rect);
 
     // Background
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     // Perimeter rectangle
     let margin = 20.0;
@@ -818,11 +818,11 @@ pub(super) fn draw_tab_diagram(
     painter.rect_stroke(
         pr,
         2.0,
-        egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(80, 80, 95)),
+        egui::Stroke::new(1.5_f32, crate::ui::tokens::DIAGRAM_MATERIAL),
         egui::StrokeKind::Middle,
     );
 
-    let tab_color = egui::Color32::from_rgb(220, 160, 50);
+    let tab_color = crate::ui::tokens::CAUTION;
     let perimeter = 2.0 * (pr.width() + pr.height());
 
     // Place tabs at even intervals around the perimeter
@@ -862,7 +862,7 @@ pub(super) fn draw_tab_diagram(
     }
 
     // Label
-    let dim_color = egui::Color32::from_rgb(140, 140, 155);
+    let dim_color = crate::ui::tokens::TEXT_MUTED;
     painter.text(
         egui::pos2(rect.center().x, rect.bottom() - 4.0),
         egui::Align2::CENTER_BOTTOM,
@@ -883,7 +883,7 @@ pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: 
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let margin = 20.0;
     let wp = egui::Rect::from_min_max(
@@ -891,8 +891,8 @@ pub(super) fn draw_outline_diagram(ui: &mut egui::Ui, label: &str, offset_side: 
         egui::pos2(rect.right() - margin, rect.bottom() - 16.0),
     );
 
-    let path_color = egui::Color32::from_rgb(50, 200, 180);
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let path_color = crate::ui::tokens::DIAGRAM_INK;
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
 
     // Main path outline
     painter.rect_stroke(
@@ -953,19 +953,19 @@ pub(super) fn draw_spiral_diagram(ui: &mut egui::Ui, stepover: f64, outward: boo
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let cx = rect.center().x;
     let cy = rect.center().y;
     let max_r = rect.width().min(rect.height()) * 0.4;
-    let path_color = egui::Color32::from_rgb(50, 200, 180);
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let path_color = crate::ui::tokens::DIAGRAM_INK;
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
 
     // Workpiece boundary
     painter.rect_stroke(
         egui::Rect::from_center_size(egui::pos2(cx, cy), egui::vec2(max_r * 2.1, max_r * 2.1)),
         2.0,
-        egui::Stroke::new(0.5_f32, egui::Color32::from_rgb(50, 50, 60)),
+        egui::Stroke::new(0.5_f32, crate::ui::tokens::HAIRLINE),
         egui::StrokeKind::Middle,
     );
 
@@ -1019,13 +1019,13 @@ pub(super) fn draw_radial_diagram(ui: &mut egui::Ui, angular_step: f64) {
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let cx = rect.center().x;
     let cy = rect.center().y;
     let max_r = rect.width().min(rect.height()) * 0.4;
-    let path_color = egui::Color32::from_rgb(50, 200, 180);
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let path_color = crate::ui::tokens::DIAGRAM_INK;
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
 
     let step_rad = (angular_step as f32).to_radians();
     let num_spokes = (std::f32::consts::TAU / step_rad.max(0.01)).ceil() as usize;
@@ -1068,10 +1068,10 @@ pub(super) fn draw_point_set_diagram(ui: &mut egui::Ui, label: &str) {
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
-    let path_color = egui::Color32::from_rgb(50, 200, 180);
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let path_color = crate::ui::tokens::DIAGRAM_INK;
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
 
     // Scattered drill points (representative pattern)
     let positions = [
@@ -1116,11 +1116,11 @@ pub(super) fn draw_pencil_diagram(ui: &mut egui::Ui, num_offsets: usize, offset_
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
-    let path_color = egui::Color32::from_rgb(50, 200, 180);
-    let offset_color = egui::Color32::from_rgb(50, 160, 200);
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let path_color = crate::ui::tokens::DIAGRAM_INK;
+    let offset_color = crate::ui::tokens::DIAGRAM_INK;
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
     let cy = rect.center().y;
 
     // Center crease line (wavy to represent edge detection)
@@ -1180,11 +1180,11 @@ pub(super) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, threshold: f64) {
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
-    let steep_color = egui::Color32::from_rgb(80, 160, 220);
-    let shallow_color = egui::Color32::from_rgb(50, 200, 180);
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
+    let steep_color = crate::ui::tokens::DIAGRAM_INK;
+    let shallow_color = crate::ui::tokens::DIAGRAM_INK;
 
     let margin = 14.0;
     let wp = egui::Rect::from_min_max(
@@ -1283,12 +1283,12 @@ pub(super) fn draw_inlay_diagram(
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
-    let female_color = egui::Color32::from_rgb(80, 160, 220);
-    let male_color = egui::Color32::from_rgb(50, 200, 180);
-    let mat_color = egui::Color32::from_rgb(50, 50, 65);
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
+    let female_color = crate::ui::tokens::DIAGRAM_INK;
+    let male_color = crate::ui::tokens::DIAGRAM_INK;
+    let mat_color = crate::ui::tokens::DIAGRAM_DIM;
 
     let cx = rect.center().x;
     let total_depth = pocket_depth.max(flat_depth).max(1.0);
@@ -1316,7 +1316,7 @@ pub(super) fn draw_inlay_diagram(
             egui::pos2(rect.left() + 8.0, surface_y),
             egui::pos2(rect.right() - 8.0, surface_y),
         ],
-        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(70, 70, 85)),
+        egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_MATERIAL),
     );
 
     // Female pocket (V cavity cut into material)
@@ -1328,7 +1328,7 @@ pub(super) fn draw_inlay_diagram(
     // Clear the pocket area
     painter.add(egui::Shape::convex_polygon(
         pocket_pts.clone(),
-        egui::Color32::from_rgb(20, 20, 26),
+        crate::ui::tokens::DIAGRAM_CANVAS,
         egui::Stroke::NONE,
     ));
     painter.add(egui::Shape::line(
@@ -1432,10 +1432,10 @@ pub(super) fn draw_ramp_finish_diagram(ui: &mut egui::Ui, max_stepdown: f64) {
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
-    let path_color = egui::Color32::from_rgb(50, 200, 180);
-    let dim_color = egui::Color32::from_rgb(100, 100, 115);
+    let path_color = crate::ui::tokens::DIAGRAM_INK;
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
 
     let num_levels = 4;
     let x_start = rect.left() + 20.0;
@@ -1513,31 +1513,31 @@ pub(super) fn draw_height_diagram(
     let lines = [
         DiagramLine {
             z: resolved.clearance_z,
-            color: egui::Color32::from_rgb(77, 128, 230),
+            color: crate::ui::tokens::DIAGRAM_INK,
             label: "CZ",
             index: 0,
         },
         DiagramLine {
             z: resolved.retract_z,
-            color: egui::Color32::from_rgb(77, 204, 204),
+            color: crate::ui::tokens::DIAGRAM_INK,
             label: "RZ",
             index: 1,
         },
         DiagramLine {
             z: resolved.feed_z,
-            color: egui::Color32::from_rgb(77, 204, 77),
+            color: crate::ui::tokens::OK,
             label: "FZ",
             index: 2,
         },
         DiagramLine {
             z: resolved.top_z,
-            color: egui::Color32::from_rgb(230, 204, 51),
+            color: crate::ui::tokens::CAUTION,
             label: "TZ",
             index: 3,
         },
         DiagramLine {
             z: resolved.bottom_z,
-            color: egui::Color32::from_rgb(230, 77, 51),
+            color: crate::ui::tokens::DANGER,
             label: "BZ",
             index: 4,
         },
@@ -1570,7 +1570,7 @@ pub(super) fn draw_height_diagram(
     let painter = ui.painter_at(rect);
 
     // Background
-    painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(20, 20, 26));
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     // Coordinate mapping: Z → screen Y (higher Z = higher on screen = lower Y)
     let z_to_y = |z: f64| -> f32 {
@@ -1590,7 +1590,7 @@ pub(super) fn draw_height_diagram(
             egui::pos2(stock_right, stock_bottom_y),
         ),
         2.0,
-        egui::Color32::from_rgb(45, 45, 55),
+        crate::ui::tokens::SURFACE_OVERLAY,
     );
     painter.rect_stroke(
         egui::Rect::from_min_max(
@@ -1598,7 +1598,7 @@ pub(super) fn draw_height_diagram(
             egui::pos2(stock_right, stock_bottom_y),
         ),
         2.0,
-        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(80, 80, 95)),
+        egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_MATERIAL),
         egui::StrokeKind::Middle,
     );
 
@@ -1615,7 +1615,7 @@ pub(super) fn draw_height_diagram(
                 egui::pos2(model_right, model_bottom_y),
             ),
             1.0,
-            egui::Color32::from_rgb(55, 55, 75),
+            crate::ui::tokens::DIAGRAM_DIM,
         );
         painter.rect_stroke(
             egui::Rect::from_min_max(
@@ -1623,7 +1623,7 @@ pub(super) fn draw_height_diagram(
                 egui::pos2(model_right, model_bottom_y),
             ),
             1.0,
-            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(90, 90, 120)),
+            egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_MATERIAL),
             egui::StrokeKind::Middle,
         );
     }
@@ -1722,7 +1722,7 @@ pub(super) fn draw_height_diagram(
         egui::Align2::LEFT_CENTER,
         "Stock",
         egui::FontId::proportional(8.0),
-        egui::Color32::from_rgb(80, 80, 95),
+        crate::ui::tokens::DIAGRAM_MATERIAL,
     );
     if ctx.model_top_z.is_some() {
         painter.text(
@@ -1730,7 +1730,7 @@ pub(super) fn draw_height_diagram(
             egui::Align2::CENTER_CENTER,
             "Model",
             egui::FontId::proportional(8.0),
-            egui::Color32::from_rgb(90, 90, 120),
+            crate::ui::tokens::DIAGRAM_MATERIAL,
         );
     }
 

@@ -72,7 +72,7 @@ fn the_inspector_header_reads_the_freshness_state() {
 #[test]
 fn the_card_reads_the_freshness_state() {
     assert!(
-        PANEL_SRC.contains("let (status_text, status_color, hover) = status_chip(freshness);"),
+        PANEL_SRC.contains("status_chip(freshness)"),
         "the chip must come from the shared mapping"
     );
     assert!(

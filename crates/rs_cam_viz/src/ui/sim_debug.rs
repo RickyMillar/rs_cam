@@ -1,32 +1,40 @@
 use crate::state::simulation::ToolpathTraceAvailability;
 
-pub fn trace_availability_badge(
-    availability: ToolpathTraceAvailability,
-) -> Option<(&'static str, egui::Color32)> {
+/// The word a trace-availability badge carries, if it carries one.
+///
+/// UP4: this used to hand back a COLOUR as well, and the four it chose were
+/// `(120, 210, 150)` green, `(210, 170, 90)` amber, `(220, 140, 90)` orange
+/// and `(110, 170, 220)` blue — the verdict palette, spent on a CATEGORY.
+/// `DESIGN_SPEC.md` §2.6 principle 1 forbids exactly that: "TRACE" in the
+/// same green as a pass is the same defect as a vendor band in the same
+/// green as a pass. Trace availability is generator-debug provenance and
+/// carries no verdict at all, so the four are separated by their WORD.
+pub fn trace_availability_badge(availability: ToolpathTraceAvailability) -> Option<&'static str> {
     match availability {
         ToolpathTraceAvailability::None => None,
-        ToolpathTraceAvailability::Semantic => {
-            Some(("SEM", egui::Color32::from_rgb(110, 170, 220)))
-        }
-        ToolpathTraceAvailability::Performance => {
-            Some(("PERF", egui::Color32::from_rgb(210, 170, 90)))
-        }
-        ToolpathTraceAvailability::PerformanceAndSemantic => {
-            Some(("TRACE", egui::Color32::from_rgb(120, 210, 150)))
-        }
-        ToolpathTraceAvailability::Partial => Some(("PART", egui::Color32::from_rgb(220, 140, 90))),
+        ToolpathTraceAvailability::Semantic => Some("SEM"),
+        ToolpathTraceAvailability::Performance => Some("PERF"),
+        ToolpathTraceAvailability::PerformanceAndSemantic => Some("TRACE"),
+        ToolpathTraceAvailability::Partial => Some("PART"),
     }
 }
 
 pub fn draw_trace_badge(ui: &mut egui::Ui, availability: ToolpathTraceAvailability) {
-    if let Some((label, color)) = trace_availability_badge(availability) {
+    if let Some(label) = trace_availability_badge(availability) {
+        // An OBSERVATION, per ruling R15: neutral ground, muted text, no
+        // glyph. It cannot borrow a verdict colour because it has none.
         egui::Frame::default()
-            .fill(color.linear_multiply(0.12))
-            .stroke(egui::Stroke::new(1.0_f32, color.linear_multiply(0.75)))
-            .inner_margin(egui::Margin::symmetric(4, 1))
-            .corner_radius(3)
+            .fill(crate::ui::tokens::SURFACE_RAISED)
+            .stroke(egui::Stroke::new(1.0_f32, crate::ui::tokens::BORDER))
+            .inner_margin(egui::Margin::symmetric(
+                crate::ui::tokens::SPACE_2 as i8,
+                crate::ui::tokens::SPACE_1 as i8,
+            ))
+            .corner_radius(crate::ui::tokens::RADIUS_SM)
             .show(ui, |ui| {
-                ui.label(egui::RichText::new(label).small().strong().color(color));
+                ui.label(
+                    crate::ui::components::text::micro(label).color(crate::ui::tokens::TEXT_MUTED),
+                );
             });
     }
 }

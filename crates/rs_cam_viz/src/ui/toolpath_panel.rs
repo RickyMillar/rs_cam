@@ -102,11 +102,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         let tp_count = toolpath_indices.len();
         let (inner_resp, dropped_payload) = ui.dnd_drop_zone::<ToolpathId, ()>(drop_frame, |ui| {
             if toolpath_indices.is_empty() {
-                ui.label(
-                    egui::RichText::new("No toolpaths")
-                        .italics()
-                        .color(theme::TEXT_DIM),
-                );
+                crate::ui::components::EmptyState::new("No toolpaths")
+                    .detail("Add an operation to begin.")
+                    .show(ui);
             }
 
             for (local_idx, &tp_idx) in toolpath_indices.iter().enumerate() {
@@ -198,11 +196,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
             ui.add_space(4.0);
             if state.session.tools().is_empty() {
-                ui.label(
-                    egui::RichText::new("No tools defined")
-                        .italics()
-                        .color(theme::TEXT_DIM),
-                );
+                crate::ui::components::EmptyState::new("No tools defined")
+                    .detail("Add a tool from the library before creating an operation.")
+                    .show(ui);
             }
             for tool in state.session.tools() {
                 let selected = state.selection == Selection::Tool(tool.id);
@@ -406,16 +402,12 @@ fn draw_toolpath_card(
 
                 // Status chip. The mapping is a pure function so the
                 // sentry can drive every state without a `Ui` (F2.2).
-                let (status_text, status_color, hover) = status_chip(freshness);
-                let chip_resp = ui.label(
-                    egui::RichText::new(status_text)
-                        .small()
-                        .strong()
-                        .color(status_color),
-                );
+                let (status_text, status_role, hover) = status_chip(freshness);
+                let mut chip = crate::ui::components::StatusChip::new(status_text, status_role);
                 if let Some(msg) = hover {
-                    chip_resp.on_hover_text(msg);
+                    chip = chip.hover(msg);
                 }
+                ui.add(chip);
                 // Manual-gen indicator for 3D ops
                 if !auto_regen {
                     ui.label(
@@ -445,9 +437,9 @@ fn draw_toolpath_card(
 
                 // Name
                 let text_color = if dim {
-                    theme::TEXT_FAINT
+                    crate::ui::tokens::TEXT_FAINT
                 } else {
-                    egui::Color32::from_rgb(190, 190, 200)
+                    crate::ui::tokens::TEXT_STRONG
                 };
                 ui.label(egui::RichText::new(&tc.name).color(text_color));
             });
@@ -678,11 +670,17 @@ fn compute_drop_index(response: &egui::Response, ui: &egui::Ui, count: usize) ->
 /// longer reproduce.
 pub(crate) fn status_chip(
     freshness: &FreshnessState,
-) -> (&'static str, egui::Color32, Option<&str>) {
+) -> (&'static str, crate::ui::components::Role, Option<&str>) {
+    use crate::ui::components::Role;
     match freshness {
-        FreshnessState::NoResult => ("PEND", theme::TEXT_DIM, None),
-        FreshnessState::Regenerating => ("GEN", theme::WARNING, None),
-        FreshnessState::Current => ("OK", theme::SUCCESS_BRIGHT, None),
+        // UP4: PEND moves to UNKNOWN, which is what the plan called for.
+        // OFF joins it, and that is a ruling: both mean "there is no verdict
+        // here", the em dash is right for both, and they were only ever
+        // separated by 20 units of grey. The WORD separates them now, which
+        // is what §2.6 rule 3 asks for.
+        FreshnessState::NoResult => ("PEND", Role::Unknown, None),
+        FreshnessState::Regenerating => ("GEN", Role::Caution, None),
+        FreshnessState::Current => ("OK", Role::Ok, None),
         // Amber, and never green: this is not a fresh result. Amber rather
         // than red because nothing is WRONG — no gate tripped, no collision
         // — the answer on screen is simply the previous question's. Red is
@@ -696,7 +694,7 @@ pub(crate) fn status_chip(
         // drawn AND the numbers below it are the previous generation's.
         FreshnessState::EditedSince => (
             "STALE",
-            theme::WARNING,
+            Role::Caution,
             Some(
                 "Inputs changed after this was generated. The path drawn in the viewport \
                  and the figures below are from the PREVIOUS generation, not from the \
@@ -706,10 +704,10 @@ pub(crate) fn status_chip(
         // A/M11: WAIT is a sequencing state, not a failure — it must not
         // read as red. Hover names the blocking op.
         FreshnessState::WaitingOnUpstream(block) => {
-            ("WAIT", theme::WARNING, Some(block.message.as_str()))
+            ("WAIT", Role::Caution, Some(block.message.as_str()))
         }
-        FreshnessState::Disabled => ("OFF", theme::TEXT_FAINT, None),
-        FreshnessState::Error(msg) => ("ERR", theme::ERROR, Some(msg.as_str())),
+        FreshnessState::Disabled => ("OFF", Role::Unknown, None),
+        FreshnessState::Error(msg) => ("ERR", Role::Danger, Some(msg.as_str())),
     }
 }
 

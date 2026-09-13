@@ -49,8 +49,10 @@ use rs_cam_viz::ui::tokens;
 /// | Package | Budget | Note |
 /// |---|---|---|
 /// | UP1 | 378 | measured on arrival; UP1 migrated the 4 `CentralPanel` fills |
+/// | UP3 | 378 | the chrome, already inside budget |
+/// | UP4 | 209 | the inspector: `properties/mod.rs` 87 → 0 and `operations/mod.rs` 64 → 0 |
 /// | UP8 | 0 | the budget becomes the ban |
-const LITERAL_BUDGET: usize = 378;
+const LITERAL_BUDGET: usize = 209;
 
 /// The only two files that may name a colour literal.
 ///

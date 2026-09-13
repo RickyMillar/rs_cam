@@ -4792,11 +4792,15 @@ fn freshness_chip_says_stale_and_never_says_ok() {
 
     // The one that matters, in detail. Amber and not the success colour;
     // red stays reserved for ERR and collisions.
-    let (text, colour, hover) = status_chip(&FreshnessState::EditedSince);
+    let (text, role, hover) = status_chip(&FreshnessState::EditedSince);
     assert_eq!(text, "STALE");
-    assert_eq!(colour, crate::ui::theme::WARNING);
-    assert_ne!(colour, crate::ui::theme::SUCCESS_BRIGHT);
-    assert_ne!(colour, crate::ui::theme::ERROR);
+    // UP4: the mapping returns a ROLE rather than a raw colour, which makes
+    // this assertion stronger. Under UP1's palette several theme names
+    // collapsed onto one value, so comparing colours could have passed while
+    // the meaning drifted; a role cannot.
+    assert_eq!(role, crate::ui::components::Role::Caution);
+    assert_ne!(role, crate::ui::components::Role::Ok);
+    assert_ne!(role, crate::ui::components::Role::Danger);
     let hover = hover.expect("four letters cannot carry this on their own");
     assert!(
         hover.contains("PREVIOUS generation"),
@@ -4855,10 +4859,10 @@ fn freshness_surfaces_agree_after_one_edit_g_freshrender() {
     assert_eq!(enabled, total);
     assert_eq!(status, readiness::CheckStatus::Warning);
 
-    let (chip, colour) =
+    let (chip, role) =
         workspace_bar::toolpath_badge(&controller.state).expect("the Toolpaths tab must say so");
     assert_eq!(chip, "1 stale");
-    assert_eq!(colour, crate::ui::theme::WARNING);
+    assert_eq!(role, crate::ui::components::Role::Caution);
 
     let (chip, _) = workspace_bar::readiness_badge(&controller.state)
         .expect("the Readiness tab must say so too");
@@ -4928,10 +4932,13 @@ fn freshness_does_not_outrank_a_collision() {
             end: rs_cam_core::geo::P3::new(1.0, 0.0, 0.0),
         }];
 
-    let (chip, colour) =
+    let (chip, role) =
         workspace_bar::readiness_badge(&controller.state).expect("a collision must be reported");
     assert!(chip.contains("collision"), "{chip}");
-    assert_eq!(colour, crate::ui::theme::ERROR);
+    // UP4: the badge producers hand back a ROLE now, not a colour, so the
+    // `role_for` shim in the bar is gone and a safety badge cannot drift
+    // onto a non-safety hue.
+    assert_eq!(role, crate::ui::components::Role::Danger);
 }
 
 /// Disabled operations are not outstanding work, and an errored one is not

@@ -712,3 +712,22 @@ pub fn as_unit_rgb(c: Color32) -> [f64; 3] {
         f64::from(c.b()) / 255.0,
     ]
 }
+
+/// Convert a linear `[f32; 3]` from `render::colors` into a `Color32`.
+///
+/// The 3D palette lives in `render/colors.rs` as float triples because that
+/// is what the vertex buffers take. A panel that draws a swatch for a
+/// toolpath needs the same colour as an egui value, and hand-writing the
+/// conversion at each site is how a raw `Color32::from_rgb` ends up in a
+/// panel that has no colour of its own.
+#[must_use]
+pub fn from_linear_rgb(c: [f32; 3]) -> Color32 {
+    let to_u8 = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Color32::from_rgb(to_u8(c[0]), to_u8(c[1]), to_u8(c[2]))
+}
+
+/// [`ACCENT`] at a given alpha, for a highlight wash over a diagram.
+#[must_use]
+pub fn accent_wash(alpha: u8) -> Color32 {
+    Color32::from_rgba_unmultiplied(ACCENT.r(), ACCENT.g(), ACCENT.b(), alpha)
+}
