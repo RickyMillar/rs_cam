@@ -280,8 +280,15 @@ pub const SPAN_SCALE: [Color32; 6] = [
 
 /// Four steps, hue 205 to 175 with lightness rising.
 ///
-/// The simulation signal strip and the feeds charts today carry 9 values over
-/// 11 sites. Every step clears 3:1 on all four surfaces; the darkest is 3.75.
+/// The feeds charts. Every step clears 3:1 on all four surfaces; the darkest
+/// is 3.75.
+///
+/// §2.9 named the simulation signal strip as this scale's other consumer and
+/// that was WRONG, measured during the UP5–UP7 migration: **the strip has six
+/// tracks and this scale has four steps.** The strip uses [`SPAN_SCALE`],
+/// which has six. Extending this one to six was the alternative and was
+/// rejected — four is right for a chart, where more series than that is a
+/// legibility problem rather than a palette problem.
 pub const CHART_SERIES: [Color32; 4] = [
     Color32::from_rgb(0x3D, 0x8B, 0xC2),
     Color32::from_rgb(0x64, 0xB0, 0xC9),

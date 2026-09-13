@@ -1984,7 +1984,8 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
     if let Some(rpm) = current.spindle_rpm {
         entries.push(LegendEntry::new(
             LegendSwatch::Circle,
-            theme::ERROR,
+            // Ruling R23: the operator's own value is not a verdict.
+            crate::ui::tokens::TEXT_STRONG,
             "● Current",
             format!("{rpm} RPM · {:.0} mm/min", current.feed_rate_mm_min),
         ));
@@ -2579,7 +2580,8 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             },
             MiniLegend {
                 swatch: LegendSwatch::Circle,
-                color: theme::ERROR,
+                // Ruling R23: the operator's own value is not a verdict.
+                color: crate::ui::tokens::TEXT_STRONG,
                 label: "● current",
                 value: format!("{:.4} mm/tooth", current.chipload_mm()),
             },
@@ -2822,7 +2824,8 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
             },
             MiniLegend {
                 swatch: LegendSwatch::Circle,
-                color: theme::ERROR,
+                // Ruling R23: the operator's own value is not a verdict.
+                color: crate::ui::tokens::TEXT_STRONG,
                 label: "● current",
                 value: format!("{:.4} mm/tooth", current.chipload_mm()),
             },
@@ -3147,7 +3150,7 @@ fn aggregate_speedup(rows: &[ProjectFeedsRow]) -> f64 {
 }
 
 /// Scatter chart showing every toolpath on the feed-RPM plane.
-/// Current = red ●, Recommended = blue ◆, line connecting the two.
+/// Current = a neutral ●, Recommended = blue ◆, line connecting the two.
 fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
     if rows.is_empty() {
         return;
@@ -3210,7 +3213,13 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                             .shape(MarkerShape::Circle)
                             .filled(true)
                             .radius(4.0_f32)
-                            .color(theme::ERROR),
+                            // Ruling R23: "current" is the operator's OWN value, a
+                            // "you are here" marker, not a verdict. It wore
+                            // DANGER red on what is a CATEGORY — current versus
+                            // recommended. TEXT_STRONG is the highest-contrast
+                            // neutral and reads as a position in a chart that is
+                            // otherwise all blue.
+                            .color(crate::ui::tokens::TEXT_STRONG),
                     );
                 }
                 plot_ui.points(

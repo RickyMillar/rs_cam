@@ -761,6 +761,31 @@ load-bearing rests on telling a cutter body from secondary text.
 Note also that `DIAGRAM_CANVAS` `#14171A` and `INK_05` `#15171A` are one
 digit apart and are NOT the same value. Do not merge them.
 
+**R22. The axis triple is the ONE exception to the one-hue rule.** §2.9
+rules that a data scale is derived from one hue by lightness, never assembled
+from separate hues. Two agents migrating this crate independently hit that
+wall on the X/Y/Z gizmo and both STOPPED rather than force it, which was
+correct. X red, Y green, Z blue is a convention every CAD operator reads
+without being taught, and re-coding it by lightness would cost more than it
+saves. `AXIS_X` `#D65C55`, `AXIS_Y` `#6FBF4A`, `AXIS_Z` `#5B8DE0`, each
+clearing 3:1 on the viewport ground.
+
+This closes the first of §2.10's four load-bearing collisions. The defect was
+never "an axis is red"; it was that the axis and the error text were **one
+constant**, so one could not move without the other. They are separate
+constants at different values now. The residual is stated rather than hidden:
+`AXIS_X` sits near `DANGER` in hue because the convention puts it there, and
+what keeps them apart is CONTEXT. **An axis colour must never appear in a
+panel.**
+
+**R23. "Current" is not a verdict.** The feeds charts drew the operator's own
+configured value as a `DANGER` red dot in four places, against a blue
+"recommended" marker. Current versus recommended is a CATEGORY, and red on it
+said "your setting is wrong" when the chart meant "you are here". It takes
+`TEXT_STRONG`: the highest-contrast neutral, which reads as a position and
+stands out in a chart that is otherwise all blue. The accent was considered
+and rejected — §2.5 reserves it for selection, focus and the primary button.
+
 #### The thirteen underspecified points
 
 **R7. A value well has a minimum width of 58 points.** §4.6 requires one and
