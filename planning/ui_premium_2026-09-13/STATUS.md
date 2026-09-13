@@ -8,7 +8,7 @@ DECIDED and what is still OPEN.
 
 ## Where things stand — 2026-09-13
 
-**UP0, UP1, UP2 and UP3 are DONE.** UP4, the inspector, is next.
+**UP0 to UP7 are DONE.** UP8 (the last 4 literals) and UP9 (the final gate) remain.
 
 | Artefact | State |
 |---|---|
@@ -420,3 +420,89 @@ the thing the operator reads.
   colour. **UP4 or an IA call (Q4).**
 - `role_for` in `workspace_bar.rs` still reads a colour back to a role. UP4
   gives the three badge producers roles directly and it goes away.
+
+---
+
+## UP4 to UP7 — DONE. The colour budget is 368 → 4
+
+| Package | Commit | Budget after |
+|---|---|---|
+| UP4 inspector + toolpath list | `1e4eb503` | 209 |
+| UP5–UP7 simulation, setup, modals (parallel) | `c42bd9ae` | 4 |
+| R22 / R23 rulings and fixes | `d91d5c70` | 4 |
+
+### Parallel agents: what worked and what it cost
+
+Three agents on **disjoint file sets**, none permitted to run cargo. The lead
+gated once on the merged tree and **it compiled on the first attempt.**
+
+The constraint that made it safe is the machine, not the plan: a parallel
+cargo build OOMs this box (no swap, ~9 GB free) and has already killed the
+terminal once. Agents write; the lead compiles, lints, tests and commits.
+
+**The agents found more than they migrated.** Ranked by what mattered:
+
+1. **Two agents independently hit the same wall and both STOPPED** rather
+   than force a mapping: no scale in §2.9 carries three separable hues, so
+   the X/Y/Z gizmo had nowhere to go. That produced ruling **R22** and closed
+   the first of §2.10's four load-bearing collisions.
+2. **A bug in the lead's own work.** The bulk migration of
+   `properties/operations/mod.rs` mapped one teal literal onto `DIAGRAM_INK`
+   across nine sites, and in three diagrams — steep/shallow, female/male
+   inlay, contour/ramp — that gave BOTH arms of a category the same colour,
+   leaving a raw literal as the only separator. **A table-driven sweep cannot
+   see that two sites are the two halves of one contrast.** Restored onto
+   span-scale steps.
+3. **Categories wearing verdict colours, everywhere.** 26 semantic span kinds
+   with greens on `Pass` and reds on `SlotClearing`; the feeds vendor band in
+   pass-green (the audit's known example); an amber/green/red traffic light
+   on an ORDERED scale, where a band's own maximum is not an exceedance; the
+   setup "Keep Out" count in red and "XY" datum in green.
+4. **Three gates that returned NO verdict were drawn in caution amber** and
+   are `UNKNOWN` now. That is the distinction §2.6 added the role for.
+
+### Rulings R22 and R23
+
+**R22 — the axis triple is the one exception to the one-hue rule.** The
+defect was never "an axis is red"; it was that the axis and the error text
+were ONE CONSTANT. `AXIS_X` / `AXIS_Y` / `AXIS_Z` are separate constants at
+different values, each clearing 3:1 on the viewport ground. The residual is
+stated: `AXIS_X` sits near `DANGER` in hue because the CAD convention puts it
+there, and only CONTEXT separates them. **An axis colour must never appear in
+a panel.**
+
+**R23 — "Current" is not a verdict.** The feeds charts drew the operator's
+own configured value as a `DANGER` dot in four places. Red on it said "your
+setting is wrong" where the chart meant "you are here". It is `TEXT_STRONG`.
+
+### A correction to the spec, measured
+
+§2.9 named the simulation signal strip as `CHART_SERIES`' second consumer.
+**The strip has six tracks and the scale has four steps.** The strip uses
+`SPAN_SCALE`. Extending `CHART_SERIES` to six was rejected: four is right for
+a chart, where more series than that is a legibility problem rather than a
+palette problem.
+
+### Verified rather than assumed
+
+The sim agent added fourteen defensive `#[allow(clippy::indexing_slicing)]`
+without being able to run clippy. The lead **deleted all fourteen and
+re-linted**: nine real complaints returned, so the instinct was right and
+they are restored with their SAFETY comments.
+
+## Open for the operator
+
+| Id | Question |
+|---|---|
+| Q1 | The toast cap. Still needs a nod. |
+| Q3 | Whether the Simulation workspace gains a status bar. Behaviour, not visual. |
+| Q4 | The IA boundary per screen. The workspace badges sit AFTER their tab, so "6 pending" renders between Toolpaths and Simulation and reads as belonging to neither. |
+| Q5 | **Three "Generate All" buttons** — panel, viewport overlay, menu. The menu one is conventional; the viewport one competes with the panel's Primary. Removing a control is behaviour, so it waits for a ruling. |
+
+## Needs looking at
+
+- **The feeds charts are now almost entirely blue** after four traffic-lights
+  left the verdict palette. That may have gone too far toward monotone.
+- **Four alpha washes moved premultiplied → unmultiplied** in the setup
+  panels. Their old values were mathematically invalid (rgb exceeding alpha),
+  so they will read fainter.
