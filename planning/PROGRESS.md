@@ -103,7 +103,31 @@ one question per ledger):
   discards the partial outcome while the row's Cancel keeps it. Nothing
   was verified on screen; the release GUI rebuild follows.
 
-The work-package table holds 30 rows, WP1 to WP26 all DONE.
+The work-package table held 30 rows, WP1 to WP26 all DONE, at that point.
+
+**Evening of the same day, after a live smoke pass on the release build**
+(STATUS.md "Live smoke pass" block; four ledgers G-MCPSIMMIRROR,
+G-EXPORTEMPTYSETUP, G-FRESHNESSDISAGREE, G-DIRTYONLOAD, plus
+G-OPTCANCELPARTIAL from the WP29 scout):
+
+- **WP27** (`940b8a05`; sentry `fc84547f`): the viewport draws the SELECTED
+  toolpath only by default (operator ruling, plan §32: many drawn toolpaths
+  make the viewport slow). One `show_all_toolpaths` view flag, one Overlays
+  registry row `all_toolpaths`, one bar button, one pure `toolpaths_to_draw`
+  read by both the upload and the pick; the isolate pin wins. The Simulation
+  workspace still draws every toolpath. Consequences: nothing selected draws
+  no toolpath, so the viewport is empty after a load until a row is clicked,
+  and a viewport click cannot select an undrawn toolpath.
+- **WP29** (`83c6219b`; sentry `7834761f`): an Optimize run reports its rung
+  (three: feed/rpm, grid, refine) and its candidate done/total on the
+  workspace-bar row and in the Optimize window (plan §33). The progress
+  struct rides the job handle and the evaluation context, so no optimizer
+  signature moved. No time-left figure: the whole-run total is unknown up
+  front. The window's "keep partial results" sentence is untouched and
+  ledgered as G-OPTCANCELPARTIAL, because both cancel routes discard them.
+
+The table holds 32 rows; WP28 (one GUI apply function that mirrors every
+`Effects` field, closing G-MCPSIMMIRROR) is the open one.
 
 ## Architecture consolidation — 2026-09-12 (reviews and follow-ons)
 

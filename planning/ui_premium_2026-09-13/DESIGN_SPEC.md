@@ -118,15 +118,32 @@ from two unrelated literals (`AUDIT.md` D-07).
 | `INK_20` | `#282D33` | `SURFACE_OVERLAY` |
 | `INK_25` | `#31373E` | hairline rules, disabled fills |
 | `INK_35` | `#454D56` | control borders, chip strokes |
-| `INK_50` | `#6B747E` | `TEXT_FAINT` — units, provenance |
+| `INK_50` | `#737C87` | `TEXT_FAINT` — units, provenance |
 | `INK_65` | `#8C959F` | `TEXT_MUTED` — secondary text, labels |
 | `INK_80` | `#B4BCC5` | `TEXT_BODY` — default label text |
 | `INK_95` | `#E2E7EC` | `TEXT_STRONG` — values, names, headings |
 
-Contrast, measured against `INK_10`: `TEXT_BODY` reaches about 8.5:1,
-`TEXT_MUTED` about 5.3:1, `TEXT_FAINT` about 3.1:1. **`TEXT_FAINT` is
+Contrast is **computed, not estimated** (WCAG 2.1 relative luminance).
+Ratios against the four surfaces:
+
+| Token | SUNKEN | BASE | RAISED | OVERLAY |
+|---|---|---|---|---|
+| `INK_50` `TEXT_FAINT` | 4.24 | 3.95 | 3.60 | 3.28 |
+| `INK_65` `TEXT_MUTED` | 5.91 | 5.51 | 5.01 | 4.57 |
+| `INK_80` `TEXT_BODY` | 9.36 | 8.71 | 7.93 | 7.23 |
+| `INK_95` `TEXT_STRONG` | 14.43 | 13.44 | 12.23 | 11.15 |
+
+`INK_50` was `#6B747E` in the first draft and fell to **2.92** on
+`SURFACE_OVERLAY`, below even the 3:1 large-text floor. It is lightened to
+`#737C87`, which clears 3:1 on every surface. **`TEXT_FAINT` is still
 forbidden below 12 points and forbidden for any sentence.** It exists for a
-unit suffix beside a number it belongs to.
+unit suffix beside the number it belongs to.
+
+For comparison, the palette shipping today fails twice. `theme::TEXT_FAINT`
+`(100, 100, 115)` reads **2.85** against the panel fill and is used for
+9-point text. `theme::ERROR` `(220, 80, 80)` reads **4.19**, below the
+normal-text floor, and it is the colour of the `ERR` chip and of collision
+text.
 
 ### 2.5 The accent
 
@@ -153,13 +170,18 @@ not blend.
 Five roles. Each has a text tone and a quiet fill for chips. Nothing else
 in the product may use these hues.
 
-| Role | Text | Chip fill | Means |
-|---|---|---|---|
-| `OK` | `#5FBF7A` | `#1C3323` | within a band, current, clear, pass |
-| `CAUTION` | `#E0A83C` | `#3A2E12` | stale, waiting, elevated, review |
-| `DANGER` | `#E2635F` | `#3A1D1E` | exceeds, collision, error, refusal |
-| `INFO` | `#5B9DD9` | `#1E2E3D` | informational, the accent reused |
-| `UNKNOWN` | `#7E8A96` | `#23282E` | **not measured** |
+| Role | Text | Chip fill | Worst ratio | Means |
+|---|---|---|---|---|
+| `OK` | `#5FBF7A` | `#1C3323` | 5.96 | within a band, current, clear, pass |
+| `CAUTION` | `#E0A83C` | `#3A2E12` | 6.23 | stale, waiting, elevated, review |
+| `DANGER` | `#E87B77` | `#3A1D1E` | 4.98 | exceeds, collision, error, refusal |
+| `INFO` | `#5B9DD9` | `#1E2E3D` | 4.80 | informational, the accent reused |
+| `UNKNOWN` | `#8D9AA8` | `#23282E` | 4.84 | **not measured** |
+
+"Worst ratio" is the lowest contrast that role reaches on any of the four
+surfaces or on its own chip fill. Every value clears 4.5. Two tones were
+lightened after the first draft failed: `DANGER` was `#E2635F` and read 4.48
+on a card, and `UNKNOWN` was `#7E8A96` and read 4.22 on its own chip.
 
 `UNKNOWN` is new and it is the most important addition in this section.
 Today "not measured" is drawn as an em dash in whatever grey is nearby, so a
@@ -204,36 +226,55 @@ is the load-bearing part, not the face.
 
 ### 3.2 The scale
 
-Eight styles. egui exposes five `TextStyle` slots, so three of these are
-`TextStyle::Name(..)` entries.
+Eight styles. **Five map onto egui's built-in `TextStyle` slots and apply
+automatically. Three do not exist as global styles and must be helper
+functions.** See §10.3 for why: a custom `TextStyle::Name` is a legal map key
+but `ui.label()` never reads it.
 
-| Name | Size | Weight | Family | Use |
-|---|---|---|---|---|
-| `Display` | 20 | SemiBold | Inter | a window title, a page title. Rare. |
-| `Heading` | 15 | SemiBold | Inter | panel title, modal step title |
-| `Subhead` | 12 | SemiBold, +0.04 em | Inter | section header. Replaces the 516 `.small().strong()` sites. |
-| `Body` | 13 | Regular | Inter | default label and sentence |
-| `BodyStrong` | 13 | Medium | Inter | a value that is not a number, an operation name |
-| `Numeric` | 13 | Regular | JetBrains Mono | **every measured value** |
-| `Caption` | 11 | Regular | Inter | units, provenance, supporting sentence |
-| `Micro` | 10 | SemiBold, +0.08 em, upper | Inter | chip text only |
+| Name | egui slot | Size | Weight | Family | Use |
+|---|---|---|---|---|---|
+| `Heading` | `TextStyle::Heading` | 15 | SemiBold | Inter | panel title, modal step title |
+| `Body` | `TextStyle::Body` | 13 | Regular | Inter | default label and sentence |
+| `ButtonText` | `TextStyle::Button` | 13 | Medium | Inter | every button |
+| `Numeric` | `TextStyle::Monospace` | 13 | Regular | JetBrains Mono | **every measured value** |
+| `Caption` | `TextStyle::Small` | **11** | Regular | Inter | units, provenance, supporting sentence |
+| `Display` | helper | 20 | SemiBold | Inter | a window title, a page title. Rare. |
+| `Subhead` | helper | 12 | SemiBold | Inter | section header |
+| `Micro` | helper | 10 | SemiBold, upper, +0.8 pt tracking | Inter | chip text only |
 
-**The floor is 11 points.** Nothing in the product renders below 11 except
-`Micro`, which is a chip and is short, upper-case and high contrast by
-construction.
+**The single highest-leverage line in this whole specification is raising
+`TextStyle::Small` from 9 to 11.** All 516 `.small()` call sites read that
+slot, so one assignment in `configure_theme` lifts the product's entire
+caption layer off the floor **without editing a single call site**. UP1
+delivers most of the legibility win on its own.
 
-Line height is 1.35 for `Body` and `Caption`, 1.2 for everything else.
+**The floor is 11 points.** Nothing renders below 11 except `Micro`, which
+is a chip: short, upper-case and high contrast by construction.
+
+Line height is **17 points for `Body` and 15 for `Caption`** (about 1.3),
+set per call site through `RichText::line_height`. It cannot be set
+globally on 0.34; see §10.2.
 
 ### 3.3 Migration of `.small()`
 
 516 sites carry `.small()`. They divide into four groups.
 
-| Today | Becomes | Why |
+| Today | Becomes | Editing needed |
 |---|---|---|
-| A section header (`.small().strong()`) | `Subhead` | it is a header, and headers are not small |
-| A unit, a provenance stamp, a `configured N` note | `Caption` | supporting text, still readable |
-| A chip or badge word | `Micro` | short, upper, tracked |
-| A whole sentence | `Body` or `Caption`, never below 11 | a sentence at 9 points is not published |
+| A unit, a provenance stamp, a `configured N` note | `Caption` at 11 | **none** — `.small()` already reads that slot |
+| A whole sentence | `Body`, or `Caption`, never below 11 | drop `.small()` where it is a sentence |
+| A section header (`.small().strong()`, 41 sites) | `Subhead` helper | call site |
+| A chip or badge word | `Micro` helper | call site |
+
+So of 516 sites, the great majority need **no edit at all** once the `Small`
+slot moves to 11. Only the 41 header sites and the chip sites are hand work.
+
+The sites concentrate in the modals, not the inspector: `feeds_modal.rs` 98,
+`optimize_modal.rs` 59, `sim_diagnostics.rs` 56, `multitool_planner.rs` 56,
+`optimize_project.rs` 53. Those five hold 322 of the 516, and four of them
+are resizable windows with room to grow. The toolpath inspector holds 44.
+**The density risk this specification was most worried about is small, and
+it lands on the modals.**
 
 The tool-load caution, the readiness cycle-time note and the workspace hint
 (`AUDIT.md` D-01, D-39) are all in the last group.
@@ -330,8 +371,10 @@ shape (`AUDIT.md` D-08).
 
 ### 4.5 `Button`
 
-Four variants. `min_size` is `(0, 26)` for all of them, so a button row is
-never ragged in height.
+Four variants. Minimum height 26 points, set **once** through
+`Style::spacing::interact_size.y`, which egui documents as "the default
+height of button, slider, etc." No per-call `.min_size()` is needed
+(§10.6).
 
 | Variant | Fill | Text | Use |
 |---|---|---|---|
@@ -341,7 +384,10 @@ never ragged in height.
 | `Danger` | transparent, 1 pt `DANGER` border | `DANGER` | delete, discard, remove |
 
 Hover lifts the fill one ramp step over 120 ms. Focus draws a 2-point
-`ACCENT` ring outside the shape, always, on every variant. Disabled drops to
+`ACCENT` ring outside the shape on every variant. **The ring is drawn by the
+component, not by the theme** — egui 0.34 draws no focus indicator by
+default and renders a focused widget in its `active` visuals instead, which
+reads as "pressed" (§10.5). Disabled drops to
 `INK_25` fill and `INK_50` text, and **a disabled control always carries a
 hover that states the reason** — the rule the Overlays registry already
 keeps for 40 rows (`AUDIT.md` D-38).
@@ -365,7 +411,10 @@ suggest pill. It gains a fixed four-slot geometry.
   two-indent defect (`AUDIT.md` D-15).
 - `trailing` never overflows. When the panel is too narrow the trailing slot
   wraps to a second line at `Caption` rather than clipping. That closes
-  `AUDIT.md` D-16 for value rows.
+  `AUDIT.md` D-16 for value rows. **A global default exists and UP1 should
+  set it**: `Style::wrap_mode` takes an `Option<TextWrapMode>` and changes
+  the default for every label at once (§10.7). The component rule then
+  handles the cases the global default gets wrong.
 - A read-only row and an editable row differ by the value slot: an editable
   value sits in a `SURFACE_SUNKEN` well with `RADIUS_SM`; a read-only value
   has no well. The difference is then visible at the value, which is where
@@ -441,8 +490,13 @@ deliberate row of blanks, not as missing text.
 
 ## 5. Motion
 
-`ctx.animate_bool_with_time` and `ctx.animate_value_with_time` carry all of
-it. The crate uses neither today.
+`ctx.animate_bool_with_time_and_easing` and `ctx.animate_value_with_time`
+carry all of it. The crate uses neither today.
+
+**Use the `_and_easing` variant.** Plain `animate_bool_with_time` hardcodes
+`emath::easing::linear`, so every "ease-out" below is
+`emath::easing::cubic_out`, passed explicitly. `emath::easing` ships 22
+functions in 0.34 (§10.4).
 
 | Event | Duration | Curve |
 |---|---|---|
@@ -531,10 +585,17 @@ else is `Default` or `Quiet`.
 
 ### Windows
 
-- Every window gets `SURFACE_OVERLAY`, `SHADOW_OVERLAY`, `RADIUS_MD` and a
-  scrim. The crate uses `egui::Window` for all twelve and never
-  `egui::Modal`, so the scrim is a *visual* statement of focus and changes
-  no input handling.
+- Every window gets `SURFACE_OVERLAY`, `SHADOW_OVERLAY` and `RADIUS_MD`.
+- **The scrim should come from `egui::Modal`, which exists in 0.34 and the
+  crate has never used** (§10.1). It paints its own backdrop and blocks
+  input to what is behind it. Blocking input is a *behaviour* change, so
+  adopting it needs the operator's word, and it must not be applied to all
+  twelve. Task windows take it: Export Wizard, Export Readiness, Feeds,
+  Optimize, Tool Library, Machine Library, the planner, Unsaved Changes.
+  **Overlays, Keyboard Shortcuts and Project Load Warnings stay plain
+  windows**, because an operator is meant to keep working with them open.
+  Where `Modal` is refused, a hand-painted scrim gives the look without the
+  input change, as `ui/optimize_project.rs:566-580` already does once.
 - A window title is `Heading`, left-aligned, with the close control right.
 - A window's footer is one row: `Quiet` cancel on the left, `Default` and
   then `Primary` on the right, in that order.
@@ -639,11 +700,14 @@ generalises.
 ## 9. Accessibility floor
 
 - Body text meets 4.5:1 against its own surface. Caption and chip text meet
-  4.5:1. `TEXT_FAINT` meets 3:1 and is restricted to §2.4's rule.
+  4.5:1. `TEXT_FAINT` meets 3:1 on every surface and is restricted to §2.4's
+  rule. Every ratio in §2.4 and §2.6 is computed, and the worst value
+  anywhere in the semantic set is 4.80.
 - Colour is never the only channel. Every verdict carries its glyph (§2.6
   rule 3).
 - The focus ring is 2 points, `ACCENT`, drawn outside the shape, on every
-  interactive control, always.
+  interactive control, always. It is a component-layer guarantee, not a
+  theme setting (§10.5).
 - The hit target minimum is 26 x 26 points. Today's row-action squares are
   18 (`AUDIT.md` D-19).
 - The layout holds at 1280 x 800 with no clipped text, which is one step
@@ -651,7 +715,97 @@ generalises.
 
 ---
 
-## 10. Out of scope
+## 10. Toolkit constraints, verified against egui 0.34.3
+
+Every claim here was read in
+`~/.cargo/registry/.../egui-0.34.3` and `epaint-0.34.3`. The first draft of
+this specification assumed four things that are wrong, and they are marked.
+
+**10.1 `egui::Modal` exists** — `egui-0.34.3/src/containers/modal.rs:16`,
+exported from `containers/mod.rs`. It paints its own backdrop, default
+`Color32::from_black_alpha(100)`, settable through `backdrop_color`, and it
+blocks input behind it. The crate uses it zero times.
+
+**10.2 Line height is per call site, in points** —
+`TextFormat::line_height: Option<f32>`
+(`epaint-0.34.3/src/text/text_layout_types.rs:381`) and
+`RichText::line_height`. **There is no line-height field on `Style`.** A
+global version, `extra_text_line_spacing`, arrived in egui 0.36 and is not
+available here. *First draft said a global ratio; wrong.*
+
+**10.3 A custom `TextStyle::Name` is never picked up by a plain widget** —
+`Label` passes `FontSelection::Default` (`widgets/label.rs:185`), which
+resolves to `TextStyle::Body` unless `Style::override_font_id` or
+`override_text_style` is set (`style.rs:158-167`). `Button` falls back to
+`TextStyle::Button` (`widgets/button.rs:48`). Only the five built-in slots
+apply automatically. *First draft said three rungs could be `TextStyle::Name`
+entries; wrong.* **Weight travels on the `FontFamily`, not the text style**:
+register one named family per weight, each with the symbol fallbacks
+appended, then point the built-in slots at those families.
+
+Use `ctx.all_styles_mut` (`context.rs:2167`), not `set_global_style`
+(`:2142`), which writes one theme and leaves the other on egui's defaults.
+The crate's own `configure_theme` uses the single-theme calls today, so the
+light theme is entirely unstyled. `ctx.style_mut` is deprecated in 0.34.
+
+**10.4 Easing is available, but not by default** — `emath::easing` ships 22
+functions. `Context::animate_bool_with_time` hardcodes
+`emath::easing::linear` (`context.rs:3220-3224`). Use
+`animate_bool_with_time_and_easing` (`:3236`) or `animate_bool_with_easing`
+(`:3212`).
+
+**10.5 There is no default focus indicator** — `Visuals::show_focused_widget`
+defaults to `false` (`style.rs:1390`) and is a debugging aid. A focused
+widget otherwise renders in its `active` visuals (`style.rs:1255`), so it
+looks pressed. A consistent outside ring must be drawn by the component
+layer. *First draft implied a theme setting; wrong.*
+
+**10.6 Minimum control height is global** — `Style::spacing::interact_size`
+is a `Vec2` and its `y` is documented as the default height of a button,
+slider and similar (`style.rs:417-420`). One assignment covers every button.
+*First draft called for `.min_size()` on every button; unnecessary.*
+
+**10.7 A global default wrap mode exists** — `Style::wrap_mode:
+Option<TextWrapMode>` (`style.rs:317`). Setting it changes the default for
+every label, which reaches the trailing-text clipping in `AUDIT.md` D-16
+far more cheaply than a per-site fix.
+
+**10.8 Letter spacing is per call site, in points** —
+`TextFormat::extra_letter_spacing`
+(`epaint-0.34.3/src/text/text_layout_types.rs:372`) and
+`RichText::extra_letter_spacing`. Not on `Style`, `FontId` or `FontTweak`.
+The unit is points, so `Micro`'s tracking is **0.8 pt at 10 pt**, not an em
+value, and only a chip helper can keep it consistent.
+
+**10.9 `Shadow` is integer-valued** — `offset: [i8; 2]`, `blur: u8`,
+`spread: u8`, `color: Color32` (`epaint-0.34.3/src/shadow.rs:10-27`). No
+fractional blur. `SHADOW_OVERLAY` is therefore
+`Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(110) }`.
+Globals are `Visuals::window_shadow` and `Visuals::popup_shadow`.
+
+**10.10 `CornerRadius` is per corner and per widget state** — fields
+`nw`, `ne`, `sw`, `se`, each `u8`. `Visuals::window_corner_radius` and
+`menu_corner_radius` are single fields, but the widget radius lives on each
+`WidgetVisuals`, so §2.2's value of 4 must be written to all of
+`noninteractive`, `inactive`, `hovered`, `active` and `open`.
+
+**10.11 There is no OpenType feature switch** — nothing in `epaint`'s text
+module mentions font features or tabular figures. §3.4's rule stands:
+numeric alignment comes from the monospace family or from nowhere.
+
+### What an upgrade would buy, for the operator to weigh
+
+egui is at **0.36.2**; this crate pins **0.34**. Two additions bear on this
+work. 0.35 added `Classes` on `UiBuilder` and widgets, a styling mechanism
+close to CSS classes, and `AtomLayout`, which handles layout inside a widget
+and is what chips and buttons need. 0.36 added the global
+`extra_text_line_spacing` that §10.2 says is missing. Building the component
+set on 0.34 and upgrading later would mean rebuilding part of it. Changing
+the pin touches `Cargo.toml`, which this specification does not do.
+
+---
+
+## 11. Out of scope
 
 Named so no package drifts into them.
 

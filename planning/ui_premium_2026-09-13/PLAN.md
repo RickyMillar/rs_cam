@@ -77,10 +77,16 @@ style. `configure_theme` sets a complete `Style`, not ten colours.
   re-exports from `tokens.rs`. **No call site changes in this package.**
   The 20 constants get the spec's values; `TEXT_DIM` and `TEXT_FAINT`
   collapse onto `INK_50`; `UNKNOWN` is added.
-- `app.rs::configure_theme` (`:1060-1082`) sets the full `Style`: the eight
-  text styles, `item_spacing` `(4, 4)`, widget corner radius 4, window and
-  menu corner radius 8, window shadow, window fill, panel fill and the
-  selection pair — all from `tokens`.
+- `app.rs::configure_theme` (`:1060-1082`) sets the full `Style`, all from
+  `tokens`, and switches to `ctx.all_styles_mut` so both themes are written
+  — today's `set_visuals` / `set_global_style` pair writes one
+  (`DESIGN_SPEC.md` §10.3). It sets: the **five built-in** text styles,
+  `item_spacing` `(4, 4)`, `spacing.interact_size.y = 26.0`, `wrap_mode`,
+  corner radius 4 on all five `WidgetVisuals` plus 8 for window and menu,
+  `window_shadow`, `popup_shadow`, the surfaces and the selection pair.
+- **`TextStyle::Small` moves from 9 to 11.** This one assignment lifts all
+  516 `.small()` call sites without editing any of them, and is the largest
+  single legibility gain in the programme.
 - `app.rs::configure_fonts` (`:1085-1111`) loads Inter and JetBrains Mono
   from `crates/rs_cam_viz/assets/fonts/` and keeps both Noto fallbacks in
   their current order.
@@ -94,16 +100,21 @@ A source scan over `crates/rs_cam_viz/src/ui/` and `src/app.rs`:
    `Color32::from_rgb(`. The count today is **412 call sites carrying 201
    distinct triples**, plus 41 distinct `from_rgba_*` values. The assertion
    carries the number and the file list so the red is legible.
-2. `configure_theme` sets every one of the eight `TextStyle` entries the
-   spec names. The scan looks for each name.
-3. Non-vacuity: the scan visited at least 40 files, and `theme.rs` still
+2. `configure_theme` sets all five built-in `TextStyle` entries, and
+   `TextStyle::Small` resolves to 11.0 or more. A headless `Context` asserts
+   the resolved size rather than scanning for a literal, so the arm cannot
+   be satisfied by a comment.
+3. `Style::wrap_mode`, `spacing.interact_size.y` and both shadows are set.
+4. Non-vacuity: the scan visited at least 40 files, and `theme.rs` still
    exports all 20 original names.
 
-**Red on today's tree** at arm 1 (453 sites) and arm 2 (zero text styles).
+**Red on today's tree** at arm 1 (412 sites), arm 2 (`Small` is 9.0 and no
+text style is set at all) and arm 3.
 
-**Acceptance.** Re-capture `shot_02`, `shot_03`, `shot_09`, `shot_12` as
-`*_up1.png`. The layout is unchanged and only the ground, the type and the
-radii move.
+**Acceptance.** Re-capture `shot_02`, `shot_03`, `shot_09`, `shot_12`,
+`shot_17` as `*_up1.png`. The layout is unchanged and only the ground, the
+type and the radii move. `shot_09` is the telling one: the readiness
+cycle-time caution should become readable with no code touching that file.
 
 **Must not change.** Any layout, any string, any control.
 
@@ -153,7 +164,19 @@ components already in `ui/components/` are extended rather than duplicated.
   one good empty state the product already has, `ui/sim_op_list.rs:128-170`.
 - `CountPill` extended per spec §4.4.
 - `motion.rs` (new): the durations in spec §5 as named helpers over
-  `ctx.animate_bool_with_time`.
+  `ctx.animate_bool_with_time_and_easing` with `emath::easing::cubic_out`.
+  The plain `_with_time` call is hardcoded to linear (`DESIGN_SPEC.md`
+  §10.4).
+- `text.rs` (new): the three rungs egui cannot carry as global styles —
+  `Display`, `Subhead`, `Micro` — as `RichText` constructors, plus
+  `numeric()` for the monospace value run. `Micro` applies its 0.8 pt
+  tracking through `RichText::extra_letter_spacing`, and `Body` and
+  `Caption` apply line height through `RichText::line_height`; neither is
+  settable globally on 0.34 (§10.2, §10.8).
+- **The focus ring is a component-layer guarantee.** egui 0.34 draws no
+  focus indicator and renders a focused widget in its `active` visuals
+  (§10.5), so every interactive component in this module draws its own
+  2-point `ACCENT` ring outside its rect.
 
 **Sentry.** `crates/rs_cam_viz/tests/component_contracts_up2.rs`, a unit
 test with a headless `egui::Context`:
@@ -162,6 +185,8 @@ test with a headless `egui::Context`:
    the spec's word and role colour.
 2. `Button::Primary` and `Button::Default` produce different fills, and
    every variant reports a height of at least 26.
+2b. Every interactive component draws a focus ring when its `Response` has
+   focus, and the ring lies outside the widget rect.
 3. `EmptyState` renders at most one button.
 4. `KeyValueRow`'s trailing slot wraps instead of clipping at a panel width
    of 240.
@@ -201,8 +226,14 @@ package. UP2 builds the kit. UP3 onward installs it.
 - `app.rs:918-957`: toasts become the `Toast` component — shadow, left rule,
   slide and fade, and `request_repaint_after(16 ms)` while any toast lives.
 - All twelve `egui::Window` sites get `SURFACE_OVERLAY`, `SHADOW_OVERLAY`,
-  `RADIUS_MD`, a scrim and the §6 footer order. The scrim generalises the
-  one at `ui/optimize_project.rs:572-574`.
+  `RADIUS_MD` and the §6 footer order.
+- **The scrim is an operator decision and UP3 does not take it.**
+  `egui::Modal` exists in 0.34 and would give the backdrop for free, but it
+  also blocks input, which is a behaviour change and rule 1 forbids it. UP3
+  paints the scrim by hand, generalising
+  `ui/optimize_project.rs:566-580`, and writes a `STATUS.md` row proposing
+  `Modal` for the eight task windows and plain windows for Overlays,
+  Shortcuts and Load Warnings (`DESIGN_SPEC.md` §6, §10.1).
 - The Project Load Warnings window anchors to the viewport centre.
 
 **Sentry.** `crates/rs_cam_viz/tests/chrome_is_one_surface_up3.rs`:
@@ -345,6 +376,12 @@ once.
 **Goal.** The pre-cut screen uses the window it is given, and separates
 safety from procedure.
 
+**This package carries the largest share of the type migration.** Five files
+hold 322 of the 516 `.small()` sites and four of them are windows:
+`feeds_modal.rs` 98, `optimize_modal.rs` 59, `sim_diagnostics.rs` 56,
+`multitool_planner.rs` 56, `optimize_project.rs` 53. Size UP7 accordingly;
+the first draft of this plan put that weight on UP4, which holds 44.
+
 **Delivers.**
 
 - `app.rs:381-386`: the column widens from 560 to 880 points.
@@ -486,7 +523,9 @@ creates it.
 | Risk | Handling |
 |---|---|
 | The font licence review rejects Inter or JetBrains Mono. | `DESIGN_SPEC.md` §3.1 names the fallback. The scale is the load-bearing part. |
-| Raising the floor from 9 to 11 points overflows a dense panel. | UP4's sentry arm 3 measures clipping at 280 points. If a panel cannot hold its rows at 11 points, the panel's default width rises; no row is hidden and no row moves. |
+| Raising the floor from 9 to 11 points overflows a dense panel. | **Measured and much smaller than first thought.** Form row labels already render at 13 points, because `ValueRow` uses a plain label; the two inspector files hold 44 of the 516 small-text sites and the modals hold 322. UP4's sentry arm 3 still measures clipping at 280 points, and UP1 sets a global `Style::wrap_mode` so overflow wraps rather than clips. |
+| The font licence work or the weight mechanism stalls UP1. | Weight travels on `FontFamily::Name`, one named family per weight, each with the symbol fallbacks appended (`DESIGN_SPEC.md` §10.3). If fonts stall, ship UP1 without them: the `Small` slot moving to 11 is independent of the typeface and delivers most of the gain. |
+| The crate pins egui 0.34 while upstream is 0.36.2. | 0.35's `Classes` and `AtomLayout` are both squarely aimed at this kind of work, and 0.36 adds the global line spacing §10.2 says is missing. Building UP2 on 0.34 and upgrading later means rebuilding part of it. Operator decision; it touches `Cargo.toml`. |
 | A restyle silently changes behaviour. | Rule 1, plus `cargo test -p rs_cam_viz`, which already holds 48 sentries including the freshness, export-parity and command-surface families. |
 | The `Color32` budget invites a package to move a literal without thinking. | The budget is a ceiling, not a target. The per-package sentries assert the *shape*; the budget only stops regression. |
 | UP6 changes one operator-visible string. | Recorded in `STATUS.md` as a deliberate exception for the operator to confirm, and reflected in `FEATURE_CATALOG.md` in UP9. |

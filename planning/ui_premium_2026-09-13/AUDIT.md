@@ -20,6 +20,14 @@ Two kinds of evidence appear below. The words are exact.
 The window measured 1600 x 1000 logical points, except `shot_15` and
 `shot_16`, which measured 1400 x 900.
 
+`shot_17` and `shot_18` were added in a second pass, on a **different
+project**: a 2.5D pocket and profile job over `demo_pocket.svg`. It is a copy
+of the review programme's own seed
+(`planning/ui_review_2026-09-09/results/R03/scratch/`), taken into a scratch
+directory rather than opened in place, as that programme's rule 6 requires.
+Two findings below were **corrected** by that second project, and each says
+so. Auditing one project was a real weakness of the first pass.
+
 Two read-only source scouts produced independent inventories of the styling
 layer and the screen structure. Where their counts differ from a first pass,
 the number in this document is the one I re-measured myself. Three counts
@@ -46,6 +54,8 @@ sites. Each is flagged at its finding.
 | `shot_14_simulation_metrics.png` | Simulation timeline with the signal strip |
 | `shot_15_feeds_modal.png` | Feeds & Speeds modal at 1400 x 900 |
 | `shot_16_machine_panel_1400.png` | Setup workspace, Machine Setup panel |
+| `shot_17_pocket_2d_geometry.png` | Toolpaths, Geometry tab, a 2.5D Pocket |
+| `shot_18_stock_panel.png` | Setup workspace, Stock Setup panel |
 
 ### What this audit does not do
 
@@ -317,16 +327,28 @@ Five different treatments say five different things, and four of them are
 9 points. The card has no interior structure: no label column, no rule, no
 grouping. The eye has to read every line to find the one that matters.
 
-### D-12 The Machine panel is the only panel with a proper title
+### D-12 One panel of four has no title, and it is the busiest one
 
-I saw `shot_16_machine_panel_1400.png`. "Machine Setup" renders as an
-18-point heading with a horizontal rule below it. No other right-hand panel
-does this. The Toolpath inspector opens on `Name:` and a text box
-(`shot_03`), and the Simulation inspector opens on the word `Inspector`
-(`shot_12`).
+**Corrected by the second project.** The first pass claimed the Machine
+panel was the only titled panel. That was an artefact of the load-warnings
+window covering the left panel's own header in every wanaka capture.
 
-Three panels occupy the same rectangle in three workspaces and title
-themselves three ways.
+What is actually true. I saw `shot_18_stock_panel.png`: the left panel is
+headed `Setups` and the right panel `Stock Setup`, both 18-point with a rule
+below. I saw `shot_17_pocket_2d_geometry.png`: the left panel is headed
+`Operations`. I saw `shot_16_machine_panel_1400.png`: `Machine Setup`.
+
+So three of the four object panels are titled. **The toolpath inspector is
+not.** It opens on `Name:` and a text box (`shot_03`, `shot_17`), so the one
+panel an operator spends most of their time in is the one that does not say
+what it is. The Simulation inspector titles itself `Inspector`, which names
+the furniture rather than the subject.
+
+Two smaller inconsistencies are visible in `shot_18`. `Edit stock
+dimensions` and `Edit machine & kinematics` are blue link-like text inside
+their cards, not buttons, so one kind of action has two affordances. And
+`Auto-place keyed pair` is greyed with no reason given, which breaks the
+rule the Overlays panel keeps for 40 rows (D-38).
 
 ### D-13 Read-only and editable rows are indistinguishable until the eye reaches the value
 
@@ -359,6 +381,13 @@ Analysis.
 `Stepover` decides the finish of the part. `Mill Shallow` is a checkbox most
 operators never touch. They are drawn identically. Nothing on the panel is
 primary.
+
+**Scope, corrected by the second project.** This is a 3D-operation finding,
+not a general one. I saw `shot_17_pocket_2d_geometry.png`: the same panel on
+a 2.5D Pocket renders six rows — Pattern, Stepover, Depth, Depth/Pass,
+Climb, Finishing Passes — and reads perfectly well as a flat list. The
+hierarchy problem starts where the row count does, so the fix belongs to the
+3D operation forms and the ten-plus-row families, not to every panel.
 
 The IA programme's D3 ("decision-first forms") owns the question of which
 rows belong in a disclosure. This finding is narrower and is purely visual:
@@ -434,6 +463,18 @@ safety meanings elsewhere: red is a collision, amber is a caution, green is
 **A height plane is not a verdict.** Spending the verdict palette on an
 ordered set of five heights teaches the operator that colour does not mean
 anything in this product.
+
+### D-20a The height planes fill the viewport on a 2.5D job
+
+I saw `shot_17_pocket_2d_geometry.png`. Five translucent height planes cover
+the entire scene from edge to edge, in blue, teal, olive and brown. They are
+many times larger than the 100 mm part, and the part itself is a thin yellow
+outline over them. The toolpath, drawn in a cyan-to-green depth ramp, sits
+on an olive ground and loses most of its contrast.
+
+On the terrain project the same planes are a band across the top of the view
+(`shot_03`). On a small 2.5D part they are the whole picture. Whatever the
+planes are sized against, it is not the part.
 
 ### D-21 The Dressup tab is four rows in a 900-point panel
 
@@ -809,3 +850,4 @@ A redesign that breaks these would be a regression.
 | 10 | D-06, D-07, D-08, D-09 token drift | 242 distinct colour values, 12 spacing values, 6 radii, 2 backgrounds, 3 text greys, 4 header forms. |
 | 11 | D-34, D-35, D-36 windows | No window is modal in look or in behaviour. `egui::Modal` is never used. |
 | 12 | D-41, D-42 the footer | The status bar is copied three times and is absent from the fourth workspace. |
+| 13 | D-20a height planes | On a small 2.5D part the planes are the whole picture and the part is an outline over them. |
