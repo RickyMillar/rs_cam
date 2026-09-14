@@ -168,6 +168,31 @@ fn button_variants_differ_and_meet_the_height_floor_up2() {
 }
 
 #[test]
+fn a_full_width_button_paints_its_centered_label_once_ur6() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/components/button.rs");
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    let widget = source
+        .split_once("impl egui::Widget for Button")
+        .map_or("", |(_, widget)| widget);
+
+    assert_eq!(
+        widget.matches("ui.painter().text(").count(),
+        1,
+        "the shared button must paint its label once, not repaint it only on hover"
+    );
+    assert!(
+        widget.contains("egui::RichText::new(&self.text)")
+            && widget.contains("egui::Color32::TRANSPARENT"),
+        "egui's native button must retain its label for disabled state and WidgetInfo accessibility"
+    );
+    assert!(
+        widget.contains("response.rect.center()"),
+        "the shared label must be centered at rest as well as on hover"
+    );
+}
+
+#[test]
 fn the_primary_button_clears_the_contrast_floor_up2() {
     // Ruling R8. Computed here rather than asserted from a comment, because
     // the alternative (INK_95 on ACCENT) reads 2.32 and would have shipped.

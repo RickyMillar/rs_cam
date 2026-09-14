@@ -141,17 +141,33 @@ impl egui::Widget for Button {
         // Every button is at least ROW_ACTION tall. `Style::interact_size.y`
         // carries this globally since UP1, but a button that sets its own
         // min_size must not fall below it.
-        let min = egui::vec2(self.min_width.unwrap_or(0.0), tokens::ROW_ACTION);
+        let font_id = ui
+            .style()
+            .text_styles
+            .get(&egui::TextStyle::Button)
+            .cloned()
+            .unwrap_or_default();
+        let text_size = ui
+            .painter()
+            .layout_no_wrap(self.text.clone(), font_id.clone(), self.variant.text())
+            .size();
+        let padding = ui.spacing().button_padding;
+        let min = egui::vec2(
+            self.min_width
+                .unwrap_or(0.0)
+                .max(text_size.x + 2.0 * padding.x),
+            tokens::ROW_ACTION.max(text_size.y + 2.0 * padding.y),
+        );
 
-        let widget = egui::Button::new(
-            egui::RichText::new(&self.text)
-                .text_style(egui::TextStyle::Button)
-                .color(self.variant.text()),
-        )
-        .min_size(min)
-        .corner_radius(tokens::RADIUS_SM)
-        .stroke(self.variant.stroke())
-        .fill(self.variant.fill());
+        // Keep egui responsible for the button's frame, disabled state, and
+        // WidgetInfo label. The transparent native label reserves its space
+        // without competing with the one centered label painted below.
+        let widget =
+            egui::Button::new(egui::RichText::new(&self.text).color(egui::Color32::TRANSPARENT))
+                .min_size(min)
+                .corner_radius(tokens::RADIUS_SM)
+                .stroke(self.variant.stroke())
+                .fill(self.variant.fill());
 
         let response = ui.add_enabled(self.enabled, widget);
 
@@ -171,19 +187,20 @@ impl egui::Widget for Button {
                 egui::CornerRadius::from(tokens::RADIUS_SM),
                 fill,
             );
-            // Repaint the label over the new ground.
-            ui.painter().text(
-                response.rect.center(),
-                egui::Align2::CENTER_CENTER,
-                &self.text,
-                ui.style()
-                    .text_styles
-                    .get(&egui::TextStyle::Button)
-                    .cloned()
-                    .unwrap_or_default(),
-                self.variant.text(),
-            );
         }
+
+        let text_color = if self.enabled {
+            self.variant.text()
+        } else {
+            ui.visuals().widgets.noninteractive.fg_stroke.color
+        };
+        ui.painter().text(
+            response.rect.center(),
+            egui::Align2::CENTER_CENTER,
+            &self.text,
+            font_id,
+            text_color,
+        );
 
         response
     }
