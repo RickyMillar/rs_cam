@@ -2732,12 +2732,15 @@ impl super::RsCamApp {
 
     /// F3.1 — add a toolpath through the GUI's own path (PLAN.md §5).
     ///
-    /// Dispatches `AppEvent::AddToolpath`, the event
-    /// `ui/toolpath_panel.rs`'s Add menu item pushes, through
-    /// `AppController::handle_internal_event`, whose `AddToolpath` arm
-    /// calls `handle_add_toolpath`. None of that binding logic is
-    /// reimplemented here: if the GUI path and a direct core add ever
-    /// disagree, this tool shows the disagreement rather than hiding it.
+    /// Calls `AppController::handle_add_toolpath`, the handler the Add
+    /// menu item in `ui/toolpath_panel.rs` reaches through
+    /// `AppEvent::AddToolpath`. That event's arm in
+    /// `handle_internal_event` calls this handler and nothing else, so
+    /// the two routes run one body; WP28 reads the handler directly
+    /// because the arm returns `()` and the reply needs the command's
+    /// `Effects`. None of that binding logic is reimplemented here: if
+    /// the GUI path and a direct core add ever disagree, this tool shows
+    /// the disagreement rather than hiding it.
     ///
     /// The handler returns `()` and reports a refusal ONLY by pushing a
     /// toast, so the refusal text is read back off the notification stack
