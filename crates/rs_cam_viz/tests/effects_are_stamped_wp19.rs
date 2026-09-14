@@ -696,10 +696,20 @@ fn one_helper_stamps_stale_on_both_routes_h3() {
         !commands.contains("mcp_stamp_stale"),
         "H3: `app/mcp/commands.rs` still calls `mcp_stamp_stale`."
     );
+    // WP28 went one step further than H3 asked. `app/mcp.rs` used to
+    // hold `mcp_apply_stale`, which derived a stale set from a
+    // `MutationKind` tag and then stamped it through the one helper.
+    // Both remaining callers run a command, and the command routes
+    // (`apply_quietly`, the Feeds funnel) stamp `Effects::stale`
+    // themselves. So the file now stamps NOTHING, and that is the
+    // stronger reading of the same property: a second stamping site
+    // cannot come back on this surface without failing here.
     assert!(
-        mcp.contains("stale::stamp_stale"),
-        "H3: `app/mcp.rs` stamps no staleness through the one helper, \
-         so the MCP route leaves a dropped result reading green."
+        !mcp.contains("stamp_stale"),
+        "H3/WP28: `app/mcp.rs` stamps staleness of its own. Every write \
+         on this surface runs a command, and the command route stamps \
+         `Effects::stale` through `crate::state::stale::stamp_stale`. A \
+         stamp here is a second site by construction."
     );
     assert!(
         commands.contains("stale::stamp_stale"),

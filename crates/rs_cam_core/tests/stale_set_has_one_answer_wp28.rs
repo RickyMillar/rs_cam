@@ -200,6 +200,10 @@ fn no_production_source_names_the_second_staleness_model() {
 /// Each entry is the row's WIRE NAME, so this list compiles before and
 /// after the deletion.
 ///
+/// Each entry carries TWO things and nothing else: the registry row's own
+/// `gui` Skip text, quoted, and the one fact I measured. I measured no
+/// mechanism, so no entry states one.
+///
 /// MEASURED 2026-09-14: no `Command::<row>` literal stands in
 /// `crates/rs_cam_viz/src`, `crates/rs_cam_cli/src` or
 /// `crates/rs_cam_mcp/src` outside an in-`src` test module, for ANY of
@@ -209,58 +213,53 @@ fn no_production_source_names_the_second_staleness_model() {
 const ALL_SKIP_ALLOW_LIST: &[(&str, &str)] = &[
     (
         "set_toolpath_operation",
-        "WP15a row for `set_toolpath_operation`. No surface changes an \
-         operation kind in place. No production caller measured.",
+        "WP15a row. The registry's own GUI reason reads: no GUI control changes an operation kind in place. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
     (
         "invalidate_stock",
-        "WP15a row for `invalidate_stock`. `set_stock_config` writes and \
-         drops in one row. No production caller measured.",
+        "WP15a row. The registry's own GUI reason reads: no GUI control drops the results alone; set_stock_config writes and drops. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
     (
         "invalidate_machine",
-        "WP15a row for `invalidate_machine`. `set_machine_kinematics` \
-         writes and drops in one row. No production caller measured.",
+        "WP15a row. The registry's own GUI reason reads: no GUI control drops the simulation alone; set_machine writes and drops. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
     (
         "invalidate_tool",
-        "WP15a row for `invalidate_tool`. `set_tool_param` writes and \
-         drops in one row. No production caller measured.",
+        "WP15a row. The registry's own GUI reason reads: no GUI control drops a tool's results alone; replace_tool writes and drops. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
     (
         "invalidate_model",
-        "WP15a row for `invalidate_model`. The three model-refresh doors \
-         reach it through the viz controller, not through this row. No \
-         production caller measured.",
+        "WP15a row. The registry's own GUI reason reads: the three model refresh doors take adopt_model_geometry, which also drops. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
     (
         "invalidate_toolpath_inputs",
-        "WP15a row for `invalidate_toolpath_inputs`. Every writing row \
-         drops through the same core helper. No production caller \
-         measured.",
+        "WP15a row. The registry's own GUI reason reads: the feeds Apply funnel writes one replace_toolpath_config, which drops. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
     (
         "update_stock_from_bbox",
-        "WP15a row for `update_stock_from_bbox`. The import doors write \
-         the stock through `set_stock_config`. No production caller \
-         measured.",
+        "WP15a row. The registry's own GUI reason reads: no GUI control sizes the stock from a bounding box. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
     (
         "replace_tools",
-        "WP15a row for `replace_tools`. The tool library writes one tool \
-         at a time. No production caller measured.",
+        "WP15a row. The registry's own GUI reason reads: no GUI control replaces the whole tools list. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
     (
         "set_feeds_provenance",
-        "WP15a row for `set_feeds_provenance`. The Feeds funnel writes \
-         the provenance inside `ReplaceToolpathConfig`. No production \
-         caller measured.",
+        "WP15a row. The registry's own GUI reason reads: the optimizer carries the stamp in restore_toolpath_snapshot since WP8. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
     (
         "set_machine_ref",
-        "WP15a row for `set_machine_ref`. The reference is save \
-         metadata, written by the project loader. No production caller \
-         measured.",
+        "WP15a row. The registry's own GUI reason reads: no GUI control writes the library reference on its own. \
+         MEASURED 2026-09-14: no production `Command` literal.",
     ),
 ];
 
