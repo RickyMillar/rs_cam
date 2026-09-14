@@ -2,7 +2,7 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::state::Workspace;
 use crate::ui::automation;
-use crate::ui::components::{Role, StatusChip};
+use crate::ui::components::Role;
 use crate::ui::tokens;
 use crate::ui_command::{NoArgs, UiCommand};
 
@@ -162,31 +162,20 @@ fn workspace_tab(
         );
     }
 
-    // The rule is SAFETY KEEPS ITS VOICE (UP3, ruling R30). A collision
-    // count stays a verdict chip, because that is the one badge on this bar
-    // worth interrupting for.
-    //
-    // DC3, Pattern E and ruling R30. Every other badge was still a WORD in
-    // the strip. UP3 had already quietened it from a verdict chip to a
-    // caption, but "6 pending" and "6 uncomputed" still took a tab's worth
-    // of space, and they sat BETWEEN two tabs, so the count belonged to
-    // neither. A badge now sits ON its tab as a 6-point dot in the top-right
-    // corner, and the count arrives on hover. The tab's own width therefore
-    // does not change with its badge, which is what lets the strip read as
-    // one strip.
+    // DC3, Pattern E. A badge sits ON its tab as a 6-point dot in the
+    // top-right corner, and its count arrives on hover. That includes
+    // Danger: safety remains legible in the Simulation inspector, Readiness
+    // banner, status bar and simulation card without turning this navigation
+    // strip into a second status surface. The tab's width therefore does not
+    // change with its badge, which is what lets the bar read as one strip.
     if let Some((badge_text, badge_role)) = badge {
-        if badge_role == Role::Danger {
-            ui.add_space(tokens::SPACE_1);
-            ui.add(StatusChip::new(&badge_text, badge_role));
-        } else {
-            let centre = egui::pos2(
-                rect.max.x - tokens::SPACE_2 - BADGE_DOT_RADIUS,
-                rect.min.y + tokens::SPACE_2 + BADGE_DOT_RADIUS,
-            );
-            ui.painter()
-                .circle_filled(centre, BADGE_DOT_RADIUS, badge_role.text());
-            let _ = response.on_hover_text(badge_text.trim());
-        }
+        let centre = egui::pos2(
+            rect.max.x - tokens::SPACE_2 - BADGE_DOT_RADIUS,
+            rect.min.y + tokens::SPACE_2 + BADGE_DOT_RADIUS,
+        );
+        ui.painter()
+            .circle_filled(centre, BADGE_DOT_RADIUS, badge_role.text());
+        let _ = response.on_hover_text(badge_text.trim());
     }
 
     ui.add_space(tokens::SPACE_1);
@@ -212,6 +201,14 @@ pub(crate) fn toolpath_badge(state: &AppState) -> Option<(String, Role)> {
     }
 }
 
+/// Shared collision badge text for the Simulation and Readiness tabs.
+///
+/// The dot itself is intentionally compact; this tooltip keeps its safety
+/// count available without creating another status chip in the tab strip.
+fn collision_badge(collision_count: usize) -> (String, Role) {
+    (format!("{collision_count} safety"), Role::Danger)
+}
+
 /// Badge for the Simulation tab: stale, collisions, or empty.
 fn simulation_badge(state: &AppState) -> Option<(String, Role)> {
     let sim = &state.simulation;
@@ -224,7 +221,7 @@ fn simulation_badge(state: &AppState) -> Option<(String, Role)> {
     // the yellow "stale" warning (SHE-003 — mirror readiness_badge's order).
     let collision_count = sim.checks.total_collision_count();
     if collision_count > 0 {
-        return Some((format!(" {collision_count}!"), Role::Danger));
+        return Some(collision_badge(collision_count));
     }
 
     if sim.is_stale(state.gui.edit_counter) {
@@ -258,7 +255,7 @@ pub(crate) fn readiness_badge(state: &AppState) -> Option<(String, Role)> {
     // the Toolpaths chip — one of the two is currently showing a wrong
     // answer rather than no answer.
     if collisions > 0 {
-        Some((format!("{collisions} collision(s)"), Role::Danger))
+        Some(collision_badge(collisions))
     } else if stale_ops > 0 {
         Some((format!("{stale_ops} stale"), Role::Caution))
     } else if uncomputed > 0 {

@@ -119,27 +119,22 @@ fn a_workspace_tab_is_on_the_token_scale_up3() {
 }
 
 #[test]
-fn a_workspace_badge_is_a_chip_not_a_loose_label_up3() {
+fn a_workspace_badge_is_a_dot_not_a_pseudo_tab_up3() {
     let root = src_root();
     let src = std::fs::read_to_string(root.join("ui/workspace_bar.rs")).unwrap();
+    // UR2 applies DC3's compact treatment to Danger too: safety has four
+    // dedicated surfaces, while the tab strip remains navigation only.
     assert!(
-        src.contains("StatusChip"),
-        "a SAFETY badge on the tab bar must use the component set"
+        !src.contains("StatusChip"),
+        "workspace badges must not render as external pseudo-tabs"
     );
-    // Operator, 2026-09-14: the chipped badges were "way too in your face".
-    // §4.4 agrees — a count on a tab is an OBSERVATION and must not wear the
-    // verdict treatment. Only Danger keeps the chip.
-    //
-    // UP3 quietened the rest to a caption. DC3 (ruling R30) took the next
-    // step and removed the WORD from the strip: a non-Danger badge is now a
-    // dot on its own tab, with the count on hover. This arm still owns the
-    // Danger half of the split, which both packages share.
-    // `the_workspace_bar_is_a_strip_dc3.rs` owns the other half.
     assert!(
-        src.contains("badge_role == Role::Danger"),
-        "only a DANGER badge may render as a verdict chip. Every other count \
-         is a quiet indicator, because a tab strip is a place you navigate \
-         from, not a place that shouts."
+        src.contains("circle_filled"),
+        "every workspace badge must use the shared compact dot treatment"
+    );
+    assert!(
+        src.contains("on_hover_text"),
+        "the compact badge must keep its count accessible on hover"
     );
 }
 

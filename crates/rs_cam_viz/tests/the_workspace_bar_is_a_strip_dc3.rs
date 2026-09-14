@@ -17,8 +17,8 @@
 //!    from a verdict chip to a caption, which fixed the shouting but not the
 //!    space: `6 pending` still rendered BETWEEN Toolpaths and Simulation, so
 //!    it belonged to neither tab, and it changed the tab slot's width. Ruling
-//!    R30: a Danger badge keeps its chip, every other badge becomes a dot on
-//!    its own tab with the count on hover.
+//!    R30 initially kept a Danger chip, but UR2 applied the compact treatment
+//!    to every badge: each is a dot on its own tab with its count on hover.
 //!
 //! A third element went with them: the right-hand hint strip, which named the
 //! workspace the operator had just chosen (Pattern C).
@@ -33,7 +33,7 @@
 //! - one hairline is reserved BEFORE the tabs draw, so the active tab's
 //!   accent paints over it — that paint ORDER is the whole fix, and it is
 //!   invisible in a still image that renders correctly by luck;
-//! - the non-Danger arm adds no text to the strip;
+//! - no badge arm adds text or a chip to the strip;
 //! - `hint()` is gone from the surface.
 //!
 //! # This is a source scan, and the reason is visibility
@@ -161,37 +161,44 @@ fn the_bar_paints_one_hairline_at_the_seam() {
     );
 }
 
-// ── arm 2 — a non-Danger badge adds no word to the strip ─────────────────
+// ── arm 2 — every badge is a dot, never a chip ───────────────────────────
 
-/// Ruling R30. Only a Danger badge renders as a chip. Every other badge is a
-/// dot on its own tab, and the count arrives on hover.
+/// UR2. A navigation strip does not need a pseudo-tab for safety: every
+/// badge is the same compact dot and its count arrives on hover.
 ///
-/// The scan is bounded to the badge block — from the Danger test to the
-/// function's return — so a label drawn anywhere else in the file, such as
-/// the Optimize progress row, does not fail this arm.
+/// The scan is bounded to the badge block, so a label drawn anywhere else in
+/// the file, such as the Optimize progress row, does not fail this arm.
 #[test]
-fn a_non_danger_badge_adds_no_label_to_the_strip() {
+fn every_badge_is_a_dot_with_an_accessible_count() {
     let src = strip_comments(SRC);
-    let block = between(&src, "if badge_role == Role::Danger", "\n}");
+    let block = between(
+        &src,
+        "if let Some((badge_text, badge_role)) = badge {",
+        "\n    ui.add_space",
+    );
 
     assert!(
-        block.contains("StatusChip::new"),
-        "safety keeps its voice: a Danger badge is still a verdict chip"
+        !block.contains("StatusChip"),
+        "a Danger badge must not become an external pseudo-tab. Every badge \
+         is a compact dot in its Role colour."
     );
     assert!(
         !block.contains("ui.label("),
-        "a non-Danger badge must add NO text to the strip. `6 pending` \
-         rendered between two tabs and belonged to neither, and it changed \
-         the tab slot's width with the count."
+        "a badge must add NO text to the strip. `6 pending` rendered between \
+         two tabs and belonged to neither, and it changed the tab slot's \
+         width with the count."
     );
     assert!(
         !block.contains("text::caption"),
-        "UP3's caption badge is what DC3 removed. The count goes on hover, \
-         not into the strip."
+        "the count goes on hover, not into the strip."
     );
     assert!(
         block.contains("circle_filled"),
-        "the badge is a dot painted inside the tab's own rect"
+        "every badge is a dot painted inside its tab's own rect"
+    );
+    assert!(
+        block.contains("BADGE_DOT_RADIUS"),
+        "the badge dot must keep the shared compact six-point geometry"
     );
     assert!(
         block.contains("badge_role.text()"),
@@ -303,7 +310,11 @@ fn the_scans_are_not_vacuous() {
     // 2. The slices must NARROW. A `between` that returned the whole file
     //    would make arm 2's negative scans meaningless, because the Optimize
     //    row does call `ui.label`.
-    let block = between(&src, "if badge_role == Role::Danger", "\n}");
+    let block = between(
+        &src,
+        "if let Some((badge_text, badge_role)) = badge {",
+        "\n    ui.add_space",
+    );
     assert!(
         !block.is_empty() && block.len() < src.len(),
         "the badge block must be a real slice of the file, not the file"
