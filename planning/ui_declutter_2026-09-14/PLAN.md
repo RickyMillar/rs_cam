@@ -462,6 +462,14 @@ per-operation modal was shut. At HEAD:
 the batch ran over zero toolpaths and reported "selected toolpaths" — a
 write that succeeds and writes nothing.
 
+**Attribution, because the two halves are different work.** DC5a found the
+CONSUMER: `apply_feeds_project_selected` at `controller/events/mod.rs:1344`,
+reading `modal.project_selected`, missed by the handler-list census and
+caught by grepping the field. The lead added the MECHANISM below — why
+`unwrap_or_default()` makes it a general hazard rather than one broken
+button. The first half is the defect; the second is the part that
+generalises to every collection in the crate.
+
 **This is the fifth consumer of the modal's project state, and it is the
 one that WRITES A RECIPE.** The other four — sort, row toggle, scatter,
 select-all — are view controls; a dead view control annoys the operator. A
