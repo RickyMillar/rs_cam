@@ -1,5 +1,5 @@
 use super::AppEvent;
-use super::components::{CountPill, FreshnessGate};
+use super::components::{CountPill, FreshnessGate, NotMeasured};
 use super::readiness::{self, CycleTimeBasisExt};
 use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
@@ -69,14 +69,34 @@ pub fn draw(
     // per its own draw.
     let load_report = sim.cached_load_report(session, gui.edit_counter);
 
+    // DC6 — ONE bar. The transport controls and the project chips used to sit
+    // as two loose rows at the bottom left, beside nothing they drive. They
+    // are one frame now, at the head of the panel that holds the timeline
+    // they scrub and directly under the viewport they play. Every transport
+    // command keeps its route; only the two containers became one.
+    egui::Frame::default()
+        .fill(crate::ui::tokens::SURFACE_BASE)
+        .corner_radius(crate::ui::tokens::RADIUS_SM)
+        .inner_margin(egui::Margin::symmetric(
+            crate::ui::tokens::SPACE_3 as i8,
+            crate::ui::tokens::SPACE_2 as i8,
+        ))
+        .show(ui, |ui| {
+            ui.set_min_height(crate::ui::tokens::ROW_ACTION);
+            ui.horizontal_wrapped(|ui| {
+                draw_transport_and_scrubber(ui, sim, session, gui, events);
+                ui.separator();
+                draw_verdict_hud(ui, sim, gui, max_feed, &load_report, events);
+            });
+        });
+    ui.add_space(crate::ui::tokens::SPACE_2);
+
     // Boundary timeline always shows the whole project — user wants the
     // full picture (Pin Drill, Back Rough, ...) at a glance regardless
     // of which TP is focused below. The signal-spine graphs scope to
     // the focused TP independently. The two widgets use different X
     // coordinate spaces; markers on each are accurate within their own
     // widget but won't visually align with the other.
-    draw_transport_and_scrubber(ui, sim, session, gui, events);
-    draw_verdict_hud(ui, sim, gui, max_feed, &load_report, events);
     draw_boundary_timeline(
         ui,
         sim,
@@ -160,90 +180,87 @@ fn draw_verdict_hud(
         .filter(|rt| rt.debug_trace.is_some() || rt.semantic_trace.is_some())
         .count();
 
-    egui::Frame::default()
-        .fill(crate::ui::tokens::SURFACE_BASE)
-        .inner_margin(egui::Margin::symmetric(6, 4))
-        .corner_radius(4)
-        .show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                // Load buckets are verdicts (pass/fail of a modeled limit);
-                // collisions/hotspots/traces are observations (tallies). One
-                // CountPill renderer, the same summary() producer the Inspector
-                // reads — the two rollups cannot diverge (W0.4 + P4-001/002).
-                ui.add(
-                    CountPill::verdict("\u{2713} load", ok)
-                        .denom(total_tp)
-                        .color(crate::ui::tokens::OK)
-                        .hover("Toolpaths within modeled load limits (of total modeled)."),
-                );
-                // Exceeds is a navigation control when any TP exceeds: click
-                // seeks to the first exceedance marker (TIM-005).
-                let exceeds_pill = CountPill::verdict("\u{2715} exceeds", bad)
-                    .denom(total_tp)
-                    .color(crate::ui::tokens::DANGER)
-                    .hover("Toolpaths exceeding a modeled load limit.");
-                if let Some(move_idx) = first_exceed_move.filter(|_| bad > 0) {
-                    if ui.add(exceeds_pill.actionable()).clicked() {
-                        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                            move_index: move_idx,
-                        })));
-                    }
-                } else {
-                    // Self-hide at zero like the Inspector copy (V4) — the
-                    // 2026-06-12 sweep caught "✗ exceeds 0/7" still shipping
-                    // in the HUD while the Inspector hid it.
-                    ui.add(exceeds_pill.hide_when_zero());
-                }
-                ui.add(
-                    CountPill::verdict("\u{26A0} unmodeled", unmodeled)
-                        .denom(total_tp)
-                        // UP4: an ABSTENTION, not a caution — the gate
-                        // could not model these toolpaths, so there is no
-                        // verdict to show (`DESIGN_SPEC.md` §2.6).
-                        .color(crate::ui::tokens::UNKNOWN)
-                        .hide_when_zero()
-                        .hover(
-                            "Toolpaths the gate could not model (drill cycles, no vendor data, \
-                             etc.).",
-                        ),
-                );
-                // Collisions is likewise a navigation control: click seeks
-                // to the first collision (TIM-005).
-                // Zero-count chips self-hide (density pass V4) — at zero the
-                // within-pill plus the readiness checks carry the all-clear.
-                let collisions_pill = CountPill::observation("collisions", collision_count)
-                    .color(crate::ui::tokens::DANGER)
-                    .hide_when_zero()
-                    .hover("Rapid/holder collisions detected during simulation.");
-                if let Some(move_idx) = first_collision_move.filter(|_| collision_count > 0) {
-                    if ui.add(collisions_pill.actionable()).clicked() {
-                        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                            move_index: move_idx,
-                        })));
-                    }
-                } else {
-                    ui.add(collisions_pill);
-                }
-                ui.add(
-                    CountPill::observation("hotspots", hotspot_count)
-                        .color(crate::ui::tokens::CAUTION)
-                        .hide_when_zero()
-                        .hover(
-                            "Sustained high-load clusters — triage in the Inspector's \
-                             Top hotspots list.",
-                        ),
-                );
-                // Generator traces are debug-grade provenance: only pill them
-                // when at least one exists (density pass 2026-06-11).
-                if trace_count > 0 {
-                    ui.add(
-                        CountPill::observation("traces", trace_count)
-                            .color(crate::ui::tokens::INFO)
-                            .hover("Generator traces recorded for inspection."),
-                    );
-                }
-            });
-        });
+    // DC6 — the chips carry no frame of their own any more. The playback bar
+    // in `draw` is the one container, so a box inside a box no longer reads as
+    // a second, separate strip.
+    ui.horizontal_wrapped(|ui| {
+        // Load buckets are verdicts (pass/fail of a modeled limit);
+        // collisions/hotspots/traces are observations (tallies). One
+        // CountPill renderer, the same summary() producer the Inspector
+        // reads — the two rollups cannot diverge (W0.4 + P4-001/002).
+        ui.add(
+            CountPill::verdict("\u{2713} load", ok)
+                .denom(total_tp)
+                .color(crate::ui::tokens::OK)
+                .hover("Toolpaths within modeled load limits (of total modeled)."),
+        );
+        // Exceeds is a navigation control when any TP exceeds: click
+        // seeks to the first exceedance marker (TIM-005).
+        let exceeds_pill = CountPill::verdict("\u{2715} exceeds", bad)
+            .denom(total_tp)
+            .color(crate::ui::tokens::DANGER)
+            .hover("Toolpaths exceeding a modeled load limit.");
+        if let Some(move_idx) = first_exceed_move.filter(|_| bad > 0) {
+            if ui.add(exceeds_pill.actionable()).clicked() {
+                events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                    move_index: move_idx,
+                })));
+            }
+        } else {
+            // Self-hide at zero like the Inspector copy (V4) — the
+            // 2026-06-12 sweep caught "✗ exceeds 0/7" still shipping
+            // in the HUD while the Inspector hid it.
+            ui.add(exceeds_pill.hide_when_zero());
+        }
+        ui.add(
+            CountPill::verdict("\u{26A0} unmodeled", unmodeled)
+                .denom(total_tp)
+                // UP4: an ABSTENTION, not a caution — the gate
+                // could not model these toolpaths, so there is no
+                // verdict to show (`DESIGN_SPEC.md` §2.6).
+                .color(crate::ui::tokens::UNKNOWN)
+                .hide_when_zero()
+                .hover(
+                    "Toolpaths the gate could not model (drill cycles, no vendor data, \
+                     etc.).",
+                ),
+        );
+        // Collisions is likewise a navigation control: click seeks
+        // to the first collision (TIM-005).
+        // Zero-count chips self-hide (density pass V4) — at zero the
+        // within-pill plus the readiness checks carry the all-clear.
+        let collisions_pill = CountPill::observation("collisions", collision_count)
+            .color(crate::ui::tokens::DANGER)
+            .hide_when_zero()
+            .hover("Rapid/holder collisions detected during simulation.");
+        if let Some(move_idx) = first_collision_move.filter(|_| collision_count > 0) {
+            if ui.add(collisions_pill.actionable()).clicked() {
+                events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                    move_index: move_idx,
+                })));
+            }
+        } else {
+            ui.add(collisions_pill);
+        }
+        ui.add(
+            CountPill::observation("hotspots", hotspot_count)
+                .color(crate::ui::tokens::CAUTION)
+                .hide_when_zero()
+                .hover(
+                    "Sustained high-load clusters — triage in the Inspector's \
+                     Top hotspots list.",
+                ),
+        );
+        // Generator traces are debug-grade provenance: only pill them
+        // when at least one exists (density pass 2026-06-11).
+        if trace_count > 0 {
+            ui.add(
+                CountPill::observation("traces", trace_count)
+                    .color(crate::ui::tokens::INFO)
+                    .hover("Generator traces recorded for inspection."),
+            );
+        }
+    });
 }
 
 fn draw_signal_spine(
@@ -1055,52 +1072,59 @@ fn desaturate(c: egui::Color32) -> egui::Color32 {
     egui::Color32::from_rgb(mix(c.r()), mix(c.g()), mix(c.b())).linear_multiply(0.7)
 }
 
-/// TIM-003 — the signal spine's empty state. Instead of silently early-
-/// returning into a void, paint a muted placeholder where the spine would be
-/// and surface the capture toggle from where it's missing: "Enable & re-run"
-/// flips metric capture on and re-runs, or "Re-run" when capture is already on
-/// but this run produced no cutting samples.
+/// TIM-003 — the signal spine's empty state.
+///
+/// The spine does not early-return into a void. It paints a placeholder where
+/// the spine would be, and it carries the capture control the operator needs.
+/// "Enable & re-run" turns metric capture on and runs the simulation again.
+/// "Re-run" runs it again when capture is already on but the run produced no
+/// cutting samples.
 fn draw_spine_empty_placeholder(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     events: &mut Vec<AppEvent>,
 ) {
-    ui.add_space(4.0);
+    // DC6 / Rule C — a state plus an action, not a sentence. The strip used
+    // to read "No cutting metrics captured — enable capture and re-run.", in
+    // italics, which narrates the remedy instead of offering it. It is the
+    // abstention mark now (`NotMeasured`, an em dash in UNKNOWN, reason on
+    // hover) beside the one button that fixes it. The two arms differ only in
+    // WHY the spine has nothing, and the reason says which.
+    let (reason, action, action_hover) = if sim.metric_options.enabled {
+        (
+            "Cutting-metric capture is on, and this run produced no cutting samples.",
+            "Re-run",
+            "Re-run the simulation to populate the signal spine.",
+        )
+    } else {
+        (
+            "Cutting-metric capture is off, so this run measured nothing.",
+            "Enable & re-run",
+            "Turn on cutting-metric capture and re-run the simulation.",
+        )
+    };
+    ui.add_space(crate::ui::tokens::SPACE_2);
     egui::Frame::default()
         .fill(crate::ui::tokens::SURFACE_BASE)
-        .inner_margin(egui::Margin::symmetric(8, 10))
-        .corner_radius(4)
+        .inner_margin(egui::Margin::symmetric(
+            crate::ui::tokens::SPACE_3 as i8,
+            crate::ui::tokens::SPACE_3 as i8,
+        ))
+        .corner_radius(crate::ui::tokens::RADIUS_SM)
         .show(ui, |ui| {
-            if sim.metric_options.enabled {
+            ui.set_min_height(crate::ui::tokens::ROW_ACTION);
+            ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("No cutting metrics for this run.")
+                    egui::RichText::new("Cut metrics")
                         .small()
-                        .italics()
-                        .color(super::theme::TEXT_MUTED),
+                        .color(crate::ui::tokens::TEXT_MUTED),
                 );
-                if ui
-                    .button("Re-run")
-                    .on_hover_text("Re-run the simulation to populate the signal spine.")
-                    .clicked()
-                {
-                    events.push(AppEvent::RunSimulation);
-                }
-            } else {
-                ui.label(
-                    egui::RichText::new("No cutting metrics captured — enable capture and re-run.")
-                        .small()
-                        .italics()
-                        .color(super::theme::TEXT_MUTED),
-                );
-                if ui
-                    .button("Enable & re-run")
-                    .on_hover_text("Turn on cutting-metric capture and re-run the simulation.")
-                    .clicked()
-                {
+                ui.add(NotMeasured::new().reason(reason));
+                if ui.button(action).on_hover_text(action_hover).clicked() {
                     sim.metric_options.enabled = true;
                     events.push(AppEvent::RunSimulation);
                 }
-            }
+            });
         });
 }
 

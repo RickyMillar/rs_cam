@@ -6,8 +6,26 @@ use crate::ui::components::{Role, StatusChip};
 use crate::ui::tokens;
 use crate::ui_command::{NoArgs, UiCommand};
 
+/// The badge dot's radius. Three quarters of the grid step puts the dot at 6
+/// points across, which keeps it on the token scale like every other mark.
+const BADGE_DOT_RADIUS: f32 = tokens::GRID * 0.75;
+
 /// Draw the workspace switcher bar. Sits below the menu bar, always visible.
+///
+/// DC3, Pattern E. A tab strip is a STRIP. One hairline runs the full width
+/// of the bar along the seam the tabs share with the panel below, and the
+/// active tab breaks that hairline with its own `ACCENT` segment. The result
+/// is a continuous baseline with one tab joined through it. Before DC3 each
+/// tab drew alone, so the tabs read as pills that float above the panel.
+///
+/// The hairline reserves its shape index HERE, before the first tab draws,
+/// because the paint order decides which line wins at the seam. The seam is
+/// only known after the row is laid out, so the shape is set at the end.
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    let seam = ui.painter().add(egui::Shape::Noop);
+    let bar = ui.max_rect();
+    let mut seam_y = None;
+
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
 
@@ -25,17 +43,28 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 Workspace::Simulation => simulation_badge(state),
                 Workspace::Readiness => readiness_badge(state),
             };
-            workspace_tab(ui, target.label(), target, current, badge, events);
+            // Every tab shares one baseline, so the last one answers for
+            // all four.
+            let bottom = workspace_tab(ui, target.label(), target, current, badge, events);
+            seam_y = Some(bottom);
         }
 
-        // Right-aligned workspace context info
+        // Right-aligned workspace context info. DC3 deleted the hint strip
+        // that sat here (Pattern C): it explained the workspace the operator
+        // had already chosen, and nobody reads it twice. The Optimize row
+        // stays, because a run in flight is real state and this bar is the
+        // one surface that reports it in every workspace.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = tokens::SPACE_3;
             optimize_progress_row(ui, state, events);
-            // Show current workspace hint
-            ui.label(crate::ui::components::text::caption(current.hint()));
         });
     });
+
+    if let Some(y) = seam_y {
+        let stroke = egui::Stroke::new(1.0_f32, tokens::HAIRLINE);
+        ui.painter()
+            .set(seam, egui::Shape::hline(bar.x_range(), y, stroke));
+    }
 }
 
 /// The Optimize progress row (WP24), or nothing when no run is in flight.
@@ -77,6 +106,8 @@ fn optimize_progress_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<A
     ui.separator();
 }
 
+/// Draw one tab. Returns the y of the seam the tab shares with the panel
+/// below, so [`draw`] runs ONE hairline across the whole bar at that line.
 fn workspace_tab(
     ui: &mut egui::Ui,
     label: &str,
@@ -84,7 +115,7 @@ fn workspace_tab(
     current: Workspace,
     badge: Option<(String, Role)>,
     events: &mut Vec<AppEvent>,
-) {
+) -> f32 {
     let is_active = current == target;
 
     // UP3. The active tab used to carry a private violet-blue that matched
@@ -113,14 +144,15 @@ fn workspace_tab(
     .min_size(egui::vec2(90.0, tokens::ROW_ACTION));
 
     let response = ui.add(button);
+    let rect = response.rect;
     if response.clicked() && !is_active {
         events.push(AppEvent::Ui(UiCommand::SwitchWorkspace(target)));
     }
 
     // The active indicator, sitting on the seam the tab shares with the
-    // panel below it.
+    // panel below it. DC3: it paints AFTER the bar's hairline, so it breaks
+    // that line and joins this one tab to the panel.
     if is_active {
-        let rect = response.rect;
         ui.painter().line_segment(
             [
                 egui::pos2(rect.min.x, rect.max.y),
@@ -130,30 +162,35 @@ fn workspace_tab(
         );
     }
 
-    // UP3. The badge was a bare `ui.label` floating beside the tab, which is
-    // why "6 pending" read as debris rather than as a count. It is a pill
-    // now, so a count on a tab and a count in a panel are one thing.
-    // A count on a tab is an OBSERVATION, not a verdict (§4.4, ruling R15),
-    // and UP3 got this wrong: it used the verdict chip, so "6 PENDING" and
-    // "6 UNCOMPUTED" arrived tinted, bordered, glyphed and upper-cased on a
-    // bar that is meant to be chrome. The operator's words were "way too in
-    // your face", and they were right — a tab strip is a place you navigate
-    // from, not a place that shouts.
+    // The rule is SAFETY KEEPS ITS VOICE (UP3, ruling R30). A collision
+    // count stays a verdict chip, because that is the one badge on this bar
+    // worth interrupting for.
     //
-    // The rule is SAFETY KEEPS ITS VOICE. A collision count stays a verdict
-    // chip, because that is the one badge on this bar worth interrupting
-    // for. Everything else is a quiet tally: no fill, no border, no glyph,
-    // muted text at caption size.
+    // DC3, Pattern E and ruling R30. Every other badge was still a WORD in
+    // the strip. UP3 had already quietened it from a verdict chip to a
+    // caption, but "6 pending" and "6 uncomputed" still took a tab's worth
+    // of space, and they sat BETWEEN two tabs, so the count belonged to
+    // neither. A badge now sits ON its tab as a 6-point dot in the top-right
+    // corner, and the count arrives on hover. The tab's own width therefore
+    // does not change with its badge, which is what lets the strip read as
+    // one strip.
     if let Some((badge_text, badge_role)) = badge {
-        ui.add_space(tokens::SPACE_1);
         if badge_role == Role::Danger {
+            ui.add_space(tokens::SPACE_1);
             ui.add(StatusChip::new(&badge_text, badge_role));
         } else {
-            ui.label(crate::ui::components::text::caption(badge_text.trim()));
+            let centre = egui::pos2(
+                rect.max.x - tokens::SPACE_2 - BADGE_DOT_RADIUS,
+                rect.min.y + tokens::SPACE_2 + BADGE_DOT_RADIUS,
+            );
+            ui.painter()
+                .circle_filled(centre, BADGE_DOT_RADIUS, badge_role.text());
+            let _ = response.on_hover_text(badge_text.trim());
         }
     }
 
     ui.add_space(tokens::SPACE_1);
+    rect.max.y
 }
 
 /// Badge for the Toolpaths tab: stale operations, else pending ones.

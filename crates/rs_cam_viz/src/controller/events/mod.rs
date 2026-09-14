@@ -22,6 +22,24 @@ use crate::ui_command::{
 
 use super::AppController;
 
+/// The ids of every ENABLED toolpath, in project order.
+///
+/// Two project-scope feeds handlers need this set: the rollup's seed and its
+/// `Select all`. Before DC5a the same expression was written out twice — once
+/// in `open_feeds_modal` as the seed, once in the select-all arm — so the two
+/// could drift. One expansion now serves both.
+fn enabled_toolpath_ids(
+    state: &crate::state::AppState,
+) -> std::collections::BTreeSet<rs_cam_core::ToolpathId> {
+    state
+        .session
+        .toolpath_configs()
+        .iter()
+        .filter(|tc| tc.enabled)
+        .map(|tc| tc.id)
+        .collect()
+}
+
 impl<B: ComputeBackend> AppController<B> {
     /// Run one command from an event arm, and stamp what it dropped.
     ///
@@ -546,9 +564,17 @@ impl<B: ComputeBackend> AppController<B> {
                 UiCommand::CloseFeedsModal(NoArgs) => {
                     self.state.feeds_modal = None;
                 }
-                UiCommand::SetFeedsModalMode(mode) => {
-                    if let Some(modal) = self.state.feeds_modal.as_mut() {
-                        modal.mode = mode;
+                UiCommand::SetProjectFeedsOpen(open) => {
+                    self.state.project_feeds.open = open;
+                    if open {
+                        // THE SEED (DC5a). Before the split this ran as a
+                        // side effect of opening the per-operation feeds
+                        // modal. It belongs to the rollup, so it runs at the
+                        // rollup's own door. An unseeded rollup opens with
+                        // every row unticked, which reads as "nothing to
+                        // report" on a project-scope surface.
+                        self.state.project_feeds.selected = enabled_toolpath_ids(&self.state);
+                        self.state.project_feeds.show_scatter = true;
                     }
                 }
                 UiCommand::ToggleFeedsProvenance(NoArgs) => {
@@ -557,9 +583,7 @@ impl<B: ComputeBackend> AppController<B> {
                     }
                 }
                 UiCommand::SetFeedsProjectSort(sort) => {
-                    if let Some(modal) = self.state.feeds_modal.as_mut() {
-                        modal.project_sort = sort;
-                    }
+                    self.state.project_feeds.sort = sort;
                 }
                 UiCommand::SetFeedsExplore(explore) => {
                     if let Some(modal) = self.state.feeds_modal.as_mut() {
@@ -567,31 +591,18 @@ impl<B: ComputeBackend> AppController<B> {
                     }
                 }
                 UiCommand::ToggleFeedsProjectRow(id) => {
-                    if let Some(modal) = self.state.feeds_modal.as_mut()
-                        && !modal.project_selected.insert(id)
-                    {
-                        modal.project_selected.remove(&id);
+                    if !self.state.project_feeds.selected.insert(id) {
+                        self.state.project_feeds.selected.remove(&id);
                     }
                 }
                 UiCommand::SetFeedsProjectScatter(show) => {
-                    if let Some(modal) = self.state.feeds_modal.as_mut() {
-                        modal.project_show_scatter = show;
-                    }
+                    self.state.project_feeds.show_scatter = show;
                 }
                 UiCommand::SetFeedsProjectSelectAll(select_all) => {
-                    if let Some(modal) = self.state.feeds_modal.as_mut() {
-                        if select_all {
-                            modal.project_selected = self
-                                .state
-                                .session
-                                .toolpath_configs()
-                                .iter()
-                                .filter(|tc| tc.enabled)
-                                .map(|tc| tc.id)
-                                .collect();
-                        } else {
-                            modal.project_selected.clear();
-                        }
+                    if select_all {
+                        self.state.project_feeds.selected = enabled_toolpath_ids(&self.state);
+                    } else {
+                        self.state.project_feeds.selected.clear();
                     }
                 }
                 UiCommand::ExportGcode(NoArgs) => {}
@@ -1093,34 +1104,16 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         }
-        let existing_mode = self
-            .state
-            .feeds_modal
-            .as_ref()
-            .map(|m| m.mode)
-            .unwrap_or(crate::state::FeedsModalMode::Toolpath);
         let existing_provenance = self
             .state
             .feeds_modal
             .as_ref()
             .is_some_and(|m| m.show_provenance);
-        let project_selected = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .filter(|tc| tc.enabled)
-            .map(|tc| tc.id)
-            .collect();
         self.state.close_modals_for_exclusivity();
         self.state.feeds_modal = Some(crate::state::FeedsModalState {
             toolpath_id,
-            mode: existing_mode,
             explore: None,
             show_provenance: existing_provenance,
-            project_sort: crate::state::ProjectFeedsSort::Index,
-            project_selected,
-            project_show_scatter: true,
         });
     }
 
@@ -1347,14 +1340,15 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     /// Apply Feeds recommendations to every toolpath whose row is
-    /// currently checked in the project view.
+    /// currently checked in the project rollup.
+    ///
+    /// DC5a repointed this at `state.project_feeds`. It used to read the
+    /// selection off the per-operation feeds modal, so `Apply selected`
+    /// applied to NOTHING once that modal was closed — the same defect as
+    /// the sort and the scatter toggle, on the one control that writes.
     fn apply_feeds_project_selected(&mut self) {
-        let ids: Vec<crate::state::toolpath::ToolpathId> = self
-            .state
-            .feeds_modal
-            .as_ref()
-            .map(|m| m.project_selected.iter().copied().collect())
-            .unwrap_or_default();
+        let ids: Vec<crate::state::toolpath::ToolpathId> =
+            self.state.project_feeds.selected.iter().copied().collect();
         self.apply_feeds_batch(&ids, "selected toolpaths");
     }
 

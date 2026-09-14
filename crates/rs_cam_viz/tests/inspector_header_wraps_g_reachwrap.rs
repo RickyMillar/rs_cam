@@ -78,14 +78,64 @@ fn function_body<'a>(src: &'a str, name: &str) -> &'a str {
 }
 
 /// The `supports_reach_map()` block — the reach checkbox and its readings.
+///
+/// # Why the end marker is an indent and not a comment
+///
+/// This function used to slice from the `if` to the comment
+/// `// Contextual diagnostics`, which sat immediately after it. DC5
+/// (2026-09-14) moved the reach block to the panel FOOTER, below the tab
+/// content, and left the diagnostic tiers where they were, because the tab
+/// strip's badges read them. The end marker then sat ABOVE the start marker
+/// and this function panicked.
+///
+/// The file's own instruction was "find it before weakening this test", so
+/// it was found: the block moved, the guarantee did not. The readings this
+/// file pins are still off the checkbox row and still constructed through
+/// `wrapped_small_label`.
+///
+/// The end is now the `if`'s OWN closing brace, found by indent — the first
+/// line after the start that is exactly four spaces, a brace and a newline.
+/// Everything inside the block is indented deeper, so this cannot match
+/// early. A marker that is part of the block's own syntax travels with the
+/// block; a neighbouring comment does not, which is the defect this
+/// paragraph exists to stop recurring.
+///
+/// # Why `"\n    }\n"` is safe here, and what would break it
+///
+/// The marker is NOT unique: it occurs **103 times** in `properties/mod.rs`
+/// (measured 2026-09-14). The cut is correct only because it takes the
+/// NEAREST occurrence after the start offset. Read that number alone and
+/// this looks fragile; it is not, and the reason is worth stating so nobody
+/// weakens the test to "fix" it.
+///
+/// **The invariant is upheld by rustfmt, and rustfmt is gated.** The `if`
+/// sits at four spaces inside `fn draw_toolpath_panel`, so everything nested
+/// inside it is indented to eight or more — verified: of the 104 lines in
+/// the block, NONE is at indent four or less. A line of exactly four spaces,
+/// a brace and a newline cannot occur inside the block in formatted source,
+/// because it would need a construct closing at the `if`'s own indent while
+/// still inside the `if`, which rustfmt does not emit. And
+/// `cargo fmt --all -- --check` runs on every commit, so the source cannot
+/// drift out of that shape without the format gate going red first.
+///
+/// So this rests on a CHECKED invariant, not on luck. It is not an absolute
+/// one, and the next reader should know which kind it is:
+///
+/// - A multi-line string literal containing a line of `    }` would end the
+///   slice early. There are none in `properties/mod.rs` today (measured
+///   2026-09-14), and this scan does not model string literals.
+/// - Both failure modes shorten the slice, and every assertion below is
+///   NEGATIVE — "these readings are not inside that row". A shorter slice
+///   therefore passes more easily. That is the silent direction. See the
+///   stripper note in `tests/the_feeds_modal_holds_one_scope_dc5a.rs`.
 fn reach_block(src: &str) -> &str {
     let start = src
         .find("if entry.operation.op_type().supports_reach_map() {")
         .expect("the reach block moved; find it before weakening this test");
     let rest = &src[start..];
     let end = rest
-        .find("// Contextual diagnostics")
-        .expect("the reach block's end marker moved");
+        .find("\n    }\n")
+        .expect("the reach block has no closing brace at its own indent");
     &rest[..end]
 }
 

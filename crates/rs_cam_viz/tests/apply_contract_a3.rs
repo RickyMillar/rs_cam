@@ -153,7 +153,7 @@ fn panel_recipe(
     )
 }
 
-/// The modal's entry point since A-4 — `ui/feeds_modal.rs::compute_preview`,
+/// The modal's entry point since A-4 — `ui/feeds/compare.rs::compute_preview`,
 /// and the same call the apply handlers make internally
 /// (`controller/events/mod.rs::apply_feeds_through_funnel`). Pre-fix this was
 /// `feeds_explain_for_operation`, which is infallible and therefore could not
@@ -179,7 +179,30 @@ fn modal_preview(
 /// build of this file rather than sliding past a runtime check.
 const UI_MOD_SRC: &str = include_str!("../src/ui/mod.rs");
 const COMPARE_SRC: &str = include_str!("../src/ui/components/compare.rs");
-const FEEDS_MODAL_SRC: &str = include_str!("../src/ui/feeds_modal.rs");
+/// Every feeds surface, as ONE text.
+///
+/// DC5a split `ui/feeds_modal.rs` into one file per job under `ui/feeds/`,
+/// and moved the project rollup out to `ui/readiness_panel.rs`. The
+/// assertions below are about the feeds surface as a whole, and the important
+/// one is NEGATIVE — no feeds surface may push a per-field apply — so the
+/// scan must cover every file that surface now spans. A constant naming one
+/// of them would turn the split into a hole in this contract.
+const FEEDS_MODAL_SRCS: [&str; 6] = [
+    include_str!("../src/ui/feeds/mod.rs"),
+    include_str!("../src/ui/feeds/shared.rs"),
+    include_str!("../src/ui/feeds/compare.rs"),
+    include_str!("../src/ui/feeds/why.rs"),
+    include_str!("../src/ui/feeds/explore.rs"),
+    // The project rollup left `ui/feeds/` for the Readiness workspace
+    // (DC5a). It still writes through the funnel, so the contract still
+    // covers it — from where it lives now.
+    include_str!("../src/ui/readiness_panel.rs"),
+];
+
+/// True when ANY feeds file holds the needle.
+fn any_feeds_src(needle: &str) -> bool {
+    FEEDS_MODAL_SRCS.iter().any(|s| s.contains(needle))
+}
 const EVENTS_SRC: &str = include_str!("../src/controller/events/mod.rs");
 /// The per-field ⚡ pill and the sites that feed it (G-PILLCLAMP, 2026-09-10).
 const VALUE_ROW_SRC: &str = include_str!("../src/ui/components/value_row.rs");
@@ -266,7 +289,7 @@ fn panel_and_modal_agree_on_a_refused_pairing() {
     );
 }
 
-/// `⚡ Apply all` (`ui/feeds_modal.rs::draw_apply_column` →
+/// `⚡ Apply all` (`ui/feeds/compare.rs::draw_apply_column` →
 /// `AppEvent::ApplyFeedsAll`) on a pairing the panel refuses.
 ///
 /// **Pre-fix (measured 2026-08-12):** it wrote the refused recipe straight in
@@ -348,8 +371,8 @@ fn per_field_apply_affordance_no_longer_exists() {
          affordance that wrote 4.445 mm of DOC where the funnel writes 1.27 mm"
     );
     assert!(
-        !FEEDS_MODAL_SRC.contains("ApplyFeedsField"),
-        "the feeds modal pushes a per-field apply event again"
+        !any_feeds_src("ApplyFeedsField"),
+        "a feeds surface pushes a per-field apply event again"
     );
     assert!(
         !EVENTS_SRC.contains("fn apply_feeds_field"),
@@ -502,7 +525,7 @@ fn modal_apply_all_writes_what_the_panel_writes() {
     assert_eq!(modal_op.depth_per_pass(), panel_op.depth_per_pass(), "doc");
     // And the attribution the divergence needed is on the button's face.
     assert!(
-        FEEDS_MODAL_SRC.contains("⚡ Apply all — changes the cut"),
+        any_feeds_src("⚡ Apply all — changes the cut"),
         "the combined apply lost its 'changes the cut' attribution; it moves DOC/WOC and \
          the operator has to be able to see that before clicking"
     );
@@ -697,7 +720,7 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
 
 // ── the project batch is allowed to be partial, never quiet ────────────────
 
-/// `⚡⚡ Apply all toolpaths` (`feeds_modal.rs`) fans `ApplyFeedsAll` over
+/// `⚡⚡ Apply all toolpaths` (`ui/feeds/project.rs`) fans `ApplyFeedsAll` over
 /// every enabled toolpath.
 ///
 /// **Pre-fix (measured 2026-08-12):** the loop called the infallible path per

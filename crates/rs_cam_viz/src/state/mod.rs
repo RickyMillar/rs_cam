@@ -201,6 +201,11 @@ pub struct AppState {
     /// so live param edits are reflected without an extra refresh
     /// path.
     pub feeds_modal: Option<FeedsModalState>,
+    /// Project-scope feeds state — the rollup over every toolpath.
+    ///
+    /// It sits beside `feeds_modal` rather than inside it (DC5a). The two
+    /// answer at different scopes, so neither owns the other's state.
+    pub project_feeds: ProjectFeedsState,
     /// Cached state of the Tool Library management modal. `None` when
     /// closed. Holds a snapshot of every catalog loaded on open; the
     /// controller refreshes the snapshot after any mutation so the
@@ -276,28 +281,41 @@ pub struct ToolLibraryModalState {
 #[derive(Debug, Clone)]
 pub struct FeedsModalState {
     pub toolpath_id: rs_cam_core::ToolpathId,
-    pub mode: FeedsModalMode,
     /// Phase 3 — drag-to-explore on the feed-RPM nomogram. `Some` while
     /// the user is dragging the operating point.
     pub explore: Option<NomogramExplore>,
     /// Phase 2 — "How is this calculated?" disclosure expanded.
     pub show_provenance: bool,
-    /// Phase 4 — sortable column for the All-toolpaths table.
-    pub project_sort: ProjectFeedsSort,
-    /// Phase 4 — set of toolpath IDs whose row checkbox is currently
-    /// ticked. Empty == nothing selected (Apply selected disabled).
-    /// Defaults to every enabled toolpath when project view is opened.
-    pub project_selected: std::collections::BTreeSet<rs_cam_core::ToolpathId>,
-    /// Phase 4 — toggle for the project-view scatter overlay.
-    pub project_show_scatter: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeedsModalMode {
-    /// Single-toolpath view: comparison card + three charts.
-    Toolpath,
-    /// Project rollup: one row per toolpath, sortable.
-    Project,
+/// Project-scope feeds state — the rollup over EVERY toolpath.
+///
+/// DC5a moved these fields off [`FeedsModalState`]. They were the cause of
+/// the defect, not a symptom of it: a project-wide sort order, selection set
+/// and chart toggle lived on the PER-OPERATION modal, so the rollup's
+/// controls only functioned while that modal was open. One container holds
+/// one scope, and that rule applies to the state as much as to the drawing.
+///
+/// The rollup lives in the Readiness workspace, which already answers
+/// project-wide questions.
+#[derive(Debug, Clone, Default)]
+pub struct ProjectFeedsState {
+    /// True while the rollup detail is on screen. The Readiness check row
+    /// opens it; the window's own close button shuts it.
+    pub open: bool,
+    /// Sortable column for the per-toolpath table.
+    pub sort: ProjectFeedsSort,
+    /// Toolpath ids whose row checkbox is ticked. Empty means nothing is
+    /// selected, which disables Apply.
+    ///
+    /// **This set is SEEDED when the rollup opens**, from every enabled
+    /// toolpath. Before DC5a the seed ran as a side effect of opening the
+    /// per-operation feeds modal. An unseeded rollup opens with every row
+    /// unticked, which reads as "nothing to report" on a project-scope
+    /// surface — an abstention drawn as a pass.
+    pub selected: std::collections::BTreeSet<rs_cam_core::ToolpathId>,
+    /// Toggle for the scatter overlay.
+    pub show_scatter: bool,
 }
 
 /// Local UI state for the drag-to-explore interaction on Chart C.
@@ -308,8 +326,10 @@ pub struct NomogramExplore {
     pub feed_mm_min: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProjectFeedsSort {
+    /// Project order. The default, and what the table shipped with.
+    #[default]
     Index,
     Speedup,
     Name,
@@ -592,6 +612,7 @@ impl AppState {
             pending_reconciliation_for_ids: Vec::new(),
             pending_apply_resim: None,
             feeds_modal: None,
+            project_feeds: ProjectFeedsState::default(),
             tool_library_modal: None,
             machine_library_open: false,
             multitool_planner: None,
@@ -682,12 +703,8 @@ mod tests {
     fn feeds_modal_fixture() -> FeedsModalState {
         FeedsModalState {
             toolpath_id: rs_cam_core::ToolpathId(0),
-            mode: FeedsModalMode::Toolpath,
             explore: None,
             show_provenance: false,
-            project_sort: ProjectFeedsSort::Index,
-            project_selected: std::collections::BTreeSet::new(),
-            project_show_scatter: false,
         }
     }
 

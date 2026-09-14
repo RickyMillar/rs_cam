@@ -8,16 +8,16 @@ pub mod tool;
 
 pub use operations::{
     DepthBeyondStock, ThroughCut, ToolpathValidationContext, bottom_z_pin_note,
-    collect_diagnostics, depth_beyond_stock, profile_through_cut, profile_through_cut_line,
-    validate_toolpath, validate_toolpath_config,
+    collect_diagnostics, depth_beyond_stock, draw_height_diagram, profile_through_cut,
+    profile_through_cut_line, validate_toolpath, validate_toolpath_config,
 };
 use operations::{
     StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
     draw_chamfer_params, draw_dogbone_diagram, draw_drill_params, draw_dropcutter_params,
-    draw_face_params, draw_height_diagram, draw_heights_params, draw_horizontal_finish_params,
-    draw_inlay_diagram, draw_inlay_params, draw_lead_in_out_diagram, draw_outline_diagram,
-    draw_pencil_diagram, draw_pencil_params, draw_pocket_params, draw_point_set_diagram,
-    draw_profile_params, draw_project_curve_params, draw_radial_diagram, draw_radial_finish_params,
+    draw_face_params, draw_heights_params, draw_horizontal_finish_params, draw_inlay_diagram,
+    draw_inlay_params, draw_lead_in_out_diagram, draw_outline_diagram, draw_pencil_diagram,
+    draw_pencil_params, draw_pocket_params, draw_point_set_diagram, draw_profile_params,
+    draw_project_curve_params, draw_radial_diagram, draw_radial_finish_params,
     draw_ramp_finish_diagram, draw_ramp_finish_params, draw_rest_params, draw_scallop_params,
     draw_spiral_diagram, draw_spiral_finish_params, draw_steep_shallow_diagram,
     draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params,
@@ -1574,7 +1574,6 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut V
                 ui,
                 *id,
                 overall_visible,
-                None,
                 &mut state.viewport,
                 events,
             );
@@ -2373,6 +2372,23 @@ fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::Too
     });
 }
 
+/// One value cell of a feeds grid that WRAPS instead of extending the `Ui`.
+///
+/// F-3, and `AUDIT.md` D-16 before it. A grid cell's default wrap mode is
+/// `Extend`, which sets an INFINITE max width. One long value — "0.1313
+/// mm/tooth (clamped)", or "CLAMPED to band ceiling \u{2014} not exceeded"
+/// beside its label — then grows the inspector past its 280 point panel. The
+/// panel clamps to its own maximum and draws the over-wide content
+/// right-aligned, which puts the left end outside the clip rect and slides
+/// the whole tab off its own left edge.
+///
+/// Do NOT fix this with a global `style.wrap_mode`: UP1 tried that and it
+/// wrapped short labels mid-word ("Spoilb / oard:"). `tokens::apply_to_style`
+/// leaves `wrap_mode` as `None` on purpose, so each long cell opts in here.
+fn wrapped_cell(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
+    ui.add(egui::Label::new(text).wrap_mode(egui::TextWrapMode::Wrap))
+}
+
 /// Checkpoint H4.4 — the operating-point card: **Commanded advance/tooth
 /// / Achieved advance/tooth / Vendor band / Gate verdict**, four lines,
 /// read-only.
@@ -2426,7 +2442,7 @@ fn draw_advance_per_tooth_card(
                     .map(|c| format!("\n\nNot freely chosen \u{2014} {}", c.label()))
                     .unwrap_or_default(),
             );
-            ui.label(commanded_text).on_hover_text(commanded_hover);
+            wrapped_cell(ui, commanded_text).on_hover_text(commanded_hover);
             ui.end_row();
 
             ui.label(format!("{ACHIEVED_ADVANCE_PER_TOOTH}:"));
@@ -2451,7 +2467,7 @@ fn draw_advance_per_tooth_card(
                     explain.gate.statistic.label(),
                 ),
             };
-            ui.label(achieved).on_hover_text(ratio_note);
+            wrapped_cell(ui, achieved).on_hover_text(ratio_note);
             ui.end_row();
 
             ui.label("Vendor band:");
@@ -2462,17 +2478,20 @@ fn draw_advance_per_tooth_card(
                 ),
                 None => format!("\u{2264} {:.4} mm/tooth", explain.band.max_mm_per_tooth),
             };
-            ui.label(band).on_hover_text(format!(
+            let band_hover = format!(
                 "Vendor chipload column from row {} (calibrated d={:.3} mm), \
                  after DOC derate. Published as a linear advance per tooth \
                  \u{2014} the same quantity as the two rows above.",
                 explain.band.observation_id, explain.band.row_diameter_mm,
-            ));
+            );
+            wrapped_cell(ui, band).on_hover_text(band_hover);
             ui.end_row();
 
             ui.label("Gate verdict:");
             let (text, color) = advance_gate_verdict_text(&verdict.chipload);
-            ui.label(egui::RichText::new(text).color(color));
+            // The worst row on this tab: "CLAMPED to band ceiling — not
+            // exceeded" beside "Gate verdict:" is wider than the panel.
+            wrapped_cell(ui, egui::RichText::new(text).color(color));
             ui.end_row();
         });
     ui.add_space(4.0);
@@ -2528,195 +2547,230 @@ fn draw_feeds_card(
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
 ) {
     ui.add_space(8.0);
-    // Open by default: on the Feeds & Speeds tab the operator wants the feed
-    // picture — including the read-only "operating point" the F-039 optimizer
-    // solved — visible without an extra expand.
-    egui::CollapsingHeader::new("Feeds & Speeds")
-        .default_open(true)
-        .show(ui, |ui| {
-        // Read-only snapshot of the cached LUT result so we can borrow
-        // `entry.operation` mutably from the recipe buttons below.
-        let Some(result) = entry.feeds_result.clone() else {
-            return;
-        };
-        // Capture op capabilities as plain bools so no borrow of
-        // `entry.operation` is held across the mutating recipe closures.
-        let pass_role = entry.operation.feeds_style().1;
-        let has_stepover = entry.operation.as_params().stepover().is_some();
-        let has_dpp = entry.operation.as_params().depth_per_pass().is_some();
-        // Drill ops are Z-only (plunge_rate IS feed_rate, no WOC/DOC); their
-        // single feed is edited on the Geometry tab next to the drill cycle,
-        // so the SPEED section shows it read-only to avoid a duplicate /
-        // no-op "Plunge" field (W3.2).
-        let is_drill = matches!(
-            entry.operation,
-            OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
-        );
-        // G-FEEDSLABEL (UX-R03-005): the read-only rows name their role.
-        // `recommended` is the calculator's value, `configured` is the
-        // stored operation's. Built once, up front, as plain strings, so
-        // no borrow of `entry.operation` outlives the section closures
-        // and a test can read the same rows without an egui context.
-        let card_rows = feeds_rows::feeds_card_rows(&feeds_rows::FeedsCardInputs {
-            recommended_feed_mm_min: result.feed_rate_mm_min,
-            recommended_rpm: result.rpm,
-            target_chip_load_mm: result.chip_load_mm,
-            recommended_axial_depth_mm: has_dpp.then_some(result.axial_depth_mm),
-            recommended_radial_width_mm: has_stepover.then_some(result.radial_width_mm),
-            configured_feed_mm_min: entry.operation.feed_rate(),
-            configured_rpm: entry
-                .operation
-                .spindle_rpm()
-                .unwrap_or(project_default_rpm),
-            flute_count: tool.flute_count,
-            configured_depth_per_pass_mm: entry.operation.as_params().depth_per_pass(),
-            configured_stepover_mm: entry.operation.as_params().stepover(),
+    // DC5 (Pattern A): the card used to sit inside a default-open
+    // `Feeds & Speeds` disclosure, ON the `Feeds & Speeds` tab. One name
+    // carried a tab AND a disclosure, and the disclosure was an expand that
+    // was always open. The tab is the container. The disclosure is deleted.
+    // Read-only snapshot of the cached LUT result so we can borrow
+    // `entry.operation` mutably from the recipe buttons below.
+    let Some(result) = entry.feeds_result.clone() else {
+        return;
+    };
+    // Capture op capabilities as plain bools so no borrow of
+    // `entry.operation` is held across the mutating recipe closures.
+    let pass_role = entry.operation.feeds_style().1;
+    let has_stepover = entry.operation.as_params().stepover().is_some();
+    let has_dpp = entry.operation.as_params().depth_per_pass().is_some();
+    // Drill ops are Z-only (plunge_rate IS feed_rate, no WOC/DOC); their
+    // single feed is edited on the Geometry tab next to the drill cycle,
+    // so the SPEED section shows it read-only to avoid a duplicate /
+    // no-op "Plunge" field (W3.2).
+    let is_drill = matches!(
+        entry.operation,
+        OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+    );
+    // G-FEEDSLABEL (UX-R03-005): the read-only rows name their role.
+    // `recommended` is the calculator's value, `configured` is the
+    // stored operation's. Built once, up front, as plain strings, so
+    // no borrow of `entry.operation` outlives the section closures
+    // and a test can read the same rows without an egui context.
+    let card_rows = feeds_rows::feeds_card_rows(&feeds_rows::FeedsCardInputs {
+        recommended_feed_mm_min: result.feed_rate_mm_min,
+        recommended_rpm: result.rpm,
+        target_chip_load_mm: result.chip_load_mm,
+        recommended_axial_depth_mm: has_dpp.then_some(result.axial_depth_mm),
+        recommended_radial_width_mm: has_stepover.then_some(result.radial_width_mm),
+        configured_feed_mm_min: entry.operation.feed_rate(),
+        configured_rpm: entry.operation.spindle_rpm().unwrap_or(project_default_rpm),
+        flute_count: tool.flute_count,
+        configured_depth_per_pass_mm: entry.operation.as_params().depth_per_pass(),
+        configured_stepover_mm: entry.operation.as_params().stepover(),
+    });
+    let card_row = |label: &str| card_rows.iter().find(|r| r.label == label);
+    let draw_card_row = |ui: &mut egui::Ui, row: &feeds_rows::FeedsCardRow| {
+        ui.label(row.label);
+        // The trailing annotation WRAPS rather than extending the Ui.
+        // `TextWrapMode::Extend` sets an infinite max width, so a long
+        // "configured 0.1313 mm/tooth" grew the inspector past its own
+        // panel and the panel clipped it — `AUDIT.md` D-16, seen on the
+        // Feeds tab where the panel's whole content shifted off its left
+        // edge. §4.6 makes the trailing slot wrap for exactly this.
+        ui.horizontal_wrapped(|ui| {
+            ui.label(&row.recommended).on_hover_text(&row.hover);
+            if let Some(configured) = &row.configured {
+                ui.add(
+                    egui::Label::new(crate::ui::components::text::caption(configured.clone()))
+                        .wrap_mode(egui::TextWrapMode::Wrap),
+                )
+                .on_hover_text(&row.hover);
+            }
         });
-        let card_row = |label: &str| card_rows.iter().find(|r| r.label == label);
-        let draw_card_row = |ui: &mut egui::Ui, row: &feeds_rows::FeedsCardRow| {
-            ui.label(row.label);
-            // The trailing annotation WRAPS rather than extending the Ui.
-            // `TextWrapMode::Extend` sets an infinite max width, so a long
-            // "configured 0.1313 mm/tooth" grew the inspector past its own
-            // panel and the panel clipped it — `AUDIT.md` D-16, seen on the
-            // Feeds tab where the panel's whole content shifted off its left
-            // edge. §4.6 makes the trailing slot wrap for exactly this.
-            ui.horizontal_wrapped(|ui| {
-                ui.label(&row.recommended).on_hover_text(&row.hover);
-                if let Some(configured) = &row.configured {
-                    ui.add(
-                        egui::Label::new(crate::ui::components::text::caption(configured.clone()))
-                            .wrap_mode(egui::TextWrapMode::Wrap),
+        ui.end_row();
+    };
+
+    // W4.1 — render the *stored* per-field provenance (what actually
+    // produced the value on this operation), not a recomputed lookup. This
+    // is the rendering repoint W2.1 deliberately deferred: a vendor-LUT feed
+    // with a formula-fallback plunge now reads honestly per field instead of
+    // one chipload source labelling every value (P7-002). Captured as owned
+    // tuples up front so the immutable read of `entry.feeds_provenance`
+    // doesn't outlive the `entry.operation` edits in the section closures.
+    let feed_prov = entry
+        .feeds_provenance
+        .feed_rate
+        .as_ref()
+        .map(|v| (ProvKind::from(v), v.reference.clone()));
+    let plunge_prov = entry
+        .feeds_provenance
+        .plunge_rate
+        .as_ref()
+        .map(|v| (ProvKind::from(v), v.reference.clone()));
+
+    // G-PILLCLAMP (UX-R03-014): the per-field ⚡ on Feed / Plunge offers
+    // and writes the apply funnel's value for that field — the same
+    // number `⚡⚡ Apply recommended speeds` writes — not the raw
+    // calculator output, and stamps the recommendation's provenance.
+    let field_previews = rs_cam_core::feeds::suggest::preview_field_applies(
+        &entry.operation,
+        &result,
+        tool,
+        machine,
+        material,
+        pass_role,
+        rs_cam_core::feeds::suggest::SuggestContext::default(),
+    );
+
+    // ── SPEED — how fast (feed / plunge / RPM) ──
+    ui.named_section("SPEED \u{2014} how fast", |ui| {
+        // The live LUT recommendation colours a raw fallback pill; a
+        // funnel-backed pill carries its own stamp.
+        let (speed_kind, speed_ref) = prov_from_chipload(&result.chipload_source);
+        egui::Grid::new("feeds_card_speed")
+            .num_columns(2)
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
+            .show(ui, |ui| {
+                // Feed / Plunge — editable here (W3.2 relocated them off
+                // the Geometry tab), each with a per-field ⚡ that applies
+                // only its own recommendation.
+                if is_drill {
+                    ui.label("Feed:");
+                    ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
+                    ui.end_row();
+                } else {
+                    use rs_cam_core::feeds::FeedsField;
+                    let mut feed = entry.operation.feed_rate();
+                    let mut feed_row =
+                        ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0).suggest(
+                            suggestion_for(
+                                field_previews.get(FeedsField::FeedRate),
+                                result.feed_rate_mm_min,
+                                1.0,
+                                (speed_kind, speed_ref),
+                            ),
+                        );
+                    if let Some((kind, reference)) = &feed_prov {
+                        feed_row = feed_row.prov(*kind, reference.as_deref());
+                    }
+                    let feed_out = feed_row.show(ui);
+                    if feed_out.edited {
+                        entry.operation.set_feed_rate(feed);
+                        entry.stale_since = Some(std::time::Instant::now());
+                        if feed_out.suggested {
+                            stamp_pill_write(entry, &field_previews, FeedsField::FeedRate);
+                        }
+                    }
+                    let mut plunge = entry.operation.plunge_rate();
+                    let mut plunge_row =
+                        ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
+                            .suggest(suggestion_for(
+                                field_previews.get(FeedsField::PlungeRate),
+                                result.plunge_rate_mm_min,
+                                1.0,
+                                (speed_kind, speed_ref),
+                            ));
+                    if let Some((kind, reference)) = &plunge_prov {
+                        plunge_row = plunge_row.prov(*kind, reference.as_deref());
+                    }
+                    let plunge_out = plunge_row.show(ui);
+                    if plunge_out.edited {
+                        entry.operation.set_plunge_rate(plunge);
+                        entry.stale_since = Some(std::time::Instant::now());
+                        if plunge_out.suggested {
+                            stamp_pill_write(entry, &field_previews, FeedsField::PlungeRate);
+                        }
+                    }
+                }
+                if let Some(row) = card_row(feeds_rows::ADVANCE_ROW_LABEL) {
+                    draw_card_row(ui, row);
+                }
+                // Spindle override vs project default. W3.1 relocated this
+                // from the per-op Params tab so the precedence renders
+                // honestly.
+                let mut spindle = entry.operation.spindle_rpm();
+                if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
+                    .suffix(" RPM")
+                    .speed(100.0)
+                    .range(1_000..=60_000)
+                    .tooltip(
+                        "Override the project default spindle speed for this operation. \
+                         Leave unchecked to follow the post-config spindle speed.",
                     )
-                    .on_hover_text(&row.hover);
+                    .show(ui)
+                {
+                    entry.operation.set_spindle_rpm(spindle);
+                    entry.stale_since = Some(std::time::Instant::now());
                 }
             });
-            ui.end_row();
-        };
+        // W3.1: SPEED-only apply — never rewrites the cut geometry.
+        if ui
+            .button("\u{26A1}\u{26A1} Apply recommended speeds")
+            .on_hover_text(
+                "Overwrite feed, plunge, and RPM with the recommended values. \
+                 Does not change the cut (DOC/WOC).",
+            )
+            .clicked()
+        {
+            rs_cam_core::feeds::suggest::apply_speeds_to_op(
+                &mut entry.operation,
+                &mut entry.feeds_provenance,
+                &result,
+                tool,
+                machine,
+                material,
+                pass_role,
+                rs_cam_core::feeds::suggest::SuggestContext::default(),
+            );
+            entry.stale_since = Some(std::time::Instant::now());
+        }
+    });
 
-        // W4.1 — render the *stored* per-field provenance (what actually
-        // produced the value on this operation), not a recomputed lookup. This
-        // is the rendering repoint W2.1 deliberately deferred: a vendor-LUT feed
-        // with a formula-fallback plunge now reads honestly per field instead of
-        // one chipload source labelling every value (P7-002). Captured as owned
-        // tuples up front so the immutable read of `entry.feeds_provenance`
-        // doesn't outlive the `entry.operation` edits in the section closures.
-        let feed_prov = entry
-            .feeds_provenance
-            .feed_rate
-            .as_ref()
-            .map(|v| (ProvKind::from(v), v.reference.clone()));
-        let plunge_prov = entry
-            .feeds_provenance
-            .plunge_rate
-            .as_ref()
-            .map(|v| (ProvKind::from(v), v.reference.clone()));
-
-        // G-PILLCLAMP (UX-R03-014): the per-field ⚡ on Feed / Plunge offers
-        // and writes the apply funnel's value for that field — the same
-        // number `⚡⚡ Apply recommended speeds` writes — not the raw
-        // calculator output, and stamps the recommendation's provenance.
-        let field_previews = rs_cam_core::feeds::suggest::preview_field_applies(
-            &entry.operation,
-            &result,
-            tool,
-            machine,
-            material,
-            pass_role,
-            rs_cam_core::feeds::suggest::SuggestContext::default(),
-        );
-
-        // ── SPEED — how fast (feed / plunge / RPM) ──
-        ui.named_section("SPEED \u{2014} how fast", |ui| {
-            // The live LUT recommendation colours a raw fallback pill; a
-            // funnel-backed pill carries its own stamp.
-            let (speed_kind, speed_ref) = prov_from_chipload(&result.chipload_source);
-            egui::Grid::new("feeds_card_speed")
+    // ── CUT — how deep/wide (changes the cut) ──
+    if has_stepover || has_dpp {
+        ui.named_section("CUT \u{2014} changes the cut", |ui| {
+            egui::Grid::new("feeds_card_cut")
                 .num_columns(2)
                 .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
+                .min_row_height(crate::ui::tokens::ROW_DENSE)
                 .show(ui, |ui| {
-                    // Feed / Plunge — editable here (W3.2 relocated them off
-                    // the Geometry tab), each with a per-field ⚡ that applies
-                    // only its own recommendation.
-                    if is_drill {
-                        ui.label("Feed:");
-                        ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
-                        ui.end_row();
-                    } else {
-                        use rs_cam_core::feeds::FeedsField;
-                        let mut feed = entry.operation.feed_rate();
-                        let mut feed_row =
-                            ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
-                                .suggest(suggestion_for(
-                                    field_previews.get(FeedsField::FeedRate),
-                                    result.feed_rate_mm_min,
-                                    1.0,
-                                    (speed_kind, speed_ref),
-                                ));
-                        if let Some((kind, reference)) = &feed_prov {
-                            feed_row = feed_row.prov(*kind, reference.as_deref());
-                        }
-                        let feed_out = feed_row.show(ui);
-                        if feed_out.edited {
-                            entry.operation.set_feed_rate(feed);
-                            entry.stale_since = Some(std::time::Instant::now());
-                            if feed_out.suggested {
-                                stamp_pill_write(entry, &field_previews, FeedsField::FeedRate);
-                            }
-                        }
-                        let mut plunge = entry.operation.plunge_rate();
-                        let mut plunge_row =
-                            ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
-                                .suggest(suggestion_for(
-                                    field_previews.get(FeedsField::PlungeRate),
-                                    result.plunge_rate_mm_min,
-                                    1.0,
-                                    (speed_kind, speed_ref),
-                                ));
-                        if let Some((kind, reference)) = &plunge_prov {
-                            plunge_row = plunge_row.prov(*kind, reference.as_deref());
-                        }
-                        let plunge_out = plunge_row.show(ui);
-                        if plunge_out.edited {
-                            entry.operation.set_plunge_rate(plunge);
-                            entry.stale_since = Some(std::time::Instant::now());
-                            if plunge_out.suggested {
-                                stamp_pill_write(entry, &field_previews, FeedsField::PlungeRate);
-                            }
-                        }
-                    }
-                    if let Some(row) = card_row(feeds_rows::ADVANCE_ROW_LABEL) {
+                    if let Some(row) = card_row(feeds_rows::DOC_ROW_LABEL) {
                         draw_card_row(ui, row);
                     }
-                    // Spindle override vs project default. W3.1 relocated this
-                    // from the per-op Params tab so the precedence renders
-                    // honestly.
-                    let mut spindle = entry.operation.spindle_rpm();
-                    if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
-                        .suffix(" RPM")
-                        .speed(100.0)
-                        .range(1_000..=60_000)
-                        .tooltip(
-                            "Override the project default spindle speed for this operation. \
-                             Leave unchecked to follow the post-config spindle speed.",
-                        )
-                        .show(ui)
-                    {
-                        entry.operation.set_spindle_rpm(spindle);
-                        entry.stale_since = Some(std::time::Instant::now());
+                    if let Some(row) = card_row(feeds_rows::WOC_ROW_LABEL) {
+                        draw_card_row(ui, row);
                     }
                 });
-            // W3.1: SPEED-only apply — never rewrites the cut geometry.
+            // W3.1: cut-geometry apply is separate + attributed — it
+            // changes the cut, so it is never folded into "Apply speeds".
             if ui
-                .button("\u{26A1}\u{26A1} Apply recommended speeds")
+                .button("\u{26A1} Apply cut geometry")
                 .on_hover_text(
-                    "Overwrite feed, plunge, and RPM with the recommended values. \
-                     Does not change the cut (DOC/WOC).",
+                    "Overwrite DOC/WOC with the recommended values. \
+                     Changes the cut.",
                 )
                 .clicked()
             {
-                rs_cam_core::feeds::suggest::apply_speeds_to_op(
+                rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
                     &mut entry.operation,
                     &mut entry.feeds_provenance,
                     &result,
@@ -2729,165 +2783,123 @@ fn draw_feeds_card(
                 entry.stale_since = Some(std::time::Instant::now());
             }
         });
+    }
 
-        // ── CUT — how deep/wide (changes the cut) ──
-        if has_stepover || has_dpp {
-            ui.named_section("CUT \u{2014} changes the cut", |ui| {
-                egui::Grid::new("feeds_card_cut")
-                    .num_columns(2)
-                    .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-                    .show(ui, |ui| {
-                        if let Some(row) = card_row(feeds_rows::DOC_ROW_LABEL) {
-                            draw_card_row(ui, row);
-                        }
-                        if let Some(row) = card_row(feeds_rows::WOC_ROW_LABEL) {
-                            draw_card_row(ui, row);
-                        }
-                    });
-                // W3.1: cut-geometry apply is separate + attributed — it
-                // changes the cut, so it is never folded into "Apply speeds".
-                if ui
-                    .button("\u{26A1} Apply cut geometry")
-                    .on_hover_text(
-                        "Overwrite DOC/WOC with the recommended values. \
-                         Changes the cut.",
-                    )
-                    .clicked()
-                {
-                    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
-                        &mut entry.operation,
-                        &mut entry.feeds_provenance,
-                        &result,
-                        tool,
-                        machine,
-                        material,
-                        pass_role,
-                        rs_cam_core::feeds::suggest::SuggestContext::default(),
-                    );
-                    entry.stale_since = Some(std::time::Instant::now());
-                }
-            });
-        }
-
-        // ── Derived (read-only) ──
-        ui.named_section("Derived", |ui| {
-            power_bar(ui, result.power_kw, result.available_power_kw);
-            mrr_row(ui, result.mrr_mm3_min);
-        });
-
-        // ── Operating point (read-only) — the F-039 optimizer's MEASURED
-        // result for this path, the post-sim counterpart to the Suggest-
-        // predicted "Derived" rollup above. Present only after a simulation
-        // where adaptive feed modulation actually ran (the rollup rides on
-        // the load verdict). No edit affordances: it's the solved result,
-        // not a field to tune.
-        // Rendered whenever the gate produced either a feed explanation or a
-        // modulation rollup — the card half needs only the former, and
-        // before Checkpoint H the whole section was hidden unless adaptive
-        // feed modulation had run, which is why an operator could simulate
-        // and still never see an achieved advance per tooth.
-        if let Some(v) = load_verdict
-            && (v.feed_explanation.is_some() || v.modulation_summary.is_some())
-        {
-            draw_operating_point(ui, v);
-        }
-
-        {
-            // W4.1: provenance is now per field (the compact badges on the Feed
-            // / Plunge rows above, read from the stored `feeds_provenance`). The
-            // single bottom badge derived from a recomputed chipload source was
-            // the P7-002 mislabel — one source standing in for every field — so
-            // it is gone; each suggest pill still carries its recommendation
-            // source on hover.
-
-            // Warnings
-            for w in &result.warnings {
-                let text = match w {
-                    rs_cam_core::feeds::FeedsWarning::FeedRateClamped { requested, actual } => {
-                        format!(
-                            "Feed clamped: {requested:.0} -> {actual:.0} mm/min (machine limit)"
-                        )
-                    }
-                    rs_cam_core::feeds::FeedsWarning::PowerLimited {
-                        required_kw,
-                        available_kw,
-                    } => format!(
-                        "Power limited: {required_kw:.2}kW needed, {available_kw:.2}kW available"
-                    ),
-                    rs_cam_core::feeds::FeedsWarning::DocExceedsFlute { requested, capped } => {
-                        format!("DOC capped: {requested:.1} -> {capped:.1}mm (flute guard)")
-                    }
-                    rs_cam_core::feeds::FeedsWarning::SlottingDetected { doc_reduced_to } => {
-                        format!("Slotting detected: DOC reduced to {doc_reduced_to:.1}mm")
-                    }
-                    rs_cam_core::feeds::FeedsWarning::ScallopInvalid {
-                        target,
-                        max_possible,
-                    } => format!("Invalid scallop: {target:.3}mm (max {max_possible:.1}mm)"),
-                    rs_cam_core::feeds::FeedsWarning::ShankTooLarge { shank_mm, max_mm } => {
-                        format!("Shank {shank_mm:.1}mm exceeds max {max_mm:.1}mm")
-                    }
-                    rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor {
-                        requested,
-                        floor,
-                        band_capped_from,
-                    } => match band_capped_from {
-                        None => format!(
-                            "Commanded advance/tooth below rubbing floor: \
-                             {requested:.3} -> {floor:.3} mm/tooth"
-                        ),
-                        Some(global) => format!(
-                            "Commanded advance/tooth raised to vendor band ceiling: \
-                             {requested:.3} -> {floor:.3} mm/tooth \
-                             (band is entirely below the {global:.3} rubbing floor)"
-                        ),
-                    },
-                    // Checkpoint K (a3) — the recipe rests on an RPM
-                    // anchor, so the chipload beside it is the formula's
-                    // and there is no band behind the recommendation.
-                    // Checkpoint K (a4) — the routing refused; there is no vendor
-                    // row behind any number on this surface.
-                    rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation {
-                        operation_kind,
-                        tool_family,
-                        missing_rows,
-                    } => format!(
-                        "No vendor data for {operation_kind} on a {tool_family} cutter \
-                         — formula-derived, no band ({missing_rows})"
-                    ),
-                    rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload {
-                        observation_id,
-                        formula_chipload_mm,
-                        floor_band_from,
-                    } => match floor_band_from {
-                        Some(row) => format!(
-                            "Vendor row {observation_id} publishes RPM only — \
-                             {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor \
-                             band; rubbing floor from {row}"
-                        ),
-                        None => format!(
-                            "Vendor row {observation_id} publishes RPM only — \
-                             {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor band"
-                        ),
-                    },
-                    rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
-                        requested,
-                        actual,
-                        envelope_lo,
-                        envelope_hi,
-                    } => format!(
-                        "Drill feed clamped: {requested:.0} -> {actual:.0} mm/min (envelope {envelope_lo:.0}-{envelope_hi:.0})"
-                    ),
-                };
-                ui.label(
-                    egui::RichText::new(format!("! {text}"))
-                        .small()
-                        .color(crate::ui::tokens::CAUTION),
-                );
-            }
-        }
+    // ── Derived (read-only) ──
+    ui.named_section("Derived", |ui| {
+        power_bar(ui, result.power_kw, result.available_power_kw);
+        mrr_row(ui, result.mrr_mm3_min);
     });
+
+    // ── Operating point (read-only) — the F-039 optimizer's MEASURED
+    // result for this path, the post-sim counterpart to the Suggest-
+    // predicted "Derived" rollup above. Present only after a simulation
+    // where adaptive feed modulation actually ran (the rollup rides on
+    // the load verdict). No edit affordances: it's the solved result,
+    // not a field to tune.
+    // Rendered whenever the gate produced either a feed explanation or a
+    // modulation rollup — the card half needs only the former, and
+    // before Checkpoint H the whole section was hidden unless adaptive
+    // feed modulation had run, which is why an operator could simulate
+    // and still never see an achieved advance per tooth.
+    if let Some(v) = load_verdict
+        && (v.feed_explanation.is_some() || v.modulation_summary.is_some())
+    {
+        draw_operating_point(ui, v);
+    }
+
+    {
+        // W4.1: provenance is now per field (the compact badges on the Feed
+        // / Plunge rows above, read from the stored `feeds_provenance`). The
+        // single bottom badge derived from a recomputed chipload source was
+        // the P7-002 mislabel — one source standing in for every field — so
+        // it is gone; each suggest pill still carries its recommendation
+        // source on hover.
+
+        // Warnings
+        for w in &result.warnings {
+            let text = match w {
+                rs_cam_core::feeds::FeedsWarning::FeedRateClamped { requested, actual } => {
+                    format!("Feed clamped: {requested:.0} -> {actual:.0} mm/min (machine limit)")
+                }
+                rs_cam_core::feeds::FeedsWarning::PowerLimited {
+                    required_kw,
+                    available_kw,
+                } => format!(
+                    "Power limited: {required_kw:.2}kW needed, {available_kw:.2}kW available"
+                ),
+                rs_cam_core::feeds::FeedsWarning::DocExceedsFlute { requested, capped } => {
+                    format!("DOC capped: {requested:.1} -> {capped:.1}mm (flute guard)")
+                }
+                rs_cam_core::feeds::FeedsWarning::SlottingDetected { doc_reduced_to } => {
+                    format!("Slotting detected: DOC reduced to {doc_reduced_to:.1}mm")
+                }
+                rs_cam_core::feeds::FeedsWarning::ScallopInvalid {
+                    target,
+                    max_possible,
+                } => format!("Invalid scallop: {target:.3}mm (max {max_possible:.1}mm)"),
+                rs_cam_core::feeds::FeedsWarning::ShankTooLarge { shank_mm, max_mm } => {
+                    format!("Shank {shank_mm:.1}mm exceeds max {max_mm:.1}mm")
+                }
+                rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor {
+                    requested,
+                    floor,
+                    band_capped_from,
+                } => match band_capped_from {
+                    None => format!(
+                        "Commanded advance/tooth below rubbing floor: \
+                         {requested:.3} -> {floor:.3} mm/tooth"
+                    ),
+                    Some(global) => format!(
+                        "Commanded advance/tooth raised to vendor band ceiling: \
+                         {requested:.3} -> {floor:.3} mm/tooth \
+                         (band is entirely below the {global:.3} rubbing floor)"
+                    ),
+                },
+                // Checkpoint K (a3) — the recipe rests on an RPM
+                // anchor, so the chipload beside it is the formula's
+                // and there is no band behind the recommendation.
+                // Checkpoint K (a4) — the routing refused; there is no vendor
+                // row behind any number on this surface.
+                rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation {
+                    operation_kind,
+                    tool_family,
+                    missing_rows,
+                } => format!(
+                    "No vendor data for {operation_kind} on a {tool_family} cutter \
+                     — formula-derived, no band ({missing_rows})"
+                ),
+                rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload {
+                    observation_id,
+                    formula_chipload_mm,
+                    floor_band_from,
+                } => match floor_band_from {
+                    Some(row) => format!(
+                        "Vendor row {observation_id} publishes RPM only — \
+                         {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor \
+                         band; rubbing floor from {row}"
+                    ),
+                    None => format!(
+                        "Vendor row {observation_id} publishes RPM only — \
+                         {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor band"
+                    ),
+                },
+                rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
+                    requested,
+                    actual,
+                    envelope_lo,
+                    envelope_hi,
+                } => format!(
+                    "Drill feed clamped: {requested:.0} -> {actual:.0} mm/min (envelope {envelope_lo:.0}-{envelope_hi:.0})"
+                ),
+            };
+            ui.label(
+                egui::RichText::new(format!("! {text}"))
+                    .small()
+                    .color(crate::ui::tokens::CAUTION),
+            );
+        }
+    }
 }
 
 // ── Vendor LUT viewer ──────────────────────────────────────────────────
@@ -4383,6 +4395,132 @@ pub(crate) enum ReachPanelSummary {
     Failed(String),
 }
 
+/// The Geometry tab's WIRING rows: Tool, Input model, Faces, stock source.
+///
+/// DC5 (Pattern A). These rows used to sit behind a `Geometry` disclosure
+/// ABOVE the tab strip, while a `Geometry` TAB held the operation's geometry
+/// PARAMETERS. One name carried two different blocks at one level, and the
+/// reader could not tell what contained what. The rows now open the Geometry
+/// tab and the disclosure is deleted, so the name has one home.
+fn draw_geometry_wiring(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    tools: &[(crate::state::job::ToolId, String, f64)],
+    models: &[(crate::state::job::ModelId, String)],
+    model_has_enriched: bool,
+    model_is_step_missing_brep: bool,
+) {
+    // Tool selector
+    ui.horizontal(|ui| {
+        ui.label("Tool:");
+        let tool_label = tools
+            .iter()
+            .find(|(id, _, _)| *id == entry.tool_id)
+            .map(|(_, s, _)| s.as_str())
+            .unwrap_or("(none)");
+        egui::ComboBox::from_id_salt("tp_tool")
+            .selected_text(tool_label)
+            .show_ui(ui, |ui| {
+                for (id, name, _) in tools {
+                    ui.selectable_value(&mut entry.tool_id, *id, name.as_str());
+                }
+            });
+    });
+
+    // Model selector
+    ui.horizontal(|ui| {
+        ui.label("Input:");
+        let model_label = models
+            .iter()
+            .find(|(id, _)| *id == entry.model_id)
+            .map(|(_, s)| s.as_str())
+            .unwrap_or("(none)");
+        egui::ComboBox::from_id_salt("tp_model")
+            .selected_text(model_label)
+            .show_ui(ui, |ui| {
+                for (id, name) in models {
+                    ui.selectable_value(&mut entry.model_id, *id, name.as_str());
+                }
+            });
+    });
+
+    // BREP-not-loaded warning: surfaces when a STEP model loaded
+    // without its enriched mesh (older project files written before
+    // the BREP round-trip fix, or an unexpected loader regression).
+    // It stays adjacent to the Input model combo it concerns.
+    if model_is_step_missing_brep {
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(
+                "⚠ BREP topology not loaded — face picker unavailable. Reload model.",
+            )
+            .color(crate::ui::tokens::CAUTION)
+            .strong(),
+        );
+    }
+
+    // Face selection (STEP models only)
+    if model_has_enriched {
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("Face Selection")
+                .strong()
+                .color(crate::ui::tokens::TEXT_STRONG),
+        );
+        // SHE-005 — one affordance, not two stacked sentences. Zero
+        // selected: a single muted placeholder. ≥1 selected: count +
+        // Clear, no tip line. The unconditional "Tip:" sentence is
+        // removed — the placeholder + the live count updating as the
+        // user clicks convey the action.
+        let face_count = entry.face_selection.as_ref().map(|f| f.len()).unwrap_or(0);
+        if face_count > 0 {
+            ui.horizontal(|ui| {
+                ui.label(format!(
+                    "{} face{} selected",
+                    face_count,
+                    if face_count == 1 { "" } else { "s" }
+                ));
+                if ui.small_button("Clear").clicked() {
+                    entry.face_selection = None;
+                    entry.stale_since = Some(std::time::Instant::now());
+                }
+            });
+        } else {
+            ui.label(
+                egui::RichText::new("Pick faces in viewport \u{2197}")
+                    .color(crate::ui::tokens::TEXT_FAINT),
+            );
+        }
+    }
+
+    // Stock source toggle — hidden for pencil ops. Pencil's own
+    // "Rest reference" group on the Geometry tab (see
+    // `draw_pencil_params`) now owns `stock_source` directly; showing
+    // this generic checkbox too used to give the user two controls
+    // that silently disagreed (this one won at generation time via
+    // `rest_depth_arm`'s R2 stock preference, regardless of what the
+    // reference-tool picker showed). Every other op still shows it.
+    if !matches!(entry.operation, OperationConfig::Pencil(_)) {
+        ui.add_space(8.0);
+        let mut use_remaining = entry.stock_source == StockSource::FromRemainingStock;
+        let resp = ui
+            .checkbox(&mut use_remaining, "Use remaining stock")
+            .on_hover_text(
+                "When enabled, prior operations in this setup are simulated to \
+                 determine remaining material. The toolpath will skip air cuts and \
+                 adapt to the actual stock state.",
+            );
+        if resp.changed() {
+            entry.stock_source = if use_remaining {
+                StockSource::FromRemainingStock
+            } else {
+                StockSource::Fresh
+            };
+            entry.stale_since = Some(std::time::Instant::now());
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_toolpath_panel(
     ui: &mut egui::Ui,
@@ -4442,6 +4580,10 @@ fn draw_toolpath_panel(
     ui.add_space(4.0);
     let validation_errors = validate_toolpath(entry, validation);
     let can_generate = !tools.is_empty() && validation_errors.is_empty();
+    // DC5 (Pattern C): the state the "requires manual generation" sentence
+    // used to carry. Read before the row so the closure holds no extra
+    // borrow of `entry`.
+    let manual_generation = !entry.auto_regen && matches!(entry.status, ComputeStatus::Pending);
     ui.horizontal(|ui| {
         if ui
             .add_enabled(can_generate, egui::Button::new("Generate"))
@@ -4455,7 +4597,18 @@ fn draw_toolpath_panel(
         use crate::state::freshness::FreshnessState;
         match freshness {
             FreshnessState::NoResult => {
-                ui.label("Ready");
+                // One word, then a hover. A printed sentence that names the
+                // button next to it tells the reader nothing the button does
+                // not already say.
+                if manual_generation {
+                    ui.label(egui::RichText::new("Manual").color(crate::ui::tokens::TEXT_MUTED))
+                        .on_hover_text(
+                            "This operation does not regenerate on its own. Press G, or click \
+                         Generate, to compute it.",
+                        );
+                } else {
+                    ui.label("Ready");
+                }
             }
             FreshnessState::Regenerating => {
                 ui.label("Computing...");
@@ -4507,12 +4660,34 @@ fn draw_toolpath_panel(
                 .on_hover_text(e);
             }
         }
+        // DC1 ruling R27 moved the card's figures off the toolpath card, so
+        // this is the product's per-operation move count. It must say whose
+        // generation it counts.
+        //
+        // F2.2 made the card prefix an edited operation's figures with
+        // `old: `, for a reason that applies here unchanged: a confident
+        // number outweighs a quiet state word beside it. R27 deleted the
+        // surface that carried the mark, so the mark moves with the figure.
+        // The word is the card's word, so the two surfaces cannot fork.
         if let Some(result) = &entry.result {
+            let is_stale = matches!(freshness, FreshnessState::EditedSince);
+            let moves = result.stats.move_count;
+            let text = if is_stale {
+                format!("old: {moves} moves")
+            } else {
+                format!("{moves} moves")
+            };
             ui.label(
-                egui::RichText::new(format!("{} moves", result.stats.move_count))
+                egui::RichText::new(text)
                     .small()
                     .color(crate::ui::tokens::TEXT_FAINT),
-            );
+            )
+            .on_hover_text(if is_stale {
+                "This count is from the previous generation. Regenerate the \
+                 operation to measure the settings shown here."
+            } else {
+                "The move count of the current generation."
+            });
         }
     });
     if !validation_errors.is_empty() {
@@ -4521,115 +4696,6 @@ fn draw_toolpath_panel(
             // wrap mode from whatever layout encloses this panel
             // (G-REACHWRAP).
             wrapped_small_label(ui, err.clone(), crate::ui::tokens::CAUTION);
-        }
-    }
-
-    // Per-tool reach map (P5). Reach-capable operations only — every other
-    // operation gets no checkbox at all rather than a disabled one, because
-    // the question does not apply to it (`OperationType::supports_reach_map`).
-    if entry.operation.op_type().supports_reach_map() {
-        ui.horizontal(|ui| {
-            ui.checkbox(show_reach_map, "Show reach map").on_hover_text(
-                "Colour the model by what THIS toolpath's cutter can form: green where \
-                     the cutter reaches the surface within the operation's tolerance, red \
-                     where a gap is left. The measure is top-down, so undersides, overhangs \
-                     and vertical walls are NOT MEASURED and keep the plain model colour.",
-            );
-            // Only the two SHORT status words share the checkbox's row.
-            // A horizontal layout's wrap mode is `Extend` (egui's
-            // `Ui::wrap_mode`: a layout that is neither vertical nor
-            // main-wrapped falls to the `Extend` arm), so a bare `ui.label`
-            // here runs past the panel and clips. A `Label::wrap()` WOULD
-            // still wrap — the label's own mode overrides the Ui's
-            // (`label.rs:191`, `self.wrap_mode.unwrap_or_else(|| ui.wrap_mode())`) —
-            // but at `ui.available_width()`, which on this row is only what
-            // the checkbox leaves: a narrow column, not the panel width.
-            // These two readings are under twenty characters and carry no
-            // caveat, so either fate is fine for them; the ones that do
-            // carry a caveat are below, where they get the full width
-            // (G-REACHWRAP).
-            match reach {
-                ReachPanelSummary::Computing => {
-                    ui.label(
-                        egui::RichText::new("reach: computing…")
-                            .small()
-                            .color(crate::ui::tokens::TEXT_MUTED),
-                    );
-                }
-                // A zero percentage over an empty population is
-                // indistinguishable from a clean part, so it is never shown
-                // as one.
-                ReachPanelSummary::NotMeasured => {
-                    ui.label(
-                        egui::RichText::new("reach: not measured")
-                            .small()
-                            .color(crate::ui::tokens::CAUTION),
-                    );
-                }
-                ReachPanelSummary::Measured { .. }
-                | ReachPanelSummary::Failed(_)
-                | ReachPanelSummary::Idle => {}
-            }
-        });
-
-        // G-REACHWRAP (UX-R09-001, 2026-09-10): the readings used to sit on
-        // the checkbox's row as bare `ui.label`s, which under that row's
-        // `Extend` mode ran past the panel and clipped — the review's
-        // 1400×900 capture shows the summary cut off mid-number with
-        // `grid_note` never drawn at all
-        // (`results/W02/evidence/01_finish_defaults.png`). `grid_note` and
-        // `over_statement_note` are the MISSING-GUARANTEE sentences — the
-        // cell, the floor and the bar, and the statement that the grid
-        // over-states — so a clipped one reads as an unqualified result.
-        // They now get the panel's full width, one wrapped line each.
-        match reach {
-            ReachPanelSummary::Measured {
-                unreachable_pct,
-                max_gap_mm,
-                grid_note,
-                area_basis_note,
-                over_statement_note,
-                tolerance_below_floor,
-            } => {
-                // The base comes from `ReachMap::area_basis_note`, not
-                // from a sentence written here. This line said "of
-                // MEASURED area" while the panel legend said "of 3D
-                // surface area, rim-eroded 3.0 mm" - two surfaces, one
-                // quantity, two descriptions, and that is the drift the
-                // shared notes exist to prevent.
-                wrapped_small_label(
-                    ui,
-                    format!(
-                        "unreachable {unreachable_pct:.1} % {area_basis_note} · \
-                         max gap {max_gap_mm:.2} mm"
-                    ),
-                    crate::ui::tokens::TEXT_STRONG,
-                );
-                wrapped_small_label(
-                    ui,
-                    grid_note.clone(),
-                    if *tolerance_below_floor {
-                        crate::ui::tokens::CAUTION
-                    } else {
-                        crate::ui::tokens::TEXT_MUTED
-                    },
-                );
-                if *tolerance_below_floor {
-                    // The shared sentence, quoted - not a fourth
-                    // hand-written paraphrase of the same bias.
-                    wrapped_small_label(
-                        ui,
-                        over_statement_note.clone(),
-                        crate::ui::tokens::CAUTION,
-                    );
-                }
-            }
-            ReachPanelSummary::Failed(message) => {
-                wrapped_small_label(ui, format!("reach: {message}"), crate::ui::tokens::CAUTION);
-            }
-            ReachPanelSummary::Computing
-            | ReachPanelSummary::NotMeasured
-            | ReachPanelSummary::Idle => {}
         }
     }
 
@@ -4643,11 +4709,14 @@ fn draw_toolpath_panel(
     //
     // Load-gate diagnostics (chipload / power / deflection / drill)
     // surface in the same ribbon now that we have `load_verdict`.
+    //
+    // DC5: the tiers are BUILT here, because the tab strip's badges read
+    // them. The rows DRAW in the panel footer, below the tab content.
     let tool_for_diags = tool_configs
         .iter()
         .find(|(id, _)| *id == entry.tool_id)
         .map(|(_, tc)| tc);
-    let mut diagnostics = operations::collect_diagnostics(
+    let diagnostics = operations::collect_diagnostics(
         entry,
         tool_for_diags,
         stale_default_defects,
@@ -4656,27 +4725,11 @@ fn draw_toolpath_panel(
         model_refs,
         load_verdict,
     );
-    // Auto-regen workflow notice: still a GUI-state-only finding
-    // (depends on `entry.auto_regen` + compute state). Synthesise it
-    // here so the panel renderer doesn't have to special-case it.
-    if !entry.auto_regen && matches!(entry.status, ComputeStatus::Pending) {
-        diagnostics.push(rs_cam_core::diagnostics::Diagnostic {
-            id: rs_cam_core::diagnostics::DiagnosticId::new("workflow.needs_generation"),
-            scope: rs_cam_core::diagnostics::Scope::Toolpath { id: entry.id },
-            category: rs_cam_core::diagnostics::Category::State,
-            severity: rs_cam_core::diagnostics::Severity::Info,
-            confidence: rs_cam_core::diagnostics::Confidence::Static,
-            state: rs_cam_core::diagnostics::DiagnosticState::Current,
-            source: rs_cam_core::diagnostics::Source::StaticValidation,
-            message: "This operation requires manual generation. Press G or click Generate."
-                .to_owned(),
-            evidence: None,
-            fix: None,
-            supersedes: Vec::new(),
-            suppressed_diagnostics: Vec::new(),
-        });
-    }
-
+    // DC5 (Pattern C): the auto-regen workflow notice used to be synthesised
+    // here as a `Category::State` diagnostic and printed as the sentence
+    // "This operation requires manual generation. Press G or click Generate."
+    // The sentence only named the button beside it. The state now reads as
+    // one word on the Generate row, with the same fact on hover.
     let mut actionable = Vec::new();
     let mut stateful = Vec::new();
     let mut hints = Vec::new();
@@ -4699,145 +4752,6 @@ fn draw_toolpath_panel(
         }
     }
 
-    for d in &actionable {
-        render_diagnostic_row(ui, d, RowTier::Actionable, entry, stale_default_defects);
-    }
-    let (merged_gate_rows, stateful_rest) = merge_stateful_gate_rows(&stateful);
-    for d in &merged_gate_rows {
-        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
-    }
-    for d in &stateful_rest {
-        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
-    }
-    if !hints.is_empty() {
-        egui::CollapsingHeader::new(format!("Hints ({})", hints.len()))
-            .default_open(false)
-            .show(ui, |ui| {
-                for d in &hints {
-                    render_diagnostic_row(ui, d, RowTier::Hint, entry, stale_default_defects);
-                }
-            });
-    }
-
-    ui.separator();
-
-    // Geometry wiring (SHE-004): Tool · Input model · Faces · stock source,
-    // grouped behind one disclosure. Default-open on a fresh op (no result
-    // yet); collapsed once it has a result so settled wiring gets out of the way.
-    egui::CollapsingHeader::new("Geometry")
-        .default_open(entry.result.is_none())
-        .show(ui, |ui| {
-            // Tool selector
-            ui.horizontal(|ui| {
-                ui.label("Tool:");
-                let tool_label = tools
-                    .iter()
-                    .find(|(id, _, _)| *id == entry.tool_id)
-                    .map(|(_, s, _)| s.as_str())
-                    .unwrap_or("(none)");
-                egui::ComboBox::from_id_salt("tp_tool")
-                    .selected_text(tool_label)
-                    .show_ui(ui, |ui| {
-                        for (id, name, _) in tools {
-                            ui.selectable_value(&mut entry.tool_id, *id, name.as_str());
-                        }
-                    });
-            });
-
-            // Model selector
-            ui.horizontal(|ui| {
-                ui.label("Input:");
-                let model_label = models
-                    .iter()
-                    .find(|(id, _)| *id == entry.model_id)
-                    .map(|(_, s)| s.as_str())
-                    .unwrap_or("(none)");
-                egui::ComboBox::from_id_salt("tp_model")
-                    .selected_text(model_label)
-                    .show_ui(ui, |ui| {
-                        for (id, name) in models {
-                            ui.selectable_value(&mut entry.model_id, *id, name.as_str());
-                        }
-                    });
-            });
-
-            // BREP-not-loaded warning: surfaces when a STEP model loaded
-            // without its enriched mesh (older project files written before
-            // the BREP round-trip fix, or an unexpected loader regression).
-            // It stays adjacent to the Input model combo it concerns.
-            if model_is_step_missing_brep {
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(
-                        "⚠ BREP topology not loaded — face picker unavailable. Reload model.",
-                    )
-                    .color(crate::ui::tokens::CAUTION)
-                    .strong(),
-                );
-            }
-
-            // Face selection (STEP models only)
-            if model_has_enriched {
-                ui.add_space(8.0);
-                ui.label(
-                    egui::RichText::new("Face Selection")
-                        .strong()
-                        .color(crate::ui::tokens::TEXT_STRONG),
-                );
-                // SHE-005 — one affordance, not two stacked sentences. Zero
-                // selected: a single muted placeholder. ≥1 selected: count +
-                // Clear, no tip line. The unconditional "Tip:" sentence is
-                // removed — the placeholder + the live count updating as the
-                // user clicks convey the action.
-                let face_count = entry.face_selection.as_ref().map(|f| f.len()).unwrap_or(0);
-                if face_count > 0 {
-                    ui.horizontal(|ui| {
-                        ui.label(format!(
-                            "{} face{} selected",
-                            face_count,
-                            if face_count == 1 { "" } else { "s" }
-                        ));
-                        if ui.small_button("Clear").clicked() {
-                            entry.face_selection = None;
-                            entry.stale_since = Some(std::time::Instant::now());
-                        }
-                    });
-                } else {
-                    ui.label(
-                        egui::RichText::new("Pick faces in viewport \u{2197}")
-                            .color(crate::ui::tokens::TEXT_FAINT),
-                    );
-                }
-            }
-
-            // Stock source toggle — hidden for pencil ops. Pencil's own
-            // "Rest reference" group on the Geometry tab (see
-            // `draw_pencil_params`) now owns `stock_source` directly; showing
-            // this generic checkbox too used to give the user two controls
-            // that silently disagreed (this one won at generation time via
-            // `rest_depth_arm`'s R2 stock preference, regardless of what the
-            // reference-tool picker showed). Every other op still shows it.
-            if !matches!(entry.operation, OperationConfig::Pencil(_)) {
-                ui.add_space(8.0);
-                let mut use_remaining = entry.stock_source == StockSource::FromRemainingStock;
-                let resp = ui
-                    .checkbox(&mut use_remaining, "Use remaining stock")
-                    .on_hover_text(
-                        "When enabled, prior operations in this setup are simulated to \
-                         determine remaining material. The toolpath will skip air cuts and \
-                         adapt to the actual stock state.",
-                    );
-                if resp.changed() {
-                    entry.stock_source = if use_remaining {
-                        StockSource::FromRemainingStock
-                    } else {
-                        StockSource::Fresh
-                    };
-                    entry.stale_since = Some(std::time::Instant::now());
-                }
-            }
-        });
-
     // ── Tab bar ─────────────────────────────────────────────────────
 
     ui.add_space(8.0);
@@ -4855,6 +4769,21 @@ fn draw_toolpath_panel(
 
     match active_tab {
         ToolpathTab::Geometry => {
+            ui.add_space(4.0);
+
+            // DC5: the geometry WIRING opens this tab — Tool, Input model,
+            // Faces and the stock source. It used to sit behind a `Geometry`
+            // disclosure above the tab strip, which gave one name two homes
+            // at one level. One name, one place (Rule A).
+            draw_geometry_wiring(
+                ui,
+                entry,
+                tools,
+                models,
+                model_has_enriched,
+                model_is_step_missing_brep,
+            );
+            ui.separator();
             ui.add_space(4.0);
 
             // Validator-driven Fix banner (PR-2C Phase 1). One row per
@@ -5697,10 +5626,12 @@ fn draw_toolpath_panel(
             // F1.19 / G-BOTTOMPIN: the Bottom row is annotated per operation,
             // so the panel needs the operation. Read before the mutable
             // borrow of `entry.heights`; `OperationType` is `Copy`.
+            // F-6 / R33: the diagram takes the same operation, so its Bottom
+            // line agrees with the sentence the panel prints beside the row.
             let op_type = entry.operation.op_type();
             draw_heights_params(ui, &mut entry.heights, ctx, op_type);
             ui.add_space(6.0);
-            draw_height_diagram(ui, &mut entry.heights, ctx);
+            draw_height_diagram(ui, &mut entry.heights, ctx, op_type);
         }
 
         ToolpathTab::Dressup => {
@@ -5743,6 +5674,156 @@ fn draw_toolpath_panel(
             // Manual G-code fields (pre_gcode, post_gcode) kept in state
             // for future export wiring — UI removed until export is implemented.
         }
+    }
+
+    // ── Panel footer ────────────────────────────────────────────────
+    //
+    // DC5 (Pattern A / Pattern C): everything below belongs to the panel, not
+    // to a tab, so it renders BELOW the tab strip's content. The reach
+    // readings and the diagnostic ribbon used to draw ABOVE the strip, which
+    // put a paragraph of text between the Generate button and the tabs and
+    // left the reader unable to tell what contained what.
+    ui.separator();
+
+    // Per-tool reach map (P5). Reach-capable operations only — every other
+    // operation gets no checkbox at all rather than a disabled one, because
+    // the question does not apply to it (`OperationType::supports_reach_map`).
+    if entry.operation.op_type().supports_reach_map() {
+        ui.horizontal(|ui| {
+            ui.checkbox(show_reach_map, "Show reach map").on_hover_text(
+                "Colour the model by what THIS toolpath's cutter can form: green where \
+                     the cutter reaches the surface within the operation's tolerance, red \
+                     where a gap is left. The measure is top-down, so undersides, overhangs \
+                     and vertical walls are NOT MEASURED and keep the plain model colour.",
+            );
+            // Only the two SHORT status words share the checkbox's row.
+            // A horizontal layout's wrap mode is `Extend` (egui's
+            // `Ui::wrap_mode`: a layout that is neither vertical nor
+            // main-wrapped falls to the `Extend` arm), so a bare `ui.label`
+            // here runs past the panel and clips. A `Label::wrap()` WOULD
+            // still wrap — the label's own mode overrides the Ui's
+            // (`label.rs:191`, `self.wrap_mode.unwrap_or_else(|| ui.wrap_mode())`) —
+            // but at `ui.available_width()`, which on this row is only what
+            // the checkbox leaves: a narrow column, not the panel width.
+            // These two readings are under twenty characters and carry no
+            // caveat, so either fate is fine for them; the ones that do
+            // carry a caveat are below, where they get the full width
+            // (G-REACHWRAP).
+            match reach {
+                ReachPanelSummary::Computing => {
+                    ui.label(
+                        egui::RichText::new("reach: computing…")
+                            .small()
+                            .color(crate::ui::tokens::TEXT_MUTED),
+                    );
+                }
+                // A zero percentage over an empty population is
+                // indistinguishable from a clean part, so it is never shown
+                // as one.
+                ReachPanelSummary::NotMeasured => {
+                    ui.label(
+                        egui::RichText::new("reach: not measured")
+                            .small()
+                            .color(crate::ui::tokens::CAUTION),
+                    );
+                }
+                ReachPanelSummary::Measured { .. }
+                | ReachPanelSummary::Failed(_)
+                | ReachPanelSummary::Idle => {}
+            }
+        });
+
+        // G-REACHWRAP (UX-R09-001, 2026-09-10): the readings used to sit on
+        // the checkbox's row as bare `ui.label`s, which under that row's
+        // `Extend` mode ran past the panel and clipped — the review's
+        // 1400×900 capture shows the summary cut off mid-number with
+        // `grid_note` never drawn at all
+        // (`results/W02/evidence/01_finish_defaults.png`). `grid_note` and
+        // `over_statement_note` are the MISSING-GUARANTEE sentences — the
+        // cell, the floor and the bar, and the statement that the grid
+        // over-states — so a clipped one reads as an unqualified result.
+        // They now get the panel's full width, one wrapped line each.
+        match reach {
+            ReachPanelSummary::Measured {
+                unreachable_pct,
+                max_gap_mm,
+                grid_note,
+                area_basis_note,
+                over_statement_note,
+                tolerance_below_floor,
+            } => {
+                // The base comes from `ReachMap::area_basis_note`, not
+                // from a sentence written here. This line said "of
+                // MEASURED area" while the panel legend said "of 3D
+                // surface area, rim-eroded 3.0 mm" - two surfaces, one
+                // quantity, two descriptions, and that is the drift the
+                // shared notes exist to prevent.
+                wrapped_small_label(
+                    ui,
+                    format!(
+                        "unreachable {unreachable_pct:.1} % {area_basis_note} · \
+                         max gap {max_gap_mm:.2} mm"
+                    ),
+                    crate::ui::tokens::TEXT_STRONG,
+                );
+                wrapped_small_label(
+                    ui,
+                    grid_note.clone(),
+                    if *tolerance_below_floor {
+                        crate::ui::tokens::CAUTION
+                    } else {
+                        crate::ui::tokens::TEXT_MUTED
+                    },
+                );
+                if *tolerance_below_floor {
+                    // The shared sentence, quoted - not a fourth
+                    // hand-written paraphrase of the same bias.
+                    wrapped_small_label(
+                        ui,
+                        over_statement_note.clone(),
+                        crate::ui::tokens::CAUTION,
+                    );
+                }
+            }
+            ReachPanelSummary::Failed(message) => {
+                wrapped_small_label(ui, format!("reach: {message}"), crate::ui::tokens::CAUTION);
+            }
+            ReachPanelSummary::Computing
+            | ReachPanelSummary::NotMeasured
+            | ReachPanelSummary::Idle => {}
+        }
+    }
+
+    for d in &actionable {
+        render_diagnostic_row(ui, d, RowTier::Actionable, entry, stale_default_defects);
+    }
+    let (merged_gate_rows, stateful_rest) = merge_stateful_gate_rows(&stateful);
+    for d in &merged_gate_rows {
+        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
+    }
+    for d in &stateful_rest {
+        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
+    }
+
+    // DC5 (Pattern C): the hint list is a COUNT at the bottom of the panel,
+    // not a block of text at the top. The operator's words were "hints is a
+    // lot of text and its at the top, why?". Every hint and its severity
+    // order survive; the row's placement and its resting weight are what
+    // changed. `id_salt` pins the collapse state, which the header text used
+    // to derive and would otherwise reset on every count change.
+    if !hints.is_empty() {
+        egui::CollapsingHeader::new(
+            egui::RichText::new(format!("{} hints", hints.len()))
+                .small()
+                .color(crate::ui::tokens::TEXT_MUTED),
+        )
+        .id_salt("tp_hints")
+        .default_open(false)
+        .show(ui, |ui| {
+            for d in &hints {
+                render_diagnostic_row(ui, d, RowTier::Hint, entry, stale_default_defects);
+            }
+        });
     }
 }
 

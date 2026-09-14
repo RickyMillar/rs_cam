@@ -63,17 +63,26 @@ fn the_inspector_header_reads_the_freshness_state() {
     );
 }
 
-/// The card's chip, stats row and ▶ button all read the one state.
+/// The card's state indicator and its generate route read the one state.
 ///
-/// The ▶ button is the sharpest of the three: `ComputeStatus::needs_generation`
+/// The generate route is the sharper of the two: `ComputeStatus::needs_generation`
 /// answers `false` for `Done`, and an edited operation keeps `Done`, so the
-/// quick-generate button was hidden on precisely the card whose whole message
+/// quick-generate control was hidden on precisely the card whose whole message
 /// is "regenerate me".
+///
+/// **This test lost its third arm on 2026-09-14 (DC1, ruling R27).** It
+/// asserted that the card's stats row prefixed an edited operation's figures
+/// with `old: `. The stats row is gone: three numbers per card times nine
+/// cards was 27 figures competing with nine names, and the inspector — which
+/// is open whenever a card is selected — carries them instead. The arm below
+/// pins the DELETION, so the row cannot return to the card without a ruling.
+/// The `old: ` guarantee itself now belongs to whichever surface draws those
+/// figures, and it is not this one.
 #[test]
 fn the_card_reads_the_freshness_state() {
     assert!(
         PANEL_SRC.contains("status_chip(freshness)"),
-        "the chip must come from the shared mapping"
+        "the state indicator must come from the shared mapping"
     );
     assert!(
         !PANEL_SRC.contains("ComputeStatus::effective("),
@@ -82,11 +91,13 @@ fn the_card_reads_the_freshness_state() {
     assert!(
         PANEL_SRC.contains("let needs_generation = !matches!(")
             && !PANEL_SRC.contains("if status.needs_generation()"),
-        "the generate button must follow freshness, not ComputeStatus::needs_generation"
+        "the generate route must follow freshness, not ComputeStatus::needs_generation"
     );
     assert!(
-        PANEL_SRC.contains("if is_stale { \"old: \" } else { \"\" }"),
-        "an edited operation's figures must say whose they are"
+        !PANEL_SRC.contains("if is_stale { \"old: \" } else { \"\" }"),
+        "R27 removed the stats row from the card. If it came back, it came \
+         back without the ruling that would justify it — and a card whose \
+         height varies with its content breaks Rule D."
     );
 }
 

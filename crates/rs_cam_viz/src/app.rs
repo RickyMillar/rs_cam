@@ -339,7 +339,19 @@ impl RsCamApp {
             .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
         egui::Panel::bottom("status_bar").show(ui, |ui| {
-            crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
+            // DC7: the bar carries the load-warnings count and reports the
+            // click. The controller owns the list, so the open decision is
+            // taken here.
+            let open_warnings = crate::ui::status_bar::draw(
+                ui,
+                self.controller.state(),
+                col_count,
+                &lane_snapshots,
+                self.controller.load_warnings(),
+            );
+            if open_warnings {
+                self.controller.set_show_load_warnings(true);
+            }
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
                 ui.label(egui::RichText::new(msg).color(crate::ui::tokens::CAUTION));
@@ -369,7 +381,19 @@ impl RsCamApp {
             .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
         egui::Panel::bottom("status_bar").show(ui, |ui| {
-            crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
+            // DC7: the bar carries the load-warnings count and reports the
+            // click. The controller owns the list, so the open decision is
+            // taken here.
+            let open_warnings = crate::ui::status_bar::draw(
+                ui,
+                self.controller.state(),
+                col_count,
+                &lane_snapshots,
+                self.controller.load_warnings(),
+            );
+            if open_warnings {
+                self.controller.set_show_load_warnings(true);
+            }
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
                 ui.label(egui::RichText::new(msg).color(crate::ui::tokens::CAUTION));
@@ -424,7 +448,19 @@ impl RsCamApp {
             .total_collision_count();
         let lane_snapshots = self.controller.lane_snapshots();
         egui::Panel::bottom("status_bar").show(ui, |ui| {
-            crate::ui::status_bar::draw(ui, self.controller.state(), col_count, &lane_snapshots);
+            // DC7: the bar carries the load-warnings count and reports the
+            // click. The controller owns the list, so the open decision is
+            // taken here.
+            let open_warnings = crate::ui::status_bar::draw(
+                ui,
+                self.controller.state(),
+                col_count,
+                &lane_snapshots,
+                self.controller.load_warnings(),
+            );
+            if open_warnings {
+                self.controller.set_show_load_warnings(true);
+            }
             if let Some(msg) = self.controller.status_message() {
                 ui.separator();
                 ui.label(egui::RichText::new(msg).color(crate::ui::tokens::CAUTION));
@@ -899,39 +935,68 @@ impl RsCamApp {
             self.load_checkpoint_for_move(move_idx, frame);
         }
 
-        // Load warnings window
+        // The load-warnings modal (DC7, defect F-4, ruling R31).
+        //
+        // This was a NON-MODAL window titled "Project Load Warnings". The
+        // operator could leave it open over the workspace tab bar, where it
+        // covered Setup, Toolpaths and Simulation, so navigation stopped. A
+        // modal cannot be left anywhere: it is a thing you open, read and
+        // close.
+        //
+        // The status bar carries the count and opens this, so the warnings
+        // stay reachable after a close. The window could be dismissed once
+        // and never reopened.
         if self.controller.show_load_warnings() {
-            let mut show = self.controller.show_load_warnings();
-            egui::Window::new("Project Load Warnings")
-                .open(&mut show)
-                .resizable(true)
+            // The content box. It is centred and it never reaches the tab
+            // bar at the top of the window.
+            const MODAL_WIDTH: f32 = 420.0;
+            const MODAL_MAX_LIST_HEIGHT: f32 = 280.0;
+
+            // `NoticeStack` is the bounded renderer §4.11 was written for,
+            // and this is one of its six consumers. A raw loop over a project
+            // with 300 warnings drew 300 rows.
+            let notices: Vec<Notice> = self
+                .controller
+                .load_warnings()
+                .iter()
+                .map(|w| Notice::new(Role::Caution, w.clone()))
+                .collect();
+            let expand_id = egui::Id::new("load_warnings_expanded");
+            let expanded = ctx.data(|d| d.get_temp::<bool>(expand_id).unwrap_or(false));
+            // The title is the same count the status bar states, so the two
+            // surfaces cannot disagree about how many there are.
+            let title = crate::ui::status_bar::warnings_label(notices.len());
+
+            let modal = egui::Modal::new(egui::Id::new("load_warnings_modal"))
+                .backdrop_color(crate::ui::tokens::SCRIM)
                 .show(ctx, |ui| {
-                    let response =
-                        ui.label("The project loaded, but some references need attention:");
-                    crate::ui::automation::record(
-                        ui,
-                        "project_load_warnings",
-                        &response,
-                        "Project Load Warnings",
-                    );
+                    ui.set_max_width(MODAL_WIDTH);
+                    let title = title.as_str();
+                    let response = ui.label(crate::ui::components::text::display(title));
+                    crate::ui::automation::record(ui, "project_load_warnings", &response, title);
                     ui.add_space(crate::ui::tokens::SPACE_3);
-                    // This iterated EVERY warning. A project with 300 of them
-                    // drew 300 rows and pushed the rest of the window off the
-                    // screen. `NoticeStack` is the bounded renderer §4.11 was
-                    // written for, and this is one of its six consumers.
-                    let notices: Vec<Notice> = self
-                        .controller
-                        .load_warnings()
-                        .iter()
-                        .map(|w| Notice::new(Role::Caution, w.clone()))
-                        .collect();
-                    let expand_id = egui::Id::new("load_warnings_expanded");
-                    let expanded = ui.data(|d| d.get_temp::<bool>(expand_id).unwrap_or(false));
-                    if NoticeStack::new(notices).expanded(expanded).show(ui) {
-                        ui.data_mut(|d| d.insert_temp(expand_id, true));
-                    }
+                    // Rule F: the container scrolls rather than clips.
+                    let expand_clicked = egui::ScrollArea::vertical()
+                        .max_height(MODAL_MAX_LIST_HEIGHT)
+                        .show(ui, |ui| {
+                            NoticeStack::new(notices).expanded(expanded).show(ui)
+                        })
+                        .inner;
+                    ui.add_space(crate::ui::tokens::SPACE_3);
+                    let close_clicked = ui
+                        .add(crate::ui::components::Button::primary("Close"))
+                        .clicked();
+                    (expand_clicked, close_clicked)
                 });
-            self.controller.set_show_load_warnings(show);
+
+            let (expand_clicked, close_clicked) = modal.inner;
+            if expand_clicked {
+                ctx.data_mut(|d| d.insert_temp(expand_id, true));
+            }
+            if close_clicked || modal.should_close() {
+                self.controller.set_show_load_warnings(false);
+                ctx.data_mut(|d| d.insert_temp(expand_id, false));
+            }
         }
 
         // Toast notifications (bottom-right corner)

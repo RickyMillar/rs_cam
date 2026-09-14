@@ -53,7 +53,7 @@ use crate::state::job::{FaceUp, ToolConfig};
 use crate::state::runtime::StaleResultPolicy;
 use crate::state::selection::Selection;
 use crate::state::toolpath::ToolpathId;
-use crate::state::{FeedsModalMode, NomogramExplore, ProjectFeedsSort, Workspace};
+use crate::state::{NomogramExplore, ProjectFeedsSort, Workspace};
 use rs_cam_core::session::CommandId;
 
 pub use rs_cam_core::session::{CommandKind, Reach, Surfaces};
@@ -189,8 +189,8 @@ pub struct SetUiViewArgs {
     pub overlays: Option<std::collections::BTreeMap<String, bool>>,
 }
 
-/// Which mode the Feeds and Speeds modal shows.
-pub type SetFeedsModalModeArgs = FeedsModalMode;
+/// Whether the project feeds rollup is on screen.
+pub type SetProjectFeedsOpenArgs = bool;
 
 /// Which sort order the project rollup table takes.
 pub type SetFeedsProjectSortArgs = ProjectFeedsSort;
@@ -618,11 +618,16 @@ macro_rules! for_each_ui_command {
                  mcp: Reach::Skip("apply_feeds writes the recipe without a modal"),
                  cli: Reach::Skip("the batch CLI draws no modal"),
              }),
-            (UiCommand, SetFeedsModalMode, "set_feeds_modal_mode", SetFeedsModalModeArgs, (),
+            // DC5a deleted `SetFeedsModalMode`. The feeds modal held TWO
+            // scopes behind a mode flip; the project rollup moved to the
+            // Readiness workspace, so there is no mode left to switch. The
+            // row below opens that rollup and is its replacement.
+            (UiCommand, SetProjectFeedsOpen, "set_project_feeds_open",
+             SetProjectFeedsOpenArgs, (),
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip("no wire tool switches a modal's own mode"),
-                 cli: Reach::Skip("the batch CLI draws no modal"),
+                 mcp: Reach::Skip("apply_feeds writes the recipe without a rollup"),
+                 cli: Reach::Skip("the batch CLI draws no rollup"),
              }),
             (UiCommand, ToggleFeedsProvenance, "toggle_feeds_provenance", NoArgs, (),
              Surfaces {

@@ -1,19 +1,16 @@
 use std::sync::Arc;
 
 use super::AppEvent;
-use super::readiness;
-use super::sim_debug::draw_trace_badge;
 use crate::render::toolpath_render::palette_color;
 use crate::state::AppState;
 use crate::state::freshness::{FreshnessState, freshness};
 use crate::state::job::{SetupId, ToolId};
 use crate::state::selection::Selection;
-use crate::state::simulation::SimulationState;
 use crate::state::toolpath::{OperationType, ToolpathId};
+use crate::state::viewport::ViewportState;
 use crate::ui::theme;
 use crate::ui::tokens;
 use crate::ui_command::{NoArgs, UiCommand};
-use rs_cam_core::compute::config::ToolpathStats;
 
 /// Minimal snapshot of a `ToolpathConfig` with just the fields the card reads.
 /// Cloning this releases the `state.session` borrow so `state.viewport` can be
@@ -29,42 +26,22 @@ struct CardInfo {
 /// Minimal snapshot of `ToolpathRuntime` fields the card needs.
 struct RuntimeSnapshot {
     visible: bool,
-    auto_regen: bool,
     has_result: bool,
-    stats: Option<ToolpathStats>,
     /// The one state every surface should read (R0.1 §4.4). Derived here,
     /// beside the core result cache the derivation needs, because the card
     /// body no longer holds the session borrow.
     freshness: FreshnessState,
 }
 
-/// Left panel for the Toolpath workspace: operation queue with status chips.
+/// Left panel for the Toolpath workspace: the operation queue.
 pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
-    // The panel title, then its rule, then the one action this panel is FOR.
-    //
-    // This stack read as three unrelated things — a heading, egui's own
-    // separator, and a default button floating in a bare horizontal. The
-    // operator's words were that it "looks a bit out of place". The heading
-    // and the rule are now one unit, the rule is the HAIRLINE token rather
-    // than egui's separator, and the button says what it is.
+    // DC2 — the heading and its rule leave the panel. A panel inside a
+    // workspace tab named "Toolpaths" does not need a second word for the
+    // same idea, and the rule separated that word from nothing. The one
+    // action this panel is FOR takes the space, at the full section width.
     ui.add_space(tokens::SPACE_2);
-    ui.label(
-        egui::RichText::new("Operations")
-            .text_style(egui::TextStyle::Heading)
-            .color(tokens::TEXT_STRONG),
-    );
-    ui.add_space(tokens::SPACE_2);
-    {
-        let y = ui.cursor().top();
-        let x = ui.max_rect().x_range();
-        ui.painter()
-            .hline(x, y, egui::Stroke::new(1.0, tokens::HAIRLINE));
-    }
-    ui.add_space(tokens::SPACE_3);
-
-    // §4.5: generating every stale operation is what this workspace is FOR.
     if ui
-        .add(crate::ui::components::Button::primary("Generate All"))
+        .add(crate::ui::components::Button::primary("Generate All").min_width(ui.available_width()))
         .clicked()
     {
         events.push(AppEvent::GenerateAll);
@@ -86,33 +63,20 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     for (setup_id, setup_name, toolpath_indices) in setups_data {
         // Setup header (only if multi-setup)
         if multi_setup {
-            ui.add_space(4.0);
+            ui.add_space(tokens::SPACE_2);
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(&setup_name)
                         .strong()
-                        .color(theme::TEXT_HEADING),
-                );
-                // Count ready/total
-                // F2.2 — `is_current()`, not `ComputeStatus::Done`. An
-                // edited operation keeps `Done`, so this header read n/n
-                // beside a card that said STALE: the same panel disagreeing
-                // with itself about the same operation.
-                let ready = toolpath_indices
-                    .iter()
-                    .filter(|&&idx| {
-                        crate::state::freshness::freshness_at(&state.session, &state.gui, idx)
-                            .is_some_and(|f| f.is_current())
-                    })
-                    .count();
-                let total = toolpath_indices.len();
-                ui.label(
-                    egui::RichText::new(format!("{ready}/{total}"))
-                        .small()
-                        .color(theme::TEXT_DIM),
+                        .color(tokens::TEXT_STRONG),
                 );
 
-                // Per-setup + Add menu
+                // DC2 — the `{ready}/{total}` fraction leaves this header.
+                // A fraction between two words is a state rendered as almost
+                // nothing (Pattern B). The setup card carries the state
+                // indicator instead.
+
+                // Per-setup add menu.
                 add_toolpath_menu(ui, setup_id, state, events);
             });
             ui.separator();
@@ -149,9 +113,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     .get(&card.id)
                     .map(|r| RuntimeSnapshot {
                         visible: r.visible,
-                        auto_regen: r.auto_regen,
                         has_result: r.result.is_some(),
-                        stats: r.result.as_ref().map(|res| res.stats.clone()),
                         freshness: freshness(
                             tc_src,
                             Some(r),
@@ -191,97 +153,31 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         }
     }
 
-    // Single-setup: show "+ Add" below toolpath list
+    // Single-setup: the add menu sits below the operation list.
     if !multi_setup && let Some(setup) = state.session.list_setups().first() {
         let sid = SetupId(setup.id);
-        ui.add_space(4.0);
+        ui.add_space(tokens::SPACE_2);
         add_toolpath_menu(ui, sid, state, events);
     }
 
-    // Tool library (compact, collapsed by default). This is the *live*
-    // tool home and holds the full CRUD set: per-tool Duplicate/Delete
-    // (context menu or Del key), library manager, and library import.
-    // W1.1 harvested these from the dead `project_tree.rs` (deleted) — the
-    // shipping GUI previously had no way to delete/duplicate a tool or
-    // reach the library from the panel.
-    ui.add_space(12.0);
-    egui::CollapsingHeader::new("Tool Library")
-        .default_open(false)
-        .show(ui, |ui| {
-            if ui
-                .small_button("Manage library…")
-                .on_hover_text("Browse, edit, and organise the reusable tool catalogs.")
-                .clicked()
-            {
-                events.push(AppEvent::Ui(UiCommand::OpenToolLibrary(NoArgs)));
-            }
-            ui.add_space(4.0);
-            if state.session.tools().is_empty() {
-                crate::ui::components::EmptyState::new("No tools defined")
-                    .detail("Add a tool from the library before creating an operation.")
-                    .show(ui);
-            }
-            for tool in state.session.tools() {
-                let selected = state.selection == Selection::Tool(tool.id);
-                let response = ui.selectable_label(selected, tool.summary());
-                if response.clicked() {
-                    events.push(AppEvent::Ui(UiCommand::Select(Selection::Tool(tool.id))));
-                }
-                response.context_menu(|ui| {
-                    if ui.button("Duplicate").clicked() {
-                        events.push(AppEvent::DuplicateTool(tool.id));
-                        ui.close();
-                    }
-                    if ui.button("Delete").clicked() {
-                        events.push(AppEvent::RemoveTool(tool.id));
-                        ui.close();
-                    }
-                });
-            }
-            ui.add_space(4.0);
-            ui.menu_button("+ Add Tool", |ui| {
-                for &tt in crate::state::job::ToolType::ALL {
-                    if ui.button(tt.label()).clicked() {
-                        events.push(AppEvent::AddTool(tt));
-                        ui.close();
-                    }
-                }
-                let libraries = rs_cam_core::tool_library::list_libraries();
-                if !libraries.is_empty() {
-                    ui.separator();
-                    ui.menu_button("From library", |ui| {
-                        for lib in &libraries {
-                            ui.menu_button(
-                                lib,
-                                |ui| match rs_cam_core::tool_library::load_library(lib) {
-                                    Ok(catalog) if catalog.tools.is_empty() => {
-                                        ui.label("(empty)");
-                                    }
-                                    Ok(catalog) => {
-                                        for tool in &catalog.tools {
-                                            let label =
-                                                format!("{} — ⌀{:.2}mm", tool.name, tool.diameter);
-                                            if ui.button(label).clicked() {
-                                                events.push(AppEvent::AddToolFromLibrary(
-                                                    Box::new(tool.clone()),
-                                                ));
-                                                ui.close();
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        ui.label(format!("load error: {e}"));
-                                    }
-                                },
-                            );
-                        }
-                    });
-                }
-            });
-        });
+    // R29 — the Tool Library left this panel for the Setup workspace. A tool
+    // is a project RESOURCE, like the stock, the machine and the models, and
+    // Setup is where the resources live. It was a collapsed disclosure at the
+    // bottom of the operation queue, which drew one object kind at a weight
+    // no other resource carries (Rule D).
 }
 
 /// Draw a single toolpath card, wrapped in a drag source.
+///
+/// R32 — the card is ONE row, at one height, for every operation:
+/// `swatch · state dot · name · tool · eye · …`.
+///
+/// It carried thirteen elements when selected and eight at rest. The four
+/// that only READ were loud and always on screen, and the six that DID
+/// something were 12-point glyphs that appeared only on hover (Pattern B).
+/// Rule B inverts that: the state is one quiet dot, and every action is in
+/// the `…` menu, which is always visible. The right-click menu keeps the
+/// same list.
 fn draw_toolpath_card(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -294,35 +190,31 @@ fn draw_toolpath_card(
     let tp_id = tc.id;
     let selected = state.selection == Selection::Toolpath(tp_id);
     let visible = rt.is_none_or(|r| r.visible);
-    let auto_regen = rt.is_none_or(|r| r.auto_regen);
-    // F2.2 — the one state the chip, the stats row and the ▶ button all
-    // read. It replaces the `ComputeStatus::effective` call that used to
-    // stand here: A/M11's "one taxonomy" rule is unchanged and `enabled`
-    // still wins over everything, but `FreshnessState` folds that in itself
-    // (`Disabled` is its first arm) and adds the one state `ComputeStatus`
-    // cannot express — generated, then edited. A card with no runtime entry
-    // at all has never been generated.
+    // F2.2 — the one state the dot reads. It replaces the
+    // `ComputeStatus::effective` call that used to stand here: A/M11's "one
+    // taxonomy" rule is unchanged and `enabled` still wins over everything,
+    // but `FreshnessState` folds that in itself (`Disabled` is its first
+    // arm) and adds the one state `ComputeStatus` cannot express —
+    // generated, then edited. A card with no runtime entry at all has never
+    // been generated.
     let freshness = rt.map_or(&FreshnessState::NoResult, |r| &r.freshness);
     let has_result = rt.is_some_and(|r| r.has_result);
-    let stats = rt.and_then(|r| r.stats.as_ref());
-    // G-TIMEEST — the card's per-op time. Resolved HERE, before the card body
-    // takes `&mut state`, and from the one shared decision rather than the
-    // local `cutting_distance / feed` this row used to carry. `CycleTime` is
-    // `Copy`, so nothing borrows `state` past this line.
-    let cycle = stats.map_or(readiness::CycleTime::NONE, |s| {
-        readiness::toolpath_cycle_time(
-            &state.session,
-            state
-                .simulation
-                .results
-                .as_ref()
-                .and_then(|r| r.cut_trace.as_ref()),
-            tp_id,
-            s.cutting_distance,
-            tc.operation.feed_rate(),
-        )
-    });
     let dim = !tc.enabled || !visible;
+
+    // Read every session-derived value HERE. The row body borrows
+    // `state.viewport` mutably, so it cannot also hold a `&AppState`.
+    let tool_summary = state
+        .session
+        .tools()
+        .iter()
+        .find(|t| t.id == ToolId(tc.tool_id))
+        .map(|tool| tool.summary());
+    let rest = match tc.operation {
+        crate::state::toolpath::OperationConfig::Rest(ref rest_cfg) => {
+            Some(rest_badge(state, rest_cfg, tp_id))
+        }
+        _ => None,
+    };
 
     let pc = palette_color(global_idx);
     let swatch_color = tokens::from_linear_rgb(pc);
@@ -340,8 +232,8 @@ fn draw_toolpath_card(
             egui::Color32::TRANSPARENT
         })
         .stroke(egui::Stroke::new(1.0_f32, border_color))
-        .inner_margin(4.0)
-        .corner_radius(3)
+        .inner_margin(tokens::SPACE_1)
+        .corner_radius(tokens::RADIUS_SM)
         .show(ui, |ui| {
             // MCP parameter highlight: glow the card when an MCP action recently
             // changed a parameter on this toolpath.
@@ -383,263 +275,48 @@ fn draw_toolpath_card(
                 events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(tp_id))));
             }
 
-            // Row 1: drag grip + swatch + status + name
+            // The one row. Rule D: the height does not vary with the
+            // content, so every card in the queue is the same height.
             ui.horizontal(|ui| {
-                // Drag grip handle — drag this to reorder.
-                let grip_id = egui::Id::new("tp_grip").with(tc.id);
-                let (grip_rect, grip_resp) =
-                    ui.allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::drag());
-                // Draw grip dots (⠿)
-                let grip_color = if grip_resp.dragged() {
-                    theme::ACCENT
-                } else if grip_resp.hovered() {
-                    theme::TEXT_MUTED
-                } else {
-                    theme::TEXT_FAINT
-                };
-                ui.painter().text(
-                    grip_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "\u{2807}",
-                    egui::FontId::proportional(12.0),
-                    grip_color,
-                );
-                if grip_resp.hovered() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-                }
-                if grip_resp.dragged() {
-                    egui::DragAndDrop::set_payload(ui.ctx(), tp_id);
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                }
-                let _ = grip_id; // used for identification
-
-                // Color swatch
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 14.0), egui::Sense::hover());
-                ui.painter().rect_filled(rect, 2.0, swatch_color);
-
-                // Status chip. The mapping is a pure function so the
-                // sentry can drive every state without a `Ui` (F2.2).
-                let (status_text, status_role, hover) = status_chip(freshness);
-                let mut chip = crate::ui::components::StatusChip::new(status_text, status_role);
-                if let Some(msg) = hover {
-                    chip = chip.hover(msg);
-                }
-                ui.add(chip);
-                // Manual-gen indicator for 3D ops
-                if !auto_regen {
-                    ui.label(
-                        egui::RichText::new("MAN")
-                            .small()
-                            .color(theme::TEXT_FAINT),
-                    )
-                    .on_hover_text(
-                        "Manual generation \u{2014} press G to generate this operation. 3D operations are not auto-regenerated on parameter change.",
-                    );
-                }
-
-                // Trace badges are generator-debug provenance. When every
-                // toolpath carries the identical availability the badge is
-                // wallpaper (8× "TRACE" said nothing in the 2026-06-11
-                // capture sweep) — show it only on cards that differ from
-                // the rest of the queue.
-                let availability =
-                    SimulationState::trace_availability_for_toolpath(&state.gui, tp_id);
-                let uniform = state.session.toolpath_configs().iter().all(|other| {
-                    SimulationState::trace_availability_for_toolpath(&state.gui, other.id)
-                        == availability
-                });
-                if !uniform {
-                    draw_trace_badge(ui, availability);
-                }
-
-                // Name
-                let text_color = if dim {
-                    crate::ui::tokens::TEXT_FAINT
-                } else {
-                    crate::ui::tokens::TEXT_STRONG
-                };
-                ui.label(egui::RichText::new(&tc.name).color(text_color));
-            });
-
-            // Row 2: tool info + quick actions
-            ui.horizontal(|ui| {
-                // Tool name
-                if let Some(tool) = state.session.tools().iter().find(|t| t.id == ToolId(tc.tool_id)) {
-                    ui.label(
-                        egui::RichText::new(tool.summary())
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    );
-                }
-
-                // Rest dependency badge
-                if let crate::state::toolpath::OperationConfig::Rest(ref rest_cfg) = tc.operation {
-                    draw_rest_badge(ui, rest_cfg, state, tp_id);
-                }
+                ui.set_min_height(tokens::ROW_ACTION);
+                draw_swatch(ui, tp_id, swatch_color);
+                draw_state_dot(ui, freshness, tp_id, events);
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if has_result
-                        && ui
-                            .small_button("Sim")
-                            .on_hover_text("Inspect in Simulation")
-                            .clicked()
-                    {
-                        events.push(AppEvent::Ui(UiCommand::InspectToolpathInSimulation(tp_id)));
-                    }
+                    ui.menu_button("\u{2026}", |ui| {
+                        card_menu(
+                            ui,
+                            tp_id,
+                            visible,
+                            tc.enabled,
+                            has_result,
+                            &mut state.viewport,
+                            events,
+                        );
+                    });
+                    draw_eye(ui, tp_id, visible, &state.viewport, events);
 
-                    // Quick generate button. F2.2: driven by freshness, not
-                    // `ComputeStatus::needs_generation()`, which answers
-                    // `false` for `Done` — and an edited operation keeps
-                    // `Done`, so the button was hidden on precisely the card
-                    // whose whole message is "regenerate me".
-                    let needs_generation = !matches!(
-                        freshness,
-                        FreshnessState::Current
-                            | FreshnessState::Regenerating
-                            | FreshnessState::Disabled
-                    );
-                    if needs_generation
-                        && ui
-                            .small_button("\u{25B6}")
-                            .on_hover_text("Generate")
-                            .clicked()
-                    {
-                        events.push(AppEvent::GenerateToolpath(tp_id));
-                    }
+                    // The name and the tool take the width the controls
+                    // leave.
+                    let tool = tool_summary.as_deref();
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        draw_name_and_tool(ui, &tc.name, tool, rest, dim);
+                    });
                 });
             });
 
-            // Row 3: stats (only when computed)
-            if let Some(stats) = stats {
-                let total_dist_m = (stats.cutting_distance + stats.rapid_distance) / 1000.0;
-                let time_str = match cycle.basis {
-                    Some(_) => readiness::format_cycle_time(cycle.seconds),
-                    // No estimate is a dash, never a plausible-looking 0 s.
-                    None => "\u{2014}".to_owned(),
-                };
-                // F2.2 (R0.1 §4.4): on an edited operation these figures
-                // count the PREVIOUS generation's moves. Left unmarked they
-                // are the strongest thing on the card saying "this is a
-                // finished, measured operation" — an amber chip two rows up
-                // does not undo three confident numbers. The prefix says
-                // whose they are and the fainter colour stops them reading
-                // as the current answer.
-                let is_stale = matches!(freshness, FreshnessState::EditedSince);
-                let stats_text = format!(
-                    "{}{} moves \u{00B7} {} \u{00B7} {:.1} m",
-                    if is_stale { "old: " } else { "" },
-                    stats.move_count,
-                    time_str,
-                    total_dist_m,
-                );
-                let resp = ui.label(
-                    egui::RichText::new(stats_text).small().color(if is_stale {
-                        theme::TEXT_FAINT
-                    } else {
-                        theme::TEXT_DIM
-                    }),
-                );
-                // The card is too narrow for the basis inline, so it lives on
-                // hover here — the surfaces an operator plans a cut from
-                // (readiness, pre-flight, export, setup sheet) all state it
-                // without hovering.
-                if let Some(basis) = cycle.basis {
-                    resp.on_hover_text(format!(
-                        "Estimated time ({}). {}",
-                        basis.qualifier(),
-                        basis.caveat()
-                    ));
-                }
-            }
-
-            // Row 4: shared per-toolpath row controls (eye / C / R / isolate).
-            // Hover/selection only (density Batch 2) — six always-on glyphs
-            // per card made an 8-op rail ~100 touch targets when a scan
-            // needs swatch + name + status. Every action also remains
-            // reachable from the right-click context menu.
-            //
-            // The hover test runs against the FULL card rect from the
-            // previous frame (stored in temp memory), and geometrically
-            // (`rect_contains_pointer`, not `Response::hovered`): testing
-            // only the content drawn so far made the row vanish the moment
-            // the pointer entered it, and a hit-test-layered check would
-            // flicker when the row's own buttons take hover priority.
-            let card_rect_id = egui::Id::new("tp_card_full_rect").with(tc.id);
-            let hovered_card = ui
-                .ctx()
-                .data_mut(|d| d.get_temp::<egui::Rect>(card_rect_id))
-                .is_some_and(|r| ui.rect_contains_pointer(r));
-            let controls_visible = selected || hovered_card;
-            if controls_visible {
-                ui.horizontal(|ui| {
-                    crate::ui::toolpath_row_controls::draw(
-                        ui,
-                        tp_id,
-                        visible,
-                        Some(tc.enabled),
-                        &mut state.viewport,
-                        events,
-                    );
-                });
-            }
-            // Remember this card's full extent (rows 1–4 as drawn this
-            // frame, padded by the frame margin) for next frame's test.
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(card_rect_id, ui.min_rect().expand(4.0)));
-
-            // Context menu
+            // Right-click carries the same list. It costs no screen space,
+            // so it stays BESIDE the `…` menu rather than instead of it.
             card_resp.context_menu(|ui| {
-                if ui.button("Generate").clicked() {
-                    events.push(AppEvent::GenerateToolpath(tp_id));
-                    ui.close();
-                }
-                if has_result && ui.button("Inspect in Simulation").clicked() {
-                    events.push(AppEvent::Ui(UiCommand::InspectToolpathInSimulation(tp_id)));
-                    ui.close();
-                }
-                let is_isolated = state.viewport.isolate_toolpath == Some(tp_id);
-                let iso_label = if is_isolated {
-                    "Clear isolation"
-                } else {
-                    "Isolate this toolpath"
-                };
-                if ui.button(iso_label).clicked() {
-                    if is_isolated {
-                        events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
-                    } else {
-                        events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(tp_id))));
-                        events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
-                    }
-                    ui.close();
-                }
-                let vis_label = if visible { "Hide" } else { "Show" };
-                if ui.button(vis_label).clicked() {
-                    events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
-                    ui.close();
-                }
-                let en_label = if tc.enabled { "Disable" } else { "Enable" };
-                if ui.button(en_label).clicked() {
-                    events.push(AppEvent::ToggleToolpathEnabled(tp_id));
-                    ui.close();
-                }
-                if ui.button("Duplicate").clicked() {
-                    events.push(AppEvent::DuplicateToolpath(tp_id));
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button("Move Up").clicked() {
-                    events.push(AppEvent::MoveToolpathUp(tp_id));
-                    ui.close();
-                }
-                if ui.button("Move Down").clicked() {
-                    events.push(AppEvent::MoveToolpathDown(tp_id));
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button("Delete").clicked() {
-                    events.push(AppEvent::RemoveToolpath(tp_id));
-                    ui.close();
-                }
+                card_menu(
+                    ui,
+                    tp_id,
+                    visible,
+                    tc.enabled,
+                    has_result,
+                    &mut state.viewport,
+                    events,
+                );
             });
         });
 
@@ -659,6 +336,283 @@ fn draw_toolpath_card(
     }
 }
 
+/// The colour swatch, which is also the card's drag grip (R26).
+///
+/// The card opened with a 10-point grip glyph beside a 6-point swatch: two
+/// rectangles, one job each. The swatch takes the drag now, so the thing the
+/// operator grabs is the thing that names the row in the viewport.
+fn draw_swatch(ui: &mut egui::Ui, tp_id: ToolpathId, swatch_color: egui::Color32) {
+    let size = egui::vec2(tokens::SPACE_3, tokens::SPACE_5);
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::drag());
+    let radius = egui::CornerRadius::from(tokens::RADIUS_SM);
+    ui.painter().rect_filled(rect, radius, swatch_color);
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    }
+    if resp.dragged() {
+        egui::DragAndDrop::set_payload(ui.ctx(), tp_id);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    resp.on_hover_text("Drag to reorder this operation, or to move it to another setup.");
+}
+
+/// The card's one state indicator (R24).
+///
+/// The card carried a `StatusChip`, a `Sim` button and a generate button,
+/// and one `FreshnessState` drove all three. The dot carries the state, the
+/// word arrives on hover, and a click generates when the state asks for
+/// generation.
+fn draw_state_dot(
+    ui: &mut egui::Ui,
+    freshness: &FreshnessState,
+    tp_id: ToolpathId,
+    events: &mut Vec<AppEvent>,
+) {
+    // The mapping is a pure function, so the sentry can drive every state
+    // without a `Ui` (F2.2).
+    let (status_text, status_role, hover) = status_chip(freshness);
+    // F2.2: driven by freshness, not `ComputeStatus::needs_generation()`,
+    // which answers `false` for `Done` — and an edited operation keeps
+    // `Done`, so the route was closed on precisely the card whose whole
+    // message is "regenerate me".
+    let needs_generation = !matches!(
+        freshness,
+        FreshnessState::Current | FreshnessState::Regenerating | FreshnessState::Disabled
+    );
+    let sense = if needs_generation {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let size = egui::vec2(tokens::SPACE_4, tokens::SPACE_4);
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    if matches!(freshness, FreshnessState::Regenerating) {
+        // The operator asked for a spinner on anything that generates.
+        ui.put(rect, egui::Spinner::new().size(tokens::SPACE_3));
+    } else {
+        // SPACE_2 is the RADIUS here, so the dot is the 8 points R24 asks
+        // for.
+        ui.painter()
+            .circle_filled(rect.center(), tokens::SPACE_2, status_role.text());
+    }
+    let mut text = match hover {
+        Some(message) => format!("{status_text} \u{2014} {message}"),
+        None => status_text.to_owned(),
+    };
+    if needs_generation {
+        text.push_str("\nClick to generate this operation.");
+    }
+    let resp = resp.on_hover_text(text);
+    if resp.clicked() {
+        events.push(AppEvent::GenerateToolpath(tp_id));
+    }
+}
+
+/// The eye — the card's only always-visible action (R28).
+///
+/// One click shows or hides this toolpath in the viewport. A double click
+/// isolates it. The bullseye glyph that used to carry the isolate is gone.
+fn draw_eye(
+    ui: &mut egui::Ui,
+    tp_id: ToolpathId,
+    visible: bool,
+    viewport: &ViewportState,
+    events: &mut Vec<AppEvent>,
+) {
+    let isolated = viewport.isolate_toolpath == Some(tp_id);
+    let glyph = if visible { "\u{1F441}" } else { "\u{2298}" };
+    let colour = if isolated {
+        tokens::CAUTION
+    } else if visible {
+        tokens::TEXT_BODY
+    } else {
+        tokens::TEXT_FAINT
+    };
+    let size = egui::vec2(tokens::ROW_DENSE, tokens::ROW_DENSE);
+    let glyph_text = egui::RichText::new(glyph).color(colour);
+    let button = egui::Button::new(glyph_text).frame(false).min_size(size);
+    let hover = if isolated {
+        "This toolpath is pinned. Click to hide it. Double-click to unpin it."
+    } else if visible {
+        "Hide this toolpath in the 3D viewport. Double-click to show only this one."
+    } else {
+        "Show this toolpath again in the 3D viewport. Double-click to show only this one."
+    };
+    let resp = ui.add(button).on_hover_text(hover);
+
+    // egui reports `clicked` on the FIRST release of a double click, and
+    // both `clicked` and `double_clicked` on the second. The first release
+    // has therefore already toggled the visibility, so the isolate arm
+    // toggles it back before it pins. Without that step the operator loses
+    // the toolpath they asked to see alone.
+    if resp.double_clicked() {
+        events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
+        if isolated {
+            events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
+        } else {
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(tp_id))));
+            events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
+        }
+    } else if resp.clicked() {
+        events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
+    }
+}
+
+/// The operation name and its tool, truncated and never wrapped.
+///
+/// A wrapped name is what made two cards different heights, which Rule D
+/// forbids. The rest-dependency badge sits between them, because it
+/// qualifies the operation rather than the tool.
+fn draw_name_and_tool(
+    ui: &mut egui::Ui,
+    name: &str,
+    tool_summary: Option<&str>,
+    rest: Option<RestBadge>,
+    dim: bool,
+) {
+    let text_color = if dim {
+        tokens::TEXT_FAINT
+    } else {
+        tokens::TEXT_STRONG
+    };
+    let name_text = egui::RichText::new(name).color(text_color);
+    ui.add(egui::Label::new(name_text).truncate());
+    if let Some(badge) = rest {
+        draw_rest_badge(ui, badge);
+    }
+    if let Some(summary) = tool_summary {
+        let tool_text = egui::RichText::new(summary)
+            .small()
+            .color(tokens::TEXT_MUTED);
+        ui.add(egui::Label::new(tool_text).truncate());
+    }
+}
+
+/// Everything one operation card can do, as one list.
+///
+/// The `…` button and the right-click menu both build from this function, so
+/// the two lists cannot drift apart. Rule B: no action on this card is
+/// hover-only, and no action lost its route when the hover row went away.
+fn card_menu(
+    ui: &mut egui::Ui,
+    tp_id: ToolpathId,
+    visible: bool,
+    enabled: bool,
+    has_result: bool,
+    viewport: &mut ViewportState,
+    events: &mut Vec<AppEvent>,
+) {
+    if ui.button("Generate").clicked() {
+        events.push(AppEvent::GenerateToolpath(tp_id));
+        ui.close();
+    }
+    if has_result && ui.button("Inspect in Simulation").clicked() {
+        events.push(AppEvent::Ui(UiCommand::InspectToolpathInSimulation(tp_id)));
+        ui.close();
+    }
+
+    ui.separator();
+
+    let is_isolated = viewport.isolate_toolpath == Some(tp_id);
+    let iso_label = if is_isolated {
+        "Clear isolation"
+    } else {
+        "Isolate this toolpath"
+    };
+    if ui.button(iso_label).clicked() {
+        if is_isolated {
+            events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
+        } else {
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(tp_id))));
+            events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
+        }
+        ui.close();
+    }
+    let vis_label = if visible { "Hide" } else { "Show" };
+    if ui.button(vis_label).clicked() {
+        events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
+        ui.close();
+    }
+    draw_move_visibility_items(ui, tp_id, viewport);
+
+    ui.separator();
+
+    // The operator ruled the enable toggle into this menu. The CONTROL is
+    // buried; the STATE is not — a disabled operation dims its name on the
+    // card and its dot takes the Unknown role. Nobody walks to the machine
+    // unaware that an operation is off.
+    let en_label = if enabled { "Disable" } else { "Enable" };
+    let en_hover = if enabled {
+        "Disable this operation. Generation, simulation and output all skip it."
+    } else {
+        "Enable this operation."
+    };
+    if ui.button(en_label).on_hover_text(en_hover).clicked() {
+        events.push(AppEvent::ToggleToolpathEnabled(tp_id));
+        ui.close();
+    }
+    if ui.button("Duplicate").clicked() {
+        events.push(AppEvent::DuplicateToolpath(tp_id));
+        ui.close();
+    }
+
+    ui.separator();
+
+    if ui.button("Move Up").clicked() {
+        events.push(AppEvent::MoveToolpathUp(tp_id));
+        ui.close();
+    }
+    if ui.button("Move Down").clicked() {
+        events.push(AppEvent::MoveToolpathDown(tp_id));
+        ui.close();
+    }
+
+    ui.separator();
+
+    if ui.button("Delete").clicked() {
+        events.push(AppEvent::RemoveToolpath(tp_id));
+        ui.close();
+    }
+}
+
+/// The per-toolpath cutting and rapid move filters, as two check items (R23).
+///
+/// DC1 asked for these to move to the Overlays panel. They cannot:
+/// `ViewportState::toolpath_move_visibility` is keyed per TOOLPATH and the
+/// Overlays rows are global, so that move would delete the capability rather
+/// than relocate it.
+///
+/// The global toggles gate these, so a per-toolpath filter does nothing
+/// while its global toggle is off. The item greys out, and its disabled
+/// hover names the control that blocks it (P4-004).
+fn draw_move_visibility_items(ui: &mut egui::Ui, tp_id: ToolpathId, viewport: &mut ViewportState) {
+    // Read the global flags before the mutable entry borrow.
+    let global_cutting = viewport.show_cutting;
+    let global_rapids = viewport.show_rapids;
+    let entry = viewport.toolpath_move_visibility.entry(tp_id).or_default();
+
+    let cut = ui.add_enabled(
+        global_cutting,
+        egui::Checkbox::new(&mut entry.show_cutting, "Cutting moves"),
+    );
+    if !global_cutting {
+        cut.on_disabled_hover_text(
+            "Cutting moves are hidden globally (Overlays \u{25B8} Toolpath \u{25B8} \
+             Cutting moves). Enable them there to use this per-toolpath filter.",
+        );
+    }
+
+    let rapid = ui.add_enabled(
+        global_rapids,
+        egui::Checkbox::new(&mut entry.show_rapids, "Rapid moves"),
+    );
+    if !global_rapids {
+        rapid.on_disabled_hover_text(
+            "Rapid moves are hidden globally (Overlays \u{25B8} Toolpath \u{25B8} \
+             Rapids). Enable them there to use this per-toolpath filter.",
+        );
+    }
+}
 /// Compute the drop index based on pointer position relative to the drop zone.
 fn compute_drop_index(response: &egui::Response, ui: &egui::Ui, count: usize) -> usize {
     if count == 0 {
@@ -679,13 +633,18 @@ fn compute_drop_index(response: &egui::Response, ui: &egui::Ui, count: usize) ->
 /// Chip text, colour and hover for one freshness state — the card's whole
 /// vocabulary, as a pure function so it can be tested without a `Ui`.
 ///
+/// The card draws the colour as one dot and the word on hover since R24, so
+/// the word no longer appears on screen at rest. The mapping itself is
+/// unchanged, and it stays public so the DC1 sentry can drive all seven
+/// states from outside the crate.
+///
 /// F2.2: driven by [`FreshnessState`], not `ComputeStatus`. The two agree on
 /// six of seven; the seventh is the point. An operation whose inputs moved
 /// after it was generated still carries `ComputeStatus::Done` — the
 /// generation that produced the drawn geometry really did finish — so this
 /// chip used to read a confident green `OK` over geometry the project can no
 /// longer reproduce.
-pub(crate) fn status_chip(
+pub fn status_chip(
     freshness: &FreshnessState,
 ) -> (&'static str, crate::ui::components::Role, Option<&str>) {
     use crate::ui::components::Role;
@@ -739,7 +698,9 @@ fn add_toolpath_menu(
     let has_mesh = state.session.models().iter().any(|m| m.mesh.is_some());
     let has_polygons = state.session.models().iter().any(|m| m.polygons.is_some());
 
-    ui.menu_button("+ Add", |ui| {
+    // DC2 — the label is one character. The menu's own items say what
+    // each one adds, so the word "Add" repeated it.
+    ui.menu_button("+", |ui| {
         ui.label(egui::RichText::new("2.5D (from SVG)").strong());
         for &op in OperationType::ALL_2D {
             add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);
@@ -879,13 +840,16 @@ pub fn rest_badge(
 
 /// Show a rest dependency badge for Rest operations.
 /// Green "dep" if the dependency is resolved, yellow if stale, red "no dep" if missing.
-fn draw_rest_badge(
-    ui: &mut egui::Ui,
-    rest_cfg: &crate::state::toolpath::RestConfig,
-    state: &AppState,
-    tp_id: ToolpathId,
-) {
-    let badge = rest_badge(state, rest_cfg, tp_id);
+///
+/// R25 deleted the `MAN` and the `TRACE` badge from the card. This one
+/// stays: a rest dependency is a real, per-operation relationship, and it
+/// changes what the operation cuts. `MAN` is a property of the operation
+/// TYPE, so every 3D card carried it and it separated nothing.
+///
+/// The caller resolves the badge with [`rest_badge`] before it enters the
+/// row, because the row body holds a mutable borrow of the viewport and
+/// cannot also hold the `&AppState` that predicate needs.
+fn draw_rest_badge(ui: &mut egui::Ui, badge: RestBadge) {
     let badge_color = match badge {
         RestBadge::Resolved => theme::SUCCESS_BRIGHT,
         RestBadge::Stale => theme::WARNING,

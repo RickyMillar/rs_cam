@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use egui::{CentralPanel, Context, FontDefinitions, Panel, Window};
+use egui::{CentralPanel, Context, FontDefinitions, Panel};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::toolpath::Toolpath;
@@ -415,7 +415,13 @@ fn render_snapshot(
         Panel::bottom("status_bar").show(ui, |ui| {
             let lanes = controller.lane_snapshots();
             let collision_count = controller.collision_positions.len();
-            crate::ui::status_bar::draw(ui, &controller.state, collision_count, &lanes);
+            crate::ui::status_bar::draw(
+                ui,
+                &controller.state,
+                collision_count,
+                &lanes,
+                controller.load_warnings(),
+            );
         });
 
         CentralPanel::default().show(ui, |ui| {
@@ -430,21 +436,9 @@ fn render_snapshot(
             );
         });
 
-        if controller.show_load_warnings() {
-            let mut open = true;
-            Window::new("Project Load Warnings")
-                .open(&mut open)
-                .show(ui.ctx(), |ui| {
-                    let response =
-                        ui.label("The project loaded, but some references need attention:");
-                    crate::ui::automation::record(
-                        ui,
-                        "project_load_warnings",
-                        &response,
-                        "Project Load Warnings",
-                    );
-                });
-        }
+        // DC7 deleted the "Project Load Warnings" window this harness used to
+        // mirror. The warnings reach the operator as a count on the status
+        // bar, which the panel above already draws.
     });
     output.textures_delta.clear();
     crate::ui::automation::snapshot(&ctx)
@@ -540,20 +534,43 @@ fn opening_heights_tab_does_not_pin_heights_or_mark_stale_g_heightstab() {
     );
 }
 
+/// DC7: a load warning reaches the operator as a COUNT on the status bar.
+///
+/// The count does not depend on `show_load_warnings`, which now gates the
+/// modal alone. That is the point of the package: the old window could be
+/// dismissed once and never reopened, so the warnings became unreachable.
 #[test]
-fn load_warning_window_can_be_shown_and_dismissed() {
+fn load_warnings_reach_the_status_bar_as_a_count_dc7() {
     let mut controller = sample_controller();
-    let project_path = fixture_path("missing_model_project.toml");
+    let clean = render_snapshot(&mut controller);
+    assert!(
+        !clean.widgets.contains_key("status_load_warnings"),
+        "a project with no warnings must show no count"
+    );
 
+    let project_path = fixture_path("missing_model_project.toml");
     controller
         .open_job_from_path(&project_path)
         .expect("open project with missing model");
-    let shown = render_snapshot(&mut controller);
-    assert!(shown.widgets.contains_key("project_load_warnings"));
+    assert!(!controller.load_warnings().is_empty());
 
+    let shown = render_snapshot(&mut controller);
+    let count = shown
+        .widgets
+        .get("status_load_warnings")
+        .expect("the status bar states the warning count");
+    assert_eq!(
+        count.label,
+        crate::ui::status_bar::warnings_label(controller.load_warnings().len())
+    );
+
+    // Closing the modal must not take the count away with it.
     controller.set_show_load_warnings(false);
-    let hidden = render_snapshot(&mut controller);
-    assert!(!hidden.widgets.contains_key("project_load_warnings"));
+    let closed = render_snapshot(&mut controller);
+    assert!(
+        closed.widgets.contains_key("status_load_warnings"),
+        "the count is the route back to the warnings and stays present"
+    );
 }
 
 #[test]

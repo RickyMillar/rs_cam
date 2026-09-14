@@ -3,7 +3,7 @@
 pub mod automation;
 pub mod components;
 pub mod export_wizard;
-pub mod feeds_modal;
+pub mod feeds;
 pub mod machine_library_modal;
 pub mod menu_bar;
 pub mod multitool_planner;
@@ -28,6 +28,14 @@ pub mod toolpath_panel;
 pub mod toolpath_row_controls;
 pub mod viewport_overlay;
 pub mod workspace_bar;
+
+/// The pre-DC5a path to the feeds surfaces.
+///
+/// DC5a split `ui/feeds_modal.rs` into `ui/feeds/`. `app.rs` still calls
+/// `crate::ui::feeds_modal::draw`, and DC5a does not own `app.rs`, so the
+/// old name stays as a re-export. Delete this line when that call is
+/// repointed at `crate::ui::feeds::draw`.
+pub use feeds as feeds_modal;
 
 use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId, ToolConfig, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};

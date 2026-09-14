@@ -8,6 +8,7 @@ use crate::state::runtime::GuiState;
 use crate::state::simulation::{SimulationIssueKind, SimulationState};
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
+use crate::ui::tokens;
 use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool_load::drill_gates::{DrillGateOutcome, DrillGateSeverity};
@@ -30,10 +31,11 @@ pub fn draw(
 
     let load_report = sim.cached_load_report(session, gui.edit_counter);
 
-    // Fixed status header (pass2 inspector §2.1) — verdict + freshness, drawn
-    // before the card dispatch so the stale signal is reachable even when a
-    // focused card replaces the scope sections (INS-001/005).
-    draw_status_header(ui, sim, gui);
+    // DC6 — the page is summary-first. ONE verdict line here, and every dense
+    // section below it is closed until the operator opens it. The line also
+    // carries freshness, so the stale signal is reachable even when a focused
+    // card replaces the scope sections (INS-001/005).
+    draw_status_header(ui, sim, session, gui);
 
     // Scope-tiered body (§2.2/2.3). A focused hotspot/issue card is a
     // mutually-exclusive drill-in overlay (early-return); otherwise the three
@@ -74,105 +76,151 @@ pub fn draw(
             draw_span_section(ui, sim, gui, max_feed, trace, &issues, events);
         }
     }
-    ui.separator();
-
-    // --- View ---
-    //
-    // P6 moved every display control that used to live here into the
-    // viewport Overlays panel: the stock opacity slider, the Solid /
-    // Deviation / By Height colour modes and the generator-step toggles are
-    // registry rows now, listed beside every other overlay instead of behind
-    // a header that was closed by default.
-    //
-    // The pointer stays, mirroring the one this section already carried for
-    // toolpath visibility. What is gone with the section is the W4.3 comment
-    // that claimed the stock show/hide toggle "lives in the viewport Show ▼
-    // menu (one home for visibility)". It did not: `show_stock` never
-    // reached `show_sim_mesh`, so the simulated stock could not be hidden by
-    // any control at all (audit §2b, fix §6.8). It has its own row now.
-    ui.label(
-        egui::RichText::new("View")
-            .small()
-            .strong()
-            .color(theme::TEXT_HEADING),
-    );
-    ui.label(
-        egui::RichText::new(
-            "Stock opacity, stock and move colour modes, collisions, the \
-             deflection panel and the generator-step overlay are in the \
-             viewport \u{201C}Overlays\u{201D} panel (shortcut: O). \
-             Per-toolpath cutting / rapid visibility: each row\u{2019}s C / R.",
-        )
-        .small()
-        .color(theme::TEXT_FAINT),
-    );
+    // DC6 deletes the "View" section. It was a heading plus one paragraph
+    // that told the operator where the display controls live: the Overlays
+    // panel (shortcut O) and each toolpath row's C / R glyphs. Pattern C of
+    // `planning/ui_declutter_2026-09-14/PLAN.md` rules that nothing which
+    // explains where a control lives survives. Every control the paragraph
+    // named is already reachable, so the paragraph goes and no control moves.
 }
 
-/// Fixed status header (pass2 inspector §2.1) — the always-visible glance: a
-/// one-line verdict banner (collision / air-cut / OK) plus a freshness chip.
-/// Drawn before the card dispatch so the stale signal covers the focused-card
-/// paths too (INS-001/005). No-op when no simulation has run.
-fn draw_status_header(ui: &mut egui::Ui, sim: &SimulationState, gui: &GuiState) {
+/// What the verdict line draws: the words, the voice, and the caveat on hover.
+struct VerdictLine {
+    text: String,
+    color: egui::Color32,
+    hover: String,
+}
+
+/// Build the verdict line from the triage answer (DC6).
+///
+/// The order is the triage contract's own — `safety`, then `actions`, then
+/// `advisories`. Nothing here reads `SimulationCutSummary::issue_count`: that
+/// tally counts air-cut emission runs, not defects, and a project reads
+/// thousands of them on a healthy cut.
+///
+/// `not_measured` is the count of metrics that ABSTAINED. An abstention never
+/// reads as a clean pass, so a clear triage with an abstaining metric takes
+/// the UNKNOWN voice and says so.
+fn verdict_line(
+    triage: &rs_cam_core::sim_triage::SimulationTriage,
+    not_measured: usize,
+    trace_present: bool,
+) -> VerdictLine {
+    // No cut trace means no measurement at all, and the default triage is
+    // empty. An empty triage is not an all-clear, so the line abstains.
+    if !trace_present {
+        return VerdictLine {
+            text: format!(
+                "{} Not measured \u{2014} this run captured no cutting metrics",
+                tokens::GLYPH_UNKNOWN
+            ),
+            color: tokens::UNKNOWN,
+            hover: "Turn on cutting-metric capture in the timeline panel and run \
+                    the simulation again."
+                .to_owned(),
+        };
+    }
+
+    let caveat = if not_measured > 0 {
+        format!(" \u{00B7} {not_measured} not measured")
+    } else {
+        String::new()
+    };
+    let provenance = "From ProjectSession::simulation_triage \u{2014} the same answer the \
+                      CLI report, the MCP get_diagnostics block and narration read. \
+                      Open the sections below for the detail."
+        .to_owned();
+
+    if let Some(first) = triage.safety.first() {
+        let n = triage.safety.len();
+        return VerdictLine {
+            text: format!(
+                "{} {n} safety \u{2014} {}{caveat}",
+                tokens::GLYPH_DANGER,
+                first.diagnostic.message
+            ),
+            color: tokens::DANGER,
+            hover: provenance,
+        };
+    }
+    if let Some(first) = triage.actions.first() {
+        let n = triage.actions.len();
+        return VerdictLine {
+            text: format!(
+                "{} {n} to act on \u{2014} {}{caveat}",
+                tokens::GLYPH_CAUTION,
+                first.diagnostic.message
+            ),
+            color: tokens::CAUTION,
+            hover: provenance,
+        };
+    }
+    if let Some(first) = triage.advisories.items.first() {
+        let n = triage.advisories.total_matching;
+        return VerdictLine {
+            text: format!(
+                "Advisories: {n} \u{2014} {}{caveat}",
+                first.diagnostic.message
+            ),
+            color: tokens::INFO,
+            hover: provenance,
+        };
+    }
+    if not_measured > 0 {
+        return VerdictLine {
+            text: format!(
+                "{} Nothing to act on, and {not_measured} metric(s) abstained",
+                tokens::GLYPH_UNKNOWN
+            ),
+            color: tokens::UNKNOWN,
+            hover: "A metric that could not be measured returns no verdict. \
+                    Collision detection is never disabled."
+                .to_owned(),
+        };
+    }
+    VerdictLine {
+        text: format!("{} Nothing to act on", tokens::GLYPH_OK),
+        color: tokens::OK,
+        hover: provenance,
+    }
+}
+
+/// The verdict line (DC6 / Rule A) — the one summary the page opens with,
+/// plus the freshness chip. Everything dense sits below it behind a
+/// disclosure. Drawn before the card dispatch so the stale signal covers the
+/// focused-card paths too (INS-001/005). No-op when no simulation has run.
+///
+/// The panel used to hand-roll its own verdict here (collision count, then a
+/// 40 % air-cut bar). It reads the shared triage instead, so the GUI cannot
+/// rank a finding differently from the CLI and the MCP for one project.
+fn draw_status_header(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+) {
     if sim.results.is_none() {
         return;
     }
-    let collision_count = sim.checks.total_collision_count();
-    // Roadmap C.6 — verdict mirrors the rule the MCP `run_simulation` response
-    // uses: collisions → ERROR; air cut > 40% → WARNING; otherwise SUCCESS.
-    // LH-1: this banner's rule is on the TOTAL-runtime measure (cutting +
-    // rapids) and always has been - the named accessor keeps it there, and the
-    // banner text says which denominator it is showing. The cutting-time
-    // reading of the same seconds is larger and is what the MCP narration
-    // prints; see `MEASUREMENT_DOMAINS.md` LH-1.
-    //
-    // W5B-F4 (2026-08-21): the bar was **20**, while the CLI's verdict on the
-    // same quantity was **40** — the workspace shipped two different project
-    // numbers and which one an operator saw depended only on whether they
-    // opened the GUI or the CLI. 20 also fired on every reference project the
-    // repo has, before and after the swept-kernel flip (2.5D golden 50.03,
-    // 3D golden 51.38, wanaka 0D 44.09), and a warning that is always on
-    // carries no information. This is the package's **interim** answer: one
-    // constant instead of two. The recommended end state is to derive the
-    // banner from the per-op offender list (`air_cut_offenders_for_toolpaths`)
-    // so that zero offenders means zero banner —
-    // `planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md` §5.6.
-    // Verdict flips from 20 → 40: none.
-    let air_cut_pct = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_ref())
-        .map(|ct| {
-            use rs_cam_core::simulation_cut::AirCutRatios;
-            ct.summary.air_cut_pct_of_total_runtime()
-        })
-        .unwrap_or(0.0);
-    let (banner_text, banner_color) = if collision_count > 0 {
-        (
-            format!(
-                "⚠ {collision_count} collision{} — review before export",
-                if collision_count == 1 { "" } else { "s" }
-            ),
-            theme::ERROR,
-        )
-    } else if air_cut_pct > 40.0 {
-        (
-            format!(
-                "⚠ High air cutting ({air_cut_pct:.0}% of total runtime) — toolpath may \
-                 be sweeping over uncut stock"
-            ),
-            theme::WARNING,
-        )
-    } else {
-        (
-            "✓ No collisions, air cutting under threshold".to_owned(),
-            theme::SUCCESS,
-        )
+    let trace_present = sim.results.as_ref().is_some_and(|r| r.cut_trace.is_some());
+    // Scoped so the triage borrow ends before the freshness read below.
+    let verdict = {
+        use rs_cam_core::sim_measurability::Measurability;
+        let triage = sim.cached_simulation_triage(session, gui.edit_counter);
+        let not_measured = triage
+            .measurability
+            .entries
+            .iter()
+            .filter(|e| matches!(e.measurability, Measurability::NotMeasurable(_)))
+            .count();
+        verdict_line(triage, not_measured, trace_present)
     };
     ui.label(
-        egui::RichText::new(banner_text)
-            .color(banner_color)
+        egui::RichText::new(verdict.text)
+            .color(verdict.color)
             .strong(),
-    );
+    )
+    .on_hover_text(verdict.hover);
     // Freshness chip — rendered here (not in the overview body) so it covers
     // the focused-card paths too (INS-005).
     if sim.is_stale(gui.edit_counter) {
@@ -381,9 +429,13 @@ fn draw_project_section(
     };
     let header =
         format!("Project — {cycle_str}{basis_tag} · \u{2713}{ok} within · \u{2715}{bad} exceeding");
+    // DC6 / Rule A — the section header IS the summary, so the body starts
+    // closed. The verdict line above the sections is the page's one always-on
+    // answer; this grid, the findings pills and the hotspot list are the
+    // dig-deeper.
     egui::CollapsingHeader::new(header)
         .id_salt("inspector_project")
-        .default_open(true)
+        .default_open(false)
         .show(ui, |ui| {
             // ─── Global stats ─── (cycle now lives in the header line)
             ui.label(
@@ -810,9 +862,12 @@ fn draw_toolpath_section(
         Some((_, name, _)) => format!("Now playing: {name}"),
         None => "Now playing: \u{2014}".to_owned(),
     };
+    // DC6 / Rule A — the title names the op under the playhead, which is the
+    // summary. The badges and the two buttons are the dig-deeper, so the body
+    // starts closed. It used to open itself on every frame a boundary played.
     egui::CollapsingHeader::new(title)
         .id_salt("inspector_toolpath")
-        .default_open(now.is_some())
+        .default_open(false)
         .show(ui, |ui| {
             let Some((boundary_id, _, boundary_start)) = now else {
                 ui.label(
