@@ -32,13 +32,107 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_viz::ui::tokens;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::material::{Material, PlywoodGrade};
+use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_viz::state::AppState;
+use rs_cam_viz::state::runtime::ToolpathRuntime;
+use rs_cam_viz::state::selection::Selection;
+use rs_cam_viz::ui::{properties, tokens};
 
 /// One tab's worst-case row: its name and how it builds.
 type TabCase<'a> = (&'a str, &'a dyn Fn(&mut egui::Ui));
 
-/// The panel width the app gives the inspector (`app.rs`, `default_size`).
+/// The default and maximum widths the app gives the inspector (`app.rs`).
 const PANEL_WIDTH: f32 = 280.0;
+const PANEL_MAX_WIDTH: f32 = 420.0;
+
+fn properties_src() -> String {
+    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties/mod.rs"))
+        .unwrap_or_else(|error| panic!("read properties source: {error}"))
+}
+
+/// Return one function's lexical body rather than an arbitrary source window.
+///
+/// The root-width sentry must inspect `draw_toolpath_panel` itself: its long
+/// signature makes a fixed byte range silently exclude the first statement.
+fn function_body<'a>(source: &'a str, name: &str) -> &'a str {
+    let signature = format!("fn {name}(");
+    let start = source
+        .find(&signature)
+        .unwrap_or_else(|| panic!("{name} moved or was renamed"));
+    let body_start = source[start..]
+        .find('{')
+        .map(|offset| start + offset)
+        .unwrap_or_else(|| panic!("{name} has no body"));
+    let mut depth = 0_u32;
+    for (offset, byte) in source[body_start..].bytes().enumerate() {
+        match byte {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &source[body_start..=body_start + offset];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("{name} body is not closed");
+}
+
+fn feeds_sources() -> Vec<(PathBuf, String)> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/feeds");
+    std::fs::read_dir(&dir)
+        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
+        .map(|entry| {
+            let path = entry
+                .unwrap_or_else(|error| panic!("read feeds entry: {error}"))
+                .path();
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            (path, source)
+        })
+        .collect()
+}
+
+/// Finds a bare `ui.label` in a `ui.horizontal` closure. This is intentionally
+/// source-level: the rule is a layout API choice, and a new row must opt into
+/// wrapping before it can reproduce the inspector-width defect.
+fn bare_labels_in_horizontal_rows(source: &str) -> Vec<usize> {
+    let mut findings = Vec::new();
+    let lines: Vec<_> = source.lines().collect();
+    let mut line = 0;
+    while line < lines.len() {
+        let current = lines[line];
+        if !(current.contains("ui.horizontal(|ui|")
+            || current.contains("ui.horizontal_wrapped(|ui|"))
+        {
+            line += 1;
+            continue;
+        }
+        let indent = current.len() - current.trim_start().len();
+        line += 1;
+        while line < lines.len() {
+            let current = lines[line];
+            if current.len() - current.trim_start().len() == indent && current.trim() == "});" {
+                break;
+            }
+            if current.contains("ui.label(") {
+                findings.push(line + 1);
+            }
+            line += 1;
+        }
+        line += 1;
+    }
+    findings
+}
 
 fn ctx() -> egui::Context {
     let ctx = egui::Context::default();
@@ -69,6 +163,125 @@ fn requested_width(ctx: &egui::Context, build: impl Fn(&mut egui::Ui)) -> f32 {
 
 /// A label beside a long trailing annotation — the shape the Feeds tab uses
 /// for "Recommended advance/tooth: 0.0710 mm/tooth · configured 0.1313".
+fn feeds_fixture() -> AppState {
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = 6.0;
+    tool.flute_count = 2;
+
+    let mut stock = StockConfig::default();
+    stock.material = Material::Plywood {
+        grade: PlywoodGrade::BalticBirch,
+    };
+
+    // The warning shape from the observed Back Rough: its deliberately low
+    // advance per tooth trips the rubbing floor while the LUT remains in play.
+    let mut operation = OperationConfig::Adaptive3d(Default::default());
+    if let OperationConfig::Adaptive3d(config) = &mut operation {
+        config.feed_rate = 3_000.0;
+        config.spindle_rpm = Some(18_000);
+    }
+    let config = ToolpathConfig {
+        id: rs_cam_core::ToolpathId(0),
+        name: "Back Rough width fixture".to_owned(),
+        enabled: true,
+        operation,
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 1,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+        planner_origin: None,
+    };
+
+    let model = LoadedModel {
+        id: 1,
+        path: PathBuf::from("back_rough_width_fixture.svg"),
+        name: "Back Rough width fixture".to_owned(),
+        kind: Some(ModelKind::Svg),
+        mesh: None,
+        polygons: Some(Arc::new(vec![Polygon2::rectangle(0.0, 0.0, 10.0, 10.0)])),
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        enriched_mesh: None,
+        units: Some(ModelUnits::Millimeters),
+        winding_report: None,
+        load_error: None,
+    };
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(stock)
+        .tool(tool)
+        .model(model);
+    builder
+        .add_toolpath(0, config)
+        .expect("add Back Rough fixture");
+    let mut state = AppState::new();
+    state.session = builder.build();
+    let id = state.session.toolpath_configs()[0].id;
+    // The controller creates this runtime row when it loads or adds a
+    // toolpath. Mirror that normal lifecycle so the production panel's
+    // write-back can cache the recipe it calculated on the selected tab.
+    state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
+    state.selection = Selection::Toolpath(id);
+    state.gui.pending_toolpath_tab = Some((id, "feeds".to_owned()));
+    state
+}
+
+#[derive(Debug, Default)]
+struct RenderedFeedsPanel {
+    requested_width: f32,
+    max_left_clip: f32,
+    rendered_rubbing_warning: bool,
+}
+
+/// Render the production inspector inside the same fixed-width Panel and
+/// vertical ScrollArea used by the app, then report whether any painted text
+/// starts to the left of its clip rectangle — the exact on-screen UR1 defect.
+fn render_feeds_panel(ctx: &egui::Context, state: &mut AppState) -> RenderedFeedsPanel {
+    let mut rendered = RenderedFeedsPanel::default();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        egui::Panel::right("ur1_toolpath_properties")
+            .default_size(PANEL_WIDTH)
+            .max_size(PANEL_MAX_WIDTH)
+            .resizable(true)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let response = ui.scope(|ui| {
+                        let mut events = Vec::new();
+                        properties::draw(ui, state, &mut events);
+                        assert!(
+                            events.is_empty(),
+                            "a width-only render must not emit UI events"
+                        );
+                    });
+                    rendered.requested_width = response.response.rect.width();
+                });
+            });
+    });
+    for clipped in &out.shapes {
+        if let egui::epaint::Shape::Text(text) = &clipped.shape {
+            rendered.max_left_clip = rendered.max_left_clip.max(
+                (clipped.clip_rect.min.x - clipped.shape.visual_bounding_rect().min.x).max(0.0),
+            );
+            rendered.rendered_rubbing_warning |= text
+                .galley
+                .job
+                .text
+                .contains("Commanded advance/tooth below rubbing floor");
+        }
+    }
+    out.textures_delta.clear();
+    rendered
+}
+
 fn annotated_row(ui: &mut egui::Ui, wrap: bool) {
     ui.horizontal_wrapped(|ui| {
         ui.label("0.0710 mm/tooth");
@@ -85,6 +298,90 @@ fn annotated_row(ui: &mut egui::Ui, wrap: bool) {
             );
         }
     });
+}
+
+#[test]
+fn feeds_horizontal_rows_have_no_bare_labels_ur1() {
+    let properties = properties_src();
+    let card_start = properties
+        .find("fn draw_feeds_card(")
+        .expect("draw_feeds_card moved or was renamed");
+    let card_end = properties[card_start..]
+        .find("// ── Vendor LUT viewer")
+        .map(|offset| card_start + offset)
+        .expect("draw_feeds_card's following section moved or was renamed");
+    let card = &properties[card_start..card_end];
+    assert!(
+        bare_labels_in_horizontal_rows(card).is_empty(),
+        "draw_feeds_card has bare ui.label calls in horizontal rows at lines {:?}; \
+         use a wrapping Label or wrapped_small_label so a caption cannot widen the inspector",
+        bare_labels_in_horizontal_rows(card),
+    );
+
+    for (path, source) in feeds_sources() {
+        let bare = bare_labels_in_horizontal_rows(&source);
+        assert!(
+            bare.is_empty(),
+            "{} has bare ui.label calls in horizontal rows at lines {bare:?}; \
+             horizontal captions must opt into wrapping",
+            path.display(),
+        );
+    }
+}
+
+#[test]
+fn inspector_root_caps_children_at_the_panel_width_ur1() {
+    let properties = properties_src();
+    let panel = function_body(&properties, "draw_toolpath_panel");
+    let first_ui_call = panel
+        .match_indices("ui.")
+        .next()
+        .map(|(offset, _)| &panel[offset..])
+        .expect("draw_toolpath_panel no longer draws through its ui parameter");
+    assert!(
+        first_ui_call.starts_with("ui.set_max_width(ui.available_width());"),
+        "the inspector's first root action no longer caps child requested widths"
+    );
+}
+
+#[test]
+fn real_warning_shaped_feeds_tab_stays_inside_its_panel_ur1() {
+    let ctx = ctx();
+    let mut state = feeds_fixture();
+    let id = state.session.toolpath_configs()[0].id;
+
+    // The production tab override is one-shot: the first frame consumes it,
+    // calculates the recipe, and persists Feeds in egui memory. The next frame
+    // renders the warning through the same steady-state path as the interactive
+    // inspector.
+    let _ = render_feeds_panel(&ctx, &mut state);
+    let rendered = render_feeds_panel(&ctx, &mut state);
+    let result = state
+        .gui
+        .toolpath_rt
+        .get(&id)
+        .and_then(|runtime| runtime.feeds_result.as_ref())
+        .expect("the real Feeds tab must calculate and cache its recipe");
+    assert!(
+        result.warnings.iter().any(|warning| matches!(
+            warning,
+            rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor { .. }
+        )),
+        "the Back Rough fixture must render its real rubbing-floor warning; warnings: {:?}",
+        result.warnings
+    );
+    assert!(
+        rendered.rendered_rubbing_warning,
+        "the steady-state frame did not paint the real rubbing-floor warning"
+    );
+    assert!(
+        rendered.max_left_clip <= 0.5,
+        "the real warning-shaped Feeds tab painted text {:.2} points left of its panel clip \
+         (requested width {:.2}; panel maximum {PANEL_MAX_WIDTH}). Its content must not slide \
+         off the inspector's left edge.",
+        rendered.max_left_clip,
+        rendered.requested_width,
+    );
 }
 
 #[test]

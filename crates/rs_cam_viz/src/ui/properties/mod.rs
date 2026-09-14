@@ -2596,7 +2596,8 @@ fn draw_feeds_card(
         // Feeds tab where the panel's whole content shifted off its left
         // edge. §4.6 makes the trailing slot wrap for exactly this.
         ui.horizontal_wrapped(|ui| {
-            ui.label(&row.recommended).on_hover_text(&row.hover);
+            ui.add(egui::Label::new(&row.recommended).wrap_mode(egui::TextWrapMode::Wrap))
+                .on_hover_text(&row.hover);
             if let Some(configured) = &row.configured {
                 ui.add(
                     egui::Label::new(crate::ui::components::text::caption(configured.clone()))
@@ -4563,6 +4564,10 @@ fn draw_toolpath_panel(
     freshness: &crate::state::freshness::FreshnessState,
     events: &mut Vec<AppEvent>,
 ) {
+    // The inspector is a fixed-width side panel. Keep children — especially
+    // long Feeds annotations — from enlarging its requested width.
+    ui.set_max_width(ui.available_width());
+
     // ── Shared header (always visible above tabs) ───────────────────
 
     // Name — single editable home for the toolpath name; the duplicate

@@ -34,22 +34,28 @@ pub(crate) fn draw_engaged_diameter_row(
     let flag = engaged >= explain.shank_diameter_mm - 1e-6
         || (tip_dia > 1e-6 && (engaged - tip_dia).abs() / tip_dia > 0.5);
     ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new("Engaged ⌀:")
-                .small()
-                .color(theme::TEXT_DIM),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new("Engaged ⌀:")
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
         );
         let icon = if flag { "⚠ " } else { "" };
-        ui.label(
-            egui::RichText::new(format!(
-                "{icon}{engaged:.2} mm at DOC {doc:.2} mm (vs {kind} ⌀ {tip_dia:.2} mm)"
-            ))
-            .small()
-            .color(if flag {
-                theme::WARNING_MILD
-            } else {
-                theme::TEXT_STRONG
-            }),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!(
+                    "{icon}{engaged:.2} mm at DOC {doc:.2} mm (vs {kind} ⌀ {tip_dia:.2} mm)"
+                ))
+                .small()
+                .color(if flag {
+                    theme::WARNING_MILD
+                } else {
+                    theme::TEXT_STRONG
+                }),
+            )
+            .wrap(),
         )
         .on_hover_text(
             "The cone shoulder does most of the cutting at depth. Advance/tooth \
@@ -596,17 +602,23 @@ pub(crate) fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain)
         let combined = d.combined_factor();
         let derate_pct = ((1.0 - combined) * 100.0).max(0.0);
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("Advance/tooth at recommendation:")
-                    .small()
-                    .strong()
-                    .color(theme::TEXT_STRONG),
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new("Advance/tooth at recommendation:")
+                        .small()
+                        .strong()
+                        .color(theme::TEXT_STRONG),
+                )
+                .wrap(),
             );
-            ui.label(
-                egui::RichText::new(format!("{effective:.4} mm/tooth"))
-                    .small()
-                    .strong()
-                    .color(theme::SUCCESS),
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!("{effective:.4} mm/tooth"))
+                        .small()
+                        .strong()
+                        .color(theme::SUCCESS),
+                )
+                .wrap(),
             );
         });
         ui.label(

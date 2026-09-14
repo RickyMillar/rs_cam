@@ -45,10 +45,13 @@ pub(crate) fn draw_spindle_strategy_row(
     use rs_cam_core::feeds::SpindleStrategy;
     let (_, max_rpm) = machine.rpm_range();
     ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new("Spindle policy:")
-                .small()
-                .color(theme::TEXT_DIM),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new("Spindle policy:")
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
         );
         let mut next = current;
         // MatchChart radio
@@ -87,10 +90,13 @@ pub(crate) fn draw_spindle_strategy_row(
             events.push(AppEvent::SetSpindleStrategy(next));
         }
         ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new(format!("(spindle max {:.0} RPM)", max_rpm))
-                .small()
-                .color(theme::TEXT_DIM),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("(spindle max {:.0} RPM)", max_rpm))
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
         );
     });
 }
@@ -169,37 +175,51 @@ pub(crate) fn draw_toolpath_view(
 
 fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Tool:").small().color(theme::TEXT_DIM));
-        ui.label(
-            egui::RichText::new(format!(
-                "{:.2} mm · {} flute · {}",
-                explain.tool_diameter_mm,
-                explain.flute_count,
-                tool_family_label(explain.query.tool_family),
-            ))
-            .small()
-            .color(theme::TEXT_STRONG),
+        ui.add(
+            egui::Label::new(egui::RichText::new("Tool:").small().color(theme::TEXT_DIM)).wrap(),
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!(
+                    "{:.2} mm · {} flute · {}",
+                    explain.tool_diameter_mm,
+                    explain.flute_count,
+                    tool_family_label(explain.query.tool_family),
+                ))
+                .small()
+                .color(theme::TEXT_STRONG),
+            )
+            .wrap(),
         );
         ui.separator();
-        ui.label(
-            egui::RichText::new("Material:")
-                .small()
-                .color(theme::TEXT_DIM),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new("Material:")
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
         );
-        ui.label(
-            egui::RichText::new(format!(
-                "{} ({})",
-                material_family_label(explain.query.material_family),
-                hardness_label(explain.query_hardness_kind, explain.query_hardness_value),
-            ))
-            .small()
-            .color(theme::TEXT_STRONG),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!(
+                    "{} ({})",
+                    material_family_label(explain.query.material_family),
+                    hardness_label(explain.query_hardness_kind, explain.query_hardness_value),
+                ))
+                .small()
+                .color(theme::TEXT_STRONG),
+            )
+            .wrap(),
         );
         ui.separator();
-        ui.label(
-            egui::RichText::new("Source:")
-                .small()
-                .color(theme::TEXT_DIM),
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new("Source:")
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
         );
         // Source signal via the one provenance vocabulary (ProvenanceBadge);
         // the extrapolation caveat stays an explicit amber note rather than
@@ -209,10 +229,13 @@ fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
             Some(row) => {
                 ui.add(ProvenanceBadge::new(ProvKind::VendorLut).reference(&row.observation_id));
                 if row.is_extrapolated {
-                    ui.label(
-                        egui::RichText::new(format!("approx ×{:.2}", combined_scale(row)))
-                            .small()
-                            .color(theme::WARNING_MILD),
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(format!("approx ×{:.2}", combined_scale(row)))
+                                .small()
+                                .color(theme::WARNING_MILD),
+                        )
+                        .wrap(),
                     );
                 }
             }
@@ -584,13 +607,16 @@ fn draw_scallop_control(
                 let value = Some((microns / 1000.0).max(0.0001));
                 events.push(AppEvent::SetDropCutterScallopHeight { toolpath_id, value });
             }
-            ui.label(
-                egui::RichText::new(format!(
-                    "→ ae {:.3} mm",
-                    explain.recommended.radial_width_mm
-                ))
-                .small()
-                .color(theme::SUCCESS),
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!(
+                        "→ ae {:.3} mm",
+                        explain.recommended.radial_width_mm
+                    ))
+                    .small()
+                    .color(theme::SUCCESS),
+                )
+                .wrap(),
             );
         }
     });

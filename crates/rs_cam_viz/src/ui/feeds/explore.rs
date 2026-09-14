@@ -540,10 +540,13 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
                 for entry in &entries {
                     ui.horizontal(|ui| {
                         draw_legend_swatch(ui, entry.swatch, entry.color);
-                        ui.label(
-                            egui::RichText::new(entry.label)
-                                .small()
-                                .color(theme::TEXT_STRONG),
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(entry.label)
+                                    .small()
+                                    .color(theme::TEXT_STRONG),
+                            )
+                            .wrap(),
                         );
                     });
                     ui.label(
@@ -696,11 +699,14 @@ fn draw_explore_controls(
             return;
         }
         if active {
-            ui.label(
-                egui::RichText::new("Explore:")
-                    .small()
-                    .strong()
-                    .color(theme::TEXT_STRONG),
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new("Explore:")
+                        .small()
+                        .strong()
+                        .color(theme::TEXT_STRONG),
+                )
+                .wrap(),
             );
             ui.add(
                 egui::Slider::new(&mut explore.rpm, env.spindle_min_rpm..=env.spindle_max_rpm)
@@ -728,26 +734,32 @@ fn draw_explore_controls(
             0.0
         };
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(format!(
-                    "→ commanded advance/tooth {preview_chipload:.4} mm/tooth · {verdict_text}"
-                ))
-                .small()
-                .color(color),
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!(
+                        "→ commanded advance/tooth {preview_chipload:.4} mm/tooth · {verdict_text}"
+                    ))
+                    .small()
+                    .color(color),
+                )
+                .wrap(),
             );
             ui.separator();
-            ui.label(
-                egui::RichText::new(format!(
-                    "power {preview_power:.2} kW ({power_pct:.0}% of cap)"
-                ))
-                .small()
-                .color(if power_pct > 90.0 {
-                    theme::ERROR
-                } else if power_pct > 70.0 {
-                    theme::WARNING_MILD
-                } else {
-                    theme::SUCCESS
-                }),
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!(
+                        "power {preview_power:.2} kW ({power_pct:.0}% of cap)"
+                    ))
+                    .small()
+                    .color(if power_pct > 90.0 {
+                        theme::ERROR
+                    } else if power_pct > 70.0 {
+                        theme::WARNING_MILD
+                    } else {
+                        theme::SUCCESS
+                    }),
+                )
+                .wrap(),
             );
         });
         ui.horizontal(|ui| {
@@ -756,10 +768,13 @@ fn draw_explore_controls(
             // offering a write the panel would never offer. Exploring the
             // nomogram stays available — reading it is not writing.
             if let Some(err) = refusal {
-                ui.label(
-                    egui::RichText::new(format!("Cannot apply — {err}"))
-                        .small()
-                        .color(theme::ERROR),
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("Cannot apply — {err}"))
+                            .small()
+                            .color(theme::ERROR),
+                    )
+                    .wrap(),
                 );
             } else if ui
                 .button("✓ Apply explored values")
@@ -1122,10 +1137,13 @@ fn draw_mini_chart_legend(ui: &mut egui::Ui, id: &str, entries: &[MiniLegend]) {
                 for entry in entries {
                     ui.horizontal(|ui| {
                         draw_legend_swatch(ui, entry.swatch, entry.color);
-                        ui.label(
-                            egui::RichText::new(entry.label)
-                                .small()
-                                .color(theme::TEXT_STRONG),
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(entry.label)
+                                    .small()
+                                    .color(theme::TEXT_STRONG),
+                            )
+                            .wrap(),
                         );
                     });
                     ui.label(
