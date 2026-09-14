@@ -73,15 +73,10 @@
 //! - `n6_a_drill_pick_invalidates_the_chain` — WP8 closed N6.
 //! - `the_fixture_is_live`, the non-vacuity guard.
 //!
-//! PINNED DIVERGENCE — each of these asserts TODAY's answer. Each names
-//! the intended answer and the phase that inverts it. `PLAN.md:111`
-//! forbids a test that freezes a defect as desired behaviour, so no
-//! assertion here states a divergence as the contract:
-//!
-//! - `n15_compute_stale_set_still_reports_one_index_pinned_divergence`
-//!   — the narrow answer `compute_stale_set` gives. WP1 took the
-//!   `set_toolpath_param` MCP arm off that function; WP3 and WP4 move
-//!   the remaining arms.
+//! PINNED DIVERGENCE — none remain. One stood here and named the narrow
+//! answer the second staleness producer gave. WP28 part 2 deleted that
+//! producer, so the divergence has no second side to pin; the test went
+//! with it. `tests/stale_set_has_one_answer_wp28.rs` keeps the deletion.
 //!
 //! ## Scope, and what this file does NOT cover
 //!
@@ -124,9 +119,9 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, MutationKind, ProjectSession, ProjectSessionBuilder,
+    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
     ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs, SetAlignmentPinDrillHolesArgs,
-    SetDrillSelectedHolesArgs, SetToolpathParamArgs, ToolpathConfig, compute_stale_set,
+    SetDrillSelectedHolesArgs, SetToolpathParamArgs, ToolpathConfig,
 };
 
 /// The one feed value every arm writes.
@@ -579,31 +574,5 @@ fn n15_apply_reports_the_set_the_setter_dropped() {
         "Effects::revision names the edited toolpath's own revision. \
          It is `Some` because the command names one toolpath that still \
          sits at that index."
-    );
-}
-
-/// PINNED DIVERGENCE — N15. `compute_stale_set` keeps the narrow answer.
-///
-/// `compute_stale_set` is the OTHER staleness model. WP1 took the
-/// `set_toolpath_param` arm of the MCP reply off it, but the function
-/// itself is unchanged and other MCP arms still call it. WP3 and WP4
-/// move those arms onto the command door. This assertion inverts there.
-///
-/// WP1 deleted `compute_stale_set_for_toolpath_param_returns_single_toolpath`
-/// in `session/compute.rs`, which pinned the same narrow answer as a
-/// unit test. That test was vacuous-green: its session held one `Fresh`
-/// toolpath, so a chain-aware answer is also `[0]`. This fixture holds a
-/// chain, so the narrow answer here is a real divergence.
-#[test]
-fn n15_compute_stale_set_still_reports_one_index_pinned_divergence() {
-    let s = fixture(pocket());
-    let mutation = MutationKind::ToolpathParamChanged { toolpath_index: 0 };
-    let reported = compute_stale_set(&s, mutation);
-    assert_eq!(
-        reported.toolpath_indices,
-        vec![0],
-        "N15: compute_stale_set(ToolpathParamChanged) returns exactly one \
-         index (`compute.rs:53` `compute_stale_set`), with no chain walk, \
-         while the setter on this fixture drops {{0, 1}}."
     );
 }

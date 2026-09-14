@@ -28,60 +28,12 @@ use crate::semantic_trace::{
 use crate::simulation_cut::{SimulationCutTrace, SimulationMetricOptions};
 use crate::tool::MillingCutter;
 
-use serde::{Deserialize, Serialize};
-
 use super::{
     AdoptResultArgs, Command, Effects, GenerateToolpathArgs, Job, JobHandle, ProjectDiagnostics,
     ProjectEvidence, ProjectSession, SessionError, SetToolpathParamArgs, SimulationOptions,
     ToolpathComputeResult, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind,
     VerdictSeverity,
 };
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StaleSet {
-    pub toolpath_indices: Vec<usize>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MutationKind {
-    ToolpathParamChanged { toolpath_index: usize },
-    ToolParamChanged { tool_index: usize },
-    SetupChanged { setup_id: usize },
-    StockChanged,
-    AllToolpaths,
-}
-
-pub fn compute_stale_set(session: &ProjectSession, mutation: MutationKind) -> StaleSet {
-    let mut toolpath_indices: Vec<usize> = match mutation {
-        MutationKind::ToolpathParamChanged { toolpath_index } => (toolpath_index
-            < session.toolpath_count())
-        .then_some(toolpath_index)
-        .into_iter()
-        .collect(),
-        MutationKind::ToolParamChanged { tool_index } => session
-            .tools()
-            .get(tool_index)
-            .map(|tool| {
-                session
-                    .toolpath_configs()
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, tc)| (tc.tool_id == tool.id.0).then_some(index))
-                    .collect()
-            })
-            .unwrap_or_default(),
-        MutationKind::SetupChanged { setup_id } => session
-            .find_setup_by_id(setup_id)
-            .map(|(_, setup)| setup.toolpath_indices.clone())
-            .unwrap_or_default(),
-        MutationKind::StockChanged | MutationKind::AllToolpaths => {
-            (0..session.toolpath_count()).collect()
-        }
-    };
-    toolpath_indices.sort_unstable();
-    toolpath_indices.dedup();
-    StaleSet { toolpath_indices }
-}
 
 /// Strip a single layer of surrounding ASCII double-quotes from a string
 /// if present. Used by the MCP coercion path to tolerate clients that
@@ -6579,42 +6531,11 @@ mod tests {
         assert!((high_diag - high_suggest).abs() < 1e-6);
     }
 
-    #[test]
-    fn compute_stale_set_for_tool_param_returns_referencing_toolpaths() {
-        let mut s = make_session();
-        let tool_id = s.tools()[0].id.0;
-        let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
-        let _ = s.add_toolpath(0, make_drill_tc(tool_id)).unwrap();
-        let stale = compute_stale_set(&s, MutationKind::ToolParamChanged { tool_index: 0 });
-        assert_eq!(stale.toolpath_indices, vec![0, 1]);
-    }
-
-    // WP1 deleted `compute_stale_set_for_toolpath_param_returns_single_toolpath`.
-    // It was vacuous-green, not red: its session held one `Fresh` Pocket,
-    // so a chain-aware answer is also `[0]`. The narrow answer it looked
-    // like a contract for is a divergence, and
-    // `mutation_paths_invalidate_alike_p0.rs` pins it by name.
-
-    #[test]
-    fn compute_stale_set_for_setup_change_returns_setup_toolpaths() {
-        let mut s = make_session();
-        let tool_id = s.tools()[0].id.0;
-        let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
-        let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
-        let setup_id = s.list_setups()[0].id;
-        let stale = compute_stale_set(&s, MutationKind::SetupChanged { setup_id });
-        assert_eq!(stale.toolpath_indices, vec![0, 1]);
-    }
-
-    #[test]
-    fn compute_stale_set_for_stock_change_returns_all_toolpaths() {
-        let mut s = make_session();
-        let tool_id = s.tools()[0].id.0;
-        let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
-        let _ = s.add_toolpath(0, make_drill_tc(tool_id)).unwrap();
-        let stale = compute_stale_set(&s, MutationKind::StockChanged);
-        assert_eq!(stale.toolpath_indices, vec![0, 1]);
-    }
+    // WP28 deleted `compute_stale_set` and `MutationKind`. Three unit
+    // tests stood here and pinned the tag-driven answer for a tool
+    // param, a setup change and a stock change. `Effects::stale` is the
+    // one answer now, and `tests/command_registry_completeness.rs`
+    // measures it against the set the setter dropped.
 
     #[test]
     fn set_tool_param_diameter() {

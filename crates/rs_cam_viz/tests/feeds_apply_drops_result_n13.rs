@@ -398,9 +398,10 @@ fn apply_feeds_project_drops_every_written_result_n13() {
 // ── 3. The MCP `apply_feeds` door ───────────────────────────────────────
 
 /// `AppController::apply_feeds_recommendation` is the public function the
-/// MCP `apply_feeds` tool calls (`app/mcp.rs:5405-5407`). The tool's own
-/// `mcp_apply_stale` stamps `stale_since` and nothing else, so the agent
-/// route carries the identical defect.
+/// MCP `apply_feeds` tool calls. Before N13 the tool's own stale helper
+/// stamped `stale_since` and nothing else, so the agent route carried
+/// the identical defect. WP28 deleted that helper: the funnel reports
+/// `Effects` and the reply names the set the setter dropped.
 ///
 /// The scope here is `Speeds` on purpose. That scope promises not to change
 /// the cut GEOMETRY, and it keeps that promise — but the feed word is part
@@ -414,7 +415,7 @@ fn agent_apply_feeds_drops_the_cached_result_n13() {
     let before = feed_at(&controller, 0);
     let id = id_at(&controller, 0);
 
-    controller
+    let _ = controller
         .apply_feeds_recommendation(id, ApplyScope::Speeds)
         .expect("a Pocket on a flat end mill is a runnable pairing");
 

@@ -19,10 +19,10 @@ use crate::ui_command::{NoArgs, SimJumpToMoveArgs, UiCommand};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::{
     AddModelArgs, AddSetupArgs, AddToolpathArgs, AdoptResultArgs, Command,
-    InvalidateToolpathInputsArgs, LoadedModel, ProjectSessionBuilder, RemoveSetupArgs,
-    ReplaceToolpathConfigArgs, ReplaceToolsArgs, SetBoundaryConfigArgs, SetFeedsProvenanceArgs,
-    SetProjectNameArgs, SetSetupFaceArgs, SetSetupRotationArgs, SetStockConfigArgs,
-    SetStockSourceArgs, SetToolpathEnabledArgs, ToolpathConfig,
+    InvalidateToolpathInputsArgs, LoadedModel, ProjectSessionBuilder, ReplaceToolpathConfigArgs,
+    ReplaceToolsArgs, SetBoundaryConfigArgs, SetFeedsProvenanceArgs, SetProjectNameArgs,
+    SetSetupFaceArgs, SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs,
+    SetToolpathEnabledArgs, ToolpathConfig,
 };
 
 struct ScriptedBackend {
@@ -1751,8 +1751,13 @@ fn add_tool_and_remove_tool_lifecycle() {
     );
 }
 
+/// WP28 part 3 deleted `Command::RemoveSetup` with its setter. The row
+/// declared `Reach::Skip` on all three surfaces, so no operator path and
+/// no agent path removed a setup (review §21.8). WP13 had already
+/// deleted `AppEvent::RemoveSetup` for the same reading. What remains of
+/// the old lifecycle test is the half the product still runs: the add.
 #[test]
-fn add_setup_and_remove_setup_lifecycle() {
+fn add_setup_appends_a_second_setup() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     // Starts with one default setup
     assert_eq!(controller.state.session.list_setups().len(), 1);
@@ -1763,24 +1768,10 @@ fn add_setup_and_remove_setup_lifecycle() {
     assert_eq!(controller.state.session.list_setups().len(), 2);
     let new_setup_id = SetupId(controller.state.session.list_setups()[1].id);
     assert_ne!(original_setup_id, new_setup_id);
-
-    // Remove the second setup through the SESSION door. WP13 deleted
-    // `AppEvent::RemoveSetup`: no control emitted it, no MCP tool named
-    // it and no registry row declared it, so no operator path reached
-    // the handler that used to stand here.
-    let effects = controller
-        .state
-        .session
-        .apply(Command::RemoveSetup(RemoveSetupArgs { index: 1 }))
-        .expect("the second setup holds no toolpath");
-    assert!(
-        !effects.simulation_cleared,
-        "a setup removal clears no simulation the project never ran"
-    );
-    assert_eq!(controller.state.session.list_setups().len(), 1);
     assert_eq!(
         SetupId(controller.state.session.list_setups()[0].id),
-        original_setup_id
+        original_setup_id,
+        "the add appends; it never re-keys the setup that stood first"
     );
 }
 

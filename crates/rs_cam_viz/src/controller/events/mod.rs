@@ -184,7 +184,13 @@ impl<B: ComputeBackend> AppController<B> {
                 self.handle_remove_keep_out(setup_id, keep_out_id);
             }
             // --- Toolpath events ---
-            AppEvent::AddToolpath(op_type) => self.handle_add_toolpath(op_type),
+            AppEvent::AddToolpath(op_type) => {
+                // The handler reports the command's `Effects`. The
+                // operator route needs none of it: `apply_quietly`
+                // already stamped the stale set and mirrored the
+                // simulation. The MCP route reads the field (WP28).
+                self.handle_add_toolpath(op_type);
+            }
             AppEvent::DuplicateToolpath(tp_id) => self.handle_duplicate_toolpath(tp_id),
             AppEvent::MoveToolpathUp(tp_id) => self.handle_move_toolpath_up(tp_id),
             AppEvent::MoveToolpathDown(tp_id) => self.handle_move_toolpath_down(tp_id),
@@ -1143,7 +1149,7 @@ impl<B: ComputeBackend> AppController<B> {
         toolpath_id: crate::state::toolpath::ToolpathId,
         scope: rs_cam_core::feeds::suggest::ApplyScope,
         explored_speeds: Option<(f64, f64)>,
-    ) -> Result<(), String> {
+    ) -> Result<Effects, String> {
         let Some(idx) = self
             .state
             .session
@@ -1242,7 +1248,7 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
         }
-        Ok(())
+        Ok(effects)
     }
 
     /// The agent-facing entry to the same funnel (Checkpoint I-5).
@@ -1256,11 +1262,18 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// `Err` carries the refusal text verbatim, so the tool can return it to
     /// the agent instead of reporting a successful no-op.
+    ///
+    /// `Ok` carries the funnel's own [`Effects`]. WP28 part 2: the MCP
+    /// reply reports `Effects::stale` — the set the command's setter
+    /// dropped — instead of the tag-driven answer `compute_stale_set`
+    /// gave, which named the edited index alone and walked no stock
+    /// chain (N15). The funnel has already stamped that set on the view,
+    /// so a caller reads the field and stamps nothing of its own.
     pub fn apply_feeds_recommendation(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
         scope: rs_cam_core::feeds::suggest::ApplyScope,
-    ) -> Result<(), String> {
+    ) -> Result<Effects, String> {
         self.apply_feeds_through_funnel(toolpath_id, scope, None)
     }
 
@@ -1376,7 +1389,7 @@ impl<B: ComputeBackend> AppController<B> {
                 rs_cam_core::feeds::suggest::ApplyScope::Both,
                 None,
             ) {
-                Ok(()) => applied += 1,
+                Ok(_) => applied += 1,
                 Err(why) => {
                     let name = self
                         .state

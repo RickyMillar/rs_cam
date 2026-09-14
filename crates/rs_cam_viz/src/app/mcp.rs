@@ -7,7 +7,7 @@ pub(crate) mod commands;
 use std::path::Path;
 
 use rs_cam_core::compute::config::ComputeStatus;
-use rs_cam_core::session::{GetOperationSchemaArgs, MutationKind, Query, QueryAnswer};
+use rs_cam_core::session::{GetOperationSchemaArgs, Query, QueryAnswer};
 
 use crate::controller::Severity;
 use crate::mcp_bridge::{
@@ -2233,33 +2233,6 @@ impl super::RsCamApp {
             .collect()
     }
 
-    /// Compute the stale set for a mutation and mark `stale_since` on the
-    /// corresponding GUI toolpath runtimes. Returns the toolpath indices
-    /// that were marked stale so callers can emit them in the mutation
-    /// envelope's `stale_toolpaths` field.
-    ///
-    /// WP19 (H3): the stamp takes `crate::state::stale::stamp_stale`,
-    /// the one helper. The MCP surface had a second one that SKIPPED an
-    /// index whose runtime row was absent, so a toolpath the operator
-    /// had never drawn was stamped on the view route and not on this
-    /// one.
-    ///
-    /// WP3: the two routes do NOT report the same SET.
-    /// `compute_stale_set(MutationKind::ToolpathParamChanged)` reports
-    /// the edited index alone. `Effects::stale` reports every toolpath
-    /// whose generation-input revision moved, which is the edited
-    /// toolpath AND the downstream results the chain dropped. An arm
-    /// whose core setter reports `Effects` takes the setter's answer,
-    /// because the setter is the one that moved the revisions.
-    fn mcp_apply_stale(&mut self, mutation: MutationKind) -> Vec<usize> {
-        let stale =
-            rs_cam_core::session::compute_stale_set(&self.controller.state().session, mutation)
-                .toolpath_indices;
-        let set: std::collections::BTreeSet<usize> = stale.iter().copied().collect();
-        crate::state::stale::stamp_stale(self.controller.state_mut(), &set);
-        stale
-    }
-
     /// The refusal reply. The shape lives in
     /// [`crate::mcp_bridge::mutation_error_json`] so the toast classifier
     /// (`McpOutcome::from_json_response`) reads the same document.
@@ -2811,8 +2784,11 @@ impl super::RsCamApp {
             .collect();
         let toasts_before = self.controller.notifications().len();
 
-        self.controller
-            .handle_internal_event(AppEvent::AddToolpath(op_type));
+        // The Add menu's own handler, which `handle_internal_event`'s
+        // `AppEvent::AddToolpath` arm calls and nothing else. It reports
+        // the command's `Effects` so the reply can name the set the
+        // setter dropped (WP28); the arm itself returns `()`.
+        let effects = self.controller.handle_add_toolpath(op_type);
 
         // Whatever this call put on the stack. The GUI add path pushes at
         // most one, but read the tail rather than assuming a count.
@@ -2871,7 +2847,16 @@ impl super::RsCamApp {
 
         match created {
             Some(created) => {
-                let stale = self.mcp_apply_stale(MutationKind::AllToolpaths);
+                // WP28: the set the `AddToolpath` command's setter
+                // dropped. An append moves one revision, so this reads
+                // the created index. `apply_quietly` already stamped it
+                // on the view, and the operator route reads the same
+                // answer. The old helper answered from a tag and named
+                // EVERY toolpath.
+                let stale: Vec<usize> = effects
+                    .as_ref()
+                    .map(|effects| effects.stale.iter().copied().collect())
+                    .unwrap_or_default();
                 let index = created.get("index").and_then(serde_json::Value::as_u64);
                 self.mcp_mutation_result(
                     match index {
@@ -3330,21 +3315,26 @@ impl super::RsCamApp {
                 Some("index"),
             );
         };
-        if let Err(why) = self
+        let effects = match self
             .controller
             .apply_feeds_recommendation(toolpath_id, parsed)
         {
-            return self.mcp_mutation_error(
-                format!(
-                    "Error: nothing applied to toolpath {index} — this tool cannot run this \
-                     operation: {why}"
-                ),
-                Some("index"),
-            );
-        }
-        let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
-            toolpath_index: index,
-        });
+            Ok(effects) => effects,
+            Err(why) => {
+                return self.mcp_mutation_error(
+                    format!(
+                        "Error: nothing applied to toolpath {index} — this tool cannot run \
+                         this operation: {why}"
+                    ),
+                    Some("index"),
+                );
+            }
+        };
+        // WP28: the funnel runs `ReplaceToolpathConfig` and stamps its
+        // own `Effects::stale`, so the reply names the edited toolpath
+        // AND the downstream results the stock chain dropped. The old
+        // helper named the edited index alone (N15).
+        let stale: Vec<usize> = effects.stale.iter().copied().collect();
         let applied = self
             .controller
             .state()

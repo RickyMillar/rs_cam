@@ -1,5 +1,6 @@
 use rs_cam_core::session::{
-    AddToolpathArgs, Command, MoveToolpathToSetupArgs, RemoveToolpathArgs, ReorderToolpathArgs,
+    AddToolpathArgs, Command, Effects, MoveToolpathToSetupArgs, RemoveToolpathArgs,
+    ReorderToolpathArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -14,7 +15,25 @@ use super::super::AppController;
 impl<B: ComputeBackend> AppController<B> {
     // ── Toolpath helpers ─────────────────────────────────────────────────
 
-    pub(crate) fn handle_add_toolpath(&mut self, op_type: crate::state::toolpath::OperationType) {
+    /// Add one toolpath the way the operator's Add menu does, and report
+    /// the command's own [`Effects`].
+    ///
+    /// `None` means nothing was created: no tool, no geometry, or the
+    /// add-time Suggest door refused the operation and tool pairing. The
+    /// refusal reaches the operator as a toast and nothing else carries
+    /// it (G-GUIADD).
+    ///
+    /// WP28 part 2: the answer carries `Effects` because the MCP
+    /// `add_toolpath_via_gui` reply reports `Effects::stale` — the set
+    /// this command's setter dropped. An append moves one revision, so
+    /// the honest answer is the created index. The reply used to report
+    /// EVERY index, because `compute_stale_set(MutationKind::AllToolpaths)`
+    /// answered from the tag alone. The GUI route already stamped the
+    /// narrow set, so the two routes now agree.
+    pub(crate) fn handle_add_toolpath(
+        &mut self,
+        op_type: crate::state::toolpath::OperationType,
+    ) -> Option<Effects> {
         let target_setup_idx = match self.state.selection {
             Selection::Toolpath(tp_id) => self.setup_of_toolpath(tp_id).and_then(|sid| {
                 self.state
@@ -51,7 +70,7 @@ impl<B: ComputeBackend> AppController<B> {
                 "Cannot add toolpath: no tools defined".into(),
                 super::super::Severity::Warning,
             );
-            return;
+            return None;
         };
         // Roadmap B.1–B.3 — pull stock-aware depth defaults so e.g.
         // a fresh DropCutter starts with `min_z = stock_bottom_z`
@@ -73,7 +92,7 @@ impl<B: ComputeBackend> AppController<B> {
                 "Cannot add toolpath: selected tool not found".into(),
                 super::super::Severity::Warning,
             );
-            return;
+            return None;
         };
         let (operation, feeds_provenance) = match rs_cam_core::feeds::suggest::suggest_params(
             rs_cam_core::feeds::suggest::SuggestParamsInput {
@@ -102,7 +121,7 @@ impl<B: ComputeBackend> AppController<B> {
                 let msg = format!("Cannot add toolpath: {e}");
                 tracing::warn!("{msg}");
                 self.push_notification(msg, super::super::Severity::Warning);
-                return;
+                return None;
             }
         };
         // Capture is_3d before `operation` moves into the toolpath
@@ -115,7 +134,7 @@ impl<B: ComputeBackend> AppController<B> {
             );
             tracing::warn!("{msg}");
             self.push_notification(msg, super::super::Severity::Warning);
-            return;
+            return None;
         }
         let model_id = self
             .state
@@ -167,13 +186,14 @@ impl<B: ComputeBackend> AppController<B> {
             planner_origin: None,
         };
 
-        let created = target_setup_idx.and_then(|setup_idx| {
+        let effects = target_setup_idx.and_then(|setup_idx| {
             let command = Command::AddToolpath(AddToolpathArgs {
                 setup_index: setup_idx,
                 config: Box::new(tc),
             });
-            self.apply_created(command)
+            self.apply_quietly(command)
         });
+        let created = effects.as_ref().and_then(|effects| effects.created);
         if let Some(tp_idx) = created
             && let Some(tc) = self.state.session.toolpath_configs().get(tp_idx)
         {
@@ -186,6 +206,7 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.selection = Selection::Toolpath(tp_id);
         }
         self.state.gui.mark_edited();
+        effects
     }
 
     pub(crate) fn handle_duplicate_toolpath(&mut self, tp_id: ToolpathId) {

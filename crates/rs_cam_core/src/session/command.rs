@@ -673,18 +673,6 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
-            (Command, RemoveSetup, "remove_setup", RemoveSetupArgs, Effects,
-             Surfaces {
-                 gui: Reach::Skip(
-                     "no GUI control removes a setup",
-                 ),
-                 mcp: Reach::Skip(
-                     "no MCP tool removes a setup; the wire adds one only",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
-             }),
             (Command, InvalidateStock, "invalidate_stock", InvalidateStockArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
@@ -1850,15 +1838,6 @@ pub struct SetToolpathOperationArgs {
     pub operation: Box<OperationConfig>,
 }
 
-/// The arguments of the `remove_setup` command.
-///
-/// The command refuses a setup that still holds a toolpath.
-#[derive(Debug, Clone)]
-pub struct RemoveSetupArgs {
-    /// The index of the setup to remove.
-    pub index: usize,
-}
-
 /// The arguments of the `invalidate_stock` command.
 ///
 /// The command drops EVERY toolpath result, not the simulation alone:
@@ -2469,7 +2448,6 @@ impl ProjectSession {
             Command::SetToolpathOperation(args) => {
                 self.set_toolpath_operation(args.index, *args.operation)
             }
-            Command::RemoveSetup(args) => self.remove_setup(args.index),
             Command::InvalidateStock(_) => Ok(self.invalidate_stock()),
             Command::InvalidateMachine(_) => Ok(self.invalidate_machine()),
             Command::InvalidateTool(args) => Ok(self.invalidate_tool(args.tool_id)),

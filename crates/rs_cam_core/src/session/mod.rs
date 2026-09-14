@@ -32,24 +32,22 @@ pub use command::{
     InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle,
     MoveToolpathToSetupArgs, OptimizeToolpathArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
     RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveFixtureArgs, RemoveKeepOutArgs,
-    RemoveModelArgs, RemoveSetupArgs, RemoveToolArgs, RemoveToolpathArgs, ReorderToolpathArgs,
-    ReplaceFixtureArgs, ReplaceKeepOutArgs, ReplaceSetupsAndToolpathsArgs, ReplaceToolArgs,
-    ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
-    SetAlignmentPinDrillHolesArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
-    SetDressupFieldArgs, SetDrillSelectedHolesArgs, SetFaceSelectionArgs, SetFeedsProvenanceArgs,
-    SetMachineArgs, SetMachineKinematicsArgs, SetMachineRefArgs, SetPostConfigArgs,
-    SetProjectNameArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs,
-    SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs,
-    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
-    SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
-    SetToolpathParamArgs, SetToolpathToolArgs, Surfaces, ToolpathCycleTimeAnswer,
-    ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
+    RemoveModelArgs, RemoveToolArgs, RemoveToolpathArgs, ReorderToolpathArgs, ReplaceFixtureArgs,
+    ReplaceKeepOutArgs, ReplaceSetupsAndToolpathsArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs,
+    ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs, SetAlignmentPinDrillHolesArgs,
+    SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs, SetDrillSelectedHolesArgs,
+    SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineKinematicsArgs,
+    SetMachineRefArgs, SetPostConfigArgs, SetProjectNameArgs, SetRestAnalysisConfigArgs,
+    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
+    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs,
+    SetToolParamArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
+    SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathToolArgs,
+    Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{
-    GenContext, GenObserver, GenerateToolpathHandle, MutationKind, OptimizeToolpathHandle,
-    RecommendClearingStrategyHandle, ResolvedGenInputs, StaleSet, compute_stale_set,
-    execute_generation, execute_job, execute_optimize_toolpath,
-    execute_recommend_clearing_strategy,
+    GenContext, GenObserver, GenerateToolpathHandle, OptimizeToolpathHandle,
+    RecommendClearingStrategyHandle, ResolvedGenInputs, execute_generation, execute_job,
+    execute_optimize_toolpath, execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
 pub use eval_context::SetupEvalContext;
@@ -117,8 +115,6 @@ pub enum SessionError {
     SetupNotFound(usize),
     /// Tool still referenced by toolpaths — cannot remove.
     ToolInUse(ToolId),
-    /// Setup still has toolpaths — cannot remove.
-    SetupHasToolpaths(usize),
     /// Geometry missing for the requested operation.
     MissingGeometry(String),
     /// Operation execution failure.
@@ -209,9 +205,6 @@ impl std::fmt::Display for SessionError {
             Self::ToolNotFound(id) => write!(f, "Tool {} not found", id.0),
             Self::SetupNotFound(id) => write!(f, "Setup {id} not found"),
             Self::ToolInUse(id) => write!(f, "Tool {} is still referenced by toolpaths", id.0),
-            Self::SetupHasToolpaths(id) => {
-                write!(f, "Setup {id} still has toolpaths — remove them first")
-            }
             Self::MissingGeometry(msg) => write!(f, "Missing geometry: {msg}"),
             Self::OperationFailed(msg) => write!(f, "Operation failed: {msg}"),
             Self::Simulation(e) => write!(f, "Simulation error: {e}"),

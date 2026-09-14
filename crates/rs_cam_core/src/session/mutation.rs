@@ -919,24 +919,6 @@ impl ProjectSession {
         idx
     }
 
-    /// Remove a setup by index. Errors if the setup still has toolpaths.
-    ///
-    /// An empty setup owns no result, so the removal drops none.
-    #[instrument(skip(self))]
-    pub(crate) fn remove_setup(&mut self, index: usize) -> Result<Effects, SessionError> {
-        self.try_with_effects(None, move |session| {
-            let setup = session
-                .setups
-                .get(index)
-                .ok_or(SessionError::SetupNotFound(index))?;
-            if !setup.toolpath_indices.is_empty() {
-                return Err(SessionError::SetupHasToolpaths(index));
-            }
-            session.setups.remove(index);
-            Ok(())
-        })
-    }
-
     // ── Cross-setup moves ─────────────────────────────────────────
 
     /// Move a toolpath from its current setup to a different setup.
@@ -2646,25 +2628,10 @@ mod tests {
         assert_eq!(s.list_setups()[1].face_up, FaceUp::Bottom);
     }
 
-    #[test]
-    fn remove_setup_with_toolpaths_errors() {
-        let mut s = make_session();
-        let _ = s.add_tool(make_tool());
-        let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
-
-        let result = s.remove_setup(0);
-        assert!(matches!(result, Err(SessionError::SetupHasToolpaths(0))));
-    }
-
-    #[test]
-    fn remove_empty_setup_succeeds() {
-        let mut s = make_session();
-        let _ = s.add_setup("Extra".to_owned(), FaceUp::default());
-        assert_eq!(s.list_setups().len(), 2);
-
-        let _ = s.remove_setup(1).unwrap();
-        assert_eq!(s.list_setups().len(), 1);
-    }
+    // WP28 part 3 deleted `remove_setup` with its all-Skip registry
+    // row. No GUI control, no MCP tool and no CLI command removed a
+    // setup, so the two tests that stood here measured a function the
+    // product never called (review §21.8).
 
     // ── Cross-setup move ─────────────────────────────────────────
 

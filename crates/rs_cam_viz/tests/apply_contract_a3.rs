@@ -853,7 +853,7 @@ fn agent_apply_honours_its_declared_scope() {
 
     let mut speeds = controller_with(OperationType::Pocket);
     let id = id_at(&speeds, 0);
-    speeds
+    let _ = speeds
         .apply_feeds_recommendation(id, ApplyScope::Speeds)
         .expect("valid pairing");
     let speeds_op = op_of(&speeds);
@@ -866,7 +866,8 @@ fn agent_apply_honours_its_declared_scope() {
 
     let mut cut = controller_with(OperationType::Pocket);
     let id = id_at(&cut, 0);
-    cut.apply_feeds_recommendation(id, ApplyScope::CutGeometry)
+    let _ = cut
+        .apply_feeds_recommendation(id, ApplyScope::CutGeometry)
         .expect("valid pairing");
     let cut_op = op_of(&cut);
     assert_ne!(
@@ -890,7 +891,8 @@ fn agent_apply_honours_its_declared_scope() {
 
     let mut both = controller_with(OperationType::Pocket);
     let id = id_at(&both, 0);
-    both.apply_feeds_recommendation(id, ApplyScope::Both)
+    let _ = both
+        .apply_feeds_recommendation(id, ApplyScope::Both)
         .expect("valid pairing");
     let both_op = op_of(&both);
     assert_eq!(both_op.feed_rate(), speeds_op.feed_rate(), "both: feed");

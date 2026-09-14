@@ -368,8 +368,9 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Mark every toolpath whose *enabled* boundary is `DerivedRestRegions`
     /// referencing `source_id` as stale, using the same `stale_since`
-    /// mechanism `mcp_apply_stale` uses for direct config edits
-    /// (`app/mcp.rs::mcp_apply_stale`). A `DerivedRestRegions` boundary's
+    /// mechanism `crate::state::stale::stamp_stale` gives every command
+    /// route (WP28 deleted the MCP surface's own helper). A
+    /// `DerivedRestRegions` boundary's
     /// clip depends entirely on the source toolpath's cached
     /// `rest_regions` — any regeneration of the source (regions changed,
     /// vanished, or newly appeared) or its removal invalidates every

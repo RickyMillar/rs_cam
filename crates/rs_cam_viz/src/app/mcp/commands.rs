@@ -1796,7 +1796,6 @@ impl RsCamApp {
             | CommandId::ReplaceSetupsAndToolpaths
             | CommandId::SetProjectName
             | CommandId::SetToolpathOperation
-            | CommandId::RemoveSetup
             | CommandId::InvalidateStock
             | CommandId::InvalidateMachine
             | CommandId::InvalidateTool
@@ -2625,7 +2624,6 @@ impl RsCamApp {
             | CommandId::ReplaceSetupsAndToolpaths
             | CommandId::SetProjectName
             | CommandId::SetToolpathOperation
-            | CommandId::RemoveSetup
             | CommandId::InvalidateStock
             | CommandId::InvalidateMachine
             | CommandId::InvalidateTool
