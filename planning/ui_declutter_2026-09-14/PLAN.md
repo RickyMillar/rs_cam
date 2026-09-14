@@ -126,9 +126,14 @@ eye. Click shows/hides, double-click isolates.
 - The `▶` / `Sim` button becomes part of the state dot.
 - The card is ONE height for every card.
 
-**Must not bury:** the `⏻` enable toggle is not a view control — it changes
-what gets CUT and EXPORTED. The state must stay legible on the card even when
-the control moves into `…`. Operator ruling required before this ships.
+**Operator ruling, 2026-09-14: bury it.** The `⏻` enable toggle moves into
+`…` with the rest. The CONTROL is buried; the STATE is not — a disabled
+operation already reads `OFF` on its state dot, and that indicator stays
+always-visible. That keeps the thing this rule existed to protect: nobody
+walks to the machine unaware an operation is off, because the card still says
+so. What goes away is the one-click toggle, which is correct — disabling an
+operation is not something you should be able to do by brushing a 12-point
+icon.
 
 ### DC2 — the operations panel header
 
@@ -156,10 +161,37 @@ own tab or to parity with setups (Pattern D).
 disclosure and a tab. `Hints` moves off the top and becomes a count.
 The three prose lines above the tab strip become one state row.
 
-Also fixes the Feeds & Speeds tab overflowing its container, and resolves the
-**split between the Feeds tab and the Feeds modal** — two surfaces for one
-job is its own Pattern A instance and needs an operator ruling on which is
-authoritative.
+Also fixes the Feeds & Speeds tab overflowing its container.
+
+#### DC5a — the feeds modal is FOUR tools, at TWO scopes
+
+Measured: `feeds_modal.rs` is **3 450 lines**, and its draw functions divide
+cleanly into four jobs that share nothing but a window.
+
+| Job | Functions | Scope | Where it belongs |
+|---|---|---|---|
+| **Compare & apply** | `comparison_card`, `apply_column`, `context_chip` | this operation | the **Feeds tab**. It is per-operation editing, which is what the inspector is FOR. |
+| **Why** | `provenance_disclosure`, `rationale`, `chipload_breakdown`, `warnings`, `chipload_*_attestation`, `engaged_diameter_row` | this operation | an **expand** from the tab. Optional detail is exactly what a disclosure is for (Rule A). |
+| **Explore** | `chart_a`, `chart_b`, `chart_c`, `explore_controls`, `scallop_control` | this operation | a **helper modal**. A nomogram you open, drag, and close is a focused tool and a legitimate modal. |
+| **Project rollup** | `project_view`, `bottleneck_callout`, `project_scatter`, `machine_envelope` | **the whole project** | NOT here at all. |
+
+**The finding is the fourth row.** `FeedsModalMode` is `{ Toolpath, Project }`
+— the modal holds two different SCOPES behind a mode flip. A project-wide
+view of every toolpath is reachable only by selecting one toolpath, opening
+its modal, and switching mode. That is why the split between the tab and the
+modal feels arbitrary: the modal is not "more detail about this operation",
+it is a container holding **two scopes and three levels of detail**.
+
+So the operator's instinct — smaller helper modals, or expands — is right,
+and the rule that produces it is Rule A: **one nesting mechanism per level,
+and a container holds one scope.**
+
+- The Feeds tab becomes authoritative for this operation.
+- "Why" is an expand on that tab, not a window.
+- "Explore" stays a modal, because it is a tool.
+- The project rollup **leaves the modal** and becomes a project-scope surface
+  of its own. Readiness is the candidate home, since that workspace already
+  answers project-wide questions.
 
 ### DC6 — the simulation workspace
 
