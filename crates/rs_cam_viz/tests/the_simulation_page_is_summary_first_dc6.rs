@@ -50,6 +50,20 @@ use std::path::{Path, PathBuf};
 /// The two files DC6 owns.
 const DIAGNOSTICS: &str = "ui/sim_diagnostics.rs";
 const TIMELINE: &str = "ui/sim_timeline.rs";
+const SIM_OP_LIST: &str = "ui/sim_op_list.rs";
+const SIM_DEBUG: &str = "ui/sim_debug.rs";
+const VIEWPORT_OVERLAY: &str = "ui/viewport_overlay.rs";
+const OVERLAYS_PANEL: &str = "ui/overlays/panel.rs";
+const OVERLAYS_REGISTRY: &str = "ui/overlays/registry.rs";
+const RUN_PRODUCER_SCAN: [&str; 7] = [
+    SIM_OP_LIST,
+    TIMELINE,
+    SIM_DEBUG,
+    DIAGNOSTICS,
+    VIEWPORT_OVERLAY,
+    OVERLAYS_PANEL,
+    OVERLAYS_REGISTRY,
+];
 
 /// Sentences the Inspector used to print, and must never print again.
 ///
@@ -69,10 +83,10 @@ const DELETED_HELP_SENTENCES: [&str; 3] = [
 /// abstention mark plus the one button that fixes it now.
 const DELETED_SPINE_SENTENCE: &str = "No cutting metrics captured";
 
-/// The fewest bytes each owned file must still hold before the scans are
-/// believed. Both are large panels; a truncated read would pass every
-/// absence arm for the wrong reason.
-const MIN_FILE_BYTES: usize = 20_000;
+/// The fewest bytes each large owned panel must still hold before its scans
+/// are believed. Smaller scan files use existence, non-empty, and anchor
+/// checks instead of being incorrectly held to a large-panel size floor.
+const MIN_LARGE_PANEL_BYTES: usize = 20_000;
 
 fn src_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
@@ -100,6 +114,18 @@ fn code_only(src: &str) -> String {
         .map(strip_comment)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Count the exact `RunSimulation` variant, not `RunSimulationWith`.
+fn direct_run_simulation_count(src: &str) -> usize {
+    const NEEDLE: &str = "AppEvent::RunSimulation";
+    src.match_indices(NEEDLE)
+        .filter(|(start, _)| {
+            src.get(start + NEEDLE.len()..)
+                .and_then(|rest| rest.chars().next())
+                .is_none_or(|next| !next.is_ascii_alphanumeric() && next != '_')
+        })
+        .count()
 }
 
 /// The source of one function, from its `fn` line to the next item at column
@@ -279,6 +305,89 @@ fn the_bottom_strip_is_one_bar_with_no_italic_sentence_dc6() {
     );
 }
 
+/// UR3. The workspace has exactly one direct Run Simulation producer. The
+/// menu remains a conventional alternate route outside this visual scan.
+#[test]
+fn simulation_workspace_has_one_direct_run_producer_ur3() {
+    let mut producer_file = "";
+    let mut total = 0;
+    for rel in RUN_PRODUCER_SCAN {
+        let count = direct_run_simulation_count(&code_only(&read(rel)));
+        if count > 0 {
+            producer_file = rel;
+        }
+        total += count;
+    }
+    assert_eq!(
+        total, 1,
+        "the Simulation workspace must have one direct RunSimulation producer: \
+         the full-width primary in {SIM_OP_LIST}. Timeline, diagnostics, \
+         viewport, and overlay surfaces may show state, but must not start a \
+         second run."
+    );
+    assert_eq!(
+        producer_file, SIM_OP_LIST,
+        "the one producer must be the primary in {SIM_OP_LIST}, not {producer_file}"
+    );
+
+    for rel in RUN_PRODUCER_SCAN {
+        let code = code_only(&read(rel));
+        assert!(
+            !code.contains("RunSimulationWith"),
+            "{rel} pushes RunSimulationWith — on the simulation surfaces that \
+             is a second run route wearing a scoped costume; the workspace \
+             primary must remain the only producer."
+        );
+        if rel == OVERLAYS_PANEL || rel == OVERLAYS_REGISTRY {
+            assert!(
+                !code.contains("RunSimulation"),
+                "{rel} restores an indirect Run Simulation route through the \
+                 overlay registry; the workspace primary must remain the only \
+                 producer."
+            );
+        }
+    }
+
+    let timeline = code_only(&read(TIMELINE));
+    let placeholder = function_source(&timeline, "fn draw_spine_empty_placeholder(");
+    assert!(
+        placeholder.contains("NotMeasured::new()") && placeholder.contains("checkbox("),
+        "the cut-metrics placeholder must keep its abstention semantics and \
+         offer only the recording option."
+    );
+    assert!(
+        !placeholder.contains("AppEvent::RunSimulation"),
+        "changing Cut metrics must mark simulation stale, not start work."
+    );
+}
+
+/// UR3. Producers OUTSIDE the visual scan, each with the ruling that permits
+/// it. A fourth affordance appearing in one of these files fails the census
+/// and forces a ruling, instead of appearing unnoticed.
+#[test]
+fn off_workspace_run_producers_hold_their_recorded_ruling_ur3() {
+    const ALLOWED: [(&str, usize, &str); 2] = [
+        (
+            "ui/menu_bar.rs",
+            1,
+            "a conventional menu route, not a second visible button",
+        ),
+        (
+            "ui/readiness_panel.rs",
+            3,
+            "the Readiness workspace; no simulation panel is on screen with it",
+        ),
+    ];
+    for (rel, expected, ruling) in ALLOWED {
+        let count = direct_run_simulation_count(&code_only(&read(rel)));
+        assert_eq!(
+            count, expected,
+            "{rel} holds {count} direct RunSimulation producers, ruled at {expected} ({ruling}). \
+             A new affordance needs a new ruling in this table, not a silent pass."
+        );
+    }
+}
+
 /// Arm 6. Non-vacuity.
 ///
 /// Every arm above asserts that something is ABSENT from a file, or that one
@@ -286,7 +395,7 @@ fn the_bottom_strip_is_one_bar_with_no_italic_sentence_dc6() {
 /// renamed function would satisfy most of them. This arm fails first instead.
 #[test]
 fn the_scan_is_not_vacuous_dc6() {
-    for rel in [DIAGNOSTICS, TIMELINE] {
+    for rel in RUN_PRODUCER_SCAN {
         let path = src_root().join(rel);
         assert!(
             path.is_file(),
@@ -294,9 +403,16 @@ fn the_scan_is_not_vacuous_dc6() {
         );
         let src = read(rel);
         assert!(
-            src.len() >= MIN_FILE_BYTES,
-            "{rel} is only {} bytes, under the {MIN_FILE_BYTES} floor. An \
-             absence arm over a truncated file passes for the wrong reason.",
+            !src.trim().is_empty(),
+            "{rel} is empty; an absence scan over it would pass vacuously"
+        );
+    }
+    for rel in [DIAGNOSTICS, TIMELINE] {
+        let src = read(rel);
+        assert!(
+            src.len() >= MIN_LARGE_PANEL_BYTES,
+            "{rel} is only {} bytes, under the {MIN_LARGE_PANEL_BYTES} large-panel \
+             floor. An absence arm over a truncated file passes for the wrong reason.",
             src.len()
         );
     }
@@ -320,6 +436,18 @@ fn the_scan_is_not_vacuous_dc6() {
         assert!(
             timeline.contains(anchor),
             "{TIMELINE} no longer defines {anchor}"
+        );
+    }
+    for (rel, anchor) in [
+        (SIM_OP_LIST, "pub fn draw("),
+        (SIM_DEBUG, "pub fn draw_trace_badge("),
+        (VIEWPORT_OVERLAY, "pub fn draw("),
+        (OVERLAYS_PANEL, "fn run_action("),
+        (OVERLAYS_REGISTRY, "pub enum OverlayAction"),
+    ] {
+        assert!(
+            code_only(&read(rel)).contains(anchor),
+            "{rel} no longer defines {anchor}"
         );
     }
 

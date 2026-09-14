@@ -3,6 +3,7 @@ use super::sim_debug::{semantic_kind_color, semantic_kind_label};
 use crate::render::toolpath_render::palette_color;
 use crate::state::job::SetupId;
 use crate::state::runtime::GuiState;
+use crate::state::selection::Selection;
 use crate::state::simulation::{SimulationIssue, SimulationIssueKind, SimulationState};
 use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::ViewportState;
@@ -27,10 +28,37 @@ pub fn draw(
     ui.heading("Verification");
     ui.separator();
 
+    // The one predicate for "would a run actually simulate something" —
+    // shared with the Readiness Run-sim affordances so no surface keeps
+    // a second copy of the builder's admission rules.
+    let can_run = crate::ui::readiness::simulation_request_is_buildable(session, gui);
+
+    // The one workspace primary comes before its recording settings, matching
+    // Toolpaths' Generate All placement.
+    let run_label = if !sim.has_results() {
+        "Run Simulation"
+    } else if sim.is_stale(gui.edit_counter) {
+        "Re-run Simulation · params changed"
+    } else {
+        "Re-run Simulation"
+    };
+    if ui
+        .add(
+            crate::ui::components::Button::primary(run_label)
+                .enabled(can_run)
+                .min_width(ui.available_width()),
+        )
+        .on_disabled_hover_text("Generate at least one enabled toolpath before simulation.")
+        .clicked()
+    {
+        events.push(AppEvent::RunSimulation);
+    }
+    ui.add_space(4.0);
+
     // --- Setup & run ---
-    // Capture toggles + Run button live together: these are the "what
-    // should the next sim record?" controls. Display-only toggles (stock
-    // coloring, generator overlay) live in the right-panel View section.
+    // Capture toggles live here: these are the "what should the next sim
+    // record?" controls. Display-only toggles (stock coloring, generator
+    // overlay) live in the right-panel View section.
     let any_compute = session.toolpath_configs().iter().any(|tc| tc.enabled);
     if any_compute {
         let mut capture_trace_all = session
@@ -47,15 +75,18 @@ pub fn draw(
                 .color(theme::TEXT_HEADING),
         )
         .id_salt("sim_setup_run")
-        .default_open(sim.boundaries().is_empty())
+        .default_open(!sim.has_results())
         .show(ui, |ui| {
-            ui.checkbox(
-                &mut sim.metric_options.enabled,
-                "Capture cutting metrics",
-            )
-            .on_hover_text(
-                "Records per-sample advance/tooth, engagement, MRR during simulation. Required for the bottom-panel signal graphs to show data. Re-run simulation to apply.",
-            );
+            let mut capture_metrics = sim.metric_options.enabled;
+            if ui
+                .checkbox(&mut capture_metrics, "Capture cutting metrics")
+                .on_hover_text(
+                    "Records per-sample advance/tooth, engagement, MRR during simulation. Required for the bottom-panel signal graphs to show data. Re-run simulation to apply.",
+                )
+                .changed()
+            {
+                sim.set_metric_capture_enabled(capture_metrics);
+            }
             if ui
                 .checkbox(&mut capture_trace_all, "Record generator trace")
                 .on_hover_text(
@@ -65,10 +96,6 @@ pub fn draw(
             {
                 events.push(AppEvent::SetGeneratorTraceCaptureAll(capture_trace_all));
             }
-            if sim.metric_options.enabled {
-                sim.metric_options.capture_arc_engagement = true;
-            }
-
             // Resolution: defines how detailed the dexel grid records material
             // removal. Belongs with the capture toggles since it's a recording
             // setting, not a display setting.
@@ -112,37 +139,18 @@ pub fn draw(
         });
 
         ui.add_space(4.0);
-        let run_label = if sim.boundaries().is_empty() {
-            "Run Simulation"
-        } else {
-            "Re-run Simulation"
-        };
-        let btn = egui::Button::new(egui::RichText::new(run_label).strong())
-            .min_size(egui::vec2(ui.available_width(), 28.0));
-        if ui.add(btn).clicked() {
-            events.push(AppEvent::RunSimulation);
-        }
-        ui.add_space(4.0);
         ui.separator();
     }
 
-    // Empty state: no results yet
-    if sim.boundaries().is_empty() {
-        let has_computed = session.toolpath_configs().iter().any(|tc| {
-            tc.enabled
-                && gui
-                    .toolpath_rt
-                    .get(&tc.id)
-                    .and_then(|rt| rt.result.as_ref())
-                    .is_some()
-        });
-
+    // Empty state: no accepted result yet. An accepted empty result is still
+    // a completed run, not the never-run state.
+    if !sim.has_results() {
         egui::Frame::default()
             .fill(theme::CARD_FILL)
             .inner_margin(12.0)
             .corner_radius(4)
             .show(ui, |ui| {
-                if has_computed {
+                if can_run {
                     ui.label(
                         egui::RichText::new("Ready to simulate")
                             .strong()
@@ -195,24 +203,17 @@ pub fn draw(
                 );
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new("Parameters changed since the last simulation run.")
-                        .small()
-                        .color(crate::ui::tokens::CAUTION),
+                    egui::RichText::new(
+                        "Toolpath parameters or capture settings changed since the last run.",
+                    )
+                    .small()
+                    .color(crate::ui::tokens::CAUTION),
                 );
-                ui.add_space(6.0);
-                let btn = egui::Button::new(egui::RichText::new("Re-run Simulation").strong())
-                    .min_size(egui::vec2(ui.available_width(), 28.0));
-                if ui.add(btn).clicked() {
-                    events.push(AppEvent::RunSimulation);
-                }
             });
         ui.add_space(4.0);
         ui.separator();
     }
 
-    // Collect selected toolpath IDs for checkbox state
-    let all_selected = sim.selected_toolpaths().is_none();
-    let selected_set: Vec<ToolpathId> = sim.selected_toolpaths().cloned().unwrap_or_default();
     let boundaries = sim.boundaries().to_vec();
     let setup_boundaries = sim.setup_boundaries().to_vec();
     let issues = sim.issues(gui, max_feed);
@@ -223,8 +224,6 @@ pub fn draw(
         .as_ref()
         .map(|item| (item.toolpath_id, item.item.id));
 
-    // Track if user toggled any checkbox
-    let mut toggled_id: Option<ToolpathId> = None;
     let mut current_setup_id: Option<SetupId> = None;
 
     for (i, boundary) in boundaries.iter().enumerate() {
@@ -265,69 +264,88 @@ pub fn draw(
         };
 
         frame.show(ui, |ui| {
+            // DC1's compact card kit: swatch · state dot · name · tool ·
+            // verdict. The overflow carries the per-toolpath C/R filters.
             ui.horizontal(|ui| {
-                // Checkbox for including in simulation
-                let mut checked = all_selected || selected_set.contains(&boundary.id);
-                let include_tip = if checked {
-                    "Included in this simulation run. Toggle off and the simulation will re-run without it."
-                } else {
-                    "Excluded from this simulation run. Toggle on and the simulation will re-run with it."
-                };
-                if ui.checkbox(&mut checked, "").on_hover_text(include_tip).changed() {
-                    toggled_id = Some(boundary.id);
-                }
-
-                // Palette color swatch
+                ui.set_min_height(crate::ui::tokens::ROW_ACTION);
                 let (swatch_rect, _) =
                     ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().rect_filled(swatch_rect, 2.0, color);
-
-                // Operation name IS the jump target (TIM-006) — one explicit
-                // hit-region instead of an invisible whole-card click zone that
-                // overlapped the inner controls' Ids.
-                let name_text = egui::RichText::new(&boundary.name).small();
-                let name_text = if is_focused {
-                    name_text.strong()
+                let dot = if is_focused {
+                    theme::ACCENT
                 } else {
-                    name_text
+                    theme::TEXT_DIM
+                };
+                let (dot_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                ui.painter().circle_filled(dot_rect.center(), 3.0, dot);
+
+                let name_text = if is_focused {
+                    egui::RichText::new(&boundary.name).small().strong()
+                } else {
+                    egui::RichText::new(&boundary.name).small()
                 };
                 if ui
-                    .add(egui::Label::new(name_text).sense(egui::Sense::click()))
+                    .add(
+                        egui::Label::new(name_text)
+                            .truncate()
+                            .sense(egui::Sense::click()),
+                    )
                     .on_hover_text("Click to jump playback to this toolpath's start.")
                     .clicked()
                 {
+                    events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(
+                        boundary.id,
+                    ))));
                     events.push(AppEvent::Ui(UiCommand::SimJumpToOpStart(
                         SimJumpToOpStartArgs { boundary_index: i },
                     )));
                 }
-            });
-
-            ui.label(
-                egui::RichText::new(&boundary.tool_name)
-                    .small()
-                    .color(theme::TEXT_MUTED),
-            );
-
-            let load_verdict = load_report
-                .per_toolpath
-                .iter()
-                .find(|verdict| verdict.toolpath_id == boundary.id);
-            draw_toolpath_status_flags(ui, boundary.id, &issues, load_verdict);
-
-            // Per-toolpath visibility controls: eye / cut / rapid / isolate.
-            // Shared with the Toolpaths-workspace panel for a consistent row.
-            let overall_visible = gui
-                .toolpath_rt
-                .get(&boundary.id)
-                .is_none_or(|rt| rt.visible);
-            ui.horizontal(|ui| {
-                crate::ui::toolpath_row_controls::draw(
-                    ui,
-                    boundary.id,
-                    overall_visible,
-                    viewport,
-                    events,
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(&boundary.tool_name)
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    )
+                    .truncate(),
                 );
+
+                let load_verdict = load_report
+                    .per_toolpath
+                    .iter()
+                    .find(|verdict| verdict.toolpath_id == boundary.id);
+                draw_toolpath_status_flags(ui, boundary.id, &issues, load_verdict);
+                // The eye renders in BOTH draw modes: `visible` bites in
+                // selected-only mode too (`toolpaths_to_draw` ANDs it), so a
+                // hidden row needs its control even when show-all is off.
+                let visible = gui
+                    .toolpath_rt
+                    .get(&boundary.id)
+                    .is_none_or(|rt| rt.visible);
+                let glyph = if visible { "👁" } else { "⊘" };
+                let hover = if visible {
+                    "Hide this toolpath in the 3D viewport."
+                } else if viewport.show_all_toolpaths {
+                    "Show this toolpath in the 3D viewport."
+                } else {
+                    "Show this toolpath in the 3D viewport. It is hidden, and the viewport draws the selected toolpath only, so a hidden toolpath still draws nothing."
+                };
+                if ui
+                    .add(egui::Button::new(glyph).frame(false))
+                    .on_hover_text(hover)
+                    .clicked()
+                {
+                    events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(
+                        boundary.id,
+                    )));
+                }
+                ui.menu_button("…", |ui| {
+                    crate::ui::toolpath_panel::draw_move_visibility_items(
+                        ui,
+                        boundary.id,
+                        viewport,
+                    );
+                });
             });
 
             if sim.debug.enabled {
@@ -393,37 +411,6 @@ pub fn draw(
 
         if i + 1 < boundaries.len() {
             ui.add_space(2.0);
-        }
-    }
-
-    // If a checkbox was toggled, re-run sim with new selection
-    if let Some(id) = toggled_id {
-        let mut new_selection: Vec<ToolpathId> = if all_selected {
-            // Was "all" — now exclude the toggled one
-            sim.boundaries()
-                .iter()
-                .map(|b| b.id)
-                .filter(|bid| *bid != id)
-                .collect()
-        } else {
-            let mut s = selected_set;
-            if s.contains(&id) {
-                s.retain(|x| *x != id);
-            } else {
-                s.push(id);
-            }
-            s
-        };
-
-        // If all are selected again, use None (meaning "all")
-        if new_selection.len() == boundaries.len() {
-            new_selection.clear();
-        }
-
-        if new_selection.is_empty() {
-            events.push(AppEvent::RunSimulation);
-        } else {
-            events.push(AppEvent::RunSimulationWith(new_selection));
         }
     }
 
@@ -932,7 +919,7 @@ fn draw_toolpath_status_flags(
     verdict: Option<&ToolpathLoadVerdict>,
 ) {
     let flags = toolpath_status_flags(toolpath_id, issues, verdict);
-    ui.horizontal_wrapped(|ui| {
+    ui.horizontal(|ui| {
         let Some(worst) = flags.first() else {
             ui.label(
                 egui::RichText::new("✓ all clear")

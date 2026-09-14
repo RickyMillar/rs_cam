@@ -885,6 +885,372 @@ fn simulation_staleness_tracks_edits() {
 }
 
 #[test]
+fn metric_capture_toggle_before_first_result_tracks_in_flight_mismatch_without_dirtying_project() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let dirty_before = controller.state.gui.dirty;
+    let revision_before = controller.state.simulation.metric_options_revision;
+
+    controller.state.simulation.set_metric_capture_enabled(true);
+    assert_eq!(
+        controller.state.simulation.metric_options_revision,
+        revision_before + 1
+    );
+    assert!(
+        !controller.state.simulation.metric_options_are_stale(),
+        "a pre-first-run capture choice has no evidence to stale"
+    );
+
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    assert_eq!(
+        controller
+            .state
+            .simulation
+            .submitted_metric_options_revision,
+        Some(revision_before + 1),
+        "the run must stamp the capture revision it answers"
+    );
+    controller
+        .state
+        .simulation
+        .set_metric_capture_enabled(false);
+    assert!(
+        !controller.state.simulation.metric_options_are_stale(),
+        "there is still no accepted evidence before the first result lands"
+    );
+
+    inject_sim_results(&mut controller, 1);
+
+    assert!(
+        controller.state.simulation.metric_options_are_stale(),
+        "a first result answering the older in-flight capture revision is stale"
+    );
+    assert_eq!(
+        controller.state.gui.dirty, dirty_before,
+        "runtime capture choices must not dirty the machining project"
+    );
+}
+
+#[test]
+fn metric_capture_toggle_after_results_marks_existing_evidence_stale_without_dirtying_project() {
+    let mut controller = sample_controller();
+    inject_sim_results(&mut controller, 1);
+    let dirty_before = controller.state.gui.dirty;
+    let revision_before = controller.state.simulation.metric_options_revision;
+
+    controller.state.simulation.set_metric_capture_enabled(true);
+
+    assert_eq!(
+        controller.state.simulation.metric_options_revision,
+        revision_before + 1
+    );
+    assert!(controller.state.simulation.metric_options_are_stale());
+    assert_eq!(controller.state.gui.dirty, dirty_before);
+}
+
+#[test]
+fn metric_capture_matching_success_clears_stale_marker() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    inject_sim_results(&mut controller, 1);
+    controller.state.simulation.set_metric_capture_enabled(true);
+    assert!(controller.state.simulation.metric_options_are_stale());
+
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    inject_sim_results(&mut controller, 1);
+
+    assert!(
+        !controller.state.simulation.metric_options_are_stale(),
+        "a successful result for the submitted capture revision is current"
+    );
+}
+
+#[test]
+fn metric_capture_unstamped_success_preserves_stale_marker() {
+    let mut controller = sample_controller();
+    inject_sim_results(&mut controller, 1);
+    controller.state.simulation.set_metric_capture_enabled(true);
+    assert!(
+        controller
+            .state
+            .simulation
+            .submitted_metric_options_revision
+            .is_none()
+    );
+
+    inject_sim_results(&mut controller, 1);
+
+    assert!(
+        controller.state.simulation.metric_options_are_stale(),
+        "an unstamped result cannot clear a marker whose capture revision it cannot prove"
+    );
+}
+
+#[test]
+fn metric_capture_cancel_preserves_marker_and_consumes_simulation_stamps() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    inject_sim_results(&mut controller, 1);
+    controller.state.simulation.set_metric_capture_enabled(true);
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    assert!(controller.state.simulation.submitted_edit_counter.is_some());
+    assert!(
+        controller
+            .state
+            .simulation
+            .submitted_metric_options_revision
+            .is_some()
+    );
+
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Simulation(Err(
+            crate::compute::ComputeError::Cancelled,
+        )));
+    controller.drain_compute_results();
+
+    assert!(controller.state.simulation.metric_options_are_stale());
+    assert!(controller.state.simulation.submitted_edit_counter.is_none());
+    assert!(
+        controller
+            .state
+            .simulation
+            .submitted_metric_options_revision
+            .is_none()
+    );
+}
+
+#[test]
+fn metric_capture_error_preserves_marker_and_consumes_simulation_stamps() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    inject_sim_results(&mut controller, 1);
+    controller.state.simulation.set_metric_capture_enabled(true);
+    controller.handle_internal_event(AppEvent::RunSimulation);
+
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Simulation(Err(
+            crate::compute::ComputeError::Message("metric capture fixture".to_owned()),
+        )));
+    controller.drain_compute_results();
+
+    assert!(controller.state.simulation.metric_options_are_stale());
+    assert!(controller.state.simulation.submitted_edit_counter.is_none());
+    assert!(
+        controller
+            .state
+            .simulation
+            .submitted_metric_options_revision
+            .is_none()
+    );
+}
+
+#[test]
+fn metric_capture_reset_clears_evidence_and_stamps_without_dirtying_project() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    inject_sim_results(&mut controller, 1);
+    controller.state.simulation.set_metric_capture_enabled(true);
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    let dirty_before = controller.state.gui.dirty;
+
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
+
+    assert!(!controller.state.simulation.has_results());
+    assert!(!controller.state.simulation.metric_options_are_stale());
+    assert!(controller.state.simulation.submitted_edit_counter.is_none());
+    assert!(
+        controller
+            .state
+            .simulation
+            .submitted_metric_options_revision
+            .is_none()
+    );
+    assert_eq!(controller.state.gui.dirty, dirty_before);
+}
+
+#[test]
+fn an_accepted_run_and_an_accepted_result_arrive_and_leave_together_ur3() {
+    // The derived metric-options staleness reads `last_run`, not `results`.
+    // The two must arrive and leave together on EVERY transition, or the
+    // reader would ask a run that has no evidence (or evidence with no run).
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let sim = &controller.state.simulation;
+    assert_eq!(sim.has_results(), sim.last_run.is_some());
+
+    // Submit: stamps exist, no evidence yet.
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    let sim = &controller.state.simulation;
+    assert_eq!(sim.has_results(), sim.last_run.is_some());
+
+    // Accept.
+    inject_sim_results(&mut controller, 1);
+    let sim = &controller.state.simulation;
+    assert_eq!(sim.has_results(), sim.last_run.is_some());
+
+    // Cancel: stamps consumed, evidence kept.
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Simulation(Err(
+            crate::compute::ComputeError::Cancelled,
+        )));
+    controller.drain_compute_results();
+    let sim = &controller.state.simulation;
+    assert_eq!(sim.has_results(), sim.last_run.is_some());
+
+    // Error: same shape.
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Simulation(Err(
+            crate::compute::ComputeError::Message("invariant fixture".to_owned()),
+        )));
+    controller.drain_compute_results();
+    let sim = &controller.state.simulation;
+    assert_eq!(sim.has_results(), sim.last_run.is_some());
+
+    // Reset: both leave together.
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
+    let sim = &controller.state.simulation;
+    assert_eq!(sim.has_results(), sim.last_run.is_some());
+
+    // A second accept re-establishes the pairing.
+    inject_sim_results(&mut controller, 1);
+    let sim = &controller.state.simulation;
+    assert_eq!(sim.has_results(), sim.last_run.is_some());
+}
+
+#[test]
+fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
+    // The Simulation primary and the Readiness Run-sim affordances gate on
+    // `readiness::simulation_request_is_buildable`; the controller's
+    // `build_simulation_groups` is the executable truth. Two predicates
+    // drift, and the drift is an enabled button that starts nothing — or a
+    // disabled button over work the controller would accept. Four fixtures,
+    // chosen to cover every admission rule the builder has.
+
+    // Fixture 1 — nothing generated.
+    let mut controller = sample_controller();
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .values()
+            .all(|rt| rt.result.is_none()),
+        "fixture 1: the sample project must start ungenerated"
+    );
+    let predicate = crate::ui::readiness::simulation_request_is_buildable(
+        &controller.state.session,
+        &controller.state.gui,
+    );
+    let builder = controller
+        .build_simulation_groups(|_, tc| tc.enabled, |_| false)
+        .is_some();
+    assert_eq!(
+        predicate, builder,
+        "fixture 1 (nothing generated): the primary and the builder disagree"
+    );
+    assert!(
+        !predicate,
+        "fixture 1: an ungenerated project must not be buildable"
+    );
+
+    // Fixture 2 — one generated op.
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .values()
+            .any(|rt| rt.result.is_some()),
+        "fixture 2: generate_all_for_test must leave a generated result"
+    );
+    let predicate = crate::ui::readiness::simulation_request_is_buildable(
+        &controller.state.session,
+        &controller.state.gui,
+    );
+    let builder = controller
+        .build_simulation_groups(|_, tc| tc.enabled, |_| false)
+        .is_some();
+    assert_eq!(
+        predicate, builder,
+        "fixture 2 (one generated op): the primary and the builder disagree"
+    );
+    assert!(predicate, "fixture 2: a generated op must be buildable");
+
+    // Fixture 3 — a generated op whose `tool_id` names no tool. The builder
+    // drops it (`controller/events/simulation.rs`), so neither may admit it.
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+    panel_edit(&mut controller, id, |entry| {
+        entry.tool_id = ToolId(999);
+    });
+    assert_eq!(
+        controller.state.session.toolpath_configs()[0].tool_id,
+        999,
+        "fixture 3 precondition failed: the corrupt tool id did not reach the session"
+    );
+    let predicate = crate::ui::readiness::simulation_request_is_buildable(
+        &controller.state.session,
+        &controller.state.gui,
+    );
+    let builder = controller
+        .build_simulation_groups(|_, tc| tc.enabled, |_| false)
+        .is_some();
+    assert_eq!(
+        predicate, builder,
+        "fixture 3 (unresolvable tool): the primary and the builder disagree"
+    );
+    assert!(
+        !predicate,
+        "fixture 3: an op with no resolvable tool must not be buildable"
+    );
+
+    // Fixture 4 — an enabled pending `FromRemainingStock` op with nothing
+    // generated. F.4's phantom prior stock: the group is still emitted, so a
+    // run CAN simulate it and the primary must say so.
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let id = controller.state.session.toolpath_configs()[0].id;
+    panel_edit(&mut controller, id, |entry| {
+        entry.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
+    });
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .values()
+            .all(|rt| rt.result.is_none()),
+        "fixture 4 precondition failed: the stock-source edit must drop the generated result"
+    );
+    let predicate = crate::ui::readiness::simulation_request_is_buildable(
+        &controller.state.session,
+        &controller.state.gui,
+    );
+    let builder = controller
+        .build_simulation_groups(|_, tc| tc.enabled, |_| false)
+        .is_some();
+    assert_eq!(
+        predicate, builder,
+        "fixture 4 (phantom prior stock): the primary and the builder disagree"
+    );
+    assert!(
+        predicate,
+        "fixture 4: the phantom prior-stock group must be buildable"
+    );
+}
+
+#[test]
 fn playback_defaults_after_reset() {
     let mut controller = sample_controller();
     inject_sim_results(&mut controller, 1);
@@ -5015,6 +5381,8 @@ fn controller_ready_for_undo() -> (AppController<ScriptedBackend>, ToolpathId) {
     controller.state.simulation.last_run = Some(crate::state::simulation::SimulationRunMeta {
         sim_generation: 1,
         last_sim_edit_counter: controller.state.gui.edit_counter,
+        // A hand-built fresh run answers the capture revision now set.
+        accepted_metric_options_revision: Some(controller.state.simulation.metric_options_revision),
     });
     controller.state.gui.dirty = false;
     (controller, tp_id)

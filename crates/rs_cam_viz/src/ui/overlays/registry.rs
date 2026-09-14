@@ -118,7 +118,6 @@ const UPLOAD_DETECTOR: &str = "the composite `overlay_upload_key` detector in ap
 /// A button the panel offers beside a disabled row, to make it drawable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayAction {
-    RunSimulation,
     RunCollisionCheck,
     /// Open `Toolpath ▸ Plan multi-tool finishing…`.
     OpenPlanner,
@@ -134,7 +133,6 @@ pub enum OverlayAction {
 impl OverlayAction {
     pub fn label(self) -> &'static str {
         match self {
-            Self::RunSimulation => "Run simulation",
             Self::RunCollisionCheck => "Run collision check",
             Self::OpenPlanner => "Plan\u{2026}",
             Self::GenerateAll => "Generate all",
@@ -1020,10 +1018,7 @@ pub const ROWS: &[OverlayRow] = &[
                 return base;
             }
             if s.simulation.playback.display_deviations.is_none() {
-                Precondition::no_with(
-                    "no deviation data \u{2014} run a simulation".to_owned(),
-                    OverlayAction::RunSimulation,
-                )
+                Precondition::no("no deviation data \u{2014} run a simulation")
             } else {
                 Precondition::Ready
             }
@@ -1119,10 +1114,7 @@ pub const ROWS: &[OverlayRow] = &[
             if s.simulation.has_results() {
                 Precondition::Ready
             } else {
-                Precondition::no_with(
-                    "advance per tooth needs a simulation".to_owned(),
-                    OverlayAction::RunSimulation,
-                )
+                Precondition::no("advance per tooth needs a simulation")
             }
         },
         default_for: no_default,
@@ -1146,7 +1138,7 @@ pub const ROWS: &[OverlayRow] = &[
             } else if s.simulation.has_results() {
                 Precondition::Ready
             } else {
-                Precondition::no_with("run a simulation".to_owned(), OverlayAction::RunSimulation)
+                Precondition::no("run a simulation")
             }
         },
         default_for: simulation_only_default,
@@ -1193,7 +1185,7 @@ pub const ROWS: &[OverlayRow] = &[
             } else if s.simulation.has_results() {
                 Precondition::Ready
             } else {
-                Precondition::no_with("run a simulation".to_owned(), OverlayAction::RunSimulation)
+                Precondition::no("run a simulation")
             }
         },
         default_for: simulation_only_default,
@@ -1275,7 +1267,7 @@ fn stock_colour_precondition(state: &AppState) -> Precondition {
     if state.simulation.has_results() {
         Precondition::Ready
     } else {
-        Precondition::no_with("run a simulation".to_owned(), OverlayAction::RunSimulation)
+        Precondition::no("run a simulation")
     }
 }
 

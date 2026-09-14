@@ -125,6 +125,48 @@ pub fn operations_check(state: &AppState) -> (CheckStatus, usize, usize) {
     (status, computed, enabled)
 }
 
+/// True when the controller's simulation builder would return `Some` —
+/// i.e. a full-run request would actually simulate something.
+///
+/// `AppController::build_simulation_groups` is the executable truth, but it
+/// needs `&mut self` so the panels cannot call it. This predicate mirrors its
+/// admission rules: a group is emitted when it has at least one ENABLED
+/// toolpath with a generated result AND a resolvable `tool_id`, OR when the
+/// first enabled-but-ungenerated config is a pending `FromRemainingStock`
+/// op (the phantom prior stock, F.4). Two predicates drift, and the drift
+/// is a button that starts nothing; the controller test
+/// `the_primary_and_the_builder_agree_about_a_runnable_project` holds the two
+/// together.
+pub fn simulation_request_is_buildable(session: &ProjectSession, gui: &GuiState) -> bool {
+    for setup in session.list_setups() {
+        let mut phantom_scan = rs_cam_core::compute::simulate::PhantomPriorStockScan::default();
+        let mut admissible = 0_usize;
+        for &tp_idx in &setup.toolpath_indices {
+            let Some(tc) = session.toolpath_configs().get(tp_idx) else {
+                continue;
+            };
+            let generated = gui
+                .toolpath_rt
+                .get(&tc.id)
+                .and_then(|rt| rt.result.as_ref())
+                .is_some();
+            phantom_scan.visit(admissible, tc.enabled, generated, tc.id, tc.stock_source);
+            if !tc.enabled || !generated {
+                continue;
+            }
+            // The builder drops a config whose `tool_id` names no tool, so
+            // the predicate must not admit it either.
+            if session.tools().iter().any(|t| t.id.0 == tc.tool_id) {
+                admissible += 1;
+            }
+        }
+        if admissible > 0 || phantom_scan.finish().is_some() {
+            return true;
+        }
+    }
+    false
+}
+
 /// Simulation freshness — Pass when fresh results exist, Warning when missing
 /// or stale.
 pub fn simulation_check(state: &AppState) -> CheckStatus {

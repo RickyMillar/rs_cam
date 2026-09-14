@@ -269,7 +269,6 @@ fn draw_row(
 /// Run a disabled row's compute affordance.
 fn run_action(state: &mut AppState, events: &mut Vec<AppEvent>, action: OverlayAction) {
     match action {
-        OverlayAction::RunSimulation => events.push(AppEvent::RunSimulation),
         OverlayAction::RunCollisionCheck => events.push(AppEvent::RunCollisionCheck),
         OverlayAction::OpenPlanner => {
             events.push(AppEvent::Ui(UiCommand::OpenMultitoolPlanner(NoArgs)));

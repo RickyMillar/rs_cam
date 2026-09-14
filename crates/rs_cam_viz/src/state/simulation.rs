@@ -800,6 +800,16 @@ pub struct SimulationRunMeta {
     pub sim_generation: u64,
     /// Edit counter at the time of the last simulation run.
     pub last_sim_edit_counter: u64,
+    /// The metric-options revision this accepted result PROVABLY answers.
+    ///
+    /// `None` means the drain could not prove one: the submit stamp was
+    /// consumed by a cancel or an error, and a late result arrived behind
+    /// it. An unprovable revision reads STALE, never current — the rule
+    /// [`SimulationChecks::checked_at_edit_counter`] already applies to a
+    /// holder verdict, for the same reason: recording preferences are not
+    /// a safety claim, but a "current" reading on unprovable evidence is
+    /// still a wrong reading.
+    pub accepted_metric_options_revision: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -864,6 +874,10 @@ pub struct SimulationState {
     pub auto_resolution: bool,
     /// Runtime-only capture options for simulation cutting metrics.
     pub metric_options: SimulationMetricOptions,
+    /// Revision of runtime-only metric options.
+    pub metric_options_revision: u64,
+    /// Metric-options revision captured when the in-flight run was submitted.
+    pub submitted_metric_options_revision: Option<u64>,
     /// Stock visualization mode.
     pub stock_viz_mode: StockVizMode,
     /// Stock opacity (0.0 = transparent, 1.0 = solid).
@@ -920,6 +934,8 @@ impl SimulationState {
             resolution: 0.25,
             auto_resolution: true,
             metric_options: SimulationMetricOptions::default(),
+            metric_options_revision: 0,
+            submitted_metric_options_revision: None,
             stock_viz_mode: StockVizMode::Solid,
             stock_opacity: 1.0,
             debug: SimulationDebugState {
@@ -1127,11 +1143,36 @@ impl SimulationState {
             .and_then(|r| r.selected_toolpaths.as_ref())
     }
 
-    /// Returns true if simulation results are stale (params changed since last sim).
+    /// Set metric capture without dirtying the project. The revision bump
+    /// alone carries the staleness: [`Self::metric_options_are_stale`]
+    /// derives it by comparing the accepted run's stamped revision against
+    /// the revision set now, so no separate bool can drift out of step
+    /// with the evidence it describes.
+    pub fn set_metric_capture_enabled(&mut self, enabled: bool) {
+        if self.metric_options.enabled != enabled {
+            self.metric_options.enabled = enabled;
+            self.metric_options_revision += 1;
+        }
+        if enabled {
+            self.metric_options.capture_arc_engagement = true;
+        }
+    }
+
+    /// True when the accepted result did not answer the capture revision
+    /// that is set now. A project with no accepted run returns `false`:
+    /// there is nothing to be stale, which is not the same as "clean".
+    pub fn metric_options_are_stale(&self) -> bool {
+        self.last_run.as_ref().is_some_and(|meta| {
+            meta.accepted_metric_options_revision != Some(self.metric_options_revision)
+        })
+    }
+
+    /// Returns true if simulation results are stale (params or recording
+    /// options changed since the last sim).
     pub fn is_stale(&self, current_edit_counter: u64) -> bool {
-        self.last_run
-            .as_ref()
-            .is_some_and(|meta| current_edit_counter > meta.last_sim_edit_counter)
+        self.last_run.as_ref().is_some_and(|meta| {
+            current_edit_counter > meta.last_sim_edit_counter || self.metric_options_are_stale()
+        })
     }
 
     /// True when a collision check HAS run and the project has been edited

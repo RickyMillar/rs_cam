@@ -870,6 +870,16 @@ impl<B: ComputeBackend> AppController<B> {
                         self.state.simulation.last_run = Some(SimulationRunMeta {
                             sim_generation: prev_gen + 1,
                             last_sim_edit_counter: submitted_at,
+                            // Recording preferences are runtime-only. This
+                            // result carries the capture revision it was
+                            // SUBMITTED with; a toggle while the worker ran
+                            // still needs a re-run, and an unstamped late
+                            // result reads stale, never current.
+                            accepted_metric_options_revision: self
+                                .state
+                                .simulation
+                                .submitted_metric_options_revision
+                                .take(),
                         });
 
                         self.pending_upload = true;
@@ -890,6 +900,13 @@ impl<B: ComputeBackend> AppController<B> {
                         self.resume_generate_all_after_simulation(None);
                     }
                     Err(ComputeError::Cancelled) => {
+                        let _ = (
+                            self.state.simulation.submitted_edit_counter.take(),
+                            self.state
+                                .simulation
+                                .submitted_metric_options_revision
+                                .take(),
+                        );
                         #[cfg(feature = "mcp")]
                         self.notify_mcp_simulation_error("Simulation cancelled");
                         self.resume_generate_all_after_simulation(Some(
@@ -897,6 +914,13 @@ impl<B: ComputeBackend> AppController<B> {
                         ));
                     }
                     Err(ComputeError::Message(error)) => {
+                        let _ = (
+                            self.state.simulation.submitted_edit_counter.take(),
+                            self.state
+                                .simulation
+                                .submitted_metric_options_revision
+                                .take(),
+                        );
                         tracing::error!("Simulation failed: {error}");
                         self.push_notification(
                             format!("Simulation failed: {error}"),

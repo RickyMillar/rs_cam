@@ -87,14 +87,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             } else {
                 "Up to date"
             };
-            check_row(
-                ui,
-                sim_status,
-                "Simulation",
-                sim_detail,
-                (sim_status != CheckStatus::Pass).then_some(("Run sim", AppEvent::RunSimulation)),
-                events,
-            );
+            let sim_action = (sim_status != CheckStatus::Pass
+                && readiness::simulation_request_is_buildable(&state.session, &state.gui))
+            .then_some(("Run sim", AppEvent::RunSimulation));
+            check_row(ui, sim_status, "Simulation", sim_detail, sim_action, events);
 
             let rapid_detail = if !sim.has_results() {
                 "Run simulation first".to_owned()
@@ -193,8 +189,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             // row on this panel offers. Only the un-simulated case has a
             // single-event fix; the no-kinematics case is a properties edit,
             // so it gets named in text instead of a fake button.
-            let action = matches!(cycle.basis, Some(readiness::CycleTimeBasis::CuttingOnly))
-                .then_some(("Run sim", AppEvent::RunSimulation));
+            let action = (matches!(cycle.basis, Some(readiness::CycleTimeBasis::CuttingOnly))
+                && readiness::simulation_request_is_buildable(&state.session, &state.gui))
+            .then_some(("Run sim", AppEvent::RunSimulation));
             check_row(ui, status, &title, &detail, action, events);
             if let Some(basis) = cycle.basis
                 && basis != readiness::CycleTimeBasis::MachineModel
@@ -231,7 +228,14 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             }
             if !sim.has_results()
                 && ui
-                    .add(crate::ui::components::Button::new("Run simulation"))
+                    .add(
+                        crate::ui::components::Button::new("Run simulation").enabled(
+                            readiness::simulation_request_is_buildable(&state.session, &state.gui),
+                        ),
+                    )
+                    .on_disabled_hover_text(
+                        "Generate at least one enabled toolpath with a valid tool first",
+                    )
                     .clicked()
             {
                 events.push(AppEvent::RunSimulation);

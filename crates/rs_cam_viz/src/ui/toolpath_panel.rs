@@ -585,7 +585,11 @@ fn card_menu(
 /// The global toggles gate these, so a per-toolpath filter does nothing
 /// while its global toggle is off. The item greys out, and its disabled
 /// hover names the control that blocks it (P4-004).
-fn draw_move_visibility_items(ui: &mut egui::Ui, tp_id: ToolpathId, viewport: &mut ViewportState) {
+pub(crate) fn draw_move_visibility_items(
+    ui: &mut egui::Ui,
+    tp_id: ToolpathId,
+    viewport: &mut ViewportState,
+) {
     // Read the global flags before the mutable entry borrow.
     let global_cutting = viewport.show_cutting;
     let global_rapids = viewport.show_rapids;

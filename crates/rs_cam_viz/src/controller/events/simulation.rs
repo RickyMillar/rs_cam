@@ -27,6 +27,8 @@ impl<B: ComputeBackend> AppController<B> {
         sim.playback = Default::default();
         sim.checks = Default::default();
         sim.last_run = None;
+        sim.submitted_metric_options_revision = None;
+        sim.submitted_edit_counter = None;
         self.collision_positions.clear();
         self.pending_upload = true;
     }
@@ -251,6 +253,8 @@ impl<B: ComputeBackend> AppController<B> {
         // to read the live counter when the result landed, which quietly
         // absorbed every edit made while the simulation ran.
         self.state.simulation.submitted_edit_counter = Some(self.state.gui.edit_counter);
+        self.state.simulation.submitted_metric_options_revision =
+            Some(self.state.simulation.metric_options_revision);
 
         let machine = self.state.session.machine();
         let max_feed_mm_min = machine.max_feed_mm_min.max(1.0);

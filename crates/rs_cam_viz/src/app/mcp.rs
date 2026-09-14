@@ -3462,9 +3462,10 @@ impl super::RsCamApp {
         // MCP server hardcodes this, and diagnostics/cut_trace require it.
         // `capture_arc_engagement` is also forced on so the tool-load `power`
         // criterion can evaluate against the run.
-        let metric_options = &mut self.controller.state_mut().simulation.metric_options;
-        metric_options.enabled = true;
-        metric_options.capture_arc_engagement = true;
+        self.controller
+            .state_mut()
+            .simulation
+            .set_metric_capture_enabled(true);
 
         // Push the simulation event
         self.controller

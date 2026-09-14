@@ -283,20 +283,19 @@ fn draw_signal_spine(
         .and_then(|r| r.cut_trace.as_ref())
         .map(std::sync::Arc::clone);
     let Some(trace_arc) = trace_arc else {
-        draw_spine_empty_placeholder(ui, sim, events);
+        draw_spine_empty_placeholder(ui, sim);
         return;
     };
     sim.debug.span_aggregates.ensure_built(&trace_arc);
     let trace = trace_arc.as_ref();
     let total_moves = sim.total_moves();
     if total_moves == 0 {
-        draw_spine_empty_placeholder(ui, sim, events);
+        draw_spine_empty_placeholder(ui, sim);
         return;
     }
     // TIM-009 — whole-spine stale skin. When the trace no longer matches the
     // current params, desaturate the track colours and drop the gate-trip
-    // drill (its dots point at moves that may no longer exist), and surface a
-    // single Re-run affordance where the stale data shows.
+    // drill (its dots point at moves that may no longer exist).
     let stale = sim.is_stale(gui.edit_counter);
 
     // Group cutting samples by toolpath using the per-trace cache. Without
@@ -340,7 +339,7 @@ fn draw_signal_spine(
     }
 
     if groups.iter().all(|g| g.samples.is_empty()) {
-        draw_spine_empty_placeholder(ui, sim, events);
+        draw_spine_empty_placeholder(ui, sim);
         return;
     }
 
@@ -501,22 +500,6 @@ fn draw_signal_spine(
             None,
         ),
     ];
-
-    // Single Re-run affordance pinned where the stale data shows (TIM-009) —
-    // the left-panel card stays the canonical control; this is the legibility
-    // fix so the user can refresh from where the stale numbers are.
-    if stale {
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("\u{27F3} stale — showing last run")
-                    .small()
-                    .color(super::theme::WARNING),
-            );
-            if ui.small_button("Re-run").clicked() {
-                events.push(AppEvent::RunSimulation);
-            }
-        });
-    }
 
     // Header row showing what's currently in focus. Focus follows the
     // playing toolpath — clicking a row in the left panel jumps playback
@@ -1075,33 +1058,23 @@ fn desaturate(c: egui::Color32) -> egui::Color32 {
 /// TIM-003 — the signal spine's empty state.
 ///
 /// The spine does not early-return into a void. It paints a placeholder where
-/// the spine would be, and it carries the capture control the operator needs.
-/// "Enable & re-run" turns metric capture on and runs the simulation again.
-/// "Re-run" runs it again when capture is already on but the run produced no
-/// cutting samples.
-fn draw_spine_empty_placeholder(
-    ui: &mut egui::Ui,
-    sim: &mut SimulationState,
-    events: &mut Vec<AppEvent>,
-) {
-    // DC6 / Rule C — a state plus an action, not a sentence. The strip used
-    // to read "No cutting metrics captured — enable capture and re-run.", in
-    // italics, which narrates the remedy instead of offering it. It is the
-    // abstention mark now (`NotMeasured`, an em dash in UNKNOWN, reason on
-    // hover) beside the one button that fixes it. The two arms differ only in
-    // WHY the spine has nothing, and the reason says which.
-    let (reason, action, action_hover) = if sim.metric_options.enabled {
-        (
-            "Cutting-metric capture is on, and this run produced no cutting samples.",
-            "Re-run",
-            "Re-run the simulation to populate the signal spine.",
-        )
+/// the spine would be, and carries the capture control. Changing that option
+/// marks the last simulation stale; the workspace primary is the only run
+/// route.
+fn draw_spine_empty_placeholder(ui: &mut egui::Ui, sim: &mut SimulationState) {
+    // DC6 / Rule C — a state plus the control that changes the next run's
+    // recording. The abstention mark remains; toggling capture does not start
+    // work behind the operator's back.
+    let reason = if !sim.has_results() {
+        "No simulation has run yet, so cutting metrics have not been measured."
+    } else if sim
+        .results
+        .as_ref()
+        .is_some_and(|results| results.cut_trace.is_none())
+    {
+        "The accepted simulation result contains no cut trace."
     } else {
-        (
-            "Cutting-metric capture is off, so this run measured nothing.",
-            "Enable & re-run",
-            "Turn on cutting-metric capture and re-run the simulation.",
-        )
+        "The accepted simulation result contains no cutting samples."
     };
     ui.add_space(crate::ui::tokens::SPACE_2);
     egui::Frame::default()
@@ -1120,9 +1093,13 @@ fn draw_spine_empty_placeholder(
                         .color(crate::ui::tokens::TEXT_MUTED),
                 );
                 ui.add(NotMeasured::new().reason(reason));
-                if ui.button(action).on_hover_text(action_hover).clicked() {
-                    sim.metric_options.enabled = true;
-                    events.push(AppEvent::RunSimulation);
+                let mut enabled = sim.metric_options.enabled;
+                if ui
+                    .checkbox(&mut enabled, "Capture")
+                    .on_hover_text("Record cutting metrics on the next simulation run.")
+                    .changed()
+                {
+                    sim.set_metric_capture_enabled(enabled);
                 }
             });
         });

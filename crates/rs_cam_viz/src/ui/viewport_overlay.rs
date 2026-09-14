@@ -208,9 +208,6 @@ pub fn draw(
                     if ui.small_button("Reset").clicked() {
                         events.push(AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
                     }
-                    if ui.small_button("Re-run").clicked() {
-                        events.push(AppEvent::RunSimulation);
-                    }
                 }
             },
         );
