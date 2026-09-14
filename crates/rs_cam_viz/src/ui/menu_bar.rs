@@ -1,4 +1,4 @@
-use super::AppEvent;
+use super::{AppEvent, model_import_event};
 use crate::state::AppState;
 use crate::state::job::SetupId;
 use crate::state::selection::Selection;
@@ -41,7 +41,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         .add_filter("STL Files", &["stl", "STL"])
                         .pick_file()
                     {
-                        events.push(AppEvent::ImportStl(path));
+                        if let Some(event) = model_import_event(path) {
+                            events.push(event);
+                        }
                     }
                 }
                 if ui.button("Import SVG...").clicked() {
@@ -50,7 +52,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         .add_filter("SVG Files", &["svg", "SVG"])
                         .pick_file()
                     {
-                        events.push(AppEvent::ImportSvg(path));
+                        if let Some(event) = model_import_event(path) {
+                            events.push(event);
+                        }
                     }
                 }
                 if ui.button("Import DXF...").clicked() {
@@ -59,7 +63,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         .add_filter("DXF Files", &["dxf", "DXF"])
                         .pick_file()
                     {
-                        events.push(AppEvent::ImportDxf(path));
+                        if let Some(event) = model_import_event(path) {
+                            events.push(event);
+                        }
                     }
                 }
                 if ui.button("Import STEP...").clicked() {
@@ -68,7 +74,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         .add_filter("STEP Files", &["step", "stp", "STEP", "STP"])
                         .pick_file()
                     {
-                        events.push(AppEvent::ImportStep(path));
+                        if let Some(event) = model_import_event(path) {
+                            events.push(event);
+                        }
                     }
                 }
                 ui.separator();

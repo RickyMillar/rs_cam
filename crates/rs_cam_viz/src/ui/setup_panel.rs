@@ -26,7 +26,7 @@
 //! on the card's hover text, and the setup's own properties panel edits
 //! them.
 
-use super::AppEvent;
+use super::{AppEvent, MODEL_FILE_EXTENSIONS, model_import_event};
 use crate::state::AppState;
 use crate::state::job::{FaceUp, ModelId, SetupId};
 use crate::state::selection::Selection;
@@ -106,7 +106,7 @@ fn draw_stock_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
     let value = format!("{eff_w:.0} × {eff_d:.0} × {eff_h:.0} mm");
 
     let selected = state.selection == Selection::Stock;
-    let row = resource_row(ui, "Stock", &value, selected, None);
+    let row = resource_row(ui, "Stock", &value, selected, true, None);
     if row.on_hover_text("Stock dimensions and material").clicked() {
         events.push(AppEvent::Ui(UiCommand::Select(Selection::Stock)));
     }
@@ -117,7 +117,7 @@ fn draw_stock_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
 fn draw_machine_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let name = state.session.machine().name.as_str();
     let selected = state.selection == Selection::Machine;
-    let row = resource_row(ui, "Machine", name, selected, None);
+    let row = resource_row(ui, "Machine", name, selected, true, None);
     if row.on_hover_text("Machine, feeds and kinematics").clicked() {
         events.push(AppEvent::Ui(UiCommand::Select(Selection::Machine)));
     }
@@ -134,7 +134,12 @@ fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEven
         Selection::Model(_) | Selection::Face(..) | Selection::Faces(..)
     );
 
-    let row = resource_row(ui, "Models", &models.len().to_string(), open, None);
+    let value = if models.is_empty() {
+        "none".to_owned()
+    } else {
+        models.len().to_string()
+    };
+    let row = resource_row(ui, "Models", &value, open, !models.is_empty(), None);
     if row.on_hover_text("The project's models").clicked() {
         // A second click on an open row closes it, which is what a
         // disclosure does.
@@ -144,6 +149,8 @@ fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEven
             events.push(AppEvent::Ui(UiCommand::Select(Selection::Model(ModelId(
                 first.id,
             )))));
+        } else {
+            import_model_from_disk(events);
         }
     }
 
@@ -172,12 +179,30 @@ fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEven
     });
 }
 
+/// Prompt for a model file using the File menu's accepted extensions and
+/// classification.
+fn import_model_from_disk(events: &mut Vec<AppEvent>) {
+    if let Some(path) = rfd::FileDialog::new()
+        .add_filter("Model Files", MODEL_FILE_EXTENSIONS)
+        .pick_file()
+        && let Some(event) = empty_models_row_event(path)
+    {
+        events.push(event);
+    }
+}
+
+/// Classify a path selected from the empty Models row through the shared File
+/// menu import route.
+fn empty_models_row_event(path: std::path::PathBuf) -> Option<AppEvent> {
+    model_import_event(path)
+}
+
 /// The Tools row — the Tool Library's new home (ruling R29).
 ///
 /// It carries the full CRUD set the Toolpaths workspace used to hold:
 /// Duplicate and Delete on each tool, the library manager, and the two add
-/// routes. The row's `…` menu holds the actions; the nested list holds the
-/// tools and appears while a tool is selected.
+/// routes. The row's `…` menu is its only trailing affordance; the nested
+/// list holds the tools and appears while a tool is selected.
 fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let open = matches!(state.selection, Selection::Tool(_));
     let count = state.session.tools().len();
@@ -232,12 +257,19 @@ fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
         });
     };
 
-    let row = resource_row(ui, "Tools", &count.to_string(), open, Some(&mut menu));
+    let value = if count == 0 {
+        "none".to_owned()
+    } else {
+        count.to_string()
+    };
+    let row = resource_row(ui, "Tools", &value, open, count > 0, Some(&mut menu));
     if row.on_hover_text("The tool library").clicked() {
         if open {
             events.push(AppEvent::Ui(UiCommand::Select(Selection::None)));
         } else if let Some(first) = state.session.tools().first() {
             events.push(AppEvent::Ui(UiCommand::Select(Selection::Tool(first.id))));
+        } else {
+            events.push(empty_tools_row_event());
         }
     }
 
@@ -265,7 +297,12 @@ fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
     });
 }
 
-/// One resource row: `label · value · […] · ›`, at [`tokens::ROW_DENSE`].
+/// The empty Tools row opens the same library surface as its menu.
+fn empty_tools_row_event() -> AppEvent {
+    AppEvent::Ui(UiCommand::OpenToolLibrary(NoArgs))
+}
+
+/// One resource row: `label · value · affordance`, at [`tokens::ROW_DENSE`].
 ///
 /// The row carries NO card frame. A card says "this is an object you read";
 /// a resource row says "this opens somewhere else".
@@ -278,6 +315,7 @@ fn resource_row(
     label: &str,
     value: &str,
     selected: bool,
+    has_resources: bool,
     menu: Option<&mut dyn FnMut(&mut egui::Ui)>,
 ) -> egui::Response {
     ui.scope_builder(egui::UiBuilder::new().sense(egui::Sense::click()), |ui| {
@@ -305,9 +343,14 @@ fn resource_row(
                         );
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new(CHEVRON).color(tokens::TEXT_FAINT));
-                        if let Some(menu) = menu {
-                            ui.menu_button(ELLIPSIS, menu);
+                        match menu {
+                            Some(menu) => {
+                                ui.menu_button(ELLIPSIS, menu);
+                            }
+                            None if has_resources => {
+                                ui.label(egui::RichText::new(CHEVRON).color(tokens::TEXT_FAINT));
+                            }
+                            None => {}
                         }
                         // The value reads from the label column
                         // rightwards and truncates, so a long
@@ -467,6 +510,29 @@ fn state_dot(ui: &mut egui::Ui, role: Role) {
 }
 
 /// Determine the active setup from the current selection.
+#[cfg(test)]
+mod tests {
+    use super::{AppEvent, empty_models_row_event, empty_tools_row_event};
+    use crate::ui_command::UiCommand;
+    use std::path::PathBuf;
+
+    #[test]
+    fn empty_models_route_accepts_uppercase_extensions() {
+        assert!(matches!(
+            empty_models_row_event(PathBuf::from("relief.STP")),
+            Some(AppEvent::ImportStep(path)) if path == PathBuf::from("relief.STP")
+        ));
+    }
+
+    #[test]
+    fn empty_tools_route_opens_the_tool_library() {
+        assert!(matches!(
+            empty_tools_row_event(),
+            AppEvent::Ui(UiCommand::OpenToolLibrary(_))
+        ));
+    }
+}
+
 fn active_setup(state: &AppState) -> Option<&SetupData> {
     let setups = state.session.list_setups();
     let setup_id = match &state.selection {

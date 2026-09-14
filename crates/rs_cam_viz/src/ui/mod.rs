@@ -58,6 +58,32 @@ use std::path::PathBuf;
 // without re-reading `planning/review_2026-08-08/APPLY_CONTRACT_CENSUS.md` §3.4
 // — sentried by `apply_contract_a3::per_field_apply_affordance_no_longer_exists`.
 
+/// File-dialog extensions accepted for model import.
+///
+/// Keep the upper-case spellings: native dialog filters can otherwise hide
+/// valid files even though [`model_import_event`] classifies extensions
+/// case-insensitively.
+pub(crate) const MODEL_FILE_EXTENSIONS: &[&str] = &[
+    "stl", "STL", "svg", "SVG", "dxf", "DXF", "step", "stp", "STEP", "STP",
+];
+
+/// Classify a selected model path into the import event used by every UI
+/// import route.
+pub(crate) fn model_import_event(path: PathBuf) -> Option<AppEvent> {
+    match path
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("stl") => Some(AppEvent::ImportStl(path)),
+        Some("svg") => Some(AppEvent::ImportSvg(path)),
+        Some("dxf") => Some(AppEvent::ImportDxf(path)),
+        Some("step" | "stp") => Some(AppEvent::ImportStep(path)),
+        _ => None,
+    }
+}
+
 /// Events emitted by UI components, processed after the UI pass.
 #[derive(Debug)]
 pub enum AppEvent {

@@ -173,6 +173,22 @@ fn every_resource_row_is_one_dense_line_dc4() {
         "the UP1 budget sentry sits at 1 with one documented exception \
          elsewhere. Every colour here is a token."
     );
+
+    let resource_row = between(&src, "fn resource_row", "fn draw_setup_card");
+    assert!(
+        resource_row.contains("match menu"),
+        "a resource row chooses exactly one trailing affordance"
+    );
+    let menu_arm = between(resource_row, "Some(menu) =>", "None if has_resources");
+    assert!(
+        menu_arm.contains("ui.menu_button(ELLIPSIS, menu)") && !menu_arm.contains("CHEVRON"),
+        "a row with actions exposes its menu as its only trailing affordance"
+    );
+    let chevron_arm = between(resource_row, "None if has_resources", "None =>");
+    assert!(
+        chevron_arm.contains("CHEVRON") && !chevron_arm.contains("ELLIPSIS"),
+        "a resource row draws a chevron only when it has no menu"
+    );
 }
 
 #[test]
