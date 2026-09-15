@@ -344,11 +344,15 @@ pub(crate) fn draw_machine_envelope(
         egui_plot::Text::new(
             "",
             egui_plot::PlotPoint::new(env.spindle_max_rpm, axis_feed_max * 0.03),
-            egui::RichText::new(format!("⬢ max {} RPM", env.spindle_max_rpm as i64))
+            egui::RichText::new(format!("max {} RPM ⬢", env.spindle_max_rpm as i64))
                 .small()
                 .color(forbidden_edge),
         )
-        .anchor(egui::Align2::LEFT_BOTTOM),
+        // Left of the wall, not right of it. The axis only runs 15 % past
+        // the cap, so a label anchored LEFT_BOTTOM here extends into that
+        // narrow strip and is clipped by the plot edge — measured as
+        // `max 24000 RPI`.
+        .anchor(egui::Align2::RIGHT_BOTTOM),
     );
     plot_ui.text(
         egui_plot::Text::new(

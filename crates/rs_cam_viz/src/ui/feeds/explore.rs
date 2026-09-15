@@ -421,7 +421,22 @@ pub(crate) fn draw_chart_c(
             //    BURN / BREAK), and the machine-cap clearance at the
             //    pointer's RPM/feed. Same text as the verdict line so
             //    the user can learn the chart by hovering.
-            if let Some(hover) = plot_ui.pointer_coordinate() {
+            // The pointer must be ON the chart. `pointer_coordinate` also
+            // answers for a pointer outside the drawn bounds, and the
+            // readout below then reports an operating point that does not
+            // exist: measured at `37891 RPM · 0 mm/min · BURN risk (below
+            // band)`, painted in the danger colour, on an axis whose maximum
+            // is 27 600. That is a hazard verdict manufactured from an
+            // absence, which is the failure shape this repo cares about most.
+            //
+            // The strip BETWEEN the spindle cap and the axis maximum is a
+            // real place to hover — it is how `· past spindle cap` is read —
+            // so the guard is the axis bound, not the machine's.
+            if let Some(hover) = plot_ui
+                .pointer_coordinate()
+                .filter(|p| (0.0..=rpm_axis_max).contains(&p.x))
+                .filter(|p| (0.0..=feed_axis_max).contains(&p.y))
+            {
                 // Read the CLAMPED coordinates once and derive everything
                 // from them, readout and cap-note alike — see
                 // `hover_readout_chipload`.

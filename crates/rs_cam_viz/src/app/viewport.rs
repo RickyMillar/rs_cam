@@ -391,10 +391,23 @@ impl RsCamApp {
             self.camera.pan(delta.x, delta.y);
         }
 
+        // The wheel belongs to whatever is UNDER the pointer, and the
+        // viewport is the bottom layer.
+        //
+        // Reported 2026-09-16: scrolling inside the Explore window also
+        // zoomed the 3D camera behind it. The guard below used to be
+        // `rect.contains(pointer)` against the GLOBAL input state, and a
+        // rectangle knows nothing about layering — a modal window drawn over
+        // the viewport sits inside that same rectangle, so the wheel drove
+        // both. `Response::hovered` is the layer-aware question: egui's hit
+        // test resolves which `Area` is on top, so it is false while an
+        // `Area` above the viewport owns the pointer.
+        //
+        // `unwrap_or_default` made it worse: with no pointer at all the
+        // fallback is `Pos2::ZERO`, which a viewport anchored near the
+        // window origin contains.
         let scroll_raw = ui.input(|i| i.smooth_scroll_delta.y);
-        if rect.contains(ui.input(|i| i.pointer.hover_pos().unwrap_or_default()))
-            && scroll_raw != 0.0
-        {
+        if response.hovered() && scroll_raw != 0.0 {
             // Normalize scroll direction: use signum for consistent zoom
             // across platforms, then scale by the absolute magnitude clamped
             // to a reasonable range so track-pad and mouse-wheel both feel right.
