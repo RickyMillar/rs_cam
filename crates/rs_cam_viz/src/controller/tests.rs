@@ -1135,7 +1135,7 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     // chosen to cover every admission rule the builder has.
 
     // Fixture 1 — nothing generated.
-    let mut controller = sample_controller();
+    let controller = sample_controller();
     assert!(
         controller
             .state

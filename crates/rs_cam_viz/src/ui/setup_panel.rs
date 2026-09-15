@@ -510,29 +510,6 @@ fn state_dot(ui: &mut egui::Ui, role: Role) {
 }
 
 /// Determine the active setup from the current selection.
-#[cfg(test)]
-mod tests {
-    use super::{AppEvent, empty_models_row_event, empty_tools_row_event};
-    use crate::ui_command::UiCommand;
-    use std::path::PathBuf;
-
-    #[test]
-    fn empty_models_route_accepts_uppercase_extensions() {
-        assert!(matches!(
-            empty_models_row_event(PathBuf::from("relief.STP")),
-            Some(AppEvent::ImportStep(path)) if path == PathBuf::from("relief.STP")
-        ));
-    }
-
-    #[test]
-    fn empty_tools_route_opens_the_tool_library() {
-        assert!(matches!(
-            empty_tools_row_event(),
-            AppEvent::Ui(UiCommand::OpenToolLibrary(_))
-        ));
-    }
-}
-
 fn active_setup(state: &AppState) -> Option<&SetupData> {
     let setups = state.session.list_setups();
     let setup_id = match &state.selection {
@@ -549,5 +526,28 @@ fn active_setup(state: &AppState) -> Option<&SetupData> {
         setups.iter().find(|s| s.id == sid.0)
     } else {
         setups.first()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AppEvent, empty_models_row_event, empty_tools_row_event};
+    use crate::ui_command::UiCommand;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn empty_models_route_accepts_uppercase_extensions() {
+        assert!(matches!(
+            empty_models_row_event(PathBuf::from("relief.STP")),
+            Some(AppEvent::ImportStep(path)) if path.as_path() == Path::new("relief.STP")
+        ));
+    }
+
+    #[test]
+    fn empty_tools_route_opens_the_tool_library() {
+        assert!(matches!(
+            empty_tools_row_event(),
+            AppEvent::Ui(UiCommand::OpenToolLibrary(_))
+        ));
     }
 }

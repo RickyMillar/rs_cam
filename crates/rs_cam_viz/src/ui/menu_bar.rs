@@ -40,10 +40,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("STL Files", &["stl", "STL"])
                         .pick_file()
+                        && let Some(event) = model_import_event(path)
                     {
-                        if let Some(event) = model_import_event(path) {
-                            events.push(event);
-                        }
+                        events.push(event);
                     }
                 }
                 if ui.button("Import SVG...").clicked() {
@@ -51,10 +50,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("SVG Files", &["svg", "SVG"])
                         .pick_file()
+                        && let Some(event) = model_import_event(path)
                     {
-                        if let Some(event) = model_import_event(path) {
-                            events.push(event);
-                        }
+                        events.push(event);
                     }
                 }
                 if ui.button("Import DXF...").clicked() {
@@ -62,10 +60,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("DXF Files", &["dxf", "DXF"])
                         .pick_file()
+                        && let Some(event) = model_import_event(path)
                     {
-                        if let Some(event) = model_import_event(path) {
-                            events.push(event);
-                        }
+                        events.push(event);
                     }
                 }
                 if ui.button("Import STEP...").clicked() {
@@ -73,10 +70,9 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("STEP Files", &["step", "stp", "STEP", "STP"])
                         .pick_file()
+                        && let Some(event) = model_import_event(path)
                     {
-                        if let Some(event) = model_import_event(path) {
-                            events.push(event);
-                        }
+                        events.push(event);
                     }
                 }
                 ui.separator();

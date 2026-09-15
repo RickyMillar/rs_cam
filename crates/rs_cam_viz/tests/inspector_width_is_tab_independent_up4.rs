@@ -168,9 +168,11 @@ fn feeds_fixture() -> AppState {
     tool.diameter = 6.0;
     tool.flute_count = 2;
 
-    let mut stock = StockConfig::default();
-    stock.material = Material::Plywood {
-        grade: PlywoodGrade::BalticBirch,
+    let stock = StockConfig {
+        material: Material::Plywood {
+            grade: PlywoodGrade::BalticBirch,
+        },
+        ..Default::default()
     };
 
     // The warning shape from the observed Back Rough: its deliberately low

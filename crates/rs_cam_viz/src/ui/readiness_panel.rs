@@ -265,14 +265,13 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         // One action row: resolve the first unmet gate, then export. Once
         // every gate passes, Export is the screen's sole Primary.
         ui.horizontal(|ui| {
-            if let Some(action) = first_unmet {
-                if ui
+            if let Some(action) = first_unmet
+                && ui
                     .add(crate::ui::components::Button::primary(action.label()))
                     .on_hover_text("Resolve the first unmet readiness check")
                     .clicked()
-                {
-                    events.push(action.event());
-                }
+            {
+                events.push(action.event());
             }
 
             let export = if first_unmet.is_some() {
@@ -820,6 +819,19 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
         });
 }
 
+struct ProjectFeedsRow {
+    id: rs_cam_core::ToolpathId,
+    name: String,
+    current: CurrentValues,
+    explain: FeedsExplain,
+    /// `Some` when `validate_tool_for_operation` refuses this row's tool ×
+    /// operation pairing. Pre-fix (A-3 §3.5) the rollup had no idea: the row
+    /// rendered a recommendation and an Apply button like any other, and
+    /// `⚡⚡ Apply all toolpaths` swept the refused row up **silently**. The
+    /// batch handler now skips it and says so; the table marks it.
+    refusal: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{FirstUnmetAction, first_unmet_action};
@@ -864,17 +876,4 @@ mod tests {
             None
         );
     }
-}
-
-struct ProjectFeedsRow {
-    id: rs_cam_core::ToolpathId,
-    name: String,
-    current: CurrentValues,
-    explain: FeedsExplain,
-    /// `Some` when `validate_tool_for_operation` refuses this row's tool ×
-    /// operation pairing. Pre-fix (A-3 §3.5) the rollup had no idea: the row
-    /// rendered a recommendation and an Apply button like any other, and
-    /// `⚡⚡ Apply all toolpaths` swept the refused row up **silently**. The
-    /// batch handler now skips it and says so; the table marks it.
-    refusal: Option<String>,
 }
