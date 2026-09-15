@@ -69,11 +69,11 @@ const SHORT_SCREEN: egui::Vec2 = egui::Vec2::new(1024.0, 560.0);
 
 /// Short AND narrow — under the window's own default on both axes, so both
 /// caps have to bite. Arm 4 reads that; keep it smaller than
-/// `DEFAULT_WIDTH` x `DEFAULT_HEIGHT` in `ui/feeds/mod.rs` plus the margin,
+/// `DEFAULT_WIDTH` x `DEFAULT_HEIGHT` in `ui/feeds/window.rs` plus the margin,
 /// or the cap it measures goes quiet and the arm proves nothing.
 const SMALL_SCREEN: egui::Vec2 = egui::Vec2::new(560.0, 480.0);
 
-/// The window's fixed area id. `ui/feeds/mod.rs` sets it explicitly because
+/// The window's fixed area id. `ui/feeds/window.rs` sets it explicitly because
 /// the title carries the toolpath name, and egui derives an area id from the
 /// title text unless told otherwise.
 const WINDOW_ID: &str = "feeds_explore_window";
@@ -300,8 +300,8 @@ fn an_uncapped_centred_window_leaves_a_short_screen_g_feedsfit() {
         window.min.y < -0.5,
         "an uncapped {BODY_HEIGHT} point body centred on a {:.0} point screen \
          put its top edge at y = {:.1}, which is ON the screen. egui now \
-         constrains this by itself, so re-derive whether ui/feeds/mod.rs \
-         still needs its cap.",
+         constrains this by itself, so re-derive whether \
+         ui/feeds/window.rs still needs its cap.",
         SHORT_SCREEN.y,
         window.min.y,
     );
@@ -314,13 +314,13 @@ fn an_uncapped_centred_window_leaves_a_short_screen_g_feedsfit() {
 /// invariant; the content will keep growing.
 #[test]
 fn the_window_declares_its_cap_and_its_scroll_g_feedsfit() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/feeds/mod.rs");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/feeds/window.rs");
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     for builder in [".max_height(", ".max_width(", ".vscroll(true)", ".id("] {
         assert!(
             source.contains(builder),
-            "ui/feeds/mod.rs no longer calls `{builder}`. The cap keeps the \
+            "ui/feeds/window.rs no longer calls `{builder}`. The cap keeps the \
              title bar on screen; the scroll keeps the cap from hiding the \
              charts; the id keeps the window's size across a re-selection."
         );

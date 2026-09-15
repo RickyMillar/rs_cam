@@ -46,7 +46,7 @@ use rs_cam_viz::state::{AppState, ProjectFeedsSort, ProjectFeedsState};
 
 /// The per-operation feeds jobs. Every one of them answers about ONE
 /// operation; none may answer about the project.
-const OPERATION_SCOPE_FILES: [&str; 5] = ["mod", "shared", "compare", "why", "explore"];
+const OPERATION_SCOPE_FILES: [&str; 6] = ["mod", "window", "shared", "compare", "why", "explore"];
 
 /// The commands and fields whose scope is THE WHOLE PROJECT.
 const PROJECT_SCOPE_NAMES: [&str; 5] = [
@@ -181,12 +181,16 @@ fn the_feeds_window_has_no_mode_to_switch() {
             "ui/feeds/{stem}.rs names FeedsModalMode"
         );
     }
-    // And the per-operation window no longer draws a rollup.
-    let window = strip_comments(&feeds_file("mod"));
-    assert!(
-        !window.contains("draw_project"),
-        "the per-operation feeds window draws a project-scope view again"
-    );
+    // And the per-operation window no longer draws a rollup. D-3 moved the
+    // window out of `mod.rs` into `window.rs`; both files are read, so the
+    // rollup cannot come back through the module root either.
+    for stem in ["mod", "window"] {
+        let window = strip_comments(&feeds_file(stem));
+        assert!(
+            !window.contains("draw_project"),
+            "ui/feeds/{stem}.rs draws a project-scope view again"
+        );
+    }
 }
 
 // ── UR4 — the modal has Explore scope only ─────────────────────────────
@@ -195,7 +199,7 @@ fn the_feeds_window_has_no_mode_to_switch() {
 /// compose Explore helpers only; Compare and Why belong to the Feeds tab.
 #[test]
 fn the_feeds_modal_body_is_explore_only() {
-    let modal = strip_comments(&feeds_file("mod"));
+    let modal = strip_comments(&feeds_file("window"));
     let body_at = modal
         .find(".show(ctx, |ui| {")
         .expect("feeds modal body moved");
@@ -441,7 +445,7 @@ fn the_scans_are_not_vacuous() {
     );
 
     // 4. The Explore-only scan has a live, non-comment anchor.
-    let modal = strip_comments(&feeds_file("mod"));
+    let modal = strip_comments(&feeds_file("window"));
     assert!(
         modal.contains("explore::draw_modal_body"),
         "Explore modal body moved or was renamed"
