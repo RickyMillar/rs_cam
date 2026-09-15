@@ -258,6 +258,24 @@ Before starting, settle two questions `ADVICE.md` §6 leaves open:
 
 ---
 
+## A constraint on `ui/feeds/`, learned during D-3
+
+Any new `.rs` file added **directly under `crates/rs_cam_viz/src/ui/feeds/`**
+needs three things, or existing sentries fail:
+
+1. an entry in `OPERATION_SCOPE_FILES` in
+   `tests/the_feeds_modal_holds_one_scope_dc5a.rs` (six entries since D-3);
+2. an `include_str!` in `FEEDS_MODAL_SRCS` in `tests/apply_contract_a3.rs`;
+3. nothing project-scope inside it — that directory is per-operation.
+
+Item 2 is enforced automatically: the `the_apply_contract_scans_every_feeds_surface`
+arm walks the directory and asserts the apply contract names every file it
+finds. A file missing from `FEEDS_MODAL_SRCS` is a hole in the apply
+contract, which is why the sentry checks rather than trusts.
+
+Phases A–C edit existing files and should not trip this. It is recorded for
+whatever comes after them.
+
 ## New sentries
 
 | Sentry | Pins |
