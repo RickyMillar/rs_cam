@@ -188,6 +188,7 @@ pub(crate) fn draw_chart_c(
         feed_mm_min: current.feed_rate_mm_min,
     });
 
+    let mut hover_readout: Option<(String, egui::Color32)> = None;
     let plot_response = Plot::new("feeds_modal_nomogram")
         .height(280.0)
         .include_x(0.0)
@@ -215,25 +216,11 @@ pub(crate) fn draw_chart_c(
                         .stroke(egui::Stroke::new(1.0_f32, wash(chart::BAND, 120)))
                         .name(format!("Vendor band {lo:.4}–{hi:.4} mm/tooth")),
                 );
-                // Inline label inside the band at the cap intersection
-                // so the user can see "VENDOR BAND" on the chart itself.
-                let mid_cl = (lo + hi) * 0.5;
-                let mid_pts =
-                    clip_iso_line(mid_cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min);
-                if let Some(end) = mid_pts.last() {
-                    plot_ui.text(
-                        egui_plot::Text::new(
-                            "",
-                            egui_plot::PlotPoint::new(end[0] * 0.55, end[1] * 0.5),
-                            egui::RichText::new(format!(
-                                "VENDOR BAND\n{lo:.4}\u{2013}{hi:.4} mm advance/tooth"
-                            ))
-                            .small()
-                            .color(wash(chart::BAND, 220)),
-                        )
-                        .anchor(egui::Align2::CENTER_CENTER),
-                    );
-                }
+                // W6: the inline "VENDOR BAND 0.0500–0.0850 mm advance/tooth"
+                // text that used to sit here is deleted. It restated the
+                // legend's first row word for word, and it was painted at a
+                // fixed fraction of the band's own extent, so on a wide band
+                // it landed on top of the iso-advance lines it was labelling.
             }
             if let Some((admit_lo, lo, hi, admit_hi)) = band_admit {
                 // Two thinner ribbons in the 5 % tolerance zones —
@@ -293,22 +280,13 @@ pub(crate) fn draw_chart_c(
                             .width(1.5_f32)
                             .name(format!("chipload {prefix} {cl:.4} mm/tooth")),
                     );
-                    // Drop an inline value tag at the last point of the
-                    // clipped line. The line ends either at the RPM cap
-                    // (sloped) or at the feed cap (horizontal); either
-                    // way the last point is in-frame.
-                    if let Some(end) = line_pts.last() {
-                        plot_ui.text(
-                            egui_plot::Text::new(
-                                "",
-                                egui_plot::PlotPoint::new(end[0], end[1]),
-                                egui::RichText::new(format!(" {prefix} {cl:.4}"))
-                                    .small()
-                                    .color(color),
-                            )
-                            .anchor(egui::Align2::LEFT_BOTTOM),
-                        );
-                    }
+                    // W6: the inline `min/mid/max 0.0500` tags that used to
+                    // sit at each line's end are deleted. They restated the
+                    // legend's three iso-advance rows, and they were anchored
+                    // to the CLIPPED end of the line — which is the machine
+                    // cap corner, the one place the two envelope labels also
+                    // want. Three labels and two walls met in the same
+                    // 40 x 20 points.
                 }
             }
 
@@ -459,25 +437,36 @@ pub(crate) fn draw_chart_c(
                 } else {
                     String::new()
                 };
-                let label = format!(
-                    "{rpm:.0} RPM · {feed:.0} mm/min\n→ commanded advance/tooth \
-                     {cl:.4} mm/tooth · {verdict}{cap_note}",
-                );
-                // Anchor the readout near the top-left of the chart so
-                // it stays out of the band area.
-                plot_ui.text(
-                    egui_plot::Text::new(
-                        "",
-                        egui_plot::PlotPoint::new(rpm_axis_max * 0.02, feed_axis_max * 0.97),
-                        egui::RichText::new(label)
-                            .small()
-                            .background_color(tokens::SCRIM)
-                            .color(color),
-                    )
-                    .anchor(egui::Align2::LEFT_TOP),
-                );
+                // W6: the readout is RETURNED, not painted into the plot.
+                //
+                // It is a two-line sentence with up to four clauses, and it
+                // was anchored inside the drawing at a fixed fraction of the
+                // axes. At the top-left of this chart that is the feed wall
+                // and the forbidden zone above it, so the sentence printed
+                // straight through them. A sentence that long is prose, and
+                // prose belongs on a line of its own, under the picture.
+                hover_readout = Some((
+                    format!(
+                        "{rpm:.0} RPM · {feed:.0} mm/min → commanded advance/tooth \
+                         {cl:.4} mm/tooth · {verdict}{cap_note}"
+                    ),
+                    color,
+                ));
             }
         });
+
+    // The readout line, under the plot and above the legend. It holds its
+    // height whether or not the pointer is over the chart, so the legend
+    // below does not jump as the pointer crosses the plot edge.
+    ui.add(
+        egui::Label::new(match &hover_readout {
+            Some((text, color)) => egui::RichText::new(text).small().color(*color),
+            None => egui::RichText::new("Hover the chart to read an operating point.")
+                .small()
+                .color(theme::TEXT_FAINT),
+        })
+        .wrap(),
+    );
 
     // Band legend below the chart — colour swatch + numeric range for
     // every overlay on the plot. This is the single best lever for

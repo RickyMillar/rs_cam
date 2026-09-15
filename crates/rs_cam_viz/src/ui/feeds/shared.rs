@@ -331,15 +331,24 @@ pub(crate) fn draw_machine_envelope(
             env.max_feed_mm_min as i64
         )),
     );
+    // W6: the RPM wall is labelled at the FOOT of the wall, not the head.
+    //
+    // Both wall labels used to sit near the top-right: this one at
+    // `axis_feed_max * 0.97` and the feed label at the feed wall, which is
+    // `axis_feed_max / 1.05`. Those two heights are about 5 % of the axis
+    // apart, and both labels are right-anchored, so on any machine whose
+    // caps are both in frame they overlapped — `max 24000 RPM` printed
+    // through `max 4000 mm/min`. The walls cross at the top-right corner;
+    // only one label can live there.
     plot_ui.text(
         egui_plot::Text::new(
             "",
-            egui_plot::PlotPoint::new(env.spindle_max_rpm, axis_feed_max * 0.97),
-            egui::RichText::new(format!("max {} RPM ⬢", env.spindle_max_rpm as i64))
+            egui_plot::PlotPoint::new(env.spindle_max_rpm, axis_feed_max * 0.03),
+            egui::RichText::new(format!("⬢ max {} RPM", env.spindle_max_rpm as i64))
                 .small()
                 .color(forbidden_edge),
         )
-        .anchor(egui::Align2::RIGHT_TOP),
+        .anchor(egui::Align2::LEFT_BOTTOM),
     );
     plot_ui.text(
         egui_plot::Text::new(
