@@ -64,8 +64,14 @@ const SCREEN: egui::Vec2 = egui::Vec2::new(1400.0, 1000.0);
 /// The line the readout shows when there is nothing to report.
 const ABSTENTION: &str = "Hover the chart to read an operating point.";
 
-/// A readout of a real operating point contains this separator.
-const READING_MARK: &str = " RPM · ";
+/// A readout of a real operating point contains this phrase.
+///
+/// It was `" RPM · "`, which is too loose: the legend's `● Now` row reads
+/// `17000 RPM · 1291 mm/min` and matched it. That went unnoticed only while
+/// the window was short enough to clip that row, so raising the window's
+/// default height turned a passing arm red — the test was reading the
+/// legend, not the readout, and had been for as long as both existed.
+const READING_MARK: &str = "commanded advance/tooth";
 
 fn fixture() -> AppState {
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);

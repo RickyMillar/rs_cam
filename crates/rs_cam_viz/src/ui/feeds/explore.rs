@@ -144,20 +144,17 @@ pub(crate) fn draw_modal_body(
 // Chart C — Feed vs RPM (the nomogram)
 // ────────────────────────────────────────────────────────────────────
 
-/// The chart's claim, in a sentence, above the chart.
+/// The chart's claim, in as few words as it takes, above the chart.
 ///
-/// The operator described the reading they want to get from this window:
+/// The operator described the reading they want: *"vendor says this
+/// chipload, we can ramp it up, but it recommended slightly less because the
+/// machine is hobby grade"*. The first version of this line said exactly
+/// that, in full — and the verdict was "way too verbose".
 ///
-/// > "Ah yep, vendor says this chipload, we can ramp it up. But it has
-/// > recommended slightly less load due to machine being hobby grade."
-///
-/// That is a sentence, and a reader should not have to assemble it from
-/// three marks and a legend. The chart shows WHERE; this line says WHAT and
-/// WHY, and it is the first thing under the heading.
-///
-/// It also carries the surface's honest abstention. When no vendor row
-/// matched there is no band to read, and a chart with no band and no
-/// sentence looks like a chart whose band is merely off screen.
+/// Both notes are right, and together they set the shape: the line carries
+/// the NUMBER and the SIZE of the hold-back, and the reasons go on the
+/// hover. A reader who wants to know why is one pointer away; a reader who
+/// does not is reading eight words.
 fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
     let r = &explain.recommended;
     let flutes = explain.flute_count.max(1) as f64;
@@ -166,23 +163,35 @@ fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
     } else {
         0.0
     };
-    let band = vendor_band(explain);
 
-    let mut text = match band {
-        Some((lo, hi)) => {
-            format!("Vendor {lo:.4}\u{2013}{hi:.4} mm/tooth · running {effective:.4}")
-        }
-        None => format!("No vendor range for this cut · running {effective:.4} mm/tooth"),
-    };
-
-    // The derate is the "why" half of the sentence, and it is only worth a
-    // clause when it actually moved the number.
     let combined = r.derates.combined_factor();
     let pct = ((1.0 - combined) * 100.0).max(0.0);
-    let color = if pct >= 1.0 {
+    let held_back = pct >= 1.0;
+
+    let text = match (vendor_band(explain), held_back) {
+        (Some(_), true) => format!("{effective:.4} mm/tooth · {pct:.0} % under vendor"),
+        (Some(_), false) => format!("{effective:.4} mm/tooth · at vendor"),
+        (None, _) => format!("{effective:.4} mm/tooth · no vendor range"),
+    };
+    let color = if held_back {
+        theme::WARNING_MILD
+    } else {
+        theme::TEXT_DIM
+    };
+
+    let mut hover = String::new();
+    if let Some((lo, hi)) = vendor_band(explain) {
+        hover.push_str(&format!("Vendor range {lo:.4}\u{2013}{hi:.4} mm/tooth.\n"));
+    } else {
+        hover.push_str(
+            "No vendor row matched this tool, material and operation, so the \
+             recommendation is formula-derived and carries no range.\n",
+        );
+    }
+    if held_back {
         let mut reasons: Vec<&str> = Vec::new();
         if r.derates.workholding < 0.999 {
-            reasons.push("workholding");
+            reasons.push("workholding rigidity");
         }
         if r.derates.ld_overhang < 0.999 {
             reasons.push("tool overhang");
@@ -204,14 +213,20 @@ fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
         } else {
             reasons.join(", ")
         };
-        text.push_str(&format!(" · held back {pct:.0}% for {why}"));
-        theme::WARNING_MILD
+        hover.push_str(&format!("Held back {pct:.0} % for {why}."));
     } else {
-        text.push_str(" · nothing held it back");
-        theme::TEXT_DIM
-    };
+        hover.push_str("Nothing derated it.");
+    }
 
-    ui.add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap());
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(format!("{text} {}", tokens::GLYPH_DETAIL))
+                .small()
+                .color(color),
+        )
+        .wrap(),
+    )
+    .on_hover_text(hover);
 }
 
 pub(crate) fn draw_chart_c(
@@ -528,83 +543,38 @@ pub(crate) fn draw_chart_c(
     draw_explore_controls(ui, current, explain, refusal, toolpath_id, modal, events);
 }
 
-/// Band legend rendered under Chart C. Each row is `[swatch] label —
-/// numeric range`. Compact, fits in two columns.
+/// The legend under the nomogram: one row per mark, then `Sources`.
 fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
-    let env = &explain.machine;
-    let band = explain.matched_row.as_ref().and_then(|row| {
-        match (row.chip_load_min_mm, row.chip_load_max_mm) {
-            (Some(lo), Some(hi)) => Some((lo, hi)),
-            (None, Some(hi)) => Some((hi * 0.7, hi)),
-            _ => None,
-        }
-    });
-    let vendor_rpm = explain
-        .matched_row
-        .as_ref()
-        .map(|row| (row.rpm_min, row.rpm_max, row.rpm_nominal));
-
+    let band = vendor_band(explain);
     let mut entries: Vec<LegendEntry> = Vec::new();
 
+    // Marks and the one region, and nothing else.
+    //
+    // This listed up to ELEVEN rows: the band, a ±5 % tolerance, three
+    // iso-advance lines, the vendor RPM window, the machine's forbidden
+    // zone, its spindle minimum, and the three marks. The operator's verdict
+    // on the trimmed version was still "the legend is too verbose", with the
+    // remedy stated: *"just have simple legend, with hover or ... to show the
+    // data source... But keep that hidden unless asked for."*
+    //
+    // So the legend answers "what am I looking at". Where each number CAME
+    // FROM is a different question, and it is asked far less often, so it
+    // lives on one row's hover at the bottom.
     if let Some((lo, hi)) = band {
-        // One row for one region.
-        //
-        // Three `iso-advance min / mid / max` rows used to follow it. They
-        // named the band's own edges and midpoint — the same fact the wedge
-        // already draws — in a term the product owner could not read: "I
-        // don't really know what the iso advance and similar is". A fourth
-        // row named the optimizer's ±5 % admit window, which is detail about
-        // a different tool. It survives as a clause here, where it costs no
-        // row of its own.
         entries.push(LegendEntry::new(
             LegendSwatch::FilledSquare,
             wash(chart::BAND, 200),
             "Vendor range",
-            format!("{lo:.4}\u{2013}{hi:.4} mm/tooth (\u{00B1}5 % accepted)"),
-        ));
-    }
-
-    if let Some((lo, hi, nominal)) = vendor_rpm {
-        let value = match (lo, hi, nominal) {
-            (Some(lo), Some(hi), _) => format!("{lo:.0}–{hi:.0} RPM"),
-            (None, None, Some(nom)) => format!("{nom:.0} RPM (nominal)"),
-            (Some(v), None, _) | (None, Some(v), _) => format!("{v:.0} RPM"),
-            _ => "—".to_owned(),
-        };
-        entries.push(LegendEntry::new(
-            LegendSwatch::FilledSquare,
-            wash(chart::RPM_RANGE, 200),
-            "Vendor RPM",
-            value,
-        ));
-    }
-
-    entries.push(LegendEntry::new(
-        LegendSwatch::FilledSquare,
-        wash(tokens::DANGER, 150),
-        "Machine limit",
-        // ui-string-columns: air either side of "or" separates two limits
-        // in a legend swatch; a single space runs them together.
-        format!(
-            "> {} RPM   or   > {} mm/min",
-            env.spindle_max_rpm as i64, env.max_feed_mm_min as i64
-        ),
-    ));
-    if env.spindle_min_rpm > 0.0 {
-        entries.push(LegendEntry::new(
-            LegendSwatch::FilledSquare,
-            wash(tokens::CAUTION, 150),
-            "Under spindle min",
-            format!("< {} RPM", env.spindle_min_rpm as i64),
+            format!("{lo:.4}\u{2013}{hi:.4} mm/tooth"),
         ));
     }
     if let Some(rpm) = current.spindle_rpm {
         entries.push(LegendEntry::new(
             LegendSwatch::Circle,
             // Ruling R23: the operator's own value is not a verdict.
-            crate::ui::tokens::TEXT_STRONG,
-            "● Now",
-            format!("{rpm} RPM · {:.0} mm/min", current.feed_rate_mm_min),
+            tokens::TEXT_STRONG,
+            "\u{25CF} Now",
+            format!("{rpm} RPM \u{00B7} {:.0} mm/min", current.feed_rate_mm_min),
         ));
     }
     let target_cl = explain.recommended.derates.target_chip_load_mm;
@@ -614,25 +584,18 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
             entries.push(LegendEntry::new(
                 LegendSwatch::Circle,
                 tokens::DIAGRAM_INK,
-                "○ Vendor target",
-                format!("{target_cl:.4} mm/tooth · {target_feed:.0} mm/min"),
+                "\u{25CB} Vendor target",
+                format!("{target_cl:.4} mm/tooth"),
             ));
         }
     }
     entries.push(LegendEntry::new(
         LegendSwatch::Diamond,
         tokens::DIAGRAM_INK,
-        "◆ Recommended",
+        "\u{25C6} Recommended",
         format!(
-            "{:.0} RPM · {:.0} mm/min · {:.4} mm/tooth",
-            explain.recommended.rpm,
-            explain.recommended.feed_rate_mm_min,
-            if explain.recommended.rpm > 0.0 {
-                explain.recommended.feed_rate_mm_min
-                    / (explain.recommended.rpm * explain.flute_count.max(1) as f64)
-            } else {
-                0.0
-            }
+            "{:.0} RPM \u{00B7} {:.0} mm/min",
+            explain.recommended.rpm, explain.recommended.feed_rate_mm_min
         ),
     ));
 
@@ -648,7 +611,56 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         for entry in &entries {
             legend_row(ui, entry);
         }
+        draw_sources_row(ui, explain);
     });
+}
+
+/// Where the numbers came from — one row, hidden behind its hover.
+///
+/// The operator asked for exactly this: *"Based off x vendor data", "Based
+/// off machine kinematics", "Based off material hardness" ... But keep that
+/// hidden unless asked for.*
+///
+/// The red and amber regions on the chart lost their legend rows to this.
+/// They are the machine's own limits, and naming them here puts them with
+/// the rest of the provenance rather than spending two rows on a colour that
+/// already reads as "do not go here".
+fn draw_sources_row(ui: &mut egui::Ui, explain: &FeedsExplain) {
+    let env = &explain.machine;
+    let mut hover = String::new();
+    match &explain.matched_row {
+        Some(row) => hover.push_str(&format!(
+            "Vendor data: {} row {}, calibrated for a {:.2} mm tool.\n",
+            row.source_vendor, row.observation_id, row.row_diameter_mm
+        )),
+        None => hover.push_str(
+            "Vendor data: none matched. The range is absent and the \
+             recommendation is formula-derived.\n",
+        ),
+    }
+    hover.push_str(&format!(
+        "Machine kinematics: {:.0}\u{2013}{:.0} RPM, feed ceiling {:.0} mm/min.\n",
+        env.spindle_min_rpm, env.spindle_max_rpm, env.max_feed_mm_min
+    ));
+    match explain.query_hardness_value {
+        Some(value) => hover.push_str(&format!(
+            "Material hardness: {value:.0} {}.",
+            match explain.query_hardness_kind {
+                Some(rs_cam_core::feeds::vendor_lut::HardnessKind::Janka) => "Janka",
+                _ => "index",
+            }
+        )),
+        None => hover.push_str("Material hardness: not published for this material."),
+    }
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(format!("Sources {}", tokens::GLYPH_DETAIL))
+                .small()
+                .color(theme::TEXT_FAINT),
+        )
+        .wrap(),
+    )
+    .on_hover_text(hover);
 }
 
 /// One legend line: `swatch · label · value`.

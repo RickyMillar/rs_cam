@@ -287,18 +287,9 @@ pub(crate) fn draw_machine_envelope(
                 env.spindle_min_rpm as i64
             )),
         );
-        plot_ui.line(
-            Line::new(
-                "",
-                PlotPoints::from(vec![
-                    [env.spindle_min_rpm, 0.0],
-                    [env.spindle_min_rpm, axis_feed_max],
-                ]),
-            )
-            .color(tokens::CAUTION)
-            .width(1.5_f32)
-            .name(format!("spindle min {} RPM", env.spindle_min_rpm as i64)),
-        );
+        // The shaded region and the axis run below already say where the
+        // spindle minimum is. A third full-height rule in the caution colour
+        // made the left third of the chart the heaviest thing on it.
     }
     plot_ui.line(
         Line::new(

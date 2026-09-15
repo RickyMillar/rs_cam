@@ -60,7 +60,12 @@ const MIN_HEIGHT: f32 = 240.0;
 /// body gains a section; a default taller than the content leaves dead space
 /// under the legend.
 const DEFAULT_WIDTH: f32 = 640.0;
-const DEFAULT_HEIGHT: f32 = 560.0;
+/// Measured against the rendered window on 2026-09-16: at 560 the legend
+/// clipped after `Under spindle min`, hiding the three rows that name the
+/// marks — `Now`, `Vendor target`, `Recommended`. Those are the rows a
+/// reader who does not know the chart needs most, so the body has to hold
+/// them without scrolling.
+const DEFAULT_HEIGHT: f32 = 720.0;
 
 /// Top-level draw entry. Short-circuits when no modal is open.
 ///
