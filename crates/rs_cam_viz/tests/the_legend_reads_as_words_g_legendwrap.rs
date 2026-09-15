@@ -218,8 +218,8 @@ fn the_explore_window_painted_its_legend_g_legendwrap() {
     assert!(
         painted
             .iter()
-            .any(|(whole, _)| whole.to_lowercase().contains("vendor band")),
-        "the legend painted no `vendor band` entry — the exact label that \
-         rendered as `ven / dor / ban / d`"
+            .any(|(whole, _)| whole.to_lowercase().contains("vendor range")),
+        "the legend painted no `Vendor range` entry — the row that rendered \
+         as `ven / dor / ban / d` when it was still called `Vendor band`"
     );
 }

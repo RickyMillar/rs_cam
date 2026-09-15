@@ -30,10 +30,18 @@
 use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points, Polygon};
 use rs_cam_core::feeds::FeedsExplain;
 
-use super::shared::{CurrentValues, chart, draw_machine_envelope, wash};
+use super::shared::{CurrentValues, chart, draw_machine_envelope, vendor_band, wash};
 use crate::state::AppState;
 use crate::ui::{AppEvent, theme, tokens};
 use crate::ui_command::UiCommand;
+
+/// Ranges that belong to an axis are drawn ON that axis, at this weight.
+///
+/// The machine's limits and the vendor's RPM window are facts about one
+/// axis. Drawn into the plot body they were a labelled hexagon and a
+/// full-height wash, both competing with the vendor band for the same
+/// pixels.
+pub(crate) const AXIS_MARK_WIDTH: f32 = 4.0;
 
 pub(crate) fn draw_spindle_strategy_row(
     ui: &mut egui::Ui,
@@ -136,6 +144,76 @@ pub(crate) fn draw_modal_body(
 // Chart C — Feed vs RPM (the nomogram)
 // ────────────────────────────────────────────────────────────────────
 
+/// The chart's claim, in a sentence, above the chart.
+///
+/// The operator described the reading they want to get from this window:
+///
+/// > "Ah yep, vendor says this chipload, we can ramp it up. But it has
+/// > recommended slightly less load due to machine being hobby grade."
+///
+/// That is a sentence, and a reader should not have to assemble it from
+/// three marks and a legend. The chart shows WHERE; this line says WHAT and
+/// WHY, and it is the first thing under the heading.
+///
+/// It also carries the surface's honest abstention. When no vendor row
+/// matched there is no band to read, and a chart with no band and no
+/// sentence looks like a chart whose band is merely off screen.
+fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
+    let r = &explain.recommended;
+    let flutes = explain.flute_count.max(1) as f64;
+    let effective = if r.rpm > 0.0 {
+        r.feed_rate_mm_min / (r.rpm * flutes)
+    } else {
+        0.0
+    };
+    let band = vendor_band(explain);
+
+    let mut text = match band {
+        Some((lo, hi)) => {
+            format!("Vendor {lo:.4}\u{2013}{hi:.4} mm/tooth · running {effective:.4}")
+        }
+        None => format!("No vendor range for this cut · running {effective:.4} mm/tooth"),
+    };
+
+    // The derate is the "why" half of the sentence, and it is only worth a
+    // clause when it actually moved the number.
+    let combined = r.derates.combined_factor();
+    let pct = ((1.0 - combined) * 100.0).max(0.0);
+    let color = if pct >= 1.0 {
+        let mut reasons: Vec<&str> = Vec::new();
+        if r.derates.workholding < 0.999 {
+            reasons.push("workholding");
+        }
+        if r.derates.ld_overhang < 0.999 {
+            reasons.push("tool overhang");
+        }
+        if r.derates.depth_tier < 0.999 {
+            reasons.push("cut depth");
+        }
+        if r.derates.power_limit < 0.999 {
+            reasons.push("spindle power");
+        }
+        if r.derates.feed_clamp < 0.999 {
+            reasons.push("machine feed cap");
+        }
+        if r.derates.safety_factor < 0.999 {
+            reasons.push("machine safety margin");
+        }
+        let why = if reasons.is_empty() {
+            "machine limits".to_owned()
+        } else {
+            reasons.join(", ")
+        };
+        text.push_str(&format!(" · held back {pct:.0}% for {why}"));
+        theme::WARNING_MILD
+    } else {
+        text.push_str(" · nothing held it back");
+        theme::TEXT_DIM
+    };
+
+    ui.add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap());
+}
+
 pub(crate) fn draw_chart_c(
     ui: &mut egui::Ui,
     current: &CurrentValues,
@@ -150,6 +228,7 @@ pub(crate) fn draw_chart_c(
             .strong()
             .color(theme::TEXT_STRONG),
     );
+    draw_headline(ui, explain);
     ui.add_space(2.0);
     let flutes = explain.flute_count.max(1) as f64;
     let env = &explain.machine;
@@ -166,12 +245,6 @@ pub(crate) fn draw_chart_c(
             (None, Some(hi)) => Some((hi * 0.7, hi)),
             _ => None,
         }
-    });
-    let band_admit = band.map(|(lo, hi)| {
-        // 5 % tolerance band (matches optimizer's breakage_tolerance default).
-        let admit_hi = hi * 1.05;
-        let admit_lo = (lo * 0.95).max(0.0);
-        (admit_lo, lo, hi, admit_hi)
     });
 
     // Vendor RPM column.
@@ -222,92 +295,36 @@ pub(crate) fn draw_chart_c(
                 // fixed fraction of the band's own extent, so on a wide band
                 // it landed on top of the iso-advance lines it was labelling.
             }
-            if let Some((admit_lo, lo, hi, admit_hi)) = band_admit {
-                // Two thinner ribbons in the 5 % tolerance zones —
-                // also clipped at the machine caps.
-                let low_admit = wedge_polygon(
-                    admit_lo,
-                    lo,
-                    env.spindle_max_rpm,
-                    flutes,
-                    env.max_feed_mm_min,
-                );
-                let high_admit = wedge_polygon(
-                    hi,
-                    admit_hi,
-                    env.spindle_max_rpm,
-                    flutes,
-                    env.max_feed_mm_min,
-                );
-                // The admitted wedge is a second RANGE beside the band, so
-                // it takes the neighbouring series rather than the caution
-                // amber it used to borrow.
-                let warn = wash(chart::ADMITTED, 50);
-                let warn_edge = wash(chart::ADMITTED, 100);
-                plot_ui.polygon(
-                    Polygon::new("", low_admit)
-                        .fill_color(warn)
-                        .stroke(egui::Stroke::new(1.0_f32, warn_edge))
-                        .name("Band-admitted (low)"),
-                );
-                plot_ui.polygon(
-                    Polygon::new("", high_admit)
-                        .fill_color(warn)
-                        .stroke(egui::Stroke::new(1.0_f32, warn_edge))
-                        .name("Band-admitted (high)"),
-                );
-            }
-
-            // 2. Three iso-chipload diagonals — each one is labelled
-            //    inline at its right-end so the chipload value is
-            //    visible without consulting a legend.
-            if let Some((lo, hi)) = band {
-                let mid = (lo + hi) * 0.5;
-                // min / mid / max were amber / green / red — a traffic
-                // light on what is an ORDERED SCALE, not three verdicts. The
-                // band's own maximum is not an exceedance. Three ascending
-                // steps of one scale now carry the order.
-                for (cl, color, prefix) in [
-                    (lo, chart::ISO_MIN, "min"),
-                    (mid, chart::ISO_MID, "mid"),
-                    (hi, chart::ISO_MAX, "max"),
-                ] {
-                    let line_pts =
-                        clip_iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min);
-                    plot_ui.line(
-                        Line::new("", PlotPoints::from(line_pts.clone()))
-                            .color(color)
-                            .width(1.5_f32)
-                            .name(format!("chipload {prefix} {cl:.4} mm/tooth")),
-                    );
-                    // W6: the inline `min/mid/max 0.0500` tags that used to
-                    // sit at each line's end are deleted. They restated the
-                    // legend's three iso-advance rows, and they were anchored
-                    // to the CLIPPED end of the line — which is the machine
-                    // cap corner, the one place the two envelope labels also
-                    // want. Three labels and two walls met in the same
-                    // 40 x 20 points.
-                }
-            }
+            // 2. The band's EDGES are the min and max iso-advance lines,
+            //    and its midpoint is the mid line. Drawing all three on top
+            //    of the wedge drew the same fact three times, in a
+            //    three-step colour scale, under a name the product owner
+            //    could not read: "I don't really know what the iso advance
+            //    and similar is" (2026-09-16).
+            //
+            //    The ±5 % admitted ribbons went with them. They are the
+            //    optimizer's tolerance, which is detail about a different
+            //    tool's behaviour, not about this cut. The band's legend row
+            //    carries the numbers.
+            //
+            //    What is left is one region: the vendor's chipload range.
 
             // 3. Machine envelope — shaded forbidden zones, walls, labels.
             draw_machine_envelope(plot_ui, env, rpm_axis_max, feed_axis_max);
 
-            // 4. Vendor RPM column.
+            // 4. The vendor's RPM window, marked ON the RPM axis.
+            //
+            //    It used to be a full-height column washed across the plot,
+            //    a second translucent region competing with the band for the
+            //    same pixels. A range along one axis is a fact about that
+            //    axis: "the max and min lines should be on the axis, not
+            //    marked on the chart as points" (2026-09-16).
             if let Some((Some(lo), Some(hi), _)) = vendor_rpm {
-                plot_ui.polygon(
-                    Polygon::new(
-                        "",
-                        PlotPoints::from(vec![
-                            [lo, 0.0],
-                            [hi, 0.0],
-                            [hi, feed_axis_max],
-                            [lo, feed_axis_max],
-                        ]),
-                    )
-                    .fill_color(wash(chart::RPM_RANGE, 25))
-                    .stroke(egui::Stroke::new(1.0_f32, wash(chart::RPM_RANGE, 80)))
-                    .name("Vendor RPM range"),
+                plot_ui.line(
+                    Line::new("", PlotPoints::from(vec![[lo, 0.0], [hi, 0.0]]))
+                        .color(wash(chart::RPM_RANGE, 220))
+                        .width(AXIS_MARK_WIDTH)
+                        .name(format!("Vendor RPM {lo:.0}–{hi:.0}")),
                 );
             }
 
@@ -530,40 +547,20 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
     let mut entries: Vec<LegendEntry> = Vec::new();
 
     if let Some((lo, hi)) = band {
-        let mid = (lo + hi) * 0.5;
+        // One row for one region.
+        //
+        // Three `iso-advance min / mid / max` rows used to follow it. They
+        // named the band's own edges and midpoint — the same fact the wedge
+        // already draws — in a term the product owner could not read: "I
+        // don't really know what the iso advance and similar is". A fourth
+        // row named the optimizer's ±5 % admit window, which is detail about
+        // a different tool. It survives as a clause here, where it costs no
+        // row of its own.
         entries.push(LegendEntry::new(
             LegendSwatch::FilledSquare,
             wash(chart::BAND, 200),
-            "Vendor band",
-            format!("{lo:.4}–{hi:.4} mm/tooth"),
-        ));
-        entries.push(LegendEntry::new(
-            LegendSwatch::FilledSquare,
-            wash(chart::ADMITTED, 180),
-            "+5% tolerance",
-            format!(
-                "{:.4}–{lo:.4}  ·  {hi:.4}–{:.4} mm/tooth",
-                lo * 0.95,
-                hi * 1.05
-            ),
-        ));
-        entries.push(LegendEntry::new(
-            LegendSwatch::Line,
-            chart::ISO_MIN,
-            "iso-advance min",
-            format!("{lo:.4} mm/tooth"),
-        ));
-        entries.push(LegendEntry::new(
-            LegendSwatch::Line,
-            chart::ISO_MID,
-            "iso-advance mid",
-            format!("{mid:.4} mm/tooth"),
-        ));
-        entries.push(LegendEntry::new(
-            LegendSwatch::Line,
-            chart::ISO_MAX,
-            "iso-advance max",
-            format!("{hi:.4} mm/tooth"),
+            "Vendor range",
+            format!("{lo:.4}\u{2013}{hi:.4} mm/tooth (\u{00B1}5 % accepted)"),
         ));
     }
 
@@ -577,7 +574,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         entries.push(LegendEntry::new(
             LegendSwatch::FilledSquare,
             wash(chart::RPM_RANGE, 200),
-            "Vendor RPM range",
+            "Vendor RPM",
             value,
         ));
     }
@@ -585,7 +582,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
     entries.push(LegendEntry::new(
         LegendSwatch::FilledSquare,
         wash(tokens::DANGER, 150),
-        "Machine forbidden",
+        "Machine limit",
         // ui-string-columns: air either side of "or" separates two limits
         // in a legend swatch; a single space runs them together.
         format!(
@@ -597,7 +594,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         entries.push(LegendEntry::new(
             LegendSwatch::FilledSquare,
             wash(tokens::CAUTION, 150),
-            "Below spindle min",
+            "Under spindle min",
             format!("< {} RPM", env.spindle_min_rpm as i64),
         ));
     }
@@ -606,7 +603,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
             LegendSwatch::Circle,
             // Ruling R23: the operator's own value is not a verdict.
             crate::ui::tokens::TEXT_STRONG,
-            "● Current",
+            "● Now",
             format!("{rpm} RPM · {:.0} mm/min", current.feed_rate_mm_min),
         ));
     }
@@ -617,7 +614,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
             entries.push(LegendEntry::new(
                 LegendSwatch::Circle,
                 tokens::DIAGRAM_INK,
-                "○ Target (pre-derate)",
+                "○ Vendor target",
                 format!("{target_cl:.4} mm/tooth · {target_feed:.0} mm/min"),
             ));
         }
@@ -625,9 +622,9 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
     entries.push(LegendEntry::new(
         LegendSwatch::Diamond,
         tokens::DIAGRAM_INK,
-        "◆ Recommended (effective)",
+        "◆ Recommended",
         format!(
-            "{:.0} RPM · {:.0} mm/min · chipload {:.4} mm/tooth",
+            "{:.0} RPM · {:.0} mm/min · {:.4} mm/tooth",
             explain.recommended.rpm,
             explain.recommended.feed_rate_mm_min,
             if explain.recommended.rpm > 0.0 {
@@ -707,7 +704,6 @@ fn legend_row(ui: &mut egui::Ui, entry: &LegendEntry) {
 #[derive(Debug, Clone, Copy)]
 enum LegendSwatch {
     FilledSquare,
-    Line,
     Circle,
     Diamond,
 }
@@ -742,16 +738,6 @@ fn draw_legend_swatch(ui: &mut egui::Ui, swatch: LegendSwatch, color: egui::Colo
                 2.0,
                 egui::Stroke::new(0.5_f32, color.linear_multiply(1.4)),
                 egui::StrokeKind::Middle,
-            );
-        }
-        LegendSwatch::Line => {
-            let y = rect.center().y;
-            painter.line_segment(
-                [
-                    egui::pos2(rect.left() + 1.0, y),
-                    egui::pos2(rect.right() - 1.0, y),
-                ],
-                egui::Stroke::new(2.0_f32, color),
             );
         }
         LegendSwatch::Circle => {

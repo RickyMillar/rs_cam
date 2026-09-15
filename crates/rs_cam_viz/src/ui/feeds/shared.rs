@@ -42,20 +42,16 @@ use crate::ui::tokens;
 pub(crate) mod chart {
     use crate::ui::tokens;
 
-    /// The vendor advance-per-tooth band.
+    /// The vendor advance-per-tooth range.
     pub const BAND: egui::Color32 = tokens::CHART_SERIES[1];
-    /// The band-admitted (±5 %) wedge either side of the band.
-    pub const ADMITTED: egui::Color32 = tokens::CHART_SERIES[0];
-    /// The vendor RPM column.
+    /// The vendor RPM window, marked on the RPM axis.
     pub const RPM_RANGE: egui::Color32 = tokens::CHART_SERIES[3];
     /// The drag-to-explore proposal.
     pub const EXPLORE: egui::Color32 = tokens::CHART_SERIES[2];
-    /// Iso-advance at the band minimum.
-    pub const ISO_MIN: egui::Color32 = tokens::SPAN_SCALE[1];
-    /// Iso-advance at the band midpoint.
-    pub const ISO_MID: egui::Color32 = tokens::SPAN_SCALE[3];
-    /// Iso-advance at the band maximum.
-    pub const ISO_MAX: egui::Color32 = tokens::SPAN_SCALE[5];
+    // ADMITTED, ISO_MIN, ISO_MID and ISO_MAX were deleted on 2026-09-16 with
+    // the series they coloured: three iso-advance lines that restated the
+    // band's own edges and midpoint, and a ±5 % ribbon pair. Four colours
+    // for one fact the wedge already draws.
 }
 
 /// A token at a given alpha, for a chart wash.
@@ -340,30 +336,57 @@ pub(crate) fn draw_machine_envelope(
     // caps are both in frame they overlapped — `max 24000 RPM` printed
     // through `max 4000 mm/min`. The walls cross at the top-right corner;
     // only one label can live there.
-    plot_ui.text(
-        egui_plot::Text::new(
+    // The limits are marked ON the axes they belong to, not lettered into
+    // the plot body.
+    //
+    // They used to be two labelled hexagons floating inside the drawing.
+    // They collided with each other and with the band, one of them clipped
+    // at the plot edge, and a label inside a chart competes with the data
+    // for attention it does not deserve — the wall already says where the
+    // limit is; only the NUMBER was ever in the label, and the legend row
+    // carries that. Operator, 2026-09-16: "the max and min lines should be
+    // on the axis, not marked on the chart as points".
+    //
+    // A segment along y = 0 from the cap to the axis end says "this part of
+    // the RPM axis is out of bounds" with no words at all.
+    plot_ui.line(
+        Line::new(
             "",
-            egui_plot::PlotPoint::new(env.spindle_max_rpm, axis_feed_max * 0.03),
-            egui::RichText::new(format!("max {} RPM ⬢", env.spindle_max_rpm as i64))
-                .small()
-                .color(forbidden_edge),
+            PlotPoints::from(vec![[env.spindle_max_rpm, 0.0], [axis_rpm_max, 0.0]]),
         )
-        // Left of the wall, not right of it. The axis only runs 15 % past
-        // the cap, so a label anchored LEFT_BOTTOM here extends into that
-        // narrow strip and is clipped by the plot edge — measured as
-        // `max 24000 RPI`.
-        .anchor(egui::Align2::RIGHT_BOTTOM),
+        .color(forbidden_edge)
+        .width(crate::ui::feeds::explore::AXIS_MARK_WIDTH)
+        .name(format!(
+            "Past machine cap ({} RPM)",
+            env.spindle_max_rpm as i64
+        )),
     );
-    plot_ui.text(
-        egui_plot::Text::new(
+    plot_ui.line(
+        Line::new(
             "",
-            egui_plot::PlotPoint::new(axis_rpm_max * 0.97, env.max_feed_mm_min),
-            egui::RichText::new(format!("max {} mm/min ⬢", env.max_feed_mm_min as i64))
-                .small()
-                .color(forbidden_edge),
+            PlotPoints::from(vec![[0.0, env.max_feed_mm_min], [0.0, axis_feed_max]]),
         )
-        .anchor(egui::Align2::RIGHT_BOTTOM),
+        .color(forbidden_edge)
+        .width(crate::ui::feeds::explore::AXIS_MARK_WIDTH)
+        .name(format!(
+            "Past machine feed ({} mm/min)",
+            env.max_feed_mm_min as i64
+        )),
     );
+    if env.spindle_min_rpm > 0.0 {
+        plot_ui.line(
+            Line::new(
+                "",
+                PlotPoints::from(vec![[0.0, 0.0], [env.spindle_min_rpm, 0.0]]),
+            )
+            .color(tokens::CAUTION)
+            .width(crate::ui::feeds::explore::AXIS_MARK_WIDTH)
+            .name(format!(
+                "Below spindle min ({} RPM)",
+                env.spindle_min_rpm as i64
+            )),
+        );
+    }
 }
 
 pub(crate) fn speedup(current: &CurrentValues, explain: &FeedsExplain) -> f64 {
