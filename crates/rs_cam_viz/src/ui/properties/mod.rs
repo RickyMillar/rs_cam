@@ -2395,6 +2395,10 @@ fn draw_feeds_card(
         &current,
         &preview,
         rationale.as_ref(),
+        &entry.operation,
+        tool,
+        material,
+        machine,
         entry.id,
         events,
     );

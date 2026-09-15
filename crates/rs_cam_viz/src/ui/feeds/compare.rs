@@ -13,7 +13,9 @@
 //! operation pairing (I-3).
 
 use rs_cam_core::feeds::FeedsExplain;
+use rs_cam_core::feeds::efficiency::{ChipVerdict, CutEfficiency, cut_efficiency};
 use rs_cam_core::feeds::suggest::FeedsPreview;
+use rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM;
 
 use rs_cam_core::feeds::rationale::SuggestRationale;
 
@@ -138,22 +140,37 @@ pub(crate) fn compute_preview(
     ))
 }
 
+// The card reads the operation, the tool, the material and the machine on
+// top of the recommendation, because the chipload verdict is a statement
+// about the cut, not about the recipe. `draw_feeds_card` carries the same
+// allow for the same reason: bundling what the session already holds into
+// a struct would build a second data model of it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_inspector_comparison(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     preview: &FeedsPreview,
     rationale: Option<&SuggestRationale>,
+    operation: &crate::state::toolpath::OperationConfig,
+    tool: &crate::state::job::ToolConfig,
+    material: &rs_cam_core::material::Material,
+    machine: &rs_cam_core::machine::MachineProfile,
     toolpath_id: crate::state::toolpath::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
-    draw_context_chip(ui, preview.explain());
+    let explain = preview.explain();
+    // Core computes the verdict; this file renders it. `rs_cam_viz`'s rule:
+    // do not recompute a narrower answer in the UI.
+    let efficiency = cut_efficiency(operation, tool, material, machine, &explain.recommended);
+    draw_context_chip(ui, explain);
     ui.add_space(crate::ui::tokens::SPACE_2);
     draw_comparison_card(
         ui,
         current,
-        preview.explain(),
+        explain,
         preview.refusal(),
         rationale,
+        efficiency.as_ref(),
         toolpath_id,
         events,
     );
@@ -245,6 +262,7 @@ fn draw_comparison_card(
     explain: &FeedsExplain,
     refusal: Option<&rs_cam_core::feeds::FeedsError>,
     rationale: Option<&SuggestRationale>,
+    efficiency: Option<&CutEfficiency>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
@@ -339,10 +357,14 @@ fn draw_comparison_card(
         }
 
         ui.add_space(4.0);
-        rail_power_row(
+        rail_efficiency_row(
             ui,
-            explain.recommended.power_kw,
-            explain.recommended.available_power_kw,
+            efficiency,
+            advance_per_tooth_mm(
+                explain.recommended.feed_rate_mm_min,
+                explain.recommended.rpm,
+                current.flute_count,
+            ),
         );
         ui.add_space(2.0);
         rail_mrr_row(ui, explain.recommended.mrr_mm3_min);
@@ -408,59 +430,269 @@ fn rail_row(
     ui.add_space(2.0);
 }
 
-/// Utilisation above this is worth an operator's attention. Below it, the
-/// figure is reported plainly rather than coloured.
-const POWER_NOTABLE_FRACTION: f64 = 0.5;
-
-/// The rail's power statement.
+/// The rail's chipload verdict — where this cut sits in the corridor, and
+/// what sitting there costs.
 ///
-/// # This was a gauge, and the gauge was dead (W3)
+/// # This replaces a gauge that could not fail (Phase A)
 ///
-/// `feeds/mod.rs` already carried the measurement that condemns it: across
-/// all three shipped machine presets × ten species × Ø3/Ø6/Ø12 slots, the
-/// power branch never fires at all, and **peak** utilisation is 23.6 %.
-/// Typical is 1 %: a 6 mm cutter in softwood needs about seven watts. A bar
-/// whose maximum observed value across the entire shipped matrix sits in its
-/// left quarter cannot distinguish a safe cut from a safer one, and an
-/// operator who learns to read it learns nothing.
+/// The line here used to read `Power 0.01 of 0.60 kW (1 %)`. `feeds/mod.rs`
+/// already carried the measurement that condemned it: across all three
+/// shipped machine presets × ten species × Ø3/Ø6/Ø12 slots, the power branch
+/// never fires at all, and **peak** utilisation is 23.6 %. Typical is 1 %: a
+/// 6 mm cutter in softwood needs about seven watts. A figure whose maximum
+/// observed value across the entire shipped matrix sits in its left quarter
+/// cannot distinguish a safe cut from a safer one.
 ///
-/// The NUMBER is worth keeping — it is the one honest answer to "will my
-/// spindle stall" — so it stays, as one line, with the spindle it is quoted
-/// against named on its hover. A headroom figure quoted against a guessed
-/// 0.8 kW default is worse than no figure.
-fn rail_power_row(ui: &mut egui::Ui, power_kw: f64, available_kw: f64) {
-    let avail = available_kw.max(0.0001);
-    let frac = (power_kw / avail).clamp(0.0, 1.0);
-    let color = if frac >= POWER_NOTABLE_FRACTION {
-        compare::power_color(frac)
-    } else {
-        theme::TEXT_DIM
+/// The chipload can. Below the vendor band there is no trade-off, only loss:
+/// at the fixture's 0.038 mm/tooth the cut spends 1.6× the energy per mm³
+/// AND 1.8× the time of the band midpoint. That is a state an operator can
+/// act on, and this row changes it on every job that matters.
+///
+/// # Every number here can be absent, and absence is said out loud
+///
+/// `cut_efficiency` refuses as a whole when the material has no
+/// primary-source `Kc`, and each ratio refuses on its own when its input is
+/// missing. A `None` renders as a stated abstention — never as a zero, a
+/// blank, a bare dash or a 100 %. The ratios go on the face because "1.6×
+/// tool wear" is actionable; `u` in J/mm³ and the ploughing share go on the
+/// hover, where the person who wants the workings will look.
+fn rail_efficiency_row(
+    ui: &mut egui::Ui,
+    efficiency: Option<&CutEfficiency>,
+    fallback_advance_mm: Option<f64>,
+) {
+    // The advance per tooth is feed ÷ (RPM × flutes) — a commanded value,
+    // not a force-model output — so it survives the model's refusal and is
+    // still printed beside the abstention.
+    let advance_mm = efficiency
+        .map(|e| e.advance_per_tooth_mm)
+        .or(fallback_advance_mm);
+    let (verdict, color) = match efficiency {
+        Some(e) => verdict_face(e),
+        None => (
+            format!(
+                "{} efficiency not modelled for this material",
+                crate::ui::tokens::GLYPH_UNKNOWN
+            ),
+            theme::TEXT_DIM,
+        ),
     };
+    let hover = match efficiency {
+        Some(e) => efficiency_hover(e),
+        None => unmodelled_hover(advance_mm),
+    };
+    // `horizontal_wrapped` so the verdict phrase wraps to its own line inside
+    // the Simulation workspace's 240-point rail rather than widening it.
     ui.horizontal_wrapped(|ui| {
         ui.add(
-            egui::Label::new(egui::RichText::new("Power").small().color(theme::TEXT_DIM)).wrap(),
-        );
-        ui.add(
             egui::Label::new(
-                egui::RichText::new(format!(
-                    "{power_kw:.2} of {avail:.2} kW ({:.0} %) {}",
-                    frac * 100.0,
-                    crate::ui::tokens::GLYPH_DETAIL
-                ))
-                .small()
-                .color(color),
+                egui::RichText::new(format!("Chip {}", crate::ui::tokens::GLYPH_DETAIL))
+                    .small()
+                    .strong()
+                    .color(theme::TEXT_HEADING),
             )
             .wrap(),
         )
-        .on_hover_text(format!(
-            "Cutting power at the recommended feed and cut, against this \
-             machine's spindle curve after its safety factor — {avail:.2} kW \
-             at this RPM.\n\nWood cuts at low power: a 6 mm cutter in softwood \
-             needs about seven watts. If {avail:.2} kW is not your spindle, set \
-             it in the machine profile, because this headroom is quoted \
-             against it."
-        ));
+        .on_hover_text(hover.clone());
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(compare::format_optional(advance_mm, " mm/tooth", 0.0001))
+                    .small()
+                    .color(theme::TEXT_STRONG),
+            )
+            .wrap(),
+        )
+        .on_hover_text(hover.clone());
+        ui.add(egui::Label::new(egui::RichText::new(verdict).small().color(color)).wrap())
+            .on_hover_text(hover);
     });
+}
+
+/// The verdict phrase and its colour.
+///
+/// Each arm prints only the ratios that exist. A missing ratio becomes a
+/// short abstention in the phrase, never a silent omission and never a zero.
+fn verdict_face(efficiency: &CutEfficiency) -> (String, egui::Color32) {
+    match efficiency.verdict {
+        ChipVerdict::Thin => {
+            let mut costs = Vec::new();
+            if let Some(wear) = efficiency.wear_ratio_vs_band_mid {
+                costs.push(format!("{wear:.1}\u{00D7} tool wear"));
+            }
+            if let Some(time) = efficiency.time_ratio_vs_band_mid {
+                costs.push(format!("{time:.1}\u{00D7} the time"));
+            }
+            let tail = if costs.is_empty() {
+                "below the vendor range; the cost of that is not modelled".to_owned()
+            } else {
+                costs.join(", ")
+            };
+            (format!("\u{26A0} thin \u{2014} {tail}"), theme::WARNING)
+        }
+        ChipVerdict::InBand => {
+            let tail = match efficiency.force_headroom {
+                Some(headroom) => headroom_phrase(headroom),
+                None => "force headroom not modelled".to_owned(),
+            };
+            (
+                format!(
+                    "{} in vendor range \u{00B7} {tail}",
+                    crate::ui::tokens::GLYPH_OK
+                ),
+                theme::SUCCESS,
+            )
+        }
+        ChipVerdict::Heavy => {
+            let tail = match efficiency.force_headroom {
+                Some(headroom) => headroom_phrase(headroom),
+                None => "above the vendor range; force headroom not modelled".to_owned(),
+            };
+            (format!("\u{26A0} heavy \u{2014} {tail}"), theme::WARNING)
+        }
+        ChipVerdict::NoBand => {
+            let tail = match efficiency.force_headroom {
+                Some(headroom) => format!(" \u{00B7} {}", headroom_phrase(headroom)),
+                None => String::new(),
+            };
+            (
+                format!(
+                    "{} no vendor chipload range matched{tail}",
+                    crate::ui::tokens::GLYPH_UNKNOWN
+                ),
+                theme::TEXT_DIM,
+            )
+        }
+    }
+}
+
+/// Force headroom as a phrase.
+///
+/// Two roundings are deliberate. A **negative** headroom is a real finding —
+/// the predicted deflection is already past the bound — so it is said, not
+/// clamped to zero. And a headroom above 99.5 % prints as `>99 %` rather
+/// than rounding up: wood routing leaves the deflection bound almost
+/// untouched on most cuts, and a flat `100 %` on the face is the shape this
+/// repository has drawn four times — an absent constraint painted as an
+/// all-clear. `>99 %` cannot be mistaken for one.
+fn headroom_phrase(headroom: f64) -> String {
+    if headroom < 0.0 {
+        format!("{:.0} % past the deflection bound", -headroom * 100.0)
+    } else if headroom > 0.995 {
+        ">99 % force headroom".to_owned()
+    } else {
+        format!("{:.0} % force headroom", headroom * 100.0)
+    }
+}
+
+/// The row's workings: the unit figure, the ploughing share in plain words,
+/// the three bounds, and where each came from.
+///
+/// Every line is present in every state. A bound the model declines says it
+/// declined; it does not drop out of the list, because a reader cannot tell a
+/// missing line from a bound that does not bite.
+fn efficiency_hover(efficiency: &CutEfficiency) -> String {
+    let mut out = format!(
+        "Chipload {:.4} mm/tooth — the recommendation's commanded advance per \
+         tooth, feed \u{00F7} (RPM \u{00D7} flutes).\n\n\
+         Energy per mm\u{00B3}: u = {:.0} J/mm\u{00B3}. {:.0} % of the cutting \
+         power is rubbing rather than shearing wood. That share is the burn \
+         and wear risk, and it falls as the chip gets thicker.\n\n",
+        efficiency.advance_per_tooth_mm,
+        efficiency.specific_energy_j_per_mm3,
+        efficiency.ploughing_share * 100.0,
+    );
+    match efficiency.band {
+        Some(band) => out.push_str(&format!(
+            "Vendor range: {:.3}–{:.3} mm/tooth, from the matched vendor row.\n",
+            band.min_mm_per_tooth, band.max_mm_per_tooth,
+        )),
+        None => out.push_str(
+            "Vendor range: no row matched this tool \u{00D7} material, so there \
+             is no wear or time ratio to quote.\n",
+        ),
+    }
+    out.push_str(&format!(
+        "Rubbing floor: {:.3} mm/tooth — below it the edge burnishes instead \
+         of cutting.\n",
+        efficiency.rubbing_floor_mm,
+    ));
+    match efficiency.deflection_ceiling_mm {
+        Some(ceiling) => out.push_str(&format!(
+            "Deflection ceiling: {ceiling:.3} mm/tooth — the heaviest chip \
+             that keeps predicted tip deflection inside {EXCEEDS_BOUND_MM:.3} mm.\n",
+        )),
+        None => out.push_str(
+            "Deflection ceiling: not modelled — this tool, depth or engagement \
+             leaves the deflection model nothing to solve.\n",
+        ),
+    }
+    match efficiency.force_headroom {
+        Some(headroom) if headroom >= 0.0 => out.push_str(&format!(
+            "Force headroom: {:.1} % of the {EXCEEDS_BOUND_MM:.3} mm deflection \
+             bound is unused.\n",
+            headroom * 100.0,
+        )),
+        Some(headroom) => out.push_str(&format!(
+            "Force headroom: none — the predicted deflection is {:.1} % past \
+             the {EXCEEDS_BOUND_MM:.3} mm bound.\n",
+            -headroom * 100.0,
+        )),
+        None => out.push_str(
+            "Force headroom: not modelled — the pre-simulation deflection \
+             predictor declined this pairing.\n",
+        ),
+    }
+    match (
+        efficiency.wear_ratio_vs_band_mid,
+        efficiency.time_ratio_vs_band_mid,
+    ) {
+        (Some(wear), Some(time)) => out.push_str(&format!(
+            "\nAgainst the middle of the vendor range: {wear:.2}\u{00D7} the \
+             energy per mm\u{00B3}, {time:.2}\u{00D7} the cutting time.\n",
+        )),
+        _ if efficiency.band.is_some() => out.push_str(
+            "\nWear and time ratios: not modelled — the band midpoint gives \
+             the closed form no usable value.\n",
+        ),
+        _ => {}
+    }
+    out.push_str(
+        "\nu = Ks + (F_edge \u{00B7} D \u{00B7} \u{03C8}) / (2 \u{00B7} ae \
+         \u{00B7} fz), the affine wood-force fit in feeds::force scaled to \
+         this material's Kc. Neither RPM nor depth of cut moves it; only the \
+         chipload and the radial engagement do. Approximate — verify on a \
+         test cut.",
+    );
+    out
+}
+
+/// The hover for the refusal state.
+///
+/// The material carries no primary-source `Kc`, so there is no force fit to
+/// read and no efficiency number to publish. This says which input is
+/// missing and names the refusal the engine already makes, so the empty row
+/// cannot be read as a clean bill of health.
+fn unmodelled_hover(advance_mm: Option<f64>) -> String {
+    let mut out = String::from(
+        "Efficiency is not modelled for this material.\n\n\
+         The energy-per-mm\u{00B3} model needs a primary-source Kc, and this \
+         material has none, so there is no cutting-force fit to read. Nothing \
+         is shown rather than a fabricated number — the same refusal the load \
+         gate makes through MaterialUnvalidated. No wear ratio, no time ratio \
+         and no force headroom exist for this cut.\n\n",
+    );
+    match advance_mm {
+        Some(fz) => out.push_str(&format!(
+            "The {fz:.4} mm/tooth beside this label is the recommendation's \
+             commanded advance per tooth, feed \u{00F7} (RPM \u{00D7} flutes). \
+             It does not depend on the force model.",
+        )),
+        None => out.push_str(
+            "The advance per tooth is not shown either: the recommendation has \
+             no positive feed, RPM and flute count to divide.",
+        ),
+    }
+    out
 }
 
 /// The rail's MRR readout, wrapped like its neighbours.
