@@ -250,9 +250,31 @@ machine.
   deflection; it does not make either one bench-validated. The honest claim
   after R1 is "these two models now agree", not "this is your spindle
   load".
-- **The 2.0 grain-anisotropy factor.** Removing it from power is required
-  for consistency with `force.rs`, but I have not traced why it was applied
-  to power and not to the force fit. That history should be read before the
-  factor is dropped — `planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §6 and
-  `KC_MILLING_CALIBRATION_2026-06-17.md` are the two documents to start
-  from.
+- ~~**The 2.0 grain-anisotropy factor.** Removing it from power is required
+  for consistency with `force.rs`~~ — **this was wrong. Corrected
+  2026-09-16 after reading the history, before R1 started.**
+
+  The divergence is not an inconsistency. It is a documented, deliberate
+  split, and `tool_load/deflection.rs:38-41` states the reason:
+
+  > **Raw `Kc(material)`**, no grain-anisotropy factor. Static deflection
+  > responds to sustained mean force, not the transient grain spikes the
+  > power-safety 2.0x factor (Pałubicki 2021) is scoped to.
+
+  So the two models answer different questions. Deflection wants the
+  sustained mean force, and takes raw `Kc`. Power carries a safety
+  allowance for transient grain spikes, and takes `2.0 x Kc`.
+  `force.rs` anchors on `LIT_ANCHOR_KC = 35.1`, which is
+  `MILLING_KC_FACTOR 2.7 x FPL shear 13.0` — the raw base, consistent
+  with deflection's documented choice.
+
+  **`GRAIN_ANISOTROPY_FACTOR` therefore STAYS on power through R1.** What
+  R1 changes is the SHAPE of the power model — adding the edge term so it
+  stops being blind to chip thickness — not its safety scoping.
+
+  This moves R1's magnitude. §1's table compares the shipped model against
+  a two-term model computed WITHOUT the anisotropy factor, so it
+  understates the change. Carrying the factor through both terms, the
+  fixture's running point goes from 0.0067 kW to about 0.057 kW — roughly
+  **8.6x**, not 4.3x. Re-measure before R1 lands rather than trusting this
+  paragraph.
