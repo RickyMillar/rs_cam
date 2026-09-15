@@ -209,6 +209,36 @@ idiom as the machine walls — fill, no stroke, no floating label.
 When `deflection_ceiling_mm` is `None`, the upper wedge is **not drawn** and
 `Sources` says the ceiling is not modelled. Do not substitute a default.
 
+### The corridor is one-sided for ordinary tools — measured during N-1
+
+On the reference fixture (6 mm 2-flute flat, 4.20 DOC, 2.10 WOC, generic
+softwood) the deflection ceiling comes out **9.36 mm/tooth**. The vendor
+band maximum is 0.0850, and the top of the chart — 4 000 mm/min at 17 000
+RPM on 2 flutes — is 0.1176 mm/tooth. The ceiling is around eighty times
+the highest chipload the chart can draw.
+
+It is not wrong. A stubby carbide cutter genuinely is not
+deflection-limited, which is what `force.rs`'s module docs and ADVICE.md
+§4 both already said: on this class of machine the binding constraints
+are the feed cap, the rubbing floor and rigidity — not tooth force.
+
+**So the upper wedge would be drawn off the top of the chart for ordinary
+tools, exactly as the power contour would.** For long or thin tools it
+does come on chart: compliance rises with the cube of stickout, so the
+ceiling falls fast.
+
+The rule for Phase B: **draw the upper wedge only when the ceiling falls
+inside the plot's y-range, and abstain visibly when it does not.** Never
+clamp it to the chart edge — a wedge pinned to the top reads as "you are
+near the force limit", which would be false by two orders of magnitude,
+and that is the absence-rendered-as-a-reading failure this programme
+keeps meeting. `Sources` names the ceiling and says when it is off scale.
+
+Expect the corridor to be bounded by the rubbing floor and the machine
+walls in the common case, with the force ceiling appearing only for tools
+that actually have a deflection problem. That is the honest picture, and
+more useful than a symmetric corridor would be.
+
 ### Phase C — `Match vendor chipload`
 
 | | |
