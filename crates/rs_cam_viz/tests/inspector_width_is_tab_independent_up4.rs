@@ -246,11 +246,22 @@ struct RenderedFeedsPanel {
 /// vertical ScrollArea used by the app, then report whether any painted text
 /// starts to the left of its clip rectangle — the exact on-screen UR1 defect.
 fn render_feeds_panel(ctx: &egui::Context, state: &mut AppState) -> RenderedFeedsPanel {
+    render_feeds_panel_at(ctx, state, PANEL_WIDTH)
+}
+
+/// The same render at an arbitrary panel width. The Simulation workspace's
+/// right rail defaults to 240 points — narrower than the Toolpaths rail —
+/// so the Feeds tab must hold its content at BOTH widths.
+fn render_feeds_panel_at(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    width: f32,
+) -> RenderedFeedsPanel {
     let mut rendered = RenderedFeedsPanel::default();
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
         egui::Panel::right("ur1_toolpath_properties")
-            .default_size(PANEL_WIDTH)
-            .max_size(PANEL_MAX_WIDTH)
+            .default_size(width)
+            .max_size(width.max(PANEL_MAX_WIDTH))
             .resizable(true)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -385,6 +396,51 @@ fn real_warning_shaped_feeds_tab_stays_inside_its_panel_ur1() {
          off the inspector's left edge.",
         rendered.max_left_clip,
         rendered.requested_width,
+    );
+}
+
+#[test]
+fn real_warning_shaped_feeds_tab_fits_the_240_point_rail_ur4() {
+    // UR4 moved the canonical comparison into the inspector, and the
+    // Simulation workspace's right rail is 240 points — 40 narrower than
+    // the panel this file measured first. The modal-width compare grid
+    // painted past that rail's left edge, which read on screen as the
+    // viewport growing over the column. This arm renders the same real
+    // fixture at the rail's own width.
+    const SIMULATION_RAIL_WIDTH: f32 = 240.0;
+    let ctx = ctx();
+    ctx.memory_mut(|memory| memory.set_everything_is_visible(true));
+    let mut state = feeds_fixture();
+    let id = state.session.toolpath_configs()[0].id;
+
+    let _ = render_feeds_panel_at(&ctx, &mut state, SIMULATION_RAIL_WIDTH);
+    let rendered = render_feeds_panel_at(&ctx, &mut state, SIMULATION_RAIL_WIDTH);
+    assert!(
+        rendered.requested_width <= SIMULATION_RAIL_WIDTH + 0.5,
+        "the Feeds tab asked for {:.2} points inside a {SIMULATION_RAIL_WIDTH} point rail \
+         (panel maximum {PANEL_MAX_WIDTH}). The Simulation workspace's inspector draws at \
+         this width; content must fit, not overflow under the viewport.",
+        rendered.requested_width,
+    );
+    assert!(
+        rendered.max_left_clip <= 0.5,
+        "the Feeds tab painted text {:.2} points left of its panel clip at the \
+         {SIMULATION_RAIL_WIDTH} point Simulation rail; its content must not slide under \
+         the viewport.",
+        rendered.max_left_clip,
+    );
+    let result = state
+        .gui
+        .toolpath_rt
+        .get(&id)
+        .and_then(|runtime| runtime.feeds_result.as_ref())
+        .expect("the rail-width fixture must still calculate its recipe");
+    assert!(
+        result.warnings.iter().any(|warning| matches!(
+            warning,
+            rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor { .. }
+        )),
+        "the rail fixture lost its real rubbing-floor warning; the width changed the path"
     );
 }
 

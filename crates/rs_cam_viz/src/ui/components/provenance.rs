@@ -163,7 +163,9 @@ impl egui::Widget for ProvenanceBadge<'_> {
         } else {
             format!("{} {full}", self.kind.glyph())
         };
-        ui.label(egui::RichText::new(text).small().color(color))
+        // `wrap()`d, not a bare label: badges render inside narrow rails
+        // (the inspector context chip, UR4) and a bare label widens its host.
+        ui.add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap())
             .on_hover_text(format!("Source: {full}."))
     }
 }

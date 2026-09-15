@@ -132,93 +132,76 @@ pub(crate) fn draw_chipload_engaged_attestation(
 /// Feeds tab, so the old independent "How is this calculated?" button would
 /// create a second, competing expansion state.
 pub(crate) fn draw_provenance(ui: &mut egui::Ui, explain: &FeedsExplain) {
+    // Wrapped `label value` rows, not a two-column Grid: the Grid asked for
+    // its value column's natural width (a long observation id or scaling
+    // sentence) and overflowed the inspector rail.
+    let row = |ui: &mut egui::Ui, label: &str, value: String, value_color: egui::Color32| {
+        ui.horizontal_wrapped(|ui| {
+            ui.add(
+                egui::Label::new(egui::RichText::new(label).small().color(theme::TEXT_DIM)).wrap(),
+            );
+            ui.add(egui::Label::new(egui::RichText::new(value).small().color(value_color)).wrap());
+        });
+    };
     egui::Frame::group(ui.style()).show(ui, |ui| match &explain.matched_row {
-        Some(row) => {
-            egui::Grid::new("feeds_inspector_provenance")
-                .num_columns(2)
-                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                .min_row_height(crate::ui::tokens::ROW_DENSE)
-                .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Row").small().color(theme::TEXT_DIM));
-                    ui.label(egui::RichText::new(&row.observation_id).small());
-                    ui.end_row();
-                    ui.label(egui::RichText::new("Vendor").small().color(theme::TEXT_DIM));
-                    ui.label(egui::RichText::new(row.source_vendor.to_string()).small());
-                    ui.end_row();
-                    ui.label(
-                        egui::RichText::new("Calibrated for")
-                            .small()
-                            .color(theme::TEXT_DIM),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{:.2} mm tool, {} flute",
-                            row.row_diameter_mm, explain.flute_count
-                        ))
-                        .small(),
-                    );
-                    ui.end_row();
-                    ui.label(
-                        egui::RichText::new("Scaling")
-                            .small()
-                            .color(theme::TEXT_DIM),
-                    );
-                    let scaling_color = if row.is_extrapolated {
-                        theme::WARNING_MILD
+        Some(row_meta) => {
+            row(
+                ui,
+                "Row",
+                row_meta.observation_id.clone(),
+                crate::ui::tokens::TEXT_BODY,
+            );
+            row(
+                ui,
+                "Vendor",
+                row_meta.source_vendor.to_string(),
+                crate::ui::tokens::TEXT_BODY,
+            );
+            row(
+                ui,
+                "Calibrated for",
+                format!(
+                    "{:.2} mm tool, {} flute",
+                    row_meta.row_diameter_mm, explain.flute_count
+                ),
+                crate::ui::tokens::TEXT_BODY,
+            );
+            let scaling_color = if row_meta.is_extrapolated {
+                theme::WARNING_MILD
+            } else {
+                theme::SUCCESS
+            };
+            let scaling = if (row_meta.chipload_diameter_scale - 1.0).abs() < 1e-3
+                && (row_meta.chipload_hardness_scale - 1.0).abs() < 1e-3
+            {
+                "none (direct match)".to_owned()
+            } else {
+                format!(
+                    "diameter \u{00D7}{:.2} \u{00B7} hardness \u{00D7}{:.2}{}",
+                    row_meta.chipload_diameter_scale,
+                    row_meta.chipload_hardness_scale,
+                    if row_meta.is_extrapolated {
+                        " (approximate)"
                     } else {
-                        theme::SUCCESS
-                    };
-                    let scaling_label = if (row.chipload_diameter_scale - 1.0).abs() < 1e-3
-                        && (row.chipload_hardness_scale - 1.0).abs() < 1e-3
-                    {
-                        "none (direct match)".to_owned()
-                    } else {
-                        format!(
-                            "diameter ×{:.2} · hardness ×{:.2}{}",
-                            row.chipload_diameter_scale,
-                            row.chipload_hardness_scale,
-                            if row.is_extrapolated {
-                                " (approximate)"
-                            } else {
-                                ""
-                            }
-                        )
-                    };
-                    ui.label(
-                        egui::RichText::new(scaling_label)
-                            .small()
-                            .color(scaling_color),
-                    );
-                    ui.end_row();
-                    if let (Some(min), Some(max)) = (row.chip_load_min_mm, row.chip_load_max_mm) {
-                        ui.label(
-                            egui::RichText::new("Scaled band")
-                                .small()
-                                .color(theme::TEXT_DIM),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!("{min:.4}–{max:.4} mm/tooth")).small(),
-                        );
-                        ui.end_row();
+                        ""
                     }
-                    if let (Some(lo), Some(hi)) = (row.rpm_min, row.rpm_max) {
-                        ui.label(
-                            egui::RichText::new("Vendor RPM range")
-                                .small()
-                                .color(theme::TEXT_DIM),
-                        );
-                        ui.label(egui::RichText::new(format!("{lo:.0}–{hi:.0}")).small());
-                        ui.end_row();
-                    } else if let Some(nom) = row.rpm_nominal {
-                        ui.label(
-                            egui::RichText::new("Vendor RPM (nominal)")
-                                .small()
-                                .color(theme::TEXT_DIM),
-                        );
-                        ui.label(egui::RichText::new(format!("{nom:.0}")).small());
-                        ui.end_row();
-                    }
-                });
+                )
+            };
+            row(ui, "Scaling", scaling, scaling_color);
+            if let (Some(min), Some(max)) = (row_meta.chip_load_min_mm, row_meta.chip_load_max_mm)
+            {
+                row(
+                    ui,
+                    "Scaled band",
+                    format!("{min:.4}\u{2013}{max:.4} mm/tooth"),
+                    crate::ui::tokens::TEXT_BODY,
+                );
+            }
+            if let (Some(lo), Some(hi)) = (row_meta.rpm_min, row_meta.rpm_max) {
+                row(ui, "Vendor RPM range", format!("{lo:.0}\u{2013}{hi:.0}"), crate::ui::tokens::TEXT_BODY);
+            } else if let Some(nom) = row_meta.rpm_nominal {
+                row(ui, "Vendor RPM (nominal)", format!("{nom:.0}"), crate::ui::tokens::TEXT_BODY);
+            }
         }
         None => {
             ui.label(
@@ -464,111 +447,93 @@ pub(crate) fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain)
                 .strong()
                 .color(theme::TEXT_DIM),
         );
-        egui::Grid::new("feeds_modal_derates")
-            .num_columns(3)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                // Header
-                ui.label(
-                    egui::RichText::new("factor")
-                        .small()
-                        .color(theme::TEXT_DIM),
-                );
-                ui.label(
-                    egui::RichText::new("×")
-                        .small()
-                        .color(theme::TEXT_DIM),
-                );
-                ui.label(
-                    egui::RichText::new("note")
-                        .small()
-                        .color(theme::TEXT_DIM),
-                );
-                ui.end_row();
+        // The derate chain renders as WRAPPED rows: the old three-column
+        // Grid asked for its natural width — a note column with ~500 points
+        // of unwrapped text — and painted past the inspector rail. A row is a
+        // `factor × value` line with the note as a caption under it.
 
-                // Chip thinning is MEASURED, NOT APPLIED since 2026-08-19
-                // (G-CHIPTHIN-HALFFIX). It is still shown, because the
-                // geometric condition is real and an operator should see it —
-                // but it must not read as one of the multipliers that produced
-                // the feed, because it no longer is one. The old rows said
-                // "feed faster" and sat in the same column as the derates that
-                // do multiply; that wording is what a reader would have cited.
-                if d.observed_combined_chip_thinning > 1.001 {
-                    derate_row(
-                        ui,
-                        "chip-thinning (observed, NOT applied)",
-                        d.observed_combined_chip_thinning,
-                        "chip is thinner per pass at this stepover / DOC — reported only; \
-                         the vendor chipload column states no radial condition to correct from",
-                    );
-                }
-                derate_row(
-                    ui,
-                    "depth-tier feed derate",
-                    d.depth_tier,
-                    if d.depth_tier < 0.999 {
-                        "deep cut — slow feed to limit deflection"
-                    } else {
-                        "shallow / nominal depth"
-                    },
-                );
-                derate_row(
-                    ui,
-                    "L/D overhang",
-                    d.ld_overhang,
-                    if d.ld_overhang < 0.999 {
-                        "long tool — back off to limit deflection"
-                    } else {
-                        "stickout reasonable for tool diameter"
-                    },
-                );
-                derate_row(
-                    ui,
-                    "workholding rigidity",
-                    d.workholding,
-                    match d.workholding {
-                        x if x < 0.99 => "Low rigidity (tape / vacuum) — back off",
-                        x if x > 1.01 => "High rigidity (vise / bolted) — push up",
-                        _ => "Medium — no adjustment",
-                    },
-                );
-                if d.power_limit < 0.999 {
-                    derate_row(
-                        ui,
-                        "power limit",
-                        d.power_limit,
-                        "spindle can't deliver more power — feed reduced",
-                    );
-                }
-                if d.feed_clamp < 0.999 {
-                    derate_row(
-                        ui,
-                        "feed-cap clamp",
-                        d.feed_clamp,
-                        "hit machine.max_feed_mm_min",
-                    );
-                }
-                derate_row(
-                    ui,
-                    "machine safety factor",
-                    d.safety_factor,
-                    "extra margin so the recommendation is comfortably safe",
-                );
-                // Spindle speedup is the only ≥ 1.0 "derate" in the
-                // chain — it walks the constant-chipload line up the
-                // speed axis when SpindleStrategy::MaxSpeed is on.
-                // Hidden when at unity (the default MatchChart state)
-                // to avoid clutter on every recommendation.
-                if (d.spindle_speedup - 1.0).abs() > 1e-3 {
-                    derate_row(
-                        ui,
-                        "spindle speedup",
-                        d.spindle_speedup,
-                        "MaxSpeed policy — RPM lifted toward spindle ceiling, feed scaled to keep the commanded advance/tooth constant",
-                    );
-                }
-            });
+
+        // Chip thinning is MEASURED, NOT APPLIED since 2026-08-19
+        // (G-CHIPTHIN-HALFFIX). It is still shown, because the
+        // geometric condition is real and an operator should see it —
+        // but it must not read as one of the multipliers that produced
+        // the feed, because it no longer is one. The old rows said
+        // "feed faster" and sat in the same column as the derates that
+        // do multiply; that wording is what a reader would have cited.
+        if d.observed_combined_chip_thinning > 1.001 {
+            derate_row(
+                ui,
+                "chip-thinning (observed, NOT applied)",
+                d.observed_combined_chip_thinning,
+                "chip is thinner per pass at this stepover / DOC — reported only; \
+                 the vendor chipload column states no radial condition to correct from",
+            );
+        }
+        derate_row(
+            ui,
+            "depth-tier feed derate",
+            d.depth_tier,
+            if d.depth_tier < 0.999 {
+                "deep cut — slow feed to limit deflection"
+            } else {
+                "shallow / nominal depth"
+            },
+        );
+        derate_row(
+            ui,
+            "L/D overhang",
+            d.ld_overhang,
+            if d.ld_overhang < 0.999 {
+                "long tool — back off to limit deflection"
+            } else {
+                "stickout reasonable for tool diameter"
+            },
+        );
+        derate_row(
+            ui,
+            "workholding rigidity",
+            d.workholding,
+            match d.workholding {
+                x if x < 0.99 => "Low rigidity (tape / vacuum) — back off",
+                x if x > 1.01 => "High rigidity (vise / bolted) — push up",
+                _ => "Medium — no adjustment",
+            },
+        );
+        if d.power_limit < 0.999 {
+            derate_row(
+                ui,
+                "power limit",
+                d.power_limit,
+                "spindle can't deliver more power — feed reduced",
+            );
+        }
+        if d.feed_clamp < 0.999 {
+            derate_row(
+                ui,
+                "feed-cap clamp",
+                d.feed_clamp,
+                "hit machine.max_feed_mm_min",
+            );
+        }
+        derate_row(
+            ui,
+            "machine safety factor",
+            d.safety_factor,
+            "extra margin so the recommendation is comfortably safe",
+        );
+        // Spindle speedup is the only ≥ 1.0 "derate" in the
+        // chain — it walks the constant-chipload line up the
+        // speed axis when SpindleStrategy::MaxSpeed is on.
+        // Hidden when at unity (the default MatchChart state)
+        // to avoid clutter on every recommendation.
+        if (d.spindle_speedup - 1.0).abs() > 1e-3 {
+            derate_row(
+                ui,
+                "spindle speedup",
+                d.spindle_speedup,
+                "MaxSpeed policy — RPM lifted toward spindle ceiling, feed scaled to keep the commanded advance/tooth constant",
+            );
+        }
 
         ui.add_space(6.0);
 
@@ -635,13 +600,21 @@ fn derate_row(ui: &mut egui::Ui, label: &str, value: f64, note: &str) {
     } else {
         theme::TEXT_DIM
     };
-    ui.label(egui::RichText::new(label).small());
-    ui.label(
-        egui::RichText::new(format!("{value:.3}"))
-            .small()
-            .color(color)
-            .monospace(),
-    );
-    ui.label(egui::RichText::new(note).small().color(theme::TEXT_DIM));
-    ui.end_row();
+    ui.horizontal_wrapped(|ui| {
+        ui.add(egui::Label::new(egui::RichText::new(label).small().color(theme::TEXT_DIM)).wrap());
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("\u{00D7}{value:.3}"))
+                    .small()
+                    .color(color)
+                    .monospace(),
+            )
+            .wrap(),
+        );
+    });
+    ui.horizontal_wrapped(|ui| {
+        ui.add_space(12.0);
+        ui.add(egui::Label::new(egui::RichText::new(note).small().color(theme::TEXT_FAINT)).wrap());
+    });
+    ui.add_space(1.0);
 }

@@ -20,7 +20,7 @@ use super::shared::{
     tool_family_label,
 };
 use crate::state::AppState;
-use crate::ui::components::compare::{self, CompareRow};
+use crate::ui::components::compare;
 use crate::ui::components::{ProvKind, ProvenanceBadge};
 use crate::ui::{AppEvent, theme};
 
@@ -208,7 +208,14 @@ fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
         );
         match &explain.matched_row {
             Some(row) => {
-                ui.add(ProvenanceBadge::new(ProvKind::VendorLut).reference(&row.observation_id));
+                // Compact in the chip: the observation id is one unbreakable
+                // token wider than the rail; the hover keeps the full
+                // reference. UR1's rule: nothing widens the inspector.
+                ui.add(
+                    ProvenanceBadge::new(ProvKind::VendorLut)
+                        .reference(&row.observation_id)
+                        .compact(),
+                );
                 if row.is_extrapolated {
                     ui.add(
                         egui::Label::new(
@@ -243,82 +250,77 @@ fn draw_comparison_card(
     ui.add_space(4.0);
 
     egui::Frame::group(ui.style()).show(ui, |ui| {
-        egui::Grid::new("feeds_modal_compare")
-            .num_columns(5)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                // Header row
-                ui.label(egui::RichText::new("").small());
-                ui.label(
-                    egui::RichText::new("Current")
+        // UR4 moved this card from a 380-point modal column into the
+        // 240-point inspector rail. The old five-column Grid answered with
+        // its natural width and painted past the panel's left edge — the
+        // exact defect class UR1 banned. Every row is now a wrapped
+        // `current → recommended` line the rail can always hold.
+        ui.horizontal_wrapped(|ui| {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new("current → recommended · Δ vs current")
                         .small()
                         .color(theme::TEXT_DIM),
-                );
-                ui.label(
-                    egui::RichText::new("Recommended")
-                        .small()
-                        .color(theme::TEXT_DIM),
-                );
-                ui.label(egui::RichText::new("Δ").small().color(theme::TEXT_DIM));
-                ui.label(egui::RichText::new("").small());
-                ui.end_row();
+                )
+                .wrap(),
+            );
+        });
 
-                CompareRow::new(
-                    "RPM",
-                    current.spindle_rpm.map(f64::from),
-                    Some(explain.recommended.rpm),
-                    "",
-                    1.0,
-                )
-                .show(ui);
-                CompareRow::new(
-                    "Feed",
-                    Some(current.feed_rate_mm_min),
-                    Some(explain.recommended.feed_rate_mm_min),
-                    " mm/min",
-                    1.0,
-                )
-                .show(ui);
-                CompareRow::new(
-                    "Plunge",
-                    Some(current.plunge_rate_mm_min),
-                    Some(explain.recommended.plunge_rate_mm_min),
-                    " mm/min",
-                    1.0,
-                )
-                .show(ui);
-                // G-FEEDSLABEL (UX-R03-005): the recommended DOC / WOC are
-                // the RAW calculator values — `⚡ Apply all` passes them
-                // through `enforce_invariants`, which can lower them (the
-                // rigidity cap put 1.2 where this cell reads 4.2 on the R03
-                // pocket) — so the cell says so. The advance row prints
-                // feed ÷ (RPM × flutes) in BOTH columns; it used to print
-                // the pre-derate target chipload beside the current
-                // advance under a "Commanded" label.
-                CompareRow::new(
-                    "DOC",
-                    current.depth_per_pass,
-                    Some(explain.recommended.axial_depth_mm),
-                    " mm",
-                    0.01,
-                )
-                .recommended_note(CALCULATOR_NOTE)
-                .show(ui);
-                woc_row(ui, current, explain);
-                CompareRow::new(
-                    ADVANCE_ROW_LABEL,
-                    Some(current.chipload_mm()),
-                    advance_per_tooth_mm(
-                        explain.recommended.feed_rate_mm_min,
-                        explain.recommended.rpm,
-                        current.flute_count,
-                    ),
-                    " mm/tooth",
-                    0.0001,
-                )
-                .show(ui);
-            });
+        rail_row(
+            ui,
+            "RPM",
+            current.spindle_rpm.map(f64::from),
+            Some(explain.recommended.rpm),
+            "",
+            1.0,
+            None,
+        );
+        rail_row(
+            ui,
+            "Feed",
+            Some(current.feed_rate_mm_min),
+            Some(explain.recommended.feed_rate_mm_min),
+            " mm/min",
+            1.0,
+            None,
+        );
+        rail_row(
+            ui,
+            "Plunge",
+            Some(current.plunge_rate_mm_min),
+            Some(explain.recommended.plunge_rate_mm_min),
+            " mm/min",
+            1.0,
+            None,
+        );
+        // G-FEEDSLABEL (UX-R03-005): the recommended DOC / WOC are the RAW
+        // calculator values — `⚡ Apply all` passes them through
+        // `enforce_invariants`, which can lower them (the rigidity cap put
+        // 1.2 where this row reads 4.2 on the R03 pocket) — so the note says
+        // so. The advance row prints feed ÷ (RPM × flutes) in both columns.
+        rail_row(
+            ui,
+            "DOC",
+            current.depth_per_pass,
+            Some(explain.recommended.axial_depth_mm),
+            " mm",
+            0.01,
+            Some(CALCULATOR_NOTE),
+        );
+        woc_row(ui, current, explain);
+        rail_row(
+            ui,
+            ADVANCE_ROW_LABEL,
+            Some(current.chipload_mm()),
+            advance_per_tooth_mm(
+                explain.recommended.feed_rate_mm_min,
+                explain.recommended.rpm,
+                current.flute_count,
+            ),
+            " mm/tooth",
+            0.0001,
+            None,
+        );
 
         // S1 — scallop-driven stepover control (DropCutter only).
         if current.supports_scallop_override {
@@ -326,16 +328,118 @@ fn draw_comparison_card(
         }
 
         ui.add_space(4.0);
-        compare::power_bar(
+        rail_power_bar(
             ui,
             explain.recommended.power_kw,
             explain.recommended.available_power_kw,
         );
         ui.add_space(2.0);
-        compare::mrr_row(ui, explain.recommended.mrr_mm3_min);
+        rail_mrr_row(ui, explain.recommended.mrr_mm3_min);
 
         ui.add_space(6.0);
         draw_apply_column(ui, refusal, toolpath_id, events);
+    });
+}
+
+/// One `label current → recommended Δ` line, wrapped so the inspector rail
+/// can never be widened (or overflowed) by its content.
+fn rail_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    current: Option<f64>,
+    recommended: Option<f64>,
+    unit: &str,
+    precision: f64,
+    note: Option<&str>,
+) {
+    ui.horizontal_wrapped(|ui| {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(label)
+                    .small()
+                    .strong()
+                    .color(theme::TEXT_HEADING),
+            )
+            .wrap(),
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(compare::format_optional(current, unit, precision))
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new("\u{2192}")
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(compare::format_optional(recommended, unit, precision))
+                    .small()
+                    .color(theme::TEXT_STRONG),
+            )
+            .wrap(),
+        );
+        ui.add(egui::Label::new(compare::delta_tag(current, recommended)).wrap());
+    });
+    if let Some(note) = note {
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(12.0);
+            ui.add(
+                egui::Label::new(egui::RichText::new(note).small().color(theme::WARNING_MILD))
+                    .wrap(),
+            );
+        });
+    }
+    ui.add_space(2.0);
+}
+
+/// The rail's power gauge. The shared `power_bar` fixes a 160-point bar and
+/// overflows a 240-point column; this one shrinks with the panel.
+fn rail_power_bar(ui: &mut egui::Ui, power_kw: f64, available_kw: f64) {
+    let avail = available_kw.max(0.0001);
+    let frac = (power_kw / avail).clamp(0.0, 1.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.add(
+            egui::Label::new(egui::RichText::new("Power:").small().color(theme::TEXT_DIM)).wrap(),
+        );
+        let text = format!("{power_kw:.2} / {avail:.2} kW ({:.0} %)", frac * 100.0);
+        // Reserve the text first so the bar gets what is left, never more.
+        let text_width = ui
+            .painter()
+            .layout_no_wrap(
+                text.clone(),
+                egui::TextStyle::Small.resolve(ui.style()),
+                crate::ui::tokens::TEXT_BODY,
+            )
+            .size()
+            .x;
+        let bar_width = (ui.available_width() - text_width - 8.0).clamp(24.0, 120.0);
+        ui.add(
+            egui::ProgressBar::new(frac as f32)
+                .fill(compare::power_color(frac))
+                .desired_width(bar_width),
+        );
+        ui.add(egui::Label::new(egui::RichText::new(text).small()).wrap());
+    });
+}
+
+/// The rail's MRR readout, wrapped like its neighbours.
+fn rail_mrr_row(ui: &mut egui::Ui, mrr_mm3_min: f64) {
+    ui.horizontal_wrapped(|ui| {
+        ui.add(egui::Label::new(egui::RichText::new("MRR:").small().color(theme::TEXT_DIM)).wrap());
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("{mrr_mm3_min:.0} mm\u{00B3}/min")).small(),
+            )
+            .wrap(),
+        );
     });
 }
 
@@ -374,9 +478,15 @@ fn draw_apply_column(
         );
         return;
     }
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
+        // A-3's contract: the 'changes the cut' attribution sits on the
+        // button's FACE, not its hover — the operator must see it before
+        // clicking. In the 240-point rail that means the button wraps:
+        // `ui.button` would paint the full phrase past the panel edge.
+        let apply =
+            egui::Button::new("⚡ Apply all — changes the cut").wrap_mode(egui::TextWrapMode::Wrap);
         if ui
-            .button("⚡ Apply all — changes the cut")
+            .add(apply)
             .on_hover_text(
                 "Overwrite RPM, feed, and plunge (how fast) AND DOC/WOC (the cut) with \
                  the recommended values, after the safety clamps. \
@@ -398,15 +508,15 @@ fn draw_apply_column(
 fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
     let scallop_active = current.supports_scallop_override && current.scallop_height.is_some();
     if !scallop_active {
-        CompareRow::new(
+        rail_row(
+            ui,
             "WOC",
             current.stepover,
             Some(explain.recommended.radial_width_mm),
             " mm",
             0.01,
-        )
-        .recommended_note(CALCULATOR_NOTE)
-        .show(ui);
+            Some(CALCULATOR_NOTE),
+        );
         return;
     }
 
@@ -426,24 +536,45 @@ fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
             .to_owned(),
     };
 
-    ui.label(egui::RichText::new("WOC ⓢ").small().color(theme::TEXT_DIM))
-        .on_hover_text(&math);
-    ui.label(compare::format_optional(current.stepover, " mm", 0.01));
-    ui.label(
-        egui::RichText::new(format!("{derived:.2} mm (auto)"))
-            .small()
-            .color(theme::SUCCESS),
-    )
-    .on_hover_text(&math);
-    ui.label(compare::delta_tag(current.stepover, Some(derived)));
     // The scallop-derived variant of the per-field WOC apply (census row M6)
     // was deleted with the other five at Checkpoint I-1: it wrote
     // `explain.recommended.radial_width_mm` raw, so it skipped
     // `clamp_stepover_to_diameter` and the runtime back-off along with
-    // everything else. The derived value is still *shown* — reading it is the
-    // row's job — and `⚡ Apply all` writes the clamped form of it.
-    ui.label("");
-    ui.end_row();
+    // everything else. The derived value is still *shown* — reading it is
+    // the row's job — and `⚡ Apply all` writes the clamped form of it.
+    ui.horizontal_wrapped(|ui| {
+        ui.add(
+            egui::Label::new(egui::RichText::new("WOC ⓢ").small().color(theme::TEXT_DIM)).wrap(),
+        )
+        .on_hover_text(&math);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(compare::format_optional(current.stepover, " mm", 0.01))
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new("\u{2192}")
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("{derived:.2} mm (auto)"))
+                    .small()
+                    .color(theme::SUCCESS),
+            )
+            .wrap(),
+        )
+        .on_hover_text(&math);
+        ui.add(egui::Label::new(compare::delta_tag(current.stepover, Some(derived))).wrap());
+    });
+    ui.add_space(2.0);
 }
 
 /// S1 — scallop-driven-stepover control for DropCutter. A checkbox
@@ -458,7 +589,9 @@ fn draw_scallop_control(
 ) {
     ui.add_space(4.0);
     let tip_r = ball_tip_radius(explain);
-    ui.horizontal(|ui| {
+    // `horizontal_wrapped` so the DragValue and the derived readout wrap to
+    // their own line inside the 240-point rail instead of overflowing it.
+    ui.horizontal_wrapped(|ui| {
         let mut enabled = current.scallop_height.is_some();
         if ui
             .checkbox(&mut enabled, "Scallop-driven stepover")

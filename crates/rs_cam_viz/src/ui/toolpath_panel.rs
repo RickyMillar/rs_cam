@@ -10,7 +10,7 @@ use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::state::viewport::ViewportState;
 use crate::ui::theme;
 use crate::ui::tokens;
-use crate::ui_command::{NoArgs, UiCommand};
+use crate::ui_command::UiCommand;
 
 /// Minimal snapshot of a `ToolpathConfig` with just the fields the card reads.
 /// Cloning this releases the `state.session` borrow so `state.viewport` can be

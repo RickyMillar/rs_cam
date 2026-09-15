@@ -2704,115 +2704,126 @@ fn draw_vendor_lut_viewer(
             let header_font = egui::FontId::proportional(9.0);
             let body_font = egui::FontId::proportional(9.0);
 
-            egui::Grid::new("vendor_lut_table")
-                .num_columns(7)
-                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                .min_row_height(crate::ui::tokens::ROW_DENSE)
-                .striped(true)
+            // A seven-column data table cannot fit the inspector rail, and
+            // UR1's rule forbids it from widening the panel: wrap it in a
+            // horizontal ScrollArea so the table scrolls inside the rail
+            // instead of being cut off at the panel edge.
+            egui::ScrollArea::horizontal()
+                .id_salt("vendor_lut_table_scroll")
+                .auto_shrink([false, false])
+                .max_width(ui.available_width())
                 .show(ui, |ui| {
-                    // Column headers
-                    for label in [
-                        "Material", "Dia (mm)", "Flutes", "RPM", "Chipload", "DOC (mm)", "Grade",
-                    ] {
-                        ui.label(
-                            egui::RichText::new(label)
-                                .font(header_font.clone())
-                                .strong()
-                                .color(dim),
-                        );
-                    }
-                    ui.end_row();
-
-                    for obs in &matching {
-                        // Highlight rows matching the current tool diameter (within 0.1mm).
-                        // Rows with `diameter_mm = None` (v-bit charts, diameter-window
-                        // articles) are never highlighted as exact-diameter matches —
-                        // their match criterion is angle / material, not diameter.
-                        let is_diameter_match = match obs.diameter_mm {
-                            Some(d) => (d - tool_diameter).abs() < 0.1,
-                            None => false,
-                        };
-                        let row_color = if is_diameter_match { highlight } else { val };
-
-                        // Material
-                        ui.label(
-                            egui::RichText::new(material_family_label(obs.material_family))
-                                .font(body_font.clone())
-                                .color(row_color),
-                        );
-
-                        // Diameter (— if the row has no diameter anchor)
-                        let diameter_text = match obs.diameter_mm {
-                            Some(d) => format!("{:.1}", d),
-                            None => "—".to_owned(),
-                        };
-                        ui.label(
-                            egui::RichText::new(diameter_text)
-                                .font(body_font.clone())
-                                .color(row_color),
-                        );
-
-                        // Flutes
-                        ui.label(
-                            egui::RichText::new(format!("{}", obs.flute_count))
-                                .font(body_font.clone())
-                                .color(row_color),
-                        );
-
-                        // RPM range
-                        let rpm_text = match (obs.rpm_min, obs.rpm_max) {
-                            (Some(lo), Some(hi)) => format!("{lo:.0}-{hi:.0}"),
-                            (Some(lo), None) => format!("{lo:.0}"),
-                            (None, Some(hi)) => format!("{hi:.0}"),
-                            (None, None) => {
-                                if let Some(nom) = obs.rpm_nominal {
-                                    format!("{nom:.0}")
-                                } else {
-                                    "-".to_owned()
-                                }
+                    egui::Grid::new("vendor_lut_table")
+                        .num_columns(7)
+                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+                        .min_row_height(crate::ui::tokens::ROW_DENSE)
+                        .striped(true)
+                        .show(ui, |ui| {
+                            // Column headers
+                            for label in [
+                                "Material", "Dia (mm)", "Flutes", "RPM", "Chipload", "DOC (mm)",
+                                "Grade",
+                            ] {
+                                ui.label(
+                                    egui::RichText::new(label)
+                                        .font(header_font.clone())
+                                        .strong()
+                                        .color(dim),
+                                );
                             }
-                        };
-                        ui.label(
-                            egui::RichText::new(rpm_text)
-                                .font(body_font.clone())
-                                .color(row_color),
-                        );
+                            ui.end_row();
 
-                        // Chipload range (mm/tooth)
-                        let chip_text = match (obs.chipload_min_mm_tooth, obs.chipload_max_mm_tooth)
-                        {
-                            (Some(lo), Some(hi)) => format!("{lo:.3}-{hi:.3}"),
-                            (Some(lo), None) => format!("{lo:.3}"),
-                            (None, Some(hi)) => format!("{hi:.3}"),
-                            (None, None) => "-".to_owned(),
-                        };
-                        ui.label(
-                            egui::RichText::new(chip_text)
-                                .font(body_font.clone())
-                                .color(row_color),
-                        );
+                            for obs in &matching {
+                                // Highlight rows matching the current tool diameter (within 0.1mm).
+                                // Rows with `diameter_mm = None` (v-bit charts, diameter-window
+                                // articles) are never highlighted as exact-diameter matches —
+                                // their match criterion is angle / material, not diameter.
+                                let is_diameter_match = match obs.diameter_mm {
+                                    Some(d) => (d - tool_diameter).abs() < 0.1,
+                                    None => false,
+                                };
+                                let row_color = if is_diameter_match { highlight } else { val };
 
-                        // DOC range (ap)
-                        let doc_text = match (obs.ap_min_mm, obs.ap_max_mm) {
-                            (Some(lo), Some(hi)) => format!("{lo:.1}-{hi:.1}"),
-                            (Some(v), None) | (None, Some(v)) => format!("{v:.1}"),
-                            (None, None) => "-".to_owned(),
-                        };
-                        ui.label(
-                            egui::RichText::new(doc_text)
-                                .font(body_font.clone())
-                                .color(row_color),
-                        );
+                                // Material
+                                ui.label(
+                                    egui::RichText::new(material_family_label(obs.material_family))
+                                        .font(body_font.clone())
+                                        .color(row_color),
+                                );
 
-                        // Evidence grade
-                        ui.label(
-                            egui::RichText::new(evidence_grade_label(obs.evidence_grade))
-                                .font(body_font.clone())
-                                .color(row_color),
-                        );
+                                // Diameter (— if the row has no diameter anchor)
+                                let diameter_text = match obs.diameter_mm {
+                                    Some(d) => format!("{:.1}", d),
+                                    None => "—".to_owned(),
+                                };
+                                ui.label(
+                                    egui::RichText::new(diameter_text)
+                                        .font(body_font.clone())
+                                        .color(row_color),
+                                );
 
-                        ui.end_row();
-                    }
+                                // Flutes
+                                ui.label(
+                                    egui::RichText::new(format!("{}", obs.flute_count))
+                                        .font(body_font.clone())
+                                        .color(row_color),
+                                );
+
+                                // RPM range
+                                let rpm_text = match (obs.rpm_min, obs.rpm_max) {
+                                    (Some(lo), Some(hi)) => format!("{lo:.0}-{hi:.0}"),
+                                    (Some(lo), None) => format!("{lo:.0}"),
+                                    (None, Some(hi)) => format!("{hi:.0}"),
+                                    (None, None) => {
+                                        if let Some(nom) = obs.rpm_nominal {
+                                            format!("{nom:.0}")
+                                        } else {
+                                            "-".to_owned()
+                                        }
+                                    }
+                                };
+                                ui.label(
+                                    egui::RichText::new(rpm_text)
+                                        .font(body_font.clone())
+                                        .color(row_color),
+                                );
+
+                                // Chipload range (mm/tooth)
+                                let chip_text =
+                                    match (obs.chipload_min_mm_tooth, obs.chipload_max_mm_tooth) {
+                                        (Some(lo), Some(hi)) => format!("{lo:.3}-{hi:.3}"),
+                                        (Some(lo), None) => format!("{lo:.3}"),
+                                        (None, Some(hi)) => format!("{hi:.3}"),
+                                        (None, None) => "-".to_owned(),
+                                    };
+                                ui.label(
+                                    egui::RichText::new(chip_text)
+                                        .font(body_font.clone())
+                                        .color(row_color),
+                                );
+
+                                // DOC range (ap)
+                                let doc_text = match (obs.ap_min_mm, obs.ap_max_mm) {
+                                    (Some(lo), Some(hi)) => format!("{lo:.1}-{hi:.1}"),
+                                    (Some(v), None) | (None, Some(v)) => format!("{v:.1}"),
+                                    (None, None) => "-".to_owned(),
+                                };
+                                ui.label(
+                                    egui::RichText::new(doc_text)
+                                        .font(body_font.clone())
+                                        .color(row_color),
+                                );
+
+                                // Evidence grade
+                                ui.label(
+                                    egui::RichText::new(evidence_grade_label(obs.evidence_grade))
+                                        .font(body_font.clone())
+                                        .color(row_color),
+                                );
+
+                                ui.end_row();
+                            }
+                        });
                 });
         });
 }
@@ -3435,7 +3446,12 @@ fn confidence_chip_label(c: rs_cam_core::diagnostics::Confidence) -> &'static st
 }
 
 fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabBadges) {
-    ui.horizontal(|ui| {
+    // `horizontal_wrapped`: the five tabs' natural width (~350 points) exceeds
+    // the Simulation workspace's 240-point rail, and a plain horizontal row
+    // would paint the last tabs past the panel edge (cut off, exactly the
+    // defect UR1 bans). Wrapping drops the tail tabs to a second row in a
+    // narrow rail instead.
+    ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         for &tab in ToolpathTab::ALL {
             let is_active = *active == tab;

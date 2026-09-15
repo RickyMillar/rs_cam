@@ -71,7 +71,9 @@ pub fn power_bar(ui: &mut egui::Ui, power_kw: f64, available_kw: f64) {
     });
 }
 
-fn power_color(frac: f64) -> Color32 {
+/// Colour for a power fraction, shared by the wide rollup bar and the rail's
+/// shrinking bar so both ramp identically.
+pub fn power_color(frac: f64) -> Color32 {
     if frac > 0.9 {
         theme::ERROR
     } else if frac > 0.7 {
