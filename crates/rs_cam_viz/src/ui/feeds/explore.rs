@@ -29,6 +29,8 @@
 
 use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points, Polygon};
 use rs_cam_core::feeds::FeedsExplain;
+use rs_cam_core::feeds::efficiency::CutEfficiency;
+use rs_cam_core::feeds::suggest::FeedsPreview;
 
 use super::shared::{CurrentValues, chart, draw_machine_envelope, vendor_band, wash};
 use crate::state::AppState;
@@ -42,6 +44,16 @@ use crate::ui_command::UiCommand;
 /// full-height wash, both competing with the vendor band for the same
 /// pixels.
 pub(crate) const AXIS_MARK_WIDTH: f32 = 4.0;
+
+/// The alpha the chipload corridor's two wedges are washed at.
+///
+/// The rubbing floor and the deflection ceiling ARE verdicts — below one the
+/// tool burnishes instead of cutting, above the other tooth force deflects
+/// or chips it — so they take the machine wall's hue rather than a data
+/// scale, for the reason `DESIGN_SPEC.md` §2.6 makes the envelope the one
+/// exception. One step lighter than the wall's own 35, because a limit the
+/// machine cannot pass is the harder stop of the two.
+const CORRIDOR_ALPHA: u8 = 22;
 
 pub(crate) fn draw_spindle_strategy_row(
     ui: &mut egui::Ui,
@@ -129,15 +141,49 @@ pub(crate) fn draw_modal_body(
     let Some(current) = super::compare::read_current_values(state, toolpath_id) else {
         return;
     };
+    let efficiency = read_cut_efficiency(state, toolpath_id, &preview);
     draw_chart_c(
         ui,
         &current,
-        preview.explain(),
-        preview.refusal(),
+        &preview,
+        efficiency.as_ref(),
         toolpath_id,
         modal,
         events,
     );
+}
+
+/// The core's efficiency answer for the recommended operating point, or
+/// `None` when the material carries no primary-source cutting coefficient.
+///
+/// The chart does not compute the corridor. `feeds::efficiency` owns both
+/// bounds, so the nomogram and the inspector's verdict row cannot disagree
+/// about where the floor and the ceiling are — the rule in
+/// `crates/rs_cam_viz/CLAUDE.md`: *"do not recompute a narrower stale answer
+/// in the UI"*.
+fn read_cut_efficiency(
+    state: &AppState,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    preview: &FeedsPreview,
+) -> Option<CutEfficiency> {
+    let tc = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.id == toolpath_id)?;
+    let tool = state
+        .session
+        .tools()
+        .iter()
+        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
+    let stock = state.session.stock_config();
+    rs_cam_core::feeds::efficiency::cut_efficiency(
+        &tc.operation,
+        tool,
+        &stock.material,
+        state.session.machine(),
+        preview.recommended(),
+    )
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -229,15 +275,104 @@ fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
     .on_hover_text(hover);
 }
 
+/// The chipload corridor, resolved against this chart's own axes.
+///
+/// The vendor band says where the vendor tested. The corridor says where the
+/// CUT is physical: below the rubbing floor the tool burnishes instead of
+/// cutting, above the deflection ceiling tooth force deflects or chips it.
+/// Both bounds are constant-chipload rays, so both are wedges of the band's
+/// own shape.
+///
+/// The floor always has a place on the chart, because its ray leaves the
+/// origin. The ceiling does not, and holding that difference is the whole
+/// reason this type exists rather than two bare `f64`s.
+#[derive(Debug, Clone, Copy)]
+struct Corridor {
+    /// Advance per tooth (mm) below which the tool burnishes.
+    floor_mm: f64,
+    ceiling: Ceiling,
+}
+
+/// Where the deflection ceiling sits relative to the drawn chart.
+#[derive(Debug, Clone, Copy)]
+enum Ceiling {
+    /// The deflection model refuses for this tool — no stickout, no axial
+    /// DOC, no lateral engagement, or an edge force already over the budget.
+    NotModelled,
+    /// Modelled, and past the top of the plot. **Nothing is drawn.**
+    ///
+    /// This is the ORDINARY case, and it is not an error. Measured on the
+    /// reference fixture (6 mm two-flute flat, 4.20 DOC, 2.10 WOC, generic
+    /// softwood) the ceiling is 9.36 mm/tooth against a chart that draws
+    /// 0.1176 mm/tooth at most — about eighty times off scale. A stubby
+    /// carbide cutter in wood is not deflection-limited; the binding
+    /// constraints are the feed cap, the rubbing floor and rigidity.
+    ///
+    /// A wedge clamped to the top edge would read as *"you are near the
+    /// force limit"*, false by two orders of magnitude. That is
+    /// absence-rendered-as-a-reading, the failure this window has already
+    /// shipped once — a readout that printed `37891 RPM · BURN risk` for a
+    /// pointer that was not over the chart. So the wedge is absent and
+    /// `Sources` names the number and says it is off scale.
+    OffScale {
+        ceiling_mm: f64,
+        /// The highest advance per tooth this chart can draw, for the
+        /// comparison `Sources` prints.
+        chart_top_mm: f64,
+    },
+    /// Modelled and inside the plot's range, so the upper wedge IS drawn.
+    /// Compliance rises with the cube of stickout, so a long or a thin tool
+    /// brings the ceiling down onto the chart.
+    OnChart { ceiling_mm: f64 },
+}
+
+impl Corridor {
+    /// Resolve the corridor against the plot's feed axis.
+    ///
+    /// A constant advance per tooth is a RAY through the origin, not a
+    /// height, so "inside the y-range" has to be asked at one RPM. It is
+    /// asked at the RPM the recommendation sits at, which is the RPM the
+    /// operator is being shown, and the question is put in the chart's own
+    /// unit: the ceiling against the highest advance per tooth the plot can
+    /// draw, `feed_axis_max / (rpm · flutes)`.
+    ///
+    /// A non-positive RPM or flute count leaves that quantity undefined, and
+    /// an undefined comparison abstains: the ceiling is reported off scale
+    /// and no wedge is drawn.
+    fn resolve(efficiency: &CutEfficiency, rpm: f64, flutes: f64, feed_axis_max: f64) -> Self {
+        let chart_top_mm = if rpm > 0.0 && flutes > 0.0 {
+            feed_axis_max / (rpm * flutes)
+        } else {
+            0.0
+        };
+        let ceiling = match efficiency.deflection_ceiling_mm {
+            None => Ceiling::NotModelled,
+            Some(ceiling_mm) if ceiling_mm.is_finite() && ceiling_mm <= chart_top_mm => {
+                Ceiling::OnChart { ceiling_mm }
+            }
+            Some(ceiling_mm) => Ceiling::OffScale {
+                ceiling_mm,
+                chart_top_mm,
+            },
+        };
+        Self {
+            floor_mm: efficiency.rubbing_floor_mm,
+            ceiling,
+        }
+    }
+}
+
 pub(crate) fn draw_chart_c(
     ui: &mut egui::Ui,
     current: &CurrentValues,
-    explain: &FeedsExplain,
-    refusal: Option<&rs_cam_core::feeds::FeedsError>,
+    preview: &FeedsPreview,
+    efficiency: Option<&CutEfficiency>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     modal: &crate::state::FeedsModalState,
     events: &mut Vec<AppEvent>,
 ) {
+    let explain = preview.explain();
+    let refusal = preview.refusal();
     ui.label(
         egui::RichText::new("Feed vs RPM (drag the red point to explore)")
             .strong()
@@ -252,6 +387,12 @@ pub(crate) fn draw_chart_c(
     // wall is visible.
     let rpm_axis_max = env.spindle_max_rpm * 1.15;
     let feed_axis_max = env.max_feed_mm_min * 1.05;
+
+    // The corridor is resolved here, where the axes are known, and nowhere
+    // else: whether the deflection ceiling has a place on this chart is a
+    // question about this chart.
+    let corridor = efficiency
+        .map(|eff| Corridor::resolve(eff, explain.recommended.rpm, flutes, feed_axis_max));
 
     // Vendor band — three iso-chipload diagonals (min, mid, max).
     let band = explain.matched_row.as_ref().and_then(|row| {
@@ -289,6 +430,53 @@ pub(crate) fn draw_chart_c(
         .allow_zoom(false)
         .allow_scroll(false)
         .show(ui, |plot_ui| {
+            // 0. The corridor: the two bounds that turn the vendor band into
+            //    a place the cut can live. They are drawn in the machine
+            //    wall's idiom — a fill, no stroke, no floating label — and
+            //    they add NO legend row. `Sources` carries both numbers.
+            if let Some(corridor) = corridor {
+                if corridor.floor_mm.is_finite() && corridor.floor_mm > 0.0 {
+                    plot_ui.polygon(
+                        Polygon::new(
+                            "",
+                            wedge_polygon(
+                                0.0,
+                                corridor.floor_mm,
+                                env.spindle_max_rpm,
+                                flutes,
+                                env.max_feed_mm_min,
+                            ),
+                        )
+                        .fill_color(wash(tokens::DANGER, CORRIDOR_ALPHA))
+                        .stroke(egui::Stroke::NONE)
+                        .name(format!(
+                            "Below the rubbing floor ({:.4} mm/tooth)",
+                            corridor.floor_mm
+                        )),
+                    );
+                }
+                // The upper wedge is drawn ONLY when the ceiling lands
+                // inside the plot. It is never clamped to the top edge —
+                // see [`Ceiling::OffScale`].
+                if let Ceiling::OnChart { ceiling_mm } = corridor.ceiling {
+                    plot_ui.polygon(
+                        Polygon::new(
+                            "",
+                            above_iso_line_polygon(
+                                ceiling_mm,
+                                env.spindle_max_rpm,
+                                flutes,
+                                env.max_feed_mm_min,
+                            ),
+                        )
+                        .fill_color(wash(tokens::DANGER, CORRIDOR_ALPHA))
+                        .stroke(egui::Stroke::NONE)
+                        .name(format!(
+                            "Past the deflection ceiling ({ceiling_mm:.4} mm/tooth)"
+                        )),
+                    );
+                }
+            }
             // 1. Band wedge polygon — clipped at machine RPM cap and
             //    feed cap so the band visually stops at the wall.
             // §2.6 rule 2: the vendor band is a RANGE, not a verdict. It
@@ -518,7 +706,7 @@ pub(crate) fn draw_chart_c(
     // Band legend below the chart — colour swatch + numeric range for
     // every overlay on the plot. This is the single best lever for
     // "what does the green/yellow/blue/red mean".
-    draw_chart_c_legend(ui, current, explain);
+    draw_chart_c_legend(ui, current, explain, corridor.as_ref());
 
     // Click inside the plot sets the explore point. Egui_plot only
     // surfaces the pointer coordinate while the response is hovered;
@@ -544,7 +732,16 @@ pub(crate) fn draw_chart_c(
 }
 
 /// The legend under the nomogram: one row per mark, then `Sources`.
-fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
+///
+/// The corridor adds NO row here. It is two regions in the machine wall's
+/// own idiom, and the wall has no row either; where those numbers came from
+/// is a `Sources` question.
+fn draw_chart_c_legend(
+    ui: &mut egui::Ui,
+    current: &CurrentValues,
+    explain: &FeedsExplain,
+    corridor: Option<&Corridor>,
+) {
     let band = vendor_band(explain);
     let mut entries: Vec<LegendEntry> = Vec::new();
 
@@ -611,7 +808,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         for entry in &entries {
             legend_row(ui, entry);
         }
-        draw_sources_row(ui, explain);
+        draw_sources_row(ui, explain, corridor);
     });
 }
 
@@ -625,7 +822,7 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
 /// They are the machine's own limits, and naming them here puts them with
 /// the rest of the provenance rather than spending two rows on a colour that
 /// already reads as "do not go here".
-fn draw_sources_row(ui: &mut egui::Ui, explain: &FeedsExplain) {
+fn draw_sources_row(ui: &mut egui::Ui, explain: &FeedsExplain, corridor: Option<&Corridor>) {
     let env = &explain.machine;
     let mut hover = String::new();
     match &explain.matched_row {
@@ -652,6 +849,7 @@ fn draw_sources_row(ui: &mut egui::Ui, explain: &FeedsExplain) {
         )),
         None => hover.push_str("Material hardness: not published for this material."),
     }
+    push_corridor_clauses(&mut hover, corridor);
     ui.add(
         egui::Label::new(
             egui::RichText::new(format!("Sources {}", tokens::GLYPH_DETAIL))
@@ -661,6 +859,47 @@ fn draw_sources_row(ui: &mut egui::Ui, explain: &FeedsExplain) {
         .wrap(),
     )
     .on_hover_text(hover);
+}
+
+/// The corridor's two clauses on the `Sources` hover.
+///
+/// Every branch says something. The ceiling in particular is named even when
+/// it is not drawn, because "the upper wedge is missing" and "the tool is
+/// nowhere near its force limit" are the same fact, and the operator can
+/// only read the second one here.
+fn push_corridor_clauses(hover: &mut String, corridor: Option<&Corridor>) {
+    let Some(corridor) = corridor else {
+        hover.push_str(
+            "\nChipload corridor: not modelled. This material carries no \
+             primary-source cutting coefficient, so neither the rubbing \
+             floor nor the deflection ceiling is drawn.",
+        );
+        return;
+    };
+    hover.push_str(&format!(
+        "\nRubbing floor: {:.4} mm/tooth, from the vendor band. Below it the \
+         tool burnishes instead of cutting.",
+        corridor.floor_mm
+    ));
+    match corridor.ceiling {
+        Ceiling::NotModelled => hover.push_str(
+            "\nDeflection ceiling: not modelled for this tool, so the upper \
+             bound is not drawn.",
+        ),
+        Ceiling::OffScale {
+            ceiling_mm,
+            chart_top_mm,
+        } => hover.push_str(&format!(
+            "\nDeflection ceiling: {ceiling_mm:.2} mm/tooth, off the top of \
+             this chart — it draws {chart_top_mm:.4} mm/tooth at most. This \
+             tool is not deflection-limited, so the upper bound is not drawn."
+        )),
+        Ceiling::OnChart { ceiling_mm } => hover.push_str(&format!(
+            "\nDeflection ceiling: {ceiling_mm:.4} mm/tooth, from tool \
+             compliance at this stickout and depth. Above it tooth force \
+             deflects or chips the cutter."
+        )),
+    }
 }
 
 /// One legend line: `swatch · label · value`.
@@ -790,6 +1029,29 @@ fn wedge_polygon(
     // Stitch into a polygon: low-line forward, high-line reversed.
     let mut pts: Vec<[f64; 2]> = lo_line;
     pts.extend(hi_line.into_iter().rev());
+    PlotPoints::from(pts)
+}
+
+/// The region ABOVE one iso-chipload ray, clipped to the same extents.
+///
+/// [`wedge_polygon`] bounds a band BETWEEN two chiploads. The deflection
+/// ceiling has no upper partner — everything above it is out — so the ray is
+/// clipped the same way and the chart's own top-left corner closes the
+/// polygon.
+fn above_iso_line_polygon(
+    cl: f64,
+    rpm_max: f64,
+    flutes: f64,
+    feed_cap: f64,
+) -> PlotPoints<'static> {
+    let mut pts = clip_iso_line(cl, rpm_max, flutes, feed_cap);
+    // `clip_iso_line` already ends at the feed cap when the slope binds
+    // first; when the RPM cap binds first, the right-hand corner is still
+    // needed to close the region against the top of the chart.
+    if pts.last().is_some_and(|[_, feed]| *feed < feed_cap) {
+        pts.push([rpm_max, feed_cap]);
+    }
+    pts.push([0.0, feed_cap]);
     PlotPoints::from(pts)
 }
 
