@@ -39,7 +39,7 @@
 //! rendered surfaces only where a vendor band is being named, because
 //! that is the vendors' own column heading — see [`VendorChiploadBand`].
 //!
-//! The stage-labelled record in [`crate::feeds::explanation`] is the
+//! The stage-labelled record in [`crate::feeds::feed_explanation`] is the
 //! prose sibling of this module: it explains one gate observation in
 //! stages, this types the values so two stages cannot be silently
 //! swapped. `ADVANCE_PER_TOOTH` there and [`AdvancePerToothMm`] here name

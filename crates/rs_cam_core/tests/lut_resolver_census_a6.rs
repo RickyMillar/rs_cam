@@ -6,7 +6,7 @@
 //! | consumer | entry point | site |
 //! |---|---|---|
 //! | Suggest / feeds calculator | [`find_best_row_for_geometry`] | `feeds/mod.rs:1002` |
-//! | Suggest's own explanation | [`find_best_row_for_geometry`] | `feeds/explain.rs:177` |
+//! | Suggest's own explanation | [`find_best_row_for_geometry`] | `feeds/explain_payload.rs:115` |
 //! | post-sim chipload gate, optimizer context, viewport envelope map | [`find_best_chip_envelope_row`] | `tool_load/chipload.rs:141` |
 //!
 //! `find_best_chip_envelope_row` is the same scorer with one extra

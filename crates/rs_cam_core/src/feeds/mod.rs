@@ -16,8 +16,8 @@
 //! 10. Collect warnings
 
 pub mod cutter_constraints;
-pub mod explain;
-pub mod explanation;
+pub mod explain_payload;
+pub mod feed_explanation;
 pub mod force;
 pub mod geometry;
 pub mod geometry_class;
@@ -30,8 +30,8 @@ pub mod suggest;
 pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
-pub use explain::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
-pub use explanation::{
+pub use explain_payload::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
+pub use feed_explanation::{
     ADVANCE_PER_TOOTH, AchievedFeedStage, ClampReason, CommandedStage, FeedExplanation,
     GateObservationStage, LutBandStage, ObservedStatistic,
 };

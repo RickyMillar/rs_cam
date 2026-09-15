@@ -1,18 +1,22 @@
+//! **The UI data contract.** Holds [`FeedsExplain`]. For the
+//! stage-labelled feed record `FeedExplanation`, see
+//! [`super::feed_explanation`].
+//!
 //! Feeds-and-speeds explanation payload — bundles everything the
-//! UI needs to render the redesigned Feeds & Speeds modal:
+//! UI needs to render the Feeds & Speeds surfaces:
 //!
 //! - the recommended values (delegates to [`super::calculate`])
 //! - the matched LUT row, if any, with scaling factors
-//! - sibling vendor rows for the diameter and hardness charts
+//! - the echoed query, tool geometry and hardness coordinates
 //! - the machine envelope (caps for the feed-RPM nomogram)
+//!
+//! The payload also carried sibling vendor rows until 2026-09-16. They
+//! fed the diameter and hardness charts only, and those charts are gone.
 //!
 //! The UI stays presentation-only; this struct is the data contract
 //! between core and the modal. Build with [`explain`].
 
-use super::vendor_lookup::{
-    LookupQuery, MatchedRow, enumerate_matching_rows, find_best_row_for_geometry,
-};
-use super::vendor_lut::VendorLut;
+use super::vendor_lookup::{LookupQuery, MatchedRow, find_best_row_for_geometry};
 use super::{FeedsInput, FeedsResult, calculate, vendor_normalize};
 use crate::machine::{MachineProfile, PowerModel};
 
@@ -50,7 +54,7 @@ impl MachineEnvelope {
 ///
 /// Computed once per recalculation. The UI reads from this and the
 /// caller's `OperationConfig` (current values) to draw the comparison
-/// card, the three charts, and the provenance disclosure.
+/// card, the feed-RPM nomogram, and the provenance disclosure.
 #[derive(Debug, Clone)]
 pub struct FeedsExplain {
     /// Recommended values (RPM, feed, plunge, DOC, WOC, chipload, power, MRR, warnings).
@@ -61,10 +65,6 @@ pub struct FeedsExplain {
     /// The matched LUT row (None when no row passed the must-match
     /// filters and the calc fell through to the empirical formula).
     pub matched_row: Option<MatchedRow>,
-    /// Sibling rows in the same `(tool_family, op, pass_role)` cohort —
-    /// every diameter / material combo we have data for. Feeds both
-    /// Chart A (vs diameter) and Chart B (vs hardness).
-    pub sibling_rows: Vec<MatchedRow>,
     /// Tool diameter (mm). Echoed so charts can mark "your tool" without
     /// reaching back into the input.
     pub tool_diameter_mm: f64,
@@ -95,75 +95,11 @@ impl FeedsExplain {
             .as_ref()
             .is_some_and(|row| row.is_extrapolated)
     }
-
-    /// Subset of sibling rows that share the query's material, sorted
-    /// by ascending diameter. Used by Chart A (chipload vs diameter).
-    pub fn rows_by_diameter(&self) -> Vec<&MatchedRow> {
-        let mut rows: Vec<&MatchedRow> = self
-            .sibling_rows
-            .iter()
-            .filter(|row| {
-                // Filter to rows whose source observation matches our
-                // query's material family. We don't carry the obs back
-                // through MatchedRow, so we use hardness as a proxy:
-                // rows whose calibrated hardness equals the query's are
-                // same-material. This is exact for hardwood/softwood/MDF
-                // (each family has a single Janka value) and acceptable
-                // for plastics.
-                match (
-                    self.query_hardness_kind,
-                    self.query_hardness_value,
-                    row.chipload_hardness_scale,
-                ) {
-                    (Some(_), Some(_), scale) => (scale - 1.0).abs() < 1e-3,
-                    _ => true,
-                }
-            })
-            .collect();
-        rows.sort_by(|a, b| a.row_diameter_mm.total_cmp(&b.row_diameter_mm));
-        rows
-    }
-
-    /// Subset of sibling rows that share the query's diameter (within
-    /// 10 %), sorted by row hardness. Used by Chart B (chipload vs
-    /// hardness). When no sibling matches the diameter, falls back to
-    /// the matched row's calibrated diameter band.
-    pub fn rows_by_hardness(&self) -> Vec<&MatchedRow> {
-        let target = self.tool_diameter_mm;
-        let mut rows: Vec<&MatchedRow> = self
-            .sibling_rows
-            .iter()
-            .filter(|row| {
-                if target <= 0.0 || row.row_diameter_mm <= 0.0 {
-                    return false;
-                }
-                let ratio = row.row_diameter_mm / target;
-                (0.9..=1.1).contains(&ratio)
-            })
-            .collect();
-        if rows.is_empty()
-            && let Some(matched) = &self.matched_row
-        {
-            rows = self
-                .sibling_rows
-                .iter()
-                .filter(|row| (row.row_diameter_mm - matched.row_diameter_mm).abs() < 0.05)
-                .collect();
-        }
-        // Sort by chipload-hardness-scale ascending — rows with smaller
-        // calibrated hardness produce a larger scale factor (softer
-        // material → higher chipload). UI plots scale vs chipload.
-        rows.sort_by(|a, b| {
-            a.chipload_hardness_scale
-                .total_cmp(&b.chipload_hardness_scale)
-        });
-        rows
-    }
 }
 
 /// Build the explanation payload for the given input. Runs the same
-/// pipeline as [`calculate`] but also enumerates sibling vendor rows
-/// and snapshots the machine envelope.
+/// pipeline as [`calculate`], then adds the matched vendor row and a
+/// snapshot of the machine envelope.
 pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
     let recommended = calculate(input);
     let machine = MachineEnvelope::from_machine(input.machine);
@@ -176,28 +112,19 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
     let routed_query = input
         .vendor_lut
         .and(vendor_normalize::to_lookup_query(input));
-    let (query, matched_row, sibling_rows) = match (input.vendor_lut, routed_query) {
+    let (query, matched_row) = match (input.vendor_lut, routed_query) {
         (Some(lut), Some(query)) => {
-            // Use the geometry-aware dispatcher so V-bit "matched row"
-            // honours the cutter's cone angle — the sibling-rows widening
-            // below still walks the whole family for chart rendering.
+            // Use the geometry-aware dispatcher so the V-bit "matched row"
+            // honours the cutter's cone angle.
             let matched = find_best_row_for_geometry(lut, &query, &input.tool_geometry);
-            let mut family_query = query.clone();
-            // For "siblings" we widen the query to the whole tool-family
-            // / op / pass_role cohort by relaxing the diameter and
-            // hardness ratios. enumerate_matching_rows already runs each
-            // sibling through passes_must_match + scoring; that's enough
-            // for chart rendering.
-            family_query.diameter_mm = lut_family_anchor_diameter(lut, &query);
-            let siblings = enumerate_matching_rows(lut, &family_query);
-            (query, matched, siblings)
+            (query, matched)
         }
         _ => {
             // No LUT, or the routing refused — synthesise a query record
-            // for echo, leave sibling_rows empty. The modal shows the
-            // formula-fallback state in this branch.
+            // for echo. The modal shows the formula-fallback state in
+            // this branch.
             let query = synthetic_query(input);
-            (query, None, Vec::new())
+            (query, None)
         }
     };
 
@@ -205,7 +132,6 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
         recommended,
         query: query.clone(),
         matched_row,
-        sibling_rows,
         tool_diameter_mm: input.tool_diameter,
         shank_diameter_mm: input.shank_diameter.unwrap_or(input.tool_diameter),
         tool_geometry: input.tool_geometry,
@@ -214,14 +140,6 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
         query_hardness_value: query.hardness_value,
         machine,
     }
-}
-
-/// Pick a representative diameter for sibling enumeration. We use the
-/// query's diameter so siblings near the calibrated range come out at
-/// reasonable scoring, but the relaxed must-match filter (max ratio
-/// 20×) lets the chart still pick up the 1 mm and 12.7 mm rows.
-fn lut_family_anchor_diameter(_lut: &VendorLut, query: &LookupQuery) -> f64 {
-    query.diameter_mm
 }
 
 /// The query record echoed back when no LUT lookup happened — because
@@ -242,7 +160,9 @@ fn synthetic_query(input: &FeedsInput<'_>) -> LookupQuery {
 )]
 mod tests {
     use super::*;
-    use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily};
+    use crate::feeds::vendor_lut::{
+        LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
+    };
     use crate::feeds::{
         OperationFamily, PassRole, SetupContext, ToolGeometryHint, embedded_vendor_lut,
     };
@@ -308,8 +228,6 @@ mod tests {
         let matched = exp.matched_row.as_ref().expect("LUT should match");
         assert!(matched.chip_load_mm > 0.0);
         assert!(matched.row_diameter_mm > 0.0);
-        // Sibling enumeration should include at least the matched row.
-        assert!(!exp.sibling_rows.is_empty());
     }
 
     #[test]
@@ -322,50 +240,6 @@ mod tests {
 
         let exp = explain(&input);
         assert!(exp.matched_row.is_none());
-        assert!(exp.sibling_rows.is_empty());
-    }
-
-    #[test]
-    fn rows_by_diameter_filters_to_same_material() {
-        let mat = Material::SolidWood {
-            species: WoodSpecies::HardMaple,
-        };
-        let mach = MachineProfile::shapeoko_vfd();
-        let lut = embedded_vendor_lut();
-        let input = make_input(&mat, &mach, Some(lut));
-
-        let exp = explain(&input);
-        let rows = exp.rows_by_diameter();
-        // Every row returned should have hardness_scale ~= 1.0 (same Janka).
-        for r in &rows {
-            assert!((r.chipload_hardness_scale - 1.0).abs() < 1e-3);
-        }
-        // Sorted ascending by diameter.
-        for w in rows.windows(2) {
-            assert!(w[0].row_diameter_mm <= w[1].row_diameter_mm);
-        }
-    }
-
-    #[test]
-    fn rows_by_hardness_filters_to_same_diameter() {
-        let mat = Material::SolidWood {
-            species: WoodSpecies::HardMaple,
-        };
-        let mach = MachineProfile::shapeoko_vfd();
-        let lut = embedded_vendor_lut();
-        let input = make_input(&mat, &mach, Some(lut));
-
-        let exp = explain(&input);
-        let rows = exp.rows_by_hardness();
-        // Every row should have a diameter within ±10 % of 6.35 mm.
-        for r in &rows {
-            let ratio = r.row_diameter_mm / 6.35;
-            assert!(
-                (0.9..=1.1).contains(&ratio),
-                "diameter {} out of band",
-                r.row_diameter_mm
-            );
-        }
     }
 
     #[test]

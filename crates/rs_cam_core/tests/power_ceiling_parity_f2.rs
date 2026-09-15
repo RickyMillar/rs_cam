@@ -217,7 +217,7 @@ fn suggest_power_ceiling_equals_the_gate_power_ceiling() {
 fn the_published_headroom_denominator_is_the_gate_ceiling() {
     // `available_power_kw` is not an internal: it is the denominator the
     // Feeds & Speeds modal renders headroom against
-    // (`feeds::explain::MachineEnvelope` / the modal's power row). If it
+    // (`feeds::explain_payload::MachineEnvelope` / the modal's power row). If it
     // is not the gate's bound then the modal's "headroom" and the
     // verdict's "Exceeds" describe different machines.
     let machine = MachineProfile::shapeoko_vfd();

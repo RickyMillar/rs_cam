@@ -1,4 +1,6 @@
 //! **The stage-labelled feed explanation record.**
+//! Holds [`FeedExplanation`]. For the UI data contract `FeedsExplain`,
+//! see [`super::explain_payload`].
 //!
 //! Census `planning/review_2026-08-04/FEEDS_CENSUS.md` tier-1 item T1.1,
 //! ruled at Checkpoint B Q2. Reference semantics:

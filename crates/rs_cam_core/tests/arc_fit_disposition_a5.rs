@@ -7,7 +7,7 @@
 //! `Default`) that was fitted against the post-sim chipload gate's **arc-mean
 //! chip thickness** observation. That observation was **deleted on
 //! 2026-08-06**: the gate now reports `effective_feed / (rpm · flutes)`, a
-//! linear advance per tooth (`feeds::explanation`'s module header, and
+//! linear advance per tooth (`feeds::feed_explanation`'s module header, and
 //! `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` for the
 //! primary sources).
 //!

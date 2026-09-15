@@ -248,7 +248,7 @@ pub struct ToolpathLoadVerdict {
     /// `Unmodeled` verdict has no stages to label) or for drill ops.
     ///
     /// Report-only and additive: no gate, threshold or severity reads
-    /// it. See `crates/rs_cam_core/src/feeds/explanation.rs` for the
+    /// it. See `crates/rs_cam_core/src/feeds/feed_explanation.rs` for the
     /// rule it is written under — it labels stages, it does not pick a
     /// winner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
