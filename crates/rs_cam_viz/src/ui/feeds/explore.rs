@@ -16,8 +16,112 @@ use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points, Polygon};
 use rs_cam_core::feeds::{FeedsExplain, vendor_lut::HardnessKind};
 
 use super::shared::{CurrentValues, chart, draw_machine_envelope, wash};
+use crate::state::AppState;
 use crate::ui::{AppEvent, theme, tokens};
 use crate::ui_command::UiCommand;
+
+pub(crate) fn draw_spindle_strategy_row(
+    ui: &mut egui::Ui,
+    current: rs_cam_core::feeds::SpindleStrategy,
+    machine: &rs_cam_core::machine::MachineProfile,
+    events: &mut Vec<AppEvent>,
+) {
+    use rs_cam_core::feeds::SpindleStrategy;
+    let (_, max_rpm) = machine.rpm_range();
+    ui.horizontal(|ui| {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new("Spindle policy:")
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
+        );
+        let mut next = current;
+        // MatchChart radio
+        if ui
+            .radio(current == SpindleStrategy::MatchChart, "Match chart")
+            .on_hover_text(
+                "Use the LUT row's chart-published RPM verbatim. \
+                 Tightest match to the vendor band's own test conditions.",
+            )
+            .clicked()
+        {
+            next = SpindleStrategy::MatchChart;
+        }
+        if ui
+            .radio(
+                current == SpindleStrategy::MaxSpeed,
+                "Max speed (constant advance/tooth)",
+            )
+            .on_hover_text(format!(
+                "Push RPM up to the spindle ceiling ({:.0} RPM × \
+                 {:.0}% headroom), scaling feed proportionally to \
+                 keep the commanded advance/tooth constant. Capped by vendor rpm_max \
+                 when published, and by a {:.1}× hard limit over the \
+                 chart RPM. Power-limit derate still applies on top \
+                 — if the higher operating point exceeds spindle \
+                 power, feed comes back down.",
+                max_rpm,
+                rs_cam_core::feeds::SPINDLE_CEILING_HEADROOM * 100.0,
+                rs_cam_core::feeds::MAX_SPINDLE_SPEEDUP,
+            ))
+            .clicked()
+        {
+            next = SpindleStrategy::MaxSpeed;
+        }
+        if next != current {
+            events.push(AppEvent::SetSpindleStrategy(next));
+        }
+        ui.add_space(8.0);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("(spindle max {:.0} RPM)", max_rpm))
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
+        );
+    });
+}
+
+/// Draw the modal's single Explore scope: spindle policy and charts.
+pub(crate) fn draw_modal_body(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    modal: &crate::state::FeedsModalState,
+    events: &mut Vec<AppEvent>,
+) {
+    draw_spindle_strategy_row(
+        ui,
+        state.session.post_config().spindle_strategy,
+        state.session.machine(),
+        events,
+    );
+    ui.separator();
+    let Some(preview) = super::compare::compute_preview(state, toolpath_id) else {
+        return;
+    };
+    let Some(current) = super::compare::read_current_values(state, toolpath_id) else {
+        return;
+    };
+    draw_chart_c(
+        ui,
+        &current,
+        preview.explain(),
+        preview.refusal(),
+        toolpath_id,
+        modal,
+        events,
+    );
+    ui.add_space(12.0);
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| draw_chart_a(ui, &current, preview.explain()));
+        ui.add_space(8.0);
+        ui.vertical(|ui| draw_chart_b(ui, &current, preview.explain()));
+    });
+}
 
 // ────────────────────────────────────────────────────────────────────
 // Chart C — Feed vs RPM (the nomogram)

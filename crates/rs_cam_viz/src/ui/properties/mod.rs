@@ -1,4 +1,3 @@
-pub mod feeds_rows;
 mod operations;
 mod pills;
 pub mod post;
@@ -23,7 +22,7 @@ use operations::{
     draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params,
     draw_unified_finish_params, draw_vcarve_params, draw_waterline_params, draw_zigzag_params,
 };
-use pills::{PillSuggestions, stamp_pill_write, suggestion_for};
+use pills::PillSuggestions;
 
 use crate::state::AppState;
 use crate::state::selection::Selection;
@@ -34,7 +33,7 @@ use crate::state::toolpath::{
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
-use crate::ui::components::{PrecedenceField, ProvKind, UiExt, ValueRow, mrr_row, power_bar};
+use crate::ui::components::{ProvKind, UiExt, ValueRow};
 use crate::ui::theme;
 use crate::ui_command::{NoArgs, UiCommand};
 
@@ -2202,9 +2201,8 @@ fn draw_grbl_import(
 /// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
 /// Run the LUT calculator (read-only), cache the result on the entry,
 /// and draw the feeds card. The calculator never writes to the operation
-/// here (Roadmap F.5) — the SPEED / CUT recipe buttons inside
-/// `draw_feeds_card` are the only path that pushes calculated values into
-/// the op (W3.1: speeds and cut geometry are applied separately).
+/// here (Roadmap F.5). The canonical comparison's `Apply all` is the
+/// only path that pushes calculated values into the operation.
 #[allow(clippy::too_many_arguments)]
 fn calculate_and_apply_feeds(
     ui: &mut egui::Ui,
@@ -2216,6 +2214,7 @@ fn calculate_and_apply_feeds(
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     project_default_rpm: u32,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
+    events: &mut Vec<AppEvent>,
 ) {
     match rs_cam_core::feeds::suggest::feeds_result_for_operation(
         &entry.operation,
@@ -2236,50 +2235,105 @@ fn calculate_and_apply_feeds(
                 material,
                 project_default_rpm,
                 load_verdict,
+                workholding,
+                spindle_strategy,
+                events,
             );
         }
         Err(e) => {
-            // Engine refused — the tool × operation combination is
-            // physically unrunnable. Clear any stale cache and show
-            // the refusal in place of the feeds card so the user sees
-            // why no recipe is offered.
             entry.feeds_result = None;
             ui.add_space(8.0);
             ui.colored_label(crate::ui::tokens::DANGER, format!("Feeds unavailable: {e}"));
-            // No LUT recipe, but feed/plunge moved off the Geometry tab in
-            // W3.2, so this is the only place to set them by hand. (Drill
-            // keeps its feed on the Geometry tab next to the drill cycle.)
-            if !matches!(
-                entry.operation,
-                OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
-            ) {
-                ui.add_space(4.0);
-                ui.named_section("SPEED \u{2014} how fast (manual)", |ui| {
-                    egui::Grid::new("feeds_manual_speed")
-                        .num_columns(2)
-                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                        .min_row_height(crate::ui::tokens::ROW_DENSE)
-                        .show(ui, |ui| {
-                            let mut feed = entry.operation.feed_rate();
-                            if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0)
-                                .show(ui)
-                                .edited
-                            {
-                                entry.operation.set_feed_rate(feed);
-                                entry.stale_since = Some(std::time::Instant::now());
-                            }
-                            let mut plunge = entry.operation.plunge_rate();
-                            if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
-                                .show(ui)
-                                .edited
-                            {
-                                entry.operation.set_plunge_rate(plunge);
-                                entry.stale_since = Some(std::time::Instant::now());
-                            }
-                        });
-                });
-            }
         }
+    }
+}
+
+fn draw_feeds_card(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    tool: &crate::state::job::ToolConfig,
+    machine: &rs_cam_core::machine::MachineProfile,
+    material: &rs_cam_core::material::Material,
+    project_default_rpm: u32,
+    load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
+    workholding: rs_cam_core::feeds::WorkholdingRigidity,
+    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    events: &mut Vec<AppEvent>,
+) {
+    ui.add_space(8.0);
+    let preview = crate::ui::feeds::compare::compute_preview_for_operation(
+        &entry.operation,
+        tool,
+        material,
+        machine,
+        workholding,
+        spindle_strategy,
+    );
+    let current = crate::ui::feeds::compare::current_values_for_operation(
+        &entry.operation,
+        tool,
+        project_default_rpm,
+    );
+    crate::ui::feeds::compare::draw_inspector_comparison(ui, &current, &preview, entry.id, events);
+    // `FeedsPreview` carries calculator warnings, but this disclosure also
+    // needs the invariant-pass rationale. Re-run the read-only canonical
+    // Suggest path; its recommendation is the preview's validated recipe.
+    let rationale = rs_cam_core::feeds::suggest::suggest_for_operation(
+        rs_cam_core::feeds::suggest::SuggestForOperationInput {
+            operation: &entry.operation,
+            tool,
+            machine,
+            material,
+            workholding,
+            lut: rs_cam_core::feeds::embedded_vendor_lut(),
+            spindle_strategy,
+            context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+        },
+    )
+    .ok()
+    .map(|suggested| {
+        rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(&suggested.warnings)
+    });
+
+    egui::CollapsingHeader::new("Why is the recommendation here?")
+        .id_salt(("feeds_why", entry.id))
+        .default_open(false)
+        .show(ui, |ui| {
+            let explain = preview.explain();
+            crate::ui::feeds::why::draw_provenance(ui, explain);
+            if let Some(rationale) = &rationale {
+                crate::ui::feeds::why::draw_rationale(ui, rationale);
+            }
+            crate::ui::feeds::why::draw_engaged_diameter_row(ui, &current, explain);
+            crate::ui::feeds::why::draw_chipload_min_warning(ui, &current, explain);
+            crate::ui::feeds::why::draw_chipload_engaged_attestation(ui, &current, explain);
+            crate::ui::feeds::why::draw_chipload_breakdown(ui, explain);
+            crate::ui::feeds::why::draw_warnings(ui, explain);
+        });
+
+    // This is accepted simulation evidence, not a recommendation. Keep it
+    // outside and below the recommendation disclosure so planned and measured
+    // values never read as interchangeable.
+    if let Some(v) = load_verdict
+        && (v.feed_explanation.is_some() || v.modulation_summary.is_some())
+    {
+        draw_operating_point(ui, v);
+    }
+}
+
+/// Map a chipload provenance source into the shared UI vocabulary.
+///
+/// The per-field suggestion builder lives in `pills.rs` and still uses this
+/// mapping even though UR4 removes the duplicate pills from the Feeds tab.
+fn prov_from_chipload(source: &rs_cam_core::feeds::ChiploadSource) -> (ProvKind, Option<&str>) {
+    use rs_cam_core::feeds::ChiploadSource;
+
+    match source {
+        ChiploadSource::VendorLut { observation_id } => {
+            (ProvKind::VendorLut, Some(observation_id.as_str()))
+        }
+        ChiploadSource::FormulaFallback => (ProvKind::Formula, None),
+        ChiploadSource::EdgeRadiusFloor => (ProvKind::EdgeRadiusFloor, None),
     }
 }
 
@@ -2537,372 +2591,6 @@ fn advance_gate_verdict_text(
     }
 }
 
-fn draw_feeds_card(
-    ui: &mut egui::Ui,
-    entry: &mut ToolpathEntry,
-    tool: &crate::state::job::ToolConfig,
-    machine: &rs_cam_core::machine::MachineProfile,
-    material: &rs_cam_core::material::Material,
-    project_default_rpm: u32,
-    load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
-) {
-    ui.add_space(8.0);
-    // DC5 (Pattern A): the card used to sit inside a default-open
-    // `Feeds & Speeds` disclosure, ON the `Feeds & Speeds` tab. One name
-    // carried a tab AND a disclosure, and the disclosure was an expand that
-    // was always open. The tab is the container. The disclosure is deleted.
-    // Read-only snapshot of the cached LUT result so we can borrow
-    // `entry.operation` mutably from the recipe buttons below.
-    let Some(result) = entry.feeds_result.clone() else {
-        return;
-    };
-    // Capture op capabilities as plain bools so no borrow of
-    // `entry.operation` is held across the mutating recipe closures.
-    let pass_role = entry.operation.feeds_style().1;
-    let has_stepover = entry.operation.as_params().stepover().is_some();
-    let has_dpp = entry.operation.as_params().depth_per_pass().is_some();
-    // Drill ops are Z-only (plunge_rate IS feed_rate, no WOC/DOC); their
-    // single feed is edited on the Geometry tab next to the drill cycle,
-    // so the SPEED section shows it read-only to avoid a duplicate /
-    // no-op "Plunge" field (W3.2).
-    let is_drill = matches!(
-        entry.operation,
-        OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
-    );
-    // G-FEEDSLABEL (UX-R03-005): the read-only rows name their role.
-    // `recommended` is the calculator's value, `configured` is the
-    // stored operation's. Built once, up front, as plain strings, so
-    // no borrow of `entry.operation` outlives the section closures
-    // and a test can read the same rows without an egui context.
-    let card_rows = feeds_rows::feeds_card_rows(&feeds_rows::FeedsCardInputs {
-        recommended_feed_mm_min: result.feed_rate_mm_min,
-        recommended_rpm: result.rpm,
-        target_chip_load_mm: result.chip_load_mm,
-        recommended_axial_depth_mm: has_dpp.then_some(result.axial_depth_mm),
-        recommended_radial_width_mm: has_stepover.then_some(result.radial_width_mm),
-        configured_feed_mm_min: entry.operation.feed_rate(),
-        configured_rpm: entry.operation.spindle_rpm().unwrap_or(project_default_rpm),
-        flute_count: tool.flute_count,
-        configured_depth_per_pass_mm: entry.operation.as_params().depth_per_pass(),
-        configured_stepover_mm: entry.operation.as_params().stepover(),
-    });
-    let card_row = |label: &str| card_rows.iter().find(|r| r.label == label);
-    let draw_card_row = |ui: &mut egui::Ui, row: &feeds_rows::FeedsCardRow| {
-        ui.label(row.label);
-        // The trailing annotation WRAPS rather than extending the Ui.
-        // `TextWrapMode::Extend` sets an infinite max width, so a long
-        // "configured 0.1313 mm/tooth" grew the inspector past its own
-        // panel and the panel clipped it — `AUDIT.md` D-16, seen on the
-        // Feeds tab where the panel's whole content shifted off its left
-        // edge. §4.6 makes the trailing slot wrap for exactly this.
-        ui.horizontal_wrapped(|ui| {
-            ui.add(egui::Label::new(&row.recommended).wrap_mode(egui::TextWrapMode::Wrap))
-                .on_hover_text(&row.hover);
-            if let Some(configured) = &row.configured {
-                ui.add(
-                    egui::Label::new(crate::ui::components::text::caption(configured.clone()))
-                        .wrap_mode(egui::TextWrapMode::Wrap),
-                )
-                .on_hover_text(&row.hover);
-            }
-        });
-        ui.end_row();
-    };
-
-    // W4.1 — render the *stored* per-field provenance (what actually
-    // produced the value on this operation), not a recomputed lookup. This
-    // is the rendering repoint W2.1 deliberately deferred: a vendor-LUT feed
-    // with a formula-fallback plunge now reads honestly per field instead of
-    // one chipload source labelling every value (P7-002). Captured as owned
-    // tuples up front so the immutable read of `entry.feeds_provenance`
-    // doesn't outlive the `entry.operation` edits in the section closures.
-    let feed_prov = entry
-        .feeds_provenance
-        .feed_rate
-        .as_ref()
-        .map(|v| (ProvKind::from(v), v.reference.clone()));
-    let plunge_prov = entry
-        .feeds_provenance
-        .plunge_rate
-        .as_ref()
-        .map(|v| (ProvKind::from(v), v.reference.clone()));
-
-    // G-PILLCLAMP (UX-R03-014): the per-field ⚡ on Feed / Plunge offers
-    // and writes the apply funnel's value for that field — the same
-    // number `⚡⚡ Apply recommended speeds` writes — not the raw
-    // calculator output, and stamps the recommendation's provenance.
-    let field_previews = rs_cam_core::feeds::suggest::preview_field_applies(
-        &entry.operation,
-        &result,
-        tool,
-        machine,
-        material,
-        pass_role,
-        rs_cam_core::feeds::suggest::SuggestContext::default(),
-    );
-
-    // ── SPEED — how fast (feed / plunge / RPM) ──
-    ui.named_section("SPEED \u{2014} how fast", |ui| {
-        // The live LUT recommendation colours a raw fallback pill; a
-        // funnel-backed pill carries its own stamp.
-        let (speed_kind, speed_ref) = prov_from_chipload(&result.chipload_source);
-        egui::Grid::new("feeds_card_speed")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                // Feed / Plunge — editable here (W3.2 relocated them off
-                // the Geometry tab), each with a per-field ⚡ that applies
-                // only its own recommendation.
-                if is_drill {
-                    ui.label("Feed:");
-                    ui.label(format!("{:.0} mm/min", result.feed_rate_mm_min));
-                    ui.end_row();
-                } else {
-                    use rs_cam_core::feeds::FeedsField;
-                    let mut feed = entry.operation.feed_rate();
-                    let mut feed_row =
-                        ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50000.0).suggest(
-                            suggestion_for(
-                                field_previews.get(FeedsField::FeedRate),
-                                result.feed_rate_mm_min,
-                                1.0,
-                                (speed_kind, speed_ref),
-                            ),
-                        );
-                    if let Some((kind, reference)) = &feed_prov {
-                        feed_row = feed_row.prov(*kind, reference.as_deref());
-                    }
-                    let feed_out = feed_row.show(ui);
-                    if feed_out.edited {
-                        entry.operation.set_feed_rate(feed);
-                        entry.stale_since = Some(std::time::Instant::now());
-                        if feed_out.suggested {
-                            stamp_pill_write(entry, &field_previews, FeedsField::FeedRate);
-                        }
-                    }
-                    let mut plunge = entry.operation.plunge_rate();
-                    let mut plunge_row =
-                        ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10000.0)
-                            .suggest(suggestion_for(
-                                field_previews.get(FeedsField::PlungeRate),
-                                result.plunge_rate_mm_min,
-                                1.0,
-                                (speed_kind, speed_ref),
-                            ));
-                    if let Some((kind, reference)) = &plunge_prov {
-                        plunge_row = plunge_row.prov(*kind, reference.as_deref());
-                    }
-                    let plunge_out = plunge_row.show(ui);
-                    if plunge_out.edited {
-                        entry.operation.set_plunge_rate(plunge);
-                        entry.stale_since = Some(std::time::Instant::now());
-                        if plunge_out.suggested {
-                            stamp_pill_write(entry, &field_previews, FeedsField::PlungeRate);
-                        }
-                    }
-                }
-                if let Some(row) = card_row(feeds_rows::ADVANCE_ROW_LABEL) {
-                    draw_card_row(ui, row);
-                }
-                // Spindle override vs project default. W3.1 relocated this
-                // from the per-op Params tab so the precedence renders
-                // honestly.
-                let mut spindle = entry.operation.spindle_rpm();
-                if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
-                    .suffix(" RPM")
-                    .speed(100.0)
-                    .range(1_000..=60_000)
-                    .tooltip(
-                        "Override the project default spindle speed for this operation. \
-                         Leave unchecked to follow the post-config spindle speed.",
-                    )
-                    .show(ui)
-                {
-                    entry.operation.set_spindle_rpm(spindle);
-                    entry.stale_since = Some(std::time::Instant::now());
-                }
-            });
-        // W3.1: SPEED-only apply — never rewrites the cut geometry.
-        if ui
-            .button("\u{26A1}\u{26A1} Apply recommended speeds")
-            .on_hover_text(
-                "Overwrite feed, plunge, and RPM with the recommended values. \
-                 Does not change the cut (DOC/WOC).",
-            )
-            .clicked()
-        {
-            rs_cam_core::feeds::suggest::apply_speeds_to_op(
-                &mut entry.operation,
-                &mut entry.feeds_provenance,
-                &result,
-                tool,
-                machine,
-                material,
-                pass_role,
-                rs_cam_core::feeds::suggest::SuggestContext::default(),
-            );
-            entry.stale_since = Some(std::time::Instant::now());
-        }
-    });
-
-    // ── CUT — how deep/wide (changes the cut) ──
-    if has_stepover || has_dpp {
-        ui.named_section("CUT \u{2014} changes the cut", |ui| {
-            egui::Grid::new("feeds_card_cut")
-                .num_columns(2)
-                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                .min_row_height(crate::ui::tokens::ROW_DENSE)
-                .show(ui, |ui| {
-                    if let Some(row) = card_row(feeds_rows::DOC_ROW_LABEL) {
-                        draw_card_row(ui, row);
-                    }
-                    if let Some(row) = card_row(feeds_rows::WOC_ROW_LABEL) {
-                        draw_card_row(ui, row);
-                    }
-                });
-            // W3.1: cut-geometry apply is separate + attributed — it
-            // changes the cut, so it is never folded into "Apply speeds".
-            if ui
-                .button("\u{26A1} Apply cut geometry")
-                .on_hover_text(
-                    "Overwrite DOC/WOC with the recommended values. \
-                     Changes the cut.",
-                )
-                .clicked()
-            {
-                rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
-                    &mut entry.operation,
-                    &mut entry.feeds_provenance,
-                    &result,
-                    tool,
-                    machine,
-                    material,
-                    pass_role,
-                    rs_cam_core::feeds::suggest::SuggestContext::default(),
-                );
-                entry.stale_since = Some(std::time::Instant::now());
-            }
-        });
-    }
-
-    // ── Derived (read-only) ──
-    ui.named_section("Derived", |ui| {
-        power_bar(ui, result.power_kw, result.available_power_kw);
-        mrr_row(ui, result.mrr_mm3_min);
-    });
-
-    // ── Operating point (read-only) — the F-039 optimizer's MEASURED
-    // result for this path, the post-sim counterpart to the Suggest-
-    // predicted "Derived" rollup above. Present only after a simulation
-    // where adaptive feed modulation actually ran (the rollup rides on
-    // the load verdict). No edit affordances: it's the solved result,
-    // not a field to tune.
-    // Rendered whenever the gate produced either a feed explanation or a
-    // modulation rollup — the card half needs only the former, and
-    // before Checkpoint H the whole section was hidden unless adaptive
-    // feed modulation had run, which is why an operator could simulate
-    // and still never see an achieved advance per tooth.
-    if let Some(v) = load_verdict
-        && (v.feed_explanation.is_some() || v.modulation_summary.is_some())
-    {
-        draw_operating_point(ui, v);
-    }
-
-    {
-        // W4.1: provenance is now per field (the compact badges on the Feed
-        // / Plunge rows above, read from the stored `feeds_provenance`). The
-        // single bottom badge derived from a recomputed chipload source was
-        // the P7-002 mislabel — one source standing in for every field — so
-        // it is gone; each suggest pill still carries its recommendation
-        // source on hover.
-
-        // Warnings
-        for w in &result.warnings {
-            let text = match w {
-                rs_cam_core::feeds::FeedsWarning::FeedRateClamped { requested, actual } => {
-                    format!("Feed clamped: {requested:.0} -> {actual:.0} mm/min (machine limit)")
-                }
-                rs_cam_core::feeds::FeedsWarning::PowerLimited {
-                    required_kw,
-                    available_kw,
-                } => format!(
-                    "Power limited: {required_kw:.2}kW needed, {available_kw:.2}kW available"
-                ),
-                rs_cam_core::feeds::FeedsWarning::DocExceedsFlute { requested, capped } => {
-                    format!("DOC capped: {requested:.1} -> {capped:.1}mm (flute guard)")
-                }
-                rs_cam_core::feeds::FeedsWarning::SlottingDetected { doc_reduced_to } => {
-                    format!("Slotting detected: DOC reduced to {doc_reduced_to:.1}mm")
-                }
-                rs_cam_core::feeds::FeedsWarning::ScallopInvalid {
-                    target,
-                    max_possible,
-                } => format!("Invalid scallop: {target:.3}mm (max {max_possible:.1}mm)"),
-                rs_cam_core::feeds::FeedsWarning::ShankTooLarge { shank_mm, max_mm } => {
-                    format!("Shank {shank_mm:.1}mm exceeds max {max_mm:.1}mm")
-                }
-                rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor {
-                    requested,
-                    floor,
-                    band_capped_from,
-                } => match band_capped_from {
-                    None => format!(
-                        "Commanded advance/tooth below rubbing floor: \
-                         {requested:.3} -> {floor:.3} mm/tooth"
-                    ),
-                    Some(global) => format!(
-                        "Commanded advance/tooth raised to vendor band ceiling: \
-                         {requested:.3} -> {floor:.3} mm/tooth \
-                         (band is entirely below the {global:.3} rubbing floor)"
-                    ),
-                },
-                // Checkpoint K (a3) — the recipe rests on an RPM
-                // anchor, so the chipload beside it is the formula's
-                // and there is no band behind the recommendation.
-                // Checkpoint K (a4) — the routing refused; there is no vendor
-                // row behind any number on this surface.
-                rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation {
-                    operation_kind,
-                    tool_family,
-                    missing_rows,
-                } => format!(
-                    "No vendor data for {operation_kind} on a {tool_family} cutter \
-                     — formula-derived, no band ({missing_rows})"
-                ),
-                rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload {
-                    observation_id,
-                    formula_chipload_mm,
-                    floor_band_from,
-                } => match floor_band_from {
-                    Some(row) => format!(
-                        "Vendor row {observation_id} publishes RPM only — \
-                         {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor \
-                         band; rubbing floor from {row}"
-                    ),
-                    None => format!(
-                        "Vendor row {observation_id} publishes RPM only — \
-                         {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor band"
-                    ),
-                },
-                rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
-                    requested,
-                    actual,
-                    envelope_lo,
-                    envelope_hi,
-                } => format!(
-                    "Drill feed clamped: {requested:.0} -> {actual:.0} mm/min (envelope {envelope_lo:.0}-{envelope_hi:.0})"
-                ),
-            };
-            ui.label(
-                egui::RichText::new(format!("! {text}"))
-                    .small()
-                    .color(crate::ui::tokens::CAUTION),
-            );
-        }
-    }
-}
-
 // ── Vendor LUT viewer ──────────────────────────────────────────────────
 
 /// Map `ToolType` to the vendor LUT `ToolFamily` for filtering.
@@ -3132,256 +2820,6 @@ fn draw_vendor_lut_viewer(
 // ── Engagement diagram ──────────────────────────────────────────────────
 
 /// Draw a split-view engagement diagram: top-down WOC (left) + side DOC (right).
-fn draw_engagement_diagram(
-    ui: &mut egui::Ui,
-    result: &rs_cam_core::feeds::FeedsResult,
-    tool_diameter: f64,
-    tool_type: crate::state::job::ToolType,
-) {
-    let desired_size = egui::vec2(ui.available_width().min(260.0), 150.0);
-    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
-    let painter = ui.painter_at(rect);
-
-    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
-
-    let tool_r = tool_diameter / 2.0;
-    let woc = result.radial_width_mm;
-    let doc = result.axial_depth_mm;
-    let tool_color = crate::ui::tokens::TEXT_STRONG;
-    let mat_color = crate::ui::tokens::HAIRLINE;
-    let dim_color = crate::ui::tokens::ACCENT;
-    let info_color = crate::ui::tokens::TEXT_MUTED;
-
-    // Divider: split canvas at ~55%
-    let mid_x = rect.left() + rect.width() * 0.52;
-    painter.line_segment(
-        [
-            egui::pos2(mid_x, rect.top() + 4.0),
-            egui::pos2(mid_x, rect.bottom() - 4.0),
-        ],
-        egui::Stroke::new(0.5_f32, crate::ui::tokens::SURFACE_OVERLAY),
-    );
-
-    // ── LEFT: Top-down WOC view ────────────────────────────────────
-    let left_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + 4.0, rect.top() + 16.0),
-        egui::pos2(mid_x - 4.0, rect.bottom() - 16.0),
-    );
-    let scale_woc = (left_rect.width() * 0.35) / tool_r.max(0.01) as f32;
-    let cx = left_rect.center().x;
-    let cy = left_rect.center().y;
-    let tr = tool_r as f32 * scale_woc;
-
-    // Material block
-    let mat_left = cx + tr - (woc as f32 * scale_woc);
-    let mat_right = left_rect.right();
-    painter.rect_filled(
-        egui::Rect::from_min_max(
-            egui::pos2(mat_left, cy - tr - 6.0),
-            egui::pos2(mat_right, cy + tr + 6.0),
-        ),
-        0.0,
-        mat_color,
-    );
-
-    // WOC crescent
-    if woc > 0.0 && woc <= tool_diameter {
-        let engage_frac = (woc / tool_diameter).clamp(0.0, 1.0);
-        let half_angle = (engage_frac * std::f32::consts::PI as f64).min(std::f64::consts::PI);
-        let mut pts = Vec::with_capacity(34);
-        let steps = 32;
-        for i in 0..=steps {
-            let t = i as f64 / steps as f64;
-            let a = -half_angle + 2.0 * half_angle * t;
-            let px = cx + (tool_r * a.cos()) as f32 * scale_woc;
-            let py = cy + (tool_r * a.sin()) as f32 * scale_woc;
-            if px >= mat_left {
-                pts.push(egui::pos2(px, py));
-            }
-        }
-        if pts.len() >= 2 {
-            let first_y = pts.first().map(|p| p.y).unwrap_or(cy);
-            let last_y = pts.last().map(|p| p.y).unwrap_or(cy);
-            pts.push(egui::pos2(mat_left, last_y));
-            pts.push(egui::pos2(mat_left, first_y));
-            painter.add(egui::Shape::convex_polygon(
-                pts,
-                crate::ui::tokens::accent_wash(50),
-                egui::Stroke::NONE,
-            ));
-        }
-    }
-
-    painter.circle_stroke(
-        egui::pos2(cx, cy),
-        tr,
-        egui::Stroke::new(1.5_f32, tool_color),
-    );
-    painter.circle_filled(egui::pos2(cx, cy), 1.5, tool_color);
-
-    // WOC label
-    painter.text(
-        egui::pos2(cx, cy + tr + 10.0),
-        egui::Align2::CENTER_TOP,
-        format!("WOC {woc:.2}"),
-        egui::FontId::proportional(8.0),
-        dim_color,
-    );
-
-    // "Top" label
-    painter.text(
-        egui::pos2(left_rect.center().x, rect.top() + 3.0),
-        egui::Align2::CENTER_TOP,
-        "Top",
-        egui::FontId::proportional(8.0),
-        info_color,
-    );
-
-    // ── RIGHT: Side DOC view ───────────────────────────────────────
-    let right_rect = egui::Rect::from_min_max(
-        egui::pos2(mid_x + 4.0, rect.top() + 16.0),
-        egui::pos2(rect.right() - 4.0, rect.bottom() - 16.0),
-    );
-
-    // Scale: fit max(doc, tool_diameter) into the right panel height
-    let max_z_extent = doc.max(tool_diameter).max(1.0);
-    let scale_doc = (right_rect.height() * 0.7) / max_z_extent as f32;
-    let scx = right_rect.center().x;
-
-    // Material surface at top of side view
-    let surface_y = right_rect.top() + right_rect.height() * 0.15;
-    let tool_hw = tool_r as f32 * scale_doc;
-    let doc_px = doc as f32 * scale_doc;
-
-    // Material block (below surface)
-    painter.rect_filled(
-        egui::Rect::from_min_max(
-            egui::pos2(right_rect.left(), surface_y),
-            egui::pos2(right_rect.right(), right_rect.bottom()),
-        ),
-        0.0,
-        mat_color,
-    );
-
-    // Material surface line
-    painter.line_segment(
-        [
-            egui::pos2(right_rect.left(), surface_y),
-            egui::pos2(right_rect.right(), surface_y),
-        ],
-        egui::Stroke::new(1.0_f32, crate::ui::tokens::BORDER),
-    );
-
-    // DOC shaded region (where tool cuts)
-    painter.rect_filled(
-        egui::Rect::from_min_max(
-            egui::pos2(scx - tool_hw, surface_y),
-            egui::pos2(scx + tool_hw, surface_y + doc_px),
-        ),
-        0.0,
-        crate::ui::tokens::accent_wash(40),
-    );
-
-    // Tool profile (simplified side view)
-    let tool_top = surface_y - tool_hw * 0.4; // shaft extends above surface
-    let tool_bottom = surface_y + doc_px;
-    use crate::state::job::ToolType;
-    match tool_type {
-        ToolType::BallNose => {
-            // Shaft rectangle above, semicircle at bottom
-            let ball_cy = tool_bottom - tool_hw;
-            painter.add(egui::Shape::line(
-                vec![
-                    egui::pos2(scx - tool_hw, ball_cy),
-                    egui::pos2(scx - tool_hw, tool_top),
-                    egui::pos2(scx + tool_hw, tool_top),
-                    egui::pos2(scx + tool_hw, ball_cy),
-                ],
-                egui::Stroke::new(1.5_f32, tool_color),
-            ));
-            let mut arc_pts = vec![egui::pos2(scx + tool_hw, ball_cy)];
-            for i in 0..=16 {
-                let a = std::f32::consts::PI * (i as f32) / 16.0;
-                arc_pts.push(egui::pos2(
-                    scx + tool_hw * a.cos(),
-                    ball_cy + tool_hw * a.sin(),
-                ));
-            }
-            painter.add(egui::Shape::line(
-                arc_pts,
-                egui::Stroke::new(1.5_f32, tool_color),
-            ));
-        }
-        _ => {
-            // EndMill / BullNose / VBit — simple rectangle
-            painter.add(egui::Shape::line(
-                vec![
-                    egui::pos2(scx - tool_hw, tool_bottom),
-                    egui::pos2(scx - tool_hw, tool_top),
-                    egui::pos2(scx + tool_hw, tool_top),
-                    egui::pos2(scx + tool_hw, tool_bottom),
-                    egui::pos2(scx - tool_hw, tool_bottom),
-                ],
-                egui::Stroke::new(1.5_f32, tool_color),
-            ));
-        }
-    }
-
-    // DOC dimension line (right side)
-    let dim_x = scx + tool_hw + 8.0;
-    painter.line_segment(
-        [
-            egui::pos2(dim_x, surface_y),
-            egui::pos2(dim_x, surface_y + doc_px),
-        ],
-        egui::Stroke::new(1.0_f32, dim_color),
-    );
-    // Ticks
-    painter.line_segment(
-        [
-            egui::pos2(dim_x - 3.0, surface_y),
-            egui::pos2(dim_x + 3.0, surface_y),
-        ],
-        egui::Stroke::new(1.0_f32, dim_color),
-    );
-    painter.line_segment(
-        [
-            egui::pos2(dim_x - 3.0, surface_y + doc_px),
-            egui::pos2(dim_x + 3.0, surface_y + doc_px),
-        ],
-        egui::Stroke::new(1.0_f32, dim_color),
-    );
-    painter.text(
-        egui::pos2(dim_x + 2.0, surface_y + doc_px / 2.0),
-        egui::Align2::LEFT_CENTER,
-        format!("{doc:.2}"),
-        egui::FontId::proportional(8.0),
-        dim_color,
-    );
-
-    // "Side" label
-    painter.text(
-        egui::pos2(right_rect.center().x, rect.top() + 3.0),
-        egui::Align2::CENTER_TOP,
-        "Side",
-        egui::FontId::proportional(8.0),
-        info_color,
-    );
-
-    // Stats at bottom
-    let stats_y = rect.bottom() - 4.0;
-    painter.text(
-        egui::pos2(rect.left() + 4.0, stats_y),
-        egui::Align2::LEFT_BOTTOM,
-        format!(
-            "Chip {:.4}  MRR {:.0} mm\u{00B3}/min",
-            result.chip_load_mm, result.mrr_mm3_min
-        ),
-        egui::FontId::proportional(8.0),
-        info_color,
-    );
-}
-
 // ── Entry style preview diagram ─────────────────────────────────────────
 
 /// Draw a 2D side-view of the entry style geometry (ramp or helix).
@@ -4834,12 +4272,9 @@ fn draw_toolpath_panel(
                 ui.add_space(2.0);
             }
 
-            // Compute + cache the LUT feeds result so the per-field ⚡ pills
-            // on the Geometry rows (stepover / depth-per-pass) can render.
-            // The bulk "Suggest all" button was retired in W3.2 — feed /
-            // plunge / RPM and DOC / WOC now apply from the SPEED and CUT
-            // sections of the Feeds & Speeds tab (the split-aware applies),
-            // and the engine-refusal message surfaces there too.
+            // Compute + cache the LUT feeds result so the Geometry-row ⚡
+            // pills (stepover / depth-per-pass) can render. Feed advice and
+            // the single validated Apply all route live on the Feeds tab.
             let pill_tool_cfg = tool_configs
                 .iter()
                 .find(|(id, _)| *id == entry.tool_id)
@@ -4858,8 +4293,9 @@ fn draw_toolpath_panel(
             }
             // G-PILLCLAMP (UX-R03-014): one dry run of the apply funnel per
             // frame, so every ⚡ pill below offers and writes the value
-            // `⚡ Apply cut geometry` would write for its field — not the raw
-            // calculator number (4.2 mm vs 1.2 mm of DOC on the demo pocket).
+            // the canonical Apply all route would write for its field — not
+            // the raw calculator number (4.2 mm vs 1.2 mm of DOC on the demo
+            // pocket).
             let pills = match (entry.feeds_result.as_ref(), pill_tool_cfg) {
                 (Some(result), Some(tool_cfg)) => Some(PillSuggestions::new(
                     &entry.operation,
@@ -5524,12 +4960,8 @@ fn draw_toolpath_panel(
             // promoted (Phase 4).
             ui.horizontal(|ui| {
                 if ui
-                    .button("\u{1F4CA} Open Feeds & Speeds modal")
-                    .on_hover_text(
-                        "Open the redesigned Feeds & Speeds view: \
-                         current-vs-recommended comparison, three machinist \
-                         charts, and Apply buttons.",
-                    )
+                    .button("Explore…")
+                    .on_hover_text("Explore feed versus RPM for this operation.")
                     .clicked()
                 {
                     events.push(AppEvent::OpenFeedsModal(entry.id));
@@ -5551,70 +4983,9 @@ fn draw_toolpath_panel(
                     spindle_strategy,
                     project_default_rpm,
                     load_verdict,
+                    events,
                 );
             }
-            if let Some(result) = &entry.feeds_result {
-                // Formula breakdown + engagement diagram — teaching material,
-                // behind a default-closed disclosure (density pass 2026-06-11).
-                ui.add_space(4.0);
-                egui::CollapsingHeader::new("Show the math")
-                    .id_salt("feeds_show_math")
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        let flute_count = tool_configs
-                            .iter()
-                            .find(|(id, _)| *id == entry.tool_id)
-                            .map(|(_, t)| t.flute_count)
-                            .unwrap_or(2);
-                        let val = crate::ui::tokens::TEXT_STRONG;
-                        let font = egui::FontId::proportional(9.5);
-
-                        ui.label(egui::RichText::new(format!(
-                            "Feed = RPM \u{00D7} flutes \u{00D7} chipload = {:.0} \u{00D7} {} \u{00D7} {:.4} = {:.0} mm/min",
-                            result.rpm, flute_count, result.chip_load_mm, result.feed_rate_mm_min
-                        )).font(font.clone()).color(val));
-
-                        ui.label(egui::RichText::new(format!(
-                            "MRR = DOC \u{00D7} WOC \u{00D7} Feed = {:.2} \u{00D7} {:.2} \u{00D7} {:.0} = {:.0} mm\u{00B3}/min",
-                            result.axial_depth_mm, result.radial_width_mm, result.feed_rate_mm_min, result.mrr_mm3_min
-                        )).font(font.clone()).color(val));
-
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Power = MRR \u{00D7} Kc / 60e6 = {:.2} kW (of {:.2} kW available)",
-                                result.power_kw, result.available_power_kw
-                            ))
-                            .font(font.clone())
-                            .color(val),
-                        );
-
-                        if result.power_limited {
-                            ui.label(
-                                egui::RichText::new(
-                                    "Feed was reduced to stay within spindle power",
-                                )
-                                .font(font.clone())
-                                .color(crate::ui::tokens::CAUTION),
-                            );
-                        }
-
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Plunge = {:.0} mm/min ({:.0}% of feed)",
-                                result.plunge_rate_mm_min,
-                                result.plunge_rate_mm_min / result.feed_rate_mm_min.max(1.0)
-                                    * 100.0
-                            ))
-                            .font(font)
-                            .color(val),
-                        );
-
-                        // Engagement diagram
-                        ui.add_space(6.0);
-                        draw_engagement_diagram(ui, result, tool_diameter, tool_type);
-                    });
-            }
-
             // Vendor cutting data viewer (always available, filtered by tool)
             draw_vendor_lut_viewer(ui, tool_type, tool_diameter);
         }
@@ -5933,19 +5304,6 @@ fn record_stock_to_leave(
 // `ProvKind` vocabulary (green for a vendor LUT row, amber for the formula
 // fallback or edge-radius floor) rather than the old local
 // `pill_color_for_source` / `source_short_label` helpers.
-
-/// Map the chipload's [`ChiploadSource`](rs_cam_core::feeds::ChiploadSource)
-/// into the shared provenance vocabulary (kind + optional observation id).
-fn prov_from_chipload(source: &rs_cam_core::feeds::ChiploadSource) -> (ProvKind, Option<&str>) {
-    use rs_cam_core::feeds::ChiploadSource;
-    match source {
-        ChiploadSource::VendorLut { observation_id } => {
-            (ProvKind::VendorLut, Some(observation_id.as_str()))
-        }
-        ChiploadSource::FormulaFallback => (ProvKind::Formula, None),
-        ChiploadSource::EdgeRadiusFloor => (ProvKind::EdgeRadiusFloor, None),
-    }
-}
 
 /// Same as [`dv`] but with an optional inline ⚡ Suggest pill that pushes
 /// the recommended value into the field on click. Delegates to [`ValueRow`]

@@ -189,6 +189,27 @@ fn the_feeds_window_has_no_mode_to_switch() {
     );
 }
 
+// ── UR4 — the modal has Explore scope only ─────────────────────────────
+
+/// The modal is a focused nomogram, not a second inspector. Its body may
+/// compose Explore helpers only; Compare and Why belong to the Feeds tab.
+#[test]
+fn the_feeds_modal_body_is_explore_only() {
+    let modal = strip_comments(&feeds_file("mod"));
+    let body_at = modal
+        .find(".show(ctx, |ui| {")
+        .expect("feeds modal body moved");
+    let body = &modal[body_at..];
+    assert!(
+        body.contains("explore::"),
+        "the modal body must draw Explore"
+    );
+    assert!(
+        !body.contains("compare::") && !body.contains("why::"),
+        "the modal draws Compare or Why again; the Feeds tab is authoritative"
+    );
+}
+
 // ── arm 2 — THE CAUSE: the state is split, not just the drawing ──────────
 
 /// **The invariant that makes the split real.** Project-scope state lives on
@@ -419,7 +440,14 @@ fn the_scans_are_not_vacuous() {
          and arm 4 now asserts nothing."
     );
 
-    // 4. The old single file stays deleted.
+    // 4. The Explore-only scan has a live, non-comment anchor.
+    let modal = strip_comments(&feeds_file("mod"));
+    assert!(
+        modal.contains("explore::draw_modal_body"),
+        "Explore modal body moved or was renamed"
+    );
+
+    // 5. The old single file stays deleted.
     assert!(
         !crate_root().join("src/ui/feeds_modal.rs").is_file(),
         "src/ui/feeds_modal.rs is back — 3 450 lines, four jobs, two scopes"

@@ -14,8 +14,7 @@ use rs_cam_core::feeds::FeedsExplain;
 use rs_cam_core::feeds::rationale::{RationaleEntry, SuggestRationale};
 
 use super::shared::{CurrentValues, engaged_diameter_context, vendor_band};
-use crate::ui::{AppEvent, theme};
-use crate::ui_command::{NoArgs, UiCommand};
+use crate::ui::theme;
 
 /// S2 — engaged-diameter-at-DOC annotation row. Renders just below the
 /// context chip for tapered-ball / V-bit tools, where the published tip
@@ -125,29 +124,17 @@ pub(crate) fn draw_chipload_engaged_attestation(
 // / draw_mrr_row were lifted to `ui::components::compare` (CL 4/4) so the
 // optimizer rollup and the Feeds Details drawer share one implementation.
 
-// ── Provenance disclosure ───────────────────────────────────────────
+// ── Warnings ────────────────────────────────────────────────────────
 
-pub(crate) fn draw_provenance_disclosure(
-    ui: &mut egui::Ui,
-    explain: &FeedsExplain,
-    show: bool,
-    events: &mut Vec<AppEvent>,
-) {
-    ui.horizontal(|ui| {
-        let arrow = if show { "▼" } else { "▶" };
-        if ui
-            .small_button(format!("{arrow} How is this calculated?"))
-            .clicked()
-        {
-            events.push(AppEvent::Ui(UiCommand::ToggleFeedsProvenance(NoArgs)));
-        }
-    });
-    if !show {
-        return;
-    }
+/// Provenance content for the inspector's single Why disclosure.
+///
+/// This is deliberately a body renderer: the outer disclosure belongs to the
+/// Feeds tab, so the old independent "How is this calculated?" button would
+/// create a second, competing expansion state.
+pub(crate) fn draw_provenance(ui: &mut egui::Ui, explain: &FeedsExplain) {
     egui::Frame::group(ui.style()).show(ui, |ui| match &explain.matched_row {
         Some(row) => {
-            egui::Grid::new("feeds_modal_prov")
+            egui::Grid::new("feeds_inspector_provenance")
                 .num_columns(2)
                 .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
                 .min_row_height(crate::ui::tokens::ROW_DENSE)
@@ -236,8 +223,7 @@ pub(crate) fn draw_provenance_disclosure(
         None => {
             ui.label(
                 egui::RichText::new(
-                    "No vendor LUT row matched. Recommendation is from the \
-                     empirical formula. Re-check against vendor data before use.",
+                    "No vendor LUT row matched. Recommendation is formula-derived; re-check against vendor data before use.",
                 )
                 .small()
                 .color(theme::WARNING_MILD),
@@ -245,8 +231,6 @@ pub(crate) fn draw_provenance_disclosure(
         }
     });
 }
-
-// ── Warnings ────────────────────────────────────────────────────────
 
 pub(crate) fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
     if explain.recommended.warnings.is_empty() {
@@ -348,13 +332,9 @@ pub(crate) fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
     }
 }
 
-// ── Suggest rationale (v3.1) ─────────────────────────────────────────
+// ── Suggest rationale ────────────────────────────────────────────────
 
-/// Render the rationale tree the combined-Suggest orchestrator
-/// produces alongside its parameter writes. Each entry corresponds to
-/// one [`SuggestWarning`] emitted by `enforce_invariants`. Renders
-/// nothing when the rationale is empty (Suggest made no rewrites
-/// worth surfacing).
+/// Render the rationale tree emitted by the canonical Suggest pass.
 pub(crate) fn draw_rationale(ui: &mut egui::Ui, rationale: &SuggestRationale) {
     if rationale.is_empty() {
         return;
@@ -404,13 +384,7 @@ pub(crate) fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain)
         0.0
     };
 
-    egui::CollapsingHeader::new(
-        egui::RichText::new("Why is the recommendation here?")
-            .strong()
-            .color(theme::TEXT_STRONG),
-    )
-    .default_open(false)
-    .show(ui, |ui| {
+    egui::Frame::NONE.show(ui, |ui| {
         // ── Step 1: target chipload ──────────────────────────────────
         ui.label(
             egui::RichText::new("Target advance/tooth")

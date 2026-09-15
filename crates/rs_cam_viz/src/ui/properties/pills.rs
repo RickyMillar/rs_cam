@@ -3,8 +3,8 @@
 //! G-PILLCLAMP (UX-R03-014, 2026-09-10). The 22 `dv_pill` sites in
 //! `operations/*.rs` used to be handed `(r.axial_depth_mm, &r.chipload_source)`
 //! straight off the `FeedsResult` — the raw calculator output — while the
-//! `⚡ Apply cut geometry` button ran the same recommendation through
-//! `apply_feeds_subset` → `enforce_invariants` and wrote the clamped value. On
+//! canonical `⚡ Apply all` action runs the same recommendation through the
+//! invariant funnel and writes the clamped value. On
 //! the demo pocket that was 4.2 mm versus 1.2 mm of DOC, both labelled as the
 //! recommendation.
 //!
@@ -29,7 +29,6 @@ use rs_cam_core::feeds::suggest::{
 };
 use rs_cam_core::feeds::{FeedsField, FeedsResult};
 
-use crate::state::toolpath::ToolpathEntry;
 use crate::ui::components::{ProvKind, Suggestion};
 
 /// Build the [`Suggestion`] a pill shows for `field`.
@@ -60,22 +59,6 @@ pub(super) fn suggestion_for<'a>(
             clamped: false,
             calculator: Some(calculator),
         },
-    }
-}
-
-/// After a pill wrote `field`, stamp the recommendation's provenance on the
-/// entry and remember the write for this frame's flush (see
-/// `ToolpathEntry::pill_stamped_fields`). A field with no preview was a raw
-/// fallback; it takes no stamp and the flush labels it `Manual`, which is
-/// honest — the funnel did not produce that number.
-pub(super) fn stamp_pill_write(
-    entry: &mut ToolpathEntry,
-    previews: &FieldApplyPreviews,
-    field: FeedsField,
-) {
-    if let Some(p) = previews.get(field) {
-        entry.feeds_provenance.set(field, p.provenance.clone());
-        entry.pill_stamped_fields.push(field);
     }
 }
 

@@ -347,6 +347,10 @@ fn inspector_root_caps_children_at_the_panel_width_ur1() {
 #[test]
 fn real_warning_shaped_feeds_tab_stays_inside_its_panel_ur1() {
     let ctx = ctx();
+    // The rubbing-floor message moved under UR4's one Why disclosure. This
+    // layout sentry needs to exercise its content, not assert that collapsed
+    // content is painted, so render all disclosures open for this fixture.
+    ctx.memory_mut(|memory| memory.set_everything_is_visible(true));
     let mut state = feeds_fixture();
     let id = state.session.toolpath_configs()[0].id;
 

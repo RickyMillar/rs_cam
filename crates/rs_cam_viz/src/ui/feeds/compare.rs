@@ -13,168 +13,153 @@
 //! operation pairing (I-3).
 
 use rs_cam_core::feeds::FeedsExplain;
-use rs_cam_core::feeds::rationale::SuggestRationale;
 use rs_cam_core::feeds::suggest::FeedsPreview;
 
-use super::explore::{draw_chart_a, draw_chart_b, draw_chart_c};
 use super::shared::{
     CurrentValues, ball_tip_radius, combined_scale, hardness_label, material_family_label,
     tool_family_label,
 };
-use super::why::{
-    draw_chipload_breakdown, draw_chipload_engaged_attestation, draw_chipload_min_warning,
-    draw_engaged_diameter_row, draw_provenance_disclosure, draw_rationale, draw_warnings,
-};
 use crate::state::AppState;
 use crate::ui::components::compare::{self, CompareRow};
 use crate::ui::components::{ProvKind, ProvenanceBadge};
-use crate::ui::properties::feeds_rows;
 use crate::ui::{AppEvent, theme};
 
-/// Project-level spindle policy selector. Emits
-/// `AppEvent::SetSpindleStrategy` when the operator toggles. Sits at
-/// the modal head so its effect on every recommendation below is
-/// visible — the row even surfaces the machine ceiling so the operator
-/// can sanity-check the headroom.
-pub(crate) fn draw_spindle_strategy_row(
-    ui: &mut egui::Ui,
-    current: rs_cam_core::feeds::SpindleStrategy,
-    machine: &rs_cam_core::machine::MachineProfile,
-    events: &mut Vec<AppEvent>,
-) {
-    use rs_cam_core::feeds::SpindleStrategy;
-    let (_, max_rpm) = machine.rpm_range();
-    ui.horizontal(|ui| {
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new("Spindle policy:")
-                    .small()
-                    .color(theme::TEXT_DIM),
-            )
-            .wrap(),
-        );
-        let mut next = current;
-        // MatchChart radio
-        if ui
-            .radio(current == SpindleStrategy::MatchChart, "Match chart")
-            .on_hover_text(
-                "Use the LUT row's chart-published RPM verbatim. \
-                 Tightest match to the vendor band's own test conditions.",
-            )
-            .clicked()
-        {
-            next = SpindleStrategy::MatchChart;
-        }
-        if ui
-            .radio(
-                current == SpindleStrategy::MaxSpeed,
-                "Max speed (constant advance/tooth)",
-            )
-            .on_hover_text(format!(
-                "Push RPM up to the spindle ceiling ({:.0} RPM × \
-                 {:.0}% headroom), scaling feed proportionally to \
-                 keep the commanded advance/tooth constant. Capped by vendor rpm_max \
-                 when published, and by a {:.1}× hard limit over the \
-                 chart RPM. Power-limit derate still applies on top \
-                 — if the higher operating point exceeds spindle \
-                 power, feed comes back down.",
-                max_rpm,
-                rs_cam_core::feeds::SPINDLE_CEILING_HEADROOM * 100.0,
-                rs_cam_core::feeds::MAX_SPINDLE_SPEEDUP,
-            ))
-            .clicked()
-        {
-            next = SpindleStrategy::MaxSpeed;
-        }
-        if next != current {
-            events.push(AppEvent::SetSpindleStrategy(next));
-        }
-        ui.add_space(8.0);
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("(spindle max {:.0} RPM)", max_rpm))
-                    .small()
-                    .color(theme::TEXT_DIM),
-            )
-            .wrap(),
-        );
-    });
+const CALCULATOR_NOTE: &str = "calculator value; Apply all enforces operation limits";
+const ADVANCE_ROW_LABEL: &str = "Advance/tooth";
+
+fn advance_per_tooth_mm(feed_mm_min: f64, rpm: f64, flutes: u32) -> Option<f64> {
+    (rpm > 0.0 && flutes > 0).then_some(feed_mm_min / (rpm * f64::from(flutes)))
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Toolpath view (Phase 1 + 2 + 3)
-// ────────────────────────────────────────────────────────────────────
-
-pub(crate) fn draw_toolpath_view(
-    ui: &mut egui::Ui,
+pub(crate) fn read_current_values(
     state: &AppState,
     toolpath_id: rs_cam_core::ToolpathId,
-    modal: &crate::state::FeedsModalState,
-    events: &mut Vec<AppEvent>,
-) {
-    let Some(preview) = compute_preview(state, toolpath_id) else {
-        ui.label(
-            egui::RichText::new(
-                "Could not build explanation — missing tool, material, or machine.",
-            )
-            .small()
-            .color(theme::WARNING),
-        );
-        return;
-    };
-    let explain = preview.explain();
-    let refusal = preview.refusal();
-    let Some(current) = read_current_values(state, toolpath_id) else {
-        ui.label("Toolpath disappeared.");
-        return;
-    };
-
-    draw_context_chip(ui, explain);
-    // S2 — engaged-diameter-at-DOC annotation for tapered/V tools.
-    draw_engaged_diameter_row(ui, &current, explain);
-    ui.add_space(8.0);
-
-    // Two-column body: left = comparison card + provenance; right = charts.
-    egui::Panel::left("feeds_modal_left")
-        .resizable(true)
-        .default_size(380.0)
-        .min_size(320.0)
-        .show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                draw_comparison_card(ui, &current, explain, refusal, toolpath_id, events);
-                ui.add_space(8.0);
-                draw_chipload_breakdown(ui, explain);
-                ui.add_space(8.0);
-                draw_provenance_disclosure(ui, explain, modal.show_provenance, events);
-                ui.add_space(8.0);
-                draw_warnings(ui, explain);
-                ui.add_space(8.0);
-                let rationale = compute_suggest_rationale(state, toolpath_id);
-                draw_rationale(ui, &rationale);
-            });
-        });
-
-    egui::CentralPanel::default().show(ui, |ui| {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            draw_chart_c(ui, &current, explain, refusal, toolpath_id, modal, events);
-            ui.add_space(12.0);
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    draw_chart_a(ui, &current, explain);
-                });
-                ui.add_space(8.0);
-                ui.vertical(|ui| {
-                    draw_chart_b(ui, &current, explain);
-                });
-            });
-        });
-    });
+) -> Option<CurrentValues> {
+    let tc = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.id == toolpath_id)?;
+    let tool = state
+        .session
+        .tools()
+        .iter()
+        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
+    Some(CurrentValues {
+        feed_rate_mm_min: tc.operation.feed_rate(),
+        plunge_rate_mm_min: tc.operation.plunge_rate(),
+        spindle_rpm: tc.operation.spindle_rpm(),
+        depth_per_pass: tc.operation.depth_per_pass(),
+        stepover: tc.operation.stepover(),
+        flute_count: tool.flute_count,
+        scallop_height: tc.operation.scallop_height(),
+        supports_scallop_override: matches!(
+            tc.operation.op_type(),
+            rs_cam_core::compute::catalog::OperationType::DropCutter
+        ),
+        pass_role: tc.operation.feeds_style().1,
+    })
 }
 
-// ── Context chip ────────────────────────────────────────────────────
+/// Build the modal's payload.
+///
+/// Returns a [`FeedsPreview`], not a bare [`FeedsExplain`]: the explain payload
+/// is infallible by design (you want the nomogram even for a pairing you would
+/// decline to run) and therefore cannot tell this surface that the pairing was
+/// refused — which is exactly how the modal came to offer eleven writes on
+/// operations the engine had already declared unrunnable (A-3 census §3.1).
+/// The preview carries the refusal alongside the numbers, and hands out
+/// something writable only when there isn't one.
+pub(crate) fn current_values_for_operation(
+    operation: &crate::state::toolpath::OperationConfig,
+    tool: &crate::state::job::ToolConfig,
+    project_default_rpm: u32,
+) -> CurrentValues {
+    CurrentValues {
+        feed_rate_mm_min: operation.feed_rate(),
+        plunge_rate_mm_min: operation.plunge_rate(),
+        spindle_rpm: operation.spindle_rpm().or(Some(project_default_rpm)),
+        depth_per_pass: operation.depth_per_pass(),
+        stepover: operation.stepover(),
+        flute_count: tool.flute_count,
+        scallop_height: operation.scallop_height(),
+        supports_scallop_override: matches!(
+            operation.op_type(),
+            rs_cam_core::compute::catalog::OperationType::DropCutter
+        ),
+        pass_role: operation.feeds_style().1,
+    }
+}
 
+pub(crate) fn compute_preview_for_operation(
+    operation: &crate::state::toolpath::OperationConfig,
+    tool: &crate::state::job::ToolConfig,
+    material: &rs_cam_core::material::Material,
+    machine: &rs_cam_core::machine::MachineProfile,
+    workholding: rs_cam_core::feeds::WorkholdingRigidity,
+    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+) -> FeedsPreview {
+    rs_cam_core::feeds::suggest::feeds_preview_for_operation(
+        operation,
+        tool,
+        material,
+        machine,
+        workholding,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        spindle_strategy,
+    )
+}
+
+pub(crate) fn compute_preview(
+    state: &AppState,
+    toolpath_id: rs_cam_core::ToolpathId,
+) -> Option<FeedsPreview> {
+    let tc = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.id == toolpath_id)?;
+    let tool = state
+        .session
+        .tools()
+        .iter()
+        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
+    let stock = state.session.stock_config();
+    Some(rs_cam_core::feeds::suggest::feeds_preview_for_operation(
+        &tc.operation,
+        tool,
+        &stock.material,
+        state.session.machine(),
+        stock.workholding_rigidity,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        state.session.post_config().spindle_strategy,
+    ))
+}
+
+pub(crate) fn draw_inspector_comparison(
+    ui: &mut egui::Ui,
+    current: &CurrentValues,
+    preview: &FeedsPreview,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    events: &mut Vec<AppEvent>,
+) {
+    draw_context_chip(ui, preview.explain());
+    ui.add_space(crate::ui::tokens::SPACE_2);
+    draw_comparison_card(
+        ui,
+        current,
+        preview.explain(),
+        preview.refusal(),
+        toolpath_id,
+        events,
+    );
+}
+
+/// Tool, material and recommendation-source context belongs with the
+/// canonical comparison, not in the Explore window. `horizontal_wrapped`
+/// keeps this compact line within the narrow inspector (UR1/UR4).
 fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.add(
             egui::Label::new(egui::RichText::new("Tool:").small().color(theme::TEXT_DIM)).wrap(),
         );
@@ -221,10 +206,6 @@ fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
             )
             .wrap(),
         );
-        // Source signal via the one provenance vocabulary (ProvenanceBadge);
-        // the extrapolation caveat stays an explicit amber note rather than
-        // recolouring the source, so a vendor row reads canonically green and
-        // "approx" is a separate, honest signal (P7-003 collapse).
         match &explain.matched_row {
             Some(row) => {
                 ui.add(ProvenanceBadge::new(ProvKind::VendorLut).reference(&row.observation_id));
@@ -244,102 +225,6 @@ fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
             }
         }
     });
-}
-
-pub(crate) fn read_current_values(
-    state: &AppState,
-    toolpath_id: rs_cam_core::ToolpathId,
-) -> Option<CurrentValues> {
-    let tc = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .find(|tc| tc.id == toolpath_id)?;
-    let tool = state
-        .session
-        .tools()
-        .iter()
-        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
-    Some(CurrentValues {
-        feed_rate_mm_min: tc.operation.feed_rate(),
-        plunge_rate_mm_min: tc.operation.plunge_rate(),
-        spindle_rpm: tc.operation.spindle_rpm(),
-        depth_per_pass: tc.operation.depth_per_pass(),
-        stepover: tc.operation.stepover(),
-        flute_count: tool.flute_count,
-        scallop_height: tc.operation.scallop_height(),
-        supports_scallop_override: matches!(
-            tc.operation.op_type(),
-            rs_cam_core::compute::catalog::OperationType::DropCutter
-        ),
-        pass_role: tc.operation.feeds_style().1,
-    })
-}
-
-/// Build the modal's payload.
-///
-/// Returns a [`FeedsPreview`], not a bare [`FeedsExplain`]: the explain payload
-/// is infallible by design (you want the nomogram even for a pairing you would
-/// decline to run) and therefore cannot tell this surface that the pairing was
-/// refused — which is exactly how the modal came to offer eleven writes on
-/// operations the engine had already declared unrunnable (A-3 census §3.1).
-/// The preview carries the refusal alongside the numbers, and hands out
-/// something writable only when there isn't one.
-pub(crate) fn compute_preview(
-    state: &AppState,
-    toolpath_id: rs_cam_core::ToolpathId,
-) -> Option<FeedsPreview> {
-    let tc = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .find(|tc| tc.id == toolpath_id)?;
-    let tool = state
-        .session
-        .tools()
-        .iter()
-        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
-    let stock = state.session.stock_config();
-    Some(rs_cam_core::feeds::suggest::feeds_preview_for_operation(
-        &tc.operation,
-        tool,
-        &stock.material,
-        state.session.machine(),
-        stock.workholding_rigidity,
-        rs_cam_core::feeds::embedded_vendor_lut(),
-        state.session.post_config().spindle_strategy,
-    ))
-}
-
-/// v3.1: derive a [`SuggestRationale`] tree from the live operation by
-/// running the same Suggest invocation `--apply-suggest` would use, then
-/// converting the warnings into rationale entries. Returns an empty
-/// rationale (rendered as nothing) when the Suggest call refuses
-/// (unmatched tool × op, etc.) — the user has no information they need
-/// to act on in that case.
-///
-/// T10 (Phase 4): the context assembly + Suggest invocation live in
-/// [`rs_cam_core::session::ProjectSession::cutter_op_profile`], shared
-/// with the MCP `get_suggest_rationale` surface.
-fn compute_suggest_rationale(
-    state: &AppState,
-    toolpath_id: rs_cam_core::ToolpathId,
-) -> SuggestRationale {
-    let Some(tc) = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .find(|tc| tc.id == toolpath_id)
-    else {
-        return SuggestRationale::default();
-    };
-    let Some(profile) = state.session.cutter_op_profile(tc) else {
-        return SuggestRationale::default();
-    };
-    match profile.feasibility {
-        Ok(()) => SuggestRationale::from_warnings(&profile.warnings),
-        Err(_) => SuggestRationale::default(),
-    }
 }
 
 fn draw_comparison_card(
@@ -418,13 +303,13 @@ fn draw_comparison_card(
                     " mm",
                     0.01,
                 )
-                .recommended_note(feeds_rows::CALCULATOR_NOTE)
+                .recommended_note(CALCULATOR_NOTE)
                 .show(ui);
                 woc_row(ui, current, explain);
                 CompareRow::new(
-                    feeds_rows::MODAL_ADVANCE_ROW_LABEL,
+                    ADVANCE_ROW_LABEL,
                     Some(current.chipload_mm()),
-                    feeds_rows::advance_per_tooth_mm(
+                    advance_per_tooth_mm(
                         explain.recommended.feed_rate_mm_min,
                         explain.recommended.rpm,
                         current.flute_count,
@@ -434,11 +319,6 @@ fn draw_comparison_card(
                 )
                 .show(ui);
             });
-
-        // S3 — chipload-min (rubbing/burning) warning, finish ops only.
-        draw_chipload_min_warning(ui, current, explain);
-        // S4 — engaged-diameter chipload attestation (tapered/V tools).
-        draw_chipload_engaged_attestation(ui, current, explain);
 
         // S1 — scallop-driven stepover control (DropCutter only).
         if current.supports_scallop_override {
@@ -459,14 +339,12 @@ fn draw_comparison_card(
     });
 }
 
-/// The modal's Apply column.
+/// The inspector comparison's Apply column.
 ///
 /// Checkpoint I-3 (2026-08-12): on a tool × operation pairing
-/// `validate_tool_for_operation` refuses, the modal still opens and still
-/// draws every chart — the explanatory job is the modal's real job — but the
-/// **whole Apply column is replaced by the refusal**. The write becomes
-/// impossible; the explanation survives. Before this, the modal previewed and
-/// applied recipes on pairings the properties panel declined to show at all.
+/// `validate_tool_for_operation` refuses, the explanation remains visible but
+/// the **whole Apply column is replaced by the refusal**. The write becomes
+/// impossible; the explanation survives.
 fn draw_apply_column(
     ui: &mut egui::Ui,
     refusal: Option<&rs_cam_core::feeds::FeedsError>,
@@ -502,9 +380,8 @@ fn draw_apply_column(
             .on_hover_text(
                 "Overwrite RPM, feed, and plunge (how fast) AND DOC/WOC (the cut) with \
                  the recommended values, after the safety clamps. \
-                 CHANGES THE CUT: the applied DOC/WOC are the invariant-resolved values, \
-                 identical to the properties panel's \"Apply recommended speeds\" plus \
-                 \"Apply cut geometry\". To move only the speeds, use the panel.",
+                 CHANGES THE CUT: the applied DOC/WOC are the invariant-resolved values. \
+                 This is the one canonical route for applying the recommendation.",
             )
             .clicked()
         {
@@ -528,7 +405,7 @@ fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
             " mm",
             0.01,
         )
-        .recommended_note(feeds_rows::CALCULATOR_NOTE)
+        .recommended_note(CALCULATOR_NOTE)
         .show(ui);
         return;
     }

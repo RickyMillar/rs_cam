@@ -206,7 +206,7 @@ fn any_feeds_src(needle: &str) -> bool {
 const EVENTS_SRC: &str = include_str!("../src/controller/events/mod.rs");
 /// The per-field ⚡ pill and the sites that feed it (G-PILLCLAMP, 2026-09-10).
 const VALUE_ROW_SRC: &str = include_str!("../src/ui/components/value_row.rs");
-const PROPERTIES_SRC: &str = include_str!("../src/ui/properties/mod.rs");
+const PILL_BUILDER_SRC: &str = include_str!("../src/ui/properties/pills.rs");
 const PILL_SITE_SRCS: [(&str, &str); 6] = [
     (
         "operations/boundary_2d.rs",
@@ -1049,13 +1049,8 @@ fn no_pill_site_feeds_the_raw_recommendation_to_the_pill() {
         }
     }
     assert!(
-        !PROPERTIES_SRC.contains("recommended: result.feed_rate_mm_min")
-            && !PROPERTIES_SRC.contains("recommended: result.plunge_rate_mm_min"),
-        "the Feeds tab pills offer the raw feed / plunge again"
-    );
-    assert!(
-        PROPERTIES_SRC.contains("preview_field_applies("),
-        "the Feeds tab no longer dry-runs the funnel for its pills"
+        PILL_BUILDER_SRC.contains("preview_field_applies("),
+        "the Geometry pill builder no longer dry-runs the funnel"
     );
     assert!(
         !VALUE_ROW_SRC.contains("round_suggestion_value("),
