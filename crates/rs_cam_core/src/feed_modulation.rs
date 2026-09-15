@@ -60,6 +60,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::feeds::force::DeflectionCapRefusal;
 use crate::machine_kinematics::{MachineKinematics, predicted_feeds_for_toolpath};
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
@@ -430,16 +431,25 @@ fn max_safe_feed_for_move(
     // feed-blind `Kc·ap·ae` reference force this replaced).
     if let Some(defl) = ctx.deflection_inputs {
         let axial_mm = effective_axial_mm(engagement, ctx);
-        if axial_mm > 0.0 && defl.compliance_mm_per_n > 0.0 {
-            // Peak-chip immersion from the radial engagement fraction
-            // (diameter cancels): cos ψ = 1 − 2·woc, θ_peak = min(ψ, π/2).
-            let cos_psi = (1.0 - 2.0 * woc_eff).clamp(-1.0, 1.0);
-            let sin_theta_peak = cos_psi.acos().min(std::f64::consts::FRAC_PI_2).sin();
-            // Max lateral force the tip can take within the bound, and the
-            // feed-independent edge force floor at this DOC.
-            let budget_force_n = defl.max_tip_deflection_mm / defl.compliance_mm_per_n;
-            let edge_force_n = axial_mm * defl.f_edge_n_per_mm;
-            if sin_theta_peak <= 0.0 || edge_force_n >= budget_force_n {
+        // One solver, shared with the pre-simulation feeds chart: the
+        // closed-form inverse lives in `feeds::force`, not here. Two
+        // copies of one model drift apart.
+        match crate::feeds::force::chipload_cap_for_deflection_with_reason(
+            defl.ks_n_per_mm2,
+            defl.f_edge_n_per_mm,
+            defl.compliance_mm_per_n,
+            defl.max_tip_deflection_mm,
+            axial_mm,
+            woc_eff,
+        ) {
+            Ok(fz_cap) => {
+                let defl_cap = fz_cap * ctx.spindle_rpm * flutes;
+                limits.push((defl_cap, BindingConstraint::DeflectionMax));
+            }
+            Err(
+                DeflectionCapRefusal::NoLateralEngagement
+                | DeflectionCapRefusal::EdgeForceOverBudget,
+            ) => {
                 // Even zero feed exceeds the bound (the edge floor alone is
                 // over budget), or no lateral engagement: feed cannot rescue
                 // deflection — pin to the chipload-min floor and let the
@@ -447,15 +457,11 @@ fn max_safe_feed_for_move(
                 // real fix (out of scope for per-move feed).
                 let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
                 limits.push((floor.max(1e-9), BindingConstraint::DeflectionMax));
-            } else if defl.ks_n_per_mm2 > 0.0 {
-                // fz_cap = (budget_force/ap − F_edge) / (Ks · sin θ_peak)
-                let fz_cap = (budget_force_n / axial_mm - defl.f_edge_n_per_mm)
-                    / (defl.ks_n_per_mm2 * sin_theta_peak);
-                if fz_cap.is_finite() && fz_cap > 0.0 {
-                    let defl_cap = fz_cap * ctx.spindle_rpm * flutes;
-                    limits.push((defl_cap, BindingConstraint::DeflectionMax));
-                }
             }
+            // No DOC, no compliance, no Ks: the deflection constraint has
+            // no signal here. It contributes no cap, and it must not claim
+            // the binding tag either.
+            Err(DeflectionCapRefusal::Unmodelled) => {}
         }
     }
 

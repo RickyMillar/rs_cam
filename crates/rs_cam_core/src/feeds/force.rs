@@ -138,6 +138,144 @@ pub fn lateral_cutting_force(
     Some(axial_mm * (ks * h_eff + f_edge))
 }
 
+/// The reason the closed-form deflection cap gives no feed answer.
+///
+/// [`chipload_cap_for_deflection_with_reason`] reports this reason;
+/// [`chipload_cap_for_deflection`] discards it. A solver needs the
+/// distinction: a bound that **no** feed satisfies is a different
+/// finding from a set of inputs that carries no model at all. The first
+/// is a constraint the caller must report; the second is an abstention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeflectionCapRefusal {
+    /// `sin θ_peak ≤ 0`. The tooth sweeps no lateral arc, so the chip is
+    /// not there to be thinned and feed does not move the bending force.
+    /// The cap is undefined, not infinite. Do not read this as a pass.
+    NoLateralEngagement,
+    /// The feed-independent edge force alone already meets or exceeds the
+    /// force budget. `F_edge` is a floor: `ap · F_edge` stands at a feed
+    /// of zero. So no feed rescues the deflection bound on this geometry.
+    /// The fix is a smaller axial DOC or a smaller stepover.
+    EdgeForceOverBudget,
+    /// The inputs carry no usable model. The axial DOC, the compliance or
+    /// the affine slope `Ks` is zero, negative or not a number, or the
+    /// solved cap is not a finite positive feed. The honest answer is an
+    /// abstention, not a number.
+    Unmodelled,
+}
+
+/// Feed-per-tooth ceiling (mm/tooth) that holds the tip deflection at or
+/// below `max_tip_deflection_mm`, with the refusal reason.
+///
+/// This inverts the affine force model of this module onto the feed axis
+/// in closed form. The lateral force is affine in feed per tooth and the
+/// tip deflection is linear in force:
+///
+/// ```text
+/// F_lat  = ap · (Ks · fz · sin θ_peak + F_edge)
+/// δ      = compliance · F_lat
+/// ```
+///
+/// Solve `δ ≤ bound` for `fz`:
+///
+/// ```text
+/// budget_force = max_tip_deflection / compliance
+/// fz_cap       = (budget_force / ap − F_edge) / (Ks · sin θ_peak)
+/// ```
+///
+/// The feed-modulation optimizer and the post-simulation deflection gate
+/// both consume this one solver, so they cannot disagree on a cut.
+///
+/// ## The immersion form
+///
+/// This function takes the radial engagement as a **fraction of the tool
+/// diameter** and uses the peak-chip form `cos ψ = 1 − 2·woc_fraction`.
+/// That is the same relation as [`immersion_angle`]'s `cos ψ = 1 − ae/r`,
+/// because `ae/r = 2·(ae/D)`. The diameter cancels, so the caller passes
+/// the engagement fraction it already holds and does not reconstruct `ae`
+/// and `r`. Do not "correct" this line to `1 − woc_fraction`.
+///
+/// ## Refusals
+///
+/// - [`DeflectionCapRefusal::NoLateralEngagement`]
+/// - [`DeflectionCapRefusal::EdgeForceOverBudget`]
+/// - [`DeflectionCapRefusal::Unmodelled`]
+///
+/// The guard order matters and matches the caller's decision tree. The
+/// function tests the axial DOC and the compliance first, so degenerate
+/// inputs report `Unmodelled` and never a can't-satisfy refusal.
+pub fn chipload_cap_for_deflection_with_reason(
+    ks_n_per_mm2: f64,
+    f_edge_n_per_mm: f64,
+    compliance_mm_per_n: f64,
+    max_tip_deflection_mm: f64,
+    axial_doc_mm: f64,
+    radial_woc_fraction: f64,
+) -> Result<f64, DeflectionCapRefusal> {
+    // A non-positive or NaN DOC/compliance carries no model. Test it
+    // before the can't-satisfy branches: without a DOC there is no edge
+    // force to compare against the budget.
+    let inputs_modelled = axial_doc_mm > 0.0 && compliance_mm_per_n > 0.0;
+    if !inputs_modelled {
+        return Err(DeflectionCapRefusal::Unmodelled);
+    }
+
+    // Peak-chip immersion: cos ψ = 1 − 2·woc, θ_peak = min(ψ, π/2).
+    let cos_psi = (1.0 - 2.0 * radial_woc_fraction).clamp(-1.0, 1.0);
+    let sin_theta_peak = cos_psi.acos().min(std::f64::consts::FRAC_PI_2).sin();
+    if sin_theta_peak <= 0.0 {
+        return Err(DeflectionCapRefusal::NoLateralEngagement);
+    }
+
+    // The largest lateral force the tip takes inside the bound, and the
+    // feed-independent edge force at this DOC.
+    let budget_force_n = max_tip_deflection_mm / compliance_mm_per_n;
+    let edge_force_n = axial_doc_mm * f_edge_n_per_mm;
+    if edge_force_n >= budget_force_n {
+        return Err(DeflectionCapRefusal::EdgeForceOverBudget);
+    }
+
+    let slope_modelled = ks_n_per_mm2 > 0.0;
+    if !slope_modelled {
+        return Err(DeflectionCapRefusal::Unmodelled);
+    }
+
+    let fz_cap =
+        (budget_force_n / axial_doc_mm - f_edge_n_per_mm) / (ks_n_per_mm2 * sin_theta_peak);
+    let cap_usable = fz_cap.is_finite() && fz_cap > 0.0;
+    if !cap_usable {
+        // A non-finite cap means an unbounded or undefined budget (a
+        // denormal compliance, an infinite bound, a denormal Ks). Abstain.
+        return Err(DeflectionCapRefusal::Unmodelled);
+    }
+    Ok(fz_cap)
+}
+
+/// Feed-per-tooth ceiling (mm/tooth) that holds the tip deflection at or
+/// below `max_tip_deflection_mm`.
+///
+/// See [`chipload_cap_for_deflection_with_reason`] for the model, the
+/// immersion form and each refusal. `None` covers every refusal: no
+/// lateral engagement, the edge force alone over budget, and inputs that
+/// carry no model. Render a `None` as an abstention, never as a zero.
+pub fn chipload_cap_for_deflection(
+    ks_n_per_mm2: f64,
+    f_edge_n_per_mm: f64,
+    compliance_mm_per_n: f64,
+    max_tip_deflection_mm: f64,
+    axial_doc_mm: f64,
+    radial_woc_fraction: f64,
+) -> Option<f64> {
+    chipload_cap_for_deflection_with_reason(
+        ks_n_per_mm2,
+        f_edge_n_per_mm,
+        compliance_mm_per_n,
+        max_tip_deflection_mm,
+        axial_doc_mm,
+        radial_woc_fraction,
+    )
+    .ok()
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -265,5 +403,97 @@ mod tests {
             kc: f64::NAN, // non-finite ⇒ kc_n_per_mm2 returns None
         };
         assert!(lateral_cutting_force(&custom, 2.0, 1.0, 0.05).is_none());
+    }
+
+    /// The ordinary solve inverts onto the bound: feed the capped chipload
+    /// back through the affine model plus the compliance and the tip
+    /// deflection lands on `max_tip_deflection_mm`.
+    #[test]
+    fn deflection_cap_inverts_onto_the_bound() {
+        let ks = 42.7;
+        let f_edge = 4.53;
+        let compliance = 0.015;
+        let bound = 0.2;
+        let ap = 2.0;
+        // Full slot: cos ψ = −1 ⇒ ψ = π, θ_peak = π/2, sin θ_peak = 1.
+        let fz = chipload_cap_for_deflection(ks, f_edge, compliance, bound, ap, 1.0).unwrap();
+        let force = ap * (ks * fz + f_edge);
+        let delta = compliance * force;
+        assert!(
+            (delta - bound).abs() < 1e-9,
+            "capped chipload must invert onto the bound: δ={delta:.6} vs {bound}"
+        );
+    }
+
+    /// Refusal 1 — no lateral engagement. A zero radial WOC gives
+    /// `ψ = 0`, so `sin θ_peak = 0`. Feed does not move the force and the
+    /// cap is undefined.
+    #[test]
+    fn deflection_cap_refuses_without_lateral_engagement() {
+        let reason =
+            chipload_cap_for_deflection_with_reason(42.7, 4.53, 0.015, 0.2, 2.0, 0.0).unwrap_err();
+        assert_eq!(reason, DeflectionCapRefusal::NoLateralEngagement);
+        assert!(chipload_cap_for_deflection(42.7, 4.53, 0.015, 0.2, 2.0, 0.0).is_none());
+    }
+
+    /// Refusal 2 — the edge force alone is over budget. `F_edge` is a
+    /// floor, so a feed of zero still breaks the bound. No feed rescues
+    /// this cut; the caller must drop the DOC or the stepover.
+    #[test]
+    fn deflection_cap_refuses_when_the_edge_force_exhausts_the_budget() {
+        let f_edge = 4.53;
+        let compliance = 0.015;
+        let bound = 0.2;
+        // budget = 0.2 / 0.015 ≈ 13.3 N; ap · F_edge = 5 × 4.53 = 22.7 N.
+        let ap = 5.0;
+        let reason =
+            chipload_cap_for_deflection_with_reason(42.7, f_edge, compliance, bound, ap, 1.0)
+                .unwrap_err();
+        assert_eq!(reason, DeflectionCapRefusal::EdgeForceOverBudget);
+        assert!(chipload_cap_for_deflection(42.7, f_edge, compliance, bound, ap, 1.0).is_none());
+    }
+
+    /// Degenerate inputs abstain rather than claim a can't-satisfy
+    /// finding. The DOC and the compliance are tested first, so a missing
+    /// DOC never reports an edge-force refusal.
+    #[test]
+    fn deflection_cap_abstains_on_unmodelled_inputs() {
+        for (ks, ap, compliance) in [
+            (42.7, 0.0, 0.015), // no axial DOC
+            (42.7, 2.0, 0.0),   // no compliance
+            (0.0, 2.0, 0.015),  // no affine slope
+            (f64::NAN, 2.0, 0.015),
+        ] {
+            let reason =
+                chipload_cap_for_deflection_with_reason(ks, 4.53, compliance, 0.2, ap, 1.0)
+                    .unwrap_err();
+            assert_eq!(
+                reason,
+                DeflectionCapRefusal::Unmodelled,
+                "ks {ks} ap {ap} compliance {compliance} must abstain"
+            );
+        }
+    }
+
+    /// A deeper cut takes more force at the same feed, so the cap falls
+    /// as the axial DOC rises — and it falls faster than proportionally,
+    /// because the edge floor eats a growing share of the budget.
+    #[test]
+    fn deflection_cap_falls_as_axial_doc_rises() {
+        let ks = 42.7;
+        let f_edge = 4.53;
+        let compliance = 0.015;
+        let bound = 0.4;
+        let shallow = chipload_cap_for_deflection(ks, f_edge, compliance, bound, 1.0, 1.0).unwrap();
+        let deep = chipload_cap_for_deflection(ks, f_edge, compliance, bound, 2.0, 1.0).unwrap();
+        assert!(
+            deep < shallow,
+            "deeper cut ⇒ lower cap ({deep} vs {shallow})"
+        );
+        assert!(
+            deep < shallow / 2.0,
+            "the edge floor makes the drop faster than proportional ({deep} vs {})",
+            shallow / 2.0
+        );
     }
 }
