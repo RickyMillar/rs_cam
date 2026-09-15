@@ -1,31 +1,39 @@
-//! Explore — the nomogram and the two mini charts.
+//! Explore — the feed-versus-RPM nomogram.
 //!
-//! - **Chart A** — advance/tooth vs diameter (the "tool size" axis)
-//! - **Chart B** — advance/tooth vs hardness (the "material" axis)
-//! - **Chart C** — feed vs RPM at constant advance/tooth (the nomogram)
+//! One chart, answering one question: *if I move feed and RPM, where do I
+//! land relative to the vendor band and my machine's limits?* A nomogram you
+//! open, drag and close is a focused tool, which is a legitimate use of a
+//! window. The scope is one operation.
 //!
-//! DC5a's plan keeps this a MODAL. A nomogram you open, drag and close is a
-//! focused tool, which is a legitimate use of a window. The scope is still
-//! one operation.
-//!
-//! Every quantity these charts plot is a **commanded** advance per tooth,
-//! `feed / (rpm · flutes)` — these are pre-simulation surfaces and have no
+//! Every quantity here is a **commanded** advance per tooth,
+//! `feed / (rpm · flutes)` — this is a pre-simulation surface and has no
 //! measured value to show (Checkpoint H2, 2026-08-08).
+//!
+//! # Two charts were deleted here, 2026-09-15
+//!
+//! `draw_chart_a` plotted advance/tooth against TOOL DIAMETER and
+//! `draw_chart_b` against MATERIAL HARDNESS. The operator is cutting one job,
+//! with one tool, in one material, so both described how the vendor table
+//! varies across tools and materials that are not on the machine. That is
+//! reference data, and the inspector's `Vendor Cutting Data` table already
+//! presents it in the right form — 174 rows, real columns, collapsed by
+//! default.
+//!
+//! They were also the two that did not work. Chart B drew an EMPTY frame
+//! with a y-axis running −0.1 to −0.5 while its series held 36 real points
+//! at y 0.028–0.417: it pinned no bounds, and `egui_plot` persists a bad
+//! auto-range per plot id for the life of the session. Chart A painted its
+//! title over its own axis label, collided its point labels, and drew series
+//! outside its frame. Evidence:
+//! `planning/feeds_rework_2026-09-15/FINDINGS.md`, F-4 to F-6.
 
 use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points, Polygon};
-use rs_cam_core::feeds::{FeedsExplain, vendor_lut::HardnessKind};
+use rs_cam_core::feeds::FeedsExplain;
 
 use super::shared::{CurrentValues, chart, draw_machine_envelope, wash};
 use crate::state::AppState;
 use crate::ui::{AppEvent, theme, tokens};
 use crate::ui_command::UiCommand;
-
-/// Chart A and Chart B are drawn side by side when the window is wide
-/// enough to hold both, and stacked when it is not. A fixed-width plot in a
-/// row that cannot hold it paints past the window edge, and the window has
-/// no horizontal scroll.
-const MINI_CHART_WIDTH: f32 = 360.0;
-const MINI_CHART_GAP: f32 = 8.0;
 
 pub(crate) fn draw_spindle_strategy_row(
     ui: &mut egui::Ui,
@@ -122,19 +130,6 @@ pub(crate) fn draw_modal_body(
         modal,
         events,
     );
-    ui.add_space(12.0);
-    let side_by_side = ui.available_width() >= MINI_CHART_WIDTH * 2.0 + MINI_CHART_GAP;
-    if side_by_side {
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| draw_chart_a(ui, &current, preview.explain()));
-            ui.add_space(MINI_CHART_GAP);
-            ui.vertical(|ui| draw_chart_b(ui, &current, preview.explain()));
-        });
-    } else {
-        draw_chart_a(ui, &current, preview.explain());
-        ui.add_space(MINI_CHART_GAP);
-        draw_chart_b(ui, &current, preview.explain());
-    }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -649,32 +644,59 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
                 .color(theme::TEXT_DIM),
         );
         ui.add_space(2.0);
-        // Two-column grid: swatch+label on the left, value on the right.
-        egui::Grid::new("feeds_modal_chart_c_legend")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                for entry in &entries {
-                    ui.horizontal(|ui| {
-                        draw_legend_swatch(ui, entry.swatch, entry.color);
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(entry.label)
-                                    .small()
-                                    .color(theme::TEXT_STRONG),
-                            )
-                            .wrap(),
-                        );
-                    });
-                    ui.label(
-                        egui::RichText::new(&entry.value)
-                            .small()
-                            .color(theme::TEXT_DIM),
-                    );
-                    ui.end_row();
-                }
-            });
+        for entry in &entries {
+            legend_row(ui, entry);
+        }
+    });
+}
+
+/// One legend line: `swatch · label · value`.
+///
+/// # Why this is not a `Grid`
+///
+/// It was, and it broke badly enough that the operator called the window
+/// "cooked": the legend rendered `vendor band` as
+///
+/// ```text
+/// ven
+/// dor
+/// ban
+/// d
+/// ```
+///
+/// one letter per line. A `Grid` cell has no known width on its first layout
+/// pass, and the two obvious wrap modes are BOTH wrong there:
+///
+/// - `TextWrapMode::Extend`, the Grid cell default, asks for INFINITE width.
+///   That is the UR1 defect this crate bans — the content widens its own
+///   container until the panel clips it.
+/// - `.wrap()`, the obvious correction, has no width to wrap against, so it
+///   collapses to the narrowest legal break. For a long token that is one
+///   character.
+///
+/// There is no third wrap mode that fixes it, because the problem is the
+/// column negotiation, not the label. A legend is a list of lines, so it is
+/// laid out as a list of lines: one `horizontal_wrapped` per entry, wrapping
+/// against the frame's real width.
+fn legend_row(ui: &mut egui::Ui, entry: &LegendEntry) {
+    ui.horizontal_wrapped(|ui| {
+        draw_legend_swatch(ui, entry.swatch, entry.color);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(entry.label)
+                    .small()
+                    .color(theme::TEXT_STRONG),
+            )
+            .wrap(),
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(&entry.value)
+                    .small()
+                    .color(theme::TEXT_DIM),
+            )
+            .wrap(),
+        );
     });
 }
 
@@ -1011,533 +1033,5 @@ fn chipload_verdict(cl: f64, explain: &FeedsExplain) -> (&'static str, egui::Col
         ("above band (5% admit)", theme::WARNING_MILD)
     } else {
         ("BREAK risk (above band)", theme::ERROR)
-    }
-}
-
-// ────────────────────────────────────────────────────────────────────
-// Chart A — Advance/tooth vs Diameter
-// ────────────────────────────────────────────────────────────────────
-
-pub(crate) fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
-    ui.label(
-        egui::RichText::new("Advance/tooth vs Diameter")
-            .strong()
-            .color(theme::TEXT_STRONG),
-    );
-    let rows = explain.rows_by_diameter();
-    if rows.is_empty() {
-        ui.label(
-            egui::RichText::new("No matching vendor rows for this material.")
-                .small()
-                .color(theme::TEXT_DIM),
-        );
-        return;
-    }
-    // Pre-compute the raw vendor min/max curves so the legend below the
-    // chart can show numeric ranges.
-    let mut min_pts: Vec<[f64; 2]> = Vec::new();
-    let mut max_pts: Vec<[f64; 2]> = Vec::new();
-    for row in &rows {
-        let d = row.row_diameter_mm;
-        // Reverse the diameter scaling so the chart shows the raw
-        // vendor row values, not the scaled-for-this-tool values. The
-        // scaling factor is the same across all rows in the cohort
-        // (same query hardness).
-        let raw_min = row.chip_load_min_mm.unwrap_or(0.0) / row.chipload_diameter_scale.max(1e-6);
-        let raw_max = row.chip_load_max_mm.unwrap_or(0.0) / row.chipload_diameter_scale.max(1e-6);
-        if raw_min > 0.0 {
-            min_pts.push([d, raw_min]);
-        }
-        if raw_max > 0.0 {
-            max_pts.push([d, raw_max]);
-        }
-    }
-    min_pts.sort_by(|a, b| a[0].total_cmp(&b[0]));
-    max_pts.sort_by(|a, b| a[0].total_cmp(&b[0]));
-
-    let band_color = wash(chart::BAND, 50);
-    let min_color = chart::ISO_MIN;
-    let max_color = chart::ISO_MAX;
-
-    Plot::new("feeds_modal_chart_a")
-        .height(180.0)
-        .width(MINI_CHART_WIDTH.min(ui.available_width()))
-        .x_axis_label("diameter (mm)")
-        .y_axis_label("commanded advance/tooth (mm)")
-        .show(ui, |plot_ui| {
-            // Shaded band between min and max — only when both curves
-            // share at least two diameters (otherwise the polygon is
-            // degenerate and adds visual noise).
-            if min_pts.len() >= 2 && max_pts.len() >= 2 {
-                let mut band_poly: Vec<[f64; 2]> = min_pts.clone();
-                band_poly.extend(max_pts.iter().rev().copied());
-                plot_ui.polygon(
-                    Polygon::new("", PlotPoints::from(band_poly))
-                        .fill_color(band_color)
-                        .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
-                        .name("vendor band (this material)"),
-                );
-            }
-            plot_ui.line(
-                Line::new("", PlotPoints::from(min_pts.clone()))
-                    .color(min_color)
-                    .width(1.5_f32)
-                    .name("vendor min"),
-            );
-            plot_ui.line(
-                Line::new("", PlotPoints::from(max_pts.clone()))
-                    .color(max_color)
-                    .width(1.5_f32)
-                    .name("vendor max"),
-            );
-            plot_ui.points(
-                Points::new("", min_pts.clone())
-                    .shape(MarkerShape::Square)
-                    .radius(3.0_f32)
-                    .color(min_color),
-            );
-            plot_ui.points(
-                Points::new("", max_pts.clone())
-                    .shape(MarkerShape::Square)
-                    .radius(3.0_f32)
-                    .color(max_color),
-            );
-            // Inline value labels next to each calibrated diameter so
-            // the user can read the band values straight from the chart.
-            for p in &min_pts {
-                plot_ui.text(
-                    egui_plot::Text::new(
-                        "",
-                        egui_plot::PlotPoint::new(p[0], p[1]),
-                        egui::RichText::new(format!("{:.3}", p[1]))
-                            .small()
-                            .color(min_color),
-                    )
-                    .anchor(egui::Align2::CENTER_TOP),
-                );
-            }
-            for p in &max_pts {
-                plot_ui.text(
-                    egui_plot::Text::new(
-                        "",
-                        egui_plot::PlotPoint::new(p[0], p[1]),
-                        egui::RichText::new(format!("{:.3}", p[1]))
-                            .small()
-                            .color(max_color),
-                    )
-                    .anchor(egui::Align2::CENTER_BOTTOM),
-                );
-            }
-
-            // Your tool vertical line spanning the band height.
-            let y_top = max_pts.iter().map(|p| p[1]).fold(0.0_f64, f64::max) * 1.15;
-            plot_ui.line(
-                Line::new(
-                    "",
-                    PlotPoints::from(vec![
-                        [explain.tool_diameter_mm, 0.0],
-                        [explain.tool_diameter_mm, y_top.max(0.05)],
-                    ]),
-                )
-                .color(theme::TEXT_DIM)
-                .style(egui_plot::LineStyle::Dashed { length: 4.0 })
-                .name(format!("your tool {:.2} mm", explain.tool_diameter_mm)),
-            );
-            plot_ui.text(
-                egui_plot::Text::new(
-                    "",
-                    egui_plot::PlotPoint::new(explain.tool_diameter_mm, y_top.max(0.05)),
-                    egui::RichText::new(format!(" {:.2} mm", explain.tool_diameter_mm))
-                        .small()
-                        .color(theme::TEXT_DIM),
-                )
-                .anchor(egui::Align2::LEFT_TOP),
-            );
-
-            // Current and recommended chipload at your diameter.
-            plot_ui.points(
-                Points::new("", vec![[explain.tool_diameter_mm, current.chipload_mm()]])
-                    .shape(MarkerShape::Circle)
-                    .filled(true)
-                    .radius(5.0_f32)
-                    .color(theme::ERROR)
-                    .name("Current"),
-            );
-            plot_ui.points(
-                Points::new(
-                    "",
-                    vec![[explain.tool_diameter_mm, explain.recommended.chip_load_mm]],
-                )
-                .shape(MarkerShape::Diamond)
-                .filled(true)
-                .radius(5.0_f32)
-                .color(tokens::DIAGRAM_INK)
-                .name("Recommended"),
-            );
-        });
-
-    // Per-chart band summary.
-    let cl_min_for_your_tool = explain
-        .matched_row
-        .as_ref()
-        .and_then(|r| r.chip_load_min_mm);
-    let cl_max_for_your_tool = explain
-        .matched_row
-        .as_ref()
-        .and_then(|r| r.chip_load_max_mm);
-    let band_text = match (cl_min_for_your_tool, cl_max_for_your_tool) {
-        (Some(lo), Some(hi)) => format!(
-            "{lo:.4}–{hi:.4} mm/tooth at your {:.2} mm tool",
-            explain.tool_diameter_mm
-        ),
-        (None, Some(hi)) => format!("≤ {hi:.4} mm/tooth at your tool"),
-        _ => "no scaled band available".to_owned(),
-    };
-    draw_mini_chart_legend(
-        ui,
-        "feeds_modal_chart_a_legend",
-        &[
-            MiniLegend {
-                swatch: LegendSwatch::FilledSquare,
-                color: band_color,
-                label: "vendor band",
-                value: band_text,
-            },
-            MiniLegend {
-                swatch: LegendSwatch::Line,
-                color: min_color,
-                label: "vendor min line",
-                value: format!("{} calibrated diameters", min_pts.len()),
-            },
-            MiniLegend {
-                swatch: LegendSwatch::Line,
-                color: max_color,
-                label: "vendor max line",
-                value: format!("{} calibrated diameters", max_pts.len()),
-            },
-            MiniLegend {
-                swatch: LegendSwatch::Circle,
-                // Ruling R23: the operator's own value is not a verdict.
-                color: crate::ui::tokens::TEXT_STRONG,
-                label: "● current",
-                value: format!("{:.4} mm/tooth", current.chipload_mm()),
-            },
-            MiniLegend {
-                swatch: LegendSwatch::Diamond,
-                color: tokens::DIAGRAM_INK,
-                label: "◆ recommended",
-                value: format!("{:.4} mm/tooth", explain.recommended.chip_load_mm),
-            },
-        ],
-    );
-}
-
-// ────────────────────────────────────────────────────────────────────
-// Chart B — Advance/tooth vs Hardness
-// ────────────────────────────────────────────────────────────────────
-
-/// Mini-legend row used under Charts A and B.
-struct MiniLegend {
-    swatch: LegendSwatch,
-    color: egui::Color32,
-    label: &'static str,
-    value: String,
-}
-
-fn draw_mini_chart_legend(ui: &mut egui::Ui, id: &str, entries: &[MiniLegend]) {
-    ui.add_space(2.0);
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        egui::Grid::new(id)
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                for entry in entries {
-                    ui.horizontal(|ui| {
-                        draw_legend_swatch(ui, entry.swatch, entry.color);
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(entry.label)
-                                    .small()
-                                    .color(theme::TEXT_STRONG),
-                            )
-                            .wrap(),
-                        );
-                    });
-                    ui.label(
-                        egui::RichText::new(&entry.value)
-                            .small()
-                            .color(theme::TEXT_DIM),
-                    );
-                    ui.end_row();
-                }
-            });
-    });
-}
-
-pub(crate) fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
-    ui.label(
-        egui::RichText::new("Advance/tooth vs Hardness")
-            .strong()
-            .color(theme::TEXT_STRONG),
-    );
-    let rows = explain.rows_by_hardness();
-    if rows.is_empty() {
-        ui.label(
-            egui::RichText::new("No matching vendor rows at this diameter.")
-                .small()
-                .color(theme::TEXT_DIM),
-        );
-        return;
-    }
-    // Each sibling row was matched with a hardness_scale of
-    // (row.hardness / query.hardness). To plot against actual row
-    // hardness we recover it from `query_hardness_value` × scale.
-    let q_hardness = explain.query_hardness_value.unwrap_or(0.0);
-
-    let band_color = wash(chart::BAND, 50);
-    let min_color = chart::ISO_MIN;
-    let max_color = chart::ISO_MAX;
-    let mut min_pts: Vec<[f64; 2]> = Vec::new();
-    let mut max_pts: Vec<[f64; 2]> = Vec::new();
-    for row in &rows {
-        let row_hardness = if row.chipload_hardness_scale > 0.0 {
-            q_hardness * row.chipload_hardness_scale
-        } else {
-            q_hardness
-        };
-        let raw_min = row.chip_load_min_mm.unwrap_or(0.0) / row.chipload_hardness_scale.max(1e-6);
-        let raw_max = row.chip_load_max_mm.unwrap_or(0.0) / row.chipload_hardness_scale.max(1e-6);
-        if raw_min > 0.0 {
-            min_pts.push([row_hardness, raw_min]);
-        }
-        if raw_max > 0.0 {
-            max_pts.push([row_hardness, raw_max]);
-        }
-    }
-    min_pts.sort_by(|a, b| a[0].total_cmp(&b[0]));
-    max_pts.sort_by(|a, b| a[0].total_cmp(&b[0]));
-
-    Plot::new("feeds_modal_chart_b")
-        .height(180.0)
-        .width(MINI_CHART_WIDTH.min(ui.available_width()))
-        .x_axis_label(hardness_axis_label(explain.query_hardness_kind))
-        .y_axis_label("commanded advance/tooth (mm)")
-        .show(ui, |plot_ui| {
-            if min_pts.len() >= 2 && max_pts.len() >= 2 {
-                let mut band_poly: Vec<[f64; 2]> = min_pts.clone();
-                band_poly.extend(max_pts.iter().rev().copied());
-                plot_ui.polygon(
-                    Polygon::new("", PlotPoints::from(band_poly))
-                        .fill_color(band_color)
-                        .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
-                        .name("vendor band (this diameter)"),
-                );
-            }
-            plot_ui.line(
-                Line::new("", PlotPoints::from(min_pts.clone()))
-                    .color(min_color)
-                    .width(1.5_f32)
-                    .name("vendor min"),
-            );
-            plot_ui.line(
-                Line::new("", PlotPoints::from(max_pts.clone()))
-                    .color(max_color)
-                    .width(1.5_f32)
-                    .name("vendor max"),
-            );
-            plot_ui.points(
-                Points::new("", min_pts.clone())
-                    .shape(MarkerShape::Square)
-                    .radius(3.0_f32)
-                    .color(min_color),
-            );
-            plot_ui.points(
-                Points::new("", max_pts.clone())
-                    .shape(MarkerShape::Square)
-                    .radius(3.0_f32)
-                    .color(max_color),
-            );
-            // Inline value tags.
-            for p in &min_pts {
-                plot_ui.text(
-                    egui_plot::Text::new(
-                        "",
-                        egui_plot::PlotPoint::new(p[0], p[1]),
-                        egui::RichText::new(format!("{:.3}", p[1]))
-                            .small()
-                            .color(min_color),
-                    )
-                    .anchor(egui::Align2::CENTER_TOP),
-                );
-            }
-            for p in &max_pts {
-                plot_ui.text(
-                    egui_plot::Text::new(
-                        "",
-                        egui_plot::PlotPoint::new(p[0], p[1]),
-                        egui::RichText::new(format!("{:.3}", p[1]))
-                            .small()
-                            .color(max_color),
-                    )
-                    .anchor(egui::Align2::CENTER_BOTTOM),
-                );
-            }
-
-            // Your material vertical line spanning the band height.
-            let y_top = max_pts.iter().map(|p| p[1]).fold(0.0_f64, f64::max) * 1.15;
-            if q_hardness > 0.0 {
-                plot_ui.line(
-                    Line::new(
-                        "",
-                        PlotPoints::from(vec![[q_hardness, 0.0], [q_hardness, y_top.max(0.05)]]),
-                    )
-                    .color(theme::TEXT_DIM)
-                    .style(egui_plot::LineStyle::Dashed { length: 4.0 })
-                    .name(format!("your material ({q_hardness:.0})")),
-                );
-                plot_ui.text(
-                    egui_plot::Text::new(
-                        "",
-                        egui_plot::PlotPoint::new(q_hardness, y_top.max(0.05)),
-                        egui::RichText::new(format!(" {q_hardness:.0}"))
-                            .small()
-                            .color(theme::TEXT_DIM),
-                    )
-                    .anchor(egui::Align2::LEFT_TOP),
-                );
-            }
-            // Current and recommended.
-            plot_ui.points(
-                Points::new("", vec![[q_hardness, current.chipload_mm()]])
-                    .shape(MarkerShape::Circle)
-                    .filled(true)
-                    .radius(5.0_f32)
-                    .color(theme::ERROR)
-                    .name("Current"),
-            );
-            plot_ui.points(
-                Points::new("", vec![[q_hardness, explain.recommended.chip_load_mm]])
-                    .shape(MarkerShape::Diamond)
-                    .filled(true)
-                    .radius(5.0_f32)
-                    .color(tokens::DIAGRAM_INK)
-                    .name("Recommended"),
-            );
-        });
-
-    let cl_min = explain
-        .matched_row
-        .as_ref()
-        .and_then(|r| r.chip_load_min_mm);
-    let cl_max = explain
-        .matched_row
-        .as_ref()
-        .and_then(|r| r.chip_load_max_mm);
-    let band_text = match (cl_min, cl_max) {
-        (Some(lo), Some(hi)) => {
-            format!("{lo:.4}–{hi:.4} mm/tooth at your material ({q_hardness:.0})")
-        }
-        (None, Some(hi)) => format!("≤ {hi:.4} mm/tooth at your material"),
-        _ => "no scaled band available".to_owned(),
-    };
-    draw_mini_chart_legend(
-        ui,
-        "feeds_modal_chart_b_legend",
-        &[
-            MiniLegend {
-                swatch: LegendSwatch::FilledSquare,
-                color: band_color,
-                label: "vendor band",
-                value: band_text,
-            },
-            MiniLegend {
-                swatch: LegendSwatch::Line,
-                color: min_color,
-                label: "vendor min line",
-                value: format!("{} materials sampled", min_pts.len()),
-            },
-            MiniLegend {
-                swatch: LegendSwatch::Line,
-                color: max_color,
-                label: "vendor max line",
-                value: format!("{} materials sampled", max_pts.len()),
-            },
-            MiniLegend {
-                swatch: LegendSwatch::Circle,
-                // Ruling R23: the operator's own value is not a verdict.
-                color: crate::ui::tokens::TEXT_STRONG,
-                label: "● current",
-                value: format!("{:.4} mm/tooth", current.chipload_mm()),
-            },
-            MiniLegend {
-                swatch: LegendSwatch::Diamond,
-                color: tokens::DIAGRAM_INK,
-                label: "◆ recommended",
-                value: format!("{:.4} mm/tooth", explain.recommended.chip_load_mm),
-            },
-        ],
-    );
-}
-
-fn hardness_axis_label(kind: Option<HardnessKind>) -> &'static str {
-    match kind {
-        Some(HardnessKind::Janka) => "Janka (lbf)",
-        Some(HardnessKind::ShoreD) => "Shore D",
-        Some(HardnessKind::Hb) => "Brinell (HB)",
-        None => "hardness",
-    }
-}
-
-#[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-mod tests {
-    use super::hover_readout_chipload;
-
-    /// The nomogram hover readout must never print a negative advance
-    /// per tooth.
-    ///
-    /// Pre-fix reproduction, preserved as the first case: the readout
-    /// divided the RAW pointer coordinates while printing the CLAMPED
-    /// ones, so a drag below the feed axis at 18000 RPM on a 2-flute
-    /// cutter printed `18000 RPM · 0 mm/min → −0.0928 mm/tooth`
-    /// (W10-LV item 10). The literal −0.0928 is reproduced here from the
-    /// feed that produces it, so the case is the observed one and not a
-    /// paraphrase: −0.0928 × 18000 × 2 = −3340.8 mm/min.
-    ///
-    /// Display-only: this function formats a tooltip. No recipe number
-    /// moves.
-    #[test]
-    fn hover_readout_never_prints_a_negative_chipload() {
-        // The exact reported reading, through the pre-fix arithmetic.
-        let raw: f64 = -3340.8 / (18000.0 * 2.0);
-        assert!(
-            (raw - -0.0928).abs() < 1e-4,
-            "fixture must reproduce the reported −0.0928 mm/tooth, got {raw}"
-        );
-
-        // Same pointer position, through the shipped path: the caller
-        // clamps the feed to 0 and hands this function the same value it
-        // prints.
-        assert_eq!(hover_readout_chipload(18000.0, 0.0, 2.0), 0.0);
-
-        // And the clamp is defended at the function too, so a caller
-        // that forgets cannot resurrect the wart.
-        assert_eq!(hover_readout_chipload(18000.0, -3340.8, 2.0), 0.0);
-
-        // Zero RPM / zero flutes must be 0.0, not an infinity or a NaN —
-        // both reach `{:.4}` in the label.
-        assert_eq!(hover_readout_chipload(0.0, 2520.0, 2.0), 0.0);
-        assert_eq!(hover_readout_chipload(0.0, 0.0, 2.0), 0.0);
-        assert_eq!(hover_readout_chipload(18000.0, 2520.0, 0.0), 0.0);
-
-        // The ordinary case is untouched: 2520 / (18000 × 2) = 0.07.
-        let ok = hover_readout_chipload(18000.0, 2520.0, 2.0);
-        assert!((ok - 0.07).abs() < 1e-12, "got {ok}");
     }
 }

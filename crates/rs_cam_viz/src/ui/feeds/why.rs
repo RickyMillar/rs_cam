@@ -1,55 +1,341 @@
-//! Why — the optional detail behind one operation's recommendation.
+//! Why — the sentences that explain one recommended number.
 //!
-//! Provenance, rationale, the chipload breakdown, the derates and the
-//! warnings. The Feeds tab owns the disclosure these render inside.
+//! This file used to draw a panel: a `Why is the recommendation here?`
+//! disclosure holding provenance, then rationale, then a derate chain, then
+//! a result, then warnings. The operator's verdict on 2026-09-15 was that it
+//! is "all just too much", and that what they actually want is: *if a
+//! recommended value differs from mine, let me hover it and see why.*
+//!
+//! They were right, and the reason is structural rather than a matter of
+//! length. The disclosure explained **the recommendation as a whole**. The
+//! operator reads the card **one row at a time**, and the question that
+//! arises is always about one row — *why is my DOC being tripled?* A
+//! whole-recipe explanation cannot answer a per-row question however short
+//! it is, and the declutter earlier that day (44 painted runs down to 13)
+//! proved it: shorter, still not an answer.
+//!
+//! So this is no longer a panel. It is a library of sentences, one per row
+//! of the comparison card, and `compare.rs` hangs each one on the row it
+//! explains. See `planning/feeds_rework_2026-09-15/PLAN.md` W2.
+//!
+//! Two things deliberately stay on the page rather than moving to a hover:
+//!
+//! - **Warnings.** A warning behind a hover is a warning that was deleted.
+//! - **The engaged-diameter row**, for tapered and V tools, where the
+//!   published tip size understates what is actually cutting.
 //!
 //! Every quantity here is a **commanded** advance per tooth,
-//! `feed / (rpm · flutes)`. These surfaces run before a simulation and have
-//! no measured value to show. The achieved figure lives on the properties
+//! `feed / (rpm · flutes)`. This surface runs before a simulation and has no
+//! measured value to show. The achieved figure lives on the properties
 //! panel's operating-point card, after a sim (Checkpoint H2, 2026-08-08).
-//!
-//! # The declutter rule for this file (2026-09-15)
-//!
-//! The operator's report: the disclosure is "horribly text-heavy". It was.
-//! Opened, it drew about twenty-five lines, and most of them were prose
-//! captions repeating what the line above already said — a derate row wrote
-//! `×0.900` and then wrote a sentence under it, six times over.
-//!
-//! **A line carries the fact. Its hover carries the explanation.** Every
-//! line that has an explanation is marked with [`tokens::GLYPH_DETAIL`], so
-//! the mark itself teaches the operator where the detail lives. A caption
-//! under a line is now the exception, not the pattern.
-//!
-//! Two further rules follow from it:
-//!
-//! - A derate at unity did not change the number. Those rows collapse into
-//!   one counted line, with the names on hover.
-//! - The arithmetic that PROVES the result is not the result. One line
-//!   states the advance per tooth; the three-step derivation is its hover.
 
 use rs_cam_core::feeds::FeedsExplain;
-use rs_cam_core::feeds::rationale::{RationaleEntry, SuggestRationale};
+use rs_cam_core::feeds::rationale::SuggestRationale;
 
 use super::shared::{CurrentValues, engaged_diameter_context, vendor_band};
 use crate::ui::{theme, tokens};
 
-/// A derate whose factor is within this of 1.0 changed nothing.
+/// A factor within this of 1.0 changed nothing.
 const UNITY_TOLERANCE: f64 = 1e-3;
 
+/// One row of the comparison card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RecipeRow {
+    Rpm,
+    Feed,
+    Plunge,
+    Doc,
+    Woc,
+    Advance,
+}
+
+impl RecipeRow {
+    /// The keywords that route a rationale entry to this row.
+    ///
+    /// The Suggest pass emits its own account of what it did — "adaptive3d
+    /// depth_per_pass clamped 9.00 → 4.20 mm (vendor_ap)". That sentence is
+    /// about ONE row, and it belongs on that row. An entry that matches no
+    /// row is recipe-level and lands on [`RecipeRow::Advance`], which is the
+    /// row that describes the recipe itself.
+    fn rationale_keywords(self) -> &'static [&'static str] {
+        match self {
+            Self::Rpm => &["rpm", "spindle"],
+            Self::Feed => &["feed"],
+            Self::Plunge => &["plunge"],
+            Self::Doc => &["depth_per_pass", "dpp", "axial", "doc", "depth"],
+            Self::Woc => &["stepover", "radial", "woc", "scallop"],
+            Self::Advance => &[],
+        }
+    }
+}
+
 /// One wrapped line, marked and hoverable, carrying its explanation.
-///
-/// This is the declutter primitive. The caller passes the fact and the
-/// explanation; the explanation never takes a line of its own.
 fn detail_line(ui: &mut egui::Ui, text: impl AsRef<str>, color: egui::Color32, hover: &str) {
     let marked = format!("{} {}", text.as_ref(), tokens::GLYPH_DETAIL);
     ui.add(egui::Label::new(egui::RichText::new(marked).small().color(color)).wrap())
         .on_hover_text(hover.to_owned());
 }
 
-/// One wrapped line with nothing further to say. No mark, no hover.
+/// One wrapped line with nothing further to say.
 fn plain_line(ui: &mut egui::Ui, text: impl Into<String>, color: egui::Color32) {
     ui.add(egui::Label::new(egui::RichText::new(text.into()).small().color(color)).wrap());
 }
+
+// ── The per-row explanations ─────────────────────────────────────────
+
+/// The sentences that explain one recommended value.
+///
+/// Returns the hover text for `row`. Always non-empty: a row that did not
+/// move still answers "why is this NOT moving", which is the same question
+/// inverted and is asked just as often.
+pub(crate) fn row_explanation(
+    row: RecipeRow,
+    current: &CurrentValues,
+    explain: &FeedsExplain,
+    rationale: Option<&SuggestRationale>,
+) -> String {
+    let mut out = String::new();
+    match row {
+        RecipeRow::Rpm => explain_rpm(&mut out, explain),
+        RecipeRow::Feed => explain_feed(&mut out, current, explain),
+        RecipeRow::Plunge => explain_plunge(&mut out, explain),
+        RecipeRow::Doc => explain_doc(&mut out, explain),
+        RecipeRow::Woc => explain_woc(&mut out, current, explain),
+        RecipeRow::Advance => explain_advance(&mut out, explain),
+    }
+    append_rationale(&mut out, row, rationale);
+    out
+}
+
+fn explain_rpm(out: &mut String, explain: &FeedsExplain) {
+    out.push_str(&format!("{:.0} RPM.\n", explain.recommended.rpm));
+    match &explain.matched_row {
+        Some(row) => match row.rpm_min.zip(row.rpm_max) {
+            Some((lo, hi)) => out.push_str(&format!(
+                "Vendor row {} publishes {lo:.0}–{hi:.0} RPM.\n",
+                row.observation_id
+            )),
+            None => match row.rpm_nominal {
+                Some(nom) => out.push_str(&format!(
+                    "Vendor row {} publishes {nom:.0} RPM nominal.\n",
+                    row.observation_id
+                )),
+                None => out.push_str("The vendor row publishes no RPM; this is the formula's.\n"),
+            },
+        },
+        None => out.push_str("No vendor row matched. This is the empirical formula's RPM.\n"),
+    }
+    let speedup = explain.recommended.derates.spindle_speedup;
+    if (speedup - 1.0).abs() > UNITY_TOLERANCE {
+        out.push_str(&format!(
+            "Spindle policy MaxSpeed lifted it ×{speedup:.3} toward the spindle \
+             ceiling, and scaled the feed with it to hold the advance/tooth \
+             constant.\n"
+        ));
+    } else {
+        out.push_str("Spindle policy is Match chart, so the RPM follows the vendor row.\n");
+    }
+}
+
+fn explain_feed(out: &mut String, current: &CurrentValues, explain: &FeedsExplain) {
+    let r = &explain.recommended;
+    let flutes = current.flute_count.max(1);
+    let advance = if r.rpm > 0.0 {
+        r.feed_rate_mm_min / (r.rpm * f64::from(flutes))
+    } else {
+        0.0
+    };
+    out.push_str(&format!("{:.0} mm/min.\n", r.feed_rate_mm_min));
+    out.push_str(&format!(
+        "feed = advance/tooth × RPM × flutes = {advance:.4} × {:.0} × {flutes}.\n",
+        r.rpm
+    ));
+    let d = &r.derates;
+    if d.power_limit < 0.999 {
+        out.push_str(&format!(
+            "The spindle could not deliver the power, so the feed was cut ×{:.3}.\n",
+            d.power_limit
+        ));
+    }
+    if d.feed_clamp < 0.999 {
+        out.push_str(&format!(
+            "The feed hit machine.max_feed_mm_min and was clamped ×{:.3}.\n",
+            d.feed_clamp
+        ));
+    }
+    out.push_str("Change the advance/tooth to change this; see that row.\n");
+}
+
+fn explain_plunge(out: &mut String, explain: &FeedsExplain) {
+    out.push_str(&format!(
+        "{:.0} mm/min.\n",
+        explain.recommended.plunge_rate_mm_min
+    ));
+    out.push_str(
+        "The plunge baseline is derived from the cutting feed and the tool \
+         diameter: a small cutter plunges slower than a large one at the same \
+         feed.\n",
+    );
+}
+
+fn explain_doc(out: &mut String, explain: &FeedsExplain) {
+    out.push_str(&format!("{:.2} mm.\n", explain.recommended.axial_depth_mm));
+    out.push_str(CALCULATOR_CAVEAT);
+    let tier = explain.recommended.derates.depth_tier;
+    if tier < 0.999 {
+        out.push_str(&format!(
+            "\nThis depth is deep enough to derate the feed ×{tier:.3}, to limit \
+             deflection."
+        ));
+    }
+}
+
+fn explain_woc(out: &mut String, current: &CurrentValues, explain: &FeedsExplain) {
+    out.push_str(&format!("{:.2} mm.\n", explain.recommended.radial_width_mm));
+    if current.supports_scallop_override && current.scallop_height.is_some() {
+        out.push_str(
+            "This stepover is derived from your target scallop height and the \
+             tool's ball-tip radius, not from the vendor row.\n",
+        );
+    }
+    out.push_str(CALCULATOR_CAVEAT);
+}
+
+fn explain_advance(out: &mut String, explain: &FeedsExplain) {
+    let r = &explain.recommended;
+    let d = &r.derates;
+    let flutes = explain.flute_count.max(1) as f64;
+    let effective = if r.rpm > 0.0 {
+        r.feed_rate_mm_min / (r.rpm * flutes)
+    } else {
+        0.0
+    };
+    out.push_str(&format!("{effective:.4} mm/tooth.\n"));
+
+    // Where the target came from.
+    match (&r.chipload_source, &d.formula) {
+        (rs_cam_core::feeds::ChiploadSource::VendorLut { observation_id }, _) => {
+            out.push_str(&format!(
+                "Target {:.4} mm/tooth — the midpoint of vendor row {observation_id}.\n",
+                d.target_chip_load_mm
+            ));
+        }
+        (rs_cam_core::feeds::ChiploadSource::FormulaFallback, Some(f))
+        | (rs_cam_core::feeds::ChiploadSource::EdgeRadiusFloor, Some(f)) => {
+            out.push_str(&format!(
+                "Target {:.4} mm/tooth — no vendor row matched, so the empirical \
+                 formula set it: fz = K₀·D^p·(1/H)^q = {:.4}·{:.2}^{:.2}·(1/{:.1})^{:.2}.\n",
+                f.result_mm_tooth, f.k0, f.diameter_mm, f.p, f.feed_scale_factor, f.q
+            ));
+        }
+        _ => {
+            out.push_str(&format!(
+                "Target {:.4} mm/tooth before the factors below.\n",
+                d.target_chip_load_mm
+            ));
+        }
+    }
+
+    // What moved it.
+    let combined = d.combined_factor();
+    let pct = ((1.0 - combined) * 100.0).max(0.0);
+    let mut moved: Vec<String> = Vec::new();
+    for (label, value) in [
+        ("depth tier", d.depth_tier),
+        ("L/D overhang", d.ld_overhang),
+        ("workholding rigidity", d.workholding),
+        ("power limit", d.power_limit),
+        ("feed cap", d.feed_clamp),
+        ("machine safety factor", d.safety_factor),
+    ] {
+        if (value - 1.0).abs() > UNITY_TOLERANCE {
+            moved.push(format!("{label} ×{value:.3}"));
+        }
+    }
+    if moved.is_empty() {
+        out.push_str("Nothing derated it.\n");
+    } else {
+        out.push_str(&format!(
+            "Derated ×{combined:.3} ({pct:.0}% reduction) by {}.\n",
+            moved.join(", ")
+        ));
+    }
+
+    // Chip thinning is MEASURED, NOT APPLIED since 2026-08-19
+    // (G-CHIPTHIN-HALFFIX). It is reported because the geometric condition
+    // is real, and it must not read as one of the multipliers above,
+    // because it no longer is one.
+    if d.observed_combined_chip_thinning > 1.001 {
+        out.push_str(&format!(
+            "Chip thinning ×{:.3} is OBSERVED, NOT APPLIED: the chip is thinner \
+             per pass at this stepover and DOC, but the vendor chipload column \
+             states no radial condition to correct from.\n",
+            d.observed_combined_chip_thinning
+        ));
+    }
+
+    // Where it landed.
+    if let Some((lo, hi)) = explain
+        .matched_row
+        .as_ref()
+        .and_then(|r| r.chip_load_min_mm.zip(r.chip_load_max_mm))
+        && effective > 0.0
+    {
+        out.push_str(&format!(
+            "Vendor band {lo:.4}–{hi:.4}; this sits at {:.0}% of the maximum.\n",
+            (effective / hi) * 100.0
+        ));
+    }
+}
+
+/// The Suggest pass's own account of what it did, routed to its row.
+fn append_rationale(out: &mut String, row: RecipeRow, rationale: Option<&SuggestRationale>) {
+    let Some(rationale) = rationale else {
+        return;
+    };
+    for entry in &rationale.entries {
+        let headline = entry.headline.to_lowercase();
+        let mine = if row == RecipeRow::Advance {
+            // The catch-all: an entry that names no row is recipe-level.
+            !RECIPE_ROWS
+                .iter()
+                .filter(|candidate| **candidate != RecipeRow::Advance)
+                .any(|candidate| {
+                    candidate
+                        .rationale_keywords()
+                        .iter()
+                        .any(|k| headline.contains(k))
+                })
+        } else {
+            row.rationale_keywords()
+                .iter()
+                .any(|k| headline.contains(k))
+        };
+        if !mine {
+            continue;
+        }
+        out.push_str(&format!("\n• {}", entry.headline));
+        if let Some(detail) = &entry.detail {
+            out.push_str(&format!("\n  {detail}"));
+        }
+    }
+}
+
+const RECIPE_ROWS: [RecipeRow; 6] = [
+    RecipeRow::Rpm,
+    RecipeRow::Feed,
+    RecipeRow::Plunge,
+    RecipeRow::Doc,
+    RecipeRow::Woc,
+    RecipeRow::Advance,
+];
+
+/// Why the DOC and WOC rows are not what the operation will end up with.
+const CALCULATOR_CAVEAT: &str = "This is the raw calculator value. `⚡ Apply all` passes it through \
+     the invariant funnel, which can lower it — the rigidity cap put 1.2 mm \
+     where this row read 4.2 mm on the R03 pocket.";
+
+// ── What stays on the page ───────────────────────────────────────────
 
 /// S2 — engaged-diameter-at-DOC annotation row. Renders just below the
 /// context chip for tapered-ball / V-bit tools, where the published tip
@@ -73,9 +359,6 @@ pub(crate) fn draw_engaged_diameter_row(
     } else {
         theme::TEXT_STRONG
     };
-    // The attestation that used to follow this row as its own italic line
-    // said the same thing this hover says, for the same tools, under the
-    // same guard. One of the two was clutter.
     detail_line(
         ui,
         format!("{icon}Engaged ⌀ {engaged:.2} mm at DOC {doc:.2} mm"),
@@ -110,7 +393,6 @@ pub(crate) fn draw_chipload_min_warning(
     if cl >= lo {
         return;
     }
-    ui.add_space(2.0);
     detail_line(
         ui,
         "⚠ Advance/tooth is below the vendor band minimum",
@@ -121,101 +403,7 @@ pub(crate) fn draw_chipload_min_warning(
     );
 }
 
-// compare_row / format_optional / format_delta / draw_power_bar / power_color
-// / draw_mrr_row were lifted to `ui::components::compare` (CL 4/4) so the
-// optimizer rollup and the Feeds Details drawer share one implementation.
-
-// ── Provenance ──────────────────────────────────────────────────────
-
-/// Provenance content for the inspector's single Why disclosure.
-///
-/// This is deliberately a body renderer: the outer disclosure belongs to the
-/// Feeds tab, so the old independent "How is this calculated?" button would
-/// create a second, competing expansion state.
-///
-/// Six labelled rows in a group frame became at most three lines. `Row` and
-/// `Vendor` name one thing and now share a line; `Calibrated for` is the
-/// hover on that line; the band and the RPM range share the next; and
-/// `Scaling` only appears when there IS scaling — "none (direct match)" is
-/// the default case and states nothing.
-pub(crate) fn draw_provenance(ui: &mut egui::Ui, explain: &FeedsExplain) {
-    let Some(row) = &explain.matched_row else {
-        detail_line(
-            ui,
-            "No vendor row matched — formula-derived",
-            theme::WARNING_MILD,
-            "No vendor lookup-table row matched this tool, material and \
-             operation, so the recommendation comes from the empirical \
-             formula. Re-check it against vendor data before you cut.",
-        );
-        return;
-    };
-
-    detail_line(
-        ui,
-        format!("{} · {}", row.source_vendor, row.observation_id),
-        tokens::TEXT_BODY,
-        &format!(
-            "The vendor row behind this recommendation. It is calibrated for \
-             a {:.2} mm tool at {} flute.",
-            row.row_diameter_mm, explain.flute_count
-        ),
-    );
-
-    let band = row
-        .chip_load_min_mm
-        .zip(row.chip_load_max_mm)
-        .map(|(lo, hi)| format!("band {lo:.4}–{hi:.4} mm/tooth"));
-    let rpm = match row.rpm_min.zip(row.rpm_max) {
-        Some((lo, hi)) => Some(format!("RPM {lo:.0}–{hi:.0}")),
-        None => row.rpm_nominal.map(|nom| format!("RPM {nom:.0} nominal")),
-    };
-    let published: Vec<String> = band.into_iter().chain(rpm).collect();
-    if !published.is_empty() {
-        detail_line(
-            ui,
-            published.join(" · "),
-            tokens::TEXT_BODY,
-            "What the vendor row publishes, after it was scaled to this tool \
-             and this material. The recommendation sits inside these.",
-        );
-    }
-
-    let scaled = (row.chipload_diameter_scale - 1.0).abs() >= UNITY_TOLERANCE
-        || (row.chipload_hardness_scale - 1.0).abs() >= UNITY_TOLERANCE;
-    if scaled {
-        let approximate = if row.is_extrapolated {
-            " (approximate)"
-        } else {
-            ""
-        };
-        let color = if row.is_extrapolated {
-            theme::WARNING_MILD
-        } else {
-            theme::TEXT_DIM
-        };
-        detail_line(
-            ui,
-            format!(
-                "scaled ×{:.2} diameter · ×{:.2} hardness{approximate}",
-                row.chipload_diameter_scale, row.chipload_hardness_scale
-            ),
-            color,
-            "The vendor row was measured on a different tool diameter or a \
-             different material hardness, so its chipload was scaled to \
-             yours. An approximate scaling reached outside the measured \
-             range.",
-        );
-    }
-}
-
-// ── Warnings ────────────────────────────────────────────────────────
-
 /// One warning as a headline and, where it has one, the detail behind it.
-///
-/// Four of these warnings used to ship as paragraphs. A paragraph in a list
-/// is unreadable as a list, and the operator needs to SCAN the warnings
-/// before reading any one of them.
 fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<String>) {
     use rs_cam_core::feeds::FeedsWarning;
     match warning {
@@ -290,9 +478,8 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
                  Missing rows: {missing_rows}."
             )),
         ),
-        // Checkpoint K (a3) — RPM-anchor row: the number above it in
-        // this surface is the empirical formula's, and the nomogram's
-        // band chart has nothing to draw for it.
+        // Checkpoint K (a3) — RPM-anchor row: the number above it is the
+        // empirical formula's, and the nomogram's band has nothing to draw.
         FeedsWarning::VendorRowPublishesNoChipload {
             observation_id,
             formula_chipload_mm,
@@ -331,9 +518,8 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
 
 /// The recommendation's warnings, one line each.
 ///
-/// The "Warnings" heading is deleted: every line already carries ⚠ in the
-/// caution colour, so the heading was a third channel saying what two
-/// channels had said.
+/// These stay on the page. A warning behind a hover is a warning that was
+/// deleted, and this surface exists to stop an operator burning a cutter.
 pub(crate) fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
     for warning in &explain.recommended.warnings {
         let (headline, detail) = warning_lines(warning);
@@ -344,248 +530,4 @@ pub(crate) fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
             None => plain_line(ui, format!("⚠ {headline}"), theme::WARNING_MILD),
         }
     }
-}
-
-// ── Suggest rationale ────────────────────────────────────────────────
-
-/// Render the rationale tree emitted by the canonical Suggest pass.
-///
-/// The "Why these values?" heading is deleted: the disclosure this renders
-/// inside is titled "Why is the recommendation here?", so the heading
-/// answered a question its own container had already asked.
-pub(crate) fn draw_rationale(ui: &mut egui::Ui, rationale: &SuggestRationale) {
-    for entry in &rationale.entries {
-        draw_rationale_entry(ui, entry);
-    }
-}
-
-fn draw_rationale_entry(ui: &mut egui::Ui, entry: &RationaleEntry) {
-    let headline = format!("• {}", entry.headline);
-    match &entry.detail {
-        Some(detail) => detail_line(ui, headline, theme::TEXT_STRONG, detail),
-        None => plain_line(ui, headline, theme::TEXT_STRONG),
-    }
-}
-
-// ────────────────────────────────────────────────────────────────────
-// Chipload-math breakdown
-// ────────────────────────────────────────────────────────────────────
-
-/// Render the chipload → feed pipeline so the operator can see *why* the
-/// recommended diamond sits where it does on the nomogram.
-///
-/// Three lines in the common case: the target, what moved it, and the
-/// result. The formula substitution, the derate notes and the three-step
-/// proof of the result all live on hovers.
-pub(crate) fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
-    let flutes = explain.flute_count.max(1) as f64;
-    let effective = if explain.recommended.rpm > 0.0 {
-        explain.recommended.feed_rate_mm_min / (explain.recommended.rpm * flutes)
-    } else {
-        0.0
-    };
-
-    draw_target_line(ui, explain);
-    draw_derate_lines(ui, explain);
-    draw_result_line(ui, explain, effective);
-}
-
-/// Step 1 — where the target advance per tooth came from.
-fn draw_target_line(ui: &mut egui::Ui, explain: &FeedsExplain) {
-    let d = &explain.recommended.derates;
-    match (&explain.recommended.chipload_source, &d.formula) {
-        (rs_cam_core::feeds::ChiploadSource::VendorLut { observation_id }, _) => {
-            detail_line(
-                ui,
-                format!(
-                    "Target {:.4} mm/tooth (vendor midpoint)",
-                    d.target_chip_load_mm
-                ),
-                tokens::TEXT_BODY,
-                &format!("The midpoint of vendor row {observation_id}."),
-            );
-        }
-        (rs_cam_core::feeds::ChiploadSource::FormulaFallback, Some(f))
-        | (rs_cam_core::feeds::ChiploadSource::EdgeRadiusFloor, Some(f)) => {
-            let mut hover =
-                String::from("No vendor row matched, so the empirical formula set the target.\n");
-            hover.push_str("fz = K₀ · D^p · (1/H)^q\n");
-            hover.push_str(&format!(
-                "= {:.4} · {:.2}^{:.2} · (1/{:.1})^{:.2}\n",
-                f.k0, f.diameter_mm, f.p, f.feed_scale_factor, f.q
-            ));
-            hover.push_str(&format!("= {:.4} mm/tooth\n", f.result_mm_tooth));
-            hover.push_str(
-                "K₀, p and q come from MachineProfile.chip_load. D is the tool \
-                 diameter. H is the material hardness index.",
-            );
-            detail_line(
-                ui,
-                format!(
-                    "Target {:.4} mm/tooth (empirical formula)",
-                    f.result_mm_tooth
-                ),
-                theme::WARNING_MILD,
-                &hover,
-            );
-        }
-        _ => {
-            detail_line(
-                ui,
-                format!("Target {:.4} mm/tooth", d.target_chip_load_mm),
-                tokens::TEXT_BODY,
-                "The starting advance per tooth, before the factors below.",
-            );
-        }
-    }
-}
-
-/// Step 2 — the factors, with the ones that changed nothing counted rather
-/// than listed.
-fn draw_derate_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
-    let d = &explain.recommended.derates;
-
-    // Chip thinning is MEASURED, NOT APPLIED since 2026-08-19
-    // (G-CHIPTHIN-HALFFIX). It is still shown, because the geometric
-    // condition is real and an operator should see it — but it must not
-    // read as one of the multipliers that produced the feed, because it no
-    // longer is one. It therefore keeps its own line ABOVE the derates, and
-    // "NOT applied" stays on the face where a reader would cite it.
-    if d.observed_combined_chip_thinning > 1.001 {
-        detail_line(
-            ui,
-            format!(
-                "chip-thinning ×{:.3} (observed, NOT applied)",
-                d.observed_combined_chip_thinning
-            ),
-            theme::TEXT_DIM,
-            "The chip is thinner per pass at this stepover and DOC. This is \
-             reported only: the vendor chipload column states no radial \
-             condition to correct from, so nothing multiplies the feed by it.",
-        );
-    }
-
-    let mut applied: Vec<(&str, f64, &str)> = Vec::new();
-    let mut unity: Vec<&str> = Vec::new();
-    let mut record = |label: &'static str, value: f64, note: &'static str| {
-        if (value - 1.0).abs() > UNITY_TOLERANCE {
-            applied.push((label, value, note));
-        } else {
-            unity.push(label);
-        }
-    };
-
-    record(
-        "depth-tier feed derate",
-        d.depth_tier,
-        "A deep cut runs a slower feed, to limit deflection.",
-    );
-    record(
-        "L/D overhang",
-        d.ld_overhang,
-        "A long tool backs off, to limit deflection.",
-    );
-    record(
-        "workholding rigidity",
-        d.workholding,
-        "Low rigidity (tape or vacuum) backs off. High rigidity (a vise or \
-         bolted work) pushes up.",
-    );
-    if d.power_limit < 0.999 {
-        record(
-            "power limit",
-            d.power_limit,
-            "The spindle cannot deliver more power, so the feed is reduced.",
-        );
-    }
-    if d.feed_clamp < 0.999 {
-        record(
-            "feed-cap clamp",
-            d.feed_clamp,
-            "The feed hit machine.max_feed_mm_min.",
-        );
-    }
-    record(
-        "machine safety factor",
-        d.safety_factor,
-        "Extra margin, so the recommendation is comfortably safe.",
-    );
-    // Spindle speedup is the only ≥ 1.0 factor in the chain. It walks the
-    // constant-chipload line up the speed axis when
-    // `SpindleStrategy::MaxSpeed` is on.
-    record(
-        "spindle speedup",
-        d.spindle_speedup,
-        "The MaxSpeed policy lifts RPM toward the spindle ceiling and scales \
-         the feed to hold the commanded advance/tooth constant.",
-    );
-
-    for (label, value, note) in applied {
-        derate_line(ui, label, value, note);
-    }
-    if !unity.is_empty() {
-        detail_line(
-            ui,
-            format!("{} factors at unity", unity.len()),
-            theme::TEXT_FAINT,
-            &format!("These changed nothing: {}.", unity.join(", ")),
-        );
-    }
-}
-
-/// Step 3 — the result, with its derivation on hover.
-fn draw_result_line(ui: &mut egui::Ui, explain: &FeedsExplain, effective: f64) {
-    let d = &explain.recommended.derates;
-    let combined = d.combined_factor();
-
-    let derate_pct = ((1.0 - combined) * 100.0).max(0.0);
-    let mut proof = format!(
-        "= target {:.4} × {:.3} combined derate ({derate_pct:.0}% reduction)\n",
-        d.target_chip_load_mm, combined
-    );
-    proof.push_str(&format!(
-        "= feed {:.0} mm/min ÷ ({:.0} RPM × {} flutes)",
-        explain.recommended.feed_rate_mm_min, explain.recommended.rpm, explain.flute_count
-    ));
-    if let Some((_, hi)) = explain
-        .matched_row
-        .as_ref()
-        .and_then(|r| r.chip_load_min_mm.zip(r.chip_load_max_mm))
-        && effective > 0.0
-    {
-        let pct_of_max = (effective / hi) * 100.0;
-        proof.push_str(&format!(
-            "\n= {pct_of_max:.0}% of the vendor band maximum ({hi:.4} mm/tooth)"
-        ));
-    }
-    ui.add_space(2.0);
-    let text = format!(
-        "Advance/tooth {effective:.4} mm/tooth {}",
-        tokens::GLYPH_DETAIL
-    );
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(text)
-                .small()
-                .strong()
-                .color(theme::SUCCESS),
-        )
-        .wrap(),
-    )
-    .on_hover_text(proof);
-}
-
-/// One factor as `label ×0.850`. The note that used to sit under it is now
-/// its hover — six captions were the bulk of this disclosure's text.
-fn derate_line(ui: &mut egui::Ui, label: &str, value: f64, note: &str) {
-    let color = if value < 0.999 {
-        theme::WARNING_MILD
-    } else if value > 1.001 {
-        theme::SUCCESS
-    } else {
-        theme::TEXT_DIM
-    };
-    let text = format!("{label} ×{value:.3} {}", tokens::GLYPH_DETAIL);
-    ui.add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap())
-        .on_hover_text(note.to_owned());
 }

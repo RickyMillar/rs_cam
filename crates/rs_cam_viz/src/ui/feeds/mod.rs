@@ -50,12 +50,17 @@ const MIN_HEIGHT: f32 = 240.0;
 
 /// The size the window takes when it has never been sized by hand.
 ///
-/// This is what the Explore body actually wants — the nomogram, the two
-/// mini charts and their captions — so a display with room shows the whole
-/// surface and never draws a scroll bar. A display without room caps it
-/// instead, and then the scroll bar earns its place.
-const DEFAULT_WIDTH: f32 = 760.0;
-const DEFAULT_HEIGHT: f32 = 700.0;
+/// This is what the body actually wants — the spindle policy row, the
+/// nomogram, its legend and its readout — so a display with room shows the
+/// whole surface and never draws a scroll bar. A display without room caps
+/// it instead, and then the scroll bar earns its place.
+///
+/// The height dropped from 700 when the two mini charts were deleted
+/// (`planning/feeds_rework_2026-09-15/PLAN.md` W4). Re-measure it if the
+/// body gains a section; a default taller than the content leaves dead space
+/// under the legend.
+const DEFAULT_WIDTH: f32 = 640.0;
+const DEFAULT_HEIGHT: f32 = 560.0;
 
 /// Top-level draw entry. Short-circuits when no modal is open.
 ///

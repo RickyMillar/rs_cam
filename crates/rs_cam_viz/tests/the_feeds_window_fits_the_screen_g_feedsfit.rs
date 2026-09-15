@@ -67,9 +67,11 @@ use rs_cam_viz::ui::{feeds, tokens};
 /// Below the body's natural height, which is the point.
 const SHORT_SCREEN: egui::Vec2 = egui::Vec2::new(1024.0, 560.0);
 
-/// Short AND narrow — the two mini charts are 360 points each, so this is
-/// under the width the side-by-side row wants.
-const SMALL_SCREEN: egui::Vec2 = egui::Vec2::new(700.0, 480.0);
+/// Short AND narrow — under the window's own default on both axes, so both
+/// caps have to bite. Arm 4 reads that; keep it smaller than
+/// `DEFAULT_WIDTH` x `DEFAULT_HEIGHT` in `ui/feeds/mod.rs` plus the margin,
+/// or the cap it measures goes quiet and the arm proves nothing.
+const SMALL_SCREEN: egui::Vec2 = egui::Vec2::new(560.0, 480.0);
 
 /// The window's fixed area id. `ui/feeds/mod.rs` sets it explicitly because
 /// the title carries the toolpath name, and egui derives an area id from the

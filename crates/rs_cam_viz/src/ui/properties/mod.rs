@@ -33,7 +33,7 @@ use crate::state::toolpath::{
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
-use crate::ui::components::{ProvKind, UiExt, ValueRow};
+use crate::ui::components::{PrecedenceField, ProvKind, UiExt, ValueRow};
 use crate::ui::theme;
 use crate::ui_command::{NoArgs, UiCommand};
 
@@ -2248,6 +2248,95 @@ fn calculate_and_apply_feeds(
     }
 }
 
+/// W1 — the operator sets the feed, the plunge and the RPM here.
+///
+/// # Why this exists again
+///
+/// `540715c1` (UR4) deleted the `SPEED — how fast` section from this tab on
+/// its way past. Feed and plunge had ALREADY been moved off the Geometry
+/// panel into this section by W3.2, and the spindle override by W3.1, so
+/// the deletion left the product with no way to set a feed rate at all —
+/// only `⚡ Apply all`, which overwrites the whole recipe at once. The
+/// operator found it the same day.
+///
+/// # What it is not
+///
+/// This block does not consult the calculator. It sets what the operation
+/// runs. `⚡ Apply all` remains the one route from a recommendation into an
+/// operation (Checkpoint I), and nothing here reads `FeedsResult`.
+///
+/// The write idiom is the panel's own: edit the scratch `ToolpathEntry` and
+/// stamp `stale_since`. The panel's write-back turns that into a `Command`,
+/// so no draw site touches the session (WP6).
+fn draw_speed_controls(ui: &mut egui::Ui, entry: &mut ToolpathEntry, project_default_rpm: u32) {
+    // A drill is Z-only: its plunge rate IS its feed rate. A second field
+    // there is a duplicate that writes nothing (the W3.2 rule).
+    let z_only = matches!(
+        entry.operation,
+        OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+    );
+    ui.named_section("Speed \u{2014} what this operation runs", |ui| {
+        egui::Grid::new("feeds_speed_controls")
+            .num_columns(2)
+            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+            .min_row_height(crate::ui::tokens::ROW_DENSE)
+            .show(ui, |ui| {
+                let mut feed = entry.operation.feed_rate();
+                if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50_000.0)
+                    .show(ui)
+                    .edited
+                {
+                    entry.operation.set_feed_rate(feed);
+                    entry.stale_since = Some(std::time::Instant::now());
+                }
+
+                if z_only {
+                    ui.label("Plunge:");
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(format!("{feed:.0} mm/min"))
+                                .color(crate::ui::tokens::TEXT_FAINT),
+                        )
+                        .wrap(),
+                    )
+                    .on_hover_text(
+                        "A drilling operation moves in Z only, so its plunge rate IS \
+                         its feed rate. Set the feed above.",
+                    );
+                    ui.end_row();
+                } else {
+                    let mut plunge = entry.operation.plunge_rate();
+                    if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10_000.0)
+                        .show(ui)
+                        .edited
+                    {
+                        entry.operation.set_plunge_rate(plunge);
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
+                }
+
+                // The project default stays visible beside the override, so
+                // the operator can see which value actually runs. The old
+                // widget hid it behind a hardcoded 18 000 (P1-005/P2-006).
+                let mut spindle = entry.operation.spindle_rpm();
+                if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
+                    .suffix(" RPM")
+                    .speed(100.0)
+                    .range(1_000..=60_000)
+                    .tooltip(
+                        "Override the project default spindle speed for this \
+                         operation. Leave it unchecked to follow the post-config \
+                         spindle speed.",
+                    )
+                    .show(ui)
+                {
+                    entry.operation.set_spindle_rpm(spindle);
+                    entry.stale_since = Some(std::time::Instant::now());
+                }
+            });
+    });
+}
+
 // The card reads the tool, the machine, the material, the project RPM, the
 // accepted load verdict and two session policies to answer one question. Its
 // caller `calculate_and_apply_feeds` carries the same allow for the same
@@ -2280,10 +2369,10 @@ fn draw_feeds_card(
         tool,
         project_default_rpm,
     );
-    crate::ui::feeds::compare::draw_inspector_comparison(ui, &current, &preview, entry.id, events);
-    // `FeedsPreview` carries calculator warnings, but this disclosure also
-    // needs the invariant-pass rationale. Re-run the read-only canonical
-    // Suggest path; its recommendation is the preview's validated recipe.
+    // `FeedsPreview` carries calculator warnings; the rows also quote the
+    // invariant pass's own account of what it did. Re-run the read-only
+    // canonical Suggest path; its recommendation is the preview's validated
+    // recipe.
     let rationale = rs_cam_core::feeds::suggest::suggest_for_operation(
         rs_cam_core::feeds::suggest::SuggestForOperationInput {
             operation: &entry.operation,
@@ -2301,20 +2390,24 @@ fn draw_feeds_card(
         rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(&suggested.warnings)
     });
 
-    egui::CollapsingHeader::new("Why is the recommendation here?")
-        .id_salt(("feeds_why", entry.id))
-        .default_open(false)
-        .show(ui, |ui| {
-            let explain = preview.explain();
-            crate::ui::feeds::why::draw_provenance(ui, explain);
-            if let Some(rationale) = &rationale {
-                crate::ui::feeds::why::draw_rationale(ui, rationale);
-            }
-            crate::ui::feeds::why::draw_engaged_diameter_row(ui, &current, explain);
-            crate::ui::feeds::why::draw_chipload_min_warning(ui, &current, explain);
-            crate::ui::feeds::why::draw_chipload_breakdown(ui, explain);
-            crate::ui::feeds::why::draw_warnings(ui, explain);
-        });
+    crate::ui::feeds::compare::draw_inspector_comparison(
+        ui,
+        &current,
+        &preview,
+        rationale.as_ref(),
+        entry.id,
+        events,
+    );
+
+    // W2 deleted the `Why is the recommendation here?` disclosure. Every row
+    // of the card above now explains its own number on hover, which is the
+    // question an operator actually asks. What stays HERE stays because a
+    // hover is the wrong home for it: a warning behind a hover is a warning
+    // that was deleted.
+    let explain = preview.explain();
+    crate::ui::feeds::why::draw_engaged_diameter_row(ui, &current, explain);
+    crate::ui::feeds::why::draw_chipload_min_warning(ui, &current, explain);
+    crate::ui::feeds::why::draw_warnings(ui, explain);
 
     // This is accepted simulation evidence, not a recommendation. Keep it
     // outside and below the recommendation disclosure so planned and measured
@@ -4974,19 +5067,17 @@ fn draw_toolpath_panel(
                 .map(|(_, t)| (t.diameter, t.tool_type));
             let (tool_diameter, tool_type) =
                 tool_info.unwrap_or((6.0, crate::state::job::ToolType::EndMill));
-            // Redesigned modal entry — pulls open the full chart-driven
-            // view. Stays alongside the legacy feeds card so existing
-            // muscle memory keeps working until the modal is fully
-            // promoted (Phase 4).
             ui.horizontal(|ui| {
                 if ui
                     .button("Explore…")
-                    .on_hover_text("Explore feed versus RPM for this operation.")
+                    .on_hover_text("Open the feed-versus-RPM nomogram for this operation.")
                     .clicked()
                 {
                     events.push(AppEvent::OpenFeedsModal(entry.id));
                 }
             });
+            ui.add_space(4.0);
+            draw_speed_controls(ui, entry, project_default_rpm);
             ui.add_space(4.0);
             if let Some(tool_cfg) = tool_configs
                 .iter()

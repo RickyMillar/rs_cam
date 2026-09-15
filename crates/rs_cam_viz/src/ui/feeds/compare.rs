@@ -15,24 +15,18 @@
 use rs_cam_core::feeds::FeedsExplain;
 use rs_cam_core::feeds::suggest::FeedsPreview;
 
+use rs_cam_core::feeds::rationale::SuggestRationale;
+
 use super::shared::{
     CurrentValues, ball_tip_radius, combined_scale, hardness_label, material_family_label,
     tool_family_label,
 };
+use super::why;
 use crate::state::AppState;
 use crate::ui::components::compare;
 use crate::ui::components::{ProvKind, ProvenanceBadge};
 use crate::ui::{AppEvent, theme};
 
-/// Why the DOC and WOC rows do not read as what the operation will get.
-///
-/// This shipped as a caution-coloured CAPTION under BOTH rows — the same
-/// sentence, twice, in the colour reserved for a warning. It is an accuracy
-/// caveat, not a warning, and it belongs to the label it qualifies. The rows
-/// carry [`crate::ui::tokens::GLYPH_DETAIL`] and hold it on hover.
-const CALCULATOR_NOTE: &str = "This is the raw calculator value. `⚡ Apply all` passes it \
-     through the invariant funnel, which can lower it — the rigidity cap put \
-     1.2 mm where this row read 4.2 mm on the R03 pocket.";
 const ADVANCE_ROW_LABEL: &str = "Advance/tooth";
 
 fn advance_per_tooth_mm(feed_mm_min: f64, rpm: f64, flutes: u32) -> Option<f64> {
@@ -148,6 +142,7 @@ pub(crate) fn draw_inspector_comparison(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     preview: &FeedsPreview,
+    rationale: Option<&SuggestRationale>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
@@ -158,6 +153,7 @@ pub(crate) fn draw_inspector_comparison(
         current,
         preview.explain(),
         preview.refusal(),
+        rationale,
         toolpath_id,
         events,
     );
@@ -242,14 +238,21 @@ fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_comparison_card(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     explain: &FeedsExplain,
     refusal: Option<&rs_cam_core::feeds::FeedsError>,
+    rationale: Option<&SuggestRationale>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
+    // W2: every row explains ITS OWN number. The `Why is the recommendation
+    // here?` disclosure that used to sit under this card explained the recipe
+    // as a whole, which is not the question an operator asks while reading a
+    // row that tripled.
+    let why = |row: why::RecipeRow| why::row_explanation(row, current, explain, rationale);
     ui.label(
         egui::RichText::new("Recommendation")
             .strong()
@@ -281,7 +284,7 @@ fn draw_comparison_card(
             Some(explain.recommended.rpm),
             "",
             1.0,
-            None,
+            &why(why::RecipeRow::Rpm),
         );
         rail_row(
             ui,
@@ -290,7 +293,7 @@ fn draw_comparison_card(
             Some(explain.recommended.feed_rate_mm_min),
             " mm/min",
             1.0,
-            None,
+            &why(why::RecipeRow::Feed),
         );
         rail_row(
             ui,
@@ -299,13 +302,13 @@ fn draw_comparison_card(
             Some(explain.recommended.plunge_rate_mm_min),
             " mm/min",
             1.0,
-            None,
+            &why(why::RecipeRow::Plunge),
         );
         // G-FEEDSLABEL (UX-R03-005): the recommended DOC / WOC are the RAW
         // calculator values — `⚡ Apply all` passes them through
-        // `enforce_invariants`, which can lower them (the rigidity cap put
-        // 1.2 where this row reads 4.2 on the R03 pocket) — so the note says
-        // so. The advance row prints feed ÷ (RPM × flutes) in both columns.
+        // `enforce_invariants`, which can lower them — so each row's hover
+        // says so. The advance row prints feed ÷ (RPM × flutes) in both
+        // columns.
         rail_row(
             ui,
             "DOC",
@@ -313,9 +316,9 @@ fn draw_comparison_card(
             Some(explain.recommended.axial_depth_mm),
             " mm",
             0.01,
-            Some(CALCULATOR_NOTE),
+            &why(why::RecipeRow::Doc),
         );
-        woc_row(ui, current, explain);
+        woc_row(ui, current, explain, &why(why::RecipeRow::Woc));
         rail_row(
             ui,
             ADVANCE_ROW_LABEL,
@@ -327,7 +330,7 @@ fn draw_comparison_card(
             ),
             " mm/tooth",
             0.0001,
-            None,
+            &why(why::RecipeRow::Advance),
         );
 
         // S1 — scallop-driven stepover control (DropCutter only).
@@ -336,7 +339,7 @@ fn draw_comparison_card(
         }
 
         ui.add_space(4.0);
-        rail_power_bar(
+        rail_power_row(
             ui,
             explain.recommended.power_kw,
             explain.recommended.available_power_kw,
@@ -351,6 +354,11 @@ fn draw_comparison_card(
 
 /// One `label current → recommended Δ` line, wrapped so the inspector rail
 /// can never be widened (or overflowed) by its content.
+///
+/// `explanation` is the row's own answer to "why is this number what it is",
+/// and it is not optional. W2 deleted the `Why is the recommendation here?`
+/// disclosure precisely because a whole-recipe explanation cannot answer a
+/// per-row question; a row with nothing to say would put that hole back.
 fn rail_row(
     ui: &mut egui::Ui,
     label: &str,
@@ -358,25 +366,19 @@ fn rail_row(
     recommended: Option<f64>,
     unit: &str,
     precision: f64,
-    note: Option<&str>,
+    explanation: &str,
 ) {
     ui.horizontal_wrapped(|ui| {
-        let heading = match note {
-            Some(_) => format!("{label} {}", crate::ui::tokens::GLYPH_DETAIL),
-            None => label.to_owned(),
-        };
-        let heading = ui.add(
+        ui.add(
             egui::Label::new(
-                egui::RichText::new(heading)
+                egui::RichText::new(format!("{label} {}", crate::ui::tokens::GLYPH_DETAIL))
                     .small()
                     .strong()
                     .color(theme::TEXT_HEADING),
             )
             .wrap(),
-        );
-        if let Some(note) = note {
-            heading.on_hover_text(note.to_owned());
-        }
+        )
+        .on_hover_text(explanation.to_owned());
         ui.add(
             egui::Label::new(
                 egui::RichText::new(compare::format_optional(current, unit, precision))
@@ -406,33 +408,58 @@ fn rail_row(
     ui.add_space(2.0);
 }
 
-/// The rail's power gauge. The shared `power_bar` fixes a 160-point bar and
-/// overflows a 240-point column; this one shrinks with the panel.
-fn rail_power_bar(ui: &mut egui::Ui, power_kw: f64, available_kw: f64) {
+/// Utilisation above this is worth an operator's attention. Below it, the
+/// figure is reported plainly rather than coloured.
+const POWER_NOTABLE_FRACTION: f64 = 0.5;
+
+/// The rail's power statement.
+///
+/// # This was a gauge, and the gauge was dead (W3)
+///
+/// `feeds/mod.rs` already carried the measurement that condemns it: across
+/// all three shipped machine presets × ten species × Ø3/Ø6/Ø12 slots, the
+/// power branch never fires at all, and **peak** utilisation is 23.6 %.
+/// Typical is 1 %: a 6 mm cutter in softwood needs about seven watts. A bar
+/// whose maximum observed value across the entire shipped matrix sits in its
+/// left quarter cannot distinguish a safe cut from a safer one, and an
+/// operator who learns to read it learns nothing.
+///
+/// The NUMBER is worth keeping — it is the one honest answer to "will my
+/// spindle stall" — so it stays, as one line, with the spindle it is quoted
+/// against named on its hover. A headroom figure quoted against a guessed
+/// 0.8 kW default is worse than no figure.
+fn rail_power_row(ui: &mut egui::Ui, power_kw: f64, available_kw: f64) {
     let avail = available_kw.max(0.0001);
     let frac = (power_kw / avail).clamp(0.0, 1.0);
+    let color = if frac >= POWER_NOTABLE_FRACTION {
+        compare::power_color(frac)
+    } else {
+        theme::TEXT_DIM
+    };
     ui.horizontal_wrapped(|ui| {
         ui.add(
-            egui::Label::new(egui::RichText::new("Power:").small().color(theme::TEXT_DIM)).wrap(),
+            egui::Label::new(egui::RichText::new("Power").small().color(theme::TEXT_DIM)).wrap(),
         );
-        let text = format!("{power_kw:.2} / {avail:.2} kW ({:.0} %)", frac * 100.0);
-        // Reserve the text first so the bar gets what is left, never more.
-        let text_width = ui
-            .painter()
-            .layout_no_wrap(
-                text.clone(),
-                egui::TextStyle::Small.resolve(ui.style()),
-                crate::ui::tokens::TEXT_BODY,
-            )
-            .size()
-            .x;
-        let bar_width = (ui.available_width() - text_width - 8.0).clamp(24.0, 120.0);
         ui.add(
-            egui::ProgressBar::new(frac as f32)
-                .fill(compare::power_color(frac))
-                .desired_width(bar_width),
-        );
-        ui.add(egui::Label::new(egui::RichText::new(text).small()).wrap());
+            egui::Label::new(
+                egui::RichText::new(format!(
+                    "{power_kw:.2} of {avail:.2} kW ({:.0} %) {}",
+                    frac * 100.0,
+                    crate::ui::tokens::GLYPH_DETAIL
+                ))
+                .small()
+                .color(color),
+            )
+            .wrap(),
+        )
+        .on_hover_text(format!(
+            "Cutting power at the recommended feed and cut, against this \
+             machine's spindle curve after its safety factor — {avail:.2} kW \
+             at this RPM.\n\nWood cuts at low power: a 6 mm cutter in softwood \
+             needs about seven watts. If {avail:.2} kW is not your spindle, set \
+             it in the machine profile, because this headroom is quoted \
+             against it."
+        ));
     });
 }
 
@@ -516,7 +543,7 @@ fn draw_apply_column(
 /// the label gains an "(auto from scallop)" marker and a tooltip
 /// spelling out the chord-height math, so it's visually distinct from a
 /// manually-entered stepover.
-fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
+fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain, explanation: &str) {
     let scallop_active = current.supports_scallop_override && current.scallop_height.is_some();
     if !scallop_active {
         rail_row(
@@ -526,7 +553,7 @@ fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
             Some(explain.recommended.radial_width_mm),
             " mm",
             0.01,
-            Some(CALCULATOR_NOTE),
+            explanation,
         );
         return;
     }

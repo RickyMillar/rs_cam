@@ -59,10 +59,30 @@ impl<'a> PrecedenceField<'a> {
 
     /// Draw the row (`label : [☑ override] [value] · 〈 default 〉`) and call
     /// `ui.end_row()`. Returns `true` if the override state or value changed.
+    ///
+    /// # The value column wraps
+    ///
+    /// The row carries a checkbox, a `DragValue` and the inherited default,
+    /// which is about 200 points of content. Laid out with `ui.horizontal`
+    /// it asked for all of it at once and pushed the Feeds tab to 370 points
+    /// inside the Simulation workspace's 240-point rail — the UR1 defect,
+    /// where content widens its own container until the panel clips it.
+    /// `horizontal_wrapped` lets the default drop to its own line in a narrow
+    /// rail instead, and changes nothing in a wide one.
     pub fn show(self, ui: &mut egui::Ui) -> bool {
         let mut changed = false;
-        ui.label(self.label);
-        ui.horizontal(|ui| {
+        ui.add_sized(
+            [
+                crate::ui::tokens::LABEL_COL_WIDTH,
+                crate::ui::tokens::ROW_DENSE,
+            ],
+            egui::Label::new(self.label)
+                .truncate()
+                .wrap_mode(egui::TextWrapMode::Truncate)
+                .halign(egui::Align::LEFT),
+        )
+        .on_hover_text(self.label);
+        ui.horizontal_wrapped(|ui| {
             let mut active = self.override_value.is_some();
             let mut value = self.override_value.unwrap_or(self.project_default);
 
