@@ -25,4 +25,4 @@ session landed nothing in them.
 | UR5 one visibility model | DONE | User-ratified selection-only model: isolate state, commands, shortcut and UI routes deleted; hide/show exists only in All-toolpaths mode; focused sentries, full viz tests + clippy green |
 | UR6 button label sits in one place | DONE | `component_contracts_up2.rs`: one centered paint in every state, disabled semantics + WidgetInfo preserved |
 | UR7 resource row has one affordance | DONE | `the_setup_rail_is_one_weight_dc4.rs`: chevron/menu mutually exclusive; "none" empty states route to import / library; classifier shared with File menu |
-| UR8 Readiness leads with the first unmet action | TODO — Run-sim affordances already gated on `simulation_request_is_buildable` (UR3 overlap); the reorder itself is not done |
+| UR8 Readiness leads with the first unmet action | DONE | One ordered `FirstUnmetAction` primary below the checks; per-row buttons and the second Run simulation are deleted; Export is Quiet until every gate passes; sentry `chrome_reads_the_kit_up3.rs` + unit ordering tests; full viz tests + clippy green |

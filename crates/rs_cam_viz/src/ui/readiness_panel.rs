@@ -21,6 +21,81 @@ use crate::ui::readiness::{self, CheckStatus, CycleTimeBasisExt};
 use crate::ui::{theme, tokens};
 use crate::ui_command::{NoArgs, UiCommand};
 
+/// The single remedy presented below the readiness checks, in priority order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FirstUnmetAction {
+    ReviewToolpaths,
+    RunSimulation,
+    ReviewCollisions,
+    RecheckHolderClearance,
+    ReviewToolLoad,
+    ReviewFeeds,
+}
+
+impl FirstUnmetAction {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::ReviewToolpaths => "Review toolpaths",
+            Self::RunSimulation => "Run simulation",
+            Self::ReviewCollisions => "Review collisions",
+            Self::RecheckHolderClearance => "Re-check holder clearance",
+            Self::ReviewToolLoad => "Review tool load",
+            Self::ReviewFeeds => "Review feeds…",
+        }
+    }
+
+    fn event(self) -> AppEvent {
+        match self {
+            Self::ReviewToolpaths => AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Toolpaths)),
+            Self::RunSimulation => AppEvent::RunSimulation,
+            Self::ReviewCollisions | Self::ReviewToolLoad => {
+                AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Simulation))
+            }
+            Self::RecheckHolderClearance => AppEvent::RunCollisionCheck,
+            Self::ReviewFeeds => AppEvent::Ui(UiCommand::SetProjectFeedsOpen(true)),
+        }
+    }
+}
+
+/// Return the ordered, first unmet readiness remedy.
+///
+/// A non-buildable simulation cannot be remedied from this screen. In that
+/// case operations wins when it is unmet; otherwise route to Toolpaths rather
+/// than offering a disabled simulation action.
+fn first_unmet_action(
+    operations: CheckStatus,
+    simulation: CheckStatus,
+    simulation_buildable: bool,
+    rapid: CheckStatus,
+    holder: CheckStatus,
+    tool_load: CheckStatus,
+    feeds: CheckStatus,
+) -> Option<FirstUnmetAction> {
+    if operations != CheckStatus::Pass {
+        return Some(FirstUnmetAction::ReviewToolpaths);
+    }
+    if simulation != CheckStatus::Pass {
+        return Some(if simulation_buildable {
+            FirstUnmetAction::RunSimulation
+        } else {
+            FirstUnmetAction::ReviewToolpaths
+        });
+    }
+    if rapid == CheckStatus::Fail {
+        return Some(FirstUnmetAction::ReviewCollisions);
+    }
+    if holder != CheckStatus::Pass {
+        return Some(FirstUnmetAction::RecheckHolderClearance);
+    }
+    if tool_load != CheckStatus::Pass {
+        return Some(FirstUnmetAction::ReviewToolLoad);
+    }
+    if feeds != CheckStatus::Pass {
+        return Some(FirstUnmetAction::ReviewFeeds);
+    }
+    None
+}
+
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let sim = &state.simulation;
     let stale = sim.has_results() && sim.is_stale(state.gui.edit_counter);
@@ -39,6 +114,17 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     // window, so the feeds maths runs once per frame, not once per surface.
     let feeds_rows = project_rows(state);
     let feeds_status = project_feeds_status(&feeds_rows);
+    let simulation_buildable =
+        readiness::simulation_request_is_buildable(&state.session, &state.gui);
+    let first_unmet = first_unmet_action(
+        ops_status,
+        sim_status,
+        simulation_buildable,
+        rapid_status,
+        holder_status,
+        load_status,
+        feeds_status,
+    );
 
     let worst = ops_status
         .worse(sim_status)
@@ -68,17 +154,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             } else {
                 format!("{computed}/{enabled} current")
             };
-            check_row(
-                ui,
-                ops_status,
-                "Operations",
-                &ops_detail,
-                (ops_status != CheckStatus::Pass).then_some((
-                    "Toolpaths",
-                    AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Toolpaths)),
-                )),
-                events,
-            );
+            check_row(ui, ops_status, "Operations", &ops_detail);
 
             let sim_detail = if !sim.has_results() {
                 "Not run"
@@ -87,10 +163,12 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             } else {
                 "Up to date"
             };
-            let sim_action = (sim_status != CheckStatus::Pass
-                && readiness::simulation_request_is_buildable(&state.session, &state.gui))
-            .then_some(("Run sim", AppEvent::RunSimulation));
-            check_row(ui, sim_status, "Simulation", sim_detail, sim_action, events);
+            let sim_detail = if sim_status == CheckStatus::Pass {
+                format!("{sim_detail} · {computed}/{enabled} operations")
+            } else {
+                sim_detail.to_owned()
+            };
+            check_row(ui, sim_status, "Simulation", &sim_detail);
 
             let rapid_detail = if !sim.has_results() {
                 "Run simulation first".to_owned()
@@ -99,17 +177,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             } else {
                 format!("{} detected", sim.checks.rapid_collisions.len())
             };
-            check_row(
-                ui,
-                rapid_status,
-                "Rapid collisions",
-                &rapid_detail,
-                (rapid_status == CheckStatus::Fail).then_some((
-                    "Simulation",
-                    AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Simulation)),
-                )),
-                events,
-            );
+            check_row(ui, rapid_status, "Rapid collisions", &rapid_detail);
 
             // F2.12 — one derivation, shared with the pre-flight gate. This
             // arm used to read `min_safe_stickout`, which the drain writes
@@ -121,19 +189,11 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             // the check examined and how many it did not, and the tier
             // refuses `Pass`.
             let holder_detail = readiness::holder_clearance_detail(state);
-            check_row(
-                ui,
-                holder_status,
-                "Holder clearance",
-                &holder_detail,
-                (holder_status != CheckStatus::Pass)
-                    .then_some(("Re-check", AppEvent::RunCollisionCheck)),
-                events,
-            );
+            check_row(ui, holder_status, "Holder clearance", &holder_detail);
 
             // Tool load — verdict-family CountPills, one universe via the /T
             // denominator (the canonical `ToolLoadReportSummary` producer).
-            check_row(ui, load_status, "Tool load", "", None, events);
+            check_row(ui, load_status, "Tool load", "");
             if summary.total_toolpaths > 0 {
                 ui.horizontal(|ui| {
                     ui.add_space(28.0);
@@ -185,14 +245,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     CheckStatus::Warning,
                 ),
             };
-            // A basis with a remedy gets the same jump affordance every other
-            // row on this panel offers. Only the un-simulated case has a
-            // single-event fix; the no-kinematics case is a properties edit,
-            // so it gets named in text instead of a fake button.
-            let action = (matches!(cycle.basis, Some(readiness::CycleTimeBasis::CuttingOnly))
-                && readiness::simulation_request_is_buildable(&state.session, &state.gui))
-            .then_some(("Run sim", AppEvent::RunSimulation));
-            check_row(ui, status, &title, &detail, action, events);
+            check_row(ui, status, &title, &detail);
             if let Some(basis) = cycle.basis
                 && basis != readiness::CycleTimeBasis::MachineModel
             {
@@ -209,43 +262,37 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         ui.separator();
         ui.add_space(crate::ui::tokens::SPACE_3);
 
-        // Primary action: open the export gate. The pre-flight modal is the
-        // confirm/override surface; this dashboard is its persistent twin.
+        // One action row: resolve the first unmet gate, then export. Once
+        // every gate passes, Export is the screen's sole Primary.
         ui.horizontal(|ui| {
-            // UP3, §4.5: ONE Primary per screen. This dashboard exists to
-            // answer "is this safe to cut?", so the export gate is the action
-            // it is FOR. "Run simulation" is a step along the way and takes
-            // the default weight. Before this the two were identical and the
-            // screen could not say which was which.
+            if let Some(action) = first_unmet {
+                if ui
+                    .add(crate::ui::components::Button::primary(action.label()))
+                    .on_hover_text("Resolve the first unmet readiness check")
+                    .clicked()
+                {
+                    events.push(action.event());
+                }
+            }
+
+            let export = if first_unmet.is_some() {
+                crate::ui::components::Button::quiet("Export G-code\u{2026}")
+            } else {
+                crate::ui::components::Button::primary("Export G-code\u{2026}")
+            };
             if ui
-                .add(crate::ui::components::Button::primary(
-                    "Export G-code\u{2026}",
-                ))
+                .add(export)
                 .on_hover_text("Open the export readiness gate")
                 .clicked()
             {
                 events.push(AppEvent::Ui(UiCommand::ExportGcode(NoArgs)));
-            }
-            if !sim.has_results()
-                && ui
-                    .add(
-                        crate::ui::components::Button::new("Run simulation").enabled(
-                            readiness::simulation_request_is_buildable(&state.session, &state.gui),
-                        ),
-                    )
-                    .on_disabled_hover_text(
-                        "Generate at least one enabled toolpath with a valid tool first",
-                    )
-                    .clicked()
-            {
-                events.push(AppEvent::RunSimulation);
             }
         });
 
         // It is ONE row, in the shape of its neighbours. The table, the
         // scatter and the machine envelope open FROM it: a 960-point chart
         // grid does not belong in a 280-point rail.
-        draw_project_feeds_row(ui, feeds_status, &feeds_rows, events);
+        draw_project_feeds_row(ui, feeds_status, &feeds_rows);
     });
 
     // DC5a. The project feeds rollup asks a PROJECT-wide question, so it
@@ -276,12 +323,7 @@ fn project_feeds_status(rows: &[ProjectFeedsRow]) -> CheckStatus {
 /// The row states the aggregate speedup and opens the detail. It is a
 /// `Warning` only when the project is leaving speed on the table; a project
 /// already at or above its recommendation passes.
-fn draw_project_feeds_row(
-    ui: &mut egui::Ui,
-    status: CheckStatus,
-    rows: &[ProjectFeedsRow],
-    events: &mut Vec<AppEvent>,
-) {
+fn draw_project_feeds_row(ui: &mut egui::Ui, status: CheckStatus, rows: &[ProjectFeedsRow]) {
     if rows.is_empty() {
         return;
     }
@@ -291,17 +333,7 @@ fn draw_project_feeds_row(
     } else {
         format!("{} toolpaths at or above recommendation", rows.len())
     };
-    check_row(
-        ui,
-        status,
-        "Feeds",
-        &detail,
-        Some((
-            "Review\u{2026}",
-            AppEvent::Ui(UiCommand::SetProjectFeedsOpen(true)),
-        )),
-        events,
-    );
+    check_row(ui, status, "Feeds", &detail);
 }
 
 /// The rollup detail, as a window the operator opens, reads and closes.
@@ -373,15 +405,8 @@ fn caveat_line(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     ui.add_space(4.0);
 }
 
-/// One readiness check row: status glyph, label, detail, optional jump action.
-fn check_row(
-    ui: &mut egui::Ui,
-    status: CheckStatus,
-    label: &str,
-    detail: &str,
-    action: Option<(&str, AppEvent)>,
-    events: &mut Vec<AppEvent>,
-) {
+/// One readiness check row: status glyph, label and detail.
+fn check_row(ui: &mut egui::Ui, status: CheckStatus, label: &str, detail: &str) {
     let (icon, color) = match status {
         CheckStatus::Pass => ("\u{2713}", theme::SUCCESS),
         CheckStatus::Warning => ("\u{26A0}", theme::WARNING),
@@ -396,17 +421,6 @@ fn check_row(
         );
         if !detail.is_empty() {
             ui.label(egui::RichText::new(detail).color(color));
-        }
-        if let Some((action_label, event)) = action {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .small_button(action_label)
-                    .on_hover_text("Jump to where you can fix this")
-                    .clicked()
-                {
-                    events.push(event);
-                }
-            });
         }
     });
     ui.add_space(4.0);
@@ -804,6 +818,52 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                 );
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FirstUnmetAction, first_unmet_action};
+    use crate::ui::readiness::CheckStatus::{Fail, Pass, Warning};
+
+    #[test]
+    fn first_unmet_action_uses_readiness_order() {
+        assert_eq!(
+            first_unmet_action(Fail, Warning, true, Fail, Fail, Fail, Warning),
+            Some(FirstUnmetAction::ReviewToolpaths)
+        );
+        assert_eq!(
+            first_unmet_action(Pass, Warning, true, Fail, Fail, Fail, Warning),
+            Some(FirstUnmetAction::RunSimulation)
+        );
+        assert_eq!(
+            first_unmet_action(Pass, Pass, true, Fail, Fail, Fail, Warning),
+            Some(FirstUnmetAction::ReviewCollisions)
+        );
+        assert_eq!(
+            first_unmet_action(Pass, Pass, true, Pass, Warning, Fail, Warning),
+            Some(FirstUnmetAction::RecheckHolderClearance)
+        );
+        assert_eq!(
+            first_unmet_action(Pass, Pass, true, Pass, Pass, Warning, Warning),
+            Some(FirstUnmetAction::ReviewToolLoad)
+        );
+        assert_eq!(
+            first_unmet_action(Pass, Pass, true, Pass, Pass, Pass, Warning),
+            Some(FirstUnmetAction::ReviewFeeds)
+        );
+    }
+
+    #[test]
+    fn non_buildable_simulation_routes_to_toolpaths() {
+        assert_eq!(
+            first_unmet_action(Pass, Warning, false, Warning, Warning, Warning, Warning),
+            Some(FirstUnmetAction::ReviewToolpaths)
+        );
+        assert_eq!(
+            first_unmet_action(Pass, Pass, true, Pass, Pass, Pass, Pass),
+            None
+        );
+    }
 }
 
 struct ProjectFeedsRow {

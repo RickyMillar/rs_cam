@@ -139,21 +139,34 @@ fn a_workspace_badge_is_a_dot_not_a_pseudo_tab_up3() {
 }
 
 #[test]
-fn the_readiness_action_row_names_one_primary_up3() {
+fn the_readiness_action_row_has_one_ordered_primary_up3() {
     let root = src_root();
     let src = std::fs::read_to_string(root.join("ui/readiness_panel.rs")).unwrap();
+    let check_row = src
+        .split("fn check_row")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("// ────────────────────────────────────────────────────────────────────")
+                .next()
+        })
+        .expect("non-vacuity: readiness_panel.rs must define check_row");
 
     assert!(
-        src.contains("Button::primary") || src.contains("ButtonVariant::Primary"),
-        "the readiness row offered 'Export G-code…' and 'Run simulation' at \
-         the SAME weight, so the screen could not say which action it was \
-         FOR. §4.5 allows exactly one Primary per screen."
+        src.contains("enum FirstUnmetAction") && src.contains("fn first_unmet_action"),
+        "Readiness needs one explicit, ordered first-unmet remedy."
     );
-    let primaries =
-        src.matches("Button::primary").count() + src.matches("ButtonVariant::Primary").count();
     assert!(
-        primaries <= 1,
-        "§4.5: at most ONE Primary per screen, found {primaries}"
+        src.contains("Button::quiet(\"Export G-code\\u{2026}\")"),
+        "Export must be Quiet while a readiness remedy is unmet."
+    );
+    assert!(
+        src.contains("if let Some(action) = first_unmet")
+            && src.contains("if first_unmet.is_some()"),
+        "the remedy and Export must be mutually exclusive Primaries"
+    );
+    assert!(
+        !check_row.contains("small_button") && !check_row.contains("AppEvent"),
+        "check rows must report status only; the single bottom row owns remedies"
     );
 }
 
