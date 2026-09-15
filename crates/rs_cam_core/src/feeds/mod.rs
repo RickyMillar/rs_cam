@@ -16,6 +16,7 @@
 //! 10. Collect warnings
 
 pub mod cutter_constraints;
+pub mod efficiency;
 pub mod explain_payload;
 pub mod feed_explanation;
 pub mod force;
@@ -30,6 +31,7 @@ pub mod suggest;
 pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
+pub use efficiency::{ChipVerdict, CutEfficiency, cut_efficiency};
 pub use explain_payload::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
 pub use feed_explanation::{
     ADVANCE_PER_TOOTH, AchievedFeedStage, ClampReason, CommandedStage, FeedExplanation,
