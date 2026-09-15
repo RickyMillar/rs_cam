@@ -221,6 +221,7 @@ fn draw_status_header(
             .strong(),
     )
     .on_hover_text(verdict.hover);
+    draw_air_cut_caution(ui, sim);
     // Freshness chip — rendered here (not in the overview body) so it covers
     // the focused-card paths too (INS-005).
     if sim.is_stale(gui.edit_counter) {
@@ -234,6 +235,51 @@ fn draw_status_header(
     }
     ui.add_space(4.0);
     ui.separator();
+}
+
+/// The high-air-cutting caution, on the page.
+///
+/// # Why this is back
+///
+/// The declutter of 2026-09-14 deleted it, on the assumption that the
+/// triage-driven verdict line above had absorbed it. It had not. Air cut
+/// lands in [`ChannelCounts`] — the triage's Class D tallies — and never in
+/// `safety`, `actions` or `advisories`, so no verdict is ever formed from
+/// it. The page kept the percentage as an informational row and lost the
+/// judgement, which is the half an operator acts on.
+///
+/// Caught by `air_cut_denominators_lh1`, a CORE test that scans this file.
+/// It went unseen for a day because the declutter ran `cargo test -p
+/// rs_cam_viz` and never the core gate.
+///
+/// # Why the threshold is not recomputed here
+///
+/// The share comes from [`AirCutRatios::air_cut_pct_of_total_runtime`], the
+/// measure the shipped thresholds are tuned against. The old banner divided
+/// by hand in the view, which is the pattern `rs_cam_viz/CLAUDE.md` bans.
+const HIGH_AIR_CUT_PCT: f64 = 40.0;
+
+fn draw_air_cut_caution(ui: &mut egui::Ui, sim: &SimulationState) {
+    use rs_cam_core::simulation_cut::AirCutRatios;
+    let Some(trace) = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref()) else {
+        return;
+    };
+    let pct = trace.summary.air_cut_pct_of_total_runtime();
+    if pct <= HIGH_AIR_CUT_PCT {
+        return;
+    }
+    ui.label(
+        egui::RichText::new(format!(
+            "\u{26A0} High air cutting ({pct:.0}% of total runtime)"
+        ))
+        .small()
+        .color(theme::WARNING_MILD),
+    )
+    .on_hover_text(
+        "More than two fifths of the run is spent moving at cutting feed \
+         without removing material. The toolpath may be crossing cleared \
+         ground; check the linking strategy and the stock model.",
+    );
 }
 
 /// Hotspot card. Returns `Some(())` when drawn so the caller can early-return.
@@ -683,16 +729,30 @@ fn draw_project_section(
                 .map(|trace| {
                     use rs_cam_core::simulation_cut::AirCutRatios;
                     let s = &trace.summary;
-                    let pct_of_total = |t: f64| {
-                        if s.total_runtime_s > 0.0 {
-                            t / s.total_runtime_s * 100.0
-                        } else {
-                            0.0
-                        }
+                    // LH-1: the air-cut share comes from the trait, not from
+                    // a division written here. `air_cut_pct_of_total_runtime`
+                    // is the measure every shipped threshold is tuned
+                    // against, and a hand-rolled copy is how two surfaces
+                    // come to quote different numbers for the same seconds.
+                    //
+                    // The declutter of 2026-09-14 replaced that call with a
+                    // local `pct_of_total` closure. LH-1's negative arm greps
+                    // for the field name followed by a divide, which a
+                    // closure applied to the field does not contain — so the
+                    // guard missed it. (This comment must not spell that
+                    // pattern out either: the sentry scans raw source,
+                    // comments included, and an explanation of the trap that
+                    // contains the trap fails the test.) The closure survives
+                    // for low engagement, which the trait publishes no ratio
+                    // for.
+                    let low_engagement_pct_of_total = if s.total_runtime_s > 0.0 {
+                        s.low_engagement_time_s / s.total_runtime_s * 100.0
+                    } else {
+                        0.0
                     };
                     (
-                        pct_of_total(s.air_cut_time_s),
-                        pct_of_total(s.low_engagement_time_s),
+                        s.air_cut_pct_of_total_runtime(),
+                        low_engagement_pct_of_total,
                         s.air_cut_pct_of_cutting_time(),
                     )
                 });
