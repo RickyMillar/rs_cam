@@ -479,11 +479,6 @@ impl<B: ComputeBackend> AppController<B> {
                         self.pending_upload = true;
                     }
                 }
-                UiCommand::ToggleIsolateToolpath(NoArgs) => self.handle_toggle_isolate_toolpath(),
-                UiCommand::ClearIsolation(NoArgs) => {
-                    self.state.viewport.isolate_toolpath = None;
-                    self.pending_upload = true;
-                }
                 UiCommand::ToggleShowAllToolpaths(NoArgs) => {
                     // WP27 — write through the Overlays funnel, never the
                     // field: one write door keeps the panel, this button and

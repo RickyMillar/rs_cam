@@ -381,12 +381,6 @@ macro_rules! for_each_ui_command {
                  mcp: Reach::Skip("no wire tool switches the camera projection"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
-            (UiCommand, ClearIsolation, "clear_isolation", NoArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip("no wire tool clears the viewport isolation"),
-                 cli: Reach::Skip("the batch CLI draws no viewport"),
-             }),
             (UiCommand, PreviewOrientation, "preview_orientation", PreviewOrientationArgs, (),
              Surfaces {
                  gui: Reach::Reached,
@@ -410,12 +404,6 @@ macro_rules! for_each_ui_command {
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Skip("no wire tool hides one toolpath in the viewport"),
-                 cli: Reach::Skip("the batch CLI draws no viewport"),
-             }),
-            (UiCommand, ToggleIsolateToolpath, "toggle_isolate_toolpath", NoArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip("no wire tool isolates one toolpath"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
             (UiCommand, ToggleShowAllToolpaths, "toggle_show_all_toolpaths", NoArgs, (),

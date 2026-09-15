@@ -1,8 +1,8 @@
 //! Phase O — the multi-tool finishing planner's reconciler.
 //!
 //! The core planner emits (and replaces) session toolpaths; everything the
-//! GUI keeps *beside* the session — per-op runtime, selection, isolation, the
-//! GPU upload flag — has to be brought back into step afterwards. That is this
+//! GUI keeps *beside* the session — per-op runtime, selection and the GPU
+//! upload flag — has to be brought back into step afterwards. That is this
 //! module, and it is the ONE path: the MCP tool calls it today and Phase U's
 //! planner dialog calls the same method, so the two surfaces cannot drift.
 //!
@@ -73,9 +73,6 @@ impl<B: ComputeBackend> AppController<B> {
             self.mark_derived_rest_dependents_stale(*id);
             if self.state.selection == Selection::Toolpath(*id) {
                 self.state.selection = Selection::None;
-            }
-            if self.state.viewport.isolate_toolpath == Some(*id) {
-                self.state.viewport.isolate_toolpath = None;
             }
         }
 
@@ -222,7 +219,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// Routes through [`Self::apply_multitool_plan`] — never
     /// `session.plan_multitool_finishing` directly — because that method owns
     /// the GUI-side bookkeeping (runtime entries for the emitted ops, teardown
-    /// for the replaced ones, selection and isolation).
+    /// for the replaced ones and selection).
     ///
     /// On success the dialog closes but the overlay **stays up**: it is now a
     /// picture of what was planned, and dropping it at the moment the ops

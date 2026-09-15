@@ -1,9 +1,9 @@
 //! Shared per-toolpath row controls, used by the Simulation workspace op
 //! list and by the Simulation section of the inspector.
 //!
-//! Renders compact toggle buttons — eye (overall visibility), cut, rapid,
-//! bullseye (isolate). All use tight symbolic glyphs so they fit on one row
-//! next to the toolpath name.
+//! Renders compact toggle buttons — eye (overall visibility), cut and rapid.
+//! All use tight symbolic glyphs so they fit on one row next to the toolpath
+//! name.
 //!
 //! DC1 removed the third caller and the parameter that served it. The
 //! operations panel no longer draws a glyph row: its card is one row with
@@ -16,9 +16,9 @@ use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::ViewportState;
 use crate::ui::AppEvent;
 use crate::ui::theme;
-use crate::ui_command::{NoArgs, UiCommand};
+use crate::ui_command::UiCommand;
 
-/// Draw the four per-toolpath viewport toggles for one row.
+/// Draw the three per-toolpath viewport toggles for one row.
 pub fn draw(
     ui: &mut egui::Ui,
     tp_id: ToolpathId,
@@ -26,22 +26,24 @@ pub fn draw(
     viewport: &mut ViewportState,
     events: &mut Vec<AppEvent>,
 ) {
-    // Overall visibility (eye). Off if the runtime's `visible` flag is off.
-    let eye = if overall_visible {
-        "\u{1F441}"
-    } else {
-        "\u{2298}"
-    };
-    if ui
-        .small_button(eye)
-        .on_hover_text(if overall_visible {
-            "Hide this entire toolpath in the 3D viewport. Simulation still includes it."
+    // Overall visibility is meaningful only when all toolpaths draw.
+    if viewport.show_all_toolpaths {
+        let eye = if overall_visible {
+            "\u{1F441}"
         } else {
-            "Show this toolpath again in the 3D viewport."
-        })
-        .clicked()
-    {
-        events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
+            "\u{2298}"
+        };
+        if ui
+            .small_button(eye)
+            .on_hover_text(if overall_visible {
+                "Hide this entire toolpath in the 3D viewport. Simulation still includes it."
+            } else {
+                "Show this toolpath again in the 3D viewport."
+            })
+            .clicked()
+        {
+            events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
+        }
     }
 
     // Per-toolpath cut / rapid visibility. The global viewport toggles gate
@@ -102,35 +104,5 @@ pub fn draw(
     };
     if rapid_resp.clicked() {
         entry.show_rapids = !entry.show_rapids;
-    }
-
-    // Isolate (only-show-this) toggle. Target \u{25CE} = bullseye.
-    let is_isolated = viewport.isolate_toolpath == Some(tp_id);
-    let iso_btn = egui::Button::new(egui::RichText::new("\u{25CE}").small().color(
-        if is_isolated {
-            theme::WARNING
-        } else {
-            theme::TEXT_HEADING
-        },
-    ))
-    .min_size(egui::vec2(18.0, 16.0));
-    if ui
-        .add(iso_btn)
-        .on_hover_text(if is_isolated {
-            "Unpin this toolpath and go back to the viewport's own rule."
-        } else {
-            "Pin this toolpath so it stays drawn as the selection moves. Click again to unpin."
-        })
-        .clicked()
-    {
-        if is_isolated {
-            events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
-        } else {
-            // Select this toolpath first so the handler isolates the right one.
-            events.push(AppEvent::Ui(UiCommand::Select(
-                crate::state::selection::Selection::Toolpath(tp_id),
-            )));
-            events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
-        }
     }
 }

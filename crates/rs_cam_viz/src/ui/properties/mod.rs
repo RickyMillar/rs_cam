@@ -1555,7 +1555,7 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut V
             );
         });
 
-        // Per-toolpath visibility controls: eye / cut / rapid / isolate.
+        // Per-toolpath visibility controls: eye / cut / rapid.
         //
         // P6 (audit §2d, fix §6.7) — these two lines used to be plain "Cut" /
         // "Rapid" checkboxes writing the SAME map entry as each operation

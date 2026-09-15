@@ -401,9 +401,6 @@ impl<B: ComputeBackend> AppController<B> {
         if self.state.selection == Selection::Toolpath(tp_id) {
             self.state.selection = Selection::None;
         }
-        if self.state.viewport.isolate_toolpath == Some(tp_id) {
-            self.state.viewport.isolate_toolpath = None;
-        }
         self.pending_upload = true;
         self.state.gui.mark_edited();
     }
@@ -483,17 +480,6 @@ impl<B: ComputeBackend> AppController<B> {
         let sim = &self.state.simulation;
         (!sim.auto_resolution && sim.resolution.is_finite() && sim.resolution > 0.0)
             .then_some(sim.resolution)
-    }
-
-    pub(crate) fn handle_toggle_isolate_toolpath(&mut self) {
-        if let Selection::Toolpath(id) = self.state.selection {
-            if self.state.viewport.isolate_toolpath == Some(id) {
-                self.state.viewport.isolate_toolpath = None;
-            } else {
-                self.state.viewport.isolate_toolpath = Some(id);
-            }
-            self.pending_upload = true;
-        }
     }
 
     pub(crate) fn handle_inspect_toolpath_in_simulation(&mut self, tp_id: ToolpathId) {

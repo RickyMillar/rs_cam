@@ -915,7 +915,7 @@ impl RsCamApp {
             resources.collision_vertex_count = 0;
         }
 
-        // Upload toolpath line data (with per-toolpath colors and isolation filtering)
+        // Upload toolpath line data with per-toolpath colors.
         //
         // V8: keep the previous pass's per-toolpath buffers, keyed by toolpath
         // id, and hand each back untouched when its key still matches. During
@@ -926,8 +926,8 @@ impl RsCamApp {
         // rebuilds at most two.
         //
         // Anything left in `previous` at the end of the loop (a toolpath that
-        // became invisible, lost the selection, was isolated away, moved to
-        // another setup, or was deleted) is dropped with the map, releasing
+        // became invisible, lost the selection, moved to another setup, or
+        // was deleted) is dropped with the map, releasing
         // its GPU buffers exactly as the old unconditional `clear()` did.
         let mut previous: HashMap<rs_cam_core::ToolpathId, ToolpathGpuData> = resources
             .toolpath_data
@@ -1021,8 +1021,8 @@ impl RsCamApp {
                 let rt = gui.toolpath_rt.get(&tc.id);
 
                 // Draw only what the WP27 rule named above: the eye button,
-                // the "not generated yet" gate, the selection, the show-all
-                // dial and the isolate pin, in one answer.
+                // the "not generated yet" gate, the selection and the
+                // show-all dial, in one answer.
                 let tp_id = tc.id;
                 let result = rt.and_then(|r| r.result.as_ref());
                 if draw_set.contains(&tp_id)

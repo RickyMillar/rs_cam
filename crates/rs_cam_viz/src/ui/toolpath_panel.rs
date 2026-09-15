@@ -294,7 +294,9 @@ fn draw_toolpath_card(
                             events,
                         );
                     });
-                    draw_eye(ui, tp_id, visible, &state.viewport, events);
+                    if state.viewport.show_all_toolpaths {
+                        draw_eye(ui, tp_id, visible, events);
+                    }
 
                     // The name and the tool take the width the controls
                     // leave.
@@ -408,52 +410,24 @@ fn draw_state_dot(
     }
 }
 
-/// The eye — the card's only always-visible action (R28).
-///
-/// One click shows or hides this toolpath in the viewport. A double click
-/// isolates it. The bullseye glyph that used to carry the isolate is gone.
-fn draw_eye(
-    ui: &mut egui::Ui,
-    tp_id: ToolpathId,
-    visible: bool,
-    viewport: &ViewportState,
-    events: &mut Vec<AppEvent>,
-) {
-    let isolated = viewport.isolate_toolpath == Some(tp_id);
+/// The eye is available only while the viewport draws all toolpaths.
+fn draw_eye(ui: &mut egui::Ui, tp_id: ToolpathId, visible: bool, events: &mut Vec<AppEvent>) {
     let glyph = if visible { "\u{1F441}" } else { "\u{2298}" };
-    let colour = if isolated {
-        tokens::CAUTION
-    } else if visible {
+    let colour = if visible {
         tokens::TEXT_BODY
     } else {
         tokens::TEXT_FAINT
     };
     let size = egui::vec2(tokens::ROW_DENSE, tokens::ROW_DENSE);
-    let glyph_text = egui::RichText::new(glyph).color(colour);
-    let button = egui::Button::new(glyph_text).frame(false).min_size(size);
-    let hover = if isolated {
-        "This toolpath is pinned. Click to hide it. Double-click to unpin it."
-    } else if visible {
-        "Hide this toolpath in the 3D viewport. Double-click to show only this one."
+    let button = egui::Button::new(egui::RichText::new(glyph).color(colour))
+        .frame(false)
+        .min_size(size);
+    let hover = if visible {
+        "Hide this toolpath in the 3D viewport."
     } else {
-        "Show this toolpath again in the 3D viewport. Double-click to show only this one."
+        "Show this toolpath again in the 3D viewport."
     };
-    let resp = ui.add(button).on_hover_text(hover);
-
-    // egui reports `clicked` on the FIRST release of a double click, and
-    // both `clicked` and `double_clicked` on the second. The first release
-    // has therefore already toggled the visibility, so the isolate arm
-    // toggles it back before it pins. Without that step the operator loses
-    // the toolpath they asked to see alone.
-    if resp.double_clicked() {
-        events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
-        if isolated {
-            events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
-        } else {
-            events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(tp_id))));
-            events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
-        }
-    } else if resp.clicked() {
+    if ui.add(button).on_hover_text(hover).clicked() {
         events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
     }
 }
@@ -513,25 +487,12 @@ fn card_menu(
 
     ui.separator();
 
-    let is_isolated = viewport.isolate_toolpath == Some(tp_id);
-    let iso_label = if is_isolated {
-        "Clear isolation"
-    } else {
-        "Isolate this toolpath"
-    };
-    if ui.button(iso_label).clicked() {
-        if is_isolated {
-            events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
-        } else {
-            events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(tp_id))));
-            events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
+    if viewport.show_all_toolpaths {
+        let vis_label = if visible { "Hide" } else { "Show" };
+        if ui.button(vis_label).clicked() {
+            events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
+            ui.close();
         }
-        ui.close();
-    }
-    let vis_label = if visible { "Hide" } else { "Show" };
-    if ui.button(vis_label).clicked() {
-        events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(tp_id)));
-        ui.close();
     }
     draw_move_visibility_items(ui, tp_id, viewport);
 

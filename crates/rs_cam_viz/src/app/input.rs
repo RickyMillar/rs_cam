@@ -475,15 +475,9 @@ impl RsCamApp {
                     )));
             }
 
-            // I: toggle isolation mode
-            if i.key_pressed(egui::Key::I) {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
-            }
-
             // H: toggle visibility of selected toolpath
-            if i.key_pressed(egui::Key::H)
+            if self.controller.state().viewport.show_all_toolpaths
+                && i.key_pressed(egui::Key::H)
                 && let Selection::Toolpath(id) = self.controller.state().selection
             {
                 self.controller

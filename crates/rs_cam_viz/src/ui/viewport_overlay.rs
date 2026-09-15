@@ -1,6 +1,5 @@
 //! The strip above the 3D view: camera, projection, the Overlays button,
-//! isolation, the draw scope, the compute indicator and the per-workspace
-//! action.
+//! the draw scope, the compute indicator and the per-workspace action.
 //!
 //! ## What P6 removed from this file
 //!
@@ -35,15 +34,6 @@ pub fn draw(
     events: &mut Vec<AppEvent>,
 ) {
     let workspace = state.workspace;
-    let isolated_name = state.viewport.isolate_toolpath.and_then(|tp_id| {
-        state
-            .session
-            .toolpath_configs()
-            .iter()
-            .find(|tc| tc.id == tp_id)
-            .map(|tc| tc.name.clone())
-    });
-
     ui.horizontal_wrapped(|ui| {
         // ── View dropdown: presets + reset ──────────────────────
         ui.menu_button("View ▼", |ui| {
@@ -117,55 +107,24 @@ pub fn draw(
             "Overlays (collisions)",
         );
 
-        // ── Isolate button ──────────────────────────────────────
-        if let Some(name) = isolated_name {
-            // Active state: show the isolated toolpath name + clear button
-            ui.label(
-                egui::RichText::new(format!("\u{25CE} {}", name))
-                    .color(theme::WARNING)
-                    .strong(),
+        // ── Draw scope: selected only / all toolpaths (WP27) ────
+        let (scope_label, scope_hover) = if state.viewport.show_all_toolpaths {
+            (
+                "All toolpaths",
+                "The viewport draws every toolpath. Click to draw the selected one only.",
             )
-            .on_hover_text("Currently showing only this toolpath. Click ✕ to clear.");
-            if ui
-                .small_button("✕")
-                .on_hover_text("Unpin (back to the viewport's own rule)")
-                .clicked()
-            {
-                events.push(AppEvent::Ui(UiCommand::ClearIsolation(NoArgs)));
-            }
-        } else if ui
-            .small_button("Isolate")
-            .on_hover_text(
-                "Pin the selected toolpath. It stays drawn as the selection moves (shortcut: I).",
+        } else {
+            (
+                "Selected only",
+                "The viewport draws the selected toolpath only. Click to draw them all.",
             )
+        };
+        if ui
+            .small_button(scope_label)
+            .on_hover_text(scope_hover)
             .clicked()
         {
-            events.push(AppEvent::Ui(UiCommand::ToggleIsolateToolpath(NoArgs)));
-        }
-
-        // ── Draw scope: selected only / all toolpaths (WP27) ────
-        //
-        // Hidden while a pin is in force: the pin overrides the scope, and
-        // the bar already names the pinned toolpath beside it.
-        if state.viewport.isolate_toolpath.is_none() {
-            let (scope_label, scope_hover) = if state.viewport.show_all_toolpaths {
-                (
-                    "All toolpaths",
-                    "The viewport draws every toolpath. Click to draw the selected one only.",
-                )
-            } else {
-                (
-                    "Selected only",
-                    "The viewport draws the selected toolpath only. Click to draw them all.",
-                )
-            };
-            if ui
-                .small_button(scope_label)
-                .on_hover_text(scope_hover)
-                .clicked()
-            {
-                events.push(AppEvent::Ui(UiCommand::ToggleShowAllToolpaths(NoArgs)));
-            }
+            events.push(AppEvent::Ui(UiCommand::ToggleShowAllToolpaths(NoArgs)));
         }
 
         // ── Compute activity indicator (right side) ─────────────

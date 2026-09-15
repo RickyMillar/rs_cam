@@ -22,7 +22,7 @@ session landed nothing in them.
 | UR2 every badge is a dot, Danger included | DONE | `the_workspace_bar_is_a_strip_dc3.rs` arm 2 flipped; one shared "N safety" badge text |
 | UR3 one Run Simulation, sim card reads the kit | DONE | dc6 census: exactly one producer, named; off-workspace allowlist; `the_sim_row_offers_its_visibility_control_ur3.rs`; metric staleness DERIVED from `SimulationRunMeta::accepted_metric_options_revision` (the bool is gone); controller tests incl. `the_primary_and_the_builder_agree_about_a_runnable_project` |
 | UR4 finish DC5a: modal is Explore only | DONE | Explore-only title/body + DC5a sentry; canonical Compare and one Why disclosure now live in the Feeds inspector; legacy card module/test and split applies deleted; full viz tests + clippy green |
-| UR5 one visibility model | TODO — scout recon complete (full isolate/command migration map); operator ratified the selection-only model |
+| UR5 one visibility model | DONE | User-ratified selection-only model: isolate state, commands, shortcut and UI routes deleted; hide/show exists only in All-toolpaths mode; focused sentries, full viz tests + clippy green |
 | UR6 button label sits in one place | DONE | `component_contracts_up2.rs`: one centered paint in every state, disabled semantics + WidgetInfo preserved |
 | UR7 resource row has one affordance | DONE | `the_setup_rail_is_one_weight_dc4.rs`: chevron/menu mutually exclusive; "none" empty states route to import / library; classifier shared with File menu |
 | UR8 Readiness leads with the first unmet action | TODO — Run-sim affordances already gated on `simulation_request_is_buildable` (UR3 overlap); the reorder itself is not done |

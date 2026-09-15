@@ -18,19 +18,14 @@
 //! SET now, and 39 of the 40 production selection writers fire no upload of
 //! their own.
 //!
-//! ## The rule, and why the pin short-circuits
+//! ## The rule after UR5
 //!
 //! ```text
-//! match isolate {
-//!     Some(pinned) => id == pinned,
-//!     None => show_all || selected == Some(id),
-//! }
+//! show_all || selected == Some(id)
 //! ```
 //!
-//! The isolate pin is set ONCE from the selection and then stays put while
-//! the selection moves. An AND of the three dials therefore draws NOTHING as
-//! soon as the operator pins toolpath A and clicks row B. The pin is an
-//! explicit operator override of the whole rule, so it wins.
+//! UR5 retires isolation. Selection now steers selected-only drawing, while
+//! show-all remains the explicit escape hatch.
 
 #![allow(
     clippy::unwrap_used,
@@ -115,7 +110,6 @@ fn a_fresh_viewport_draws_the_selected_toolpath_only() {
     assert_the_row_exists();
     let filter = ToolpathDrawFilter {
         selected: Some(B),
-        isolate: None,
         show_all: ViewportState::new().show_all_toolpaths,
     };
     let drawn = toolpaths_to_draw(filter, three_rows());
@@ -135,7 +129,6 @@ fn a_fresh_viewport_draws_the_selected_toolpath_only() {
 fn show_all_draws_every_toolpath_in_config_order() {
     let filter = ToolpathDrawFilter {
         selected: Some(B),
-        isolate: None,
         show_all: true,
     };
     assert_eq!(
@@ -146,13 +139,12 @@ fn show_all_draws_every_toolpath_in_config_order() {
     );
 }
 
-// ── (iii) the selection steers, and the pin wins ─────────────────────
+// ── (iii) selection steers; show-all remains the escape hatch ───────
 
 #[test]
-fn the_draw_set_follows_the_selection_and_the_pin_wins() {
+fn the_draw_set_follows_selection_and_show_all_overrides_it() {
     let selected_only = |selected: Option<ToolpathId>| ToolpathDrawFilter {
         selected,
-        isolate: None,
         show_all: false,
     };
     assert_eq!(
@@ -164,30 +156,14 @@ fn the_draw_set_follows_the_selection_and_the_pin_wins() {
         vec![C]
     );
 
-    // The pin beats the selection. A naive AND of the three dials draws
-    // NOTHING here, which is the defect this sub-assertion exists for.
-    let pinned = ToolpathDrawFilter {
+    let all = ToolpathDrawFilter {
         selected: Some(C),
-        isolate: Some(A),
-        show_all: false,
-    };
-    assert_eq!(
-        toolpaths_to_draw(pinned, three_rows()),
-        vec![A],
-        "the pin is an explicit override and does not follow the selection, \
-         so it must win rather than AND"
-    );
-
-    // And it beats show-all, in the other direction.
-    let pinned_with_all = ToolpathDrawFilter {
-        selected: Some(C),
-        isolate: Some(A),
         show_all: true,
     };
     assert_eq!(
-        toolpaths_to_draw(pinned_with_all, three_rows()),
-        vec![A],
-        "the pin must narrow show-all, not be swallowed by it"
+        toolpaths_to_draw(all, three_rows()),
+        vec![A, B, C],
+        "show-all must override selected-only drawing"
     );
 }
 
@@ -199,7 +175,6 @@ fn the_draw_set_follows_the_selection_and_the_pin_wins() {
 fn an_ungenerated_or_hidden_toolpath_is_never_drawn() {
     let filter = ToolpathDrawFilter {
         selected: Some(B),
-        isolate: None,
         show_all: false,
     };
     let ungenerated = vec![(A, true, true), (B, true, false), (C, true, true)];
@@ -226,7 +201,6 @@ fn an_ungenerated_or_hidden_toolpath_is_never_drawn() {
 fn nothing_selected_draws_nothing() {
     let filter = ToolpathDrawFilter {
         selected: None,
-        isolate: None,
         show_all: false,
     };
     assert!(
@@ -241,8 +215,8 @@ fn nothing_selected_draws_nothing() {
 /// The upload pass and the pick path ask the SAME function.
 ///
 /// Two predicates drift, and the drift is a click that selects geometry the
-/// viewport does not draw. The arm also asserts the retired inline gates are
-/// gone from both files, so a second rule cannot sit beside the first.
+/// viewport does not draw. UR5 also retires the isolate route rather than
+/// leaving a second draw rule beside the shared one.
 #[test]
 fn the_upload_and_the_pick_read_one_draw_rule() {
     let upload = strip_comments(&source("src/app/gpu_upload.rs"));
@@ -256,22 +230,96 @@ fn the_upload_and_the_pick_read_one_draw_rule() {
         "src/interaction/picking.rs no longer asks `toolpaths_to_draw`; a \
          click can now select a toolpath the viewport does not draw"
     );
-    assert!(
-        !upload.contains("match isolate"),
-        "src/app/gpu_upload.rs still carries its own inline isolate gate \
-         beside the shared rule"
-    );
-    assert!(
-        !pick.contains("isolate_toolpath"),
-        "src/interaction/picking.rs still reads the isolate pin itself \
-         instead of taking the shared filter"
-    );
+}
+
+/// UR5 removes the isolate state and every UI route that could write it.
+///
+/// Each scanned file has a live, related anchor first, so this census cannot
+/// pass merely because a source file moved or was replaced with an empty stub.
+#[test]
+fn ur5_has_no_isolate_routes() {
+    for (name, code, anchor) in [
+        (
+            "viewport state",
+            source("src/state/viewport.rs"),
+            "show_all_toolpaths",
+        ),
+        (
+            "UI commands",
+            source("src/ui_command.rs"),
+            "ToggleToolpathVisibility",
+        ),
+        ("input", source("src/app/input.rs"), "show_all_toolpaths"),
+        (
+            "event dispatch",
+            source("src/controller/events/mod.rs"),
+            "ToggleToolpathVisibility",
+        ),
+        (
+            "toolpath events",
+            source("src/controller/events/toolpath.rs"),
+            "Selection::Toolpath",
+        ),
+        (
+            "planner events",
+            source("src/controller/events/planner.rs"),
+            "Selection::Toolpath",
+        ),
+        (
+            "viewport overlay",
+            source("src/ui/viewport_overlay.rs"),
+            "show_all_toolpaths",
+        ),
+        (
+            "toolpath panel",
+            source("src/ui/toolpath_panel.rs"),
+            "ToggleToolpathVisibility",
+        ),
+        (
+            "shared controls",
+            source("src/ui/toolpath_row_controls.rs"),
+            "ToggleToolpathVisibility",
+        ),
+        (
+            "properties",
+            source("src/ui/properties/mod.rs"),
+            "Selection::Toolpath",
+        ),
+        (
+            "simulation rows",
+            source("src/ui/sim_op_list.rs"),
+            "show_all_toolpaths",
+        ),
+        (
+            "GPU upload",
+            source("src/app/gpu_upload.rs"),
+            "toolpaths_to_draw",
+        ),
+        (
+            "picking",
+            source("src/interaction/picking.rs"),
+            "toolpaths_to_draw",
+        ),
+    ] {
+        let code = strip_comments(&code);
+        assert!(code.contains(anchor), "non-vacuity: {name} lost `{anchor}`");
+        for retired in [
+            "isolate_toolpath",
+            "ToggleIsolateToolpath",
+            "ClearIsolation",
+        ] {
+            assert!(
+                !code.contains(retired),
+                "UR5 retired isolate routes; {name} still contains `{retired}`"
+            );
+        }
+    }
 }
 
 // ── (vii) the CPU rasteriser is untouched ────────────────────────────
 
 /// MCP `screenshot_toolpath` renders ONE result on the CPU. It reads neither
-/// the draw set nor the pin, so WP27 does not change what it photographs.
+/// the draw set nor the show-all scope, so WP27 does not change what it photographs.
 /// `screenshot_gui` captures the live window and DOES change — that is the
 /// one MCP behaviour change, and it is a doc note, not a code path here.
 #[test]

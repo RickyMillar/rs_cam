@@ -315,29 +315,26 @@ pub fn draw(
                     .iter()
                     .find(|verdict| verdict.toolpath_id == boundary.id);
                 draw_toolpath_status_flags(ui, boundary.id, &issues, load_verdict);
-                // The eye renders in BOTH draw modes: `visible` bites in
-                // selected-only mode too (`toolpaths_to_draw` ANDs it), so a
-                // hidden row needs its control even when show-all is off.
-                let visible = gui
-                    .toolpath_rt
-                    .get(&boundary.id)
-                    .is_none_or(|rt| rt.visible);
-                let glyph = if visible { "👁" } else { "⊘" };
-                let hover = if visible {
-                    "Hide this toolpath in the 3D viewport."
-                } else if viewport.show_all_toolpaths {
-                    "Show this toolpath in the 3D viewport."
-                } else {
-                    "Show this toolpath in the 3D viewport. It is hidden, and the viewport draws the selected toolpath only, so a hidden toolpath still draws nothing."
-                };
-                if ui
-                    .add(egui::Button::new(glyph).frame(false))
-                    .on_hover_text(hover)
-                    .clicked()
-                {
-                    events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(
-                        boundary.id,
-                    )));
+                if viewport.show_all_toolpaths {
+                    let visible = gui
+                        .toolpath_rt
+                        .get(&boundary.id)
+                        .is_none_or(|rt| rt.visible);
+                    let glyph = if visible { "👁" } else { "⊘" };
+                    let hover = if visible {
+                        "Hide this toolpath in the 3D viewport."
+                    } else {
+                        "Show this toolpath in the 3D viewport."
+                    };
+                    if ui
+                        .add(egui::Button::new(glyph).frame(false))
+                        .on_hover_text(hover)
+                        .clicked()
+                    {
+                        events.push(AppEvent::Ui(UiCommand::ToggleToolpathVisibility(
+                            boundary.id,
+                        )));
+                    }
                 }
                 ui.menu_button("…", |ui| {
                     crate::ui::toolpath_panel::draw_move_visibility_items(

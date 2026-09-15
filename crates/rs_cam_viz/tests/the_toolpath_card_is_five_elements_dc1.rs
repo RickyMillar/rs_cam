@@ -122,8 +122,7 @@ const DELETED: &[(&str, &str)] = &[
     ),
     (
         "\\u{25CE}",
-        "R28 — the eye is the only always-visible action, and a double \
-         click on it isolates; the bullseye glyph is deleted",
+        "UR5 — isolation is retired; the bullseye glyph must not return",
     ),
 ];
 
@@ -171,8 +170,8 @@ fn the_card_still_draws_its_five_elements_dc1() {
          cross-setup move must still work."
     );
     assert!(
-        code.contains("double_clicked()"),
-        "R28 — a double click on the eye isolates the toolpath"
+        code.contains("if state.viewport.show_all_toolpaths"),
+        "UR5 keeps the eye only in all-toolpaths mode; selected-only has no visibility route"
     );
 }
 
@@ -273,6 +272,7 @@ fn the_scan_read_a_real_panel_dc1() {
         "pub fn status_chip(",
         "fn add_toolpath_menu(",
         "\"Generate All\"",
+        "ToggleToolpathVisibility",
     ] {
         assert!(
             code.contains(anchor),

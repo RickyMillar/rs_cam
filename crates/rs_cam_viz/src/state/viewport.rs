@@ -170,14 +170,12 @@ pub struct ViewportState {
     /// every toolpath in the program. The Toolpaths workspace names NO
     /// default, so an operator override survives a round trip.
     pub show_all_toolpaths: bool,
-    /// When set, only this toolpath is visible (isolation mode, toggle with I).
-    pub isolate_toolpath: Option<ToolpathId>,
     /// Color mode for toolpath lines.
     pub toolpath_color_mode: ToolpathColorMode,
     /// Per-toolpath move-type visibility overlay — AND'd with the global
     /// `show_cutting` / `show_rapids` flags. Missing entries default to visible.
     ///
-    /// Per-object, so it stays on the operation row (eye / C / R / bullseye)
+    /// Per-object, so it stays on the operation row (eye / C / R)
     /// and is deliberately NOT an Overlays registry row: the panel is
     /// per-scene (UX §6.7).
     pub toolpath_move_visibility: HashMap<ToolpathId, ToolpathMoveVisibility>,
@@ -240,7 +238,6 @@ impl ViewportState {
             show_sim_stock: false,
             show_tool_deflection: false,
             show_all_toolpaths: false,
-            isolate_toolpath: None,
             toolpath_color_mode: ToolpathColorMode::Normal,
             toolpath_move_visibility: HashMap::new(),
             span_kind_filter: SpanKindFilter::default(),
@@ -254,7 +251,7 @@ impl Default for ViewportState {
     }
 }
 
-/// The three dials that decide which toolpaths the viewport draws (WP27).
+/// The two dials that decide which toolpaths the viewport draws (WP27).
 ///
 /// One value, built in one place, so the GPU upload and the click pick cannot
 /// answer the question differently. A click that selects geometry the viewport
@@ -263,21 +260,18 @@ impl Default for ViewportState {
 pub struct ToolpathDrawFilter {
     /// The selected toolpath, when the selection names one.
     pub selected: Option<ToolpathId>,
-    /// The isolate pin. It overrides both other dials.
-    pub isolate: Option<ToolpathId>,
     /// Draw every generated toolpath rather than the selected one alone.
     pub show_all: bool,
 }
 
 impl ToolpathDrawFilter {
-    /// Read the three dials, each from the one place it lives.
+    /// Read the two dials, each from the one place it lives.
     pub fn from_state(state: &super::AppState) -> Self {
         Self {
             selected: match state.selection {
                 super::selection::Selection::Toolpath(id) => Some(id),
                 _ => None,
             },
-            isolate: state.viewport.isolate_toolpath,
             show_all: state.viewport.show_all_toolpaths,
         }
     }
@@ -290,11 +284,6 @@ impl ToolpathDrawFilter {
 /// own setup filter and its own palette index, so a hidden neighbour never
 /// moves a toolpath's colour.
 ///
-/// Three dials, and the isolate PIN wins. The pin is set ONCE from the
-/// selection and then stays put while the selection moves, so an AND of the
-/// three draws nothing as soon as the operator pins one toolpath and clicks
-/// another row. The pin is an explicit override of the whole rule.
-///
 /// With nothing selected the answer is empty. That is the operator ruling:
 /// the model and the stock still draw, and the operations list is the picker.
 pub fn toolpaths_to_draw<I>(filter: ToolpathDrawFilter, rows: I) -> Vec<ToolpathId>
@@ -303,12 +292,7 @@ where
 {
     rows.into_iter()
         .filter(|&(id, visible, has_result)| {
-            visible
-                && has_result
-                && match filter.isolate {
-                    Some(pinned) => id == pinned,
-                    None => filter.show_all || filter.selected == Some(id),
-                }
+            visible && has_result && (filter.show_all || filter.selected == Some(id))
         })
         .map(|(id, _, _)| id)
         .collect()
