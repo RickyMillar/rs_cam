@@ -572,11 +572,6 @@ impl<B: ComputeBackend> AppController<B> {
                         self.state.project_feeds.show_scatter = true;
                     }
                 }
-                UiCommand::ToggleFeedsProvenance(NoArgs) => {
-                    if let Some(modal) = self.state.feeds_modal.as_mut() {
-                        modal.show_provenance = !modal.show_provenance;
-                    }
-                }
                 UiCommand::SetFeedsProjectSort(sort) => {
                     self.state.project_feeds.sort = sort;
                 }
@@ -1099,16 +1094,10 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         }
-        let existing_provenance = self
-            .state
-            .feeds_modal
-            .as_ref()
-            .is_some_and(|m| m.show_provenance);
         self.state.close_modals_for_exclusivity();
         self.state.feeds_modal = Some(crate::state::FeedsModalState {
             toolpath_id,
             explore: None,
-            show_provenance: existing_provenance,
         });
     }
 

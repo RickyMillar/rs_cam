@@ -284,8 +284,6 @@ pub struct FeedsModalState {
     /// Phase 3 — drag-to-explore on the feed-RPM nomogram. `Some` while
     /// the user is dragging the operating point.
     pub explore: Option<NomogramExplore>,
-    /// Phase 2 — "How is this calculated?" disclosure expanded.
-    pub show_provenance: bool,
 }
 
 /// Project-scope feeds state — the rollup over EVERY toolpath.
@@ -704,7 +702,6 @@ mod tests {
         FeedsModalState {
             toolpath_id: rs_cam_core::ToolpathId(0),
             explore: None,
-            show_provenance: false,
         }
     }
 

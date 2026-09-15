@@ -20,6 +20,13 @@ use crate::state::AppState;
 use crate::ui::{AppEvent, theme, tokens};
 use crate::ui_command::UiCommand;
 
+/// Chart A and Chart B are drawn side by side when the window is wide
+/// enough to hold both, and stacked when it is not. A fixed-width plot in a
+/// row that cannot hold it paints past the window edge, and the window has
+/// no horizontal scroll.
+const MINI_CHART_WIDTH: f32 = 360.0;
+const MINI_CHART_GAP: f32 = 8.0;
+
 pub(crate) fn draw_spindle_strategy_row(
     ui: &mut egui::Ui,
     current: rs_cam_core::feeds::SpindleStrategy,
@@ -116,11 +123,18 @@ pub(crate) fn draw_modal_body(
         events,
     );
     ui.add_space(12.0);
-    ui.horizontal_top(|ui| {
-        ui.vertical(|ui| draw_chart_a(ui, &current, preview.explain()));
-        ui.add_space(8.0);
-        ui.vertical(|ui| draw_chart_b(ui, &current, preview.explain()));
-    });
+    let side_by_side = ui.available_width() >= MINI_CHART_WIDTH * 2.0 + MINI_CHART_GAP;
+    if side_by_side {
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| draw_chart_a(ui, &current, preview.explain()));
+            ui.add_space(MINI_CHART_GAP);
+            ui.vertical(|ui| draw_chart_b(ui, &current, preview.explain()));
+        });
+    } else {
+        draw_chart_a(ui, &current, preview.explain());
+        ui.add_space(MINI_CHART_GAP);
+        draw_chart_b(ui, &current, preview.explain());
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -1047,7 +1061,7 @@ pub(crate) fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: 
 
     Plot::new("feeds_modal_chart_a")
         .height(180.0)
-        .width(360.0)
+        .width(MINI_CHART_WIDTH.min(ui.available_width()))
         .x_axis_label("diameter (mm)")
         .y_axis_label("commanded advance/tooth (mm)")
         .show(ui, |plot_ui| {
@@ -1306,7 +1320,7 @@ pub(crate) fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: 
 
     Plot::new("feeds_modal_chart_b")
         .height(180.0)
-        .width(360.0)
+        .width(MINI_CHART_WIDTH.min(ui.available_width()))
         .x_axis_label(hardness_axis_label(explain.query_hardness_kind))
         .y_axis_label("commanded advance/tooth (mm)")
         .show(ui, |plot_ui| {

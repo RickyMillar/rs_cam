@@ -24,7 +24,15 @@ use crate::ui::components::compare;
 use crate::ui::components::{ProvKind, ProvenanceBadge};
 use crate::ui::{AppEvent, theme};
 
-const CALCULATOR_NOTE: &str = "calculator value; Apply all enforces operation limits";
+/// Why the DOC and WOC rows do not read as what the operation will get.
+///
+/// This shipped as a caution-coloured CAPTION under BOTH rows — the same
+/// sentence, twice, in the colour reserved for a warning. It is an accuracy
+/// caveat, not a warning, and it belongs to the label it qualifies. The rows
+/// carry [`crate::ui::tokens::GLYPH_DETAIL`] and hold it on hover.
+const CALCULATOR_NOTE: &str = "This is the raw calculator value. `⚡ Apply all` passes it \
+     through the invariant funnel, which can lower it — the rigidity cap put \
+     1.2 mm where this row read 4.2 mm on the R03 pocket.";
 const ADVANCE_ROW_LABEL: &str = "Advance/tooth";
 
 fn advance_per_tooth_mm(feed_mm_min: f64, rpm: f64, flutes: u32) -> Option<f64> {
@@ -353,15 +361,22 @@ fn rail_row(
     note: Option<&str>,
 ) {
     ui.horizontal_wrapped(|ui| {
-        ui.add(
+        let heading = match note {
+            Some(_) => format!("{label} {}", crate::ui::tokens::GLYPH_DETAIL),
+            None => label.to_owned(),
+        };
+        let heading = ui.add(
             egui::Label::new(
-                egui::RichText::new(label)
+                egui::RichText::new(heading)
                     .small()
                     .strong()
                     .color(theme::TEXT_HEADING),
             )
             .wrap(),
         );
+        if let Some(note) = note {
+            heading.on_hover_text(note.to_owned());
+        }
         ui.add(
             egui::Label::new(
                 egui::RichText::new(compare::format_optional(current, unit, precision))
@@ -388,15 +403,6 @@ fn rail_row(
         );
         ui.add(egui::Label::new(compare::delta_tag(current, recommended)).wrap());
     });
-    if let Some(note) = note {
-        ui.horizontal_wrapped(|ui| {
-            ui.add_space(12.0);
-            ui.add(
-                egui::Label::new(egui::RichText::new(note).small().color(theme::WARNING_MILD))
-                    .wrap(),
-            );
-        });
-    }
     ui.add_space(2.0);
 }
 
@@ -456,25 +462,30 @@ fn draw_apply_column(
     events: &mut Vec<AppEvent>,
 ) {
     if let Some(err) = refusal {
-        ui.label(
-            egui::RichText::new("Cannot apply — this tool cannot run this operation")
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!(
+                    "Cannot apply — this tool cannot run this operation {}",
+                    crate::ui::tokens::GLYPH_DETAIL
+                ))
                 .small()
                 .strong()
                 .color(theme::ERROR),
-        );
-        ui.label(
-            egui::RichText::new(err.to_string())
-                .small()
-                .color(theme::WARNING),
-        );
-        ui.label(
-            egui::RichText::new(
-                "The numbers above are shown so you can see what the calculator would \
-                 suggest and why the pairing is refused. Change the tool (or the \
-                 operation) to enable Apply.",
             )
-            .small()
-            .color(theme::TEXT_DIM),
+            .wrap(),
+        )
+        .on_hover_text(
+            "The numbers above show what the calculator would suggest, and \
+             why the pairing is refused. Change the tool or the operation to \
+             enable Apply.",
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(err.to_string())
+                    .small()
+                    .color(theme::WARNING),
+            )
+            .wrap(),
         );
         return;
     }

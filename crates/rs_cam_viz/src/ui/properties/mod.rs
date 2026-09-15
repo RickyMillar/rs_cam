@@ -2248,6 +2248,12 @@ fn calculate_and_apply_feeds(
     }
 }
 
+// The card reads the tool, the machine, the material, the project RPM, the
+// accepted load verdict and two session policies to answer one question. Its
+// caller `calculate_and_apply_feeds` carries the same allow for the same
+// reason: bundling these into a struct would build a second data model of
+// what the session already holds.
+#[allow(clippy::too_many_arguments)]
 fn draw_feeds_card(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -2306,7 +2312,6 @@ fn draw_feeds_card(
             }
             crate::ui::feeds::why::draw_engaged_diameter_row(ui, &current, explain);
             crate::ui::feeds::why::draw_chipload_min_warning(ui, &current, explain);
-            crate::ui::feeds::why::draw_chipload_engaged_attestation(ui, &current, explain);
             crate::ui::feeds::why::draw_chipload_breakdown(ui, explain);
             crate::ui::feeds::why::draw_warnings(ui, explain);
         });
@@ -2830,7 +2835,6 @@ fn draw_vendor_lut_viewer(
 
 // ── Engagement diagram ──────────────────────────────────────────────────
 
-/// Draw a split-view engagement diagram: top-down WOC (left) + side DOC (right).
 // ── Entry style preview diagram ─────────────────────────────────────────
 
 /// Draw a 2D side-view of the entry style geometry (ramp or helix).

@@ -216,6 +216,14 @@ pub const GLYPH_DANGER: &str = "✕";
 /// The glyph that accompanies [`UNKNOWN`].
 pub const GLYPH_UNKNOWN: &str = "—";
 
+/// The glyph that marks a line whose explanation lives on its hover.
+///
+/// A dense surface declutters by moving explanations off the page, and an
+/// explanation the operator cannot find is an explanation that was deleted.
+/// This mark is the affordance: one glyph, used for nothing else, so the
+/// operator learns it once.
+pub const GLYPH_DETAIL: &str = "\u{24D8}";
+
 // ===========================================================================
 // §2.7 Structure
 // ===========================================================================

@@ -617,12 +617,6 @@ macro_rules! for_each_ui_command {
                  mcp: Reach::Skip("apply_feeds writes the recipe without a rollup"),
                  cli: Reach::Skip("the batch CLI draws no rollup"),
              }),
-            (UiCommand, ToggleFeedsProvenance, "toggle_feeds_provenance", NoArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip("get_suggest_rationale reports the same provenance"),
-                 cli: Reach::Skip("the batch CLI draws no modal"),
-             }),
             (UiCommand, SetFeedsProjectSort, "set_feeds_project_sort",
              SetFeedsProjectSortArgs, (),
              Surfaces {
