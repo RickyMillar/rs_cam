@@ -389,6 +389,9 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ApplyFeedsAll(toolpath_id) => {
                 self.apply_feeds_all(toolpath_id);
             }
+            AppEvent::ApplyFeedsSpeeds(toolpath_id) => {
+                self.apply_feeds_speeds(toolpath_id);
+            }
             AppEvent::SetDropCutterScallopHeight { toolpath_id, value } => {
                 self.set_drop_cutter_scallop_height(toolpath_id, value);
             }
@@ -1267,6 +1270,33 @@ impl<B: ComputeBackend> AppController<B> {
         if let Err(why) = self.apply_feeds_through_funnel(
             toolpath_id,
             rs_cam_core::feeds::suggest::ApplyScope::Both,
+            None,
+        ) {
+            self.push_notification(
+                format!("Feeds not applied to toolpath {}: {why}", toolpath_id.0),
+                crate::controller::Severity::Warning,
+            );
+        }
+    }
+
+    /// Apply only the recommended SPEEDS to the given toolpath — the
+    /// comparison card's `Match vendor chipload`.
+    ///
+    /// Phase C of `planning/load_model_2026-09-16/SPEC.md`. The chipload
+    /// verdict row can tell the operator their chipload is thin and costs
+    /// them 1.6× tool wear; before this the only write on the Feeds tab was
+    /// `⚡ Apply all`, so the only offered answer to "my feed is wrong" also
+    /// rewrote DOC and WOC. This one holds the cut geometry byte-identical
+    /// and moves feed, plunge and RPM alone.
+    ///
+    /// Same funnel, same refusal rule, same staleness as
+    /// [`Self::apply_feeds_all`] — only the [`ApplyScope`] differs.
+    ///
+    /// [`ApplyScope`]: rs_cam_core::feeds::suggest::ApplyScope
+    fn apply_feeds_speeds(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
+        if let Err(why) = self.apply_feeds_through_funnel(
+            toolpath_id,
+            rs_cam_core::feeds::suggest::ApplyScope::Speeds,
             None,
         ) {
             self.push_notification(

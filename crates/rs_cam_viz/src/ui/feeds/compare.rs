@@ -768,6 +768,33 @@ fn draw_apply_column(
             events.push(AppEvent::ApplyFeedsAll(toolpath_id));
         }
     });
+    // Phase C (SPEC.md, 2026-09-16). The verdict row above can say the
+    // chipload is thin and costs 1.6× tool wear. Before this button the only
+    // write on the tab was `⚡ Apply all`, so the only offered answer to a
+    // wrong feed also rewrote the operator's cut geometry.
+    //
+    // A-3's attribution rule applies here too, in the mirror image: the face
+    // says what this write changes AND what it holds, so the two buttons read
+    // as one pair. This is not a per-field apply — it is the same funnel with
+    // `ApplyScope::Speeds`, which the funnel was built to serve.
+    ui.horizontal_wrapped(|ui| {
+        let speeds =
+            egui::Button::new("⚡ Match vendor chipload — changes the speeds, not the cut")
+                .wrap_mode(egui::TextWrapMode::Wrap);
+        if ui
+            .add(speeds)
+            .on_hover_text(
+                "Overwrite RPM, feed, and plunge (how fast) with the recommended values, \
+                 after the safety clamps, so the chipload lands in the vendor band. \
+                 HOLDS THE CUT: DOC and WOC keep the values you authored. \
+                 Use this when the chipload verdict reads thin or heavy and the cut \
+                 geometry is already the one you want.",
+            )
+            .clicked()
+        {
+            events.push(AppEvent::ApplyFeedsSpeeds(toolpath_id));
+        }
+    });
 }
 
 /// WOC (stepover) comparison row. When the operation is in

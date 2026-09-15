@@ -256,6 +256,21 @@ pub enum AppEvent {
     /// invariant-resolved ones — identical to the properties panel's two
     /// buttons applied together (Checkpoint I-1).
     ApplyFeedsAll(ToolpathId),
+    /// Apply the recommended SPEEDS only (RPM, feed, plunge) to a toolpath,
+    /// holding DOC and WOC exactly as authored. The `Match vendor chipload`
+    /// button on the comparison card routes here.
+    ///
+    /// Goes through the same `feeds::suggest::apply` funnel as
+    /// [`AppEvent::ApplyFeedsAll`], with `ApplyScope::Speeds` instead of
+    /// `ApplyScope::Both`. It is NOT a per-field apply: the funnel still
+    /// resolves the whole operating point through `enforce_invariants` on a
+    /// scratch clone and then copies back the speed half, so a refused tool ×
+    /// operation pairing still cannot be written.
+    ///
+    /// Phase C of `planning/load_model_2026-09-16/SPEC.md`: the chipload
+    /// verdict row tells the operator their chipload is thin, and this is the
+    /// answer to it that does not also rewrite the cut geometry.
+    ApplyFeedsSpeeds(ToolpathId),
     /// S1 — set (or clear) the scallop-driven-stepover target on a
     /// DropCutter toolpath. `Some(h)` switches WOC to be derived from
     /// the cusp height + tool tip radius; `None` restores the formula
