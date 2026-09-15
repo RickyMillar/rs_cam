@@ -289,7 +289,20 @@ from taste:
 
 ## Order of work
 
+`REVIEW.md` adds three preconditions. All three are removals or moves, none
+changes behaviour, and together they cost less than Phase A. D-1 in
+particular must come first: Phase A edits the consumers of the file it
+cleans.
+
 ```
+D-1  delete FeedsExplain::sibling_rows + rows_by_diameter/rows_by_hardness
+       — zero readers since today's chart deletion, and populating it scores
+         and sorts 256 LUT observations on every frame the Feeds tab draws
+D-2  rename explain.rs → explain_payload.rs, explanation.rs → feed_explanation.rs
+       — FeedsExplain vs FeedExplanation, one letter apart, both alive
+D-3  move the Explore window out of ui/feeds/mod.rs into ui/feeds/window.rs;
+       mod.rs becomes a module root whose doc is a map
+─────────────────────────────────────
 N-2  extract the deflection cap        ← pure refactor, existing test must not move
 N-1  feeds::efficiency + 2 core sentries
 A    verdict row + sentry              ← smallest shippable increment of value
