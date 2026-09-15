@@ -71,11 +71,17 @@ Two things to take from that table:
    power is edge ploughing**, not cutting. That is the physical content of
    "below the band — burn risk", and today no number on any surface says it.
 
-There is a second, separate inconsistency worth fixing at the same time.
-Power multiplies `Kc` by `GRAIN_ANISOTROPY_FACTOR = 2.0` (→ 35.1 N/mm² for
-softwood); `force.rs` anchors on `Kc` **without** that factor and fits
-`Ks = 49.95` for hardwood. The two models are not merely different in shape,
-they do not share a base constant.
+Power also multiplies `Kc` by `GRAIN_ANISOTROPY_FACTOR = 2.0` where
+`force.rs` does not. **That part is NOT a defect** — see the correction in
+§6. It is a documented split: deflection models sustained mean force and
+takes raw `Kc`; power carries a safety allowance for transient grain spikes.
+The factor stays. What is wrong is the SHAPE of the power model, which is
+blind to chip thickness, and that is what the rest of this document is
+about.
+
+Note this means the two-term column above understates the change R1 would
+make, because it was computed without the factor. §6 carries the corrected
+magnitude.
 
 ---
 
