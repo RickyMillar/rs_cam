@@ -1,314 +1,84 @@
-# rs_cam Agent Notes
-
-> ## Regression sentries — F-024..F-040 + literature matrix
->
-> The acceptance loop closed 2026-05-26 at 7/7 Within. Its regression
-> net lives on as sentry tests under `crates/rs_cam_core/tests/` (e.g.
-> `dexel_stock_z_frame_f024.rs`, `adaptive_feed_modulation_pipeline_f036b.rs`,
-> `lead_in_out_feed_rates_f040.rs`) and the `_litmatrix_*.rs`
-> feeds-validation suite. Run `ls crates/rs_cam_core/tests/` for the
-> full inventory. Any re-surfacing of an F-XXX issue should fail one
-> of these sentries before it reaches smoke.
-
-## What this repo is
+# rs_cam agent index
 
 `rs_cam` is a Rust CAM workspace for 3-axis wood routers.
 
-It has four crates:
+## Read the instruction file closest to the work
 
-- `crates/rs_cam_core`: CAM engine and shared data model
-- `crates/rs_cam_cli`: batch CLI
-- `crates/rs_cam_viz`: desktop CAM app (`rs_cam_gui`)
-- `crates/rs_cam_mcp`: shared MCP parameter struct library consumed by the GUI-embedded MCP server
+| Area | Instruction file | Owns |
+|---|---|---|
+| Workspace-wide rules and this index | `CLAUDE.md` | architecture, discovery, quality gates |
+| CAM engine / session / simulation / export | `crates/rs_cam_core/CLAUDE.md` | machining invariants and core tests |
+| Desktop GUI / controller / embedded MCP server | `crates/rs_cam_viz/CLAUDE.md` | UI state, worker wiring, live control |
+| Batch commands and job files | `crates/rs_cam_cli/CLAUDE.md` | CLI parity, replay and sweeps |
+| MCP wire types | `crates/rs_cam_mcp/CLAUDE.md` | schema compatibility |
+| Plans, status and historical evidence | `planning/CLAUDE.md` | active-vs-archived planning material |
 
-## Architecture guardrails
+Read the relevant child file before changing that area. Do not load every
+package instruction speculatively.
 
-- keep the core library independent from GUI concerns
-- treat the toolpath IR as the boundary between planning and post-processing/output
-- keep import, tool modeling, operation generation, dressups, simulation, and export as distinct layers
-- prefer extending the existing core + worker + UI wiring path instead of creating parallel one-off flows
-- every surface mutates `ProjectSession` through `ProjectSession::apply(Command)`; the `*_mut` hatches are crate-private or deleted since WP7 (2026-09-12)
+## Workspace shape
 
-## Current doc map
+- `crates/rs_cam_core`: CAM engine and shared data model.
+- `crates/rs_cam_cli`: batch CLI.
+- `crates/rs_cam_viz`: desktop application (`rs_cam_gui`) and embedded MCP
+  server.
+- `crates/rs_cam_mcp`: shared MCP parameter types; it is **not** the server.
 
-- product overview: `README.md`
-- capability surface: `FEATURE_CATALOG.md`
-- AI analysis reference: `AI_MACHINIST_ANALYSIS_REFERENCE.md`
-- attribution and source lineage: `CREDITS.md`
-- design docs: `architecture/`
-- research notes: `research/`
-- status and backlog: `planning/`
+## Architecture and mutation contract
 
-## Session workflow
+- Keep core independent of GUI concerns.
+- Treat the toolpath IR as the boundary between planning and post-processing /
+  output.
+- Keep import, tool modelling, operation generation, dressups, simulation and
+  export as distinct layers.
+- Extend the existing core → worker → UI wiring path; do not add a parallel
+  one-off flow.
+- Every product surface mutates `ProjectSession` through
+  `ProjectSession::apply(Command)`. Do not reintroduce public `*_mut` escape
+  hatches.
 
-1. Read `planning/PROGRESS.md`.
-2. Check `FEATURE_CATALOG.md` before making claims about shipped functionality.
-3. Update docs when the visible product surface changes.
-4. Keep `CREDITS.md` current when adding external datasets, formulas, or algorithm references.
+## Sources of truth
 
-## SocratiCode codebase intelligence
+- Manifests, not prose, define dependencies: root `Cargo.toml` and each crate's
+  `Cargo.toml`.
+- `FEATURE_CATALOG.md` defines shipped capability claims.
+- `planning/PROGRESS.md` is the current status entry point; consult the
+  relevant plan before acting on a package.
+- Update visible-product docs with visible surface changes.
+- Update `CREDITS.md` when adding external datasets, formulas or algorithm
+  references.
 
-This project is indexed with SocratiCode. Prefer the SocratiCode tools for codebase exploration before reading files directly.
+## Codebase discovery
 
-Core workflow:
+This project is indexed by SocratiCode. Start exploration with broad
+`codebase_search`; use `rg` only for a known exact string/regex. Before a
+refactor, deletion or import-graph change, inspect impact with the graph /
+symbol tools. Read files only after search narrows the area. If search is
+empty, inspect index status rather than assuming the symbol is absent.
 
-1. Start most explorations with `codebase_search` using broad conceptual queries or exact symbol/type names. Use `rg` instead when you already know the exact string or regex.
-2. Read files only after search narrows the work to a small set of relevant paths; avoid speculative whole-file reads.
-3. Use `codebase_graph_query` before following imports manually, and before modifying/deleting files to see file-level dependents.
-4. Use symbol-level tools before refactors: `codebase_impact` for blast radius, `codebase_flow` for forward execution flow, `codebase_symbol` for callers/callees, and `codebase_symbols` for symbol discovery.
-5. Use `codebase_graph_circular` / `codebase_graph_stats` when debugging architectural/import-order issues.
-6. If search returns no results, call `codebase_status`; if indexing is incomplete, wait and poll status before searching.
-7. Use `codebase_context` and `codebase_context_search` for non-code artifacts if `.socraticodecontextartifacts.json` exists.
+## Quality gates
 
-When indexing has just been started, call `codebase_status` roughly every 60 seconds until complete; indexing is asynchronous and progress is checkpointed.
+`Cargo.toml` is the lint policy source of truth: zero warnings, including the
+workspace's denied clippy lints and `unsafe_code`.
 
-## Dependency reality
+| Need | Command |
+|---|---|
+| Format | `cargo fmt --all -- --check` |
+| Focused crate tests | `cargo test -p <crate> -q` |
+| Core full gate | `cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q` |
+| Full lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings` |
 
-Use the actual manifests as source of truth:
+Do not use workspace-wide `cargo test`; it can loop in this repository. Run the
+smallest relevant test first, then the appropriate gate before committing.
 
-- workspace: `Cargo.toml`
-- core: `crates/rs_cam_core/Cargo.toml`
-- CLI: `crates/rs_cam_cli/Cargo.toml`
-- GUI: `crates/rs_cam_viz/Cargo.toml`
+Test modules may allow only `unwrap_used`, `expect_used`, `panic` and
+`indexing_slicing`; `println!` / `eprintln!` remain denied unless a test has a
+specific `print_stderr` allowance. Prefer a local, documented allow with a
+`SAFETY:` comment over a file-wide production-code allow.
 
-Do not document or rely on crates that are not currently in those manifests.
+## Regression sentries
 
-## Implementation expectations
-
-- tests live close to the code they validate
-- if GUI state adds a field, audit setup-sheet, project-IO, and any test initializers for required updates
-- if a feature is only present in UI/state and not end-to-end wired, document that honestly
-
-## Lint policy — zero warnings enforced
-
-`Cargo.toml`'s `[workspace.lints.clippy]` denies **20** lints, plus
-`unsafe_code` at `[workspace.lints.rust]` — **21** in total. Clippy must pass
-with zero warnings before committing.
-
-This table listed 16 and said "all", which is how two agents in one day wrote
-code against an incomplete list and had to hand-check the remainder. The six
-that were missing are at the bottom; `Cargo.toml` is the source of truth if
-this drifts again.
-
-| Lint | What it catches |
-|------|-----------------|
-| `unwrap_used` | `.unwrap()` — use `?`, `.unwrap_or()`, or `#[allow]` + SAFETY comment |
-| `expect_used` | `.expect()` — same; `#[allow]` OK for provably-safe cases with comment |
-| `panic` | `panic!()` in non-test code |
-| `todo` / `unimplemented` | Placeholder code must not ship |
-| `indexing_slicing` | `arr[i]` — use iterators, `.get()`, or `#[allow]` + SAFETY comment |
-| `dbg_macro` | No `dbg!()` in production |
-| `print_stdout` / `print_stderr` | Use `tracing` instead of `println!`/`eprintln!` |
-| `map_err_ignore` | `.map_err(\|_\| ...)` — preserve the original error |
-| `needless_pass_by_value` | Take `&[T]`/`&str` not `Vec<T>`/`String` when not consumed |
-| `large_enum_variant` / `result_large_err` | Keep enums and error types small |
-| `redundant_clone` | Don't `.clone()` what you already own |
-| `unsafe_code` | No `unsafe` in this codebase (`[workspace.lints.rust]`, not clippy) |
-| `wildcard_imports` | No `use foo::*` |
-| `clone_on_ref_ptr` | `Arc::clone(&x)`, not `x.clone()`, on ref-counted pointers |
-| `implicit_clone` | Don't `.to_vec()` / `.to_owned()` where `.clone()` says it |
-| `str_to_string` | `.to_owned()` on a `&str`, not `.to_string()` |
-| `semicolon_if_nothing_returned` | Terminate unit-returning statements |
-| `manual_let_else` | Use `let ... else`, not a match that only diverges |
-
-**When you hit a lint:** run `/lint-fix` for approved fix patterns. Prefer fixing the code. If the pattern is provably safe (e.g. indexing bounded by a loop, `.expect()` after a `.is_some()` check), use `#[allow(clippy::the_lint)]` with a `// SAFETY:` comment on the specific line or block — never file-level.
-
-**Test code** is exempt for FOUR of them: test modules carry
-`#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]`.
-Note what that does NOT cover — **`print_stdout` and `print_stderr` are denied
-in tests too**. An instrument that needs to report its measurement must opt in
-explicitly with `#![allow(clippy::print_stderr)]` at the top of the file, as
-`tests/power_ceiling_parity_f2.rs` does. A leftover debug `println!` in a test
-fails the gate.
-
-**`cargo fmt --all -- --check` is the format gate**, not per-file `rustfmt`.
-Running `rustfmt --check` over a file list captured from an earlier
-`git status` misses anything edited afterwards. Note the effective
-`fn_call_width` is 60, not 100.
-
-## Dev workflow quick reference
-
-| Task | Command |
-|------|---------|
-| Run GUI | `cargo run -p rs_cam_viz --bin rs_cam_gui` |
-| Run CLI | `cargo run -p rs_cam_cli -- <subcommand>` |
-| Test — dev loop | `cargo test -p rs_cam_core -q` (also `-p rs_cam_cli`, `-p rs_cam_viz`, `-p rs_cam_mcp`) — avoid workspace-wide `cargo test`, it can loop on this repo |
-| Test — FULL gate | `cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q` |
-| Lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings` |
-| Format | `cargo fmt --check` |
-| Bench | `cargo bench -p rs_cam_core` |
-
-The 12 heaviest core test binaries sit behind the `heavy-tests` feature — they
-were 75% of the 1,663 s serial suite (2026-08-27 profile), and the dev loop does
-not even compile them. The FULL gate runs them and is required once per phase /
-commit-gate run; lint with the feature too, or those 12 never get linted.
-`#[ignore]` keeps its existing meaning here — instrument and evidence runs, 283
-of them, invoked explicitly and never by a gate — so heaviness is the feature's
-job, not the attribute's, and the two must not be conflated.
-
-Run `/dev` for the full reference. Run `/verify` before committing.
-
-## MCP live control (rs-cam tools)
-
-The GUI embeds an MCP server (`--mcp` flag) so Claude can control the live GUI in real-time. Since WP4 every MCP mutation dispatches as one `McpRequestKind::Core(CoreRequest)` arm and is applied through `ProjectSession::apply(Command)`, and its reply's `stale_toolpaths` is that command's `Effects.stale` — the set the setter itself dropped, not a set the reply re-derives (a removal is the one exception: it re-keys every index and reports none). When the `rs-cam` MCP is connected, follow this workflow:
-
-### Standard workflow
-
-1. **Load**: `load_project` with a `.toml` file path
-2. **Inspect**: `inspect_model` (geometry, bbox, triangle count), `inspect_stock` (dimensions, material), `inspect_machine` (spindle, power, rigidity)
-3. **Review**: `list_toolpaths`, `get_toolpath_params` for each index
-4. **Generate**: `generate_all` or `generate_toolpath` per index. `generate_all` runs a FIXPOINT loop by default (`fixpoint: true`, the default): generate → simulate → generate, repeating until nothing new becomes generatable, so a chain of `k` "remaining stock" ops resolves in one call instead of `k` manual rounds. Pass `fixpoint: false` for the old flat single-pass behavior. If the project has any enabled `StockSource::FromRemainingStock` toolpaths, `simulation_resolution_mm` is REQUIRED — the call refuses rather than guessing a cell size (collision counts and engagement both move with it), and the error names the blocking toolpath indices. The reply reports `rounds` and `simulations` taken, and separates real `errors` from `awaiting_prior_stock` (ops still waiting on upstream simulated stock — not failures). **`simulation_resolution_mm` is not scoped to the call**: before each inter-round simulation the ladder writes it onto `state.simulation.resolution` and unticks `auto_resolution`, and both stay that way after the run, so every later simulation the operator triggers is measured at the cell YOUR argument chose. Since G-RESNOTICE (2026-09-10) the GUI raises a notification naming the old value, the new value and the cleared checkbox whenever that write changes anything; nothing about when or whether it writes has changed. Toolpath status is one of `Pending / Computing / Done / AwaitingPriorStock / Disabled / Error`; `Disabled` is derived from `enabled: false` and never stored (`crates/rs_cam_core/src/compute/config.rs:32-90`).
-5. **Simulate**: `run_simulation` (always collects metrics)
-6. **Diagnose**: read `get_diagnostics`'s `triage` block first (bounded, typed, severity-ordered — see "Metric caveats" below), then `narrate_toolpath(index)` for agent-readable Z-level structure, cut runs vs marching-squares regions, engagement histogram, suspicious arcs, peak axial DOC, and air-cut %. Narration is **cheap**: timed on an idle lane 2026-08-06 at **4 ms** on a 12.6k-move pass with a 70k-sample cut trace. The "~12 min" figure this file and the tool description used to carry was a single wall-clock reading taken *during* a 40-minute `generate_all` — i.e. mostly queue time — and is retired. Use `get_cut_trace` only when drilling into raw metrics.
-7. **Visualize**: `screenshot_simulation` / `screenshot_toolpath` to `.png` then Read the image
-8. **Iterate**: `set_toolpath_param`, `set_tool_param`, regenerate, re-simulate. To change which CUTTER or which GEOMETRY INPUT a toolpath is bound to, use `set_toolpath_tool` / `set_toolpath_model` — see the rebind bullet under "Common pitfalls". To add an operation the way the operator's Add menu does — first tool, first model, add-time refusal and all — use `add_toolpath_via_gui`, and read the toast it leaves with `get_notifications`; see the bullet under "Common pitfalls".
-9. **Reach**: `reach_map(index)` answers "does this tool's tip fit into the valleys?" for a finishing op — the area-weighted unreachable percentage, the worst gap in mm and a gap histogram. It is a **top-down** measure: undersides, walls and a band one envelope radius wide inside the part outline are NOT MEASURED, never `reachable`, so read `is_measured` and `measured_area_mm2` against `surface_area_mm2` before believing a clean percentage, and treat any gap of the order of `discretisation_floor_mm` as arithmetic. The tolerance defaults to the operation's own cusp / scallop height, never `stock_to_leave`. `screenshot_toolpath(reach_overlay: true)` shades the model surface with the same map, and the GUI viewport draws it whenever a finishing op is selected (`crates/rs_cam_core/src/reach_map.rs`). **Read `grid_note` first — the cell, the floor and the bar** (P5.1, 2026-09-08). The cell follows the tool's tip sphere and the model, never the tolerance, so probes at different tolerances are comparable and probes across tools are not. `discretisation_floor_mm` is measured on the surface the walk built (`max(profile_floor_mm, curvature_floor_p95_mm)`, the curvature term read at the binding tap); when `tolerance_below_floor` is true the grid OVER-states: `machined_z` is a minimum over a sampled CL set, so it sits at or above the continuum minimum and the gap bias is non-negative — the true unreachable share is AT OR BELOW the reported figure, `unresolved_pct_of_measured_area` is the band the grid cannot classify either way, and `reached` is the sound side (a cell called reached really is formed). Every percentage is 3D SURFACE AREA over the rim-eroded population (`area_basis`); a planar or whole-board figure beside one of these is a different question, and on a terrain that alone is 5 points. On the wanaka terrain those floors are 0.132 / 0.234 mm against a 0.05 bar — do not quote one tool's floor for another. The tolerance is the declared scallop height, else the cusp of the op's own raster stepover on the TIP radius (0.146 mm for R2.0 at s1.5), else 0.05. F1 ruling: the wanaka red was mostly real — an independent 0.15 mm rasterisation (`planning/deep_doc_modulation_2026-09-08/reach_truth_rasteriser.py`) puts the same-base truth at 58.6 % unreachable at 0.05 against a 59.05 % reading (was 68.2 %), 42.1 % against 51.11 % at the raster's own cusp, 26.8 % against 36.36 % at 0.30 — the residual is the grid's additive gap inflation (~0.05 mm at the 0.645 cell), which reads as a near-constant PERCENTAGE offset because this terrain's gap density is flat over 0.05–0.30 mm; the tapered shank is +0.01 pp. The floor is a C² bound and does not cover slope kinks in `tip_z`; the measured table is in `curvature_floor_plane`.
-10. **Overlays**: `set_ui_view` also takes `overlays: {"<id>": bool}` — the Overlays panel's row ids (`crates/rs_cam_viz/src/ui/overlays/registry.rs` is the one list that feeds the panel, this parameter and the completeness sentry). The reply reports `applied` and `refused: {"<id>": "<reason>"}` using the panel's own disabled-row reason, and `screenshot_gui` then captures what was enabled. Colour overlays are exclusive per surface (model: reach map vs rest heatmap; stock: solid / deviation / by height; moves: palette / engagement / advance per tooth), so enabling one clears the others on that surface. A row the registry lists as not drawn (derived rest regions, boundary outline) is refused with that reason, never silently accepted. Since WP27 (2026-09-13) the viewport draws the SELECTED toolpath only, so `screenshot_gui` photographs one toolpath in the Toolpaths workspace and none when nothing is selected; call `set_ui_view(overlays: {"all_toolpaths": true})` for the old picture (`screenshot_toolpath` is a CPU rasteriser and does not change).
-
-If a `generate_toolpath` / `generate_all` call is taking a long time: both take `timeout_s` — on timeout they return a `status: "running"` response instead of blocking, and the generate is **not** cancelled, it keeps running in the background. `generation_status` (lane state, in-flight toolpath/stage, elapsed time) and `cancel_generation` are served off the GUI frame loop independent of whatever is queued behind a long generate, and both answer within about a second (`crates/rs_cam_viz/src/mcp_server.rs:52,164,179-180`; tests in `crates/rs_cam_viz/tests/mcp_escape_hatches.rs`).
-
-This workflow names a working subset — the embedded server registers roughly 69 tools total; also useful: `get_operation_schema`, `get_diagnostics`, `inspect_spans`, `get_toolpath_diagnostics`.
-
-### Key diagnostic thresholds
-
-| Metric | Good | Concern | Bad |
-|--------|------|---------|-----|
-| Air cutting % | per-operation threshold — see below | — | — |
-| Rapid collisions | 0 | any nonzero: read the depth, not the count — see below | — |
-| Avg engagement | > 0.3 | 0.1-0.3 | < 0.1 |
-
-Air-cut thresholds are set PER OPERATION TYPE against the total-runtime denominator (`air_cut_pct_of_total_runtime`), not one fixed band — see `OperationType::air_cut_high_threshold_pct` (`crates/rs_cam_core/src/compute/catalog.rs:456-491`): `None` (suppressed — dexel can't see Z-only moves) for `Drill`/`AlignmentPinDrill`; 60.0 for `ProjectCurve` (rivers/curves are inherently sparse); 45.0 for the 3D finish family (DropCutter, Scallop, UnifiedFinish, Waterline, Pencil, HorizontalFinish, SteepShallow, RampFinish, SpiralFinish, RadialFinish); 40.0 for 2.5D clearing/rough (Pocket, Face, Adaptive, Rest, Zigzag, Adaptive3d) and 2D contour ops (Profile, Chamfer, Inlay, VCarve, Trace).
-
-**Drill-specific thresholds** — read from `cut_trace.drill_summaries` keyed by `toolpath_id`, gate verdicts from `get_tool_load_report().per_toolpath[].drill_gates`:
-
-| Metric | Low / Within | Elevated | High / Exceeds |
-|--------|--------------|----------|----------------|
-| `max_depth_to_diameter` vs material threshold (Janka-banded: softwood 8, medium hardwood 6, dense/unknown 5; plywood/sheet 5, plastic 4) | < 0.75× | 0.75–1.0× | ≥ 1.0× |
-| `per_peck_max_dtd` vs material per-peck threshold (Janka-banded 2026-06-03: softwood ≤700 lbf 6.0, medium hardwood 5.0, dense/unknown 4.0; plywood/sheet 1.5, plastic 1.0) | ≤ 1.0× | — | > 1.0× |
-| Plunge feed / diameter (1/min) | inside material envelope | below min | above max |
-
-Four things about that table an agent must not infer wrongly (all measured 2026-08-04/06, `planning/review_2026-08-04/DRILL_GATE_EVIDENCE_AUDIT.md`):
-
-- **Every number in it is REPO-AUTHORED**, not vendor or handbook. The W6 audit retrieved the real Onsrud drill chart (`onsrud.com/images/Drill.pdf`) and the FPL Wood Handbook in both editions: neither contains any peck or depth-to-diameter guidance for wood, and the "3–8×D" figure the per-peck ceilings were built on is a *total-hole* regime statement being used as a *per-peck* bound. Checkpoint D held the values and corrected the citation instead; `material.rs` now says so at the constants. Do not cite these to a vendor.
-- **`Elevated` is not an exceedance.** Chip welding's `Elevated` band is `[0.75t, t)` — observed *below* the threshold it names — and it used to print `Chip welding (D/d) exceeds: 7.33 vs 8.00`. Fixed 2026-08-04; the column header vocabulary is what produced the defect, so read the band, not the verb.
-- **The peck model is rooted at the R-plane** (Fanuc G83), not at the hole top — because that is what the emitter does. On shipped defaults (depth 10, `Peck(3)`, Ø6, feed 300, R = +5) the true figures are `peck_count` **5** and `feed_time_s` **3.400**, not 4 and 2.000; the first descent is entirely in air. One expansion, `drill::fed_descents`, serves both. Load-bearing invariant, sentried by `r_plane_rooting_moves_no_gate_number`: **every gate reads cutting geometry, never fed distance.** Since 2026-08-21 (`18a0a79e`, per-op link ceiling in `tsp.rs`) the **emitted** motion matches that schedule too: the default-on TSP rapid reorder used to delete the R-plane and peck re-entry rapids and turn every re-entry into a fed descent from full safe-Z (4.12× fed time per hole, G83 ≡ G73 byte-identical — the cycle dial was inert), while `drill_summaries.feed_time_s` read the cycle *description* and reported the healthy number in both arms. Sentried by `drill_fed_descents_motion.rs`, which asserts fed descents against **stored motion**, never the description.
-- **All three gates divide by the ENVELOPE radius** (`execute.rs` uses `tool_def.radius() * 2.0` with `ToolProfile::Flat` hardcoded, and `catalog.rs` carries no tool precondition for `Drill`). On a tapered ball that overstates diameter by up to 14×, so all three read `Within` on a grossly overloaded cutter — and two of them block export when they trip, which makes the failure mode a **silent pass**. Ledgered to the radius programme (`planning/review_2026-07-29/RADIUS_AUDIT.md`, R-12), not fixed.
-
-**Metric caveats**:
-
-- `rapid_collision_count` changed meaning on 2026-08-28 (Phase S2, `planning/rapid_safety_2026-08-28/`). It is now a **live-replay, tool-profile-aware** check for stamped ops (each rapid evaluated against the stock as it exists at that moment of playback, via `max_clearance_tip_z_for_profile`), reporting only interference beyond a **cell-scaled tolerance** (~2.2 × sim cell — 0.66 mm at 0.3 mm resolution), so the count is resolution-scaled: a coarser sim reports only deeper strikes, and comparing counts across resolutions is meaningless. Drill ops keep the legacy frozen-snapshot point probe (`check_rapid_collisions_against_stock`). **Do NOT cite the old "most reliable signal" framing**: before this date the checker was a zero-radius point probe that was blind to off-axis strikes inside the tool envelope, and it mutually masked with the air-cut filter's identical blindness — the shipped wanaka programs carried 601 rapid-through-stock link descents (up to 1.3 mm deep) under a zero count for months. A nonzero count is a real safety signal; a zero at coarse resolution is "nothing deeper than the tolerance," not "nothing".
-- **The chipload gate observes ADVANCE PER TOOTH, not chip thickness** (2026-08-06). It used to compare a dexel-measured arc-mean chip thickness in mm against a vendor `chipload_min/max_mm_tooth` band — two different physical quantities, differing by a per-row factor measured across the shipped LUT at **2.4×–40.4×, median 10.9×**. A literature wave verified from primary sources (Onsrud, Freud, Amana, Garr — verbatim `Chip Load = Feed Rate / (RPM × flutes)`, one chart numerically self-verifying) that the vendor column is an advance per tooth, and the gate-side normalisation was **deleted** rather than inverted: the observation is now `effective_feed ÷ (rpm · flutes)`. Consequences an agent should know: the gate is **no longer engagement-aware at all** (the sample's own arc cancelled even before the deletion), so the *sim* remains the operational arbiter of engagement; a shipped fixture's verdict moved `Within` + burn advisory → `Exceeds(High)`; and a separate fixture's "safe" 0.18 mm/tooth turned out to be **3.27× the band maximum** while the pre-fix gate said `Within`. The GUI viewport's chipload heat-map was converted with it (F-HEATMAP, closed 2026-08-08): `ToolpathGpuData::from_toolpath_advance_per_tooth` (`crates/rs_cam_viz/src/render/toolpath_render.rs:590`) takes a per-move `AdvancePerToothMm` and a `VendorChiploadBand` as **distinct newtypes**, so the visible surface now colours by the same advance-per-tooth quantity the gate observes and the old chip-thickness-vs-band pairing cannot be rebuilt by accident. Earlier notes calling this heat-map "still mismatched, not fixed" are stale.
-- **Sub-Ø2 chipload verdicts are provisional.** The scaling laws that transfer a vendor row to another diameter/hardness are `D^0.61` and `Janka^-0.5`, adopted 2026-08-06 and **derived by this repo — no primary source publishes either exponent** (`CREDITS.md` says so in those words). On the reference fixture the diameter law moved the band by ×1.598 and reversed the verdict the unit deletion had produced four commits earlier. Neither move was wrong; they moved different sides of one comparison. Expect a bench measurement to move them.
-- **Suggest's rubbing floor is subordinated to the matched band.** `RUBBING_FLOOR_MM_TOOTH = 0.025` was clamping a fine-tool recommendation to **3.47×** the row's own derated band maximum. It is now `min(floor, derated_band_max)` (`feeds::effective_rubbing_floor`), with the bare constant retained where no band exists. When no feed can both clear chip formation and stay inside the vendor window, `FeedsWarning::ChiploadClampedToFloor` carries `band_capped_from` and all three renderers say which guarantee was **not** met. **Read `band_capped_from` before diagnosing a clamped feed** — it is what distinguishes the two shapes: `Some(0.025)` means a band was found and beat the constant; `None` means no vendor row matched at all and the bare constant applied. P1 (2026-08-22) additionally lets the floor fall back to the **envelope** resolver's band when the recipe resolver's row is an RPM-only anchor, so the floor and the post-sim gate quote the same row (`FeedsWarning::VendorRowPublishesNoChipload::floor_band_from` names it). **P1 changes no recipe on the LUT as shipped** — measured, with `the_fallback_does_not_lower_the_floor_on_todays_lut` as the tripwire — and it does **not** reach the observed Ø1 tapered-ball case, which is a no-vendor-row case; a resolver fix cannot reach that, only a diameter-carrying floor (P2, not adopted) would. **The per-field ⚡ pill writes the same clamped value as Apply** (G-PILLCLAMP, 2026-09-10): every pill reads `feeds::suggest::preview_field_applies`, a dry run of the apply funnel, so it offers and writes the funnel's number for its one field and stamps the recommendation's provenance — pre-fix it wrote the raw calculator value (4.2 mm of DOC where Apply wrote 1.2 on the demo pocket, UX-R03-014). A pill whose dial the funnel does not write (VCarve Max Depth) offers the raw value and its hover says "not clamped". Sentry: `tests/pill_writes_clamped_value_g_pillclamp.rs`.
-- `average_engagement` is the **cylinder-side radial-WOC fraction** (a.k.a. `engagement.radial_woc_fraction`), not leading-edge engagement. For adaptive3d it typically reads ~10× lower than the algorithmic target (~3% observed vs ~30% target from `target_engagement_fraction`). Use it for **relative** comparison between parameter variants, not as an absolute pass/fail bar. For axis-aware reporting (axial-DOC, arc, chip thickness, leading-edge speed by kinematics class) read the `per_kinematics` summary block — Step 2 of the dexel-fidelity roadmap landed the structured `Engagement` vector on every sample (see `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.D / §6.H). Under Step 4 (F.a sub-cell stamping, 2026-05-19) the perp-extent measurement is gated on cells with stamp coverage ≥ 0.95 to prevent F.a boundary residuals from inflating engagement on repeated passes. A genuine full slot now reads radial ≈ 0.95 (limited by grid discretisation + sub-sample geometry) rather than 1.0; per-toolpath averages drop by roughly that proportion. Continue treating the scalar as a comparative signal, not an absolute fraction-of-diameter readout. **The denominator changed on 2026-08-28 (U3 / Phase M3, `planning/rapid_safety_2026-08-28/`):** it is now `2 × engagement_radius_mm(axial_doc)` — the diameter actually cutting at that sample's depth — not `2 × envelope_radius_mm()`, which on a tapered ball is the SHANK. Flat endmills are bit-for-bit unchanged (their engaged radius *is* the envelope radius); every other shape reads **higher or the same, never lower** (`width_at_height` is capped at `radius()`), and so do the derived `arc_engagement_radians` and the power/deflection figures downstream of it. M1 measured the size of the move on a real wanaka trace: time-weighted mean engagement **3.69×** (R1.5 taper finish) and **5.74×** (R0.5 pencil), against **1.000×** on both Ø6 flat roughs; air-cut % moved only −0.26 pp, because 99.75 % of the sub-0.02 population is a hard zero no denominator can lift (that last figure is **resolution-conditional** — at 0.3 mm cells the grid cannot form a positive reading below 0.02 on a 6 mm denominator; M1 §8 L3). **Any engagement, air-cut or gate figure on a NON-FLAT tool quoted from before that date is understated** by the ratio `envelope ÷ engaged` at its own DOC.
-- `ProjectDiagnostics` carries TWO air-cut percentages with different denominators, and they are not interchangeable (`crates/rs_cam_core/src/session/mod.rs:846-864`, `crates/rs_cam_core/src/simulation_cut.rs:537-566`). `air_cut_pct_of_total_runtime` (air-cut time ÷ cutting + rapids) is the measure every shipped threshold is tuned against — the GUI's 40% banner, the CLI's 40% verdict, and every per-operation value in `OperationType::air_cut_high_threshold_pct` (all recalibrated 2026-08-21 for the swept instrument — W5B-F4). `air_cut_pct_of_cutting_time` (rapids excluded) is what the MCP `narrate_toolpath` air-cut line reports. **That reading is ≥ the total-runtime one only while all three figures share ONE time base, and between 2026-08 and 2026-09-08 they did not — G-AIRDENOM** (`planning/ab_instrument_flags_2026-09-08.md` Flag 1). `air_cut_time_s` and `cutting_runtime_s` were naive dexel seconds at the pre-modulation COMMANDED feed (`dexel_stock/simulation.rs:937`) while two later passes overwrote `total_runtime_s` with the kinematics-integrated wall clock at the MODULATED feed (`compute/simulate::apply_kinematics_cycle_time` for F-034, `session/compute::apply_adaptive_feed_modulation`'s re-timing loop for F-036b); where modulation raised the feed the order INVERTED — 1.76× on a wanaka rough. **Fixed 2026-09-08**: `simulation_cut::rebase_cutting_times` moves each cutting sample's seconds onto the integrator's clock by its own move's `commanded ÷ modulated` ratio (per SAMPLE, not one factor per toolpath — the modulator leaves a zero-engagement move at its commanded feed, so an average factor would shrink air along with the engaged time), so `cutting_runtime_s + rapid_runtime_s == total_runtime_s` and the documented order holds again. Two consequences to know: **under modulation the total-runtime percentage now moves by the rebase factor** (it FALLS on a lifted rough), so the shipped 40 %/45 %/60 % bars — recalibrated W5B-F4, 2026-08-21, against the mixed-base quantity — now sit against a slightly different one; **no threshold was changed**. Nothing is rebased with modulation OFF, and the order holds there anyway because F-034's accel model can only LENGTHEN the total. Still NOT rebased and therefore still mixed-base: `SimulationSemanticCutSummary` rows, `SimulationCutHotspot`, `KinematicsSummary::cutting_runtime_s` (the per-class times no longer sum to the toolpath's), and `average_engagement` (deliberately — it is a comparative signal, see the entry above). `average_mrr_mm3_s` DID move with the rebase, so `total_removed_volume_est_mm3 ÷ cutting_runtime_s` still reproduces it. Sentry: `tests/air_cut_one_time_base_g_airdenom.rs`, which carries the pre-fix reproduction in the same run. For a cross-arm comparison prefer absolute `air_cut_time_s` over either percentage. The legacy `air_cut_percentage` field is just an alias for the total-runtime reading, kept for wire compatibility. Plunge-and-retract-loop ops (project_curve, v_carve, drill) no longer inflate either reading from retract feeds — but the mechanism is that every shipped generator emits retracts as **rapids** (`rapid_to_with_intent(MoveIntent::Retract)`), and rapids were always excluded from cutting metrics (corrected 2026-08-21; the Step-1 note here used to credit the intent tag). The metric path's Retract-tagged-*Linear* branch is unreachable from shipped generators — a census sentry pins this, because the playback and metric grids would disagree about such a move if one ever shipped (`planning/perf_review_2026-08-19/DELTA_sim_w6_playback.md` §4). Drill toolpaths still set `metrics_not_applicable: true` (engagement axes don't apply to Z-only kinematics), but Step 3 PR2 added a parallel `drill_summaries` slot on `SimulationCutTrace` — drill ops produce **drill-native** metrics (per-peck `DrillSample`, per-toolpath `DrillToolpathSummary` with peck adequacy + chip-welding risk + cycle time) and three drill-specific gates on `ToolpathLoadVerdict.drill_gates` (chip welding, peck adequacy, plunge feed sanity). The legacy "treat as not-applicable" advice still applies to engagement metrics; consult `drill_summaries` / `drill_gates` for the actionable signal. **Do NOT read the absence of a `toolpath_summaries` row as "not simulated"** — that conflation was G-DRILLTIME (2026-08-22): the cycle-time integrator folded the project total over the engagement summary list, so a drill's runtime was computed and thrown away, and 0.8% of runtime unmodelled relabelled a 99.2%-modelled estimate as `cutting only, no accel` on every operator surface. `SimulationCutTrace::toolpath_runtimes` is the separate slot for "was this integrated?", populated for **every** toolpath whenever the machine carries kinematics; it covers stored motion only, so G82 **dwell is not in it** (that stays `DrillToolpathSummary::dwell_time_s`, and nothing adds the two). Since N2 (2026-09-10) the modulation retime re-integrates every runtime and republishes it through one publisher, `simulation_cut::publish_cycle_times`. That publisher writes the slot, the summaries and the project total on one clock — the retime's. Before N2 the retime folded only over the engagement summaries. The project total then dropped every drill, and `toolpath_runtimes` kept the pre-modulation numbers. Since N7 (2026-09-11) the retime re-integrates only when the machine carries a kinematics block; with `kinematics: None` the live-sim runtime is byte-identical with modulation on or off, per `machine.rs`.
-- **Analytic drill removal needs the frame's cut direction, and a drill on a side-face setup does nothing.** `TriDexelStock::apply_drill_op(&drill_op, direction)` removes material *above* the tip envelope only when the tool advances downward in the grid it is applied to. A `DrillHole` carries no axis — it is an XY centre plus `top_z`/`bottom_z` — so after `group_drill_op_to_global` maps a `FaceUp::Bottom` setup (`z → H − z`) the pair arrives **inverted**, and `top_z <= bottom_z` is then correct, not corrupt. Never `min`/`max` the pair and never infer the direction from their ordering (a zero-depth hole is degenerate); the answer is the group's `StockCutDirection`, which already rides both call paths. Pre-fix (G-DRILLFLIP, found by an operator watching the viewport) a flipped blind hole carved the exact **complement** of its own band — plausible-looking and wrong. **Scope**: this is a checkpoint / playback / screenshot defect, NOT a planning one — rest generation reads `prior_stocks`, which are clones of the per-setup **local** `group_stock` (`compute/simulate.rs:917` → `session/compute.rs:1434`), and the local stock's drill removal was always correct because setup-local Z is always the tool axis. `global_stock` feeds checkpoints, playback and the S5 prefix memo only; a comment on `playback_dispatch` claimed otherwise for a long time and was corrected 2026-08-22. The kernel's abstention arm remains for any lateral direction (`DrillRemovalReport::unrepresentable_axis` — a `DrillHole` cannot express a hole whose axis is global X or Y), but **G-DRILLLATERAL is CLOSED as unreachable (2026-08-22)**: no shipped path passes a lateral direction any more. The lateral-setups campaign of 2026-08-22 (`planning/lateral_setups_2026-08-22/SPEC.md`) landed the full picture: a lateral setup is simulated entirely in its setup-local frame with `direction` hardcoded to `FromTop` (`compute/simulate.rs`), which is why lateral metrics/gates/G-code were always correct; `SetupTransformInfo::cut_direction()`'s lateral sign-inversion was **fixed** (G-LATERALSIGN), and then G-FRONTNAME (2026-08-22 late, `e43695e9`) fixed the layer under it: all four lateral `FaceUp` arms machined the OPPOSITE world face from their drafting-convention names — operator ruled front = −Y / back = +Y / left = −X / right = +X (matching the composite panel labels), the transform arms swapped in pairs, and `cut_direction()` is the identity again, this time derived (`face_up_names_follow_drafting_convention_g_frontname.rs` pins the ruling); a 2D drawing on a lateral setup is consumed **in that setup's work plane** (operator-ruled; `apply_to_drawing_polygons` vs `apply_to_polygons` — drawings vs world-anchored footprints — and a lateral setup refuses when the project has no mesh or carries an enabled fixture/keep-out, G-LATERALKEEPOUT, the one still-open lateral gap); and live scrub replays a lateral group in its **own frame** and maps the mesh out (G-LATERALSCRUB, `3e951540`), so the global playback stock skips lateral groups and the X/Y side grids are kernel capability with **no shipped caller** — `dexel_stock_to_mesh`'s side-grid append branches are dead in production. Fixtures: `tests/lateral_setup_end_to_end.rs`, `tests/lateral_scrub_playback_stock_g_lateralscrub.rs`. See the SPEC before touching any of it.
-- `peak_axial_doc_mm` now reports lateral/arc/helix axial engagement only. Pure-vertical plunge distance is exposed separately as `plunge_descent_mm` / `peak_plunge_descent_mm`, so deflection gates no longer consume peck descent as cutter engagement. **F-024 (2026-05-25) follow-up:** the value also now reflects the *commanded* axial DOC rather than the full stock height. Pre-F-024 the per-setup dexel grid for identity setups (`face_up=Top`, `z_rotation=Deg0`) was rooted at zero-local Z (`(0,0,0)..(stock_x, stock_y, stock_z)`) while the toolpath emitted cuts in world frame (Z = -depth, with stock top at Z=0). The cutter sat below every dexel ray, `ray_blend_above` cleared the entire ray, and per-sample `axial_engagement_mm` read the full stock height (e.g. 12 mm on a 2 mm-DOC pocket pass). Identity setups now pass `local_stock_bbox = None` from `session/compute.rs`, so the per-setup grid uses the world-frame stock bbox and the measured axial matches the commanded DOC. Non-identity setups (face flips, Z-rotation) still use the zero-rooted effective bbox — that path's frame consistency is tracked separately if it surfaces again.
-- **A 2D model's `ModelUnits` reaches geometry through TWO doors and they must agree.** A project file stores a model's *path* plus its declared units, never its geometry, so `io::load_model_file` (interactive import) and `session::project_file::load_model_geometry` (project load) both re-import the same file. Until 2026-08-22 the project door applied the unit scale **only to STL** — `ModelUnits`' own doc still says "units of the imported STL", which is how the SVG/DXF arms were missed — so an inch-authored 2D model reloaded **25.4× smaller**, silently, with the stock still at its saved size (`update_from_bbox` runs on import, not load). Third divergence found in this loader pair; sentried by `model_units_survive_reload_g_unitsreload.rs`, which asserts the two doors **agree** rather than asserting a size. **A THIRD family sits beside that pair — the GUI doors that refresh a model record in place** (`controller/io.rs`: `rescale_model`, `reload_model`, `relink_model`). Each hand-copied its own subset of `LoadedModel`'s fields, and until G-RELOADTARGETS (F4.4, 2026-09-10) rescale and reload assigned neither `drill_targets` nor `layers`: nothing wrote an empty list, so the PREVIOUS import's targets survived beside the new polygons and a drill operation — which reads the record at generation time — cut the previous version's holes. The field split is now one core function, `LoadedModel::adopt_geometry`, whose exhaustive destructuring stops compiling when a field is added; sentried by `crates/rs_cam_viz/tests/model_refresh_carries_targets_g_reloadtargets.rs`. The pick half of that is **G-DRILLPICKSTALE** (F4.8, 2026-09-10). `DrillConfig::selected_holes` and `AlignmentPinDrillConfig::selected_holes` still store picked hole COORDINATES on the toolpath config — `DrillTarget` carries no id, and an index is WORSE than a coordinate because deleting one hole shifts every later index and would drill the wrong hole silently — so the coordinate is the only identity a pick has. The generator now re-resolves every pick against the model's CURRENT targets and **refuses to generate** when one names none of them (`execute::stale_drill_picks_refusal`, shared by both drill families and by the drill panel, which prints the same sentence before Generate). One residual stands and is deliberate: the check is skipped when the model exposes NO targets, because an empty list also reaches that seam from callers that resolved no model (`execute_operation_annotated` passes `&[]` on purpose), so an operator who DELETES every hole from the drawing still drills the old positions. Sentry: `crates/rs_cam_core/tests/drill_picks_resolve_to_targets_g_drillpickstale.rs`.
-- **Read `triage` first, not `issue_count`.** Raw `issue_count` with thousands of `air_cut` entries is **emission noise**: every sample outside fresh material counts as an "issue", and three different quantities ship under that one name (segments, per-sample counts, and MCP's post-filter count — one `get_cut_trace` response can display all three). `ProjectSession::simulation_triage` is the single construction site for the bounded typed answer, consumed unchanged by the GUI panel, MCP `get_diagnostics` (`resp["triage"]`), the CLI `project` report and narration. Read `triage.safety` (collisions, holder strikes), then `triage.actions`, then `triage.advisories` — the advisories are capped (10 per toolpath, 50 per project) with `truncated` and a true pre-cap `total_matching`, and deduped on a ≥10 mm spatial key that never merges two distinct safety events. `hotspots` and `rapid_collision_count` remain trustworthy raw signals. **Since 2026-08-13 (TD3 B-5) `get_diagnostics`' `per_toolpath` rows are the core `ToolpathDiagnostic`** — the same record the CLI's `project` report publishes — so `op_kind`, per-toolpath `collision_count` / `rapid_collision_count` and the report-only finding areas (`truncated_core_mm2` + its deprecated `standing_material_mm2` duplicate, `untouched_material_mm2`, `reached_uncut_estimate_mm2`, `unmachined_band_area_mm2`, `tip_float_points`, `max_tip_float_mm`) are on the wire in GUI mode, with `null` meaning **not measured**. Before that they were absent from the GUI wire entirely and present on the CLI's, and the project-level `collision_count` was a literal `0`. Probe `build_info().features` for `diagnostics_row_core_parity` before reading a missing key as "not measured" — on an older binary it means "not published" (`planning/review_2026-08-08/RESULTS_PARITY.md`).
-- **A metric can now say it was not measurable, and gates ABSTAIN when it does.** `sim_measurability::{MeasurabilityReport, Measurability, SimMetric, MeasurabilityReason}`. The motivating case: `FRESH_MATERIAL_THRESHOLD_MM = 0.05` gates the radial-engagement measurement, so a 0.02 mm-deep pass reads **air 95.9%, peak radial 0.0000, avg engagement 0.0000** while removing **63.7 mm³** — a hard zero dressed as a percent that clears every shipped bar. A `NotMeasurable` metric now abstains with a stated reason instead of feeding a healthy-looking verdict; **collision detection is never disabled**, and the GUI prints a `NOT MEASURED: …` strip above the diagnostics panel. Two independent conditions produce it (a fixed millimetre material floor, and a lateral-resolution condition from the 0.95 perp-coverage gate) — neither is "cell < cut depth". No threshold moved to add this.
-- **The kinematic utilization reading is PLANNED before a simulation and EMITTED after — read `feeds_provenance`, never the timing.** `kinematic_utilization::analyse_toolpath` measures whatever move list its caller hands it, and the feed modulator runs *after* the simulation, writing its modulated clone back into `session.results[idx]`. So the same call answers about two different things either side of a run. `ProjectSession::kinematic_utilization_of/_for` stamps `FeedsProvenance::{Planned, Emitted}` from the EVIDENCE — every `SimulationCutTrace::modulated_feeds` entry for the toolpath must be present on the move list — and the CLI `project` line, the GUI pill and MCP `narrate_toolpath` all print the qualifier. Three things a reader must not infer wrongly. (a) The GUI's `narrate_toolpath` narrates `state.gui.toolpath_rt`, the worker's **pre-modulation IR**, which the modulation post-pass never rewrites, so that surface reads `planned` even right after a simulation. Since 2026-09-07 the MCP narration says exactly that in its own words — `planned — this surface narrates the pre-modulation plan; the emitted reading is in get_tool_load_report after a simulation` — instead of borrowing the shared `FeedsProvenance::qualifier()` text, which ends "run a simulation for emitted" and is FALSE here (a simulation does not rewrite the worker's IR, so the operator reads the same number again). The CLI and GUI keep the shared wording, where it is true, because they read `session.results`. Narrating the emitted result on this surface is still the follow-up, of the G-MODEXPORT class. (b) `BindingFractions::junction_bound` is **rare by construction** (the forward-only integrator never lowers an entry velocity), so a 0 % junction share is NOT "cornering is free" — the cost of a corner lands on `accel_bound`; read `machine_bound`. (c) The optimizer path publishes `kinematic_utilization: None` because it holds no emitted `Toolpath` — absent means **not measured**, never clean.
-- **The modulator's plunge guard is GEOMETRIC and cannot reach a tagged plunge.** Since 2026-09-07 `adaptive_feed_modulate` caps any move `kinematic_utilization::classify_move` calls `Plunge` at the operation's own `plunge_rate` and reports `BindingConstraint::PlungeRate`, whatever the intent tag says — that closes the incident where the adaptive3d rough emitted step-down descents as plain cutting moves and the modulator lifted them to the lateral chipload band (wanaka front rough: 118 of 125 over-1× plunges removed, every lateral feed byte-identical, +0.43 % fed time). **`should_skip_modulation` stays intent-based and the guard runs after it**, so a move already carrying `EntryPlunge` / `Drilling` / `LeadIn` / `LeadOut` keeps its commanded feed and the guard never sees it — an over-1× plunge that survives is therefore a GENERATOR defect, not a modulator one. One was found and is now **fixed as G-BOUNDARYPLUNGE on 2026-09-07**: seven `EntryPlunge` descents on that same fixture ran at the op's 750 mm/min **feed** rate instead of its 541 mm/min plunge rate, because a boundary re-entry re-tagged the original cutting move as `EntryPlunge` while *preserving its cut feed*. `boundary.rs`'s clip walk now re-emits that descent at the OPERATION's plunge rate — the same dial the adaptive3d peck ladder uses, threaded in as `plunge_rate_mm_min` from `apply_boundary_clip` / `apply_boundary_clip_multi`; `None` (no operation in scope) keeps the old cut feed. Sentry: `boundary_reentry_plunge_rate_g_boundaryplunge.rs`. Note also that the guard now touches moves the modulator never used to alter at all: a **zero-engagement** vertical descent short-circuits the solver at `(commanded, MachineMaxFeed)` and is then capped — deliberate, because a dexel zero is the weakest evidence in the pipeline and a descent through air still ends in material.
-- **A gate handed an empty population passes and looks healthy.** Measured 2026-08-05: three gates returned `Within` with `sample_range 0..0`, no locality and `available_kw 0.0`, indistinguishable on every surface from a measured clean cut. When judging whether a gate exonerated something, check its *population* first — `sample_count`, `sample_range` — and treat a bar written as a verdict comparison as vacuous until you have.
-- `ToolpathStats` (`crates/rs_cam_core/src/compute/config.rs`) also carries **fourteen** report-only generation findings, of which eleven reach `narrate_toolpath` or the diagnostics list and **four do not** (`deprecated_dial`, `derived_stepovers` and `claims_reference` never reach narration; `boundary_clip_dropped` has no narration adapter — do not cite this list as evidence of coverage). They are: `truncated_core_mm2` (renamed from `standing_material_mm2` in wave 16, 2026-08-04 — the old spelling survives only as a legacy JSON key), `untouched_material_mm2`, `reached_uncut_estimate_mm2`, `dropped_band`, `clipped_band`, `tip_float`, `deprecated_dial`, `derived_stepovers`, `ramp_reach_clamp`, `claims_reference`, `retract_trips`, `zero_removal` (wave 16: a rest pass whose emitted cutting geometry never gets under the stock the prior op left — it costs full price in motion and removes nothing; a report, not a refusal), and the two Checkpoint C slots `offset_library_failures` and `boundary_clip_dropped` (2026-08-05). **Eleven share one contract**: `None` means **not measured** (the generator path never ran that check), `Some(0.0)` means measured and clean — never coerce an absent value to zero. **Three are deliberately outside it** and say so in their own docs: `derived_stepovers` is a `Vec` (empty = nothing derived a stepover, not "measured zero"); `zero_removal`'s `None` conflates "not measured" with "nothing to report", because it supports no ratio; and `boundary_clip_dropped` makes the same call for the same reason. Note also that `offset_library_failures` counts offset **calls**, not distinct rings — but since the G2 depth hoist (473c3d1f, 2026-08-19) pocket/profile/zigzag/trace/rest (+ face) offset once per ring, not once per Z level, so the ×L multiplication only applies to families still offsetting inside their depth loop. No gate consumes any of these; they are report-only.
-- **The feed-optimisation dressup caps its feed floor at its own ceiling since WP21 (2026-09-12).** The floor is half the operation's nominal feed and the ceiling is `DressupConfig::feed_max_rate`; before WP21 a nominal feed above twice that dial inverted the pair and panicked the pass (`crates/rs_cam_core/tests/feedopt_clamp_never_panics_wp21.rs`). Since WP22 (2026-09-13) the pass also caps a move `kinematic_utilization::classify_move` calls `Plunge` at the operation's own `plunge_rate`. It is the geometric guard the modulator carries, and both read that one classifier. Before WP22 the pass wrote `nominal * factor` onto every cutting move. That lifted a plunge descent to about twice its plunge rate (`crates/rs_cam_core/tests/feedopt_caps_plunges_g_feedoptplunge.rs`).
-
-### Model types and what they need
-
-| Kind | Geometry | Typical operations |
-|------|----------|-------------------|
-| `stl` (3D mesh) | `inspect_model` → bbox, triangle count | adaptive3d (rough), drop_cutter/waterline/scallop (finish) |
-| `step` (BREP) | `inspect_model` + `inspect_brep_faces` → face types, normals | Same as STL + face-selective operations |
-| `svg`/`dxf` (2D) | `inspect_model` → polygon count, area, perimeter | pocket, profile, adaptive, v_carve, trace |
-| Drill cycle (any model + hole positions) | Hole XY from the model's drill targets (circle-like closed polygons and DXF points/circle/arc centres) or an explicit pick; a drawing with none refuses; pin drill from the stock `alignment_pins` snapshot | `drill`, `alignment_pin_drill` — bypass dexel stamping for analytical cone/cylinder removal; produce `DrillToolpathSummary` + `drill_gates` instead of engagement metrics |
-
-### Tool selection guidance
-
-- **Roughing**: Use end mills. `adaptive3d` for 3D surfaces, `adaptive`/`pocket` for 2.5D
-- **Finishing**: Use ball nose for 3D surfaces (required for `scallop`). End mills OK for `drop_cutter`, `waterline`
-- **Fine detail**: Smaller diameter = better detail but longer runtime
-- Check `inspect_machine` for max shank diameter constraint
-
-### Common pitfalls
-
-- `stock_top_z` in roughing config must match actual stock height, not an arbitrary value
-- **A pinned Bottom Z reaches emitted motion on only THREE operations**
-  (G-BOTTOMPIN, 2026-09-10): `Adaptive3d`, `UnifiedFinish` and `Waterline`.
-  Those are the only reads of `heights.bottom_z` in the generator dispatch.
-  Every other operation floors its cut at `top_z` minus its OWN depth dial,
-  because `OperationConfig::cutting_levels(top_z)` takes no bottom parameter
-  and `execute.rs`'s `effective_levels` returns that pre-computed ladder
-  whenever it is non-empty — which it always is for the seven depth-stepping
-  ops, so the `else` branch that WOULD read a pinned bottom is unreachable
-  from all six of its callers. Ask
-  `OperationType::honors_pinned_bottom_z()` rather than assume. Measured: a
-  pin moved 14 mm on a test pocket and the emitted floor did not move.
-  Whether the pin SHOULD drive a 2.5D cut is an open operator decision
-  (`planning/ui_fix_2026-09-09/reports/J7.md` recommends against).
-- **`geom.depth_beyond_stock` is a core diagnostic since 2026-09-10**
-  (G-DEPTHSTOCKCORE), so it reaches MCP `get_toolpath_diagnostics` and the
-  CLI `project` report, not only the GUI inspector ribbon. It fires when an
-  operation's own depth dial puts its cut floor below the stock bottom, and
-  it reads that dial ALONE — never a pinned Bottom Z, per the bullet above.
-  It answers only for operations declaring `DepthSemantics::Explicit(_)`;
-  for every other operation it ABSTAINS, which means NOT MEASURED and never
-  "the cut is inside the board". J8 deleted the GUI-side rule of the same
-  name, so both surfaces read core's rule. Until N4 (2026-09-10) the
-  core/MCP route projected its heights through
-  `ResolvedHeights::from_context` and dropped a pinned Top Z, so it missed
-  the caution the GUI showed, and it could never raise
-  `geom.bottom_above_top_z`, `geom.feed_z_below_top_z` or
-  `geom.clearance_z_below_retract_z`. Since N4 the route resolves the
-  toolpath's own `HeightsConfig`.
-- Scallop requires a ball-tip tool (ball nose or tapered ball nose)
-- Horizontal finish is useless on terrain — only cuts near-flat areas
-- After `set_toolpath_param`, the toolpath is stale — must `generate_toolpath` again
-- After modifying tools, ALL dependent toolpaths go stale
-- **Any stock edit stales EVERY toolpath** (G-FRESHSTATE, operator ruling 2026-09-10): dimensions, alignment pins, and the material alone all drop every cached result on both the GUI and the MCP route, because heights reference the stock top, an inherited boundary follows the stock outline, and the material sets the feeds. A setup's `face_up` / `z_rotation` drops every result in that setup. A machine kinematics edit drops the simulation only — geometry does not move. **All THREE model-refresh doors now stale too** (G-RESCALESTALE, F4.7, 2026-09-10): reload, relink and — new — rescale each call `invalidate_model` and stamp `stale_since`, so they drop the results of the toolpaths bound to that model and only those. Until F4.7 `rescale_model` invalidated NOTHING, so a declared-units change moved every polygon by up to 25.4× while every card stayed green and export emitted the cached path. `rescale_model`'s `ModelKind::Step` arm returns before the import, so it moves nothing and still invalidates nothing. Sentry: `crates/rs_cam_viz/tests/model_refresh_invalidates_results_g_rescalestale.rs`.
-- **An edit made in the GUI inspector now drops the core result too.** Before G-FRESHSTATE the panel wrote `ToolpathConfig` fields directly, no core setter ran, and `session.get_result(idx)` kept the PREVIOUS parameter set's geometry — which export emitted. Any note claiming a GUI param edit leaves the core cache intact is stale. Since N13 (2026-09-11) the feeds Apply funnel (`⚡ Apply all`, the project rollup, MCP `apply_feeds`) drops it too, through the same `invalidate_toolpath_inputs` door and gated on the same `generation_inputs_signature`; before N13 it stamped `stale_since` only, the operation still read `Current`, and export emitted the pre-apply path and its feed words (sentry `crates/rs_cam_viz/tests/feeds_apply_drops_result_n13.rs`). Since WP1 (2026-09-11) `ProjectSession::set_toolpath_param` is a thin wrapper over `ProjectSession::apply(Command::SetToolpathParam)`, the one command door. The door returns `Effects`, and MCP `set_toolpath_param` now reports `Effects.stale` — every index the setter dropped, not the narrower answer it reported before (N15); WP28 deleted that second producer, `compute_stale_set`, and every MCP arm now reads the command's own `Effects.stale` (sentry `crates/rs_cam_core/tests/stale_set_has_one_answer_wp28.rs`). The CLI's three param sites take the same door through `crates/rs_cam_cli/src/command.rs`. No motion changes. Sentries: `crates/rs_cam_core/tests/command_registry_completeness.rs`, `crates/rs_cam_viz/tests/command_registry_surfaces.rs`.
-- **The core export door emits the operation's `coolant` setting since P0-D1** (2026-09-11). `ProjectSession::export_gcode*`, `rs_cam_cli project --emit-gcode` and `rs_cam_cli run` all take that door, and it hardcoded `CoolantMode::Off` before. The GUI door and the CLI job-file door always read `ToolpathConfig::coolant`, so the three doors now agree. No GUI control and no MCP setter writes the field; only a project file or a job TOML sets it. Sentries: `crates/rs_cam_core/tests/export_honors_coolant_p0d1.rs`, `crates/rs_cam_viz/tests/export_parity_core_vs_gui_p0.rs`.
-- **A toolpath's TOOL and INPUT MODEL are rebound with their own tools, not with `set_toolpath_param`** (F3.7 / F3.8, G-MCPREBIND, 2026-09-10). `set_toolpath_param` writes the OPERATION's params and refuses the keys `tool_id` / `model_id` — "unknown parameter 'tool_id' for {op} operation" — because no operation config declares either. Rest's `prev_tool_id` IS a real param and a different thing: the rest-analysis reference tool, not the cutter the toolpath runs. Use `set_toolpath_tool(index, tool_id)` and `set_toolpath_model(index, model_id)`. Both take a project-assigned **id**, not a positional index: `tool_id` is a `list_tools` row's `id` and `model_id` an `inspect_model` row's `id`, so `set_toolpath_tool` differs from `add_toolpath`, which takes a `tool_index` — the two numbers agree until a tool is removed, so read the `tool` / `model` object the reply echoes. A rebind invalidates the toolpath's cached result AND every downstream operation that machines the stock it leaves (`ProjectSession::set_toolpath_tool` / `set_toolpath_model` call `invalidate_result_chain`); regenerate after one. `set_toolpath_tool` deliberately ALLOWS a tool the operation's shape constraint rejects — that is what keeps a blocked operation repairable rather than a dead end, and the generator still refuses until an accepted tool is bound. `set_toolpath_model` does NOT clear a BREP face selection: face ids belong to the model that was bound when they were picked, so re-pick after a rebind. The GUI's Tool: / Input: combos write the same two fields; since G-FRESHSTATE `tc.tool_id` and `tc.model_id` are both in `generation_inputs_signature`, so a GUI rebind drops the core result through `invalidate_toolpath_inputs` too and the two routes agree. (An earlier draft of this bullet said the GUI invalidated nothing. That was true when F3.7 was written and stopped being true when G-FRESHSTATE merged.) Neither route records an undo entry for a rebind. Since N5 (2026-09-10) `stepover` and `depth_per_pass` are refused with the same "unknown parameter" text on an operation whose config has no such field, where before they reported success, stamped manual provenance and staled the result chain. Sentries: `crates/rs_cam_core/tests/toolpath_rebind_g_mcprebind.rs`, `crates/rs_cam_viz/tests/mcp_rebind_surface_g_mcprebind.rs`, `crates/rs_cam_core/tests/set_param_refuses_absent_field_n5.rs`
-- **`add_toolpath` and `add_toolpath_via_gui` are two different doors, and the GUI one can refuse** (F3.1 / F3.5, G-GUIADD, 2026-09-10). `add_toolpath` takes an explicit `tool_index` and `model_id` and is the right tool when you know what to bind. `add_toolpath_via_gui` dispatches the Add menu's own `AppEvent::AddToolpath` through `handle_add_toolpath`, so it reproduces what the operator gets: it binds `tools().first()` and `models().first()` — it does NOT read the selection and does NOT look for a compatible tool — and it runs the add-time Suggest door, which for some operation x tool-shape pairs REFUSES and creates nothing at all (a flat end mill on Scallop is the standing example; R0.3 §2.2 row A1). Use it when the question is "what would the operator see", which is what makes the refusal contract testable. **The GUI add path reports a refusal ONLY by pushing a toast** — `handle_add_toolpath` returns `()` — so the reply reads the refusal back off the notification stack and returns it as `refusal`, with `created: null`; on success `created` carries the index, id, name and the tool and model it bound. `get_notifications` reads that same stack, newest first, and is **read-only**: it removes nothing, so two reads agree and a test cannot consume the evidence the operator is still looking at. Each entry carries `severity`, `age_seconds` (measured from the push), `ttl_seconds` (by severity: info 4, warning 6, error 8) and `visible`. The stack lives only in the running GUI process — it is not persisted, and it is empty after a restart. Expired entries are collected on the frame loop, so `include_expired` (default true) is what keeps a toast that has been on screen a while from vanishing between the push and the assertion. Note the deliberate exception to G-MCPTOAST: the `add_toolpath_via_gui` dispatch arm pushes NO toast of its own, because the GUI path already pushed exactly the one F1.1 asks for and a second would break its "one toast per request" rule. Sentries: `crates/rs_cam_viz/tests/add_toolpath_via_gui_g_guiadd.rs`, `crates/rs_cam_viz/tests/get_notifications_g_toastread.rs`
-- **Approach moves are stock-aware on surface-riding ops since 2026-09-03** (G-RAMPTERRAIN, `planning/entry_moves_2026-09-03/` — three fixed classes, one family): ramp legs, helix turns, and lead-in/out arcs clip to `drop-cutter CL + stock_to_leave`; on lost surface contact the finish door degrades the entry to a plunge (or skips the lead), the adaptive3d door leaves the leg unconstrained (prism stock). Prism ops (pocket/profile/…) keep blind legs BY DESIGN — `OperationConfig::entry_probe_leave` is the classification, and a mesh-surface floor on a pocket ramp would destroy it. **That exemption is about Z only — see G-RAMPCONTAIN at the end of this bullet.** `try_fit_arc` additionally runs its per-point Z check unconditionally — pre-fix a short knoll between LEVEL endpoints collapsed into a flat arc through the knoll. Before that date every ramp/helix/lead approach was terrain-blind (877 buried feed chords on the wanaka ISO export; the rapid checker cannot see fed gouges). Sentry: `entry_moves_stock_aware_g_rampterrain.rs`; burial checker: `entry_audit::buried_fed_chords`. That exemption is about **Z**. In XY the legs were blind too, and nothing checked them: on `fixtures/demo_pocket.svg` the return leg ran 11 mm past the pocket wall and cut the surrounding stock under a clean verdict (UX-R03-001), invisible to the rapid checker (rapids only) and to `buried_fed_chords` (Z only). **Since 2026-09-10 (G-RAMPCONTAIN) a prism ramp FOLDS along the operation's own following cut moves** — out for half the ramp length, then back over the same ground, Z by cumulative XY distance — so it is contained wherever the op's own cut is contained, with no region polygon and no offset call at emit time. Below `max(1.0, tool_radius)` mm of following cut it degrades to a plunge at the entry column; it never refuses. The adaptive3d door still emits the legacy straight legs (prism stock, `dir = (1.0, 0.0)`), and G-RAMPTERRAIN's Z clip on surface-riding ops is unchanged. The XY checker is `entry_audit::fed_moves_outside_region`, the sibling of `buried_fed_chords`; sentry `ramp_contained_in_region_g_rampcontain.rs`.
-- `stock_to_leave` on UnifiedFinish is honoured by **all three bands** since 2026-08-06 (shallow raster, mid-steep scallop, very-steep waterline). Before that only the scallop band applied it, so any project or note written earlier assumed a dial that was inert on two thirds of the surface. It is a **vertical** (+Z) offset: what remains measured normal to a wall sloped at angle A is `stock_to_leave × cos A` — 0.71× at 45°, 0.26× at 75°.
-- **A `ToolContainment::Inside` boundary is not an unconditional guarantee.** If the boundary offset collapses, the path is emitted **unclipped** rather than over-clipped, and the only trace is the report-only `boundary_clip_dropped` finding. A genuine library failure now refuses instead; a genuine collapse passes through with a typed finding. Check the finding before asserting a path was contained.
-- `monotone_cell_decomposition` (C2) ships **default-ON since 2026-09-01** — the C4 operator surface review passed (`planning/thin_organic_2026-08-27/FINDINGS.md` §7, "C4 ruling") and the operator ordered the flip the same day. It shipped default-off until then. Production A/B (CLI 2026-08-30, GUI 2026-09-01, figures agree): 1.090× finish tiers, −14 % rapid distance, `membership_fallbacks`/`empty_fallbacks` 0. A legacy project file with no key now loads ON; a file that pins `false` keeps `false` — that is the per-operation opt-out. The ranked follow-on avenues are `planning/finishing_status_2026-09-01.md`.
-- **Two of the three offset panic classes are `debug_assert!`s in a dependency**, so debug and release do not agree: in release the library proceeds on unvalidated input (a malformed slice, a corrupt spatial index, a NaN arc centre) instead of being caught. `offset_library_failures` is therefore **not comparable across builds**, and a lower release count is the expected divergence, not an improvement.
-
-## Agent skills
-
-Project-level Claude Code customizations in `.claude/`:
-
-| File | Type | Purpose |
-|------|------|---------|
-| `skills/verify/SKILL.md` | `/verify` | Run the CI quality gate locally |
-| `skills/dev/SKILL.md` | `/dev` | Build, test, run, and module quick reference |
-| `skills/sim-analysis/SKILL.md` | `/sim-analysis` | Simulation diagnostic interpretation guide |
-| `skills/lint-fix/SKILL.md` | `/lint-fix` | Fix clippy lint violations with approved patterns |
-| `skills/refresh-lit-matrix/SKILL.md` | `/refresh-lit-matrix` | Re-verify or replace stale literature-matrix sources |
-| `agents/cam-navigator.md` | Agent | Codebase navigation: find operations, trace pipelines |
-| `agents/sim-diagnostics.md` | Agent | Simulation diagnostic analysis and interpretation |
-
-## Parallel agent teams
-
-Use `TeamCreate` to spin up agent teams for tasks that benefit from parallel work:
-
-- **Parameter sweeps**: 4 agents split by operation family (2D contour, 2D clearing, 3D raster, 3D contour) — see `toolpath_stress_test/agents/AGENT_INSTRUCTIONS.md`
-- **Defect investigation**: one agent per finding from `toolpath_stress_test/FINDINGS.md`, each in an isolated worktree
-- **Multi-crate refactors**: separate agents for core, CLI, and viz changes working on independent worktrees
-- **Test + fix cycles**: one agent runs tests / sweeps, another fixes issues as they're reported
-
-Teams share a task list for coordination. Use worktree isolation (`isolation: "worktree"`) when agents edit overlapping files. Agents go idle between turns — this is normal; send them messages to wake them.
-
-## Parameter sweep infrastructure
-
-Toolpath validation tooling lives in `crates/rs_cam_core/src/fingerprint.rs` and `crates/rs_cam_core/tests/param_sweep.rs`:
-
-| Command | What it does |
-|---------|-------------|
-| `cargo test --test param_sweep` | Run all 56 parameter sweeps across the operation families |
-| `cargo test --test param_sweep sweep_pocket` | Run sweeps for one operation family |
-| `cargo run -p rs_cam_cli -- sweep job.toml --param X --values "..." --output-dir out/` | Full-pipeline sweep with dressups/depth stepping |
-| `python3 toolpath_stress_test/agents/analyze_sweep.py target/param_sweeps/` | Automated verdict analysis |
-
-Sweep output goes to `target/param_sweeps/{op}/{param}/` with JSON fingerprints, diffs, toolpath SVGs, and 6-view composite stock PNGs.
+The F-024..F-040 acceptance findings remain protected by tests under
+`crates/rs_cam_core/tests/`, including `_litmatrix_*.rs`. When a change touches
+one of those behaviours, find and run its sentry; see
+`crates/rs_cam_core/CLAUDE.md` for the core-specific rules.
