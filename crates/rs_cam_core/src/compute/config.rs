@@ -200,8 +200,7 @@ pub struct ToolpathStats {
     /// Same three-valued contract as [`Self::truncated_core_mm2`]: `None`
     /// = not measured, `Some(0.0)` = measured and clean.
     /// `untouched_material_mm2 <= truncated_core_mm2` whenever both are
-    /// `Some` (same cascade run, hole-corrected). Read through
-    /// [`ToolpathStats::untouched_material`].
+    /// `Some` (same cascade run, hole-corrected).
     ///
     /// Report-only: no gate consumes it and no verdict changes on it.
     pub untouched_material_mm2: Option<f64>,
@@ -231,8 +230,7 @@ pub struct ToolpathStats {
     /// **Not an exact area** — it is `(arc length owned by dropped ring
     /// points) x (offset stepover)`, summed per ring; see the source field's
     /// doc for what it cannot distinguish (off-part geometry vs a genuine
-    /// left-high residual). Read through
-    /// [`ToolpathStats::reached_uncut_estimate`].
+    /// left-high residual).
     ///
     /// Report-only: no gate consumes it and no verdict changes on it.
     pub reached_uncut_estimate_mm2: Option<f64>,
@@ -1312,45 +1310,6 @@ impl ToolpathStats {
         })
     }
 
-    /// [`Self::untouched_material_mm2`] with its measurement contract
-    /// attached, or `None` when nothing measured it. M4 §5b sibling of
-    /// [`Self::truncated_core`] — same rule, different provenance
-    /// ([`UNTOUCHED_MATERIAL_PROVENANCE`], hole-aware net area).
-    #[must_use]
-    pub fn untouched_material(
-        &self,
-    ) -> Option<(
-        crate::measurement::ProjectedXyAreaMm2,
-        crate::measurement::MeasurementProvenance,
-    )> {
-        self.untouched_material_mm2.map(|mm2| {
-            (
-                crate::measurement::ProjectedXyAreaMm2::new(mm2),
-                UNTOUCHED_MATERIAL_PROVENANCE,
-            )
-        })
-    }
-
-    /// [`Self::reached_uncut_estimate_mm2`] with its measurement
-    /// contract attached, or `None` when nothing measured it. M4 §5b
-    /// sibling of [`Self::truncated_core`] — same rule, different
-    /// provenance ([`REACHED_UNCUT_ESTIMATE_PROVENANCE`], an estimator,
-    /// not an exact area).
-    #[must_use]
-    pub fn reached_uncut_estimate(
-        &self,
-    ) -> Option<(
-        crate::measurement::ProjectedXyAreaMm2,
-        crate::measurement::MeasurementProvenance,
-    )> {
-        self.reached_uncut_estimate_mm2.map(|mm2| {
-            (
-                crate::measurement::ProjectedXyAreaMm2::new(mm2),
-                REACHED_UNCUT_ESTIMATE_PROVENANCE,
-            )
-        })
-    }
-
     /// [`Self::tip_float`] with its measurement contract attached, or `None`
     /// when nothing measured it. Same rule as [`Self::truncated_core`]:
     /// the value and its provenance travel together or not at all.
@@ -1757,14 +1716,6 @@ pub enum BoundarySource {
 }
 
 impl BoundarySource {
-    /// Sources with no extra configuration beyond picking them — safe for a
-    /// simple combo box. `Geometry` needs a polygon-index picker,
-    /// `FaceSelection` a face picker, `DerivedRestRegions` a source-toolpath
-    /// picker and `PlannedTierRegions` a whole ladder + tier, so none of
-    /// those four are listed here.
-    pub const ALL_SIMPLE: &[BoundarySource] =
-        &[BoundarySource::Stock, BoundarySource::ModelSilhouette];
-
     pub fn label(&self) -> &'static str {
         match self {
             BoundarySource::Stock => "Stock",
