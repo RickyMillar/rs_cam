@@ -67,7 +67,7 @@ raw_feed` and the feed is scaled at constant RPM.
 | `PowerModel` | Lever |
 |---|---|
 | `ConstantPower` | Traverse. Lower RPM and feed together, book it on `spindle_speedup`. |
-| `VfdConstantTorque`, below `rated_rpm` | **The traverse is useless.** Available and required power both scale with RPM, so utilisation does not move. Leave the feed alone and warn, naming depth. |
+| `VfdConstantTorque`, below `rated_rpm` | **The traverse is useless.** Available and required power both scale with RPM, so utilisation does not move. Go to the engagement ladder below. |
 | `VfdConstantTorque`, at or above `rated_rpm` | Flat above the knee, so a traverse helps down to `rated_rpm` and no further. **Unreachable today — see below.** |
 
 The third row is correctness for user-defined profiles only. `power_at_rpm`
@@ -126,6 +126,106 @@ does nothing.
 
 **Acceptance:** `tests/literature_matrix` cell `bull_12mm_pocket_oak` returns
 to `moderate`. **Do not re-pin it.** It is the acceptance test.
+
+---
+
+
+---
+
+## The engagement ladder — REVISED 2026-09-16 after the DOC survey
+
+The first version of this plan said the VFD branch should "recommend a
+shallower depth". **Two read-only surveys killed that as written.** See
+`DOC_SURVEY_MODEL.md` and `DOC_SURVEY_RUNTIME.md`, and register items T-11
+and T-12.
+
+### What the surveys found
+
+**1. Depth is not a free parameter for most operations.** For 14 of the 24
+operation types the calculator's depth recommendation is silently discarded
+(T-12). Worse, for many of those the depth is not the engine's to choose at
+all:
+
+| Operation | Why the depth is not free |
+|---|---|
+| V-carve | depth is `dist / tan(half_angle)` per point (`vcarve.rs:87-92`). Capping it flat-bottoms the widest strokes. |
+| Chamfer | depth IS the chamfer width the user asked for (`chamfer.rs:41-43`). |
+| Inlay | depth sets the male/female fit (`inlay.rs:96`). A unilateral cut breaks the joint. |
+| 7 surface-finishing ops | no axial parameter exists. The model surface sets the depth. |
+| Drill | the depth is the hole. |
+
+**2. Where depth IS free, it is quantised.** Every 2.5D operation uses
+`DepthDistribution::Even` (`depth.rs:16-19`), so the realised depth is
+`total / ceil(total / dpp)`. On a 12 mm pocket only 4.00, 3.00, 2.40, 2.00,
+1.71, 1.50 and 1.33 are reachable. **"Reduce the depth by 20 percent" is not
+expressible.** A proposal must be snapped to a realisable `total / n` or the
+engine reasons about a depth the machine will not cut.
+
+**3. The loop is closed only by regeneration.** The runtime power verdict
+reads a MEASURED depth from the dexel (`tool_load/power.rs:422`), not the
+scalar the recommendation changes (`feeds/mod.rs:1782`). They meet only when
+the toolpath is regenerated. The default `ApplyScope` is `Speeds`, which never
+writes the geometry.
+
+### The generic shape, and it is not "reduce the depth"
+
+**Ask what this operation can give up, in order, and stop at the first thing
+it can actually accept.**
+
+```
+1. RPM traverse        — only when PowerModel says it helps
+2. Axial depth         — only when set_depth_per_pass returns true,
+                         and snapped to a realisable total/n
+3. Radial width        — the wider-reaching lever; more operations expose
+                         a stepover than expose a depth per pass
+4. Refuse, and NAME the lever the user holds
+```
+
+Rung 4 is not a failure state. For a chamfer it is the only correct answer:
+the depth is the feature the user asked for, and the engine must say "this cut
+is over power at the chamfer width you specified" rather than quietly cutting
+a smaller chamfer.
+
+**The enabling change is to stop discarding the refusal signal.**
+`set_depth_per_pass` already returns a `bool` for exactly this purpose and
+`feeds/suggest.rs:877` throws it away. Honour it, and the ladder can ask each
+rung "can this operation do it?" instead of guessing. That is T-12, and it is
+now a prerequisite rather than a nice-to-have.
+
+### What this means for sequencing
+
+**T-12 moves ahead of Phase 1.** Without it, a depth proposal is silently
+dropped for most operations and the user sees a warning with no fix and no
+statement that the fix was discarded.
+
+**T-11 also moves ahead of Phase 1 IF the modulator is in the path.** The
+modulator's effective depth is proportional to the square of the nominal depth
+because of the unit defect, so its response to a depth change is roughly
+quadratic. Any reasoning about depth that passes through it is unsound until
+it is fixed. Establish first whether the modulator sits on this path at all —
+`DOC_SURVEY_RUNTIME.md` could not resolve whether its output reaches the power
+verdict. If it does not, T-11 is still a real defect but it does not block.
+
+### Revised order
+
+```
+T-12  honour the set_depth_per_pass refusal            <- prerequisite
+T-11  fix the modulator's depth units, IF in path      <- check first
+Phase 1  power derate: the engagement ladder           <- the red cell
+Phase 2  feed cap traverses
+Phase 3  deflection guard (sentry only)
+Phase 4  gantry force limit                            <- blocked on data
+Phase 5  helix wrap (T-7)                              <- must follow Phase 1
+```
+
+### One unverified oddity, flagged not fixed
+
+On the `ApplyScope` path the V-carve `max_depth` envelope clamp runs on the
+scratch clone and is then discarded, because the copy-back never copies
+`max_depth`. It survives only through `resolve_operation_invariants`
+(`suggest.rs:1406-1414`). No test pins it. The survey could not determine
+whether this is deliberate. **Do not change it as part of this work** —
+establish intent first.
 
 ---
 

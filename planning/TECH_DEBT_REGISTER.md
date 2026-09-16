@@ -24,6 +24,8 @@ need a register.
 | T-8 | The power derate thins the chip, and only half the power responds | open — one sentry red |
 | T-9 | A feed clamped onto a ceiling ships one rounding step above it | open |
 | T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating |
+| T-11 | Feed modulation multiplies mm by a fraction of a different quantity | open — every fixture hides it |
+| T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | open |
 
 ---
 
@@ -347,6 +349,122 @@ Two of the three unknowns are now answered.
 not belt driven, and a check on whether the frame rather than the motor sets
 the real limit. The one piece of evidence on that point, a Shapeoko belt
 thread, says the drive compliance dominated.
+
+---
+
+## T-11 — feed modulation scales its depth by a fraction of the wrong quantity
+
+`feed_modulation.rs:577` computes the axial depth a move cuts at:
+
+```rust
+axial * engagement.axial_doc_fraction.clamp(0.0, 1.0)
+```
+
+`axial` is `ctx.nominal_axial_doc_mm`, an absolute depth in mm: the maximum
+`axial_engagement_mm` over the toolpath's cutting samples
+(`session/compute.rs:2373-2379`).
+
+`axial_doc_fraction` is NOT a fraction of that depth. The dexel writes it as
+a fraction of the FLUTE LENGTH (`dexel_stock/simulation.rs:1106`):
+
+```rust
+axial_doc_fraction: Some((axial_engagement_mm / flute_length).clamp(0.0, 1.0)),
+```
+
+The product is therefore `mm x (mm / flute_length)`, which is not a depth.
+The field's own doc comment names the correct source two lines up: "Use
+`axial_doc_mm` on the sample for the absolute reading."
+
+**The error factor is `flute_length / nominal_axial_doc_mm`**, and it always
+makes the depth too SHALLOW, because a pass is always shallower than the
+flute. A 2 mm pass on a tool with a 25 mm flute gives `2.0 x 0.08 = 0.16 mm`
+against a true 2.0 mm: 12.5x too shallow.
+
+`effective_axial_mm` feeds both the deflection cap and the power cap in the
+constrained-max solver. A depth that reads 12x too shallow makes both caps far
+too permissive, so the modulator allows a feed the machine should not be given.
+
+**Why no gate can fail on it:** every fixture sets `axial_doc_fraction: 1.0` —
+`constrained_max_modulation_f039.rs` at lines 97, 136, 172, 220, 278, 311 and
+316, and the in-module unit tests at `feed_modulation.rs:901` and `:965-997`.
+At exactly 1.0 the wrong expression returns `nominal x 1.0`, which is the right
+answer. The one value that hides the defect is the only value under test. The
+unit test at `feed_modulation.rs:913` even writes the assumption down:
+`let ap = 2.0; // nominal x axial_doc_fraction`.
+
+**Cost if left:** the modulator is the component that decides the feed for
+every move of an adaptive toolpath. It currently believes the cut is about ten
+times shallower than it is.
+
+**Interaction with the derate work:** `effective_axial` is proportional to
+`nominal^2`, so the modulator's response to a depth change is quadratic, not
+linear. Halving an operation's depth moves the modulator's effective depth by
+about four. Any reasoning about "reduce the depth" that passes through the
+modulator is wrong until this is fixed. See
+`planning/load_model_2026-09-16/IMPLEMENTATION_PLAN.md`.
+
+**Fix:** read the absolute per-sample `axial_engagement_mm` that the dexel
+already measures, exactly as the field doc directs. Multiplying the fraction
+by `flute_length` recovers the same number and is the smaller change, but it
+re-derives a value the sample already carries. Then re-pin the fixtures at a
+fraction that is NOT 1.0, or the replacement is equally unguarded.
+
+**Found by:** a read-only survey during the derate-lever work, 2026-09-16.
+Verified through all four hops: the dexel producer, the time-weighted mean at
+`session/compute.rs:2308`, the `nominal_axial` maximum at `:2373`, and the
+multiplication at `feed_modulation.rs:577`. Read statically. Not benched.
+
+---
+
+## T-12 — a depth recommendation is dropped for 14 of 24 operations, silently
+
+`OperationParams::set_depth_per_pass` returns a `bool`, and its own doc
+comment says why (`compute/catalog.rs:677-681`):
+
+> Returns `false` when this config has no such field, so the caller can refuse
+> instead of discarding the value.
+
+The caller discards it. `feeds/suggest.rs:877` calls
+`scratch.set_depth_per_pass(...)` and ignores the result. The copy-back at
+`feeds/suggest.rs:936` then reads `depth_per_pass()`, gets `None` for a config
+that has no such field, and writes nothing.
+
+Exactly **10** configs override `depth_per_pass` and `set_depth_per_pass`
+(counted in `compute/operation_configs.rs`). The trait default returns `None`
+and `false`. There are 24 operation types. So for 14 of them the calculator
+computes an axial depth, writes it to a scratch clone, and the value
+evaporates. No warning is raised.
+
+**Why no gate can fail on it:** the apply path reports success, because it did
+apply everything it was able to apply. The refusal signal exists in the type
+and is thrown away one line after it is produced. This is the same shape as
+the other entries here: an absence rendered as a success.
+
+**Cost if left:** it is about to become load-bearing. The derate work needs a
+power-limited cut to recommend a shallower pass, and for 14 of 24 operations
+that recommendation would be silently discarded while the warning still says
+the cut is over power. The user would see a problem, no fix, and no statement
+that the fix was dropped.
+
+**A second reason the value cannot be trusted as written.** Every 2.5D
+operation uses `DepthDistribution::Even` (`depth.rs:16-19`), so the realised
+depth is `total / ceil(total / depth_per_pass)`, not `depth_per_pass`. The
+realised depth is a staircase. On a 12 mm pocket only 4.00, 3.00, 2.40, 2.00,
+1.71, 1.50 and 1.33 mm are reachable. Asking for 2.90 lands on 2.40, a 20 %
+step. Asking for 2.60 or 2.40 then changes nothing at all. **A proposal
+expressed as a percentage cut cannot be honoured**, and a caller that assumes
+it was gets a depth up to 20 % away from the one it reasoned about.
+
+**Fix:** honour the `bool`. When a config refuses the write, raise a typed
+`SuggestWarning` naming the field and the operation, exactly as the five
+existing axial clamps already do. Separately, snap any proposed depth to a
+realisable `total / n` before proposing it, so the number the engine reasons
+about is the number the machine will cut.
+
+**Found by:** a read-only survey during the derate-lever work, 2026-09-16.
+Verified: the trait defaults at `compute/catalog.rs:673-681`, the 10 overrides,
+the discarded return at `feeds/suggest.rs:877`, the `None` guard at `:936`, and
+the `Even` distribution at `depth.rs:16-19`. Read statically. Not benched.
 
 ---
 
