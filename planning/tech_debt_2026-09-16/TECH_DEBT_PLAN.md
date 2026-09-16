@@ -185,4 +185,17 @@ wave touched. No heavy gate ran (2026-09-11 operator ruling).
 
 ## Progress
 
-- [ ] W1  - [ ] W2  - [x] W3  - [ ] W4  - [ ] ruled items  - [ ] review + re-scan
+- [x] W1  - [ ] W2  - [x] W3  - [ ] W4  - [x] ruled items  - [ ] review + re-scan
+
+W1 closed 2026-09-17, twelve commits on master, in queue order: L1
+`625a4b6d`, L2 `dbc00a15`, L3 + L4 `9c720ea3`, L6 `d496e5df`, L8
+`cd6bba1a`, L5 + L10 + L11 `5e4165ce`, L9 `b0691763`, L7 `3ead7135`, Q2
+`4a8b9871`, Q1 `a98b7fca`, S19 + S21 + S23 overlap `7a81ee4d`. Every
+ruled item landed with its breaking change stated in the commit body. A
+commit cannot carry its own hash, so each plan cell was filled by the
+NEXT commit and the last one by this note.
+
+The S19 / S21 / S23 rows in W1's files went with W1 (`7a81ee4d`): five
+dead `pub` items — `all_toolpath_ids`, `export_diagnostics_json`,
+`ui_style`, `new_default_with_ctx`, `mcp_highlight_effect`. Row 11 of
+the ranked table keeps the rest of S4–S24 for W2.
