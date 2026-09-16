@@ -4,7 +4,6 @@
 //! Embedded Amana data is compiled in via include_str!.
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 /// Tool vendor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -390,35 +389,6 @@ impl VendorLut {
             }
         }
         VendorLut { observations }
-    }
-
-    /// Load additional observations from a directory of JSON files.
-    /// F3.2 (defect class C1): rows must pass [`validate_observation`]
-    /// — bad data must not enter the LUT wearing a "validated" badge.
-    pub fn load_dir(&mut self, path: &Path) -> Result<usize, String> {
-        let entries = std::fs::read_dir(path)
-            .map_err(|e| format!("cannot read directory {}: {e}", path.display()))?;
-        let mut count = 0;
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.extension().and_then(|e| e.to_str()) == Some("json") {
-                let contents = std::fs::read_to_string(&p)
-                    .map_err(|e| format!("cannot read {}: {e}", p.display()))?;
-                let file: ObservationFile = serde_json::from_str(&contents)
-                    .map_err(|e| format!("parse error in {}: {e}", p.display()))?;
-                for obs in &file.observations {
-                    if let Err(violation) = validate_observation(obs) {
-                        return Err(format!(
-                            "invalid observation in {}: {violation}",
-                            p.display()
-                        ));
-                    }
-                }
-                count += file.observations.len();
-                self.observations.extend(file.observations);
-            }
-        }
-        Ok(count)
     }
 }
 
