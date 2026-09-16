@@ -42,7 +42,7 @@ and are NOT touched by this programme's fix waves.
 | 21 | Q6 | D | S | a test re-implements the flat-shelf histogram verbatim, so it cannot catch drift | W3 ✅ |
 | 22 | S29 | E | L | 199 `pub` items with own-file-only callers → compiler-checked demotion, one crate per cycle (30-row sample: 0 false positives) | W4 |
 | 23 | S30, L12, L13 | E | S | `setups_mut` visibility; `MachineProfile::from_key` pub for a deleted loader; `simulation.rs` calls itself legacy yet is the live `StockMesh` path | W4 |
-| 24 | L9, L10, L11 | E | S | `parse_lenient` aliases of a deleted loader (also the MCP mutation parser); two duplicated wire keys | W1 (ruled) |
+| 24 | L9, L10, L11 | E | S | `parse_lenient` aliases of a deleted loader (also the MCP mutation parser); two duplicated wire keys | W1 (ruled) ✅ b0691763 (L9) + 5e4165ce (L10, L11) |
 
 Cut line. Below it, recorded and not scheduled: D14 (two ~160-line band-dispatch
 drivers, L), L14, L15, D10, S31, S32, Q7–Q12, L16, and every F-tier row. Long
@@ -76,6 +76,14 @@ breaking change stated in the commit body:
    `taperedballnose`, `tapered_ball`. "Canonical names only" decides it, so
    all eight went.
 5. **L7** — a trace with no `provenance` block is stale, not fresh.
+   *Implementation note (2026-09-17):* the ruled inversion landed. The CLI
+   producer (`cli/src/main.rs`, `SimulationCutTrace::from_samples`) does NOT
+   gain a provenance block. It holds no `SimulationRequest`, and core's
+   `machine_hash` is `spindle_rpm` + `rapid_feed` of one project while the CLI
+   carries a spindle speed per phase. A block built there would either fail
+   every comparison — the same answer the inverted arm gives, with more code —
+   or read FRESH against a project it was never compared to, which is the
+   hole the ruling closes. Nothing deserialises that artifact back today.
 6. **L8** — delete the three no-constructor `Command` variants with their
    registry rows, `CommandId` arms, `fmt` arms and the two tests.
 

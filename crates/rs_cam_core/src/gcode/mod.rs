@@ -389,19 +389,23 @@ pub fn export_gcode_checked(
 /// trace's recorded hashes, the gates can no longer be honoured
 /// against the current configs.
 ///
-/// Returns `true` when the trace is safe to evaluate against. Traces
-/// without a `provenance` block (pre-provenance schema) get the
-/// benefit of the doubt — backward-compat with older traces — and
-/// return `true`.
+/// Returns `true` when the trace is safe to evaluate against. A trace
+/// without a `provenance` block carries no evidence of what it was
+/// simulated against, so L7 (operator ruling, 2026-09-16) reads it as
+/// STALE. The arm used to return `true` for backward compatibility
+/// with a pre-provenance schema, which let a gate be honoured against
+/// a configuration nobody had checked.
 ///
 /// Cheap: only iterates enabled toolpaths and hashes the cached
 /// annotated toolpath. Doesn't recompute anything heavy.
 pub fn sim_trace_is_fresh(project: &ProjectSession, trace: &SimulationCutTrace) -> bool {
     let Some(provenance) = trace.provenance.as_ref() else {
-        // No provenance → schema predates the freshness check. Keep
-        // the legacy behaviour of treating it as fresh; the user can
-        // still hit "Run simulation" to invalidate manually.
-        return true;
+        // L7: no provenance, no evidence. The simulator stamps the
+        // block on every trace it produces (`compute/simulate.rs`), so
+        // a trace without one came from somewhere that cannot say what
+        // it simulated. Stale is the conservative answer, and the
+        // operator can run the simulation to get a stamped trace.
+        return false;
     };
     for (idx, tc) in project.toolpath_configs().iter().enumerate() {
         if !tc.enabled {
@@ -1043,6 +1047,34 @@ mod tests {
     use crate::geo::P3;
     use crate::ids::ToolpathId;
     use crate::toolpath::Toolpath;
+
+    /// L7 (operator ruling, 2026-09-16): a trace with no `provenance`
+    /// block is stale, not fresh.
+    ///
+    /// The simulator stamps the block on every trace it builds
+    /// (`compute/simulate.rs`), so an unstamped trace cannot say what
+    /// it simulated. `SimEvidenceMeta::resolve` must therefore drop it,
+    /// and the gates read `SimulationRequired` rather than being
+    /// honoured against a configuration nobody checked.
+    ///
+    /// The arm returned `true` until L7. `SimulationCutTrace::from_samples`
+    /// is the constructor that leaves `provenance` at `None`.
+    #[test]
+    fn a_trace_without_provenance_is_stale() {
+        let project = crate::session::ProjectSession::new_empty();
+        let trace = crate::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new());
+        assert!(trace.provenance.is_none(), "the fixture must be unstamped");
+        assert!(
+            !sim_trace_is_fresh(&project, &trace),
+            "an unstamped trace carries no evidence, so it is stale"
+        );
+        let evidence = SimEvidenceMeta::resolve(&project, Some(&trace));
+        assert!(evidence.is_stale());
+        assert!(
+            evidence.effective_trace().is_none(),
+            "a stale trace must not reach the gate evaluators"
+        );
+    }
 
     /// A toolpath that runs `operation`, with every other field neutral.
     fn toolpath_running(
