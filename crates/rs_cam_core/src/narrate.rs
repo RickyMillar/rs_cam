@@ -1095,23 +1095,7 @@ fn append_zero_removal(
     finding: Option<crate::compute::config::ZeroRemovalFinding>,
 ) {
     let Some(f) = finding else { return };
-    output.push_str(&format!(
-        "Zero removal: this rest pass costs {cutting:.0} mm of cutting and \
-         removes NOTHING — over {samples} sampled positions its deepest \
-         reach below the prior operation's stock is {deepest:+.4} mm, \
-         against a {floor:.4} mm floor derived from the reference's own \
-         sampling (positive would be into material). Check the reference: \
-         the prior \
-         op may have left nothing here, or this pass's stock-to-leave may \
-         not be below what it left. Keeping the pass is a legitimate choice. \
-         [Material standing above the CUTTER's own surface, mm; generation \
-         stage; sampled along the swept path at the stock grid cell. \
-         Report-only — no gate consumes this.]\n",
-        cutting = f.cutting_distance_mm,
-        samples = f.sampled_positions,
-        deepest = f.deepest_engagement_mm,
-        floor = f.floor_mm,
-    ));
+    output.push_str(&format!("Zero removal: {}\n", f.message()));
 }
 
 /// Checkpoint C: one line when a 2D offset failed rather than collapsed.
@@ -1156,20 +1140,7 @@ fn append_boundary_clip_dropped(
     finding: Option<crate::compute::config::BoundaryClipDroppedFinding>,
 ) {
     let Some(f) = finding else { return };
-    output.push_str(&format!(
-        "Boundary containment DROPPED: `{containment:?}` was requested and \
-         its offset collapsed to nothing across all {regions} source \
-         region(s) at a {dia:.3} mm tool, so this toolpath was emitted with \
-         NO boundary clip — not with a smaller one. The usual cause is \
-         benign (the tool is wider than the region it was asked to stay \
-         inside, so nothing there is machinable anyway) and the path is left \
-         unclipped rather than silently deleted. But nothing is containing \
-         this path: check it against the boundary you meant before running \
-         it. [Generation stage; report-only — no gate consumes this.]\n",
-        containment = f.containment,
-        regions = f.source_region_count,
-        dia = f.tool_diameter_mm,
-    ));
+    output.push_str(&format!("Boundary containment DROPPED: {}\n", f.message()));
 }
 
 /// F4: one line when a rest-claims dial the operator set steers nothing.
@@ -1188,18 +1159,7 @@ fn append_inert_claims_dial(
     finding: Option<crate::compute::config::InertClaimsDialFinding>,
 ) {
     let Some(f) = finding else { return };
-    output.push_str(&format!(
-        "Inert claims dial: {dials} — but {why}. The emitted toolpath is \
-         exactly what it would be at the default, so nothing else will ever \
-         mention this. To make the number live, set `territory_clip = true` \
-         (which additionally needs `pencil_claims = true` and a machined-stock \
-         reference in scope); to stop paying attention to it, put it back at \
-         its default. [Read from this operation's config at generation; \
-         report-only — no gate consumes this, and recording it changes no \
-         emitted motion.]\n",
-        dials = f.dials(),
-        why = f.why(),
-    ));
+    output.push_str(&format!("Inert claims dial: {}\n", f.message()));
 }
 
 /// C8: one line, always, about material a ramp descent knowingly left.
@@ -1269,28 +1229,7 @@ fn append_clipped_band(output: &mut String, context: &ToolpathNarrationContext<'
     let plans_bands = matches!(context.operation_kind, Some(OperationType::UnifiedFinish));
     match context.clipped_band {
         Some(f) => {
-            output.push_str(&format!(
-                "Partly machined band: {area:.1} mm² across {count} planned \
-                 region(s) — the {band} band cut only part of its depth. The \
-                 resolved {clip} = {clip_z:.3} mm shortened its ladder from \
-                 {req_lo:.3}..{req_hi:.3} mm to {del_lo:.3}..{del_hi:.3} mm \
-                 ({planned} levels planned, {resolved} laddered), leaving up \
-                 to {lost:.3} mm of the feature unfinished. [{provenance}. \
-                 Report-only — no gate consumes this.]\n",
-                area = f.area_mm2,
-                count = f.region_count,
-                band = f.band_label,
-                clip = f.clip_label,
-                clip_z = f.clip_z_mm,
-                req_lo = f.requested_bottom_z_mm,
-                req_hi = f.requested_top_z_mm,
-                del_lo = f.delivered_bottom_z_mm,
-                del_hi = f.delivered_top_z_mm,
-                planned = f.planned_levels,
-                resolved = f.resolved_levels,
-                lost = f.max_lost_height_mm,
-                provenance = f.provenance.describe(),
-            ));
+            output.push_str(&format!("Partly machined band: {}\n", f.message()));
         }
         None if plans_bands => {
             output.push_str(
@@ -1314,27 +1253,10 @@ fn append_tip_float(
     output: &mut String,
     measured: Option<crate::compute::config::TipFloatFinding>,
 ) {
-    use crate::compute::config::{
-        TIP_FLOAT_DOMAIN, TIP_FLOAT_RESOLUTION, TIP_FLOAT_STAGE, TIP_FLOAT_THRESHOLD_MM,
-    };
+    use crate::compute::config::{TIP_FLOAT_DOMAIN, TIP_FLOAT_STAGE};
     match measured {
         Some(f) if f.floating_points > 0 => {
-            let pct = 100.0 * f.floating_fraction().unwrap_or(0.0);
-            output.push_str(&format!(
-                "Tip float: {floating} of {total} centreline points ({pct:.0}%) \
-                 sit over material the tool CANNOT reach — it wedges on the \
-                 valley walls and rides above the floor. Worst residual \
-                 {max:.3} mm left uncut beneath the emitted line (float > \
-                 {threshold} mm counts). A smaller tip, or handing these \
-                 valleys to a finer tool, is the only fix — the pass as \
-                 emitted cannot remove it. {TIP_FLOAT_DOMAIN}; \
-                 {TIP_FLOAT_STAGE}; {TIP_FLOAT_RESOLUTION}. Report-only — no \
-                 gate consumes this.\n",
-                floating = f.floating_points,
-                total = f.centreline_points,
-                max = f.max_float_mm,
-                threshold = TIP_FLOAT_THRESHOLD_MM,
-            ));
+            output.push_str(&format!("Tip float: {}\n", f.message()));
         }
         Some(f) if f.centreline_points > 0 => {
             output.push_str(&format!(

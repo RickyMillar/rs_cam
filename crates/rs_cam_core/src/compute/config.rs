@@ -757,6 +757,36 @@ pub struct BoundaryClipDroppedFinding {
     pub source_region_count: usize,
 }
 
+impl BoundaryClipDroppedFinding {
+    /// The operator-facing sentence, without a leading label and without a
+    /// trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "`{containment:?}` containment was requested and its offset \
+             collapsed to nothing across all {regions} source region(s) at a \
+             {dia:.3} mm tool, so this toolpath was emitted with NO boundary \
+             clip — not with a smaller one. The usual cause is benign: the \
+             tool is wider than the region it was asked to stay inside, \
+             nothing there is machinable, and leaving the path unclipped is \
+             better than silently deleting it. But nothing is containing this \
+             path. Check it against the boundary you meant before running it, \
+             or use a smaller tool. [Generation stage; report-only — no gate \
+             consumes this.]",
+            containment = self.containment,
+            regions = self.source_region_count,
+            dia = self.tool_diameter_mm,
+        )
+    }
+}
+
 /// A/M7 gate 1: how many retract round trips a toolpath took, and whether
 /// each one happened INSIDE a planner routing node or BETWEEN two of them.
 ///
@@ -854,6 +884,41 @@ pub struct ZeroRemovalFinding {
     /// is a different statement from 0 µm against 21 µm, and the second is
     /// the only one that means "nothing at all".
     pub floor_mm: f64,
+}
+
+impl ZeroRemovalFinding {
+    /// The operator-facing sentence, without a leading label and without a
+    /// trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "this rest pass removes no material: over {samples} sampled \
+             cutting positions the tool never gets under the stock the prior \
+             operation left (deepest reach {deepest:+.4} mm against a \
+             {floor:.4} mm floor, which is what the reference's own sampling \
+             can manufacture; positive would be INTO material). It still \
+             costs {cutting:.0} mm of cutting travel plus its retracts. Most \
+             often the reference is not what was intended — check that the \
+             prior operation actually left something here, and that this \
+             pass's stock-to-leave is BELOW what the prior pass left. Keeping \
+             the pass is a legitimate choice; running it unknowingly is not. \
+             [Material standing above the CUTTER's own surface, mm; measured \
+             at generation against the prior stock snapshot; sampled along \
+             the swept path at the stock grid cell. Report-only — no gate \
+             consumes this.]",
+            samples = self.sampled_positions,
+            deepest = self.deepest_engagement_mm,
+            floor = self.floor_mm,
+            cutting = self.cutting_distance_mm,
+        )
+    }
 }
 
 /// Which rest reference a claims pipeline resolved to, and under what
@@ -988,6 +1053,31 @@ impl InertClaimsDialFinding {
              mask-AND that `territory_clip` gates — the only consumer of these \
              numbers — never ran either. This pass covered its full territory"
         }
+    }
+
+    /// The operator-facing sentence, without a leading label and without a
+    /// trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "{dials} — but {why}. This operation therefore cut its FULL \
+             territory, not rest islands, and its emitted toolpath is \
+             byte-identical to what the default value would have produced. \
+             Set `territory_clip = true` (which also needs \
+             `pencil_claims = true` and a machined-stock reference in scope) \
+             to make the number live, or return it to its default. [Read from \
+             this operation's config at generation; report-only — no gate \
+             consumes this, and recording it changes no emitted motion.]",
+            dials = self.dials(),
+            why = self.why(),
+        )
     }
 }
 
@@ -1197,6 +1287,42 @@ impl ClippedBandFinding {
             self.provenance,
         )
     }
+
+    /// The operator-facing sentence, without a leading label and without a
+    /// trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "{area:.1} mm² of the {band} band across {count} planned \
+             region(s) cut only PART of its depth: the resolved {clip} = \
+             {clip_z:.3} mm shortened the ladder from \
+             {req_lo:.3}..{req_hi:.3} mm to {del_lo:.3}..{del_hi:.3} mm \
+             ({planned} levels planned, {resolved} laddered), leaving up to \
+             {lost:.3} mm of the feature unfinished. If that was not \
+             deliberate, pin {clip} to the real depth of the feature. \
+             [{provenance}. Report-only — no gate consumes this.]",
+            area = self.area_mm2,
+            band = self.band_label,
+            count = self.region_count,
+            clip = self.clip_label,
+            clip_z = self.clip_z_mm,
+            req_lo = self.requested_bottom_z_mm,
+            req_hi = self.requested_top_z_mm,
+            del_lo = self.delivered_bottom_z_mm,
+            del_hi = self.delivered_top_z_mm,
+            planned = self.planned_levels,
+            resolved = self.resolved_levels,
+            lost = self.max_lost_height_mm,
+            provenance = self.provenance.describe(),
+        )
+    }
 }
 
 /// Tip float on a pencil/rest centreline: the cutter is driven along a
@@ -1253,6 +1379,37 @@ impl TipFloatFinding {
     pub fn floating_fraction(&self) -> Option<f64> {
         (self.centreline_points > 0)
             .then(|| self.floating_points as f64 / self.centreline_points as f64)
+    }
+
+    /// The operator-facing sentence for a finding that HAS floating points,
+    /// without a leading label and without a trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    ///
+    /// The three "nothing to report" readings — measured clean, no points at
+    /// all, and not measured — stay with the narration, which prints a line
+    /// for each. The adapter is silent on all three.
+    #[must_use]
+    pub fn message(&self) -> String {
+        let pct = 100.0 * self.floating_fraction().unwrap_or(0.0);
+        format!(
+            "{floating} of {total} centreline points ({pct:.0}%) sit over \
+             material this tool CANNOT reach — it wedges between the valley \
+             walls and rides above the floor. Worst residual {max:.3} mm is \
+             left uncut BENEATH the emitted line (float > \
+             {TIP_FLOAT_THRESHOLD_MM} mm counts). The pass as emitted cannot \
+             remove it: use a smaller tip, or route these valleys to a finer \
+             tool. [{provenance}. Report-only — no gate consumes this.]",
+            floating = self.floating_points,
+            total = self.centreline_points,
+            max = self.max_float_mm,
+            provenance = TIP_FLOAT_PROVENANCE.describe(),
+        )
     }
 }
 

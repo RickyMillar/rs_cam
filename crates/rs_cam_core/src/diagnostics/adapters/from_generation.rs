@@ -136,18 +136,7 @@ fn inert_claims_dial(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diag
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
-        message: format!(
-            "Inert rest-claims dial: {dials} — but {why}. This operation \
-             therefore cut its FULL territory, not rest islands, and its \
-             emitted toolpath is byte-identical to what the default value \
-             would have produced. Set `territory_clip = true` (which also \
-             needs `pencil_claims = true` and a machined-stock reference in \
-             scope) to make the number live, or return it to its default. \
-             [Read from config at generation; report-only — no gate consumes \
-             this, and recording it changes no emitted motion.]",
-            dials = f.dials(),
-            why = f.why(),
-        ),
+        message: f.message(),
         evidence: None,
         fix: None,
         supersedes: vec![],
@@ -179,21 +168,7 @@ fn boundary_clip_dropped(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
-        message: format!(
-            "Boundary containment `{containment:?}` was requested and its \
-             offset collapsed to nothing across all {regions} source \
-             region(s) at a {dia:.3} mm tool, so this toolpath was emitted \
-             with NO boundary clip — not with a tighter one. The usual cause \
-             is benign: the tool is wider than the region it was asked to \
-             stay inside, nothing there is machinable, and leaving the path \
-             unclipped is better than silently deleting it. But nothing is \
-             containing this path. Check it against the boundary you meant, \
-             or use a smaller tool. [Generation stage; report-only — no gate \
-             consumes this.]",
-            containment = f.containment,
-            regions = f.source_region_count,
-            dia = f.tool_diameter_mm,
-        ),
+        message: f.message(),
         evidence: None,
         fix: None,
         supersedes: vec![],
@@ -287,26 +262,7 @@ fn zero_removal(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
-        message: format!(
-            "This rest pass removes no material: over {samples} sampled \
-             cutting positions the tool never gets under the stock the prior \
-             operation left (deepest reach {deepest:+.4} mm against a \
-             {floor:.4} mm floor, which is what the reference's own \
-             sampling can manufacture; positive would be INTO material). It \
-             still costs {cutting:.0} mm of cutting \
-             travel plus its retracts. Most often the reference is not what \
-             was intended — check that the prior operation actually left \
-             something here, and that this pass's stock-to-leave is BELOW \
-             what the prior pass left. Keeping the pass is a legitimate \
-             choice; running it unknowingly is not. [Material standing \
-             above the CUTTER's own surface, mm; measured at generation \
-             against the prior stock snapshot; sampled along the swept path \
-             at the stock grid cell. Report-only — no gate.]",
-            samples = f.sampled_positions,
-            deepest = f.deepest_engagement_mm,
-            floor = f.floor_mm,
-            cutting = f.cutting_distance_mm,
-        ),
+        message: f.message(),
         evidence: None,
         fix: None,
         supersedes: vec![],
@@ -684,28 +640,7 @@ fn clipped_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
-        message: format!(
-            "{area:.1} mm² of the {band} band across {count} planned \
-             region(s) cut only PART of its depth: the resolved {clip} = \
-             {clip_z:.3} mm shortened the ladder from {req_lo:.3}..{req_hi:.3} mm \
-             to {del_lo:.3}..{del_hi:.3} mm ({planned} levels planned, \
-             {resolved} laddered), leaving up to {lost:.3} mm of the feature \
-             unfinished. If that was not deliberate, pin {clip} to the real \
-             depth of the feature. [{provenance}. Report-only — no gate.]",
-            area = f.area_mm2,
-            band = f.band_label,
-            count = f.region_count,
-            clip = f.clip_label,
-            clip_z = f.clip_z_mm,
-            req_lo = f.requested_bottom_z_mm,
-            req_hi = f.requested_top_z_mm,
-            del_lo = f.delivered_bottom_z_mm,
-            del_hi = f.delivered_top_z_mm,
-            planned = f.planned_levels,
-            resolved = f.resolved_levels,
-            lost = f.max_lost_height_mm,
-            provenance = f.provenance.describe(),
-        ),
+        message: f.message(),
         evidence: None,
         fix: None,
         supersedes: vec![],
@@ -765,7 +700,6 @@ fn unmachined_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
 /// Wave D1: a valley centreline driven over material the cutter cannot
 /// physically reach (Checkpoint A evidence §5 / §9.4).
 fn tip_float(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
-    use crate::compute::config::{TIP_FLOAT_PROVENANCE, TIP_FLOAT_THRESHOLD_MM};
     // `None` = this operation emits no centrelines. `Some` with zero
     // floating points is a measured-clean pass — also not a diagnostic.
     let Some(f) = stats.tip_float else {
@@ -774,7 +708,6 @@ fn tip_float(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> 
     if f.floating_points == 0 {
         return Vec::new();
     }
-    let pct = 100.0 * f.floating_fraction().unwrap_or(0.0);
     vec![Diagnostic {
         id: DiagnosticId::from(ids::GEOM_TIP_FLOAT),
         scope: Scope::Toolpath { id: toolpath_id },
@@ -783,19 +716,7 @@ fn tip_float(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> 
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
-        message: format!(
-            "{floating} of {total} centreline points ({pct:.0}%) run over \
-             material this tool cannot reach — it wedges between the valley \
-             walls and floats above the floor. Worst residual {max:.3} mm is \
-             left uncut BENEATH the emitted line (float > \
-             {TIP_FLOAT_THRESHOLD_MM} mm counts). The pass as emitted cannot \
-             remove it: use a smaller tip, or route these valleys to a finer \
-             tool. [{provenance}. Report-only — no gate.]",
-            floating = f.floating_points,
-            total = f.centreline_points,
-            max = f.max_float_mm,
-            provenance = TIP_FLOAT_PROVENANCE.describe(),
-        ),
+        message: f.message(),
         evidence: None,
         fix: None,
         supersedes: vec![],
