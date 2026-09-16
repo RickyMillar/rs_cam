@@ -55,9 +55,7 @@ use rs_cam_core::{
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CliToolType {
-    #[serde(alias = "endmill")]
     Flat,
-    #[serde(alias = "ballnose")]
     Ball,
     #[serde(rename = "bullnose")]
     BullNose,
