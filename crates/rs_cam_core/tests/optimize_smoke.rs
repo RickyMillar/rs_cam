@@ -51,7 +51,7 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
         return None;
     }
     let polygons =
-        rs_cam_core::svg_input::load_svg(&svg_path, 0.1).expect("demo_pocket.svg should parse");
+        rs_cam_core::io::svg_input::load_svg(&svg_path, 0.1).expect("demo_pocket.svg should parse");
     if polygons.is_empty() {
         eprintln!("Skipping: demo_pocket.svg parsed empty");
         return None;

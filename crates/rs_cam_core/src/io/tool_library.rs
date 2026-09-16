@@ -45,7 +45,7 @@ pub enum ToolLibraryError {
     Serialize(String, toml::ser::Error),
 }
 
-impl crate::named_toml_library::LibraryError for ToolLibraryError {
+impl crate::io::named_toml_library::LibraryError for ToolLibraryError {
     fn invalid_name(name: &str) -> Self {
         Self::InvalidName(name.to_owned())
     }
@@ -95,12 +95,12 @@ pub fn library_dir() -> Option<PathBuf> {
 }
 
 fn path_in(dir: &Path, name: &str) -> Result<PathBuf, ToolLibraryError> {
-    crate::named_toml_library::path_in(dir, name)
+    crate::io::named_toml_library::path_in(dir, name)
 }
 
 /// List catalog names (file stems) in `dir`. Missing dir → empty.
 pub fn list_in(dir: &Path) -> Vec<String> {
-    crate::named_toml_library::list_in(dir)
+    crate::io::named_toml_library::list_in(dir)
 }
 
 /// List catalog names in the resolved library dir.
@@ -283,7 +283,7 @@ pub fn delete_library(name: &str) -> Result<(), ToolLibraryError> {
 
 /// Rename catalog `old` to `new` in `dir`. Errors if `new` already exists.
 pub fn rename_in(dir: &Path, old: &str, new: &str) -> Result<(), ToolLibraryError> {
-    crate::named_toml_library::rename_in(dir, old, new)
+    crate::io::named_toml_library::rename_in(dir, old, new)
 }
 
 /// Rename a catalog in the resolved dir.

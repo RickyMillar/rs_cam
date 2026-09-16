@@ -13,12 +13,12 @@ use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
     gcode::{emit_gcode, post},
     geo::{BoundingBox3, P3},
+    io::svg_input::load_svg_data,
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
     surface::dropcutter::batch_drop_cutter,
-    svg_input::load_svg_data,
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{MoveType, Toolpath, raster_toolpath_from_grid},
 };
@@ -314,7 +314,7 @@ fn svg_fixture_file_import_pocket_gcode() {
     }
 
     let polygons =
-        rs_cam_core::svg_input::load_svg(&svg_path, 0.1).expect("demo_pocket.svg should parse");
+        rs_cam_core::io::svg_input::load_svg(&svg_path, 0.1).expect("demo_pocket.svg should parse");
     assert!(
         !polygons.is_empty(),
         "demo_pocket.svg should produce polygons"

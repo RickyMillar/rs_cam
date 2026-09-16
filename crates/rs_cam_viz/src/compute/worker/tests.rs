@@ -135,17 +135,17 @@ fn drill_spec(id: usize) -> RequestSpec {
     // G-DRILLCENTROID: the holes are drill targets, not the two rectangles'
     // centroids (which the generator no longer reads).
     spec.drill_targets = vec![
-        rs_cam_core::dxf_input::DrillTarget {
+        rs_cam_core::io::dxf_input::DrillTarget {
             x: -8.0,
             y: -8.0,
             layer: "holes".to_owned(),
-            kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
+            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
         },
-        rs_cam_core::dxf_input::DrillTarget {
+        rs_cam_core::io::dxf_input::DrillTarget {
             x: 8.0,
             y: 8.0,
             layer: "holes".to_owned(),
-            kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
+            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
         },
     ];
     spec.stock = board(20.0, 25.0);

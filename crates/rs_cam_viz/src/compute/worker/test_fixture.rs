@@ -121,7 +121,7 @@ pub(super) struct RequestSpec {
     pub extra_tools: Vec<ToolConfig>,
     pub polygons: Option<Vec<Polygon2>>,
     /// The model's drill targets — the `Drill` family's hole source.
-    pub drill_targets: Vec<rs_cam_core::dxf_input::DrillTarget>,
+    pub drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget>,
     pub mesh: Option<TriangleMesh>,
     pub stock: StockConfig,
     pub dressups: DressupConfig,

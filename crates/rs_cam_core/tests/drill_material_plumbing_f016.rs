@@ -72,11 +72,11 @@ fn build_drill_session(material: Material) -> ProjectSession {
         polygons: Some(Arc::new(vec![unit_square_at(50.0, 50.0)])),
         // G-DRILLCENTROID: the hole source is a drill target, not the
         // square's centroid.
-        drill_targets: std::sync::Arc::new(vec![rs_cam_core::dxf_input::DrillTarget {
+        drill_targets: std::sync::Arc::new(vec![rs_cam_core::io::dxf_input::DrillTarget {
             x: 50.5,
             y: 50.5,
             layer: "holes".to_owned(),
-            kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
+            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
         }]),
         layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://f016_drill_holes.svg"),

@@ -459,7 +459,7 @@ impl RsCamApp {
                     && model.id == *mid
                 {
                     use rs_cam_core::compute::execute::drill_pick_matches;
-                    use rs_cam_core::dxf_input::DrillTargetKind;
+                    use rs_cam_core::io::dxf_input::DrillTargetKind;
                     for t in model.drill_targets.iter() {
                         let (tx, ty) = if let Some(setup) = setup_ref {
                             let tp = setup

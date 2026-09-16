@@ -82,8 +82,8 @@ use rs_cam_core::compute::operation_configs::{
     AlignmentPinDrillConfig, DrillConfig, DrillCycleType,
 };
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::geo::P2;
+use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     AdoptModelGeometryArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,

@@ -159,7 +159,7 @@ pub struct ResolvedGenInputs {
     /// circle/arc centres), the `Drill` family's hole source when nothing
     /// is picked. Shared with the model, never transformed here — like
     /// `selected_holes`, the generator maps them into the emission frame.
-    drill_targets: Arc<Vec<crate::dxf_input::DrillTarget>>,
+    drill_targets: Arc<Vec<crate::io::dxf_input::DrillTarget>>,
     keep_out_footprints: Vec<crate::polygon::Polygon2>,
     boundary_config: crate::compute::config::BoundaryConfig,
     emission_stock_bbox: BoundingBox3,

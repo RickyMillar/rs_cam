@@ -10,9 +10,9 @@ use crate::compute::config::{DressupConfig, DressupEntryStyle, ResolvedHeights};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::{ToolConfig, ToolType};
 use crate::debug_trace::ToolpathDebugContext;
-use crate::dxf_input::DrillTarget;
 use crate::geo::BoundingBox3;
 use crate::geometry::region_set::RegionSet;
+use crate::io::dxf_input::DrillTarget;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::semantic_trace::{
@@ -4673,7 +4673,7 @@ mod tests {
     #[test]
     fn drill_holes_come_from_targets_or_picks_never_centroids() {
         use crate::compute::operation_configs::DrillConfig;
-        use crate::dxf_input::DrillTargetKind;
+        use crate::io::dxf_input::DrillTargetKind;
         // Two targets, as a DXF with one POINT and one CIRCLE imports to.
         let targets = [
             DrillTarget {

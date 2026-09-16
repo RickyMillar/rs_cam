@@ -10,13 +10,13 @@ pub enum VizError {
     StlImport(#[from] rs_cam_core::mesh::MeshError),
 
     #[error("SVG import failed: {0}")]
-    SvgImport(#[from] rs_cam_core::svg_input::SvgError),
+    SvgImport(#[from] rs_cam_core::io::svg_input::SvgError),
 
     #[error("DXF import failed: {0}")]
-    DxfImport(#[from] rs_cam_core::dxf_input::DxfError),
+    DxfImport(#[from] rs_cam_core::io::dxf_input::DxfError),
 
     #[error("STEP import failed: {0}")]
-    StepImport(#[from] rs_cam_core::step_input::StepImportError),
+    StepImport(#[from] rs_cam_core::io::step_input::StepImportError),
 
     #[error("Failed to save project: {0}")]
     ProjectSave(String),

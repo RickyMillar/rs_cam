@@ -86,7 +86,7 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig, modified: bool) -> ToolEdi
             .on_hover_text("Add to the catalog, or overwrite the matching entry if one exists.")
             .clicked()
         {
-            match rs_cam_core::tool_library::add_or_replace_tool(&trimmed, tool.clone()) {
+            match rs_cam_core::io::tool_library::add_or_replace_tool(&trimmed, tool.clone()) {
                 Ok((path, replaced)) => {
                     let verb = if replaced { "Updated" } else { "Saved" };
                     ui.data_mut(|d| {

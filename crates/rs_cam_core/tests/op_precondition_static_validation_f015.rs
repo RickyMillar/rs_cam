@@ -68,11 +68,11 @@ fn polygon_model(id: usize) -> LoadedModel {
 /// polygons (G-DRILLCENTROID).
 fn target_model(id: usize) -> LoadedModel {
     let mut model = polygon_model(id);
-    model.drill_targets = Arc::new(vec![rs_cam_core::dxf_input::DrillTarget {
+    model.drill_targets = Arc::new(vec![rs_cam_core::io::dxf_input::DrillTarget {
         x: 0.0,
         y: 0.0,
         layer: "holes".to_owned(),
-        kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 3.0 },
+        kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 3.0 },
     }]);
     model
 }

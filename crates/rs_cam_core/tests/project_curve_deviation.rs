@@ -29,11 +29,11 @@ use std::path::PathBuf;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::execute::apply_dressups;
-use rs_cam_core::dxf_input::load_dxf;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::boundary::{
     ToolContainment, clip_toolpath_to_boundary, effective_boundary,
 };
+use rs_cam_core::io::dxf_input::load_dxf;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::project_curve::{ProjectCurveParams, ProjectDirection, project_curve_toolpath};
@@ -243,7 +243,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
     // Load polygons fresh to compare. Polygons live in setup-local frame
     // after the compute step transformed them, but since face_up=Bottom
     // only flips Z (not XY), the 2D footprint matches the DXF.
-    let polygons = rs_cam_core::dxf_input::load_dxf(&fixture_path("rivers_aligned.dxf"), 5.0)
+    let polygons = rs_cam_core::io::dxf_input::load_dxf(&fixture_path("rivers_aligned.dxf"), 5.0)
         .expect("DXF loads");
 
     let final_tp = &result.toolpath();

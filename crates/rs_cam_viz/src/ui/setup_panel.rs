@@ -224,15 +224,16 @@ fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
                     ui.close();
                 }
             }
-            let libraries = rs_cam_core::tool_library::list_libraries();
+            let libraries = rs_cam_core::io::tool_library::list_libraries();
             if libraries.is_empty() {
                 return;
             }
             ui.separator();
             ui.menu_button("From library", |ui| {
                 for lib in &libraries {
-                    ui.menu_button(lib, |ui| {
-                        match rs_cam_core::tool_library::load_library(lib) {
+                    ui.menu_button(
+                        lib,
+                        |ui| match rs_cam_core::io::tool_library::load_library(lib) {
                             Ok(catalog) if catalog.tools.is_empty() => {
                                 ui.label("(empty)");
                             }
@@ -250,8 +251,8 @@ fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
                             Err(e) => {
                                 ui.label(format!("load error: {e}"));
                             }
-                        }
-                    });
+                        },
+                    );
                 }
             });
         });

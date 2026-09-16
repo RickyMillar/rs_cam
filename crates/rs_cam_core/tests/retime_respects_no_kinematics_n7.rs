@@ -158,17 +158,17 @@ fn pocket_model() -> LoadedModel {
 /// two operations do not machine the same ground.
 fn drill_model() -> LoadedModel {
     let targets = vec![
-        rs_cam_core::dxf_input::DrillTarget {
+        rs_cam_core::io::dxf_input::DrillTarget {
             x: 85.0,
             y: 20.0,
             layer: "holes".to_owned(),
-            kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
+            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
         },
-        rs_cam_core::dxf_input::DrillTarget {
+        rs_cam_core::io::dxf_input::DrillTarget {
             x: 85.0,
             y: 70.0,
             layer: "holes".to_owned(),
-            kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
+            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
         },
     ];
     LoadedModel {

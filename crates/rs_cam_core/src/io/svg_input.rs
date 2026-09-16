@@ -236,25 +236,25 @@ pub fn circle_like_ring(ring: &[P2]) -> Option<(P2, f64)> {
 /// AFTER the unit scale is applied, so the diameters and the tolerance
 /// floor are in millimetres. Not applied to DXF, where a `CIRCLE` entity
 /// already yields its own target and this would double-count it.
-pub fn circle_like_drill_targets(polygons: &[Polygon2]) -> Vec<crate::dxf_input::DrillTarget> {
+pub fn circle_like_drill_targets(polygons: &[Polygon2]) -> Vec<crate::io::dxf_input::DrillTarget> {
     polygons
         .iter()
         .flat_map(|poly| {
             std::iter::once(poly.exterior.as_slice()).chain(poly.holes.iter().map(Vec::as_slice))
         })
         .filter_map(circle_like_ring)
-        .map(|(c, diameter)| crate::dxf_input::DrillTarget {
+        .map(|(c, diameter)| crate::io::dxf_input::DrillTarget {
             x: c.x,
             y: c.y,
             layer: SVG_CIRCLE_LAYER.to_owned(),
-            kind: crate::dxf_input::DrillTargetKind::CircleCenter { diameter },
+            kind: crate::io::dxf_input::DrillTargetKind::CircleCenter { diameter },
         })
         .collect()
 }
 
 /// The layer list a model built from `targets` carries: [`SVG_CIRCLE_LAYER`]
 /// when there is at least one target, else empty.
-pub fn circle_like_layers(targets: &[crate::dxf_input::DrillTarget]) -> Vec<String> {
+pub fn circle_like_layers(targets: &[crate::io::dxf_input::DrillTarget]) -> Vec<String> {
     if targets.is_empty() {
         Vec::new()
     } else {

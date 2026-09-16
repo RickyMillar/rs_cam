@@ -3,7 +3,7 @@
 #![cfg(feature = "step")]
 
 use rs_cam_core::geometry::enriched_mesh::SurfaceType;
-use rs_cam_core::step_input::load_step;
+use rs_cam_core::io::step_input::load_step;
 use std::path::Path;
 
 fn fixtures_dir() -> std::path::PathBuf {

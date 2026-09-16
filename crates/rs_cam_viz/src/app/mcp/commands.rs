@@ -684,7 +684,7 @@ impl RsCamApp {
             CoreRequest::SetMachineKinematics(p) => self.core_set_machine_kinematics(&p, before),
             CoreRequest::ImportMachineSettings(p) => self.core_import_machine_settings(&p, before),
             CoreRequest::LoadMachineFromLibrary(p) => {
-                let profile = match rs_cam_core::machine_library::load(&p.name) {
+                let profile = match rs_cam_core::io::machine_library::load(&p.name) {
                     Ok(profile) => profile,
                     Err(e) => {
                         return CorePlan::Answered(json_str(serde_json::json!({
@@ -985,7 +985,7 @@ impl RsCamApp {
         p: &rs_cam_mcp::server::AddToolFromLibraryParam,
         mut before: CoreBefore,
     ) -> CorePlan {
-        use rs_cam_core::tool_library;
+        use rs_cam_core::io::tool_library;
         let cat = match tool_library::load_library(&p.catalog) {
             Ok(c) => c,
             Err(e) => return CorePlan::Answered(mutation_error_json(&format!("Error: {e}"), None)),

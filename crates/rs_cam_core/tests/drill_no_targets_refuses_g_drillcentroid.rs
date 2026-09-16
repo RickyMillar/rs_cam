@@ -51,7 +51,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::DressupEntryStyle;
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
-use rs_cam_core::dxf_input::{DrillTarget, DrillTargetKind};
+use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::io::load_model_file;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder};
 

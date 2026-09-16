@@ -81,10 +81,10 @@ use crate::compute::stock_config::{
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::debug_trace::{ToolpathDebugOptions, ToolpathDebugTrace};
-use crate::dxf_input::DrillTarget;
 use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
 use crate::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId};
+use crate::io::dxf_input::DrillTarget;
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
 use crate::semantic_trace::ToolpathSemanticTrace;

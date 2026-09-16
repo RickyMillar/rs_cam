@@ -1,7 +1,7 @@
 //! Reusable machine-profile library — a catalog you import *from*.
 //!
 //! Machines live as standalone TOML files in a per-user library
-//! directory. Like the tool library ([`crate::tool_library`]), this uses
+//! directory. Like the tool library ([`crate::io::tool_library`]), this uses
 //! **snapshot** semantics: importing a machine COPIES it into the
 //! project's inline `[job.machine]`, which is then authoritative. Later
 //! edits to a library file never reach existing projects — re-import to
@@ -42,7 +42,7 @@ pub enum MachineLibraryError {
     Serialize(String, toml::ser::Error),
 }
 
-impl crate::named_toml_library::LibraryError for MachineLibraryError {
+impl crate::io::named_toml_library::LibraryError for MachineLibraryError {
     fn invalid_name(name: &str) -> Self {
         Self::InvalidName(name.to_owned())
     }
@@ -87,13 +87,13 @@ pub fn library_dir() -> Option<PathBuf> {
 /// True when `name` is a safe bare file stem (no separators, no `..`).
 /// Path to the `.toml` for `name` inside `dir`.
 fn path_in(dir: &Path, name: &str) -> Result<PathBuf, MachineLibraryError> {
-    crate::named_toml_library::path_in(dir, name)
+    crate::io::named_toml_library::path_in(dir, name)
 }
 
 /// List the machine names (file stems) available in `dir`. Missing dir
 /// returns an empty list (not an error).
 pub fn list_in(dir: &Path) -> Vec<String> {
-    crate::named_toml_library::list_in(dir)
+    crate::io::named_toml_library::list_in(dir)
 }
 
 /// List the machine names available in the resolved library dir.
@@ -164,7 +164,7 @@ pub fn delete(name: &str) -> Result<(), MachineLibraryError> {
 
 /// Rename machine `old` to `new` in `dir`. Errors if `new` already exists.
 pub fn rename_in(dir: &Path, old: &str, new: &str) -> Result<(), MachineLibraryError> {
-    crate::named_toml_library::rename_in(dir, old, new)
+    crate::io::named_toml_library::rename_in(dir, old, new)
 }
 
 /// Rename a machine in the resolved library dir.

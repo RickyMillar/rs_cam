@@ -271,7 +271,7 @@ impl PanelSideEffects {
 /// view state (selection, filter, edit drafts) lives in egui temp memory.
 #[derive(Debug, Clone)]
 pub struct ToolLibraryModalState {
-    pub catalogs: Vec<(String, rs_cam_core::tool_library::ToolCatalog)>,
+    pub catalogs: Vec<(String, rs_cam_core::io::tool_library::ToolCatalog)>,
 }
 
 /// Persistent state for the Feeds & Speeds modal. Carries the focused

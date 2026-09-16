@@ -949,7 +949,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             let drill_layers: Vec<String> = model_for_panel
                 .map(|m| (*m.layers).clone())
                 .unwrap_or_default();
-            let drill_targets: Vec<rs_cam_core::dxf_input::DrillTarget> = model_for_panel
+            let drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget> = model_for_panel
                 .map(|m| (*m.drill_targets).clone())
                 .unwrap_or_default();
 
@@ -1640,7 +1640,7 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
     let status_id = egui::Id::new("machine_lib_status");
     let name_id = egui::Id::new("machine_lib_save_name");
 
-    let machines = rs_cam_core::machine_library::list();
+    let machines = rs_cam_core::io::machine_library::list();
 
     ui.horizontal(|ui| {
         ui.label("Library:");
@@ -1649,7 +1649,7 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
             .show_ui(ui, |ui| {
                 for name in &machines {
                     if ui.selectable_label(false, name).clicked() {
-                        match rs_cam_core::machine_library::load(name) {
+                        match rs_cam_core::io::machine_library::load(name) {
                             Ok(profile) => {
                                 // Snapshot copy into the inline machine — no ref.
                                 apply_machine(state, profile);
@@ -1691,7 +1691,7 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
             .add_enabled(!trimmed.is_empty(), egui::Button::new("Save to library"))
             .clicked()
         {
-            match rs_cam_core::machine_library::save(&trimmed, state.session.machine()) {
+            match rs_cam_core::io::machine_library::save(&trimmed, state.session.machine()) {
                 Ok(path) => {
                     state.gui.mark_edited();
                     ui.data_mut(|d| {
@@ -4055,7 +4055,7 @@ fn draw_toolpath_panel(
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     tab_override: Option<ToolpathTab>,
     drill_layers: &[String],
-    drill_targets: &[rs_cam_core::dxf_input::DrillTarget],
+    drill_targets: &[rs_cam_core::io::dxf_input::DrillTarget],
     // P5 — `show_reach_map` is the viewport's reach-map checkbox, threaded in
     // as a `&mut bool` rather than reached through `AppState`, because this
     // panel takes no state reference; the caller copies the flag out and

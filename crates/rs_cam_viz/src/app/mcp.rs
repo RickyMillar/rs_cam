@@ -796,7 +796,7 @@ impl super::RsCamApp {
     /// catalog (name, tool count, the tool types it contains). Cheap —
     /// no per-tool geometry. Independent of the loaded project.
     fn mcp_list_tool_library(&self) -> String {
-        use rs_cam_core::tool_library;
+        use rs_cam_core::io::tool_library;
         let mut catalogs = Vec::new();
         for name in tool_library::list_libraries() {
             let Ok(catalog) = tool_library::load_library(&name) else {
@@ -831,7 +831,7 @@ impl super::RsCamApp {
     /// `add_tool_from_library` consumes. Full geometry comes across on
     /// import (the project keeps a snapshot).
     fn mcp_list_tool_catalog(&self, catalog: &str) -> String {
-        use rs_cam_core::tool_library;
+        use rs_cam_core::io::tool_library;
         let cat = match tool_library::load_library(catalog) {
             Ok(c) => c,
             Err(e) => return json_str(serde_json::json!({ "error": e.to_string() })),
@@ -2026,10 +2026,10 @@ impl super::RsCamApp {
     /// List the per-user machine library with a compact spec summary per
     /// entry (snapshot model — these are import sources, not live links).
     fn mcp_list_machine_library(&self) -> String {
-        let names = rs_cam_core::machine_library::list();
+        let names = rs_cam_core::io::machine_library::list();
         let machines: Vec<serde_json::Value> = names
             .iter()
-            .map(|name| match rs_cam_core::machine_library::load(name) {
+            .map(|name| match rs_cam_core::io::machine_library::load(name) {
                 Ok(p) => {
                     let kinematics = match &p.kinematics {
                         Some(k) => {

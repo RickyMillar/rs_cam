@@ -1,6 +1,6 @@
 use super::super::pills::PillSuggestions;
 use rs_cam_core::compute::execute::stale_drill_picks_refusal;
-use rs_cam_core::dxf_input::{DrillTarget, DrillTargetKind};
+use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 

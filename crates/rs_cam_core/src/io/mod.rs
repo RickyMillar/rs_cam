@@ -4,6 +4,17 @@
 //! [`LoadedModel`] with the correct metadata. They intentionally live in core
 //! so that headless callers (CLI, MCP) can import files without depending on
 //! the GUI crate.
+//!
+//! The folder holds every door that reads a file from disk: the three
+//! importers and the two on-disk TOML libraries.
+
+pub mod dxf_input;
+pub mod machine_library;
+mod named_toml_library;
+#[cfg(feature = "step")]
+pub mod step_input;
+pub mod svg_input;
+pub mod tool_library;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -36,18 +47,18 @@ pub(crate) fn load_geometry(
             Ok(LoadedGeometry::Mesh(mesh))
         }
         ModelKind::Svg => {
-            let mut polygons = crate::svg_input::load_svg(path, 0.1)
+            let mut polygons = crate::io::svg_input::load_svg(path, 0.1)
                 .map_err(|e| format!("SVG load failed: {e}"))?;
             apply_uniform_scale_2d(&mut polygons, scale);
             // G-DRILLCENTROID: circle-like closed rings are the SVG's drill
             // targets (usvg has already flattened every `<circle>`).
             // Classified AFTER the unit scale so the floor is in mm.
-            let drill_targets = crate::svg_input::circle_like_drill_targets(&polygons);
-            let layers = crate::svg_input::circle_like_layers(&drill_targets);
+            let drill_targets = crate::io::svg_input::circle_like_drill_targets(&polygons);
+            let layers = crate::io::svg_input::circle_like_layers(&drill_targets);
             Ok(LoadedGeometry::Polygons(polygons, drill_targets, layers))
         }
         ModelKind::Dxf => {
-            let import = crate::dxf_input::load_dxf_full(path, 5.0)
+            let import = crate::io::dxf_input::load_dxf_full(path, 5.0)
                 .map_err(|e| format!("DXF load failed: {e}"))?;
             let mut polygons = import.polygons;
             let mut drill_targets = import.drill_targets;
@@ -65,7 +76,7 @@ pub(crate) fn load_geometry(
             // the declared units are the ONLY scale a STEP file gets.
             // `apply_uniform_scale` moves the BREP data as well as the
             // mesh, so face selection survives.
-            let mut enriched = crate::step_input::load_step(path, 0.1)
+            let mut enriched = crate::io::step_input::load_step(path, 0.1)
                 .map_err(|e| format!("STEP load failed: {e}"))?;
             if (scale - 1.0).abs() > 1e-9 {
                 enriched.apply_uniform_scale(scale);
@@ -223,7 +234,7 @@ pub(crate) fn apply_uniform_scale_2d(polygons: &mut [crate::polygon::Polygon2], 
 }
 
 pub(crate) fn apply_uniform_scale_targets(
-    targets: &mut [crate::dxf_input::DrillTarget],
+    targets: &mut [crate::io::dxf_input::DrillTarget],
     scale: f64,
 ) {
     if (scale - 1.0).abs() < 1e-9 {
@@ -232,7 +243,7 @@ pub(crate) fn apply_uniform_scale_targets(
     for t in targets {
         t.x *= scale;
         t.y *= scale;
-        if let crate::dxf_input::DrillTargetKind::CircleCenter { diameter } = &mut t.kind {
+        if let crate::io::dxf_input::DrillTargetKind::CircleCenter { diameter } = &mut t.kind {
             *diameter *= scale;
         }
     }

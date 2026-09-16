@@ -1,6 +1,6 @@
 //! The directory mechanics the two on-disk TOML libraries share.
 //!
-//! [`crate::tool_library`] and [`crate::machine_library`] both store named
+//! [`crate::io::tool_library`] and [`crate::io::machine_library`] both store named
 //! records as `<name>.toml` in one directory, and both grew the same three
 //! pieces: the name validator, the `dir.join("<name>.toml")` builder, and the
 //! `read_dir` walk that lists the file stems. Their `rename_in` was the same

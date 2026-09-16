@@ -45,7 +45,7 @@ fn draw_content(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
     let view_id = egui::Id::new("machinelib_view");
     let mut view: MachineLibraryView = ui.data(|d| d.get_temp(view_id).unwrap_or_default());
 
-    let machines = rs_cam_core::machine_library::list();
+    let machines = rs_cam_core::io::machine_library::list();
     // Drop a selection that was deleted/renamed out from under us.
     if let Some(sel) = view.selected.clone()
         && !machines.contains(&sel)
@@ -150,7 +150,7 @@ fn draw_detail_panel(ui: &mut egui::Ui, view: &mut MachineLibraryView, events: &
         return;
     };
 
-    let profile = match rs_cam_core::machine_library::load(&name) {
+    let profile = match rs_cam_core::io::machine_library::load(&name) {
         Ok(p) => p,
         Err(e) => {
             ui.colored_label(

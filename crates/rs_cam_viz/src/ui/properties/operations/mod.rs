@@ -2831,11 +2831,11 @@ mod tests {
     /// entity imports to.
     fn session_target_model(id: usize) -> rs_cam_core::session::LoadedModel {
         let mut model = session_polygon_model(id);
-        model.drill_targets = Arc::new(vec![rs_cam_core::dxf_input::DrillTarget {
+        model.drill_targets = Arc::new(vec![rs_cam_core::io::dxf_input::DrillTarget {
             x: 0.0,
             y: 0.0,
             layer: "holes".to_owned(),
-            kind: rs_cam_core::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
+            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
         }]);
         model
     }

@@ -101,10 +101,10 @@ impl<B: ComputeBackend> AppController<B> {
     /// Load a fresh snapshot of every catalog into the modal state. Used
     /// both to open the modal and to refresh it after a mutation.
     fn load_tool_library_snapshot(&mut self) {
-        let catalogs = rs_cam_core::tool_library::list_libraries()
+        let catalogs = rs_cam_core::io::tool_library::list_libraries()
             .into_iter()
             .filter_map(|name| {
-                rs_cam_core::tool_library::load_library(&name)
+                rs_cam_core::io::tool_library::load_library(&name)
                     .ok()
                     .map(|catalog| (name, catalog))
             })
@@ -128,56 +128,56 @@ impl<B: ComputeBackend> AppController<B> {
     fn report_tool_library_error(
         &mut self,
         context: &str,
-        err: &rs_cam_core::tool_library::ToolLibraryError,
+        err: &rs_cam_core::io::tool_library::ToolLibraryError,
     ) {
         tracing::error!("{context}: {err}");
         self.push_notification(format!("{context}: {err}"), super::super::Severity::Error);
     }
 
     pub(crate) fn delete_library_tool(&mut self, catalog: &str, index: usize) {
-        if let Err(e) = rs_cam_core::tool_library::remove_tool_at(catalog, index) {
+        if let Err(e) = rs_cam_core::io::tool_library::remove_tool_at(catalog, index) {
             self.report_tool_library_error("Delete tool failed", &e);
         }
         self.refresh_tool_library_snapshot();
     }
 
     pub(crate) fn update_library_tool(&mut self, catalog: &str, index: usize, tool: ToolConfig) {
-        if let Err(e) = rs_cam_core::tool_library::update_tool_at(catalog, index, tool) {
+        if let Err(e) = rs_cam_core::io::tool_library::update_tool_at(catalog, index, tool) {
             self.report_tool_library_error("Update tool failed", &e);
         }
         self.refresh_tool_library_snapshot();
     }
 
     pub(crate) fn move_library_tool(&mut self, from: &str, index: usize, to: &str) {
-        if let Err(e) = rs_cam_core::tool_library::move_tool(from, index, to) {
+        if let Err(e) = rs_cam_core::io::tool_library::move_tool(from, index, to) {
             self.report_tool_library_error("Move tool failed", &e);
         }
         self.refresh_tool_library_snapshot();
     }
 
     pub(crate) fn create_tool_catalog(&mut self, name: &str) {
-        if let Err(e) = rs_cam_core::tool_library::create_library(name) {
+        if let Err(e) = rs_cam_core::io::tool_library::create_library(name) {
             self.report_tool_library_error("Create catalog failed", &e);
         }
         self.refresh_tool_library_snapshot();
     }
 
     pub(crate) fn delete_tool_catalog(&mut self, name: &str) {
-        if let Err(e) = rs_cam_core::tool_library::delete_library(name) {
+        if let Err(e) = rs_cam_core::io::tool_library::delete_library(name) {
             self.report_tool_library_error("Delete catalog failed", &e);
         }
         self.refresh_tool_library_snapshot();
     }
 
     pub(crate) fn rename_tool_catalog(&mut self, old: &str, new: &str) {
-        if let Err(e) = rs_cam_core::tool_library::rename_library(old, new) {
+        if let Err(e) = rs_cam_core::io::tool_library::rename_library(old, new) {
             self.report_tool_library_error("Rename catalog failed", &e);
         }
         self.refresh_tool_library_snapshot();
     }
 
     pub(crate) fn dedupe_tool_catalog(&mut self, name: &str) {
-        if let Err(e) = rs_cam_core::tool_library::dedupe_library(name) {
+        if let Err(e) = rs_cam_core::io::tool_library::dedupe_library(name) {
             self.report_tool_library_error("Dedupe catalog failed", &e);
         }
         self.refresh_tool_library_snapshot();
@@ -189,7 +189,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// inline machine (no live link), then invalidate machine-dependent
     /// state.
     pub(crate) fn import_machine_from_library(&mut self, name: &str) {
-        match rs_cam_core::machine_library::load(name) {
+        match rs_cam_core::io::machine_library::load(name) {
             Ok(profile) => {
                 // `SetMachine` invalidates exactly as `invalidate_machine`
                 // does (§19 ruling 2), so the two calls become one.
@@ -206,21 +206,21 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn save_machine_to_library(&mut self, name: &str) {
-        match rs_cam_core::machine_library::save(name, self.state.session.machine()) {
+        match rs_cam_core::io::machine_library::save(name, self.state.session.machine()) {
             Ok(path) => self.set_status(format!("Saved machine to {}", path.display())),
             Err(e) => self.report_machine_library_error("Save machine failed", &e),
         }
     }
 
     pub(crate) fn delete_machine_from_library(&mut self, name: &str) {
-        match rs_cam_core::machine_library::delete(name) {
+        match rs_cam_core::io::machine_library::delete(name) {
             Ok(()) => self.set_status(format!("Deleted machine '{name}' from library")),
             Err(e) => self.report_machine_library_error("Delete machine failed", &e),
         }
     }
 
     pub(crate) fn rename_machine_in_library(&mut self, old: &str, new: &str) {
-        match rs_cam_core::machine_library::rename(old, new) {
+        match rs_cam_core::io::machine_library::rename(old, new) {
             Ok(()) => self.set_status(format!("Renamed machine '{old}' → '{new}'")),
             Err(e) => self.report_machine_library_error("Rename machine failed", &e),
         }
@@ -229,7 +229,7 @@ impl<B: ComputeBackend> AppController<B> {
     fn report_machine_library_error(
         &mut self,
         context: &str,
-        err: &rs_cam_core::machine_library::MachineLibraryError,
+        err: &rs_cam_core::io::machine_library::MachineLibraryError,
     ) {
         tracing::error!("{context}: {err}");
         self.push_notification(format!("{context}: {err}"), super::super::Severity::Error);

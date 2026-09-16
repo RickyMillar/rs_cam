@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rs_cam_core::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId, SurfaceType};
-use rs_cam_core::step_input::load_step;
+use rs_cam_core::io::step_input::load_step;
 
 use super::*;
 use crate::compute::{
