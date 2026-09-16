@@ -152,19 +152,16 @@ pub(crate) fn find_matched_lut_row(
 
 /// Map the operation's `feeds_family` (used by the F&S calculator) to
 /// the `LutOperationFamily` (used by the chipload/power gate's LUT
-/// lookup). Same mapping the suggest module applied — kept as a
-/// shared helper so optimize and suggest can't drift apart.
+/// lookup).
+///
+/// This held a second copy of the eight-arm match. The canonical one is
+/// [`crate::feeds::vendor_normalize::op_family_to_lut`], which the LUT
+/// loader's reachability census and the gate's query builder already read,
+/// so optimize and suggest now share the mapping instead of keeping two in
+/// step by hand. `lut_op_family_mapping_covers_all_variants` stays as the
+/// tripwire over the arms.
 pub(crate) fn lut_op_family_from(family: OperationFamily) -> LutOperationFamily {
-    match family {
-        OperationFamily::Adaptive => LutOperationFamily::Adaptive,
-        OperationFamily::Pocket => LutOperationFamily::Pocket,
-        OperationFamily::Contour => LutOperationFamily::Contour,
-        OperationFamily::Parallel => LutOperationFamily::Parallel,
-        OperationFamily::Scallop => LutOperationFamily::Scallop,
-        OperationFamily::Trace => LutOperationFamily::Trace,
-        OperationFamily::Face => LutOperationFamily::Face,
-        OperationFamily::Drill => LutOperationFamily::Drill,
-    }
+    crate::feeds::vendor_normalize::op_family_to_lut(family)
 }
 
 /// Map the operation's `feeds_pass_role` to the LUT's pass-role enum.

@@ -184,7 +184,7 @@ maintain.
 - [x] **C25 — ops helper merges** (I08 pairs E/F). `runtime_annotations_to_labels`
   via a 2-method trait in `compute/spans.rs` (6 copies: adaptive, adaptive3d,
   scallop, pencil, ramp_finish, spiral_finish). Risk: low.
-- [ ] **C26 — vendor-normalize delegation** (I09 P2). `context.rs:152-168`
+- [x] **C26 — vendor-normalize delegation** (I09 P2). `context.rs:152-168`
   delegates to `vendor_normalize::op_family_to_lut` (byte-identical 8-arm
   match; a drift-tripwire test already exists — keep it). Risk: low.
 - [ ] **C27 — dexel dead-path deletion** (I03). Delete
