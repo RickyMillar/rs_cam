@@ -2160,6 +2160,50 @@ fn add_setup_appends_a_second_setup() {
     );
 }
 
+/// Q1: the add-toolpath door holds the model before it calls Suggest.
+///
+/// `SuggestContext::model_bbox` gates the runtime-sanity stepover
+/// back-off, and every surface used to pass `SuggestContext::default()`,
+/// so the back-off read "no constraint signal" on every add. The GUI
+/// door resolved `model_id` AFTER the Suggest call; it now resolves it
+/// before, and passes `ProjectSession::model_bbox` of that id.
+///
+/// What this pins is the plumbing precondition: the id the door writes
+/// onto the toolpath resolves to a real bbox at the moment Suggest runs.
+/// The engine-side effect of a `Some` bbox lives in
+/// `rs_cam_core::feeds`, which this programme must not edit, so it is
+/// not observable from here.
+#[test]
+fn the_add_door_holds_a_model_bbox_for_the_toolpath_it_writes() {
+    let mut controller = sample_controller();
+    let before = controller.state.session.toolpath_count();
+    controller.handle_add_toolpath(crate::state::toolpath::OperationType::Pocket);
+    assert_eq!(
+        controller.state.session.toolpath_count(),
+        before + 1,
+        "the add door must create the toolpath"
+    );
+
+    let added = &controller.state.session.toolpath_configs()[before];
+    let bbox = controller
+        .state
+        .session
+        .model_bbox(added.model_id)
+        .expect("the model the door named must carry a bbox");
+    let model = controller
+        .state
+        .session
+        .models()
+        .iter()
+        .find(|m| m.id == added.model_id)
+        .expect("the door must name a model the session holds");
+    let mesh = model.mesh.as_ref().expect("the fixture model is a mesh");
+    assert!(
+        (bbox.min.x - mesh.bbox.min.x).abs() < 1e-9 && (bbox.max.z - mesh.bbox.max.z).abs() < 1e-9,
+        "the bbox must be the model's own, not a placeholder: {bbox:?}"
+    );
+}
+
 #[test]
 fn add_toolpath_and_remove_toolpath_lifecycle() {
     let mut controller = sample_controller();

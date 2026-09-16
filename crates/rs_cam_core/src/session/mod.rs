@@ -1709,6 +1709,17 @@ impl ProjectSession {
             .collect()
     }
 
+    /// The bbox of one model, by id — the singular of
+    /// [`Self::collect_model_bboxes`].
+    ///
+    /// Q1: a Suggest call site holds one `model_id` and needs the one
+    /// bbox. `None` means the id names no model, or the model carries
+    /// no finite geometry (a placeholder row).
+    #[must_use]
+    pub fn model_bbox(&self, model_id: usize) -> Option<BoundingBox3> {
+        self.models.iter().find(|m| m.id == model_id)?.bbox()
+    }
+
     /// All toolpath configurations.
     pub fn toolpath_configs(&self) -> &[ToolpathConfig] {
         &self.toolpath_configs
@@ -2440,6 +2451,43 @@ mod tests {
         assert!(
             message.contains("River") && message.contains("entry_style Ramp to None"),
             "the operator sentence must name the toolpath and the change: {message}"
+        );
+    }
+
+    /// Q1: `model_bbox` answers for one id, and says `None` rather
+    /// than guessing.
+    ///
+    /// The Suggest call sites read it to fill
+    /// `SuggestContext::model_bbox`, which gates the runtime-sanity
+    /// stepover back-off. A wrong-but-present bbox would be worse than
+    /// none, so an id the session does not hold, and a model that
+    /// carries no geometry, both read `None`.
+    #[test]
+    fn the_session_answers_for_one_model_bbox() {
+        let session = ProjectSessionBuilder::new()
+            .model(LoadedModel {
+                id: 7,
+                name: "Placeholder".to_owned(),
+                mesh: None,
+                polygons: None,
+                drill_targets: std::sync::Arc::new(Vec::new()),
+                layers: std::sync::Arc::new(Vec::new()),
+                path: std::path::PathBuf::from("missing.stl"),
+                kind: None,
+                units: None,
+                enriched_mesh: None,
+                winding_report: None,
+                load_error: None,
+            })
+            .build();
+
+        assert!(
+            session.model_bbox(7).is_none(),
+            "a model with no geometry has no bbox to report"
+        );
+        assert!(
+            session.model_bbox(99).is_none(),
+            "an id the session does not hold reads None"
         );
     }
 

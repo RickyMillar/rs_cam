@@ -24,7 +24,7 @@ and are NOT touched by this programme's fix waves.
 | 3 | L2 (report arm) | A | S | `stock_to_leave_radial` is inert in the planner but still `ParamDef::required` and emits no `DeprecatedDialFinding` — the exact hole that machinery exists to close | W1 ✅ dbc00a15 (deleted, not reported) |
 | 4 | L3 + L4 (+D1) | B | S | `_legacy_feeds_auto` and the top-level `toolpaths` pre-setup reader read pre-v3 shapes that `check_format_version` already refuses; delete both | W1 (ruled: delete L4 too) ✅ 9c720ea3 |
 | 5 | L6 | B | M | the whole `machine_ref` chain is dead end to end (nothing writes it, save persists it, load drops it, `SetMachineRef` has no constructor, `machine_library_link_cleared` is always `null` on the wire) | W1 ✅ d496e5df |
-| 6 | Q2 | B | S | the only production file-wide `#![allow(clippy::indexing_slicing)]` (`cli/sweep.rs`, ~18 sites) | W1 |
+| 6 | Q2 | B | S | the only production file-wide `#![allow(clippy::indexing_slicing)]` (`cli/sweep.rs`, ~18 sites) | W1 ✅ 4a8b9871 |
 | 7 | L5 | B | S | `standing_material_mm2` is still emitted beside `truncated_core_mm2` although core documents the old name as measuring the wrong quantity | W1 (ruled) ✅ 5e4165ce (with L10 + L11) |
 | 8 | S2 | C | L | `viz.rs` `toolpath_to_3d_html` + `simulation_3d_html`: 765 dead lines | W2 ✅ d76fa7bc |
 | 9 | S3 | C | M | `rs_cam_viz/src/io/presets.rs`: a whole dead module (280 lines, 9 tests) | W2 ✅ 863d9c70 (the 280 lines went out in `0761b14d`) |
@@ -86,6 +86,27 @@ breaking change stated in the commit body:
    hole the ruling closes. Nothing deserialises that artifact back today.
 6. **L8** — delete the three no-constructor `Command` variants with their
    registry rows, `CommandId` arms, `fmt` arms and the two tests.
+
+### Q1 remainder (2026-09-17)
+
+The two add-toolpath sites are wired. Their TODOs were stale: the GUI door
+resolved `model_id` a few lines BELOW its Suggest call, and MCP `add_toolpath`
+takes `model_id` as a required parameter. Both now read
+`ProjectSession::model_bbox(model_id)`, which this wave added beside the
+existing `collect_model_bboxes`.
+
+Six call sites still pass `SuggestContext::default()`:
+`viz/ui/properties/mod.rs:2386` (the rationale card), `viz/ui/properties/pills.rs:137`,
+`viz/controller/events/mod.rs:1023` and `:1208`,
+`viz/controller/events/model.rs:760`, and `core/session/compute.rs:1875`.
+The first two sit behind `draw_toolpath_panel`, which takes 24 parameters and
+belongs to the other account's UI review plan, so threading a bbox through it
+is a separate package. `ProjectSession::cutter_op_profile` already assembles
+the right context (model bbox matched on `tc.model_id`, plus the stock) and is
+the shape those sites should adopt.
+
+`upstream_leftover_stock_mm` stays `None` everywhere: no lookup at these sites
+gives it, and v1 does not read it.
 
 ## For the power-calcs owner (not touched here)
 

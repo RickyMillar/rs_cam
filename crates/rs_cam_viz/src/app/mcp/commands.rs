@@ -845,6 +845,10 @@ impl RsCamApp {
                 None,
             ));
         };
+        // Q1: `add_toolpath` takes `model_id` as a required parameter, so
+        // the model IS known here. The bbox gates the runtime-sanity
+        // stepover back-off in Suggest.
+        let model_bbox = session.model_bbox(p.model_id);
         let (op_config, feeds_provenance) = match rs_cam_core::feeds::suggest::suggest_params(
             rs_cam_core::feeds::suggest::SuggestParamsInput {
                 op_type,
@@ -855,10 +859,15 @@ impl RsCamApp {
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                 stock_ctx: &stock_ctx,
                 spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                // TODO(v1.2): wire model_bbox once add_toolpath via MCP
-                // takes an explicit model_id; today the model is picked
-                // post-creation.
-                context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+                // Q1: the stock reaches Suggest through `stock_ctx`
+                // above, so `SuggestContext::stock` stays empty rather
+                // than carrying the same value twice.
+                // `upstream_leftover_stock_mm` stays `None`: no lookup
+                // here gives it, and v1 does not read it.
+                context: rs_cam_core::feeds::suggest::SuggestContext {
+                    model_bbox: model_bbox.as_ref(),
+                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
+                },
             },
         ) {
             Ok(s) => (s.operation, s.provenance),

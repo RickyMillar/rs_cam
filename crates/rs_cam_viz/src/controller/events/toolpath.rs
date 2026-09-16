@@ -80,6 +80,18 @@ impl<B: ComputeBackend> AppController<B> {
         let stock_padding = self.state.session.stock_config().padding;
         let stock_ctx =
             rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(stock_bbox, stock_padding);
+        // Q1: the model this toolpath will use is the one the config
+        // below writes. Reading it BEFORE the Suggest call is the whole
+        // fix: `SuggestContext::model_bbox` gates the runtime-sanity
+        // stepover back-off, and every surface used to pass `None`.
+        let model_id = self
+            .state
+            .session
+            .models()
+            .first()
+            .map(|m| m.id)
+            .unwrap_or(0);
+        let model_bbox = self.state.session.model_bbox(model_id);
         let Some(tool) = self
             .state
             .session
@@ -104,11 +116,16 @@ impl<B: ComputeBackend> AppController<B> {
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                 stock_ctx: &stock_ctx,
                 spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                // TODO(v1.2): populate model_bbox + upstream leftover so
-                // the GUI Suggest button benefits from runtime-sanity
-                // floor; needs per-tool model lookup at "add toolpath"
-                // time (model_id is selected later by the user).
-                context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+                // Q1: the bbox the runtime-sanity back-off reads. The
+                // stock reaches Suggest through `stock_ctx` above, so
+                // `SuggestContext::stock` stays empty rather than
+                // carrying the same value twice.
+                // `upstream_leftover_stock_mm` stays `None`: no lookup
+                // here gives it, and v1 does not read it.
+                context: rs_cam_core::feeds::suggest::SuggestContext {
+                    model_bbox: model_bbox.as_ref(),
+                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
+                },
             },
         ) {
             Ok(s) => (s.operation, s.provenance),
@@ -136,14 +153,6 @@ impl<B: ComputeBackend> AppController<B> {
             self.push_notification(msg, super::super::Severity::Warning);
             return None;
         }
-        let model_id = self
-            .state
-            .session
-            .models()
-            .first()
-            .map(|m| m.id)
-            .unwrap_or(0);
-
         let tc = rs_cam_core::session::ToolpathConfig {
             id: rs_cam_core::ToolpathId(0), // will be assigned by session
             name: format!(
