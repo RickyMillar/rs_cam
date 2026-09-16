@@ -696,11 +696,14 @@ pub fn pencil_toolpath(
     tp
 }
 
-fn runtime_annotations_to_labels(annotations: &[PencilRuntimeAnnotation]) -> Vec<(usize, String)> {
-    annotations
-        .iter()
-        .map(|annotation| (annotation.move_index, annotation.event.label()))
-        .collect()
+impl crate::compute::spans::RuntimeLabel for PencilRuntimeAnnotation {
+    fn move_index(&self) -> usize {
+        self.move_index
+    }
+
+    fn label(&self) -> String {
+        self.event.label()
+    }
 }
 
 /// Build the centreline + offset `PencilPath`s for one already-sampled valley
@@ -2499,7 +2502,10 @@ pub fn pencil_toolpath_annotated(
     let (tp, annotations) = pencil_toolpath_structured_annotated(
         mesh, index, cutter, params, None, debug, &mut None, &mut None,
     );
-    (tp, runtime_annotations_to_labels(&annotations))
+    (
+        tp,
+        crate::compute::spans::runtime_annotations_to_labels(&annotations),
+    )
 }
 
 #[cfg(test)]

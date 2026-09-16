@@ -26,7 +26,7 @@ use tracing::info;
 mod clearing;
 mod path;
 mod search;
-use path::{adaptive_3d_segments, runtime_annotations_to_labels, segments_to_toolpath};
+use path::{adaptive_3d_segments, segments_to_toolpath};
 
 // F-029 probe: re-export the planner-state probe for the F-029 acceptance
 // test. Internal — hidden from rustdoc. Will be removed once F-029 lands and
@@ -521,7 +521,10 @@ pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
         adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
             mesh, index, cutter, params, cancel, debug,
         )?;
-    Ok((tp, runtime_annotations_to_labels(&annotations)))
+    Ok((
+        tp,
+        crate::compute::spans::runtime_annotations_to_labels(&annotations),
+    ))
 }
 
 #[cfg(test)]

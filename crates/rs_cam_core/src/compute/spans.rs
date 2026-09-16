@@ -19,6 +19,30 @@ pub fn operation_spans(n_moves: usize) -> Vec<Span> {
     vec![Span::new(0, n_moves, SpanKind::Operation)]
 }
 
+/// One operation's runtime annotation: the move it sits on, and how it reads.
+///
+/// Six generators (2D and 3D adaptive, scallop, pencil, ramp finish, spiral
+/// finish) carry an annotation struct of the same `{ move_index, event }`
+/// shape, and each had a copy of the projection below. The engines are
+/// deliberate siblings; this projection was not.
+pub(crate) trait RuntimeLabel {
+    /// Index of the move the annotation opens.
+    fn move_index(&self) -> usize;
+    /// How the annotation reads in a span, a narration or a trace.
+    fn label(&self) -> String;
+}
+
+/// Project runtime annotations onto the `(move_index, label)` pairs
+/// [`spans_from_labeled_events`] consumes.
+pub(crate) fn runtime_annotations_to_labels<A: RuntimeLabel>(
+    annotations: &[A],
+) -> Vec<(usize, String)> {
+    annotations
+        .iter()
+        .map(|annotation| (annotation.move_index(), annotation.label()))
+        .collect()
+}
+
 /// Build structural spans from a sequence of operation-specific runtime
 /// annotations represented as `(move_index, label)` pairs.
 ///

@@ -469,13 +469,14 @@ pub fn ramp_finish_toolpath_with_cancel(
     Ok(tp)
 }
 
-fn runtime_annotations_to_labels(
-    annotations: &[RampFinishRuntimeAnnotation],
-) -> Vec<(usize, String)> {
-    annotations
-        .iter()
-        .map(|annotation| (annotation.move_index, annotation.event.label()))
-        .collect()
+impl crate::compute::spans::RuntimeLabel for RampFinishRuntimeAnnotation {
+    fn move_index(&self) -> usize {
+        self.move_index
+    }
+
+    fn label(&self) -> String {
+        self.event.label()
+    }
 }
 
 // infallible: cancel closure always returns false, so Cancelled is unreachable
@@ -886,7 +887,10 @@ pub fn ramp_finish_toolpath_annotated(
 ) -> (Toolpath, Vec<(usize, String)>) {
     let (tp, annotations, _clamp) =
         ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug, None);
-    (tp, runtime_annotations_to_labels(&annotations))
+    (
+        tp,
+        crate::compute::spans::runtime_annotations_to_labels(&annotations),
+    )
 }
 
 #[cfg(test)]

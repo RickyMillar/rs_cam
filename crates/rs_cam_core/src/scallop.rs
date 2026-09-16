@@ -1861,11 +1861,14 @@ pub fn scallop_toolpath(
     tp
 }
 
-fn runtime_annotations_to_labels(annotations: &[ScallopRuntimeAnnotation]) -> Vec<(usize, String)> {
-    annotations
-        .iter()
-        .map(|annotation| (annotation.move_index, annotation.event.label()))
-        .collect()
+impl crate::compute::spans::RuntimeLabel for ScallopRuntimeAnnotation {
+    fn move_index(&self) -> usize {
+        self.move_index
+    }
+
+    fn label(&self) -> String {
+        self.event.label()
+    }
 }
 
 // infallible: cancel closure always returns false, so Cancelled is unreachable
@@ -2810,7 +2813,10 @@ pub fn scallop_toolpath_annotated(
 ) -> (Toolpath, Vec<(usize, String)>) {
     let (tp, annotations, _report) =
         scallop_toolpath_structured_annotated(mesh, index, cutter, params, debug);
-    (tp, runtime_annotations_to_labels(&annotations))
+    (
+        tp,
+        crate::compute::spans::runtime_annotations_to_labels(&annotations),
+    )
 }
 
 #[cfg(test)]

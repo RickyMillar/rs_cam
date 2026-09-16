@@ -1651,13 +1651,14 @@ pub(super) fn segments_to_toolpath(
     (tp, annotations)
 }
 
-pub(super) fn runtime_annotations_to_labels(
-    annotations: &[Adaptive3dRuntimeAnnotation],
-) -> Vec<(usize, String)> {
-    annotations
-        .iter()
-        .map(|annotation| (annotation.move_index, annotation.event.label()))
-        .collect()
+impl crate::compute::spans::RuntimeLabel for Adaptive3dRuntimeAnnotation {
+    fn move_index(&self) -> usize {
+        self.move_index
+    }
+
+    fn label(&self) -> String {
+        self.event.label()
+    }
 }
 
 #[cfg(test)]

@@ -181,7 +181,7 @@ maintain.
   delegates. **Run the project_curve tests against the shared function first**
   (review gap: I08's hand-trace is not evidence). Also delete pencil's
   private `polyline_length` dupe if the shared helper covers it. Risk: low-med.
-- [ ] **C25 — ops helper merges** (I08 pairs E/F). `runtime_annotations_to_labels`
+- [x] **C25 — ops helper merges** (I08 pairs E/F). `runtime_annotations_to_labels`
   via a 2-method trait in `compute/spans.rs` (6 copies: adaptive, adaptive3d,
   scallop, pencil, ramp_finish, spiral_finish). Risk: low.
 - [ ] **C26 — vendor-normalize delegation** (I09 P2). `context.rs:152-168`

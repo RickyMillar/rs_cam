@@ -21,7 +21,7 @@ mod spiral;
 
 pub(crate) use material_grid::MaterialGrid;
 pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug};
-use path::{apply_residue_mop_cleanup, runtime_annotations_to_labels, segments_to_toolpath};
+use path::{apply_residue_mop_cleanup, segments_to_toolpath};
 
 pub(crate) use crate::adaptive_shared::{
     angle_diff, average_angles, blend_corners_to_moves, refine_angle_bracket,
@@ -286,7 +286,10 @@ pub fn adaptive_toolpath_annotated_traced_with_cancel(
 ) -> Result<(Toolpath, Vec<(usize, String)>), Cancelled> {
     let (tp, annotations) =
         adaptive_toolpath_structured_annotated_traced_with_cancel(polygon, params, cancel, debug)?;
-    Ok((tp, runtime_annotations_to_labels(&annotations)))
+    Ok((
+        tp,
+        crate::compute::spans::runtime_annotations_to_labels(&annotations),
+    ))
 }
 
 #[cfg(test)]
