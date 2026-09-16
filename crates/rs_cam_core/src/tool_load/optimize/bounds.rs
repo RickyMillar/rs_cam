@@ -157,7 +157,7 @@ impl AxisBounds {
 /// 4-variant clearing ops (Pocket/Adaptive use `baseline_mult_hi_four_point`)
 /// from the 3-variant default. Reads `ap_min_mm` / `ap_max_mm` from the
 /// LUT row when present.
-pub fn resolve_doc_bounds(
+pub(crate) fn resolve_doc_bounds(
     baseline_doc_mm: f64,
     lut_row: Option<&MatchedRow>,
     op_type: OperationType,
@@ -177,7 +177,7 @@ pub fn resolve_doc_bounds(
 
 /// Resolve bounds for `Stepover`. Reads `ae_min_mm` / `ae_max_mm` from
 /// the LUT row when present.
-pub fn resolve_stepover_bounds(
+pub(crate) fn resolve_stepover_bounds(
     baseline_stepover_mm: f64,
     lut_row: Option<&MatchedRow>,
     op_type: OperationType,
@@ -197,7 +197,7 @@ pub fn resolve_stepover_bounds(
 
 /// Resolve bounds for `ScallopHeight`. Quality target — no LUT envelope
 /// today; multiplicative-only sweep.
-pub fn resolve_scallop_height_bounds(
+pub(crate) fn resolve_scallop_height_bounds(
     baseline_scallop_mm: f64,
     op_type: OperationType,
     policy: &SearchPolicy,
@@ -214,7 +214,7 @@ pub fn resolve_scallop_height_bounds(
 /// Resolve bounds for `FeedRate`. Hard interval comes from the machine
 /// envelope; preferred and warm-start are baseline-anchored. Step 4
 /// scaffold — Step 5 retargeters refine via LUT chipload × rpm × flutes.
-pub fn resolve_feed_bounds(
+pub(crate) fn resolve_feed_bounds(
     baseline_feed_mm_min: f64,
     ctx: &AxisContext<'_>,
     _lut_row: Option<&MatchedRow>,
@@ -256,7 +256,7 @@ pub fn resolve_feed_bounds(
 /// Resolve bounds for `SpindleRpm`. Hard interval is the machine RPM
 /// envelope. Preferred is `[rpm_min_rpm, rpm_max_rpm]` from the LUT row
 /// when both are present. Warm-start defaults to ±20% around baseline.
-pub fn resolve_rpm_bounds(
+pub(crate) fn resolve_rpm_bounds(
     baseline_rpm: f64,
     ctx: &AxisContext<'_>,
     lut_row: Option<&MatchedRow>,

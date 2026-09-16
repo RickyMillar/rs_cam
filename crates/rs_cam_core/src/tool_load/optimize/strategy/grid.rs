@@ -34,7 +34,7 @@ pub struct AxisGridStrategy<'a> {
     pub anchor_op: &'a OperationConfig,
     pub lut_row: Option<&'a MatchedRow>,
     pub op_type: OperationType,
-    pub policy: &'a SearchPolicy,
+    pub(crate) policy: &'a SearchPolicy,
 }
 
 impl<'a> OptimizationStrategy for AxisGridStrategy<'a> {

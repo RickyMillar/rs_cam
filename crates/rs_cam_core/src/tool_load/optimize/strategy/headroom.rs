@@ -119,7 +119,7 @@ pub struct HeadroomScaleStrategy<'a> {
     /// commanded `spindle_rpm` (which may be `None` for "use project
     /// default") because Stage 0 scales from the measured value.
     pub baseline_rpm: f64,
-    pub policy: &'a SearchPolicy,
+    pub(crate) policy: &'a SearchPolicy,
 }
 
 impl<'a> OptimizationStrategy for HeadroomScaleStrategy<'a> {

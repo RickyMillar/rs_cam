@@ -30,7 +30,7 @@ pub enum PolicySource {
 
 /// Complete optimizer tuning posture.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SearchPolicy {
+pub(crate) struct SearchPolicy {
     pub axes: AxesPolicy,
     pub feed: FeedPolicy,
     pub retarget: RetargetPolicy,
@@ -42,7 +42,7 @@ pub struct SearchPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AxesPolicy {
+pub(crate) struct AxesPolicy {
     pub doc: AxisPolicy,
     pub stepover: AxisPolicy,
     pub scallop_height: AxisPolicy,
@@ -65,7 +65,7 @@ pub struct AxisPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeedPolicy {
+pub(crate) struct FeedPolicy {
     pub min_positive_scale_input: PolicyValue<f64>,
     pub dedup_threshold_fraction: PolicyValue<f64>,
     pub plunge_tracking_threshold_fraction: PolicyValue<f64>,
@@ -76,7 +76,7 @@ pub struct FeedPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RetargetPolicy {
+pub(crate) struct RetargetPolicy {
     pub chipload_target_midpoint_weight: PolicyValue<f64>,
     pub rpm_bracket_midpoint_weight: PolicyValue<f64>,
     pub chipload_upper_only_fraction: PolicyValue<f64>,
@@ -134,14 +134,14 @@ pub struct RankingPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct StagePolicy {
+pub(crate) struct StagePolicy {
     pub coarse_resolution_mm: PolicyValue<f64>,
     pub refined_resolution_mm: PolicyValue<f64>,
     pub refined_survivor_count: PolicyValue<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FallbackPolicy {
+pub(crate) struct FallbackPolicy {
     pub doc_anchor_mm: PolicyValue<f64>,
     pub stepover_anchor_mm: PolicyValue<f64>,
     pub scallop_height_anchor_mm: PolicyValue<f64>,

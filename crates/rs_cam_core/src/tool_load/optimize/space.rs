@@ -26,7 +26,7 @@ impl SearchSpace {
     /// Resolve every axis the view exposes that has a working resolver.
     /// Reserved axes (AngularStep / HelixPitch / RampAngle) return None
     /// from the resolver and are silently skipped.
-    pub fn build(
+    pub(crate) fn build(
         view: &AxisView<'_>,
         ctx: &AxisContext<'_>,
         lut_row: Option<&MatchedRow>,
