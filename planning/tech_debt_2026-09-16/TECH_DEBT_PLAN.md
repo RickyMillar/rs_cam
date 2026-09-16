@@ -40,8 +40,8 @@ and are NOT touched by this programme's fix waves.
 | 19 | D4, D5, D6, D7, D8, D9 | D | S each | CLI string coercers; panic-payload readers; library `list_in`/`rename_in`; four `polyline_length`s; four cache counter scaffolds; two dashed-line emitters | W3 D4 ✅ D5 ✅ D6 ✅ D7 ✅ D8 ✅ D9 ✅ |
 | 20 | Q5 | D | M | the `never_cancel` + `expect("… never cancelled")` idiom copied 26 times, each with its own allow | W3 ✅ |
 | 21 | Q6 | D | S | a test re-implements the flat-shelf histogram verbatim, so it cannot catch drift | W3 ✅ |
-| 22 | S29 | E | L | 199 `pub` items with own-file-only callers → compiler-checked demotion, one crate per cycle (30-row sample: 0 false positives) | W4 |
-| 23 | S30, L12, L13 | E | S | `setups_mut` visibility; `MachineProfile::from_key` pub for a deleted loader; `simulation.rs` calls itself legacy yet is the live `StockMesh` path | W4 |
+| 22 | S29 | E | L | 199 `pub` items with own-file-only callers → compiler-checked demotion, one crate per cycle (30-row sample: 0 false positives) | W4 ✅ mcp `7f709f30` · cli `352a3fe4` · viz `8d0e7b9a` · core `50eabb24` |
+| 23 | S30, L12, L13 | E | S | `setups_mut` visibility; `MachineProfile::from_key` pub for a deleted loader; `simulation.rs` calls itself legacy yet is the live `StockMesh` path | W4 ✅ S30 `b80d4ab3` · L12 `bbee10e7` · L13 `a76a6752` |
 | 24 | L9, L10, L11 | E | S | `parse_lenient` aliases of a deleted loader (also the MCP mutation parser); two duplicated wire keys | W1 (ruled) ✅ b0691763 (L9) + 5e4165ce (L10, L11) |
 
 Cut line. Below it, recorded and not scheduled: D14 (two ~160-line band-dispatch
@@ -183,9 +183,75 @@ wave touched. No heavy gate ran (2026-09-11 operator ruling).
 | D4 | `9376e12e` | `cli/job.rs` holds `param_value_from_str`, with `run.rs`'s integer-first order, and both `run.rs` and `sweep.rs` call it. The apply path's rules win, as the finding directs: `SetToolpathParam`'s 0/1 → bool step reads `Number::as_i64`, so an integer that arrives as a float would not coerce. The sweep report's `SweepVariant.value` therefore records `3` where it recorded `3.0`; that is the representation defect the finding names, not a behaviour change, because the sweep applies its value by patching TOML text from the raw string (`patch_toml_field`), never through the coercer |
 | D5 | `78712bc2` | `rs_cam_core::panic_message` becomes `pub`; the viz worker copy and the viz panic hook both delegate. The finding names two readers; a third stood in `rs_cam_viz/src/bin/main.rs:140`. Core's fallback text `"non-string panic payload"` wins over viz's `"unknown panic"`, per the finding; no test pins either string |
 
+## Wave 4 — landed (tier E, over-wide visibility)
+
+One commit per item, and one per crate for the S29 sweep. A commit cannot
+carry its own hash, so this table is filled by the closing docs commit,
+exactly as the Wave 2b and Wave 3 tables were.
+
+Wave gate: `cargo clippy --workspace --all-targets -- -D warnings` is clean
+and `cargo fmt --all -- --check` reports no diff. No heavy gate ran
+(2026-09-11 operator ruling).
+
+| id | commit | demoted | restored | test door | note |
+|---|---|---|---|---|---|
+| S30 | `b80d4ab3` | — | — | 1 | `setups_mut` was already `pub(crate)`, so the finding's "demote" is a no-op. The real residue is `#[cfg_attr(not(test), allow(dead_code))]` on a door whose only caller is the `#[cfg(test)]` module of `session/save.rs`. `#[cfg(test)]` replaces the allow. The visibility does not change, so `hatches_are_crate_private_wp7` and `setters_are_crate_private_wp15b` read the same declaration |
+| L12 | `bbee10e7` | — | — | 1 | `MachineProfile::from_key` stays `pub`: `crates/rs_cam_core/tests` is an external crate and the literature-matrix shim is the one caller. Doc only. The finding's "deleted loader" is confirmed — the doc named the viz legacy project loader, which is gone — and `matching_preset_index` stops calling `from_key` a legacy-file reader |
+| L13 | `a76a6752` | — | — | — | Doc only, as the finding directs. `rs_cam_core::simulation` is the name `rs_cam_viz::app::gpu_upload` uses for `StockMesh` at two production sites, so it is not legacy and it does not move: a rename is not mechanical. **Recorded while reading it:** the module's other two re-exports, `linearize_arc` and `RadialProfileLUT`, have no reader through this path. That is a deletion, not a visibility change, so it is residue below |
+| S29 `rs_cam_mcp` | `7f709f30` | 2 | 0 | 2 | No wire type changed and `tests/snapshots/mcp_wire_surface.json` is untouched. The two test doors, `BoundedResponse::insert_section` and `ResponseBudget::try_charge`, went behind `#[cfg(test)]`: every shipped handler builds its sections with `insert_always` and `cap_json_values` |
+| S29 `rs_cam_cli` | `352a3fe4` | 4 | 0 | 0 | The crate ships one binary and no library target, so a `pub` item here exported nothing. All four rows demote clean |
+| S29 `rs_cam_viz` | `8d0e7b9a` | 51 | 9 | 4 | 62 rows listed, 2 already deleted by S3, 60 swept. Restored: 3 for `private_interfaces` (`GenerateAllScope`, `OptimizeStageRow`, `ToolpathMoveVisibility`), 1 test door (`ApplyReport`), and 5 for a dead cluster (see residue). The 4 `#[cfg(test)]` doors are in `state/toolpath/entry.rs` |
+| S29 `rs_cam_core` | `50eabb24` | 74 | 13 | 16 | 138 rows listed; 25 belong to the power-calcs owner (`feeds/**`, `tool_load/**`), 1 is the S33 hold, 9 are already deleted, 103 swept. Restored: 12 for `private_interfaces`, 1 for a cross-crate reader (`ToolSummary`, read by `rs_cam_cli::project`). Test doors: 3 restored to `pub` for an external harness (`OperationParamSchema`, `GeomCacheStats`, `CompactSpiral`) and 13 put behind `#[cfg(test)]` |
+
+### What the sweep proves about the instrument
+
+The 30-row sample measured 0 false positives. The full sweep measured 4:
+`ApplyReport`, `OperationParamSchema`, `GeomCacheStats` and `CompactSpiral`
+each have an external test caller that binds the type off a function return
+without ever writing the type name. A word-count instrument cannot see that
+use. `private_interfaces` is the second blind spot, and it is larger: 15
+rows are types a `pub` signature or a `pub` field still exposes. Both classes
+are compiler-visible, which is why the finding's compiler-checked method
+holds even though its count does not.
+
+### W4 residue — recorded, not scheduled
+
+These are deletion-class findings the sweep uncovered. W4 changes visibility
+and doc lines only, so none of them landed here.
+
+1. **The viz runtime-profile reader cluster.** `SimulationState`'s
+   `semantic_runtime_metrics`, `current_cut_sample` and `runtime_hotspots`,
+   the two records they return (`SimulationRuntimeHotspot`,
+   `ActiveCutSample`), `SimulationRuntimeProfile::metrics_for_range` and
+   that struct's three cumulative arrays are dead in production. The only
+   callers are the `#[cfg(test)]` module of
+   `crates/rs_cam_viz/src/state/simulation.rs`. A `#[cfg(test)]` gate is not
+   enough: `sync_debug_state` builds the profile on a live UI path, so the
+   gate would leave the arrays written and never read. The five `pub` items
+   carry a doc line saying they are dead.
+2. **Two unread re-exports.** `rs_cam_core::simulation` re-exports
+   `linearize_arc` and `RadialProfileLUT`; nothing reads either through that
+   path.
+
 ## Progress
 
-- [x] W1  - [ ] W2  - [x] W3  - [ ] W4  - [x] ruled items  - [ ] review + re-scan
+- [x] W1  - [ ] W2  - [x] W3  - [x] W4  - [x] ruled items  - [ ] review + re-scan
+
+W4 closed 2026-09-17, seven commits on master, in queue order: S30
+`b80d4ab3`, L12 `bbee10e7`, L13 `a76a6752`, S29 `rs_cam_mcp` `7f709f30`,
+S29 `rs_cam_cli` `352a3fe4`, S29 `rs_cam_viz` `8d0e7b9a`, S29
+`rs_cam_core` `50eabb24`. Totals across the four crates: 131 items
+demoted, 22 restored to `pub` with a doc line naming what holds them
+there, 22 test doors. The plan cells were filled by this note, because a
+commit cannot carry its own hash.
+
+**Count correction.** "For the power-calcs owner" says eight S29 rows.
+The evidence file holds 25 rows under `crates/rs_cam_core/src/feeds/**`
+or `tool_load/**`. This wave applied the ownership rule by PATH, not by
+count, so all 25 stayed untouched, and `roughing_pass_count` (the S33
+hold, in `depth.rs`) stayed untouched too. The remaining 182 rows are the
+sweep's population; 11 of them were already deleted in waves 1 and 2, so
+the compiler saw 171.
 
 W1 closed 2026-09-17, twelve commits on master, in queue order: L1
 `625a4b6d`, L2 `dbc00a15`, L3 + L4 `9c720ea3`, L6 `d496e5df`, L8
