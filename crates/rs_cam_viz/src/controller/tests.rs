@@ -1140,7 +1140,12 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     // chosen to cover every admission rule the builder has.
 
     // Fixture 1 — nothing generated.
-    let controller = sample_controller();
+    let mut controller = sample_controller();
+    // The shared fixture seeds a GUI result. Fixture 1 needs the
+    // ungenerated state, so it drops that result first.
+    for rt in controller.state.gui.toolpath_rt.values_mut() {
+        rt.result = None;
+    }
     assert!(
         controller
             .state
@@ -1229,6 +1234,17 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     panel_edit(&mut controller, id, |entry| {
         entry.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
     });
+    assert_eq!(
+        controller.state.session.toolpath_configs()[0].stock_source,
+        crate::state::toolpath::StockSource::FromRemainingStock,
+        "fixture 4 precondition failed: the stock source did not reach the session"
+    );
+    // F2.2 keeps the GUI result across an edit so the viewport can go on
+    // drawing it, so the fixture drops it by hand. The panel does the same
+    // at three sites in `ui/properties/mod.rs`.
+    for rt in controller.state.gui.toolpath_rt.values_mut() {
+        rt.result = None;
+    }
     assert!(
         controller
             .state
@@ -1236,7 +1252,7 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
             .toolpath_rt
             .values()
             .all(|rt| rt.result.is_none()),
-        "fixture 4 precondition failed: the stock-source edit must drop the generated result"
+        "fixture 4: the phantom prior stock needs an ungenerated op"
     );
     let predicate = crate::ui::readiness::simulation_request_is_buildable(
         &controller.state.session,
