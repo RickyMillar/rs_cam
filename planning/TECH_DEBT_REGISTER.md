@@ -25,7 +25,7 @@ need a register.
 | T-9 | A feed clamped onto a ceiling ships one rounding step above it | open |
 | T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating |
 | T-11 | Feed modulation multiplies mm by a fraction of a different quantity | open — every fixture hides it |
-| T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | open |
+| T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `0dc9141f` |
 
 ---
 
@@ -455,7 +455,14 @@ step. Asking for 2.60 or 2.40 then changes nothing at all. **A proposal
 expressed as a percentage cut cannot be honoured**, and a caller that assumes
 it was gets a depth up to 20 % away from the one it reasoned about.
 
-**Fix:** honour the `bool`. When a config refuses the write, raise a typed
+**CLOSED by `0dc9141f`** (2026-09-16). The funnel honours the `bool` and
+raises `SuggestWarning::CutGeometryFieldNotHeld`, pinned by
+`tests/apply_reports_a_field_it_cannot_hold_g_notheld.rs`. The second half —
+snapping a proposed depth to a realisable `total / n` — is NOT done, and is
+carried into the derate work's engagement ladder rather than here, because
+only a caller that proposes a depth needs it.
+
+**Original fix note:** honour the `bool`. When a config refuses the write, raise a typed
 `SuggestWarning` naming the field and the operation, exactly as the five
 existing axial clamps already do. Separately, snap any proposed depth to a
 realisable `total / n` before proposing it, so the number the engine reasons
