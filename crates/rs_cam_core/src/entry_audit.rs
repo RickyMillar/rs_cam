@@ -135,6 +135,9 @@ pub fn buried_fed_chords(
 /// The sibling of [`BuriedChord`] in the other axis: that one asks how deep
 /// a fed move sank below the protected surface, this one asks how far it
 /// reached past the wall.
+///
+/// Stays `pub`: `fed_moves_outside_region` returns it, so a crate-private
+/// form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy)]
 pub struct OutsideRegionChord {
     /// Index of the move in `Toolpath::moves`.

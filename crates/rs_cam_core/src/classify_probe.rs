@@ -66,7 +66,7 @@ use crate::tool::{BallEndmill, CLPoint, MillingCutter};
 /// candidate here keeps a window of the same order so the M3 acceptance gate
 /// "cancellation latency remains bounded by a tile/chunk" is measured against
 /// like for like.
-pub const CANCEL_WINDOW_CELLS: usize = 8192;
+pub(crate) const CANCEL_WINDOW_CELLS: usize = 8192;
 
 /// Cancellation window for the scatter-shaped arm, whose loop runs over the
 /// triangle soup rather than over cells.
@@ -75,7 +75,7 @@ pub const CANCEL_WINDOW_CELLS: usize = 8192;
 /// unbounded number of cells (a single ground quad spans the whole grid), so
 /// a face-counted window of the same nominal size would have a much longer
 /// worst-case latency than a cell-counted one.
-pub const CANCEL_WINDOW_FACES: usize = 1024;
+pub(crate) const CANCEL_WINDOW_FACES: usize = 1024;
 
 /// Edge length, in cells, of one [`ClassificationSampler::TileRaster`] output
 /// tile. 64 × 64 = 4096 cells, i.e. half a cancellation window, so a cancel
@@ -266,7 +266,7 @@ pub fn sample_classification_grid(
 /// The probe the classification grid samples with — one place, so every arm
 /// and every bench uses the identical cutter.
 #[must_use]
-pub fn classification_probe() -> BallEndmill {
+pub(crate) fn classification_probe() -> BallEndmill {
     BallEndmill::new(CLASSIFICATION_PROBE_DIAMETER_MM, 1.0)
 }
 

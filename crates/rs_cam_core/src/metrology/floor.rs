@@ -107,8 +107,12 @@ pub struct FloorReport {
 impl FloorReport {
     /// A candidate's `× floor` score: its cutting distance over the floor.
     /// `NaN` when the floor is empty — not measured, never zero.
+    ///
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
     #[must_use]
-    pub fn times_floor(&self, cutting_mm: f64) -> f64 {
+    pub(crate) fn times_floor(&self, cutting_mm: f64) -> f64 {
         if self.l_min_mm > 0.0 {
             cutting_mm / self.l_min_mm
         } else {

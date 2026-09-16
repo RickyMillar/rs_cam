@@ -57,7 +57,7 @@ pub fn trace_polygon_at_z(polygon: &Polygon2, z: f64, params: &TraceParams) -> T
 /// is made — trace's caller records the total across levels, so a
 /// no-compensation trace honestly reports a measured zero).
 #[must_use]
-pub fn trace_polygon_at_z_reported(
+pub(crate) fn trace_polygon_at_z_reported(
     polygon: &Polygon2,
     z: f64,
     params: &TraceParams,
@@ -128,7 +128,7 @@ pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
 ///
 /// G2 (2026-08-20): the compensation offset is computed ONCE above the level
 /// loop instead of once per level. The per-level closure stamps Z only.
-pub fn trace_toolpath_with_cancel(
+pub(crate) fn trace_toolpath_with_cancel(
     polygon: &Polygon2,
     params: &TraceParams,
     cancel: &dyn CancelCheck,

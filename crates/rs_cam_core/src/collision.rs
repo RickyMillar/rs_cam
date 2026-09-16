@@ -88,7 +88,11 @@ impl ToolAssembly {
     ///
     /// Each HolderSegment can have different bottom/top radii (tapered).
     /// Collision checking uses max_radius per segment (conservative).
-    pub fn segments_from_profile(
+    ///
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn segments_from_profile(
         cutter_radius: f64,
         profile: &[HolderSegment],
     ) -> Vec<(f64, f64, f64)> {
@@ -180,7 +184,7 @@ pub fn check_collisions(
 ///
 /// Samples every `step_mm` along each move (in addition to endpoints)
 /// to catch collisions mid-travel on long linear moves.
-pub fn check_collisions_interpolated(
+pub(crate) fn check_collisions_interpolated(
     toolpath: &Toolpath,
     assembly: &ToolAssembly,
     mesh: &TriangleMesh,
@@ -568,11 +572,11 @@ pub fn check_rapid_collisions_against_stock(
 ///
 /// It scales with the grid, so it is never hardcoded to one resolution —
 /// see [`rapid_clearance_tolerance_mm`].
-pub const RAPID_CLEARANCE_TOLERANCE_CELLS: f64 = std::f64::consts::FRAC_1_SQRT_2 + 0.5 + 1.0;
+pub(crate) const RAPID_CLEARANCE_TOLERANCE_CELLS: f64 = std::f64::consts::FRAC_1_SQRT_2 + 0.5 + 1.0;
 
 /// [`RAPID_CLEARANCE_TOLERANCE_CELLS`] in millimetres, for a grid of
 /// `cell_size`.
-pub fn rapid_clearance_tolerance_mm(cell_size: f64) -> f64 {
+pub(crate) fn rapid_clearance_tolerance_mm(cell_size: f64) -> f64 {
     cell_size * RAPID_CLEARANCE_TOLERANCE_CELLS
 }
 

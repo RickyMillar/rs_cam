@@ -125,8 +125,12 @@ impl MoveProvenance {
     }
 
     /// True when this provenance leaves every index where it found it.
+    ///
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
     #[must_use]
-    pub fn is_index_preserving(&self) -> bool {
+    pub(crate) fn is_index_preserving(&self) -> bool {
         match self {
             Self::Mapping(m) => m.iter().enumerate().all(|(i, &v)| i == v),
             Self::Remap(r) | Self::Permutation(r) => {

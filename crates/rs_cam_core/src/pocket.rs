@@ -75,7 +75,7 @@ pub fn pocket_toolpath_with_cancel(
 /// stopped early on a `debug_assert!` inside a transitive dependency, left
 /// material standing, and reported a successful generate — the loop cannot
 /// tell "the pocket is finished" from "the offset broke".
-pub fn pocket_toolpath_reported_with_cancel(
+pub(crate) fn pocket_toolpath_reported_with_cancel(
     polygon: &Polygon2,
     params: &PocketParams,
     cancel: &dyn CancelCheck,

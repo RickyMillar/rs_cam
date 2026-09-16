@@ -232,7 +232,7 @@ pub fn adaptive_toolpath(polygon: &Polygon2, params: &AdaptiveParams) -> Toolpat
     })
 }
 
-pub fn adaptive_toolpath_with_cancel(
+pub(crate) fn adaptive_toolpath_with_cancel(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     cancel: &dyn CancelCheck,
@@ -240,7 +240,7 @@ pub fn adaptive_toolpath_with_cancel(
     adaptive_toolpath_traced_with_cancel(polygon, params, cancel, None)
 }
 
-pub fn adaptive_toolpath_traced_with_cancel(
+pub(crate) fn adaptive_toolpath_traced_with_cancel(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     cancel: &dyn CancelCheck,

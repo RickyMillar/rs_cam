@@ -108,7 +108,7 @@ impl MaterialGrid {
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Get cell value at world coordinates. Returns CELL_AIR for out-of-bounds.
     #[inline]
-    pub fn get_at(&self, x: f64, y: f64) -> u8 {
+    pub(crate) fn get_at(&self, x: f64, y: f64) -> u8 {
         match self.world_to_cell(x, y) {
             Some((r, c)) => self.cells[r * self.cols + c],
             None => CELL_AIR,

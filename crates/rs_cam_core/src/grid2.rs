@@ -125,7 +125,11 @@ impl<T> Grid2<T> {
     }
 
     /// Row/column for a flat index, or `None` if out of bounds.
-    pub fn rc_of(&self, i: usize) -> Option<(usize, usize)> {
+    ///
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn rc_of(&self, i: usize) -> Option<(usize, usize)> {
         if i < self.len() {
             Some(row_major_rc(i, self.nx))
         } else {
@@ -165,7 +169,10 @@ impl<T> Grid2<T> {
         }
     }
 
-    pub fn at_index(&self, i: usize) -> Option<&T> {
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn at_index(&self, i: usize) -> Option<&T> {
         self.data.get(i)
     }
 
@@ -181,7 +188,11 @@ impl<T> Grid2<T> {
     }
 
     /// Iterate every cell as `(r, c, &value)` in row-major order.
-    pub fn iter_rc(&self) -> impl Iterator<Item = (usize, usize, &T)> {
+    ///
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn iter_rc(&self) -> impl Iterator<Item = (usize, usize, &T)> {
         let nx = self.nx;
         self.data
             .iter()
@@ -193,7 +204,10 @@ impl<T> Grid2<T> {
         &self.data
     }
 
-    pub fn into_vec(self) -> Vec<T> {
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn into_vec(self) -> Vec<T> {
         self.data
     }
 }

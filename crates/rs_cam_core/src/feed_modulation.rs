@@ -142,7 +142,7 @@ impl ChiploadBand {
     /// target. Geometric (not arithmetic) so the target sits
     /// proportionally between min and max regardless of band width.
     #[inline]
-    pub fn mid_mm_per_tooth(&self) -> f64 {
+    pub(crate) fn mid_mm_per_tooth(&self) -> f64 {
         (self.min_mm_per_tooth * self.max_mm_per_tooth).sqrt()
     }
 }

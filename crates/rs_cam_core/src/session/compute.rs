@@ -1795,7 +1795,7 @@ impl RecommendClearingStrategyHandle {
     /// for the ranking reads this; [`execute_recommend_clearing_strategy`]
     /// answers `Ok(None)` for every other operation.
     #[must_use]
-    pub fn has_clearing_strategy(&self) -> bool {
+    pub(crate) fn has_clearing_strategy(&self) -> bool {
         matches!(
             self.inputs.operation,
             crate::compute::OperationConfig::Adaptive3d(_)

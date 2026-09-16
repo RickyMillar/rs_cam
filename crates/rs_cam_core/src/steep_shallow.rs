@@ -663,7 +663,7 @@ pub fn steep_shallow_spans(
 /// find the waterline pass again after a reorder remaps spans.
 pub const STEEP_HALF_LABEL: &str = "Steep pass";
 /// Label on the shallow half's `Region` span.
-pub const SHALLOW_HALF_LABEL: &str = "Shallow pass";
+pub(crate) const SHALLOW_HALF_LABEL: &str = "Shallow pass";
 
 /// [`steep_shallow_toolpath_with_cancel`] plus the [`SteepShallowSplit`]
 /// describing where each half landed. Byte-identical toolpath output.

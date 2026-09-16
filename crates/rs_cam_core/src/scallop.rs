@@ -715,7 +715,7 @@ impl ScallopStepoverPolicy {
     /// exposed so [`crate::scallop_isofield`] and a harness can build the same
     /// field the cascade would sample.
     #[must_use]
-    pub fn point_stepover(
+    pub(crate) fn point_stepover(
         self,
         slope_map: &crate::slope::SlopeMap,
         cusp_r: f64,
@@ -2166,7 +2166,7 @@ pub fn scallop_toolpath_research(
 /// `link_stage: None` is the legacy intra-pass relink, byte for byte — which
 /// is what every research seam and the iso-field entry point pass.
 #[allow(clippy::too_many_arguments)]
-pub fn scallop_toolpath_research_with_stage(
+pub(crate) fn scallop_toolpath_research_with_stage(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,

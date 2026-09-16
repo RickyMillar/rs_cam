@@ -136,7 +136,7 @@ pub const CHAIN_EPS: f64 = 1e-6;
 /// land in the same or an adjacent hash cell. Assumes mm-scale coordinates
 /// (as does `CHAIN_EPS`) — a grid using different units would need both
 /// constants rescaled.
-pub const CHAIN_QUANTIZE_SCALE: f64 = 1e5;
+pub(crate) const CHAIN_QUANTIZE_SCALE: f64 = 1e5;
 
 /// Chain a set of unordered 2D line segments into closed loops.
 ///

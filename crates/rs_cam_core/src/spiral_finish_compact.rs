@@ -252,6 +252,10 @@ pub struct CompactSpiralReport {
 
 /// The bridged spiral: one continuous cutter-contact polyline, outermost ring
 /// first, hub last.
+///
+/// **Test door.** Stays `pub` for two reasons: `bridge_nested_levels`
+/// returns it, and the harness `tests/whole_board_spiral_ledger_g1.rs`
+/// binds it (S29, 2026-09-16).
 #[derive(Debug, Clone, Default)]
 pub struct CompactSpiral {
     /// Cutter-contact points. `z` is interpolated from the input rings and is

@@ -43,7 +43,7 @@ pub fn push_cutter_triangle(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn Mill
 /// nothing: the band is `2·radius` wide, so a Ø6 cutter's band grows by
 /// 0.03%, and the index quantises to whole cells (≥ 0.1 mm) anyway, so on
 /// almost every query it does not change the cell range at all.
-pub const PUSH_QUERY_SLACK_MM: f64 = 1e-3;
+pub(crate) const PUSH_QUERY_SLACK_MM: f64 = 1e-3;
 
 /// How far, laterally, a cutter swept along a fiber can reach off the fiber
 /// line — the half-width of the band the spatial index needs to return.
@@ -182,7 +182,7 @@ pub fn push_cutter_fiber_into(
 /// XY does not move as the plane descends — so a multi-level caller can pay
 /// for the query once and replay the contact tests per level.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn push_cutter_fiber_over(
+pub(crate) fn push_cutter_fiber_over(
     fiber: &mut Fiber,
     mesh: &TriangleMesh,
     cutter: &dyn MillingCutter,

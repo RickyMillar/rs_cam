@@ -49,7 +49,7 @@ impl TriDexelStock {
     }
 
     /// Simulate with cancellation support.
-    pub fn simulate_toolpath_with_cancel(
+    pub(crate) fn simulate_toolpath_with_cancel(
         &mut self,
         toolpath: &Toolpath,
         cutter: &dyn MillingCutter,
@@ -838,7 +838,7 @@ impl TriDexelStock {
     ///
     /// Since SIM w6 this is [`Self::replay_moves`] with a never-firing cancel
     /// token, rather than a second hand-maintained copy of the same `match`.
-    pub fn simulate_toolpath_range_with_lut(
+    pub(crate) fn simulate_toolpath_range_with_lut(
         &mut self,
         toolpath: &Toolpath,
         lut: &RadialProfileLUT,

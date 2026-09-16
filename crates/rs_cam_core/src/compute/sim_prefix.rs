@@ -204,7 +204,7 @@ use crate::toolpath_spans::AnnotatedToolpath;
 /// doubling the process's footprint. `Arc`-shared checkpoints are counted at
 /// their refcount cost, not their full size, because that is what the
 /// snapshot actually adds.
-pub const DEFAULT_MAX_BYTES: usize = 1_500_000_000;
+pub(crate) const DEFAULT_MAX_BYTES: usize = 1_500_000_000;
 
 /// How many points the tool key probes the radial profile at.
 const PROFILE_PROBES: usize = 64;

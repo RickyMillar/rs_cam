@@ -2684,6 +2684,9 @@ fn material_above_cutter(
 ///
 /// Report-only. Nothing gates on it, and the operation is not refused —
 /// see [`reference_engagement_of_cutting_moves`].
+///
+/// Stays `pub`: `reference_engagement_of_cutting_moves` returns it, so a
+/// crate-private form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ReferenceEngagement {
     /// Deepest the tip reached below the reference surface, mm. `<= 0` means

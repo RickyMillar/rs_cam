@@ -211,7 +211,7 @@ impl ReachToleranceSource {
 /// Smallest cell (mm) [`ReachMapParams::for_cutter`] will choose. Below this
 /// the drop pass dominates the interaction budget for no visible gain — the
 /// overlay is a look-and-see instrument, not a planning artefact.
-pub const MIN_REACH_CELL_MM: f64 = 0.25;
+pub(crate) const MIN_REACH_CELL_MM: f64 = 0.25;
 
 /// Largest cell (mm) [`ReachMapParams::for_cutter`] will choose.
 ///
@@ -224,7 +224,7 @@ pub const MIN_REACH_CELL_MM: f64 = 0.25;
 /// the top of [`crate::tier_map`]'s own measured planning band (0.3–0.6 mm),
 /// and [`ReachMapParams::for_cutter`] tightens it further to half the tip
 /// radius on a fine tool.
-pub const MAX_REACH_CELL_MM: f64 = 0.6;
+pub(crate) const MAX_REACH_CELL_MM: f64 = 0.6;
 
 /// Cell budget for one map. The walk coarsens its cell until the grid fits,
 /// so a big board degrades resolution instead of the frame rate.

@@ -17,6 +17,9 @@ pub enum MeshError {
 }
 
 /// Result of checking mesh winding consistency.
+///
+/// Stays `pub`: `TriangleMesh::check_winding` returns it, so a crate-private
+/// form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone)]
 pub struct WindingReport {
     /// Number of edges with consistent winding (adjacent faces have opposite edge directions).

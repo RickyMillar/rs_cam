@@ -102,10 +102,10 @@ pub enum ToolMaterial {
 
 /// Young's modulus of tungsten carbide (N/mm² == MPa). Cited range
 /// 550–650 GPa across grades; 600 is the canonical handbook value.
-pub const CARBIDE_YOUNGS_MODULUS_N_PER_MM2: f64 = 600_000.0;
+pub(crate) const CARBIDE_YOUNGS_MODULUS_N_PER_MM2: f64 = 600_000.0;
 /// Young's modulus of high-speed steel (N/mm² == MPa). Handbook value
 /// is 200–210 GPa for M2/M42 grades; 200 chosen as a clean reference.
-pub const HSS_YOUNGS_MODULUS_N_PER_MM2: f64 = 200_000.0;
+pub(crate) const HSS_YOUNGS_MODULUS_N_PER_MM2: f64 = 200_000.0;
 
 impl ToolMaterial {
     pub const ALL: &[ToolMaterial] = &[ToolMaterial::Carbide, ToolMaterial::Hss];
@@ -280,7 +280,7 @@ impl ToolConfig {
     /// Cross-type geometry this tool is carrying: fields owned by a
     /// DIFFERENT [`ToolType`] that still hold a non-zero value. Read-only
     /// twin of [`ToolConfig::normalize_geometry`].
-    pub fn cross_type_geometry(&self) -> Vec<ClearedGeometry> {
+    pub(crate) fn cross_type_geometry(&self) -> Vec<ClearedGeometry> {
         ToolGeometryField::ALL
             .iter()
             .filter(|f| f.owner() != self.tool_type)
@@ -569,12 +569,12 @@ impl ToolGeometryField {
     /// Whether the owning type is degenerate without it. A flat end
     /// mill with no corner radius is an ordinary flat end mill; a V-bit
     /// with no included angle is not a V-bit at all.
-    pub const fn defines_owner(self) -> bool {
+    pub(crate) const fn defines_owner(self) -> bool {
         !matches!(self, ToolGeometryField::CornerRadiusMm)
     }
 
     /// Whether the field is a length (mm) rather than an angle (deg).
-    pub const fn is_length(self) -> bool {
+    pub(crate) const fn is_length(self) -> bool {
         matches!(
             self,
             ToolGeometryField::CornerRadiusMm

@@ -1002,7 +1002,7 @@ pub fn drill_pick_matches(pick: [f64; 2], target: &DrillTarget) -> bool {
 
 /// The phrase every stale-pick refusal carries, so the operator can tell a
 /// stale pick from the two refusals [`drill_targets_refusal`] already gives.
-pub const STALE_DRILL_PICKS_PHRASE: &str = "no longer";
+pub(crate) const STALE_DRILL_PICKS_PHRASE: &str = "no longer";
 
 /// Refuse when a stored pick names no target on the model (G-DRILLPICKSTALE,
 /// F4.8). `None` means every pick resolves, or that there is nothing to

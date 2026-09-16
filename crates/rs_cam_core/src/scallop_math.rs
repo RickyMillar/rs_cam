@@ -82,7 +82,11 @@ pub fn stepover_from_scallop_curved(tool_radius: f64, scallop_height: f64, curva
 }
 
 /// Scallop height given stepover, tool radius, and surface curvature.
-pub fn scallop_height_curved(tool_radius: f64, stepover: f64, curvature: f64) -> f64 {
+///
+/// **Test door.** The `#[cfg(test)]` module of this file is the only
+/// caller. No production path reads it (S29, tech debt 2026-09-16).
+#[cfg(test)]
+pub(crate) fn scallop_height_curved(tool_radius: f64, stepover: f64, curvature: f64) -> f64 {
     let r_eff = if curvature.abs() < 1e-9 {
         tool_radius
     } else {

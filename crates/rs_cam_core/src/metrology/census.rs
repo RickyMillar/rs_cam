@@ -79,7 +79,7 @@ pub const COHERENCE_QUERY_CAP: usize = 4_000;
 pub const MIN_TRUSTED_TRIANGLES: usize = 2;
 
 /// Anisotropy-ratio bands the prize census reports area fractions above.
-pub const PRIZE_RATIO_BANDS: [f64; 4] = [1.05, 1.10, 1.25, 1.50];
+pub(crate) const PRIZE_RATIO_BANDS: [f64; 4] = [1.05, 1.10, 1.25, 1.50];
 
 /// The anisotropy prize bar, lower edge: an area-weighted median
 /// `W_max/W_min` at or under this means the prize is under ~2 % — close
@@ -499,8 +499,12 @@ pub struct PrizeCell {
 impl PrizeCell {
     /// The prize bound: the best fixed-direction integral over the
     /// direction-optimal floor. `1.0` means no prize at all.
+    ///
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
     #[must_use]
-    pub fn best_fixed_bound(&self) -> f64 {
+    pub(crate) fn best_fixed_bound(&self) -> f64 {
         self.bound_x.min(self.bound_y).min(self.bound_pca)
     }
 }

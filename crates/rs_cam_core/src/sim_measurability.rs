@@ -279,12 +279,12 @@ pub struct MetricMeasurability {
 /// measured part. The census's shallow arm sits at ~1.0 and its deep arm at
 /// ~0.0, so the fixture that motivated the ruling is nowhere near this
 /// boundary — this is not a tuned knob, and it moves no gate threshold.
-pub const NOT_MEASURABLE_BLIND_FRACTION: f64 = 0.5;
+pub(crate) const NOT_MEASURABLE_BLIND_FRACTION: f64 = 0.5;
 
 /// Fraction at or above which the metric is `Degraded` — measurable in part.
 /// Below it, blind samples are edge effects (pass ends, boundary cells) that
 /// every real cut produces.
-pub const DEGRADED_BLIND_FRACTION: f64 = 0.1;
+pub(crate) const DEGRADED_BLIND_FRACTION: f64 = 0.1;
 
 /// Per-`(toolpath, metric)` measurability, plus the project-level context it
 /// was derived under.

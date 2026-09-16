@@ -255,6 +255,10 @@ pub struct BandGenStats {
 
 /// One routed junction between two consecutive regions in the cut order
 /// (P2.d telemetry — lets the A/B harness see which link kind won where).
+///
+/// Stays `pub`: it is the element type of the `pub` field
+/// `UnifiedFinishReport::links`, so a crate-private form raises
+/// `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy)]
 pub struct RoutedLink {
     /// Index into the decomposition's `planned.regions` we linked FROM.
@@ -1286,7 +1290,7 @@ pub struct RelinkTotals {
 impl RelinkTotals {
     /// Fraction of junctions kept on the surface. `None` when the pass
     /// never ran or the op had a single fragment per region.
-    pub fn link_rate(&self) -> Option<f64> {
+    pub(crate) fn link_rate(&self) -> Option<f64> {
         let junctions = self.surface_links + self.retract_links;
         (junctions > 0).then(|| self.surface_links as f64 / junctions as f64)
     }

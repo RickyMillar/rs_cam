@@ -687,6 +687,9 @@ impl_air_cut_ratios!(
 
 /// The cutting-time slices of one toolpath summary, re-expressed on the
 /// kinematics integrator's wall clock. See [`rebase_cutting_times`].
+///
+/// Stays `pub`: `rebase_cutting_times` returns it, so a crate-private form
+/// raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RebasedCuttingTimes {
     /// `total_s − rapid_s − retract_s` from the integrator, distributed
@@ -1064,7 +1067,7 @@ impl SimulationCutTrace {
         )
     }
 
-    pub fn from_samples_with_semantics<'a, I>(
+    pub(crate) fn from_samples_with_semantics<'a, I>(
         sample_step_mm: f64,
         samples: Vec<SimulationCutSample>,
         semantic_traces: I,
@@ -1336,7 +1339,7 @@ pub struct KinematicsAccumulator {
 /// summaries, dropping empty (no-sample) entries. The reporting layer wants
 /// "only the kinematics classes that were observed"; the accumulation hot
 /// path wants O(1) array indexing.
-pub fn finalize_per_kinematics(
+pub(crate) fn finalize_per_kinematics(
     accs: [KinematicsAccumulator; CutKinematics::COUNT],
 ) -> BTreeMap<CutKinematics, KinematicsSummary> {
     let mut out = BTreeMap::new();

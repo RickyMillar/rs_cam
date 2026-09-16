@@ -579,7 +579,7 @@ impl TriDexelStock {
     /// cell"), so it costs work, never safety. Lowering it to the surviving
     /// `ray_top` would be tighter but is **not** sliver-safe: that is a
     /// cell-centre sample, and the bound's contract is over the whole cell.
-    pub fn clear_below_at(&mut self, row: usize, col: usize, z: f32) {
+    pub(crate) fn clear_below_at(&mut self, row: usize, col: usize, z: f32) {
         let idx = row * self.z_grid.cols + col;
         let ray = &mut self.z_grid.rays[idx];
         crate::dexel::ray_subtract_below(ray, z);

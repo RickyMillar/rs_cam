@@ -763,7 +763,7 @@ impl CompositeSubject {
 /// Pass the project stock bbox to keep a series of per-toolpath composites on
 /// one scale and one origin. Retract heights above the stock still show: the
 /// frame expands to cover the mesh, it never clips it away.
-pub fn render_toolpath_composite_in_frame(
+pub(crate) fn render_toolpath_composite_in_frame(
     annotated: &crate::toolpath_spans::AnnotatedToolpath,
     background_mesh: Option<&crate::stock_mesh::StockMesh>,
     frame: Option<&crate::geo::BoundingBox3>,

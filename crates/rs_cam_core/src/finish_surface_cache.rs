@@ -256,6 +256,9 @@ fn table() -> &'static Mutex<Vec<Entry>> {
 }
 
 /// Cumulative counters for the memo, since process start.
+///
+/// Stays `pub`: `finish_surface_cache::stats` returns it, so a crate-private
+/// form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FinishSurfaceCacheStats {
     pub builds: u64,

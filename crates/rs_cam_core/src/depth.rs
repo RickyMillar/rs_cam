@@ -286,7 +286,11 @@ where
 ///
 /// `rough_op` is called for each roughing level. `finish_op` is called
 /// for the final finish pass (if finish_allowance > 0).
-pub fn depth_stepped_with_finish<R, F>(
+///
+/// **Test door.** The `#[cfg(test)]` module of this file is the only
+/// caller. No production path reads it (S29, tech debt 2026-09-16).
+#[cfg(test)]
+pub(crate) fn depth_stepped_with_finish<R, F>(
     depth: &DepthStepping,
     safe_z: f64,
     rough_op: R,

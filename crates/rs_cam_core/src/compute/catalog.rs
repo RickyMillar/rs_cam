@@ -1207,6 +1207,9 @@ impl OperationConfig {
 }
 
 /// Lightweight per-field hint included beside `get_toolpath_params`.
+///
+/// Stays `pub`: `OperationConfig::param_schema_hints` returns it, so a
+/// crate-private form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParamHint {
     #[serde(rename = "type")]
@@ -1217,6 +1220,11 @@ pub struct ParamHint {
 }
 
 /// One operation parameter entry returned by `operation_schema`.
+///
+/// **Test door.** Stays `pub` for two reasons: it is the element type of the
+/// `pub` field `OperationSchema::params`, and the harnesses
+/// `tests/radial_finish_ranges_n10.rs` and
+/// `tests/unified_finish_planner_dials_f2.rs` bind it (S29, 2026-09-16).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OperationParamSchema {
     pub name: String,
@@ -1344,7 +1352,7 @@ impl ParamRange {
     }
 
     /// Schema projection for `get_operation_schema` consumers.
-    pub fn to_json(self) -> serde_json::Value {
+    pub(crate) fn to_json(self) -> serde_json::Value {
         let mut obj = serde_json::Map::new();
         if let Some(min) = self.min {
             obj.insert("min".to_owned(), serde_json::json!(min));
@@ -1546,7 +1554,7 @@ impl DressupPolicy {
         entry: EntryStylePolicy::ForceNone,
     };
     /// `Ramp` upgraded to `Helix`; everything else untouched.
-    pub const PREFER_HELIX: Self = Self {
+    pub(crate) const PREFER_HELIX: Self = Self {
         strip_all_reason: None,
         entry: EntryStylePolicy::PreferHelix,
     };

@@ -402,7 +402,11 @@ pub struct ToolpathSemanticParams {
 
 impl ToolpathSemanticParams {
     /// Insert a pre-serialised value under a typed key.
-    pub fn insert_json(&mut self, key: SemanticKey, value: Value) {
+    ///
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn insert_json(&mut self, key: SemanticKey, value: Value) {
         self.values.insert(key.as_str().to_owned(), value);
     }
 

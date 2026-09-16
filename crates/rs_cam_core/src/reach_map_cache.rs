@@ -93,6 +93,9 @@ fn table() -> &'static Mutex<Table> {
 }
 
 /// Cumulative counters for the memo, since process start.
+///
+/// Stays `pub`: `reach_map_cache::stats` returns it, so a crate-private form
+/// raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReachMapCacheStats {
     pub builds: u64,

@@ -349,7 +349,7 @@ impl MeasurementProvenance {
     /// Resolution as one printable phrase: the cell size and its source, plus
     /// the note when there is one.
     #[must_use]
-    pub fn resolution_label(&self) -> String {
+    pub(crate) fn resolution_label(&self) -> String {
         match (self.cell_mm, self.resolution_note.is_empty()) {
             (Some(cell), true) => format!("{cell:.3} mm cell, {}", self.cell_source),
             (Some(cell), false) => format!(

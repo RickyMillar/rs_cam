@@ -213,7 +213,7 @@ pub fn remove_tool_at(name: &str, index: usize) -> Result<ToolCatalog, ToolLibra
 
 /// Replace the tool at `index` in catalog `name` in `dir`, then save.
 /// Out-of-range index is a no-op. Returns the resulting catalog.
-pub fn update_tool_at_in(
+pub(crate) fn update_tool_at_in(
     dir: &Path,
     name: &str,
     index: usize,
@@ -325,7 +325,7 @@ fn dedupe_key(t: &ToolConfig) -> String {
 
 /// Remove duplicate tools (by [`dedupe_key`]) from catalog `name` in
 /// `dir`, keeping the first occurrence, then save. Returns the result.
-pub fn dedupe_in(dir: &Path, name: &str) -> Result<ToolCatalog, ToolLibraryError> {
+pub(crate) fn dedupe_in(dir: &Path, name: &str) -> Result<ToolCatalog, ToolLibraryError> {
     let mut catalog = load_from(dir, name)?;
     let mut seen = std::collections::HashSet::new();
     catalog.tools.retain(|t| seen.insert(dedupe_key(t)));

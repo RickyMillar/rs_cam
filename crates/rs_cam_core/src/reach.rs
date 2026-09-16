@@ -218,7 +218,7 @@ impl ValleySide {
     /// The apex depth (mm) this side's V implies. The reach solve cannot ask
     /// for more depth than the side's own wall provides.
     #[must_use]
-    pub fn implied_depth_mm(&self) -> f64 {
+    pub(crate) fn implied_depth_mm(&self) -> f64 {
         if self.wall_rise_mm.is_finite() && self.wall_run() > 0.0 {
             self.wall_rise_mm
         } else {
@@ -450,7 +450,7 @@ impl SampledCrossSection {
     /// referenced to, read off the surface instead of synthesised from a wall
     /// angle. `0.0` when the side measured nothing above the centreline.
     #[must_use]
-    pub fn rim_rise_mm(&self, sign: f64) -> f64 {
+    pub(crate) fn rim_rise_mm(&self, sign: f64) -> f64 {
         let range = if sign > 0.0 {
             self.center_index + 1..self.heights_mm.len()
         } else {

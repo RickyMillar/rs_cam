@@ -1031,13 +1031,13 @@ fn contact_runs(points: &[P3]) -> Vec<&[P3]> {
 /// removed, so a budget that is too generous for a given pass is reported
 /// rather than hidden. On the wanaka200 pencil (R0.5 tip, 0.20 mm median
 /// bite) this yields 0.25 mm = 1.25x the median, inside k.
-pub const ENTRY_RAMP_BITE_TIP_FRACTION: f64 = 0.5;
+pub(crate) const ENTRY_RAMP_BITE_TIP_FRACTION: f64 = 0.5;
 /// Floor under the derived per-lap budget — a hair-thin tip must not be able
 /// to generate an unbounded lap count.
 pub const ENTRY_RAMP_MIN_BITE_MM: f64 = 0.10;
 /// Ceiling over the derived per-lap budget. A big ball entering a shallow
 /// crease still ramps rather than punching a full-diameter hole.
-pub const ENTRY_RAMP_MAX_BITE_MM: f64 = 0.50;
+pub(crate) const ENTRY_RAMP_MAX_BITE_MM: f64 = 0.50;
 /// Maximum ramp angle from horizontal, degrees.
 ///
 /// This is deliberately NOT the plunge-rate cap. `stale.tapered_ball_plunge`
@@ -1054,16 +1054,16 @@ pub const ENTRY_RAMP_MAX_BITE_MM: f64 = 0.50;
 /// the lap COUNT and the anti-gouge guarantee (G-ENTRYLOAD) are unchanged and
 /// only the wasted travel drops. 12 degrees is the operator-set cap for the
 /// R1.0 tapered ball in white oak — conservative for a small ball tip.
-pub const ENTRY_RAMP_MAX_ANGLE_DEG: f64 = 12.0;
+pub(crate) const ENTRY_RAMP_MAX_ANGLE_DEG: f64 = 12.0;
 /// Shortest window (mm of path) worth ramping over. Below this the run is
 /// treated as too short to enter along and the legacy descent is kept.
-pub const ENTRY_RAMP_MIN_WINDOW_MM: f64 = 0.5;
+pub(crate) const ENTRY_RAMP_MIN_WINDOW_MM: f64 = 0.5;
 /// Hard cap on laps. When the stock standing over a crease is so deep that
 /// the budget would need more laps than this, the emission stays bounded and
 /// the per-lap step grows past the budget — which the post-simulation
 /// `project.entry_load` finding then reports. A silently unbounded ramp and a
 /// silent plunge are the same failure.
-pub const ENTRY_RAMP_MAX_LAPS: usize = 64;
+pub(crate) const ENTRY_RAMP_MAX_LAPS: usize = 64;
 
 /// The tool radius that actually nestles into a crease: the corner radius for
 /// flat/bullnose cutters, the tip sphere (`cusp_radius_mm`) otherwise. For a

@@ -336,7 +336,7 @@ impl TierIslandParams {
     /// The close radius in force for a tier with this cusp radius: the
     /// explicit dial verbatim, or the derivation scaled by coarseness.
     #[must_use]
-    pub fn effective_close_radius_mm(&self, cusp_radius_mm: f64) -> f64 {
+    pub(crate) fn effective_close_radius_mm(&self, cusp_radius_mm: f64) -> f64 {
         self.close_radius_mm.map_or_else(
             || Self::derived_close_radius_mm(cusp_radius_mm, self.coarseness),
             |v| v.max(0.0),
@@ -346,7 +346,7 @@ impl TierIslandParams {
     /// The min island area in force for a tier with this cusp radius: the
     /// explicit dial verbatim, or the derivation scaled by coarseness².
     #[must_use]
-    pub fn effective_min_region_area_mm2(&self, cusp_radius_mm: f64) -> f64 {
+    pub(crate) fn effective_min_region_area_mm2(&self, cusp_radius_mm: f64) -> f64 {
         self.min_region_area_mm2.map_or_else(
             || Self::derived_min_region_area_mm2(cusp_radius_mm, self.coarseness),
             |v| v.max(0.0),

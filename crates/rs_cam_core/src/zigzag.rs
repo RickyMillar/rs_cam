@@ -54,7 +54,10 @@ pub fn zigzag_toolpath(polygon: &Polygon2, params: &ZigzagParams) -> Toolpath {
 /// no passes at all, which reads exactly like "the pocket is narrower than
 /// the tool".
 #[must_use]
-pub fn zigzag_toolpath_reported(polygon: &Polygon2, params: &ZigzagParams) -> (Toolpath, usize) {
+pub(crate) fn zigzag_toolpath_reported(
+    polygon: &Polygon2,
+    params: &ZigzagParams,
+) -> (Toolpath, usize) {
     let (lines, failures) =
         zigzag_lines_reported(polygon, params.tool_radius, params.stepover, params.angle);
     (lines_to_toolpath(&lines, params), failures)

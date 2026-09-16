@@ -994,6 +994,9 @@ impl ToolpathComputeResult {
 }
 
 /// Summary of a toolpath for listing.
+///
+/// Stays `pub`: `ProjectSession::list_toolpaths` returns it, so a
+/// crate-private form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(serde::Serialize)]
 pub struct ToolpathSummary {
     pub index: usize,
@@ -1016,6 +1019,9 @@ pub struct ToolpathSummary {
 /// consumers can correlate the named diameter with the effective
 /// LUT-lookup diameter rather than reading a single number that doesn't
 /// tell the whole story.
+///
+/// Stays `pub`: `ProjectSession::list_tools` returns it, and
+/// `rs_cam_cli::project` reads that return (S29, 2026-09-16).
 #[derive(serde::Serialize)]
 pub struct ToolSummary {
     pub id: ToolId,
@@ -1341,7 +1347,7 @@ pub struct ProjectEvidence<'a> {
 
 impl<'a> ProjectEvidence<'a> {
     /// Build evidence from a core [`SimulationResult`].
-    pub fn from_simulation(sim: &'a SimulationResult) -> Self {
+    pub(crate) fn from_simulation(sim: &'a SimulationResult) -> Self {
         let boundaries = sim
             .boundaries
             .iter()
@@ -1560,7 +1566,7 @@ impl ProjectSession {
 
     /// Construct a session from a parsed project file, with the warnings
     /// [`Self::load_with_warnings`] describes.
-    pub fn from_project_file_with_warnings(
+    pub(crate) fn from_project_file_with_warnings(
         project: ProjectFile,
         base_dir: &Path,
     ) -> Result<(Self, Vec<ProjectLoadWarning>), SessionError> {

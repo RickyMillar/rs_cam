@@ -149,7 +149,7 @@ impl RampReachClamp {
     /// Follows [`crate::scallop::ScallopReport::PROVENANCE`]'s shape and
     /// deliberately NOT its content: that one is a ring-cascade residual
     /// measured from polygons, this one is the swath a PATH sweeps.
-    pub const AREA_PROVENANCE: crate::measurement::MeasurementProvenance =
+    pub(crate) const AREA_PROVENANCE: crate::measurement::MeasurementProvenance =
         crate::measurement::MeasurementProvenance::new(
             crate::measurement::MeasurementDomain::ProjectedXyArea,
             crate::measurement::MeasurementStage::RampReachClampSwath,

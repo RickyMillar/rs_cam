@@ -168,6 +168,9 @@ impl Default for MachineKinematics {
 /// caller (GUI / MCP) decides which to apply onto the live
 /// `MachineProfile`. `kinematics` is always populated (absent settings
 /// fall back to [`MachineKinematics::default`]).
+///
+/// Stays `pub`: `MachineKinematics::from_grbl_settings` returns it, so a
+/// crate-private form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, PartialEq)]
 pub struct GrblImport {
     /// Kinematics built from `$11` (junction deviation) and
@@ -478,6 +481,9 @@ pub enum KinematicBinding {
 
 /// One move's solved kinematics (P1, 2026-09-07) — what
 /// [`move_kinematics`] returns.
+///
+/// Stays `pub`: `move_kinematics` returns it, so a crate-private form raises
+/// `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MoveKinematics {
     /// Peak velocity the move actually reaches (mm/min).

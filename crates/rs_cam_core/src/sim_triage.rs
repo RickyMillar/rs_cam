@@ -67,7 +67,7 @@ pub const ADVISORY_CAP_PER_PROJECT: usize = 50;
 /// tiny. Buckets are tool-relative (`4 x diameter`) so one bucket is a
 /// recognisable place on the part at any tool size, and this floor keeps a
 /// Ø1 finishing tool from generating a bucket per millimetre.
-pub const MIN_SPATIAL_BUCKET_MM: f64 = 10.0;
+pub(crate) const MIN_SPATIAL_BUCKET_MM: f64 = 10.0;
 
 /// A list that knows it is incomplete.
 ///
@@ -235,7 +235,11 @@ impl SimulationTriage {
     }
 
     /// Highest severity anywhere in the actionable lists.
-    pub fn worst_severity(&self) -> Option<Severity> {
+    ///
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn worst_severity(&self) -> Option<Severity> {
         self.safety
             .iter()
             .chain(self.actions.iter())
@@ -249,7 +253,8 @@ impl SimulationTriage {
 /// Supplied by callers that hold the annotated toolpaths. Callers that do not
 /// pass `None` and dedup falls back to the semantic item id — coarser, but
 /// never wrong.
-pub type RegionResolver<'a> = &'a dyn Fn(ToolpathId, &[SpanId]) -> Option<(SpanId, RegionSpanRole)>;
+pub(crate) type RegionResolver<'a> =
+    &'a dyn Fn(ToolpathId, &[SpanId]) -> Option<(SpanId, RegionSpanRole)>;
 
 /// Everything the builder needs. Borrowed, so no caller has to clone a trace.
 pub struct TriageInputs<'a> {
@@ -478,10 +483,10 @@ impl SimulationTriage {
 /// offset against 94.1% at or below 1.5x — a clear bimodal signature, not a
 /// tail. 2% is well under the measured case and well over the handful of
 /// samples any pass produces at a step or a corner.
-pub const STANDING_MATERIAL_SAMPLE_FRACTION: f64 = 0.02;
+pub(crate) const STANDING_MATERIAL_SAMPLE_FRACTION: f64 = 0.02;
 
 /// How many times its own median bite a sample must remove to count.
-pub const STANDING_MATERIAL_MULTIPLE: f64 = 3.0;
+pub(crate) const STANDING_MATERIAL_MULTIPLE: f64 = 3.0;
 
 /// Report a finishing/surface-following pass that is cutting through material
 /// an upstream operation deliberately left standing.
@@ -625,11 +630,11 @@ pub const ENTRY_LOAD_MEDIAN_MULTIPLE: f64 = 2.0;
 /// floor built on it would go quiet on precisely the small-tip tools that
 /// break. A millimetre of unplanned axial engagement at entry is a
 /// broken-cutter event on any tool a pencil/finishing pass runs.
-pub const ENTRY_LOAD_SEVERE_PEAK_MM: f64 = 1.0;
+pub(crate) const ENTRY_LOAD_SEVERE_PEAK_MM: f64 = 1.0;
 
 /// Body samples required before this pass's median is a reference rather than
 /// noise. Same bar, for the same reason, as `standing_material_finding`'s.
-pub const ENTRY_LOAD_MIN_BODY_SAMPLES: usize = 50;
+pub(crate) const ENTRY_LOAD_MIN_BODY_SAMPLES: usize = 50;
 
 /// Noise floor (mm): a peak below this is not reported however large a
 /// multiple of the median it is.

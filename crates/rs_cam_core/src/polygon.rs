@@ -1123,13 +1123,13 @@ pub struct FlattenPolicy {
 impl FlattenPolicy {
     /// Share of the calling operation's chord tolerance the XY flattening is
     /// allowed to consume. See the type doc for the derivation.
-    pub const CHORD_TOLERANCE_SHARE: f64 = 0.10;
+    pub(crate) const CHORD_TOLERANCE_SHARE: f64 = 0.10;
 
     /// Floor (mm). Ten times `toolpath::MIN_EMITTED_SEGMENT_MM`, the coarsest
     /// shipped post's coordinate quantum — below this the flattening is
     /// asking for precision the G-code cannot carry, and pays for it in
     /// vertices.
-    pub const MIN_DEVIATION_MM: f64 = 0.001;
+    pub(crate) const MIN_DEVIATION_MM: f64 = 0.001;
 
     /// Ceiling (mm). A very loose operation tolerance must not buy a visibly
     /// faceted wall; 50 µm is half the finest finishing tolerance in this
@@ -1457,7 +1457,7 @@ impl OffsetRingSet {
     /// Seed a cascade from several polygons. Each becomes its own group, so
     /// a panic or a collapse in one cannot take the others with it.
     #[must_use]
-    pub fn from_polygons(polygons: &[Polygon2]) -> Self {
+    pub(crate) fn from_polygons(polygons: &[Polygon2]) -> Self {
         let groups = polygons
             .iter()
             .filter(|p| p.exterior.len() >= 3)
@@ -1536,7 +1536,10 @@ impl OffsetRingSet {
 
     /// [`Self::offset_per_group`] with the failure channel attached.
     #[must_use]
-    pub fn offset_per_group_reported(&self, distances: &[f64]) -> (Self, Option<OffsetFailure>) {
+    pub(crate) fn offset_per_group_reported(
+        &self,
+        distances: &[f64],
+    ) -> (Self, Option<OffsetFailure>) {
         let Some(&fallback) = distances.last() else {
             return (Self::default(), None);
         };

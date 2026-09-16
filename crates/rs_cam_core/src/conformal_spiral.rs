@@ -265,10 +265,10 @@ pub const PAPER_INITIAL_BRIDGE_SHIFT: f64 = PI / 10.0;
 /// ring radius `R_i^S` is at or below this, the bridge shift becomes `2π`
 /// because "the abrupt turns in the corresponding `C_i^T` make it challenging
 /// to maintain smooth transitions".
-pub const PAPER_NEAR_CENTRE_RADIUS: f64 = 0.3;
+pub(crate) const PAPER_NEAR_CENTRE_RADIUS: f64 = 0.3;
 
 /// **[SOURCE-2025 Pseudocode A-2 lines 6–9]** The near-centre bridge shift.
-pub const PAPER_NEAR_CENTRE_BRIDGE_SHIFT: f64 = TAU;
+pub(crate) const PAPER_NEAR_CENTRE_BRIDGE_SHIFT: f64 = TAU;
 
 /// **[SOURCE-2025 Pseudocode A-2 lines 6–9]** The secondary along-line shift
 /// `D_{i+1−i+1}^{Real} = 8π/5`, applied in the paper after an *outer* bridge.
@@ -285,7 +285,7 @@ pub const PAPER_SECONDARY_LINE_SHIFT: f64 = 8.0 * PI / 5.0;
 /// Note `π/50 = 2π/100`: the paper's step is exactly one cell of a 100-point
 /// angular lattice. This module snaps it to whichever lattice
 /// [`SpiralParams::n_angular_samples`] defines.
-pub const PAPER_SHIFT_STEP: f64 = PI / 50.0;
+pub(crate) const PAPER_SHIFT_STEP: f64 = PI / 50.0;
 
 /// **[SOURCE-2025 §2.2.2 / Pseudocode A-2 lines 3, 30–35]** Start-angle sweep
 /// step over `[0, 2π)`, `π/50`.

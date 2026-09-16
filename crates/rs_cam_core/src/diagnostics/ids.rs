@@ -81,7 +81,7 @@ pub const PROJECT_PLUNGE_CLASS_LOAD: &str = "project.plunge_class_load";
 /// INFORMATIONAL. It carries no threshold and no verdict — it answers "how
 /// hard is the machine working, and where is the headroom" for an operator
 /// who otherwise has to hand-analyse an exported `.nc`.
-pub const PROJECT_KINEMATIC_UTILIZATION: &str = "project.kinematic_utilization";
+pub(crate) const PROJECT_KINEMATIC_UTILIZATION: &str = "project.kinematic_utilization";
 
 // ── Feeds calculator warnings ───────────────────────────────────────
 pub const FEEDS_FEED_CLAMPED: &str = "feeds.feed_clamped";

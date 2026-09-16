@@ -488,7 +488,7 @@ fn rewrite_sim_required_to_stale_deflection(v: &mut crate::tool_load::verdict::D
 /// [`Self::is_stale`] to know whether to rewrite
 /// `Unmodeled::SimulationRequired` into `Unmodeled::StaleSimulation`.
 #[derive(Debug, Clone, Copy)]
-pub enum SimEvidenceMeta<'a> {
+pub(crate) enum SimEvidenceMeta<'a> {
     /// No simulation trace has been cached on this evidence path.
     Missing,
     /// The cached trace's hashes match the current project state.
@@ -515,7 +515,7 @@ impl<'a> SimEvidenceMeta<'a> {
     /// `Missing` and `Stale` — gates surface as
     /// `Unmodeled::SimulationRequired` and the stale-rewrite pass
     /// fixes that up afterwards.
-    pub fn effective_trace(self) -> Option<&'a SimulationCutTrace> {
+    pub(crate) fn effective_trace(self) -> Option<&'a SimulationCutTrace> {
         match self {
             Self::Fresh(t) => Some(t),
             _ => None,

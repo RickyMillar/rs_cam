@@ -158,6 +158,10 @@ fn table() -> &'static Mutex<Table> {
 }
 
 /// Cumulative counters for the memo, since process start.
+///
+/// **Test door.** Stays `pub` for two reasons: `geom_cache::stats` returns
+/// it, and the harness `tests/geometry_cache_g8.rs` binds it
+/// (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct GeomCacheStats {
     pub index_builds: u64,
