@@ -286,7 +286,8 @@ pub enum FeedsField {
     SpindleRpm,
     Stepover,
     DepthPerPass,
-    #[allow(dead_code)] // symmetry; scallop is stamped via struct fields, not set()
+    /// Kept for symmetry. Scallop height is stamped through the struct
+    /// fields, not through `set()`.
     ScallopHeight,
 }
 
