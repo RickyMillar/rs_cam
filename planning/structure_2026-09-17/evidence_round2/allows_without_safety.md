@@ -1,0 +1,484 @@
+# `allow(` in production code with no SAFETY comment within 3 lines (449 of 665)
+
+CLAUDE.md: prefer a local, documented allow with a `SAFETY:` comment. An undocumented allow is debt by the repo's own definition. `allow(dead_code)` rows are dead production code regardless of comment.
+
+## By lint
+
+| count | lint |
+|---|---|
+| 255 | `clippy::indexing_slicing` |
+| 102 | `clippy::too_many_arguments` |
+| 19 | `clippy::needless_pass_by_value` |
+| 17 | `?` |
+| 10 | `dead_code` |
+| 8 | `clippy::indexing_slicing, clippy::too_many_arguments` |
+| 5 | `clippy::result_large_err` |
+| 4 | `clippy::needless_range_loop` |
+| 4 | `clippy::print_stdout` |
+| 3 | `clippy::cast_possible_truncation, clippy::cast_sign_loss` |
+| 3 | `clippy::expect_used` |
+| 2 | `clippy::unwrap_used, clippy::panic` |
+| 2 | `clippy::type_complexity` |
+| 2 | `clippy::indexing_slicing, clippy::expect_used` |
+| 2 | `clippy::cast_sign_loss, clippy::cast_possible_truncation` |
+| 2 | `clippy::too_many_arguments, clippy::expect_used` |
+| 2 | `clippy::large_enum_variant` |
+| 1 | `clippy::unwrap_used` |
+| 1 | `clippy::too_many_arguments, clippy::indexing_slicing` |
+| 1 | `clippy::expect_used, clippy::too_many_arguments` |
+| 1 | `clippy::nonminimal_bool` |
+| 1 | `clippy::too_many_arguments, clippy::panic` |
+| 1 | `clippy::struct_excessive_bools` |
+| 1 | `clippy::print_stderr` |
+
+## Rows
+
+- `crates/rs_cam_core/src/polygon.rs:548` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/polygon.rs:1404` #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+- `crates/rs_cam_core/src/polygon.rs:1568` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/polygon.rs:1693` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/polygon.rs:1773` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/polygon.rs:1803` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/polygon.rs:1817` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/interrupt.rs:34` /// `#[allow(clippy::expect_used)]` over the `Result` it made unreachable.
+- `crates/rs_cam_core/src/toolpath.rs:199` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/toolpath.rs:215` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/toolpath.rs:241` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/toolpath.rs:277` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/toolpath.rs:332` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/toolpath.rs:496` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/toolpath.rs:594` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/toolpath.rs:772` #[allow(clippy::indexing_slicing, clippy::too_many_arguments)] // bounded by grid dimensions
+- `crates/rs_cam_core/src/toolpath.rs:866` #[allow(clippy::indexing_slicing)] // first element access guarded by is_empty check
+- `crates/rs_cam_core/src/mesh.rs:43` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/mesh.rs:140` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/mesh.rs:197` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/mesh.rs:299` #[allow(clippy::indexing_slicing)] // bounded by triangle indices from source mesh
+- `crates/rs_cam_core/src/mesh.rs:331` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/mesh.rs:434` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/mesh.rs:548` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/mesh.rs:654` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/mesh.rs:694` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/geo.rs:397` #[allow(clippy::unwrap_used, clippy::panic)] // Tests: unwrap is idiomatic for asserting success
+- `crates/rs_cam_core/src/diagnostics/tests.rs:5` #![allow(
+- `crates/rs_cam_core/src/diagnostics/adapters/from_feeds.rs:411` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/session/compute.rs:1162` #[allow(dead_code)]
+- `crates/rs_cam_core/src/session/compute.rs:2185` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/session/compute.rs:2320` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/session/compute.rs:2338` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/session/compute.rs:2344` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/session/compute.rs:3324` // rather than `#[allow(clippy::unwrap_used)]`.
+- `crates/rs_cam_core/src/session/compute.rs:3580` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/session/compute.rs:3783` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/session/compute.rs:4188` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/io/dxf_input.rs:302` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/io/dxf_input.rs:324` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/io/dxf_input.rs:513` #[allow(clippy::indexing_slicing)] // len >= 2 guarded below
+- `crates/rs_cam_core/src/io/dxf_input.rs:535` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/io/dxf_input.rs:600` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/io/dxf_input.rs:657` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/io/step_input.rs:43` #[allow(clippy::indexing_slicing)] // mesh vertex/face indices bounded by tessellation output
+- `crates/rs_cam_core/src/io/step_input.rs:241` #[allow(clippy::indexing_slicing)] // triangle indices [0..3] and vertex lookups bounded by mesh
+- `crates/rs_cam_core/src/io/step_input.rs:348` #[allow(clippy::indexing_slicing)] // vertex indices bounded by mesh topology
+- `crates/rs_cam_core/src/io/step_input.rs:411` #[allow(clippy::indexing_slicing)] // vertex indices bounded by face tessellation
+- `crates/rs_cam_core/src/geometry/enriched_mesh.rs:284` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/geometry/edge_distance.rs:85` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/geometry/edge_distance.rs:288` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/geometry/boundary.rs:455` #[allow(clippy::indexing_slicing)] // bounded by grid dimensions computed from mesh bbox
+- `crates/rs_cam_core/src/geometry/boundary.rs:493` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/geometry/boundary.rs:565` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/geometry/contour_extract.rs:65` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/geometry/contour_extract.rs:94` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/geometry/contour_extract.rs:148` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/geometry/contour_extract.rs:170` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/geometry/grid2.rs:21` //! raw slice indexing anywhere in this module, so no `#[allow(clippy::indexing_slicing)]`
+- `crates/rs_cam_core/src/geometry/arc_util.rs:81` #[allow(clippy::unwrap_used, clippy::panic)] // Tests: unwrap is idiomatic for asserting success
+- `crates/rs_cam_core/src/dexel_stock/band.rs:80` #[allow(clippy::indexing_slicing)] // caller derives `local` from clamped bounds
+- `crates/rs_cam_core/src/dexel_stock/mod.rs:546` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dexel_stock/mod.rs:561` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:195` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:248` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:249` #[allow(clippy::indexing_slicing)] // bounded by clamped bbox / bin count
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:270` #[allow(clippy::needless_range_loop)]
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:396` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:397` #[allow(clippy::indexing_slicing)] // bounded by clamped bbox / bin count
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:631` #[allow(clippy::needless_range_loop)]
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:666` #[allow(clippy::needless_range_loop)]
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:715` #[allow(clippy::needless_range_loop)]
+- `crates/rs_cam_core/src/dexel_stock/swept.rs:932` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/whole_path.rs:424` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:217` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:528` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:539` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:631` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:639` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:796` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:797` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:1230` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:1231` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/stamping.rs:1703` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dexel_stock/tile_mip.rs:194` #[allow(clippy::indexing_slicing)] // bounded by rows/cols, checked above
+- `crates/rs_cam_core/src/dexel_stock/tile_mip.rs:218` #[allow(clippy::indexing_slicing)] // tile indices derived from clamped cells
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:123` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:124` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:269` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:320` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:358` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:405` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:406` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:762` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:862` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:1024` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:1138` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:1173` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:1219` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:1364` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:1400` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dexel_stock/simulation.rs:1608` #[allow(clippy::indexing_slicing)] // bounded by the loop range
+- `crates/rs_cam_core/src/ops/adaptive_shared.rs:121` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/adaptive_shared.rs:124` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/adaptive_shared.rs:214` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/zigzag.rs:66` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/ops/zigzag.rs:80` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/ops/project_curve.rs:86` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/project_curve.rs:183` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/ops/project_curve.rs:230` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/ops/pocket.rs:237` #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+- `crates/rs_cam_core/src/ops/face.rs:98` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/face.rs:108` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/rest.rs:149` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/waterline.rs:160` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/ops/inlay.rs:208` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/inlay.rs:221` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/vcarve.rs:70` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/ops/vcarve.rs:83` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/adaptive3d/mod.rs:454` #[allow(clippy::expect_used)]
+- `crates/rs_cam_core/src/adaptive3d/mod.rs:481` #[allow(clippy::type_complexity)]
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:76` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:131` #[allow(dead_code)] // Some fields are strategy-specific and only read by some strategies.
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:147` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:263` #[allow(dead_code)] // Some fields are strategy-specific (ContourParallel, Adaptive, AgentSearch-2d).
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:485` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:591` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:645` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:784` #[allow(clippy::indexing_slicing)] // idx < path_3d.len() by construction
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:1017` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:1193` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:1199` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:1369` #[allow(clippy::indexing_slicing)] // anchors indexed by enumerate idx
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:1464` #[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:1621` #[allow(clippy::indexing_slicing)] // order entries are valid region indices
+- `crates/rs_cam_core/src/adaptive3d/clearing.rs:1983` #[allow(clippy::indexing_slicing)] // checked non-empty above
+- `crates/rs_cam_core/src/adaptive3d/path.rs:257` #[allow(dead_code)]
+- `crates/rs_cam_core/src/adaptive3d/path.rs:260` #[allow(dead_code)]
+- `crates/rs_cam_core/src/adaptive3d/path.rs:269` #[allow(clippy::type_complexity)] // diagnostic probe; returns raw cell-grid metadata
+- `crates/rs_cam_core/src/adaptive3d/path.rs:302` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive3d/path.rs:1117` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/adaptive3d/search.rs:41` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive3d/search.rs:99` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive3d/search.rs:132` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive3d/search.rs:262` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/export/viz.rs:50` #[allow(clippy::indexing_slicing)] // i starts at 1, so i-1 is always valid
+- `crates/rs_cam_core/src/export/viz.rs:230` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/export/viz.rs:281` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/export/viz.rs:365` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/export/viz.rs:574` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/export/viz.rs:1216` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/export/fingerprint.rs:1093` #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/export/fingerprint.rs:1254` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/export/fingerprint.rs:1506` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/machine/kinematics.rs:665` #[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
+- `crates/rs_cam_core/src/machine/kinematics.rs:787` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/machine/kinematics.rs:829` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/machine/kinematics.rs:981` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/machine/kinematics.rs:1018` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/machine/kinematics.rs:1167` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/tool_load/optimize/retarget_reconciliation_a8.rs:47` #![allow(
+- `crates/rs_cam_core/src/finish/ramp_finish.rs:248` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/finish/ramp_finish.rs:277` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/finish/ramp_finish.rs:310` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/finish/ramp_finish.rs:469` #[allow(clippy::indexing_slicing, clippy::expect_used)]
+- `crates/rs_cam_core/src/finish/ramp_finish.rs:501` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/ramp_finish.rs:531` #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/direction_field.rs:502` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/finish/direction_field.rs:648` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/finish/direction_field.rs:1087` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/finish/direction_field.rs:1152` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/finish/direction_field.rs:1352` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/finish/direction_field.rs:1531` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/finish/spiral_finish.rs:149` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/unified_finish.rs:1463` #[allow(clippy::too_many_arguments)] // op-generator adapter surface, mirrors the strategy fns it composes
+- `crates/rs_cam_core/src/finish/unified_finish.rs:1515` #[allow(clippy::too_many_arguments)] // op-generator adapter surface, mirrors the strategy fns it composes
+- `crates/rs_cam_core/src/finish/unified_finish.rs:1847` #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+- `crates/rs_cam_core/src/finish/unified_finish.rs:2714` #[allow(clippy::too_many_arguments)] // lattice dials (step, direction, window) ride beside the op params, mir
+- `crates/rs_cam_core/src/finish/unified_finish.rs:2982` #[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
+- `crates/rs_cam_core/src/finish/unified_finish.rs:3059` #[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
+- `crates/rs_cam_core/src/finish/unified_finish.rs:3208` #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+- `crates/rs_cam_core/src/finish/scallop_isofield.rs:242` #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/scallop_isofield.rs:305` #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/finish_planner.rs:1169` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/crease_paths.rs:97` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/steep_shallow.rs:84` #[allow(clippy::indexing_slicing)] // bounded indexing in grid morphology
+- `crates/rs_cam_core/src/finish/steep_shallow.rs:131` #[allow(
+- `crates/rs_cam_core/src/finish/steep_shallow.rs:183` #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/steep_shallow.rs:364` #[allow(
+- `crates/rs_cam_core/src/finish/steep_shallow.rs:412` #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/steep_shallow.rs:670` #[allow(clippy::too_many_arguments)] // mirrors the sibling above, plus the split
+- `crates/rs_cam_core/src/finish/steep_shallow.rs:700` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/pencil.rs:345` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/finish/pencil.rs:421` #[allow(clippy::indexing_slicing)] // i bounded to 1..len-1; neighbours i±1 valid
+- `crates/rs_cam_core/src/finish/pencil.rs:596` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/finish/pencil.rs:789` #[allow(clippy::too_many_arguments)] // cohesive per-chain emit; splitting hurts clarity
+- `crates/rs_cam_core/src/finish/pencil.rs:969` #[allow(clippy::indexing_slicing)] // i < n by loop guard
+- `crates/rs_cam_core/src/finish/pencil.rs:987` #[allow(clippy::indexing_slicing)] // depths non-empty → index < len
+- `crates/rs_cam_core/src/finish/pencil.rs:1461` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/pencil.rs:1906` #[allow(clippy::expect_used, clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/pencil.rs:2130` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/pencil.rs:2341` #[allow(clippy::indexing_slicing)] // face_a/face_b are valid mesh face indices
+- `crates/rs_cam_core/src/finish/pencil.rs:2413` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/crest_lines.rs:220` #[allow(clippy::indexing_slicing)] // tri vertex indices validated on mesh load
+- `crates/rs_cam_core/src/finish/crest_lines.rs:275` #[allow(clippy::indexing_slicing)] // tri vertex indices validated on mesh load
+- `crates/rs_cam_core/src/finish/crest_lines.rs:318` #[allow(clippy::indexing_slicing)] // fixed 4×4 literal indices
+- `crates/rs_cam_core/src/finish/crest_lines.rs:327` #[allow(clippy::indexing_slicing)] // all indices are mesh vertex/face indices or fixed 0..3
+- `crates/rs_cam_core/src/finish/crest_lines.rs:567` #[allow(clippy::indexing_slicing)] // tri vertex indices validated on mesh load
+- `crates/rs_cam_core/src/finish/crest_lines.rs:600` #[allow(clippy::indexing_slicing)] // tri/loop indices bounded to mesh data and 0..3
+- `crates/rs_cam_core/src/finish/horizontal_finish.rs:68` #[allow(clippy::indexing_slicing, clippy::expect_used)]
+- `crates/rs_cam_core/src/finish/horizontal_finish.rs:91` #[allow(clippy::indexing_slicing, clippy::too_many_arguments)] // mesh vertex/face indexing is bounded by mesh
+- `crates/rs_cam_core/src/finish/horizontal_finish.rs:301` #[allow(clippy::indexing_slicing)] // tri_idx bounded by flat_face_set.len() check
+- `crates/rs_cam_core/src/finish/conformal_spiral.rs:1182` #[allow(clippy::result_large_err)]
+- `crates/rs_cam_core/src/finish/conformal_spiral.rs:1280` #[allow(clippy::result_large_err)]
+- `crates/rs_cam_core/src/finish/conformal_spiral.rs:1525` #[allow(clippy::result_large_err)]
+- `crates/rs_cam_core/src/finish/conformal_spiral.rs:2546` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/conformal_spiral.rs:2664` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/conformal_spiral.rs:2776` #[allow(clippy::result_large_err)]
+- `crates/rs_cam_core/src/finish/conformal_spiral.rs:3133` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/pencil_dihedral.rs:54` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/finish/pencil_dihedral.rs:72` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/finish/pencil_dihedral.rs:139` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/finish/pencil_dihedral.rs:346` #[allow(clippy::indexing_slicing)] // chain entries are valid vertex indices
+- `crates/rs_cam_core/src/finish/scallop.rs:1034` #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+- `crates/rs_cam_core/src/finish/scallop.rs:1160` #[allow(clippy::too_many_arguments, clippy::expect_used)]
+- `crates/rs_cam_core/src/finish/scallop.rs:1199` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/scallop.rs:1860` #[allow(clippy::indexing_slicing)] // ring/filtered indexing is guarded by len checks
+- `crates/rs_cam_core/src/finish/scallop.rs:1907` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/scallop.rs:1947` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/scallop.rs:1986` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/scallop.rs:2095` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/scallop.rs:2131` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/scallop.rs:2171` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/finish/surface_link.rs:661` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/dressup/mod.rs:165` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/mod.rs:753` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/mod.rs:787` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/mod.rs:1227` #[allow(clippy::indexing_slicing)] // windows(2) pairs, bounded
+- `crates/rs_cam_core/src/dressup/mod.rs:1366` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/mod.rs:1597` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/mod.rs:1672` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/mod.rs:2043` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/mod.rs:2404` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/mod.rs:2954` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/feed_modulation.rs:730` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/dressup/tsp.rs:142` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/tsp.rs:149` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/dressup/tsp.rs:310` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/dressup/tsp.rs:355` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/dressup/tsp.rs:466` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/dressup/tsp.rs:533` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/dressup/tsp.rs:601` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/dressup/condition.rs:55` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/arcfit.rs:74` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/dressup/arcfit.rs:315` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/metrology/monge.rs:314` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/adaptive/path.rs:113` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/path.rs:717` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/path.rs:805` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/path.rs:909` #[allow(clippy::indexing_slicing)] // i < filtered.len()
+- `crates/rs_cam_core/src/adaptive/path.rs:948` #[allow(clippy::indexing_slicing)] // machinable_vec non-empty checked above
+- `crates/rs_cam_core/src/adaptive/path.rs:987` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/path.rs:1142` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/path.rs:1208` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/adaptive/path.rs:1277` #[allow(clippy::indexing_slicing)] // path.len() >= 2 checked above
+- `crates/rs_cam_core/src/adaptive/path.rs:1279` #[allow(clippy::expect_used)]
+- `crates/rs_cam_core/src/adaptive/path.rs:1338` #[allow(clippy::indexing_slicing)] // i < contour.len() bounded above
+- `crates/rs_cam_core/src/adaptive/path.rs:1360` #[allow(clippy::indexing_slicing)] // len >= 2 checked
+- `crates/rs_cam_core/src/adaptive/path.rs:1365` #[allow(clippy::indexing_slicing)] // len >= 2 checked
+- `crates/rs_cam_core/src/adaptive/path.rs:1384` #[allow(clippy::indexing_slicing)] // best_idx in 0..verts.len()
+- `crates/rs_cam_core/src/adaptive/path.rs:1386` #[allow(clippy::indexing_slicing)] // best_idx in 0..verts.len()
+- `crates/rs_cam_core/src/adaptive/path.rs:1404` #[allow(clippy::indexing_slicing)] // contour.len() >= 2 checked above
+- `crates/rs_cam_core/src/adaptive/path.rs:1411` #[allow(clippy::indexing_slicing)] // i, (i+1)%n bounded by contour len
+- `crates/rs_cam_core/src/adaptive/path.rs:1413` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/adaptive/path.rs:1431` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/spiral.rs:53` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/adaptive/spiral.rs:54` #[allow(clippy::indexing_slicing)] // bounded indexing over grid/loop buffers
+- `crates/rs_cam_core/src/adaptive/spiral.rs:256` #[allow(clippy::indexing_slicing)] // fixed-size direction/loop sampling
+- `crates/rs_cam_core/src/adaptive/spiral.rs:307` #[allow(clippy::indexing_slicing)] // padded-grid indices bounded by construction
+- `crates/rs_cam_core/src/adaptive/spiral.rs:348` #[allow(clippy::indexing_slicing)] // loop indices bounded by len
+- `crates/rs_cam_core/src/adaptive/search.rs:18` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/material_grid.rs:29` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/material_grid.rs:68` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/material_grid.rs:108` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/material_grid.rs:124` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/material_grid.rs:161` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/material_grid.rs:215` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/material_grid.rs:244` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/material_grid.rs:307` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/adaptive/material_grid.rs:318` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/pushcutter.rs:184` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/pushcutter.rs:411` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/pushcutter.rs:422` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/rest_field.rs:561` #[allow(clippy::too_many_arguments)] // one cohesive measurement off five grids
+- `crates/rs_cam_core/src/surface/rest_field.rs:1341` #[allow(clippy::nonminimal_bool)]
+- `crates/rs_cam_core/src/surface/rest_field.rs:1915` #[allow(clippy::indexing_slicing)] // r,c bounded by nx,ny above
+- `crates/rs_cam_core/src/surface/rest_field.rs:1935` #[allow(clippy::indexing_slicing)] // all indices bounded by nx/ny by construction
+- `crates/rs_cam_core/src/surface/dropcutter.rs:527` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/surface/slope.rs:114` #[allow(clippy::too_many_arguments, clippy::expect_used)]
+- `crates/rs_cam_core/src/surface/slope.rs:133` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/surface/slope.rs:236` #[allow(clippy::too_many_arguments, clippy::panic)]
+- `crates/rs_cam_core/src/surface/slope.rs:265` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/slope.rs:288` #[allow(clippy::indexing_slicing)] // bounds checked on the line above
+- `crates/rs_cam_core/src/surface/slope.rs:329` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/slope.rs:419` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/slope.rs:498` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/slope.rs:559` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/surface/slope.rs:570` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/surface/slope.rs:582` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/surface/slope.rs:592` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/surface/slope.rs:645` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/slope.rs:725` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/slope.rs:732` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/slope.rs:739` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/slope.rs:746` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/slope.rs:753` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/surface/flow_accum.rs:24` //! are therefore bounded by construction; the `#[allow(clippy::indexing_slicing)]`
+- `crates/rs_cam_core/src/surface/flow_accum.rs:133` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/surface/flow_accum.rs:201` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/surface/flow_accum.rs:383` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/trace/semantic_trace.rs:778` #[allow(clippy::indexing_slicing)] // bounds checked on the line above each index
+- `crates/rs_cam_core/src/trace/semantic_trace.rs:965` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel_mesh.rs:32` #[allow(clippy::indexing_slicing)] // grid indexing bounded by row/col loops
+- `crates/rs_cam_core/src/stock/dexel_mesh.rs:192` #[allow(clippy::indexing_slicing)] // grid indexing bounded by row*cols iteration
+- `crates/rs_cam_core/src/stock/dexel_mesh_mc.rs:48` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/stock/dexel_mesh_mc.rs:347` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/stock/stock_mesh.rs:102` #[allow(clippy::indexing_slicing)] // stride-3 loop bounded by num_verts
+- `crates/rs_cam_core/src/stock/dexel.rs:41` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:62` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:85` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:129` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:163` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:467` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:474` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:481` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:491` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:499` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:506` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/dexel.rs:515` #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+- `crates/rs_cam_core/src/stock/simulation_cut.rs:1484` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/compute/simulate.rs:1549` #[allow(clippy::too_many_arguments)] // deviation-pass plumbing, mirrors the call site's request fields
+- `crates/rs_cam_core/src/compute/simulate.rs:1696` #[allow(clippy::indexing_slicing)] // triangle indices bounded by mesh
+- `crates/rs_cam_core/src/compute/execute.rs:3161` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_core/src/compute/execute.rs:3366` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/compute/execute.rs:3415` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/compute/execute.rs:3507` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/compute/execute.rs:3688` #[allow(clippy::too_many_arguments)] // post-generation attach point; every
+- `crates/rs_cam_core/src/compute/execute.rs:3991` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_core/src/compute/execute.rs:4538` #[allow(
+- `crates/rs_cam_core/src/compute/execute.rs:4548` #[allow(
+- `crates/rs_cam_core/src/compute/execute.rs:4558` #[allow(
+- `crates/rs_cam_core/src/compute/execute.rs:4567` #[allow(
+- `crates/rs_cam_core/src/gcode/emitter.rs:334` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/mcp_server.rs:86` #[allow(dead_code)]
+- `crates/rs_cam_viz/src/mcp_server.rs:488` #[allow(clippy::needless_pass_by_value)]
+- `crates/rs_cam_viz/src/mcp_server.rs:558` #[allow(clippy::needless_pass_by_value)] Parameters(CutTraceParam {
+- `crates/rs_cam_viz/src/mcp_server.rs:604` #[allow(clippy::needless_pass_by_value)] Parameters(GenDebugTraceParam {
+- `crates/rs_cam_viz/src/mcp_server.rs:882` #[allow(clippy::needless_pass_by_value)]
+- `crates/rs_cam_viz/src/mcp_server.rs:908` #[allow(clippy::needless_pass_by_value)]
+- `crates/rs_cam_viz/src/mcp_server.rs:937` #[allow(clippy::needless_pass_by_value)] Parameters(AddToolpathViaGuiParam {
+- `crates/rs_cam_viz/src/mcp_server.rs:957` #[allow(clippy::needless_pass_by_value)] Parameters(GetNotificationsParam {
+- `crates/rs_cam_viz/src/mcp_server.rs:1101` #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<
+- `crates/rs_cam_viz/src/mcp_server.rs:1117` #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<PreviewTierMapParam>,
+- `crates/rs_cam_viz/src/mcp_server.rs:1228` #[allow(clippy::needless_pass_by_value)]
+- `crates/rs_cam_viz/src/mcp_server.rs:1248` #[allow(clippy::needless_pass_by_value)]
+- `crates/rs_cam_viz/src/mcp_server.rs:1272` #[allow(clippy::needless_pass_by_value)] Parameters(GenerateAllParam {
+- `crates/rs_cam_viz/src/mcp_server.rs:1480` #[allow(clippy::needless_pass_by_value)] Parameters(ScreenshotSimParam {
+- `crates/rs_cam_viz/src/mcp_server.rs:1508` #[allow(clippy::needless_pass_by_value)] Parameters(ScreenshotToolpathParam {
+- `crates/rs_cam_viz/src/mcp_server.rs:1564` #[allow(clippy::needless_pass_by_value)] Parameters(ScreenshotGuiParam {
+- `crates/rs_cam_viz/src/mcp_server.rs:1588` #[allow(clippy::needless_pass_by_value)] Parameters(SetUiViewParam {
+- `crates/rs_cam_viz/src/controller.rs:5` #[allow(
+- `crates/rs_cam_viz/src/controller.rs:14` #[allow(
+- `crates/rs_cam_viz/src/controller.rs:22` #[allow(
+- `crates/rs_cam_viz/src/controller.rs:31` #[allow(
+- `crates/rs_cam_viz/src/controller.rs:40` #[allow(
+- `crates/rs_cam_viz/src/controller.rs:48` #[allow(
+- `crates/rs_cam_viz/src/render/sim_render.rs:81` #[allow(clippy::indexing_slicing)] // stride loop bounded by colors.len()
+- `crates/rs_cam_viz/src/render/sim_render.rs:144` #[allow(clippy::indexing_slicing)] // stride-3 loop bounded by num_verts = vertices.len()/3
+- `crates/rs_cam_viz/src/render/sim_render.rs:237` #[allow(clippy::indexing_slicing)] // triangle stride-3 access bounded by loop
+- `crates/rs_cam_viz/src/render/sim_render.rs:389` #[allow(clippy::indexing_slicing)] // stride-3 loops bounded by vertex/index counts
+- `crates/rs_cam_viz/src/render/colors.rs:21` #[allow(clippy::indexing_slicing)] // modulo indexing into constant-length palette
+- `crates/rs_cam_viz/src/render/mesh_render.rs:49` /// zero callers and an `#[allow(dead_code)]`, and P6 deleted it
+- `crates/rs_cam_viz/src/render/mesh_render.rs:66` #[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
+- `crates/rs_cam_viz/src/render/mesh_render.rs:151` #[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
+- `crates/rs_cam_viz/src/render/mesh_render.rs:222` #[allow(clippy::indexing_slicing)] // modulo indexing into constant-length palette
+- `crates/rs_cam_viz/src/render/mesh_render.rs:259` #[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
+- `crates/rs_cam_viz/src/render/toolpath_render.rs:126` #[allow(clippy::indexing_slicing)] // n - 1 is safe: n > 0 and n <= len
+- `crates/rs_cam_viz/src/render/toolpath_render.rs:153` #[allow(clippy::indexing_slicing)] // loop index i bounded by tp.moves.len()
+- `crates/rs_cam_viz/src/render/toolpath_render.rs:450` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_viz/src/render/toolpath_render.rs:604` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_viz/src/render/toolpath_render.rs:849` #[allow(clippy::indexing_slicing)] // first_cut_idx validated by position() and bounds > 0
+- `crates/rs_cam_viz/src/render/toolpath_render.rs:1006` #[allow(clippy::indexing_slicing)] // first_cut_idx validated by position() and bounds > 0
+- `crates/rs_cam_viz/src/render/camera.rs:87` #[allow(clippy::indexing_slicing)] // nalgebra 4x4 matrix slice is always 16 elements
+- `crates/rs_cam_viz/src/render/camera.rs:137` #[allow(clippy::indexing_slicing)] // fixed-size [f32; 3] arrays
+- `crates/rs_cam_viz/src/state/history.rs:18` #[allow(clippy::large_enum_variant)]
+- `crates/rs_cam_viz/src/state/simulation.rs:1259` #[allow(clippy::indexing_slicing)] // boundary_index from position() is always in bounds
+- `crates/rs_cam_viz/src/state/simulation.rs:1412` #[allow(clippy::indexing_slicing)] // child_index from parent's child list, bounded by trace.items
+- `crates/rs_cam_viz/src/state/simulation.rs:1478` #[allow(clippy::indexing_slicing)] // active_index from active_item_index() bounded by trace.items
+- `crates/rs_cam_viz/src/state/simulation.rs:2160` #[allow(clippy::indexing_slicing)] // item_index from enumerate(), bounded by trace.items
+- `crates/rs_cam_viz/src/state/simulation.rs:2339` #[allow(clippy::indexing_slicing)] // item_index from enumerate(), bounded by trace.items
+- `crates/rs_cam_viz/src/state/simulation.rs:2379` #[allow(clippy::indexing_slicing)] // item indices from move_item_indices, bounded by trace.items
+- `crates/rs_cam_viz/src/state/simulation.rs:2403` #[allow(clippy::indexing_slicing)] // index from item_index_by_id, bounded by trace.items
+- `crates/rs_cam_viz/src/state/simulation.rs:2457` #[allow(clippy::indexing_slicing)] // bounds checked: move_end_exclusive <= cumulative.len()-1
+- `crates/rs_cam_viz/src/state/simulation.rs:2480` #[allow(clippy::indexing_slicing)] // move_index bounded by caller's loop over toolpath.moves
+- `crates/rs_cam_viz/src/ui/sim_debug.rs:92` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_viz/src/ui/sim_op_list.rs:607` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/sim_op_list.rs:741` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_viz/src/ui/preflight.rs:317` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/sim_diagnostics.rs:434` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/sim_diagnostics.rs:1414` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/sim_diagnostics.rs:1492` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/sim_timeline.rs:674` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/sim_timeline.rs:1252` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/sim_timeline.rs:1541` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/sim_timeline.rs:1655` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_viz/src/ui/sim_timeline.rs:1657` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_viz/src/ui/sim_timeline.rs:1659` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_viz/src/ui/feeds/compare.rs:148` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/feeds/compare.rs:258` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/properties/mod.rs:2190` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/properties/mod.rs:2329` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/properties/mod.rs:3111` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/properties/mod.rs:4031` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/properties/setup.rs:35` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/ui/properties/operations/mod.rs:109` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/controller/io.rs:529` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_viz/src/app/mcp.rs:1337` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/app/mcp.rs:4781` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/app/mcp.rs:4988` #[allow(clippy::indexing_slicing)] // pos came from pass_index_of
+- `crates/rs_cam_viz/src/app/mcp.rs:5192` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_viz/src/compute/worker.rs:3` #[allow(
+- `crates/rs_cam_viz/src/compute/worker.rs:12` #[allow(
+- `crates/rs_cam_viz/src/compute/worker.rs:20` #[allow(
+- `crates/rs_cam_viz/src/compute/worker.rs:310` #[allow(clippy::large_enum_variant)]
+- `crates/rs_cam_viz/src/compute/worker/gen_parity_p0_tests.rs:272` #[allow(dead_code)]
+- `crates/rs_cam_viz/src/compute/worker/test_fixture.rs:233` #[allow(clippy::needless_pass_by_value)]
+- `crates/rs_cam_cli/src/nc_replay.rs:1` #![allow(clippy::print_stdout)] // CLI surface
+- `crates/rs_cam_cli/src/nc_replay.rs:204` #[allow(clippy::indexing_slicing)]
+- `crates/rs_cam_cli/src/run.rs:31` #[allow(clippy::struct_excessive_bools)]
+- `crates/rs_cam_cli/src/smoke.rs:14` #![allow(clippy::print_stdout)] // CLI surface
+- `crates/rs_cam_cli/src/smoke.rs:44` #[allow(dead_code)]
+- `crates/rs_cam_cli/src/smoke.rs:479` #[allow(clippy::result_large_err)] // tp_idx tuple is small; failure path is the rare branch
+- `crates/rs_cam_cli/src/main.rs:2` #![allow(clippy::print_stderr)] // CLI uses eprintln! for user-facing diagnostic output
+- `crates/rs_cam_cli/src/main.rs:3` #![allow(clippy::print_stdout)] // CLI `version` prints build info to stdout
+- `crates/rs_cam_cli/src/sweep.rs:6` #![allow(clippy::print_stdout)]
+- `crates/rs_cam_cli/src/sweep.rs:294` #[allow(clippy::needless_pass_by_value)]
+- `crates/rs_cam_cli/src/project.rs:206` #[allow(clippy::too_many_arguments)]
+- `crates/rs_cam_cli/src/job.rs:183` #[allow(dead_code)]
+- `crates/rs_cam_mcp/src/server.rs:1361` #[allow(clippy::needless_pass_by_value)]

@@ -14,11 +14,11 @@ need a register.
 
 | ID | What | Status |
 |---|---|---|
-| T-1 | `enumerate_matching_rows` is dead; `pub` hides it | open |
+| T-1 | `enumerate_matching_rows` is dead; `pub` hides it | **closed** `b930cce5` — deleted (feeds wave, 2026-09-17) |
 | T-2 | LH-1's guard is syntactic and a closure defeats it | open |
 | T-3 | Cross-crate sentries never run in a per-crate gate | open |
 | T-4 | `predict_peak_deflection_um` returns `0.0` for every refusal | open |
-| T-5 | `feeds/mod.rs` 4 144 lines, `suggest.rs` 5 667 | open |
+| T-5 | `feeds/mod.rs` 4 144 lines, `suggest.rs` 5 667 | open — `calculate` (1 302 lines) has no mechanical seam: 16 `let mut` locals cross its 19 step banners and `effective_d` is rebound mid-way (FEEDS_WAVE FW-22, 2026-09-17) |
 | T-6 | Two implementations of one physical model | closed |
 | T-7 | Two definitions of "teeth in cut", differing by helix wrap | **withdrawn** — the premise fails |
 | T-8 | The power derate thins the chip, and only half the power responds | **closed** `348facbb` |
