@@ -63,10 +63,10 @@ pub const DEFAULT_MAX_SPAN_SUMMARIES: usize = 200;
 /// (`rs_cam_core::simulation_cut`), so the first 200 are the interesting
 /// ones. That ordering is a documented part of the cap contract — see
 /// [`ORDERING_SEMANTIC_SUMMARIES`].
-pub const DEFAULT_MAX_SEMANTIC_SUMMARIES: usize = 200;
+pub(crate) const DEFAULT_MAX_SEMANTIC_SUMMARIES: usize = 200;
 
 /// Default cap on `get_cut_trace`'s opt-in `drill_samples` (Checkpoint L-3).
-pub const DEFAULT_MAX_DRILL_SAMPLES: usize = 500;
+pub(crate) const DEFAULT_MAX_DRILL_SAMPLES: usize = 500;
 
 /// Default cap on `inspect_spans`' summary-mode `top_level` array
 /// (Checkpoint L-3, "same cap in the same commit for uniformity").
@@ -238,7 +238,11 @@ impl ResponseBudget {
     /// Charge `value` if it fits. Charges **nothing** and returns `false`
     /// when it does not — the caller must then omit the section and record
     /// it via [`Self::record_not_computed`].
-    pub fn try_charge(&mut self, value: &Value) -> bool {
+    ///
+    /// **Test door.** The only caller is
+    /// [`BoundedResponse::insert_section`], which is itself a test door.
+    #[cfg(test)]
+    pub(crate) fn try_charge(&mut self, value: &Value) -> bool {
         let cost = Self::cost_of(value);
         if self.would_fit(cost) {
             self.charge(cost);
@@ -443,7 +447,13 @@ impl BoundedResponse {
     /// (never `[]`, never `0`) and named in `sections_not_computed`.
     ///
     /// Returns whether it was included.
-    pub fn insert_section(&mut self, key: &str, value: Value) -> bool {
+    ///
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. Every shipped handler in `rs_cam_viz::app::mcp` builds its
+    /// optional sections with [`Self::insert_always`] and
+    /// [`cap_json_values`], so no production path opens this door.
+    #[cfg(test)]
+    pub(crate) fn insert_section(&mut self, key: &str, value: Value) -> bool {
         if self.budget.try_charge(&value) {
             self.map.insert(key.to_owned(), value);
             true
