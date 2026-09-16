@@ -26,12 +26,12 @@ and are NOT touched by this programme's fix waves.
 | 5 | L6 | B | M | the whole `machine_ref` chain is dead end to end (nothing writes it, save persists it, load drops it, `SetMachineRef` has no constructor, `machine_library_link_cleared` is always `null` on the wire) | W1 |
 | 6 | Q2 | B | S | the only production file-wide `#![allow(clippy::indexing_slicing)]` (`cli/sweep.rs`, ~18 sites) | W1 |
 | 7 | L5 | B | S | `standing_material_mm2` is still emitted beside `truncated_core_mm2` although core documents the old name as measuring the wrong quantity | W1 (ruled) |
-| 8 | S2 | C | L | `viz.rs` `toolpath_to_3d_html` + `simulation_3d_html`: 765 dead lines | W2 |
+| 8 | S2 | C | L | `viz.rs` `toolpath_to_3d_html` + `simulation_3d_html`: 765 dead lines | W2 ✅ d76fa7bc |
 | 9 | S3 | C | M | `rs_cam_viz/src/io/presets.rs`: a whole dead module (280 lines, 9 tests) | W2 ✅ |
-| 10 | D2 | C | S | `compute/semantic_helpers.rs` is dead and `pub`-re-exported; `spans.rs` carries its own drifted `CutRun`/`cutting_runs` | W2 |
-| 11 | S4, S5, S6, S8, S9, S11–S24 | C | M | 64 confirmed-dead pub items and private helpers, ~900 lines across core and viz (per-file groups in `S_*.md`) | W2 |
+| 10 | D2 | C | S | `compute/semantic_helpers.rs` is dead and `pub`-re-exported; `spans.rs` carries its own drifted `CutRun`/`cutting_runs` | W2 ✅ 73d4ce1c |
+| 11 | S4, S5, S6, S8, S9, S11–S24 | C | M | 64 confirmed-dead pub items and private helpers, ~900 lines across core and viz (per-file groups in `S_*.md`) | W2 core ✅ S5 ebfa0a49 · S6 1cf332ae · S8 5e11d53d · S9 e15d4e1e · S11 c90da49a · S12 d6ba1f04 · S13 ff95800c · S14 6d1fc0c5 · S15 7f4a0ddb · S16 818342bb · S17 4ba62234 · S21 62ce17da · S23 a65c9469 + f8a869df; viz rows open |
 | 12 | S26, S27, S28 | C | S | 26 `allow(dead_code)` attributes that cannot fire (items are `pub` in a `pub mod` of a lib crate) and claim a live MCP surface is dead | W2 |
-| 13 | S25 | C | M | 29 `pub` items used only from tests and not declared fixtures → `pub(crate)` + `#[cfg(test)]` scope or move into the test | W2 |
+| 13 | S25 | C | M | 29 `pub` items used only from tests and not declared fixtures → `pub(crate)` + `#[cfg(test)]` scope or move into the test | W2 core ✅ dab59c0e; viz + power-calcs rows open |
 | 14 | L8 | C | S | three `Command` variants with no production constructor (`ReplaceSetupsAndToolpaths`, `SetProjectName`, `SetMachineRef`) | W1 (ruled) |
 | 15 | L7 | C | S | a trace with no `provenance` block is treated as fresh; the one producer is the CLI | W1 (ruled) |
 | 16 | D11 | D | M | viz mirrors core's two simulation structs by hand (the class that dropped 11 fields in C04); inherits G-MCPSIMMIRROR / WP28 | W3 |
