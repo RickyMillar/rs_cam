@@ -34,6 +34,7 @@ use crate::state::toolpath::{
 use crate::ui::AppEvent;
 use crate::ui::automation;
 use crate::ui::components::{PrecedenceField, ProvKind, UiExt, ValueRow};
+use crate::ui::feeds::shared::{material_family_label, tool_family_label};
 use crate::ui::theme;
 use crate::ui_command::{NoArgs, UiCommand};
 
@@ -2708,39 +2709,6 @@ fn tool_type_to_lut_family(
         crate::state::job::ToolType::BullNose => ToolFamily::BullNose,
         crate::state::job::ToolType::VBit => ToolFamily::ChamferVbit,
         crate::state::job::ToolType::TaperedBallNose => ToolFamily::TaperedBallNose,
-    }
-}
-
-/// Human-readable label for a `MaterialFamily`.
-fn material_family_label(m: rs_cam_core::feeds::vendor_lut::MaterialFamily) -> &'static str {
-    use rs_cam_core::feeds::vendor_lut::MaterialFamily;
-    match m {
-        MaterialFamily::Softwood => "Softwood",
-        MaterialFamily::Hardwood => "Hardwood",
-        MaterialFamily::PlywoodSoftwood => "Plywood (Soft)",
-        MaterialFamily::PlywoodHardwood => "Plywood (Hard)",
-        MaterialFamily::Mdf => "MDF",
-        MaterialFamily::Hdf => "HDF",
-        MaterialFamily::Particleboard => "Particleboard",
-        MaterialFamily::Acrylic => "Acrylic",
-        MaterialFamily::Hdpe => "HDPE",
-        MaterialFamily::Polycarbonate => "Polycarbonate",
-        MaterialFamily::Delrin => "Delrin",
-        MaterialFamily::Aluminum => "Aluminum",
-        MaterialFamily::Fiberglass => "Fiberglass",
-    }
-}
-
-/// Human-readable label for a `ToolFamily`.
-fn tool_family_label(f: rs_cam_core::feeds::vendor_lut::ToolFamily) -> &'static str {
-    use rs_cam_core::feeds::vendor_lut::ToolFamily;
-    match f {
-        ToolFamily::FlatEnd => "Flat End",
-        ToolFamily::BallNose => "Ball Nose",
-        ToolFamily::TaperedBallNose => "Tapered Ball",
-        ToolFamily::BullNose => "Bull Nose",
-        ToolFamily::ChamferVbit => "V-Bit",
-        ToolFamily::FacingBit => "Facing",
     }
 }
 

@@ -235,6 +235,20 @@ maintain.
 - [x] **C28 — bench helper** (I10 pair 5). Single `rolling_field` in a
   benches helper. Risk: low.
 
+## Phase 3b — tail items from the re-run (2026-09-16)
+
+- [x] **C29 — one home for the feeds family labels** (DRIFTED_DUP).
+  `ui/properties/mod.rs` carried private `material_family_label` and
+  `tool_family_label`; `ui/feeds/shared.rs` carried `pub(crate)` twins. The
+  two tables had drifted in capitalisation ("Plywood (Soft)" against
+  "Plywood (soft)", "Flat End" against "Flat end") and in wording
+  ("Particleboard" against "Particle board", "Facing" against "Facing bit").
+  The properties copies are deleted and both call sites read the shared feeds
+  module. No test, snapshot or golden pinned either spelling, so the
+  sentence-case shared spellings win. Risk: low. Gate:
+  `cargo test -p rs_cam_viz -q --lib -- ui::properties ui::feeds` (18 passed)
+  and viz clippy.
+
 ## Phase 4 — documentation / no-action items
 
 - [ ] **C40 — SIBLING/NO-ACTION records**: I08 pairs B/C/D, I09 P1/P3,

@@ -10,6 +10,10 @@
 //! `ui/readiness_panel.rs`. A function that only ONE of them calls belongs
 //! in that caller's file.
 //!
+//! C29 added a fifth caller: the vendor LUT viewer in `ui/properties/mod.rs`
+//! reads [`material_family_label`] and [`tool_family_label`] here. It carried
+//! its own copies of both tables, and the two spellings had drifted apart.
+//!
 //! [`draw_machine_envelope`] is the one item DC5a's plan placed with the
 //! project rollup and the call graph placed here. Chart C draws it and the
 //! project scatter draws it, so it is shared geometry and not a
