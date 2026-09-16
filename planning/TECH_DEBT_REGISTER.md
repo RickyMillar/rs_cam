@@ -24,7 +24,7 @@ need a register.
 | T-8 | The power derate thins the chip, and only half the power responds | open — one sentry red |
 | T-9 | A feed clamped onto a ceiling ships one rounding step above it | open |
 | T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating |
-| T-11 | Feed modulation multiplies mm by a fraction of a different quantity | open — every fixture hides it |
+| T-11 | Feed modulation multiplies mm by a fraction of a different quantity | **closed** `bf8824ad` |
 | T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `0dc9141f` |
 
 ---
@@ -403,7 +403,21 @@ about four. Any reasoning about "reduce the depth" that passes through the
 modulator is wrong until this is fixed. See
 `planning/load_model_2026-09-16/IMPLEMENTATION_PLAN.md`.
 
-**Fix:** read the absolute per-sample `axial_engagement_mm` that the dexel
+**CLOSED by `bf8824ad`** (2026-09-16). `PerMoveEngagement` now carries
+`axial_doc_mm` and the solver reads it. The multiplication is deleted, not
+corrected, so no expression with the wrong units survives. Pinned by
+`tests/modulation_reads_the_depth_in_mm_g_axialunits.rs`, which never uses a
+fraction of 1.0.
+
+**One thing to know if this is ever revisited:** closing it changed no
+existing test outcome. The pipeline fixture that drives real modulation
+supplies neither `deflection_inputs` nor `power_inputs`, so the depth never
+reached a cap in the suite. Production supplies both. The defect was
+therefore live in shipped behaviour and invisible to every gate, and the new
+sentry is the only coverage. A fixture that drives the modulator with the
+caps ENABLED, off a real simulated trace, is still missing.
+
+**Original fix note:** read the absolute per-sample `axial_engagement_mm` that the dexel
 already measures, exactly as the field doc directs. Multiplying the fraction
 by `flute_length` recovers the same number and is the smaller change, but it
 re-derives a value the sample already carries. Then re-pin the fixtures at a
