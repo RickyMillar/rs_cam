@@ -1,11 +1,11 @@
 use crate::debug_trace::{TOOLPATH_DEBUG_SCHEMA_VERSION, ToolpathDebugBounds2, ToolpathDebugTrace};
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
-use crate::toolpath::{Move, Toolpath};
+use crate::toolpath::Toolpath;
 use serde::Serialize;
 use serde::{Deserialize, Serialize as DeriveSerialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -869,11 +869,6 @@ impl ToolpathSemanticScope {
         self.update_item(|item| item.params.insert(key, value));
     }
 
-    /// [`Self::set_param`] with a pre-serialised value.
-    pub fn set_param_json(&self, key: SemanticKey, value: Value) {
-        self.update_item(|item| item.params.insert_json(key, value));
-    }
-
     pub fn set_debug_span_id(&self, debug_span_id: u64) {
         self.update_item(|item| item.debug_span_id = Some(debug_span_id));
     }
@@ -954,35 +949,11 @@ impl<'a> ToolpathSemanticWriter<'a> {
         }
     }
 
-    pub fn push_move(&mut self, scope: Option<&ToolpathSemanticScope>, mv: Move) {
-        let start = self.toolpath.moves.len();
-        self.toolpath.moves.push(mv);
-        if let Some(scope) = scope {
-            scope.bind_to_toolpath(self.toolpath, start, self.toolpath.moves.len());
-        }
-    }
-
-    pub fn bind_scope_to_current_range(&self, scope: &ToolpathSemanticScope, move_start: usize) {
-        scope.bind_to_toolpath(self.toolpath, move_start, self.toolpath.moves.len());
-    }
-
     pub fn toolpath(&self) -> &Toolpath {
         self.toolpath
     }
 
     pub fn finish(self) {}
-}
-
-pub fn item_ids_covering_move(trace: &ToolpathSemanticTrace, move_idx: usize) -> Vec<u64> {
-    let mut item_ids = BTreeSet::new();
-    for item in &trace.items {
-        if item.move_start.is_some_and(|start| start <= move_idx)
-            && item.move_end.is_some_and(|end| move_idx <= end)
-        {
-            item_ids.insert(item.id);
-        }
-    }
-    item_ids.into_iter().collect()
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
