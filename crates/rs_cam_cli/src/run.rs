@@ -110,7 +110,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         let command = Command::SetToolParam(SetToolParamArgs {
             index: tool_idx,
             param: key.to_owned(),
-            value: parse_json_value(value),
+            value: crate::job::param_value_from_str(value),
         });
         let _ = apply_command(&mut session, command)
             .map_err(|e| anyhow::anyhow!("--tool-set {key}: {e}"))?;
@@ -161,7 +161,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         let command = Command::SetToolpathParam(SetToolpathParamArgs {
             index: tp_index,
             param: key.to_owned(),
-            value: parse_json_value(value),
+            value: crate::job::param_value_from_str(value),
         });
         let _ = apply_command(&mut session, command)
             .map_err(|e| anyhow::anyhow!("--set {key}: {e}"))?;
@@ -311,23 +311,4 @@ fn parse_tool_spec(spec: &str) -> Result<(ToolType, f64)> {
 fn split_kv(kv: &str) -> Result<(&str, &str)> {
     kv.split_once('=')
         .with_context(|| format!("Expected key=value, got '{kv}'"))
-}
-
-/// Best-effort typed JSON from a CLI string: integer, float, bool,
-/// else string. `set_toolpath_param`'s own coercion layer (E.6.a)
-/// handles the rest (numeric strings, 0/1 bools, enum tokens).
-fn parse_json_value(s: &str) -> serde_json::Value {
-    if let Ok(i) = s.parse::<i64>() {
-        return serde_json::Value::Number(i.into());
-    }
-    if let Ok(f) = s.parse::<f64>()
-        && let Some(n) = serde_json::Number::from_f64(f)
-    {
-        return serde_json::Value::Number(n);
-    }
-    match s {
-        "true" => serde_json::Value::Bool(true),
-        "false" => serde_json::Value::Bool(false),
-        _ => serde_json::Value::String(s.to_owned()),
-    }
 }

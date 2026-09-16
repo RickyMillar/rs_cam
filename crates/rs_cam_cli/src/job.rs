@@ -932,6 +932,33 @@ fn job_params_for(
     Ok(p)
 }
 
+/// Best-effort typed JSON from a CLI parameter string: integer, then float,
+/// then bool, else string.
+///
+/// **One coercer for the CLI.** `run --set` applies its answer through
+/// `Command::SetToolpathParam`, whose own coercion layer (E.6.a) handles the
+/// rest — numeric strings, 0/1 bools and enum tokens — and whose 0/1 → bool
+/// step reads `Number::as_i64`, so the integer-first order is load-bearing
+/// there. `sweep` records its answer in the report's `SweepVariant.value`.
+/// The sweep held its own copy with the float test FIRST until 2026-09-17,
+/// so the same `3` on the command line was `3` in one artifact and `3.0` in
+/// the other, and a reader comparing them saw two types for one value.
+pub(crate) fn param_value_from_str(s: &str) -> serde_json::Value {
+    if let Ok(i) = s.parse::<i64>() {
+        return serde_json::Value::Number(i.into());
+    }
+    if let Ok(f) = s.parse::<f64>()
+        && let Some(n) = serde_json::Number::from_f64(f)
+    {
+        return serde_json::Value::Number(n);
+    }
+    match s {
+        "true" => serde_json::Value::Bool(true),
+        "false" => serde_json::Value::Bool(false),
+        _ => serde_json::Value::String(s.to_owned()),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {

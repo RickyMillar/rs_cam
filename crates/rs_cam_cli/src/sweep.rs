@@ -139,7 +139,7 @@ pub fn run_sweep(
 
         let arts = SweepArtifacts::generate(var_tp);
 
-        let json_val = parse_value_to_json(val_str);
+        let json_val = crate::job::param_value_from_str(val_str);
         sweep_variants.push(SweepVariant {
             value: json_val,
             fingerprint: var_fp,
@@ -266,16 +266,6 @@ fn format_toml_field(field: &str, value: &str) -> String {
         format!("{field} = {value}")
     } else {
         format!("{field} = \"{value}\"")
-    }
-}
-
-fn parse_value_to_json(s: &str) -> serde_json::Value {
-    if let Ok(n) = s.parse::<f64>() {
-        serde_json::json!(n)
-    } else if let Ok(b) = s.parse::<bool>() {
-        serde_json::json!(b)
-    } else {
-        serde_json::json!(s)
     }
 }
 
