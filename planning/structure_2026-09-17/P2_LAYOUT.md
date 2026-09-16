@@ -1,12 +1,70 @@
 # P2 — the target layout for `crates/rs_cam_core/src/`
 
-Status: **draft, awaiting operator ratification.** No file moves until the
-operator ratifies this table. Programme: `planning/structure_2026-09-17/`,
-work package P2.
+Status: **ratified, 2026-09-17.** Section 0 records the five rulings that
+changed the table. Programme: `planning/structure_2026-09-17/`, work
+package P2.
 
 This document is the complete move order. It assigns every one of the 115
 root `.rs` files to one destination. It names every rename, every visibility
 change, every path break and every sentry the move must repair.
+
+## 0. Rulings (2026-09-17)
+
+The operator ratified this layout with five changes. Section 12 records the
+questions; this section records the answers. Where an answer and a later
+section disagree, this section wins.
+
+**Q1 — the spine stays at the root, but only the seven vocabulary files.**
+The root keeps `lib.rs`, `geo`, `polygon`, `mesh`, `toolpath`, `ids`,
+`interrupt` and `measurement`. The two helpers `panic_message.rs` and
+`build_info.rs` move to a new `util/` folder. The root holds **8** files.
+
+**Q2 — `folder/mod.rs` carries the folder's principal type.** The folder
+follows the precedent that `material/` already sets. So `io.rs` becomes
+`io/mod.rs`, `machine.rs` becomes `machine/mod.rs`, `dressup.rs` becomes
+`dressup/mod.rs` and the folder is `dressup/` (singular), and `material.rs`
+becomes `material/mod.rs`. There is no `io/model.rs` and no
+`machine/profile.rs`. `machine_kinematics.rs` still becomes
+`machine/kinematics.rs`. The crate paths `rs_cam_core::io::…`,
+`::machine::…`, `::dressup::…` and `::material::…` survive for every item
+those four files define. The `pub mod` lines of the folder's other files are
+appended to that `mod.rs`.
+
+**Q3 — the follow-path operation renames.** `trace.rs` becomes
+`ops/trace_path.rs`, module name `trace_path`. Its six call sites change.
+
+**Q4 — `simulation.rs` is deleted.** The 18-line re-export facade goes. Its
+readers (`rs_cam_viz::app::gpu_upload` and the test sites) name
+`rs_cam_core::stock::stock_mesh::StockMesh` directly. There is no shim.
+
+**Q5 — the move may edit `feeds/**` and `tool_load/**`.** The edits are path
+edits only: a `use` line or a call path, never a formula, a threshold or a
+control flow. The move agent checks `git status --short` on both folders
+before every rewrite and stops if a foreign modification is present.
+
+No re-export shim stands at any old path. No legacy support.
+
+### The folder table after the rulings
+
+| Folder | Files | Note |
+|---|---:|---|
+| root | 8 | `lib.rs`, `geo`, `polygon`, `mesh`, `toolpath`, `ids`, `interrupt`, `measurement` |
+| `util/` | 2 | `panic_message`, `build_info` — new |
+| `geometry/` | 14 | new |
+| `surface/` | 6 | new |
+| `maps/` | 11 | new |
+| `ops/` | 16 | new; `trace.rs` becomes `trace_path.rs` |
+| `finish/` | 20 | new |
+| `dressup/` | 7 | new; singular; `dressup.rs` becomes `mod.rs` |
+| `stock/` | 9 | new; `simulation.rs` is deleted, not moved |
+| `io/` | 7 | new; `io.rs` becomes `mod.rs` |
+| `export/` | 4 | new |
+| `trace/` | 5 | new |
+| `machine/` | 4 | new; `machine.rs` becomes `mod.rs` |
+| `material/` | 1 | existing; `material.rs` becomes `mod.rs` |
+
+`lib.rs` declares **31** modules after the move: 24 folders and 7 spine
+files.
 
 ## 1. The measurement (before)
 
