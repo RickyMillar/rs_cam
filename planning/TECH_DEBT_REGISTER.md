@@ -23,6 +23,7 @@ need a register.
 | T-7 | Two definitions of "teeth in cut", differing by helix wrap | open |
 | T-8 | The power derate thins the chip, and only half the power responds | open — one sentry red |
 | T-9 | A feed clamped onto a ceiling ships one rounding step above it | open |
+| T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs data |
 
 ---
 
@@ -244,12 +245,21 @@ re-pinned.
 correct against the ceiling it is given, and every assertion about the
 clamp passes. No assertion states which lever a power limit should pull.
 
-**Fix:** R4 — make the derate direction per-derate. Deflection-driven derates
-reduce chipload; feed-cap and power derates traverse the constant-chipload
-line by reducing RPM, which cuts BOTH power terms (at fixed chipload, feed
-is proportional to RPM, so the shear term is too, and the edge term is
-proportional to `Vc`). Needs its own authorisation, for the same reason R1
-did — it moves recommended spindle speeds.
+**Fix:** specified in `planning/load_model_2026-09-16/DERATE_SPEC.md`. Make
+the derate direction per-derate. Deflection-driven derates reduce chipload.
+The feed-cap derate traverses the constant-chipload line by reducing RPM.
+The power derate branches on `PowerModel`.
+
+**Correction, measured after R1:** an earlier version of this entry said the
+power derate must also traverse the constant-chipload line. That is true
+only on `PowerModel::ConstantPower`. On `PowerModel::VfdConstantTorque` the
+available power scales with RPM exactly as the required power does, so
+utilisation stays at 120 % at 9 000, 6 000, 4 500 and 3 000 rpm. The
+traverse achieves nothing there. Only a smaller depth of cut helps
+(120 % -> 85 % -> 57 % -> 36 % at ap 8.4 -> 6.0 -> 4.0 -> 2.5 mm).
+
+Needs its own authorisation, for the same reason R1 did — it moves
+recommended spindle speeds.
 
 ---
 
@@ -280,6 +290,46 @@ limit to become binding will meet it too.
 by a ceiling, or re-check the limits after quantisation. Not done here
 because it moves recommended feeds by up to 1 mm/min across the whole
 matrix, for a defect worth 0.013 %.
+
+---
+
+## T-10 — no gantry feed-force limit exists; the steppers are unmodelled
+
+`rs_cam_core` models tool deflection, spindle power and chipload. It does
+not model the force the gantry must push to make the cut. There is no
+thrust, stall or feed-force limit anywhere in the crate.
+
+A stepper gantry does not fail by running out of watts. It fails by losing
+steps when the cutting force is more than the axis thrust. Measured on the
+reference cut (Ø12 4-flute bull nose, ap 8.4, ae 4.2, white oak) the feed
+force is 22-34 N. As wattage that is 1.4-3.3 W, under 1 % of the spindle
+power — which is why a power model cannot see it. Against a hobby gantry's
+thrust it is significant.
+
+The force is set by the chip thickness, not by the feed rate. At a constant
+chip thickness of 0.0625 mm/tooth the feed can go from 1 125 to 4 500
+mm/min and the gantry force does not move from 28.0 N, while the spindle
+power goes from 269 to 1 076 W.
+
+**Why nothing catches it:** the limit is not weakly enforced. It is absent.
+No test can fail on a constraint the crate does not state.
+
+**Cost if left:** the engine recommends a cut that a light machine cannot
+push, and it reports no warning. The user finds out when the machine loses
+position in the middle of a job.
+
+**This is a research question before it is a coding question.** It needs:
+
+1. A rated axis thrust per machine profile, in newtons. `MachineProfile`
+   carries no such field. Without it there is no denominator, and a made-up
+   constant is worse than the present honest silence.
+2. A feed-force ratio. The affine model in `feeds/force.rs` gives the
+   tangential force. The feed-direction component is a fraction of it that
+   changes with the immersion angle and the cut direction. The numbers above
+   use 0.5 as a placeholder. A real value needs a literature anchor of the
+   same standard as `force.rs` uses, or a measurement.
+3. A decision on the lever to pull when it binds. Per `DERATE_SPEC.md`,
+   probably a thinner chip or a narrower cut, and never a slower feed.
 
 ---
 
