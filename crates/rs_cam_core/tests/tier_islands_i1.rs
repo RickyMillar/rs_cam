@@ -25,11 +25,11 @@
 #![allow(clippy::indexing_slicing)]
 
 use rs_cam_core::geo::P2;
-use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::tier_islands::{
+use rs_cam_core::maps::tier_islands::{
     CAP_CLOSE_RAISE_FACTOR, MAX_CLOSE_RAISES, TierIslandParams, extract_tier_islands,
 };
-use rs_cam_core::tier_map::{NO_TIER, ResidualTreatment, TierMap};
+use rs_cam_core::maps::tier_map::{NO_TIER, ResidualTreatment, TierMap};
+use rs_cam_core::polygon::Polygon2;
 
 // ── Fixture construction ────────────────────────────────────────────────
 

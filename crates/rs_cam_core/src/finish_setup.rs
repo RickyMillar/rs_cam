@@ -346,7 +346,7 @@ impl FinishSurface {
 /// start. Incremented on entry, so a build cancelled part-way still counts —
 /// the question this answers is "did the walk run", not "did it finish".
 ///
-/// The measurement instrument for the [`crate::finish_surface_cache`] memo, and
+/// The measurement instrument for the [`crate::maps::finish_surface_cache`] memo, and
 /// deliberately **inside the builder** rather than on the cache: the bar that
 /// memo is written against is "the second call does no surface-build work", and
 /// a counter kept by the cache could report a hit while something else rebuilt.
@@ -382,7 +382,7 @@ pub fn reset_surface_build_count() {
 /// This entry point is **uncached** and stays that way: it is what the
 /// resolution A/B harnesses and the parity sentries drive, and they need a
 /// fresh build every time. Production finishing consumers go through
-/// [`crate::finish_surface_cache::cached_finish_surface`], which memoises
+/// [`crate::maps::finish_surface_cache::cached_finish_surface`], which memoises
 /// *this* function — so the two can never disagree about what a surface is.
 pub fn build_finish_surface_with_policy_and_cancel(
     mesh: &TriangleMesh,

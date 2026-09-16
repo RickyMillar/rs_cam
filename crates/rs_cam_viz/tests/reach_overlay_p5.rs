@@ -27,8 +27,8 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::maps::reach_map::{ReachMap, reach_map_for_mesh};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
-use rs_cam_core::reach_map::{ReachMap, reach_map_for_mesh};
 use rs_cam_core::tool::BallEndmill;
 
 use rs_cam_viz::state::runtime::reach_overlay_colors;

@@ -1229,8 +1229,10 @@ fn render_tier_map_preview(
     let svg_written = match svg_path {
         None => None,
         Some(path) => {
-            let svg =
-                rs_cam_core::tier_islands::tier_islands_to_svg(&preview.map, &preview.islands);
+            let svg = rs_cam_core::maps::tier_islands::tier_islands_to_svg(
+                &preview.map,
+                &preview.islands,
+            );
             if let Err(e) = std::fs::write(path, &svg) {
                 return preview_error(&format!("could not write {path}: {e}"));
             }

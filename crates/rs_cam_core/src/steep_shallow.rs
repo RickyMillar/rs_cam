@@ -718,7 +718,7 @@ pub fn steep_shallow_toolpath_split_with_resolution(
     // MEMOISED — see `finish_surface_cache`'s module doc. Like `ramp_finish`,
     // this op builds one surface per call rather than per region; it shares the
     // entry so every generation consumer reads one memo.
-    let surface = crate::finish_surface_cache::cached_finish_surface(
+    let surface = crate::maps::finish_surface_cache::cached_finish_surface(
         mesh, index, cutter, resolution, cancel,
     )?;
     let surface_hm = &surface.heightmap;

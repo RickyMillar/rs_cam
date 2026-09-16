@@ -165,16 +165,16 @@ pub struct ResolvedGenInputs {
     emission_stock_bbox: BoundingBox3,
     heights: crate::compute::config::ResolvedHeights,
     tool_def: crate::tool::ToolDefinition,
-    /// G8: shared with the per-mesh memo in [`crate::geom_cache`] rather than
+    /// G8: shared with the per-mesh memo in [`crate::maps::geom_cache`] rather than
     /// owned, so repeated toolpath resolution over one model reuses one grid.
     ///
-    /// WP11b: a [`LazyIndex`](crate::geom_cache::LazyIndex), not a built
+    /// WP11b: a [`LazyIndex`](crate::maps::geom_cache::LazyIndex), not a built
     /// index. [`ProjectSession::start`] runs on the GUI frame loop and the
     /// grid build over a 661 k-triangle terrain is the most expensive step
     /// generation makes, so the build waits for
-    /// [`force`](crate::geom_cache::LazyIndex::force) on the worker thread.
+    /// [`force`](crate::maps::geom_cache::LazyIndex::force) on the worker thread.
     /// Read it through [`Self::spatial_index`], never by hand.
-    spatial_index: Option<Arc<crate::geom_cache::LazyIndex>>,
+    spatial_index: Option<Arc<crate::maps::geom_cache::LazyIndex>>,
     cutting_levels: Vec<f64>,
     prev_tool_radius: Option<f64>,
     /// R1 (pencil): the resolved real reference tool config when the Pencil op's
@@ -219,7 +219,7 @@ pub struct ResolvedGenInputs {
 impl ResolvedGenInputs {
     /// The spatial index over this generation's mesh, built on first read.
     ///
-    /// The bundle stores a [`LazyIndex`](crate::geom_cache::LazyIndex), so
+    /// The bundle stores a [`LazyIndex`](crate::maps::geom_cache::LazyIndex), so
     /// this is where the grid build happens. Call it off the frame loop.
     /// `None` means the operation has no mesh.
     fn spatial_index(&self) -> Option<&crate::mesh::SpatialIndex> {
@@ -2783,7 +2783,7 @@ impl ProjectSession {
                 // array. Returning a *shared* Arc is also what lets the
                 // spatial-index memo below hit on a non-identity setup: a
                 // fresh Arc per toolpath would miss however it was keyed.
-                mesh = Some(crate::geom_cache::cached_transform(
+                mesh = Some(crate::maps::geom_cache::cached_transform(
                     raw_mesh,
                     &self.setup_transform_info(face_up, z_rotation),
                 ));
@@ -2887,7 +2887,7 @@ impl ProjectSession {
         // the worker thread. The one arm below that needs a built index —
         // a `PlannedTierRegions` boundary, which walks the tier map here —
         // forces it explicitly and says so.
-        let spatial_index = mesh.as_ref().map(crate::geom_cache::lazy_auto_index);
+        let spatial_index = mesh.as_ref().map(crate::maps::geom_cache::lazy_auto_index);
 
         // Compute cutting levels from the operation config (empty for 3D ops,
         // actual depth levels for 2D ops like Profile, Pocket, Adaptive, etc.)
@@ -3496,7 +3496,7 @@ impl ProjectSession {
                 // G8: memoised per mesh identity. This ran twice per toolpath
                 // (pre-boundary resolution + the post-generation enforcement
                 // clip), each time rasterising every face of the mesh.
-                let silhouettes = crate::geom_cache::cached_silhouette(m);
+                let silhouettes = crate::maps::geom_cache::cached_silhouette(m);
                 crate::polygon::largest_by_area(&silhouettes)
                     .cloned()
                     .unwrap_or_else(|| {

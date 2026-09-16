@@ -3,8 +3,8 @@
 //!
 //! Phase O of `planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md`. The
 //! layers below it already exist and are not re-implemented here:
-//! [`crate::tier_map`] walks the *n*-tool residual, [`crate::tier_map_cache`]
-//! memoises the walk, and [`crate::tier_islands`] conditions the labels into
+//! [`crate::maps::tier_map`] walks the *n*-tool residual, [`crate::maps::tier_map_cache`]
+//! memoises the walk, and [`crate::maps::tier_islands`] conditions the labels into
 //! per-tier [`RegionSet`]s. This module is the seam between those and the
 //! session's op chain.
 //!
@@ -23,7 +23,7 @@
 //! validates the ladder, allocates a plan id, replaces any prior plan, and
 //! writes `k` configs. The boundary each fine tier carries is a *recipe*
 //! ([`BoundarySource::PlannedTierRegions`]), resolved lazily at generation
-//! time through [`crate::tier_map_cache::cached_tier_map`] — so the `k`
+//! time through [`crate::maps::tier_map_cache::cached_tier_map`] — so the `k`
 //! sibling ops share ONE grid walk, and re-planning at a different coarseness
 //! costs nothing until something is generated.
 //!
@@ -81,10 +81,12 @@ use crate::compute::cutter::build_cutter;
 use crate::compute::operation_configs::UnifiedFinishConfig;
 use crate::compute::tool_config::ToolConfig;
 use crate::ids::ToolpathId;
+use crate::maps::tier_islands::{
+    TierBandAdvisory, TierIslandParams, TierIslands, extract_tier_islands,
+};
+use crate::maps::tier_map::{ResidualTreatment, TierLadder, TierMap, TierMapParams};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
-use crate::tier_islands::{TierBandAdvisory, TierIslandParams, TierIslands, extract_tier_islands};
-use crate::tier_map::{ResidualTreatment, TierLadder, TierMap, TierMapParams};
 use crate::tool::{MillingCutter, ToolDefinition};
 
 use super::{PlannerOrigin, ProjectSession, SessionError, SetupEvalContext, ToolpathConfig};
@@ -247,16 +249,16 @@ pub struct MultitoolPlanOutcome {
     /// Prior planner-origin ops this run removed. Empty on a first plan.
     pub replaced: Vec<ToolpathId>,
     /// G-OVERLAPFILL: what the overlap band cost each fine tier in
-    /// territory — see [`crate::tier_islands::TierBandAdvisory`].
+    /// territory — see [`crate::maps::tier_islands::TierBandAdvisory`].
     ///
     /// **Three-valued.** `None` means **not measured**: planning is cheap by
     /// contract (no tier map is built here), and no map for this ladder and
     /// these dials was already in
-    /// [`crate::tier_map_cache`]. Preview first — either
+    /// [`crate::maps::tier_map_cache`]. Preview first — either
     /// [`ProjectSession::preview_multitool_plan`] or a generate — and the
     /// next plan reads it. `Some(vec![])` means measured and healthy: every
     /// tier's band is under
-    /// [`crate::tier_islands::BAND_RATIO_ADVISORY_BOUND`].
+    /// [`crate::maps::tier_islands::BAND_RATIO_ADVISORY_BOUND`].
     pub band_advisories: Option<Vec<TierBandAdvisory>>,
 }
 
@@ -429,7 +431,7 @@ impl ProjectSession {
 
     /// G-OVERLAPFILL advisories off an ALREADY CACHED tier map, or `None`.
     ///
-    /// Never walks a map: [`crate::tier_map_cache::peek_tier_map`] is a
+    /// Never walks a map: [`crate::maps::tier_map_cache::peek_tier_map`] is a
     /// lookup. On a hit it does re-run the island morphology (an O(cells)
     /// pass, the same one a dial-only re-preview pays), which is what buys
     /// the areas; on a miss it costs a hash and reports "not measured".
@@ -446,7 +448,7 @@ impl ProjectSession {
             margin_mm: spec.margin_mm,
             treatment: spec.treatment,
         };
-        let map = crate::tier_map_cache::peek_tier_map(mesh, &ladder, &params)?;
+        let map = crate::maps::tier_map_cache::peek_tier_map(mesh, &ladder, &params)?;
         let islands = extract_tier_islands(&map, &spec.islands, cusp_radii).ok()?;
         Some(islands.band_advisories().collect())
     }
@@ -500,9 +502,9 @@ impl ProjectSession {
     /// The mesh and spatial index `spec`'s setup would GENERATE against.
     ///
     /// The same two lines `session::compute` runs per toolpath — the
-    /// setup-transformed mesh from [`crate::geom_cache::cached_transform`] on a
+    /// setup-transformed mesh from [`crate::maps::geom_cache::cached_transform`] on a
     /// non-identity setup, the model's own mesh otherwise, and
-    /// [`crate::geom_cache::cached_auto_index`] over whichever it is. Sharing
+    /// [`crate::maps::geom_cache::cached_auto_index`] over whichever it is. Sharing
     /// the memo is what makes the preview's map and the emitted ops' maps the
     /// SAME cached object rather than two walks that happen to agree: the
     /// tier-map memo keys on mesh identity, so a preview built off a private
@@ -519,7 +521,7 @@ impl ProjectSession {
             .and_then(|m| m.mesh.clone())?;
         let ctx = SetupEvalContext::build_for_setup(self, self.setups.get(setup_index));
         if ctx.needs_transform() {
-            mesh = crate::geom_cache::cached_transform(
+            mesh = crate::maps::geom_cache::cached_transform(
                 &mesh,
                 &self.setup_transform_info(ctx.face_up, ctx.z_rotation),
             );
@@ -535,7 +537,7 @@ impl ProjectSession {
         let Some(mesh) = self.plan_mesh(model_id, setup_index) else {
             return (None, None);
         };
-        let index = crate::geom_cache::cached_auto_index(&mesh);
+        let index = crate::maps::geom_cache::cached_auto_index(&mesh);
         (Some(mesh), Some(index))
     }
 
@@ -551,7 +553,7 @@ impl ProjectSession {
     /// It is NOT cheap the way [`Self::plan_multitool_finishing`] is — this is
     /// the call that pays for the grid walk (≈ 8 s at 0.6 mm, ≈ 31 s at 0.3 mm
     /// per ladder tool on the reference board). It is memoised
-    /// ([`crate::tier_map_cache`]), so a second preview that changes only the
+    /// ([`crate::maps::tier_map_cache`]), so a second preview that changes only the
     /// island dials re-runs the morphology alone, and the ops the plan later
     /// emits resolve their boundaries off the very same cached map. Run it off
     /// the UI thread and hand it a `cancel` the caller can fire.
@@ -1211,7 +1213,7 @@ fn resolve_tier_plan_with_tools(
         margin_mm: recipe.margin_mm,
         treatment: recipe.treatment,
     };
-    let map = crate::tier_map_cache::cached_tier_map(
+    let map = crate::maps::tier_map_cache::cached_tier_map(
         mesh,
         index.as_ref(),
         &ladder,

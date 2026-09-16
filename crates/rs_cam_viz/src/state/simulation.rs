@@ -181,7 +181,7 @@ pub struct SimulationDebugState {
 /// compares with [`Arc::ptr_eq`], which additionally proves the cached entry's
 /// subject is still alive.
 ///
-/// The doctrine and its full argument live in `rs_cam_core::geom_cache` (module
+/// The doctrine and its full argument live in `rs_cam_core::maps::geom_cache` (module
 /// doc) and `rs_cam_core::compute::sim_prefix` (`weak_matches`, copied here
 /// because the viz caches key on viz-side state). Pairing a bare pointer with
 /// an element count or an edit counter — what these four caches used to do —

@@ -37,12 +37,12 @@ mod common;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use common::tools::ball_cutter;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::surface::dropcutter::point_drop_cutter;
-use rs_cam_core::tier_map::{
+use rs_cam_core::maps::tier_map::{
     NO_TIER, ResidualTreatment, TierLadder, TierMap, TierMapError, TierMapParams, compute_tier_map,
     ladder_drops_at,
 };
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::surface::dropcutter::point_drop_cutter;
 use rs_cam_core::tool::MillingCutter;
 
 /// Half-extent of the fixture plate (mm).

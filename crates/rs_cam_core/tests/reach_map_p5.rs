@@ -1,4 +1,4 @@
-//! P5 — the per-tool reach map (`rs_cam_core::reach_map`).
+//! P5 — the per-tool reach map (`rs_cam_core::maps::reach_map`).
 //!
 //! The map answers one question — *does this ball radius fit into the
 //! mountain valleys?* — as a per-cell gap in mm between the surface a cutter
@@ -28,13 +28,13 @@
 use std::sync::Arc;
 
 use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::reach_map::{
+use rs_cam_core::maps::reach_map::{
     ReachMapParams, ReachMapRequest, ReachToleranceSource, compute_reach_map, reach_color,
     reach_colors, reach_map_for_mesh,
 };
-use rs_cam_core::reach_map_cache;
-use rs_cam_core::tier_map::cl_offset_bias_mm;
+use rs_cam_core::maps::reach_map_cache;
+use rs_cam_core::maps::tier_map::cl_offset_bias_mm;
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::tool::{
     BallEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition,
 };
@@ -205,7 +205,7 @@ fn a_flat_endmill_on_a_slope_is_reachable_too() {
 
 /// Where the worst gap sits, in world XY — so a failure names a place, not
 /// just a number.
-fn worst_cell(map: &rs_cam_core::reach_map::ReachMap) -> String {
+fn worst_cell(map: &rs_cam_core::maps::reach_map::ReachMap) -> String {
     let mut best = (f32::NEG_INFINITY, 0usize);
     for (i, cell) in map.cells.iter().enumerate() {
         if let Some(gap) = cell
@@ -354,7 +354,7 @@ fn a_colour_vector_has_one_entry_per_model_vertex() {
     // FOUR readings the overlay must not mix (P5.2): reached is
     // green-dominant, unresolved is neutral grey, a miss is red-dominant and
     // DEEPENS with the gap, and not measured is the model mesh's own colour.
-    let probe = rs_cam_core::reach_map::ReachRamp {
+    let probe = rs_cam_core::maps::reach_map::ReachRamp {
         tolerance_mm: 0.05,
         floor_mm: 0.05,
         max_gap_mm: 4.0,

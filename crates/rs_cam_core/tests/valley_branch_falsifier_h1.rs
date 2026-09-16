@@ -144,10 +144,10 @@ use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::contour_extract::marching_squares_bool_grid;
 use rs_cam_core::geometry::grid_field::distance_transform_2d;
 use rs_cam_core::geometry::monotone_cells::{lattice_monotone_cells, region_frame};
+use rs_cam_core::maps::tier_islands::{TierIslandParams, extract_tier_islands};
+use rs_cam_core::maps::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
-use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::tool::{CLPoint, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 use rs_cam_core::unified_finish::unified_finish_classification_resolution;
@@ -585,7 +585,7 @@ fn machined_stock(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     coarse: &TaperedBallEndmill,
-    tier_map: &rs_cam_core::tier_map::TierMap,
+    tier_map: &rs_cam_core::maps::tier_map::TierMap,
     bounds: [f64; 4],
 ) -> rs_cam_core::dexel_stock::TriDexelStock {
     use rs_cam_core::dexel_stock::TriDexelStock;

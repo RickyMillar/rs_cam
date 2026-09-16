@@ -33,9 +33,9 @@
 //! Every numeric control is a plain editable field. The Feeds tab's standing
 //! rule applies here.
 
-use rs_cam_core::rest_heatmap_mesh::{tier_fill_color, tier_overlap_color};
+use rs_cam_core::maps::rest_heatmap_mesh::{tier_fill_color, tier_overlap_color};
+use rs_cam_core::maps::tier_islands::{COARSENESS_MAX, COARSENESS_MIN, TierIslandSet, TierIslands};
 use rs_cam_core::session::MultitoolPreview;
-use rs_cam_core::tier_islands::{COARSENESS_MAX, COARSENESS_MIN, TierIslandSet, TierIslands};
 
 use super::{AppEvent, theme};
 use crate::state::AppState;
@@ -871,7 +871,7 @@ mod tests {
     use super::*;
 
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::tier_islands::TierCapReport;
+    use rs_cam_core::maps::tier_islands::TierCapReport;
 
     fn set_with(cap: TierCapReport, min_region_area_mm2: f64) -> TierIslandSet {
         TierIslandSet {

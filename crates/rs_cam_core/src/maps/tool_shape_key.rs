@@ -3,8 +3,8 @@
 //!
 //! # Why this is its own module
 //!
-//! [`crate::tier_map_cache`] introduced this key and argued it at length in its
-//! own module doc. [`crate::finish_surface_cache`] needs exactly the same
+//! [`crate::maps::tier_map_cache`] introduced this key and argued it at length in its
+//! own module doc. [`crate::maps::finish_surface_cache`] needs exactly the same
 //! question answered — *"is this the same cutter, as far as a drop cutter can
 //! tell?"* — and a second copy of a memo key is the divergence class this repo
 //! has already paid for more than once: two copies drift, and a memo key that

@@ -47,11 +47,11 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
 };
+use rs_cam_core::maps::tier_islands::TierIslandParams;
+use rs_cam_core::maps::tier_map::ResidualTreatment;
 use rs_cam_core::session::{
     AddToolpathArgs, Command, PlannerOrigin, ProjectFile, ProjectSession, ProjectSessionBuilder,
 };
-use rs_cam_core::tier_islands::TierIslandParams;
-use rs_cam_core::tier_map::ResidualTreatment;
 
 fn temp_path(name: &str) -> PathBuf {
     let mut dir = std::env::temp_dir();

@@ -15,7 +15,7 @@
 //!
 //! The operator's ruling (2026-08-27) is ONE knob spanning "lots of small
 //! regions" ↔ "a few large ones", with the raw dials behind an advanced
-//! flyout. The knob is [`rs_cam_core::tier_islands::TierIslandParams::coarseness`],
+//! flyout. The knob is [`rs_cam_core::maps::tier_islands::TierIslandParams::coarseness`],
 //! which scales the DERIVED close radius and min-island area from their
 //! `for_tool` baselines — linearly and quadratically respectively, because
 //! they are one length scale expressed once as a radius and once as its
@@ -41,9 +41,9 @@
 
 use std::time::{Duration, Instant};
 
+use rs_cam_core::maps::tier_islands::{COARSENESS_MAX, COARSENESS_MIN, TierIslandParams};
+use rs_cam_core::maps::tier_map::ResidualTreatment;
 use rs_cam_core::session::{MultitoolPlanSpec, MultitoolPreview};
-use rs_cam_core::tier_islands::{COARSENESS_MAX, COARSENESS_MIN, TierIslandParams};
-use rs_cam_core::tier_map::ResidualTreatment;
 
 /// Smallest planning cell (mm) the dialog will accept.
 ///

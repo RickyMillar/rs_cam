@@ -91,7 +91,7 @@
 //! # The instrument
 //!
 //! [`stats`] returns cumulative build/hit counts per derivation, and every
-//! *build* logs one `tracing::debug!` line under target `rs_cam_core::geom_cache`.
+//! *build* logs one `tracing::debug!` line under target `rs_cam_core::maps::geom_cache`.
 //! An 8-operation `generate_all` over one model should print exactly one
 //! `geom cache build kind=index` line; a regression that reintroduces
 //! per-toolpath rebuilding shows up as eight.
@@ -99,7 +99,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::compute::transform::SetupTransformInfo;
-use crate::memo::MeshMemo;
+use crate::maps::memo::MeshMemo;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 
@@ -147,7 +147,7 @@ struct Entry {
     transformed: Option<(TransformKey, Arc<TriangleMesh>)>,
 }
 
-/// The table itself is [`crate::memo::MeshMemo`]: `Weak` mesh identity (the
+/// The table itself is [`crate::maps::memo::MeshMemo`]: `Weak` mesh identity (the
 /// module doc above argues why that is not a raw pointer), dead-mesh sweep
 /// and oldest-first eviction at [`CAPACITY`]. The key is the mesh alone.
 type Table = MeshMemo<(), Entry, CAPACITY>;
@@ -173,11 +173,11 @@ pub struct GeomCacheStats {
 }
 
 /// This cache's own counters, one pair per memoised product. The mechanism
-/// is shared ([`crate::memo::CacheCounters`]); the statics are per cache and,
+/// is shared ([`crate::maps::memo::CacheCounters`]); the statics are per cache and,
 /// here, per product.
-static INDEX: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
-static SILHOUETTE: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
-static TRANSFORM: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
+static INDEX: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
+static SILHOUETTE: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
+static TRANSFORM: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
 
 /// Read the counters. This is the measurement instrument for G8: the point of
 /// the change is that these `*_builds` stay at one per model across a whole
@@ -255,7 +255,7 @@ pub fn cached_auto_index(mesh: &Arc<TriangleMesh>) -> Arc<SpatialIndex> {
     let built = Arc::new(SpatialIndex::build_auto(mesh));
     INDEX.record_build();
     tracing::debug!(
-        target: "rs_cam_core::geom_cache",
+        target: "rs_cam_core::maps::geom_cache",
         kind = "index",
         triangles = mesh.faces.len(),
         cells = built.cell_count(),
@@ -324,7 +324,7 @@ pub fn cached_silhouette(mesh: &Arc<TriangleMesh>) -> Arc<Vec<Polygon2>> {
     let built = Arc::new(crate::geometry::boundary::model_silhouette(mesh, None));
     SILHOUETTE.record_build();
     tracing::debug!(
-        target: "rs_cam_core::geom_cache",
+        target: "rs_cam_core::maps::geom_cache",
         kind = "silhouette",
         triangles = mesh.faces.len(),
         polygons = built.len(),
@@ -358,7 +358,7 @@ pub fn cached_transform(mesh: &Arc<TriangleMesh>, info: &SetupTransformInfo) -> 
     let built = Arc::new(info.apply_to_mesh(mesh));
     TRANSFORM.record_build();
     tracing::debug!(
-        target: "rs_cam_core::geom_cache",
+        target: "rs_cam_core::maps::geom_cache",
         kind = "transform",
         triangles = mesh.faces.len(),
         "geom cache build"

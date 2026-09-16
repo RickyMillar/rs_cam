@@ -13,7 +13,7 @@
 //! flagged as a P2.e datapoint if conditioned region counts ever grow"*).
 //!
 //! Tier islands are that growth. The multi-tool planner caps a tier at 24
-//! islands (`crate::tier_islands::DEFAULT_MAX_REGIONS_PER_TIER`), so a tier
+//! islands (`crate::maps::tier_islands::DEFAULT_MAX_REGIONS_PER_TIER`), so a tier
 //! whose mid-steep band decomposes into k regions pays k identical whole-board
 //! surface builds. `planning/thin_organic_2026-08-27/FINDINGS.md` §1.4 names
 //! this the prerequisite for the contour-for-thin-regions work, because that
@@ -21,9 +21,9 @@
 //! generation-time regression would be indistinguishable from a toolpath
 //! regression in the A/B.
 //!
-//! Nothing in the tree cached this before. [`crate::geom_cache`] memoises the
+//! Nothing in the tree cached this before. [`crate::maps::geom_cache`] memoises the
 //! spatial index, the silhouette and the setup-transformed mesh, and none of
-//! its keys carry a tool or a resolution; [`crate::tier_map_cache`] carries
+//! its keys carry a tool or a resolution; [`crate::maps::tier_map_cache`] carries
 //! both but memoises a tier map, not a surface.
 //!
 //! # Why this is a module and not a `geom_cache` entry
@@ -142,9 +142,9 @@ use crate::finish_setup::{
     build_finish_surface_with_policy_and_cancel,
 };
 use crate::interrupt::{CancelCheck, Cancelled};
+use crate::maps::tool_shape_key::ToolShapeKey;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
-use crate::tool_shape_key::ToolShapeKey;
 
 /// Maximum number of distinct surfaces held at once. See the module doc: the
 /// working set inside one operation is one, the second slot spans a tier
@@ -266,9 +266,9 @@ pub struct FinishSurfaceCacheStats {
 }
 
 /// This cache's own counters. The mechanism is shared
-/// ([`crate::memo::CacheCounters`]); the static is per cache, by the same
+/// ([`crate::maps::memo::CacheCounters`]); the static is per cache, by the same
 /// rule as the capacity and the key.
-static COUNTERS: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
+static COUNTERS: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
 
 /// Read the counters.
 #[must_use]
@@ -336,7 +336,7 @@ pub fn cached_finish_surface(
     )?);
     COUNTERS.record_build();
     tracing::debug!(
-        target: "rs_cam_core::finish_surface_cache",
+        target: "rs_cam_core::maps::finish_surface_cache",
         rows = built.rows(),
         cols = built.cols(),
         cell_mm = built.cell_size(),

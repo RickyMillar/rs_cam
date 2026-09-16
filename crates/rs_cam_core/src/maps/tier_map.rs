@@ -128,17 +128,17 @@
 //! # Cancellation
 //!
 //! The walk polls the cancel token **once per grid row**, in *both* passes —
-//! [`crate::grid::walk_rows`] is the one site that does it, so the
+//! [`crate::maps::grid::walk_rows`] is the one site that does it, so the
 //! granularity cannot drift between the two arms, between the parallel and
-//! serial builds, or between this map and [`crate::reach_map`].
+//! serial builds, or between this map and [`crate::maps::reach_map`].
 //! `rest_field`'s walk has no polling at all, which is why a rest analysis on
 //! a big board cannot be interrupted; this one can.
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::grid::{GridSpec, walk_rows};
 use crate::interrupt::{CancelCheck, Cancelled};
+use crate::maps::grid::{GridSpec, walk_rows};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::surface::dropcutter::point_is_over_mesh_xy;
 use crate::tool::{CLPoint, MillingCutter, drop_cutter_can_contact};
@@ -175,12 +175,12 @@ pub fn reset_drop_call_count() {
 /// is compared against.
 ///
 /// This exists as an enum rather than a closure because it is part of the
-/// [`crate::tier_map_cache`] key: a slope-compensated map and a raw one over
+/// [`crate::maps::tier_map_cache`] key: a slope-compensated map and a raw one over
 /// the same mesh, ladder and grid are different answers, and a memo that
 /// could not tell them apart would serve one for the other.
 ///
 /// Both variants are payload-free on purpose: every dial they could carry
-/// would have to be `to_bits`-keyed in [`crate::tier_map_cache`], and a
+/// would have to be `to_bits`-keyed in [`crate::maps::tier_map_cache`], and a
 /// discriminant cannot be got wrong. The compensation cap is therefore a
 /// module constant ([`MAX_COMPENSATED_SLOPE_DEG`]), not a field.
 /// It is `Serialize`/`Deserialize` because
@@ -736,7 +736,7 @@ fn classify_cell(
 }
 
 /// The ladder's own [`GridSpec`] constructor. The grid type and its
-/// accessors live in [`crate::grid`]; the padding rule is this module's.
+/// accessors live in [`crate::maps::grid`]; the padding rule is this module's.
 impl GridSpec {
     /// Pad past the mesh bbox by the finest tool's envelope plus the margin,
     /// so the outer ring of cells is genuinely non-contact and a consumer's

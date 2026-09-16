@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use rs_cam_core::feeds::FeedsResult;
+use rs_cam_core::maps::reach_map::ReachMap;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::reach_map::ReachMap;
 
 use super::job::{PostConfig, PostFormat};
 use super::toolpath::ToolpathId;
@@ -86,7 +86,7 @@ pub enum ReachStatus {
 ///
 /// The map is built on a worker (`ComputeLane::Reach`) because a cold walk is
 /// one full-grid drop-cutter pass — seconds, not milliseconds. Nothing here
-/// borrows the session: `rs_cam_core::reach_map::ReachMapRequest` carries its
+/// borrows the session: `rs_cam_core::maps::reach_map::ReachMapRequest` carries its
 /// own mesh, index and cutter, which is what lets the walk leave the UI
 /// thread without lending the session out.
 pub struct ReachOverlayState {
@@ -124,7 +124,7 @@ pub struct ReachOverlayState {
     /// `vertex_gaps` pass, off the frame loop). Comparing the resolved
     /// requests instead would remove the blink, and it cannot be done
     /// honestly from this crate: the memo's own tool-geometry key
-    /// (`rs_cam_core::tool_shape_key::ToolShapeKey`) is `pub(crate)` to core,
+    /// (`rs_cam_core::maps::tool_shape_key::ToolShapeKey`) is `pub(crate)` to core,
     /// and the fields that ARE reachable miss the common case — editing the
     /// selected tool's diameter leaves `tool_id` and, inside the cell clamp,
     /// `ReachMapParams` unchanged. A blink is a cosmetic cost; showing the

@@ -5,16 +5,16 @@
 //! drop-cutter work. It is cheap enough to call from the UI thread.
 //!
 //! The split is what lets the GUI keep the walk off the render loop without
-//! lending the whole session out: [`crate::reach_map::ReachMapRequest`] is
+//! lending the whole session out: [`crate::maps::reach_map::ReachMapRequest`] is
 //! `Send`, so the UI thread resolves one and a background thread calls
-//! [`crate::reach_map_cache::cached_reach_map`] on it. Nothing in the session
+//! [`crate::maps::reach_map_cache::cached_reach_map`] on it. Nothing in the session
 //! is borrowed while the walk runs.
 
 use std::sync::Arc;
 
 use crate::compute::cutter::build_cutter;
 use crate::feeds::ToolGeometryHint;
-use crate::reach_map::{
+use crate::maps::reach_map::{
     DEFAULT_REACH_TOLERANCE_MM, ReachMapParams, ReachMapRequest, ReachToleranceSource,
 };
 use crate::tool::MillingCutter;
@@ -132,8 +132,8 @@ impl ProjectSession {
     /// surface's probe dial. Pass `None` for the operator-facing answer.
     ///
     /// Does no drop-cutter work: the two geometry lookups it makes
-    /// ([`crate::geom_cache::cached_transform`] and
-    /// [`crate::geom_cache::cached_auto_index`]) are both memoised on mesh
+    /// ([`crate::maps::geom_cache::cached_transform`] and
+    /// [`crate::maps::geom_cache::cached_auto_index`]) are both memoised on mesh
     /// identity and are already warm on any generated toolpath.
     #[must_use]
     pub fn reach_map_spec(
@@ -153,12 +153,12 @@ impl ProjectSession {
         let setup = self.find_setup_for_toolpath_index(toolpath_index);
         let ctx = SetupEvalContext::build_for_setup(self, setup);
         if ctx.needs_transform() {
-            mesh = crate::geom_cache::cached_transform(
+            mesh = crate::maps::geom_cache::cached_transform(
                 &mesh,
                 &self.setup_transform_info(ctx.face_up, ctx.z_rotation),
             );
         }
-        let index = crate::geom_cache::cached_auto_index(&mesh);
+        let index = crate::maps::geom_cache::cached_auto_index(&mesh);
 
         let cutter = Arc::new(build_cutter(tool_cfg));
         let (tolerance_mm, tolerance_source) =

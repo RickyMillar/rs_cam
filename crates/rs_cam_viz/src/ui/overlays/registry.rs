@@ -1503,7 +1503,7 @@ pub enum Legend {
     /// whole ramp, not just the bar, because the ramp is LOG-scaled from the
     /// bar to the deepest gap and a legend built from the bar alone could not
     /// draw it (P5.2).
-    Reach(rs_cam_core::reach_map::ReachRamp),
+    Reach(rs_cam_core::maps::reach_map::ReachRamp),
     /// Colours from `render::sim_render::deviation_colors`.
     Deviation,
     /// Colours from `rs_cam_core::stock_mesh::height_gradient_colors`.

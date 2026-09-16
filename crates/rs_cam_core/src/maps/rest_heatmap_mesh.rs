@@ -45,10 +45,10 @@
 //! independent visibility flags and can be on at once.
 
 use crate::geo::P2;
+use crate::maps::tier_islands::TierIslands;
+use crate::maps::tier_map::{NO_TIER, TierMap};
 use crate::stock_mesh::StockMesh;
 use crate::surface::rest_field::RestGrid;
-use crate::tier_islands::TierIslands;
-use crate::tier_map::{NO_TIER, TierMap};
 
 /// Vertical lift (mm) applied to every heatmap vertex above the RestGrid's
 /// `surface_z`. Keeps the draped overlay from z-fighting the model/stock
@@ -522,9 +522,9 @@ mod tests {
     // ── Multi-tool tier preview ─────────────────────────────────────────
 
     use crate::geometry::region_set::RegionSet;
+    use crate::maps::tier_islands::{TierCapReport, TierIslandSet};
+    use crate::maps::tier_map::ResidualTreatment;
     use crate::polygon::Polygon2;
-    use crate::tier_islands::{TierCapReport, TierIslandSet};
-    use crate::tier_map::ResidualTreatment;
 
     const PREVIEW_NX: usize = 6;
     const PREVIEW_NY: usize = 6;

@@ -3,14 +3,14 @@
 //!
 //! This is Phase I of the multi-tool island-finishing plan
 //! (`planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md`). Its input is a
-//! [`crate::tier_map::TierMap`] — a per-cell "coarsest tool that holds this
+//! [`crate::maps::tier_map::TierMap`] — a per-cell "coarsest tool that holds this
 //! cell" label — and its output is, per fine tier, a [`RegionSet`] a
 //! `unified_finish` op can be confined to.
 //!
 //! # Why this layer exists at all
 //!
 //! Measured on the real wanaka mesh (2026-08-26, 0.3 mm cells, tolerance
-//! 0.05, R2.0 → R1.0 ladder, [`crate::tier_map::ResidualTreatment::SlopeCompensated`]):
+//! 0.05, R2.0 → R1.0 ladder, [`crate::maps::tier_map::ResidualTreatment::SlopeCompensated`]):
 //! the fine tier's territory is **22.0% of the board / 8,815 mm²**, and it
 //! arrives as roughly **566 raw islands**. Handed to
 //! [`crate::geometry::region_mask::region_polygons_from_mask`] as-is, 502 of those are
@@ -103,8 +103,8 @@ use crate::geometry::grid_field::distance_transform_2d;
 use crate::geometry::grid2::Grid2;
 use crate::geometry::region_mask::region_polygons_from_mask_reported;
 use crate::geometry::region_set::RegionSet;
+use crate::maps::tier_map::{NO_TIER, TierMap};
 use crate::polygon::Polygon2;
-use crate::tier_map::{NO_TIER, TierMap};
 
 // ── Constants ───────────────────────────────────────────────────────────
 
@@ -290,7 +290,7 @@ pub struct TierIslandParams {
     /// back to the coarsest tier, before any morphology.
     ///
     /// **Off (0.0) by default, and that is a stated limitation, not an
-    /// oversight.** [`crate::tier_map`]'s module doc assigns this erosion to
+    /// oversight.** [`crate::maps::tier_map`]'s module doc assigns this erosion to
     /// its consumer: within roughly one ENVELOPE radius of the part edge a big
     /// tool hangs off and rests on the rim, reading a false-high residual, so
     /// the rim reads as fine-tier territory. This module is handed CUSP radii
@@ -740,7 +740,7 @@ impl TierIslands {
 ///
 /// `cusp_radii` is the ladder's per-tier **cusp** (tip) radii in mm, coarse
 /// first — the same ordering and the same radius
-/// [`crate::tier_map::TierLadder`] sorts on
+/// [`crate::maps::tier_map::TierLadder`] sorts on
 /// ([`crate::tool::MillingCutter::cusp_radius_mm`], never `radius()`: on a
 /// tapered tool `radius()` reports the shank, which is what made
 /// `min_region_area_mm2` 144 mm² instead of 4 mm² in the incident
@@ -1228,7 +1228,7 @@ fn tier_ring_svg_subpath(ring: &[P2], flip: f64, out: &mut String) {
 )]
 mod tests {
     use super::*;
-    use crate::tier_map::ResidualTreatment;
+    use crate::maps::tier_map::ResidualTreatment;
 
     fn map_with(labels: Vec<u8>, nx: usize, ny: usize, tier_count: usize) -> TierMap {
         let len = labels.len();

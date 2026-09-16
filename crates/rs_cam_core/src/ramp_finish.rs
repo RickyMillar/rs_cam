@@ -552,7 +552,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     // memo was written for; it goes through the same door anyway so that every
     // generation consumer shares one entry, and so a second op run back-to-back
     // against the same mesh and tool does not repeat the walk.
-    let surface = crate::finish_surface_cache::cached_finish_surface(
+    let surface = crate::maps::finish_surface_cache::cached_finish_surface(
         mesh, index, cutter, resolution, cancel,
     )?;
     let surface_hm = &surface.heightmap;

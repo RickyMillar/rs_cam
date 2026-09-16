@@ -100,14 +100,14 @@ use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_can
 use rs_cam_core::geo::P2;
 use rs_cam_core::geometry::contour_extract::marching_squares_bool_grid;
 use rs_cam_core::geometry::grid_field::distance_transform_2d;
+use rs_cam_core::maps::tier_islands::{TierIslandParams, extract_tier_islands};
+use rs_cam_core::maps::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::metrology::costing::{
     CandidateCost, CostingContext, CostingFeeds, LinkRegime,
     relink_and_cost_under as metrology_relink_and_cost_under,
 };
 use rs_cam_core::polygon::{Polygon2, detect_containment, shoelace_area};
-use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
-use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::unified_finish::unified_finish_classification_resolution;
 
@@ -2295,7 +2295,7 @@ struct A3Inputs<'a> {
     coarse: &'a TaperedBallEndmill,
     /// Production's own ownership field, at `cell_mm`. Used to decide, per
     /// dexel column, WHICH prior op last cut there.
-    tier_map: &'a rs_cam_core::tier_map::TierMap,
+    tier_map: &'a rs_cam_core::maps::tier_map::TierMap,
     zero_grid: &'a rs_cam_core::surface::dropcutter::DropCutterGrid,
     stepover: f64,
 }
@@ -3925,7 +3925,7 @@ struct D1Setup {
     index: SpatialIndex,
     coarse: TaperedBallEndmill,
     fine: TaperedBallEndmill,
-    tier_map: rs_cam_core::tier_map::TierMap,
+    tier_map: rs_cam_core::maps::tier_map::TierMap,
     zero_grid: rs_cam_core::surface::dropcutter::DropCutterGrid,
     stepover: f64,
     regions: Vec<RegionCells>,

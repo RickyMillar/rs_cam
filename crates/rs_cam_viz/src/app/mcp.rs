@@ -3098,8 +3098,8 @@ impl super::RsCamApp {
         // The remaining fields (raw close radius / min island area, rim
         // erosion) stay at their core derivation; `coarseness` is the one
         // knob the operator turns and it scales both.
-        let island_defaults = rs_cam_core::tier_islands::TierIslandParams::default();
-        let islands = rs_cam_core::tier_islands::TierIslandParams {
+        let island_defaults = rs_cam_core::maps::tier_islands::TierIslandParams::default();
+        let islands = rs_cam_core::maps::tier_islands::TierIslandParams {
             coarseness: dials.coarseness.unwrap_or(island_defaults.coarseness),
             overlap_mm: dials.overlap_mm.unwrap_or(island_defaults.overlap_mm),
             max_regions_per_tier: dials
@@ -3126,7 +3126,7 @@ impl super::RsCamApp {
             // board for the fine tiers, compensated 22.0% — within 3% of the
             // stock-referenced truth. Stated here rather than inherited so a
             // change to the core default cannot silently move this surface.
-            treatment: rs_cam_core::tier_map::ResidualTreatment::SlopeCompensated,
+            treatment: rs_cam_core::maps::tier_map::ResidualTreatment::SlopeCompensated,
             islands,
             coarse_skips_fine_islands: dials
                 .coarse_skips_fine_islands
@@ -3643,11 +3643,11 @@ impl super::RsCamApp {
         // so `cancel_generation` is not its owner.
         let cancel = std::sync::atomic::AtomicBool::new(false);
         let cancel_fn = || cancel.load(std::sync::atomic::Ordering::SeqCst);
-        let map = rs_cam_core::reach_map_cache::cached_reach_map(&spec, &cancel_fn)
+        let map = rs_cam_core::maps::reach_map_cache::cached_reach_map(&spec, &cancel_fn)
             .map_err(|e| format!("Reach map for toolpath {index} could not be built — {e}"))?;
         let gaps = map.vertex_gaps(spec.mesh.as_ref(), spec.index.as_ref());
         let floors = map.vertex_floors(spec.mesh.as_ref());
-        Ok(rs_cam_core::reach_map::reach_overlay_stock_mesh(
+        Ok(rs_cam_core::maps::reach_map::reach_overlay_stock_mesh(
             spec.mesh.as_ref(),
             &gaps,
             &floors,
@@ -3677,7 +3677,7 @@ impl super::RsCamApp {
         };
         let cancel = std::sync::atomic::AtomicBool::new(false);
         let cancel_fn = || cancel.load(std::sync::atomic::Ordering::SeqCst);
-        let map = match rs_cam_core::reach_map_cache::cached_reach_map(&request, &cancel_fn) {
+        let map = match rs_cam_core::maps::reach_map_cache::cached_reach_map(&request, &cancel_fn) {
             Ok(map) => map,
             Err(e) => {
                 return json_str(serde_json::json!({

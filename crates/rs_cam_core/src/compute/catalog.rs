@@ -339,7 +339,7 @@ impl OperationType {
         self.spec().label
     }
 
-    /// Does a per-tool reach map ([`crate::reach_map`]) say anything about
+    /// Does a per-tool reach map ([`crate::maps::reach_map`]) say anything about
     /// this operation? P5, 2026-09-08.
     ///
     /// **Derived from the registry, not a name list**: the operation must

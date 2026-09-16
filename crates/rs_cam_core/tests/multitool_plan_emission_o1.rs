@@ -33,12 +33,12 @@ mod common;
 use common::tools::ball_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundarySource, StockSource};
+use rs_cam_core::maps::tier_map::ResidualTreatment;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::multitool::MultitoolPlanSpec;
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, equal_cusp_stepover_mm,
 };
-use rs_cam_core::tier_map::ResidualTreatment;
 
 /// Cusp height (mm) every tier is dialled to.
 const CUSP_MM: f64 = 0.03;

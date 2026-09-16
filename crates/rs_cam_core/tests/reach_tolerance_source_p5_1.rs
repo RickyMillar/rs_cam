@@ -38,7 +38,9 @@ use common::tools::{ball_tool_config, endmill_tool_config, tapered_ball_tool_con
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::{DropCutterConfig, ScallopConfig};
 use rs_cam_core::compute::tool_config::ToolConfig;
-use rs_cam_core::reach_map::{DEFAULT_REACH_TOLERANCE_MM, ReachMapParams, ReachToleranceSource};
+use rs_cam_core::maps::reach_map::{
+    DEFAULT_REACH_TOLERANCE_MM, ReachMapParams, ReachToleranceSource,
+};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 

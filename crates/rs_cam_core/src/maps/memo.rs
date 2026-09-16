@@ -1,7 +1,7 @@
 //! The bounded, mesh-identity memo the map caches share.
 //!
-//! [`crate::geom_cache`], [`crate::tier_map_cache`] and
-//! [`crate::reach_map_cache`] each grew the same table: a `Vec` of entries
+//! [`crate::maps::geom_cache`], [`crate::maps::tier_map_cache`] and
+//! [`crate::maps::reach_map_cache`] each grew the same table: a `Vec` of entries
 //! that hold a [`Weak<TriangleMesh>`] for identity, a lookup that upgrades the
 //! `Weak` and compares with [`Arc::ptr_eq`], and an insert that sweeps
 //! dead-mesh entries and then evicts oldest-first at `CAPACITY`. The argument
@@ -14,7 +14,7 @@
 //! memo owns no lock, so each cache keeps the lock scope its own doc
 //! describes: the lock covers the lookup and the insert, never the build.
 //!
-//! [`crate::finish_surface_cache`] is deliberately not a member of the TABLE.
+//! [`crate::maps::finish_surface_cache`] is deliberately not a member of the TABLE.
 //! It keys the mesh by CONTENT, because no call site on its path holds an
 //! `Arc` to hang a `Weak` on (its module doc argues this at length), so it has
 //! neither the `Weak` identity nor the dead-mesh sweep this memo is built

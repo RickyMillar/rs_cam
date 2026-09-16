@@ -685,7 +685,7 @@ fn for_each_neighbor(i: usize, rows: usize, cols: usize, mut visit: impl FnMut(u
     }
 }
 
-/// `a &= b`, elementwise. `pub(crate)` for [`crate::tier_islands`], which
+/// `a &= b`, elementwise. `pub(crate)` for [`crate::maps::tier_islands`], which
 /// clips a closed tier mask back to the cells the tier is allowed to own —
 /// the same "close, then re-clamp" pairing [`decompose`]'s step 2 uses.
 pub(crate) fn and_masks_in_place(a: &mut [bool], b: &[bool]) {
@@ -699,7 +699,7 @@ pub(crate) fn and_masks_in_place(a: &mut [bool], b: &[bool]) {
 /// 8-connected components of `in_mask`, each a `Vec` of flat indices, in
 /// row-major discovery order.
 ///
-/// `pub(crate)` for [`crate::tier_islands`] (Phase I), which labels tier
+/// `pub(crate)` for [`crate::maps::tier_islands`] (Phase I), which labels tier
 /// masks with the same connectivity and the same discovery order — the order
 /// is load-bearing for determinism there, so the two must not diverge into
 /// separate implementations.
@@ -768,7 +768,7 @@ fn banded_components(
 /// distance transforms (O(cells)) rather than the per-ring dilation loop
 /// `steep_shallow::dilate_grid` uses.
 ///
-/// `pub(crate)` for [`crate::tier_islands`] (Phase I): the tier planner's
+/// `pub(crate)` for [`crate::maps::tier_islands`] (Phase I): the tier planner's
 /// island-merge step IS this operation, and re-implementing it there would
 /// give two "close" functions that could drift on the erosion convention
 /// (`> radius` vs `>= radius`) — a one-cell difference that shows up as

@@ -1,4 +1,4 @@
-//! Bounded memo for [`crate::reach_map::compute_reach_map`] — P5.
+//! Bounded memo for [`crate::maps::reach_map::compute_reach_map`] — P5.
 //!
 //! # Why this exists
 //!
@@ -10,18 +10,18 @@
 //!
 //! # Why the key is sound
 //!
-//! Verbatim [`crate::tier_map_cache`] discipline, for the same reasons argued
+//! Verbatim [`crate::maps::tier_map_cache`] discipline, for the same reasons argued
 //! at length there:
 //!
 //! * **Mesh identity** is a [`Weak<TriangleMesh>`] upgraded and compared with
 //!   [`Arc::ptr_eq`], never a bare pointer — a bare pointer has an ABA hazard.
 //!   Production meshes reach this through
-//!   [`crate::geom_cache::cached_transform`], which is itself memoised, so
+//!   [`crate::maps::geom_cache::cached_transform`], which is itself memoised, so
 //!   the same model in the same setup yields the same `Arc` and therefore
 //!   hits. A re-imported or re-transformed model is a new `Arc` and misses,
 //!   which is the invalidation: **there is no explicit invalidation code, and
 //!   there must not be.**
-//! * **Tool geometry** is keyed by [`crate::tool_shape_key::ToolShapeKey`] —
+//! * **Tool geometry** is keyed by [`crate::maps::tool_shape_key::ToolShapeKey`] —
 //!   the shape-defining accessors plus the
 //!   [`crate::feeds::ToolGeometryHint`] discriminant and its dials. A Ø6 ball
 //!   and the shipped Ø1-tip/Ø6-shank taper both report `radius() == 3.0`, and
@@ -33,7 +33,7 @@
 //!
 //! The tool and model **ids** ARE in the key, and have been since the file's
 //! first commit. They are display payload stamped onto the answer
-//! ([`crate::reach_map::ReachMap::with_ids`]), so two different ids over the
+//! ([`crate::maps::reach_map::ReachMap::with_ids`]), so two different ids over the
 //! same mesh and the same shape describe the same reach — but a hit serves
 //! the stamped answer, so leaving the ids out would hand one tool's map back
 //! carrying the other tool's id. The extra miss is the safe side, and
@@ -50,10 +50,10 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::interrupt::{CancelCheck, Cancelled};
-use crate::memo::MeshMemo;
+use crate::maps::memo::MeshMemo;
+use crate::maps::reach_map::{ReachMap, ReachMapRequest, compute_reach_map};
+use crate::maps::tool_shape_key::ToolShapeKey;
 use crate::mesh::TriangleMesh;
-use crate::reach_map::{ReachMap, ReachMapRequest, compute_reach_map};
-use crate::tool_shape_key::ToolShapeKey;
 
 /// Maximum number of distinct (mesh, tool, params) reach maps held at once.
 pub const CAPACITY: usize = 4;
@@ -83,7 +83,7 @@ impl ReachMapKey {
     }
 }
 
-/// The table itself is [`crate::memo::MeshMemo`]: `Weak` mesh identity,
+/// The table itself is [`crate::maps::memo::MeshMemo`]: `Weak` mesh identity,
 /// dead-mesh sweep and oldest-first eviction at [`CAPACITY`].
 type Table = MeshMemo<ReachMapKey, Arc<ReachMap>, CAPACITY>;
 
@@ -103,9 +103,9 @@ pub struct ReachMapCacheStats {
 }
 
 /// This cache's own counters. The mechanism is shared
-/// ([`crate::memo::CacheCounters`]); the static is per cache, by the same
+/// ([`crate::maps::memo::CacheCounters`]); the static is per cache, by the same
 /// rule as the capacity and the key.
-static COUNTERS: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
+static COUNTERS: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
 
 /// Read the counters.
 #[must_use]
@@ -169,7 +169,7 @@ pub fn cached_reach_map(
     );
     COUNTERS.record_build();
     tracing::debug!(
-        target: "rs_cam_core::reach_map_cache",
+        target: "rs_cam_core::maps::reach_map_cache",
         cells = built.cells.len(),
         cell_mm = built.cell_mm,
         tolerance_mm = built.tolerance_mm,

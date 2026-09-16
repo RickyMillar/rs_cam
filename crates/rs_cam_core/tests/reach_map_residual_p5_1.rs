@@ -123,8 +123,8 @@
 #![allow(clippy::print_stderr)]
 
 use rs_cam_core::geo::P3;
+use rs_cam_core::maps::reach_map::{ReachMap, reach_map_for_mesh};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::reach_map::{ReachMap, reach_map_for_mesh};
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 
 // ── fixtures ───────────────────────────────────────────────────────────────
@@ -573,7 +573,9 @@ fn a_trough_the_ball_does_not_fit_still_reports_its_bridge_gap() {
 /// would a finer tool improve".
 #[test]
 fn the_tier_map_and_the_reach_map_answer_different_questions() {
-    use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
+    use rs_cam_core::maps::tier_map::{
+        ResidualTreatment, TierLadder, TierMapParams, compute_tier_map,
+    };
 
     let half_angle = 45.0_f64;
     let mesh = v_trench(10.0, half_angle, 0.1);
@@ -683,7 +685,7 @@ fn the_wanaka_terrain_reach_table() {
     };
     // The shipped Q2 pass: Ø4 tapered ball, 3° half-angle, Ø6 shank.
     let taper = TaperedBallEndmill::new(4.0, 3.0, 6.0, 25.0);
-    let cell = rs_cam_core::reach_map::ReachMapParams::for_cutter(&taper, 0.05).cell_mm;
+    let cell = rs_cam_core::maps::reach_map::ReachMapParams::for_cutter(&taper, 0.05).cell_mm;
     eprintln!(
         "wanaka terrain: {} triangles, R{:.2} tip, envelope {:.2}, \
          cell rule gives {cell:.3} mm before the cell budget",

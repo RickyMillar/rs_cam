@@ -76,10 +76,10 @@ use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
 use rs_cam_core::geo::P2;
 use rs_cam_core::geometry::grid_field::distance_transform_2d;
+use rs_cam_core::maps::tier_islands::{TierIslandParams, extract_tier_islands};
+use rs_cam_core::maps::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
-use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::unified_finish::unified_finish_classification_resolution;
 

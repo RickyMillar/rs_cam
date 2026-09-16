@@ -302,6 +302,8 @@ use rs_cam_core::classify_probe::ClassificationSampler;
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
 use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::maps::tier_islands::{TierIslandParams, extract_tier_islands};
+use rs_cam_core::maps::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::metrology::census::{
     TriField, ZoneStats, ZoneVerdict as Verdict, census_zone as metrology_census_zone, ratio,
@@ -310,8 +312,6 @@ use rs_cam_core::metrology::monge::{
     ISOTROPY_ABS_TOL, ISOTROPY_REL_TOL, MongeOutcome, MongeScratch, axis_cos, fit_quadric, median,
 };
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
-use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::unified_finish::unified_finish_classification_resolution;
 

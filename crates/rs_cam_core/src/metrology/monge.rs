@@ -139,7 +139,7 @@ pub enum MongeOutcome {
 /// the surface.
 ///
 /// **One reader, not two.** This delegates to
-/// [`crate::reach_map::surface_z_at`], which is the same question tied to
+/// [`crate::maps::reach_map::surface_z_at`], which is the same question tied to
 /// the same containment predicate the drop cutter uses
 /// ([`crate::surface::dropcutter::point_is_over_mesh_xy`] via
 /// [`crate::geo::Triangle::contains_point_xy`]), so "is there surface here"
@@ -153,7 +153,7 @@ pub enum MongeOutcome {
 /// pierce, and `max` over the hits is the topmost surface, which for a
 /// heightfield is the only surface.
 pub fn surface_z(mesh: &TriangleMesh, index: &SpatialIndex, at: P2) -> Option<f64> {
-    crate::reach_map::surface_z_at(at.x, at.y, mesh, index)
+    crate::maps::reach_map::surface_z_at(at.x, at.y, mesh, index)
 }
 
 /// Solve the symmetric 6x6 system `A x = b` by Gauss-Jordan with partial

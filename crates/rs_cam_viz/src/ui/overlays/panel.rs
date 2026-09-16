@@ -335,7 +335,7 @@ fn swatch_row(ui: &mut egui::Ui, title: &str, swatches: &[(&str, [f32; 3])]) {
 fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend) {
     match legend {
         Legend::RestHeatmap(threshold, peak) => {
-            use rs_cam_core::rest_heatmap_mesh::rest_ramp_color;
+            use rs_cam_core::maps::rest_heatmap_mesh::rest_ramp_color;
             let threshold = threshold as f32;
             let peak = peak.max(threshold + 1e-6);
             gradient_strip(
@@ -346,7 +346,7 @@ fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend) {
             );
         }
         Legend::Reach(ramp) => {
-            use rs_cam_core::reach_map::reach_color;
+            use rs_cam_core::maps::reach_map::reach_color;
             // The strip draws the DEPTH band only — the bar to the deepest
             // gap, on the ramp's own log scale — because that is the part
             // with structure in it. Green and grey are single colours and
@@ -480,7 +480,7 @@ fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend) {
             );
         }
         Legend::TierMap(tier_count) => {
-            use rs_cam_core::rest_heatmap_mesh::tier_fill_color;
+            use rs_cam_core::maps::rest_heatmap_mesh::tier_fill_color;
             ui.label(
                 egui::RichText::new("Tier map \u{2014} one colour per tool tier")
                     .small()

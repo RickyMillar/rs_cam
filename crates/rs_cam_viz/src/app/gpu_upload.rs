@@ -1264,13 +1264,15 @@ impl RsCamApp {
                 None
             };
             resources.rest_heatmap_data = rest_grid.and_then(|grid| {
-                rs_cam_core::rest_heatmap_mesh::rest_grid_to_heatmap_mesh(&grid).and_then(|hm| {
-                    SimMeshGpuData::from_heightmap_mesh(
-                        &render_state.device,
-                        &resources.gpu_limits,
-                        &hm,
-                    )
-                })
+                rs_cam_core::maps::rest_heatmap_mesh::rest_grid_to_heatmap_mesh(&grid).and_then(
+                    |hm| {
+                        SimMeshGpuData::from_heightmap_mesh(
+                            &render_state.device,
+                            &resources.gpu_limits,
+                            &hm,
+                        )
+                    },
+                )
             });
         }
 
@@ -1312,7 +1314,7 @@ impl RsCamApp {
                 })
                 .and_then(|planner| planner.ready_preview())
                 .and_then(|preview| {
-                    rs_cam_core::rest_heatmap_mesh::tier_map_to_heatmap_mesh(
+                    rs_cam_core::maps::rest_heatmap_mesh::tier_map_to_heatmap_mesh(
                         &preview.map,
                         &preview.islands,
                     )

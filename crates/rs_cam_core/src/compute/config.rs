@@ -1841,7 +1841,7 @@ pub enum BoundarySource {
     /// a project file must store what to compute rather than a snapshot of a
     /// computation, and the regions must reflect the mesh and the ladder as
     /// they are at generation time. The islands are re-derived through
-    /// [`crate::tier_map_cache::cached_tier_map`], so the `k` sibling ops one
+    /// [`crate::maps::tier_map_cache::cached_tier_map`], so the `k` sibling ops one
     /// plan emits share a single grid walk rather than paying `k` of them.
     ///
     /// Unlike `DerivedRestRegions` this has **no source-toolpath
@@ -1853,7 +1853,7 @@ pub enum BoundarySource {
     ///
     /// `tier` is always ≥ 1. Tier 0 is the complement — the coarse tool
     /// sweeps its territory as one pass and needs no boundary — so
-    /// [`crate::tier_islands::TierIslands`] publishes no set for it and this
+    /// [`crate::maps::tier_islands::TierIslands`] publishes no set for it and this
     /// variant is never emitted with `tier: 0`.
     PlannedTierRegions {
         /// The FULL ladder, coarse → fine, as session tool ids. The whole
@@ -1865,16 +1865,16 @@ pub enum BoundarySource {
         tier: u8,
         /// Tier-map planning resolution (mm). Plan at 0.3–0.6; a full-grid
         /// drop-cutter map at 0.15 costs ~125 s per tool on a 200 mm board
-        /// (`crate::tier_map`'s module doc).
+        /// (`crate::maps::tier_map`'s module doc).
         cell_mm: f64,
-        /// Residual tolerance (mm) — see [`crate::tier_map::TierMapParams`].
+        /// Residual tolerance (mm) — see [`crate::maps::tier_map::TierMapParams`].
         tolerance_mm: f64,
         /// Grid padding (mm) beyond the finest tool's envelope.
         margin_mm: f64,
         /// How the raw residual is treated before the tolerance comparison.
-        treatment: crate::tier_map::ResidualTreatment,
+        treatment: crate::maps::tier_map::ResidualTreatment,
         /// Island close / min-area / overlap / cap dials.
-        islands: crate::tier_islands::TierIslandParams,
+        islands: crate::maps::tier_islands::TierIslandParams,
     },
 }
 

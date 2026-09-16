@@ -2,7 +2,7 @@
 //!
 //! # What the band does, and why that is not a defect
 //!
-//! [`rs_cam_core::tier_islands`] grows every fine tier's islands by
+//! [`rs_cam_core::maps::tier_islands`] grows every fine tier's islands by
 //! `overlap_mm` to make the MACHINING copy. The band's stated purpose is to
 //! reach into the coarser tier's territory so the fine tool's first pass
 //! lands on ground the coarse tool already cut, blending two cusp patterns
@@ -40,10 +40,10 @@
     clippy::print_stderr
 )]
 
-use rs_cam_core::tier_islands::{
+use rs_cam_core::maps::tier_islands::{
     BAND_RATIO_ADVISORY_BOUND, TierIslandParams, extract_tier_islands,
 };
-use rs_cam_core::tier_map::{ResidualTreatment, TierMap};
+use rs_cam_core::maps::tier_map::{ResidualTreatment, TierMap};
 
 // ── Fixture ─────────────────────────────────────────────────────────────
 
@@ -306,7 +306,7 @@ fn a_surviving_hole_is_a_real_polygon_not_a_collapsed_ring() {
 /// The dials come from the fixture the peer measured with
 /// (`planning/deep_doc_modulation_2026-09-08/T3b_r10_scallop_islands_relink3.toml`):
 /// tools 4 and 2, cell 0.4, margin 0.5, slope-compensated, **overlap 1.25**
-/// — NOT [`rs_cam_core::tier_islands::DEFAULT_OVERLAP_MM`] (2.0). Reference
+/// — NOT [`rs_cam_core::maps::tier_islands::DEFAULT_OVERLAP_MM`] (2.0). Reference
 /// readings from study doc §2.7a, owned / machining mm²:
 ///
 /// | tolerance | owned | machining |

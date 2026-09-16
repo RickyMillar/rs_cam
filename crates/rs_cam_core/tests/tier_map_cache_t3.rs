@@ -23,11 +23,11 @@ mod common;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use common::tools::{ball_cutter, wanaka_taper};
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphere};
-use rs_cam_core::tier_map::{
+use rs_cam_core::maps::tier_map::{
     ResidualTreatment, TierLadder, TierMapParams, drop_call_count, reset_drop_call_count,
 };
-use rs_cam_core::tier_map_cache::{CAPACITY, cache_len, cached_tier_map, clear, stats};
+use rs_cam_core::maps::tier_map_cache::{CAPACITY, cache_len, cached_tier_map, clear, stats};
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphere};
 use rs_cam_core::tool::MillingCutter;
 
 /// The counters and the table are process-global, so every test that reads a

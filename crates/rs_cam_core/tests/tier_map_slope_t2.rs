@@ -47,13 +47,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use common::tools::ball_cutter;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_flat};
-use rs_cam_core::tier_map::{
+use rs_cam_core::maps::tier_map::{
     MAX_COMPENSATED_SLOPE_DEG, NO_TIER, ResidualTreatment, TierLadder, TierMap, TierMapError,
     TierMapParams, cl_offset_bias_mm, compute_tier_map, drop_call_count, ladder_drops_at,
     reset_drop_call_count,
 };
-use rs_cam_core::tier_map_cache::{cached_tier_map, clear};
+use rs_cam_core::maps::tier_map_cache::{cached_tier_map, clear};
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_flat};
 use rs_cam_core::tool::MillingCutter;
 
 /// Half-extent of every plate fixture (mm).

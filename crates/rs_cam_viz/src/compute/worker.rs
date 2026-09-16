@@ -315,13 +315,13 @@ enum AnalysisRequest {
 
 /// One reach-map walk for the viewport overlay (P5).
 ///
-/// Carries no session. `rs_cam_core::reach_map::ReachMapRequest` owns its
+/// Carries no session. `rs_cam_core::maps::reach_map::ReachMapRequest` owns its
 /// mesh, spatial index and cutter, so the UI thread resolves one through
 /// `ProjectSession::reach_map_spec` — which does no drop-cutter work — and
 /// hands it over without lending the session out.
 pub struct ReachRequest {
     pub toolpath_id: ToolpathId,
-    pub spec: rs_cam_core::reach_map::ReachMapRequest,
+    pub spec: rs_cam_core::maps::reach_map::ReachMapRequest,
 }
 
 /// A finished reach-map walk.
@@ -334,7 +334,7 @@ pub struct ReachResult {
     /// The toolpath the walk was resolved for. The controller drops a result
     /// whose id no longer matches the selection rather than reporting it.
     pub toolpath_id: ToolpathId,
-    pub result: Result<Arc<rs_cam_core::reach_map::ReachMap>, ComputeError>,
+    pub result: Result<Arc<rs_cam_core::maps::reach_map::ReachMap>, ComputeError>,
     /// One colour per vertex of the mesh the map was measured over, in that
     /// mesh's vertex order. Empty when the walk failed.
     ///
@@ -1357,7 +1357,7 @@ fn run_job(request: &mut JobRequest) -> Result<rs_cam_core::session::JobAnswer, 
 /// are deliberate:
 ///
 /// * It computes the per-vertex colours here, beside the map.
-///   [`rs_cam_core::reach_map::ReachMap::vertex_gaps`] runs one
+///   [`rs_cam_core::maps::reach_map::ReachMap::vertex_gaps`] runs one
 ///   spatial-index query per mesh vertex — hundreds of thousands on a
 ///   board-sized terrain — so building them in the GPU upload pass would put
 ///   that walk on the frame loop.
@@ -1420,14 +1420,15 @@ fn spawn_reach_lane(
             // builds at its own `cached_tier_map` call.
             let cancel_fn = || lane.cancel.load(Ordering::SeqCst);
             let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                let built =
-                    match rs_cam_core::reach_map_cache::cached_reach_map(&request.spec, &cancel_fn)
-                    {
-                        Ok(map) => Ok(map),
-                        // `Cancelled` is a unit struct and carries nothing to
-                        // preserve; the lane's own error says the same thing.
-                        Err(rs_cam_core::interrupt::Cancelled) => Err(ComputeError::Cancelled),
-                    };
+                let built = match rs_cam_core::maps::reach_map_cache::cached_reach_map(
+                    &request.spec,
+                    &cancel_fn,
+                ) {
+                    Ok(map) => Ok(map),
+                    // `Cancelled` is a unit struct and carries nothing to
+                    // preserve; the lane's own error says the same thing.
+                    Err(rs_cam_core::interrupt::Cancelled) => Err(ComputeError::Cancelled),
+                };
                 let built = if lane.cancel.load(Ordering::SeqCst) {
                     Err(ComputeError::Cancelled)
                 } else {

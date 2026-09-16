@@ -33,7 +33,7 @@
 //! This module used to justify a bare `Arc::as_ptr` key by citing
 //! `SimulationState::cached_simulation_triage` as the codebase's established
 //! precedent. That citation was wrong twice over: the workspace's *argued*
-//! doctrine is the opposite one (`rs_cam_core::geom_cache` module doc,
+//! doctrine is the opposite one (`rs_cam_core::maps::geom_cache` module doc,
 //! `rs_cam_core::compute::sim_prefix` — "**pointer keys are `Weak`, never
 //! bare pointers**"), and the viz caches it named have since been converted
 //! to that doctrine too (`state::simulation`, `weak_matches`). Both key
@@ -66,7 +66,7 @@ use super::toolpath_render::EntryPreviewConfig;
 /// been dropped can only compare equal to a `Weak` into that same reserved
 /// allocation, which no live replacement can be. (Where a cache must also
 /// know the subject is still *alive*, upgrade instead — see
-/// `rs_cam_core::geom_cache` and `state::simulation::weak_matches`.)
+/// `rs_cam_core::maps::geom_cache` and `state::simulation::weak_matches`.)
 ///
 /// Cost: a dropped object's `Arc` header (tens of bytes, its `Vec`s already
 /// freed) is retained until the key is replaced on the next upload pass.

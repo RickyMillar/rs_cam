@@ -1,4 +1,4 @@
-//! Bounded memo for [`crate::tier_map::compute_tier_map`] — task T3 of the
+//! Bounded memo for [`crate::maps::tier_map::compute_tier_map`] — task T3 of the
 //! multi-tool plan (`planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md`
 //! Phase T).
 //!
@@ -34,7 +34,7 @@
 //!
 //! # Why the key is sound
 //!
-//! Verbatim [`crate::geom_cache`] discipline, for the same reasons argued at
+//! Verbatim [`crate::maps::geom_cache`] discipline, for the same reasons argued at
 //! length there:
 //!
 //! * **Mesh identity** is a [`Weak<TriangleMesh>`] upgraded and compared with
@@ -57,7 +57,7 @@
 //!   shipped Ø1-tip/Ø6-shank taper both report `radius() == 3.0`, and a key
 //!   that read only the envelope would collide on them — which is exactly the
 //!   radius-semantics defect class this repo has been paying down. That key
-//!   lived here until [`crate::finish_surface_cache`] needed the same answer;
+//!   lived here until [`crate::maps::finish_surface_cache`] needed the same answer;
 //!   it was moved rather than copied.
 //! * **[`ResidualTreatment`]** is in the key, so a slope-compensated map (T2)
 //!   can never be served out of a raw map's entry.
@@ -79,18 +79,18 @@
 //!
 //! [`stats`] counts builds and hits. The bar T3 is written against is not
 //! "the second call is faster" but "the second call does **no** drop-cutter
-//! work", which is read off [`crate::tier_map::drop_call_count`] — see
+//! work", which is read off [`crate::maps::tier_map::drop_call_count`] — see
 //! `tests/tier_map_cache_t3.rs`.
 
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::interrupt::CancelCheck;
-use crate::memo::MeshMemo;
-use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::tier_map::{
+use crate::maps::memo::MeshMemo;
+use crate::maps::tier_map::{
     ResidualTreatment, TierLadder, TierMap, TierMapError, TierMapParams, compute_tier_map,
 };
-use crate::tool_shape_key::ToolShapeKey;
+use crate::maps::tool_shape_key::ToolShapeKey;
+use crate::mesh::{SpatialIndex, TriangleMesh};
 
 /// Maximum number of distinct (mesh, ladder, params) tier maps held at once.
 ///
@@ -127,7 +127,7 @@ impl TierMapKey {
     }
 }
 
-/// The table itself is [`crate::memo::MeshMemo`]: `Weak` mesh identity,
+/// The table itself is [`crate::maps::memo::MeshMemo`]: `Weak` mesh identity,
 /// dead-mesh sweep and oldest-first eviction at [`CAPACITY`].
 type Table = MeshMemo<TierMapKey, Arc<TierMap>, CAPACITY>;
 
@@ -147,9 +147,9 @@ pub struct TierMapCacheStats {
 }
 
 /// This cache's own counters. The mechanism is shared
-/// ([`crate::memo::CacheCounters`]); the static is per cache, by the same
+/// ([`crate::maps::memo::CacheCounters`]); the static is per cache, by the same
 /// rule as the capacity and the key.
-static COUNTERS: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
+static COUNTERS: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
 
 /// Read the counters.
 #[must_use]
@@ -207,7 +207,7 @@ pub fn cached_tier_map(
     let built = Arc::new(compute_tier_map(mesh, index, ladder, params, cancel)?);
     COUNTERS.record_build();
     tracing::debug!(
-        target: "rs_cam_core::tier_map_cache",
+        target: "rs_cam_core::maps::tier_map_cache",
         tiers = built.tier_count,
         cells = built.labels.len(),
         cell_mm = built.cell_mm,
@@ -255,7 +255,7 @@ fn put(mesh: &Arc<TriangleMesh>, key: TierMapKey, map: Arc<TierMap>) {
 )]
 mod tests {
     use super::TierMapKey;
-    use crate::tier_map::{TierLadder, TierMapParams};
+    use crate::maps::tier_map::{TierLadder, TierMapParams};
     use crate::tool::{BallEndmill, MillingCutter};
 
     // The ball-vs-taper shape-key test moved to `tool_shape_key::tests` with

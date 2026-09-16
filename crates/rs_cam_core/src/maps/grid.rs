@@ -1,7 +1,7 @@
 //! The grid a full-board walk lays over the mesh bbox, and the row walk that
 //! drives it.
 //!
-//! [`crate::tier_map`] and [`crate::reach_map`] had a copy each of both. The
+//! [`crate::maps::tier_map`] and [`crate::maps::reach_map`] had a copy each of both. The
 //! grid is the same row-major convention in both maps, and the walk is the
 //! same dual-configuration row loop with one cancel poll per row — the
 //! granularity each module doc promises, which cannot drift between the two

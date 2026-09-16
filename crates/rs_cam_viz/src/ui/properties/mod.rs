@@ -3876,27 +3876,27 @@ pub(crate) enum ReachPanelSummary {
     Measured {
         unreachable_pct: f64,
         max_gap_mm: f64,
-        /// [`rs_cam_core::reach_map::ReachMap::grid_note`] — the cell, the
+        /// [`rs_cam_core::maps::reach_map::ReachMap::grid_note`] — the cell, the
         /// floor and the bar, plus the "the bar is under the floor" sentence
         /// where that applies. Printed under the percentage, because a
         /// percentage without its grid is not comparable with the next one
         /// (F1 / F5, 2026-09-08).
         grid_note: String,
-        /// [`rs_cam_core::reach_map::ReachMap::area_basis_note`] - the base
+        /// [`rs_cam_core::maps::reach_map::ReachMap::area_basis_note`] - the base
         /// every percentage on every surface owes beside it. Carried rather
         /// than rebuilt: this line printed "of MEASURED area" of its own
         /// while the panel legend printed the shared note, which is the
         /// fourth-surface drift the shared notes exist to stop.
         area_basis_note: String,
-        /// [`rs_cam_core::reach_map::ReachMap::over_statement_note`], shown
+        /// [`rs_cam_core::maps::reach_map::ReachMap::over_statement_note`], shown
         /// when the bar is under the floor.
         over_statement_note: String,
         /// True when the tolerance is under
-        /// [`rs_cam_core::reach_map::ReachMap::discretisation_floor_mm`]. The
+        /// [`rs_cam_core::maps::reach_map::ReachMap::discretisation_floor_mm`]. The
         /// grid's gap bias is NON-NEGATIVE (a minimum over a sampled set sits
         /// at or above the continuum minimum), so the percentage OVER-states
         /// and the truth is at or below it — see
-        /// [`rs_cam_core::reach_map::ReachMap::tolerance_below_floor`].
+        /// [`rs_cam_core::maps::reach_map::ReachMap::tolerance_below_floor`].
         tolerance_below_floor: bool,
     },
     Failed(String),

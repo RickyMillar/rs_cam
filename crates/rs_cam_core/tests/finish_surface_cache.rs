@@ -35,8 +35,10 @@ use rs_cam_core::finish_setup::{
     FinishResolutionPolicy, build_finish_surface_with_policy_and_cancel, reset_surface_build_count,
     surface_build_count,
 };
-use rs_cam_core::finish_surface_cache::{CAPACITY, cache_len, cached_finish_surface, clear, stats};
 use rs_cam_core::geo::P3;
+use rs_cam_core::maps::finish_surface_cache::{
+    CAPACITY, cache_len, cached_finish_surface, clear, stats,
+};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphere};
 use rs_cam_core::scallop::{ScallopParams, scallop_toolpath_structured_annotated_with_cancel};
 use rs_cam_core::tool::MillingCutter;

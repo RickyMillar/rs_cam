@@ -14,12 +14,12 @@
 //!
 //! # Why this is not a one-rung tier map
 //!
-//! [`crate::tier_map`] is the multi-tool sibling and was the obvious host,
+//! [`crate::maps::tier_map`] is the multi-tool sibling and was the obvious host,
 //! but a one-rung ladder cannot answer this. Its residual is
 //! `drop_z(tool_k) − drop_z(finest)` and with one tool `tool_k` **is** the
 //! finest, so every cell reads exactly zero. Two further mismatches:
 //!
-//! * [`crate::tier_map::TierMap`] deliberately stores a `u8` label and one
+//! * [`crate::maps::tier_map::TierMap`] deliberately stores a `u8` label and one
 //!   `f32` reference drop — 5 B/cell — and **discards the residual**. The
 //!   overlay shades by gap depth, so the millimetres are the payload.
 //! * A tool-versus-true-mesh residual measured as a raw vertical drop
@@ -31,13 +31,13 @@
 //!
 //! So this module builds on the layer *underneath* the tier map — the
 //! drop-cutter contact heights ([`crate::surface::dropcutter::point_drop_cutter`],
-//! the same call [`crate::tier_map::ladder_drops_at`] hoists a query out of)
+//! the same call [`crate::maps::tier_map::ladder_drops_at`] hoists a query out of)
 //! — and takes the residual against the **machined surface** instead of
 //! against a second drop plane.
 //!
 //! # Why the machined surface, and not a slope correction
 //!
-//! [`crate::tier_map::cl_offset_bias_mm`] subtracts the bias analytically.
+//! [`crate::maps::tier_map::cl_offset_bias_mm`] subtracts the bias analytically.
 //! Two reasons that law is the wrong instrument here:
 //!
 //! 1. **It is the spherical-tip law.** A flat tip on a slope sits
@@ -67,7 +67,7 @@
 //! `max over r of [ r·tan θ − height_at_radius(r) ]` — the same support
 //! function, read the other way. It reads no slope, needs no cap and has no
 //! abstain arm. Feed it a ball and it reproduces
-//! [`crate::tier_map::cl_offset_bias_mm`] to the discretisation floor;
+//! [`crate::maps::tier_map::cl_offset_bias_mm`] to the discretisation floor;
 //! `tests/reach_map_p5.rs::a_sloped_plane_is_reachable_and_the_bias_it_cancels_is_large`
 //! asserts that rather than assuming it.
 //!
@@ -130,8 +130,8 @@ use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
 
 use crate::geo::P3;
-use crate::grid::{GridSpec, walk_rows};
 use crate::interrupt::{CancelCheck, Cancelled};
+use crate::maps::grid::{GridSpec, walk_rows};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::{MillingCutter, ToolDefinition};
@@ -221,7 +221,7 @@ pub(crate) const MIN_REACH_CELL_MM: f64 = 0.25;
 /// scale** error, not a profile-sampling one — the mesh's own surface is read
 /// once per cell, so a crevice narrower than the cell falls between the
 /// samples and the map cannot see the very thing it is asked about. 0.6 mm is
-/// the top of [`crate::tier_map`]'s own measured planning band (0.3–0.6 mm),
+/// the top of [`crate::maps::tier_map`]'s own measured planning band (0.3–0.6 mm),
 /// and [`ReachMapParams::for_cutter`] tightens it further to half the tip
 /// radius on a fine tool.
 pub(crate) const MAX_REACH_CELL_MM: f64 = 0.6;
@@ -239,7 +239,7 @@ pub const MAX_REACH_CELLS: usize = 120_000;
 /// lies on the surface it is being compared against.
 const TOP_SURFACE_EPS_MM: f64 = 1e-6;
 
-/// Inputs to a reach-map walk. Mirrors [`crate::tier_map::TierMapParams`] in
+/// Inputs to a reach-map walk. Mirrors [`crate::maps::tier_map::TierMapParams`] in
 /// shape and units.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ReachMapParams {
@@ -353,7 +353,7 @@ impl std::fmt::Debug for ReachMapRequest {
 ///
 /// Row-major `r * nx + c`, cell centre at
 /// `(origin_x + c * cell_mm, origin_y + r * cell_mm)` — the same convention
-/// as [`crate::tier_map::TierMap`] and [`crate::geometry::grid2::Grid2`].
+/// as [`crate::maps::tier_map::TierMap`] and [`crate::geometry::grid2::Grid2`].
 ///
 /// `None` in [`Self::cells`] means **not measured**, never zero: no surface
 /// under that XY, or no CL position within an envelope radius held the tool
@@ -621,7 +621,7 @@ impl ReachMap {
     /// zero-radius predicate, not a grid lookup: at half a cell on a steep
     /// flank the grid's own surface Z is a different number. Every caller
     /// already holds a memoised index
-    /// ([`crate::geom_cache::cached_auto_index`]).
+    /// ([`crate::maps::geom_cache::cached_auto_index`]).
     #[must_use]
     pub fn vertex_gaps(&self, mesh: &TriangleMesh, index: &SpatialIndex) -> Vec<f32> {
         mesh.vertices
@@ -775,7 +775,7 @@ impl ReachMap {
 
 /// Colour for one vertex gap, shared by the 3D overlay and its legend so the
 /// two cannot drift — the same discipline
-/// [`crate::rest_heatmap_mesh::rest_ramp_color`] keeps.
+/// [`crate::maps::rest_heatmap_mesh::rest_ramp_color`] keeps.
 ///
 /// Four states, not two:
 ///
@@ -846,7 +846,7 @@ pub fn reach_colors(gaps: &[f32], floors: &[f32], ramp: ReachRamp) -> Vec<[f32; 
 /// colour at index *i* is [`reach_color`] of `gaps[i]`. It shares
 /// [`reach_color`] with the live viewport overlay and its legend, so a
 /// screenshot and the screen cannot show two different verdicts — the same
-/// discipline [`crate::rest_heatmap_mesh::rest_ramp_color`] keeps.
+/// discipline [`crate::maps::rest_heatmap_mesh::rest_ramp_color`] keeps.
 #[must_use]
 pub fn reach_overlay_stock_mesh(
     mesh: &TriangleMesh,
@@ -918,7 +918,7 @@ fn plane_z_at(tri: &crate::geo::Triangle, x: f64, y: f64) -> Option<f64> {
 }
 
 /// This map's own [`GridSpec`] constructors. The grid type and its
-/// accessors live in [`crate::grid`]; the padding and coarsening rules are
+/// accessors live in [`crate::maps::grid`]; the padding and coarsening rules are
 /// this module's.
 impl GridSpec {
     /// Pad past the mesh bbox by the cutter's envelope plus the margin, so
@@ -1115,7 +1115,7 @@ fn sampling_floor_mm(cutter: &dyn MillingCutter, cell_mm: f64) -> f64 {
 }
 
 /// Slope tangents the floor is swept over: 0° to 75° in 5° steps, the band
-/// [`crate::tier_map::MAX_COMPENSATED_SLOPE_DEG`] names as the last angle at
+/// [`crate::maps::tier_map::MAX_COMPENSATED_SLOPE_DEG`] names as the last angle at
 /// which a vertical-gap reading is a measurement at all.
 fn floor_slope_tangents() -> [f64; 16] {
     let mut tangents = [0.0f64; 16];
@@ -1460,7 +1460,7 @@ fn sample_tip_z(tip_z: &[f64], grid: &GridSpec, x: f64, y: f64) -> Option<f64> {
 /// perfectly. Interpolating over the surviving corners does not fix it,
 /// because the field is genuinely discontinuous there.
 ///
-/// [`crate::tier_map`] leaves the equivalent erosion to its consumer so the
+/// [`crate::maps::tier_map`] leaves the equivalent erosion to its consumer so the
 /// map stays a measurement. This map IS the consumer surface, so it abstains
 /// here instead — `None`, never a number. The eroded width is published as
 /// [`ReachMap::rim_erosion_mm`].
@@ -1728,7 +1728,7 @@ fn triangle_centroid(tri: &crate::geo::Triangle) -> Option<P3> {
 /// Two passes over the same grid: one drop-cutter CL plus one exact surface
 /// Z per cell, then a min-filter of the CL plane with the tool profile. The
 /// drop-cutter work — the expensive half — is one call per cell, the same as
-/// one rung of [`crate::tier_map::compute_tier_map`].
+/// one rung of [`crate::maps::tier_map::compute_tier_map`].
 ///
 /// # Errors
 ///
@@ -1786,7 +1786,7 @@ pub fn compute_reach_map(
     };
 
     tracing::debug!(
-        target: "rs_cam_core::reach_map",
+        target: "rs_cam_core::maps::reach_map",
         cells = cells.len(),
         cell_mm = grid.cell_mm,
         tolerance_mm,
@@ -1824,7 +1824,7 @@ pub fn compute_reach_map(
 
 /// [`compute_reach_map`] for a caller that holds no spatial index — a
 /// fixture or a one-shot probe. Production callers hold a memoised index
-/// ([`crate::geom_cache::cached_auto_index`]) and should pass it.
+/// ([`crate::maps::geom_cache::cached_auto_index`]) and should pass it.
 #[must_use]
 pub fn reach_map_for_mesh(
     mesh: &TriangleMesh,

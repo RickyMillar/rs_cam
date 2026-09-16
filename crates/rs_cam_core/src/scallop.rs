@@ -2215,7 +2215,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
     // the identical grid the previous region read. The uncached builder is
     // still the one that runs on a miss, so a cached surface and a fresh one
     // cannot diverge.
-    let surface = crate::finish_surface_cache::cached_finish_surface(
+    let surface = crate::maps::finish_surface_cache::cached_finish_surface(
         mesh, index, cutter, resolution, cancel,
     )?;
     let surface_hm = &surface.heightmap;

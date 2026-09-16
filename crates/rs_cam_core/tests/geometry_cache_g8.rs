@@ -231,7 +231,7 @@ fn csr_queries_match_the_reference_cell_union() {
 #[test]
 fn cached_index_equals_a_fresh_build() {
     let _guard = counter_lock();
-    use rs_cam_core::geom_cache::cached_auto_index;
+    use rs_cam_core::maps::geom_cache::cached_auto_index;
     use std::sync::Arc;
 
     let mesh = Arc::new(terrain());
@@ -264,7 +264,7 @@ fn cached_index_equals_a_fresh_build() {
 #[test]
 fn a_different_mesh_at_the_same_address_is_not_a_hit() {
     let _guard = counter_lock();
-    use rs_cam_core::geom_cache::cached_auto_index;
+    use rs_cam_core::maps::geom_cache::cached_auto_index;
     use std::sync::Arc;
 
     // Fill, drop, refill. Without a liveness-checked key this is the ABA case:
@@ -300,7 +300,7 @@ fn a_different_mesh_at_the_same_address_is_not_a_hit() {
 #[test]
 fn cache_is_bounded() {
     let _guard = counter_lock();
-    use rs_cam_core::geom_cache::{cache_len, cached_auto_index};
+    use rs_cam_core::maps::geom_cache::{cache_len, cached_auto_index};
     use std::sync::Arc;
 
     let mut live = Vec::new();
@@ -310,10 +310,10 @@ fn cache_is_bounded() {
         live.push(m);
     }
     assert!(
-        cache_len() <= rs_cam_core::geom_cache::CAPACITY,
+        cache_len() <= rs_cam_core::maps::geom_cache::CAPACITY,
         "cache grew past its stated capacity: {} > {}",
         cache_len(),
-        rs_cam_core::geom_cache::CAPACITY
+        rs_cam_core::maps::geom_cache::CAPACITY
     );
 }
 
@@ -336,8 +336,8 @@ fn eight_toolpaths_over_one_model_build_one_index() {
     use rs_cam_core::compute::operation_configs::DropCutterConfig;
 
     let _guard = counter_lock();
-    rs_cam_core::geom_cache::clear();
-    rs_cam_core::geom_cache::reset_stats();
+    rs_cam_core::maps::geom_cache::clear();
+    rs_cam_core::maps::geom_cache::reset_stats();
 
     const N: usize = 8;
     let half = 20.0;
@@ -372,7 +372,7 @@ fn eight_toolpaths_over_one_model_build_one_index() {
         generate(&mut session, i);
     }
 
-    let stats = rs_cam_core::geom_cache::stats();
+    let stats = rs_cam_core::maps::geom_cache::stats();
     println!(
         "{N} toolpaths, one model: index_builds={} index_hits={}",
         stats.index_builds, stats.index_hits
