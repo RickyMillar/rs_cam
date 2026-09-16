@@ -899,7 +899,7 @@ impl ZeroRemovalFinding {
     #[must_use]
     pub fn message(&self) -> String {
         format!(
-            "this rest pass removes no material: over {samples} sampled \
+            "This rest pass removes no material: over {samples} sampled \
              cutting positions the tool never gets under the stock the prior \
              operation left (deepest reach {deepest:+.4} mm against a \
              {floor:.4} mm floor, which is what the reference's own sampling \
