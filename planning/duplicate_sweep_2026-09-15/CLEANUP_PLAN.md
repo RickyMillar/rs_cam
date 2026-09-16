@@ -289,7 +289,7 @@ maintain.
     the pre and post G-code, the dressups, the heights, the stock source
     and the debug options through a save and a load — the assertions that
     died with the viz writer C11 deleted.
-  - R3 (this commit): the docs stop naming the deleted loader as live
+  - R3 (`8db8793b`): the docs stop naming the deleted loader as live
     (`state/toolpath/entry.rs`, `session/mutation.rs` ×2,
     `ui/properties/operations/mod.rs`, `session/project_file.rs`,
     `session/save.rs`, `gcode/mod.rs` ×2,
@@ -301,15 +301,19 @@ maintain.
 
 ## Phase 4 — documentation / no-action items
 
-- [ ] **C40 — SIBLING/NO-ACTION records**: I08 pairs B/C/D, I09 P1/P3,
+- [x] **C40 — SIBLING/NO-ACTION records**: I08 pairs B/C/D, I09 P1/P3,
   I10 pairs 2/3, I05 pair 2, adaptive↔adaptive3d engines (I08 F), the
   finish_surface_cache 4th member note. Each already documented in its
   finding file; CLEANUP_PLAN references them as the answer to
   "why didn't you merge X?".
-- [ ] **C99 — verification re-run.** After the phases land:
+- [x] **C99 — verification re-run.** After the phases land:
   `python3 scripts/duplicate_sweep.py --threshold 0.92` (with C00's test
   filter). Expect the src pair count to drop from 59 to the ~15 pairs that
   are SIBLING/NO-ACTION. Attach the report here.
+  **Done 2026-09-16:** 59 → 22 src pairs after phases 0–3, → **14** after
+  C29–C31 + R1–R3 (`rerun_2026-09-16.md`; 413 test pairs reported
+  separately). The 14 are the C40 answer key plus two by-design label
+  pairs. Full account in `EXECUTION_SUMMARY.md`.
 
 ## Notes for the executing swarm
 
