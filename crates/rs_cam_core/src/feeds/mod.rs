@@ -1151,11 +1151,11 @@ fn power_model_terms(
 /// removes no material. When the floor binds, the cut stays over budget and
 /// the `PowerLimited` warning fires — the unmet-constraint signal, not a
 /// fabricated pass.
-pub const POWER_LADDER_AP_FLOOR_MM: f64 = 0.5;
+const POWER_LADDER_AP_FLOOR_MM: f64 = 0.5;
 
 /// Smallest radial width the power ladder may propose (mm). See
 /// [`POWER_LADDER_AP_FLOOR_MM`].
-pub const POWER_LADDER_AE_FLOOR_MM: f64 = 0.5;
+const POWER_LADDER_AE_FLOOR_MM: f64 = 0.5;
 
 /// Largest value in `[floor, current]` that satisfies `fits`, by bisection.
 ///

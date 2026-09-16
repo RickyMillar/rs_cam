@@ -33,7 +33,7 @@ pub struct MachineEnvelope {
 }
 
 impl MachineEnvelope {
-    pub fn from_machine(machine: &MachineProfile) -> Self {
+    fn from_machine(machine: &MachineProfile) -> Self {
         let (min_rpm, max_rpm) = machine.rpm_range();
         let max_power_kw = match machine.power {
             PowerModel::VfdConstantTorque { rated_power_kw, .. } => rated_power_kw,

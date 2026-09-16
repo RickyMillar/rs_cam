@@ -53,7 +53,7 @@ pub const LEGACY_ESTIMATE_LABEL: &str = "Legacy pre-simulation estimate";
 /// The sentence that says *why* [`LEGACY_ESTIMATE_LABEL`] applies, so a
 /// reader who has never heard of the arc-fit table still knows what to do
 /// about it (simulate).
-pub const LEGACY_ESTIMATE_NOTE: &str = "Estimated against the arc-mean chip observation the post-sim gate retired on 2026-08-06, \
+const LEGACY_ESTIMATE_NOTE: &str = "Estimated against the arc-mean chip observation the post-sim gate retired on 2026-08-06, \
      not the advance per tooth it reports today — simulate to get the observed value.";
 
 /// Which operation field a rationale entry describes a change (or

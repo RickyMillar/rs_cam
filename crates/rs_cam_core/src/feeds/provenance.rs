@@ -74,7 +74,7 @@ impl ValueProvenance {
         Self::bare(ProvenanceSource::Formula)
     }
 
-    pub fn edge_radius_floor() -> Self {
+    fn edge_radius_floor() -> Self {
         Self::bare(ProvenanceSource::EdgeRadiusFloor)
     }
 
@@ -92,7 +92,7 @@ impl ValueProvenance {
 
     /// Map the chipload's own origin onto the value(s) it derives (feed, plunge,
     /// and the chipload itself).
-    pub fn from_chipload_source(source: &ChiploadSource) -> Self {
+    fn from_chipload_source(source: &ChiploadSource) -> Self {
         match source {
             ChiploadSource::VendorLut { observation_id } => {
                 Self::vendor_lut(observation_id.clone())

@@ -408,7 +408,7 @@ impl VendorLut {
 /// range — the burn floor and breakage ceiling it implies are
 /// fabricated precision. Encode such sources with only
 /// `chipload_max_mm_tooth` (nominal reference) instead.
-pub const MIN_CHIPLOAD_RANGE_FRACTION: f64 = 0.05;
+const MIN_CHIPLOAD_RANGE_FRACTION: f64 = 0.05;
 
 /// Plausibility ceiling for chipload as a fraction of cutter diameter.
 /// The hottest legitimate vendor row (Onsrud industrial softwood chart,

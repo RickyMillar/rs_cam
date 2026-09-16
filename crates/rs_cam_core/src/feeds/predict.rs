@@ -76,7 +76,7 @@ pub const ENDMILL_CORE_FRACTION: f64 = 0.7;
 /// instead we use the cutting-length + a 5 mm collet exposure margin
 /// (matching the convention in `tool_load::deflection` test fixtures
 /// which build `stickout = cutting_length + 5 mm`).
-pub const COLLET_EXPOSURE_MARGIN_MM: f64 = 5.0;
+const COLLET_EXPOSURE_MARGIN_MM: f64 = 5.0;
 
 /// Radial WOC fallback fraction of tool diameter for non-Adaptive
 /// families when `operation.stepover()` is `None`. Matches the
