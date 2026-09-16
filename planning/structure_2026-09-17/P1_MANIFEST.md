@@ -16,9 +16,9 @@ The task brief states: *"No crate source, test, bench or script reads any
 NO cargo run at all."*
 
 **Both halves are false.** The command finds **238 distinct `planning/` paths
-cited from `crates/` and `scripts/`**, across roughly 500 sites. Six of those
-paths are already dangling today. Four paths are read at run time by tests that
-fail when the file is absent.
+cited from `crates/` and `scripts/`**, across roughly 500 sites. Seven of those
+paths are already dangling today, at 16 sites. Nine paths are read at run time
+by tests that fail when the file is absent.
 
 I keep the conclusion — P1 needs no cargo run — but for a different reason: the
 delete set below touches no file that a **non-ignored** test reads, so the core
@@ -43,7 +43,12 @@ red. They do not run in the normal suite.
 | `planning/airrun_2026-08-19/wanaka200_2_Setup_2___front.nc` | **13 595 318** | `rapid_replay_shipped_gcode_s1.rs:102` |
 | `planning/airrun_2026-06-01/wanaka.toml` | 21 045 | `p1_headless_ab_wanaka.rs:39`, `finish_planner_wanaka_decompose.rs:39` (both `assert!(path.exists())`) |
 | `planning/multitool_2026-08-23/wanaka200_mt2.toml`, `…_overlap02.toml` | 38 668 | `union_coverage_m1.rs:180` |
-| `planning/deep_doc_modulation_2026-09-08/Q2_r20_s15.toml`, `T3b_r10_scallop_islands_relink3.toml` | small | `reach_map_residual_p5_1.rs:661`, `tier_band_overlap_g_overlapfill.rs:307` |
+| `planning/deep_doc_modulation_2026-09-08/T3b_r10_scallop_islands_relink3.toml` | small | `tier_band_overlap_g_overlapfill.rs:334` — a real `.join(…)` |
+
+`planning/deep_doc_modulation_2026-09-08/Q2_r20_s15.toml` is **class D, not
+class B**: `reach_map_residual_p5_1.rs:661` names it in a doc comment only, and
+that harness skips on a path outside the repository. I keep it anyway because
+it is small and it is the project the reach-map table was measured on.
 
 The 13.6 MB `.nc` is the one file where the brief's "delete every blob over
 5 MB" and "a path a test reads is KEEP" collide. **Ruling needed** — see 6.2.
@@ -55,20 +60,21 @@ by `std::fs::create_dir_all` in `reference_plate_contract.rs:1127` and
 `band_run_off_reproduction_d16_1.rs:1081`. The tests write there; nothing reads
 the committed contents. Deleting them cannot break a test.
 
-### 0.4 Class D — prose citations (doc comments, assertion strings). ~480 sites.
+### 0.4 Class D — prose citations (doc comments, assertion strings). ~500 sites.
 
 These name a planning document as the provenance of a sentry or a constant. No
 file is opened. Deleting the target leaves a dead reference in a comment.
 
-The repository **already tolerates this**: four paths are cited from live code
-and do not exist today.
+The repository **already tolerates this**: seven paths are cited from live code
+at 16 sites and do not exist today.
 
 | Dangling today | Sites |
 |---|---|
 | `planning/adaptive_review_2026-04.md` | 6 |
-| `planning/acceptance_loop/findings/F-035…`, `F-036a…`, `F-036b…`, `F-039…` | 6 |
+| `planning/acceptance_loop/findings/F-035…`, `F-036a…`, `F-036b…`, `F-039…` (4 paths) | 6 |
 | `planning/P3_TRANSIT_PEAK_DOC_RCA.md` | 3 (the file now sits under `archive/`) |
 | `planning/feed_modulation_calibration/BENCH_CHECKLIST.md` | 1 |
+| **Total** | **7 paths, 16 sites** |
 
 **Two frozen files cite deleted-candidate documents and I may not edit them:**
 
@@ -100,7 +106,10 @@ Rules applied, in order:
    - **E2 — sentry provenance keeps a small package.** A package under about
      200 kB whose documents a live sentry names as its pre-registration is
      KEEP. Deleting 47 kB to break eight sentry citations is a bad trade. A
-     large package gets the tag rewrite instead.
+     large package gets the tag rewrite instead. **E2 covers packages, not
+     top-level files.** The four top-level files I keep for sentry provenance
+     (2.9) are judgment calls, not a rule; section 5.2 lists the heavy citers
+     the orchestrator can promote the same way.
 5. Retrieval for everything deleted is `git show
    planning-pre-purge-2026-09-17:<path>` plus one line in
    `planning/DELETED_INDEX.md`.
@@ -195,12 +204,12 @@ row says which wins.
 
 | Kept file | Reason |
 |---|---|
-| `planning/data_ingest_2026-05-30/verification_report_2026-06-01.md`, `wood_kc_derivation.md`, `hardness_extra.md`, `aluminum_kc.md`, `wood_database_species.md`, `vendor_breadth.json` | `CREDITS.md:410,517,536,562` + 6 sentry sites (E1) |
+| `planning/data_ingest_2026-05-30/` — **all 25 files except the two `sweep_snapshot_*.tar.gz`** | `CREDITS.md:366,368,410,435,517,536,562` names `amana_long_tail.json`, `onsrud_ocr.json`, the `verification_report`, the `_gaps.md` **family** and three derivations, plus 6 sentry sites. Keeping the whole package less the tarballs costs 395 kB and removes every attribution risk; the two tarballs are 44.56 MB of the package's 44.96 MB (E1) |
 | `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md`, `LAW_MAGNITUDE_TABLES.md`, `DRILL_GATE_EVIDENCE_AUDIT.md` | `CREDITS.md:239,308,632` (E1) |
 | `planning/review_2026-08-08/LIT_MATRIX_REFRESH_S2.md` | `CREDITS.md:688` **and** `crates/rs_cam_core/tests/literature_matrix/sources.toml:15` — a data string in a fixture, not a comment; rewriting it edits the fixture |
 | `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md` | ALWAYS (2.1) |
 
-### 2.9 Top-level files kept in place (41 files)
+### 2.9 Top-level files kept in place (38 files; the 4 movers of section 4 are listed here too)
 
 | File | Reason | Evidence |
 |---|---|---|
@@ -211,7 +220,8 @@ row says which wins.
 | `UNIFIED_LOAD_MODEL_2026-06-18.md` | LINKED-CURRENT (E1) | `CREDITS.md:318` |
 | `SUGGEST_SIM_OPTIMIZE_ACCEPTANCE.md` | LINKED-CURRENT (E1) | `CREDITS.md:599` |
 | `feeds_data_ingest_consolidation_2026-05-29.md`, `…-05-30.md`, `…-06-01.md`, `feeds_data_ingest_phase4_2026-05-31.md`, `phaseB`, `phaseC`, `phaseD`, `phaseE` (8 files) | LINKED-CURRENT (E1) | `CREDITS.md:347,357,383,404,438,541,569,595` |
-| `finishing_status_2026-09-01.md` | LINKED-CURRENT | `PROGRESS.md:543` names it the status board; edited 2026-09-17 by the doc-correction wave |
+| `finishing_status_2026-09-01.md` | LINKED-CURRENT | `PROGRESS.md:543` names it the status board; `PROGRESS.md:598` "(start there)"; edited 2026-09-17 by the doc-correction wave |
+| `finishing_synthesis_2026-08-30.md` | LINKED-CURRENT | `PROGRESS.md:599` "Theory and measurements: … (§12 is the closure — do not act on §11 alone)" — the same sentence as the kept status board; 13 sentry sites, one an assertion message at `conformal_spiral_synthetic_f2.rs:2126` |
 | `deep_doc_modulation_2026-09-08.md` | LINKED-CURRENT | cited by **two open specs** (`linking_2026-09-09/SPEC.md:7`, `island_clip_2026-09-09/SPEC.md:3`) and `PROGRESS.md:414`. **MOVE, see section 4** |
 | `machine_kinematics_confidence_2026-09-07.md` | SENTRY (E2) | 6 sentry sites; provenance of the shipped plunge guard |
 | `post_reference_notes.md` | SENTRY | `gcode_emulator_validation.rs:146,373` print its path in a skip message an operator reads |
@@ -226,7 +236,7 @@ row says which wins.
 
 ## 3. DELETE
 
-919 files, 1 146 180 691 bytes. One row per package. The rationale column is
+899 files, 1 145 842 903 bytes. One row per package. The rationale column is
 the line that goes into `planning/DELETED_INDEX.md`.
 
 ### 3.1 Reviews
@@ -258,7 +268,7 @@ the line that goes into `planning/DELETED_INDEX.md`.
 
 | Path | Files | Bytes | DELETED_INDEX line |
 |---|---|---|---|
-| `planning/data_ingest_2026-05-30/` (less 6 CREDITS-cited files) | 21 | 44 872 001 | Feeds data ingest, phase 2 (2026-05-30). Decided the wood/aluminium Kc derivations and the hardness extension, all now bundled in the LUT. Carries two 22 MB source tarballs. The six files `CREDITS.md` names as attribution are kept |
+| `planning/data_ingest_2026-05-30/sweep_snapshot_5a67c1d.tar.gz`, `sweep_snapshot_phaseE_completion.tar.gz` | 2 | 44 563 556 | Two 22 MB parameter-sweep snapshot tarballs from the phase-E feeds ingest. The verdict JSON they summarise stays in the package, no document or test names the archives, and the LUT rows they produced are bundled |
 | `planning/probe_artifacts/` | 35 | 21 814 850 | Loose AgentSearch probe renders. No citation in any document or test; the probe log they belong to is itself deleted |
 
 ### 3.5 Archive
@@ -273,11 +283,11 @@ the line that goes into `planning/DELETED_INDEX.md`.
 |---|---|---|---|
 | `planning/ux-fixes/` | 5 | 146 786 | Phased UX improvement plans, phases 1–5 (focus loss, theme, timeline, help, polish). All shipped; superseded by three later UI programmes |
 
-### 3.7 Top-level files — 114 files, 2 244 603 bytes
+### 3.7 Top-level files — 113 files, 2 215 260 bytes
 
 Grouped by family. Every one of the 155 top-level files appears exactly once in
-section 2.9 (41 kept), section 4 (4 moved, of which 4 are also counted as
-kept content) or this table.
+section 2.9 (38 kept in place, plus the 4 movers listed there), section 4
+(4 moved) or this table. 38 + 4 + 113 = 155.
 
 | Family | Files | DELETED_INDEX line |
 |---|---|---|
@@ -290,7 +300,7 @@ kept content) or this table.
 | **G-code and post, 2026-05/06** — `GCODE_EXPORT_OVERHAUL.md`, `gcode_gap_report.md`, `POST_LAYER_AUDIT_2026-06-11.md` | 3 | Specified the post-processor layer and its dialects; shipped and pinned by `gcode_current_outputs` captures, which are kept |
 | **Unification and refactor, 2026-04/06** — `LOADER_UNIFICATION.md`, `CLI_PROJECT_UNIFICATION.md`, `CODEBASE_UNIFICATION_PLAN.md`, `PHASE_4F_JOBSTATE_REMOVAL.md`, `architectural_refactor_2026-06-06.md`, `architectural_refactor_2026-06-06_v2.md`, `architectural_refactor_2026-06-06_v2_decisions.json`, `architectural_refactor_orchestrator_prompt.md`, `DEFECT_CLASS_CLEANUP_2026-06-10.md`, `phase_4_promotion_plan_2026-06-01.md` | 10 | Unified the two project loaders and removed `JobState`. Completed 2026-06-08; the duplicate sweep of 2026-09-16 removed the last legacy loader and `JobState` outright |
 | **Feeds data ingest working papers, 2026-05/06** — `feeds_data_coverage_audit_2026-05-29.md`, `feeds_data_source_acquisition_2026-05-29.md`, `feeds_data_ingest_2026-05-30_phased_plan.md`, `feeds_data_ingest_completion_2026-05-31.md`, `feeds_data_ingest_completion_results_2026-05-31.md`, `feeds_phase5_consolidation_2026-06-01.md`, `feeds_modal_enhancements_2026-06-02.md`, `feeds_modal_enhancements_PROMPT_2026-06-02.md`, `feeds_workspace_design_2026-06-02.md`, `feeds_workspace_breakout_investigation_2026-06-02.md`, `combined_suggest_design_2026-06-03.md`, `combined_suggest_v3_2026-06-04.md`, `cutting-calcs-data-gaps.md`, `feed_modulation_roadmap.md`, `KC_MILLING_CALIBRATION_2026-06-17.md`, `tool_kinematics_chipload_audit_2026-05-31.md`, `cutter_axial_constraints_2026-06-06.md`, `tool_library_modal_plan.md`, `tool_diagnostics_generic_plan.md` | 19 | Working papers for the feeds/speeds ingest. The bundled data's attribution lives in `CREDITS.md`, which cites the eight consolidation and phase records kept in 2.9; these are the drafts behind them |
-| **Finishing campaign, 2026-07/08** — `finishing_speedup_project.md`, `finishing_synthesis_2026-08-30.md`, `multitool_finishing_plan.md`, `unified_finishing_pass_plan.md`, `unified_finishing_probe_prompt.md`, `unified_finish_planner_design.md`, `unified_v3_design.md`, `unified_v3_design_prompt.md`, `v3_campaign_map.md`, `v3_workplan.md`, `v3_proof_spec.md`, `v3_process_proof_prompt.md`, `rest_cascade_optimal_plan.md`, `p2b_decomposition_prompt.md`, `p2d_router_prompt.md`, `p2f_fidelity_parity_prompt.md`, `p2g_quality_matrix_prompt.md`, `p2_selective_finishing_prompt.md` | 18 | The unified-finishing v3 campaign. CLOSED 2026-07-28 **not provable on this fixture** (coarse TIN); the surviving verdicts are in `review_2026-07-29/SUPERSEDED_CONCLUSIONS.md` and `finishing_status_2026-09-01.md`, both kept |
+| **Finishing campaign, 2026-07/08** — `finishing_speedup_project.md`, `multitool_finishing_plan.md`, `unified_finishing_pass_plan.md`, `unified_finishing_probe_prompt.md`, `unified_finish_planner_design.md`, `unified_v3_design.md`, `unified_v3_design_prompt.md`, `v3_campaign_map.md`, `v3_workplan.md`, `v3_proof_spec.md`, `v3_process_proof_prompt.md`, `rest_cascade_optimal_plan.md`, `p2b_decomposition_prompt.md`, `p2d_router_prompt.md`, `p2f_fidelity_parity_prompt.md`, `p2g_quality_matrix_prompt.md`, `p2_selective_finishing_prompt.md` | 17 | The unified-finishing v3 campaign. CLOSED 2026-07-28 **not provable on this fixture** (coarse TIN); the surviving verdicts are in `review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`, `finishing_status_2026-09-01.md` and `finishing_synthesis_2026-08-30.md`, all three kept |
 | **Pencil campaign, 2026-06/07** — `pencil_investigation_2026-07.md`, `pencil_investigation_prompt.md`, `pencil_curvature_detector_prompt.md`, `pencil_restdepth_detector_prompt.md`, `pencil_reference_fidelity_prompt.md`, `pencil_review_prompt.md`, `pencil_postmortem_and_rest_driven_design.md` | 7 | Diagnosed pencil's valley targeting and its detectors. Fixed at `29a6d61` (coverage 0.137 → 0.80); the watershed-spine follow-up closed REJECT 2026-09-03 and its package is kept |
 | **Misc closed** — `3D_FINISH_BUGS.md`, `3D_FINISH_FIX_PROMPT.md`, `ACCEL_FRIENDLY_TOOLPATHS_2026-06-20.md`, `STRATEGY_ADVISOR_2026-06-17.md`, `HEIGHTS_SETUP_FRAME_AUDIT_2026-06-12.md`, `DEXEL_Z_ONLY_INVESTIGATION.md`, `TECH_DEBT_AUDIT.md`, `TECH_DEBT_REVIEW_2026-06-10.md`, `remaining_stock_sim_dependency_ux.md`, `machine_run_and_datum_2026-09-07.md`, `ui_overlays_ux_2026-09-08.md`, `ui_overlays_dead_duplicate_2026-09-08.md` | 12 | Each closed: accel conditioning is default-on for roughing; the strategy advisor shipped; the identity-setup frame bug was fixed 2026-06-12; the dexel Z-only roadmap landed steps 0–5; the two 2026-04/06 tech-debt audits are named by `TECH_DEBT_REGISTER.md:5` **as point-in-time evidence, not as current** (rule 2 not met); the datum work landed at `e17b2ff0`; the overlay audit shipped as the P6 panel at `92a62851` |
 
@@ -313,6 +323,11 @@ A move rewrites every citing line. Section 5 lists them.
 
 ### 5.1 In kept index documents — these must be fixed in the delete commits
 
+Built mechanically: every path in the DELETE set, matched against the kept
+documents by full path and by bare file name, then each hit read to drop the
+false positives that a shared name such as `STATUS.md` or `IMPLEMENTATION_PLAN.md`
+produces. **31 lines in 4 documents.**
+
 | Citing line | Cites | Fix |
 |---|---|---|
 | `planning/CLAUDE.md:22-23` | "Preserve useful measurements … under `planning/` or `planning/archive/`" | Rewrite: the archive is gone; name the tag instead |
@@ -322,6 +337,13 @@ A move rewrites every citing line. Section 5 lists them.
 | `planning/PROGRESS.md:414` | `deep_doc_modulation_2026-09-08.md` | Repoint to `deep_doc_modulation_2026-09-08/STUDY.md` (move) |
 | `planning/PROGRESS.md:408` | `roughing_strategy_ab_results_2026-09-07.md` | Repoint to `roughing_strategy_ab_2026-09-07/RESULTS.md` (move) |
 | `planning/PROGRESS.md:533-545` | `valley_tracing_2026-09-02` "Status: **OPEN, phase V0 … not run**" | Correct to CLOSED — `TRACK.md:8` says closed, and the same PROGRESS block says so eleven lines later |
+| `planning/PROGRESS.md:717` | `review_2026-08-04/TECH_DEBT_2_CLOSEOUT.md` | Tag form |
+| `planning/PROGRESS.md:721` | `review_2026-08-04/ORCHESTRATION_LOG.md` | Tag form |
+| `planning/PROGRESS.md:759,794` | `review_2026-07-29/ORCHESTRATION_LOG.md` (bare name) | Tag form |
+| `planning/PROGRESS.md:792` | `review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md` | Tag form |
+| `planning/PROGRESS.md:805` | `review_2026-07-29/TOOL_SCALE_SEMANTICS.md` (bare name) | Tag form |
+| `planning/PROGRESS.md:812` | `review_2026-07-29/CHECKPOINT_A_EVIDENCE.md` (bare name) | Tag form |
+| `planning/PROGRESS.md:814` | `review_2026-07-29/CHECKPOINT_B_EVIDENCE.md` (bare name) | Tag form |
 | `planning/PROGRESS.md:869,965,1133,1238,1353,1434,1494` (7 lines) | `DEXEL_Z_ONLY_INVESTIGATION.md` | Tag form |
 | `planning/PROGRESS.md:1562,1711` | `UX_PAIN_POINTS_2026-05-11.md` | Tag form |
 | `planning/PROGRESS.md:1718` | `cutting-calcs-data-gaps.md` | Tag form |
@@ -341,8 +363,9 @@ A move rewrites every citing line. Section 5 lists them.
 
 ### 5.2 In crate source and tests — the class D problem
 
-About 480 sites cite a planning document in a doc comment or an assertion
-string. The delete set breaks roughly 190 of them. I cannot repair them in P1:
+About 500 sites cite a planning document in a doc comment or an assertion
+string. **The delete set breaks 293 sites, over 103 distinct paths.** I counted
+them; the number is exact. I cannot repair them in P1:
 two are inside the FREEZE set, and any repair of that size needs `cargo fmt`
 and a compile, which P1 is told not to run.
 
@@ -352,19 +375,27 @@ Add one sentence to root `CLAUDE.md` and `crates/rs_cam_core/CLAUDE.md`:
 > A `planning/…` path in a doc comment that no longer exists is retrievable
 > with `git show planning-pre-purge-2026-09-17:<path>`.
 
-The 14 sites already dangling today (section 0.4) show the repository accepts
-this. The alternative costs roughly 190 edits across about 90 files, touches
-two frozen files, and risks the `rustfmt` cascade.
+The 16 sites already dangling today (section 0.4) show the repository accepts
+this. The alternative costs 293 edits, touches two frozen files, and risks the
+`rustfmt` cascade.
 
-The heaviest citers, if the orchestrator rules the other way: `unified_v3_design.md`
-(20 sites), `multitool_2026-08-23/ORCHESTRATION_PLAN.md` (17 — kept),
-`review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md` (15),
-`DEXEL_Z_ONLY_INVESTIGATION.md` (13), `unified_finish_planner_design.md` (11),
-`review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` (10 — kept),
-`airrun_2026-08-19/RUN_LOG.md` (10),
-`ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` (10),
-`ui_review_2026-09-09/results/…` (6),
-`ui_fix_2026-09-09/…` (12), `archive/…` (4).
+The heaviest deleted citers, if the orchestrator rules the other way — these
+are also the files it could promote to KEEP instead:
+
+| Deleted path | Sites broken |
+|---|---|
+| `planning/unified_v3_design.md` | 20 |
+| `planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md` | 15 |
+| `planning/DEXEL_Z_ONLY_INVESTIGATION.md` | 13 |
+| `planning/unified_finish_planner_design.md` | 11 |
+| `planning/airrun_2026-08-19/RUN_LOG.md` | 10 |
+| `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` | 10 |
+| `planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md` | 9 |
+| `planning/review_2026-08-04/FEEDS_CENSUS.md` | 7 |
+| `planning/cutter_axial_constraints_2026-06-06.md` | 7 |
+| `planning/review_2026-08-08/XVAC_CENSUS.md` | 6 |
+| `planning/review_2026-07-29/ORCHESTRATION_LOG.md` | 6 |
+| the remaining 92 deleted paths | 179 |
 
 ---
 
@@ -373,9 +404,9 @@ The heaviest citers, if the orchestrator rules the other way: `unified_v3_design
 **6.1 The P1 gate is not achievable as written.** `PROMPT.md` requires that
 `rg -n "planning/" crates/*/tests crates/*/src` show no path that no longer
 exists. 238 distinct paths are cited; the tree already fails this gate today at
-14 sites. Ruling needed: accept the tag-retrieval sentence (5.2) and re-scope
-the gate to "no path a test **reads at run time** is missing", or order the
-~190 rewrites as a separate work package.
+16 sites. The purge breaks 293 more. Ruling needed: accept the tag-retrieval
+sentence (5.2) and re-scope the gate to "no path a test **reads at run time**
+is missing", or order the 293 rewrites as a separate work package.
 
 **6.2 The 13.6 MB `wanaka200_2_Setup_2___front.nc`.** It is a blob over 5 MB
 *and* a file an `#[ignore]`d harness asserts exists. Keep the file, or delete it
@@ -427,16 +458,18 @@ rewrite of 6.3.
 | | Files | Bytes |
 |---|---|---|
 | Baseline under `planning/` | 1 415 | 1 199 472 022 |
-| **DELETE** | **919** | **1 146 180 691** |
-| After the purge | 496 | 53 291 331 |
+| **DELETE** | **899** | **1 145 842 903** |
+| After the purge | 516 | 53 629 119 |
+
+That deletes 63.5 % of the files and 95.5 % of the bytes.
 
 Of the deleted bytes, 955 007 960 (83 %) is one package, `airrun_2026-08-19`,
 and 948 300 086 of that is one file, `p2_a1_lakes_vbit_chk4.html`.
 
-Top-level files: 155 today → 41 kept in place, 4 moved into a package,
-114 deleted.
+Top-level files: 155 today = **38 kept in place + 4 moved into a package +
+113 deleted**.
 
-Package directories: 46 today → 35 kept whole or in part.
+Package directories: 46 today → 36 kept whole or in part, 10 deleted whole.
 
 A `git filter-repo` pass to drop the 948 MB blob from history is **not** part
 of this programme. It stays an operator decision for a moment when no session
