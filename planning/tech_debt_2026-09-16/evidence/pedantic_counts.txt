@@ -1,0 +1,106 @@
+    999 unnecessary structure name repetition: help: use the applicable keywor
+    949 multiply and add expressions may be calculated more efficiently and ac
+    718 casting X to X may truncate the value
+    682 this could be a X
+    586 casting X to X may cause a loss of precision (X can be up to N bits wi
+    264 casting X to X may lose the sign of the value
+    253 first doc comment paragraph is too long
+    198 this function has too many lines (N/N)
+    165 casting X to X may truncate the value on targets with N-bit wide point
+    154 casts from X to X can be expressed infallibly using X
+    132 binding's name is too similar to existing binding
+    113 hypotenuse can be computed more accurately: help: consider using: X
+    108 called X on an X value
+     98 redundant closure: help: replace the closure with the method itself: X
+     88 manual implementation of X which can overflow: help: use X instead: X
+     85 variables can be used directly in the X string
+     84 X appended to existing X
+     81 pub(crate) function inside private module
+     81 adding items after statements is confusing, since items exist from the
+     64 casting X to X may cause a loss of precision (X is N bits wide, but X'
+     63 use Option::map_or_else instead of an if let/else
+     53 use Option::map_or_else instead of an if let/else: help: try: X
+     52 these match arms have identical bodies
+     51 casting X to X may wrap around the value: help: if this is intentional
+     48 N bindings with single-character names in scope
+     45 casting X to X may lose the sign of the value: help: if this is intent
+     44 missing X attribute on a method returning X
+     42 multiply and add expressions can be calculated more efficiently and ac
+     39 use Option::map_or instead of an if let/else
+     32 while condition comparing floats
+     29 you seem to be trying to use X for destructuring a single pattern. Con
+     27 use Option::map_or instead of an if let/else: help: try: X
+     27 casting X to X may wrap around the value on targets with N-bit wide po
+     24 calling X is more clear than this expression: help: try: X
+     23 this parameter is a mutable reference but is not used mutably
+     23 assigning the result of X may be inefficient: help: use X: X
+     21 unnecessary hashes around raw string literal
+     20 pub(crate) struct inside private module
+     18 you are deriving X and can implement X: help: consider deriving X as w
+     17 it is more concise to loop over references to containers instead of us
+     15 unnecessary boolean X operation
+     15 strict comparison of X or X: help: consider comparing them within some
+     14 function call inside of X: help: try: X
+     13 X is an expression: help: it is more idiomatic to write: X
+     13 temporary with significant X can be early dropped
+     13 more than N bools in a struct
+     13 code link adjacent to code text
+     11 this looks like a formatting argument but it is not part of a formatti
+     11 this argument (N byte) is passed by reference, but would be more effic
+      9 X is an expression
+      6 used underscore-prefixed binding
+      6 unused X argument
+      6 unnested or-patterns
+      6 unnecessary X operation
+      6 this sequence of operators looks suspiciously like a bug: help: did yo
+      6 the following explicit lifetimes could be elided: 'a
+      6 it is more idiomatic to use X instead of X
+      6 called X on an X value: help: try: X
+      5 pub(crate) enum inside private module
+      5 long literal lacking separators: help: consider: X
+      5 field marked as public but also inferred as unused because it's prefix
+      5 case-sensitive file extension comparison
+      5 all if blocks contain the same code at the end
+      4 wildcard matches only a single variant and will also match any future 
+      4 usage of wildcard import for enum variants: help: try: X
+      4 more than N bools in function parameters
+      4 all fields have the same postfix: X
+      3 you seem to be trying to use X for an equality check. Consider using X
+      3 used X where X could be used instead: help: try: X
+      3 unnecessary semicolon: help: remove
+      3 this X expression is redundant
+      3 this function's return value is unnecessarily wrapped by X
+      3 this binding can be a slice pattern to avoid indexing
+      3 these match arms have identical bodies: the wildcard arm
+      3 pub(crate) module inside private module
+      3 it looks like you're trying to convert a tuple to an array
+      2 warning: X (lib) generated N warnings (run X to apply N suggestions)
+      2 unnecessary struct building: help: replace with: X
+      2 pub(crate) type alias inside private module
+      2 pub(crate) constant inside private module
+      2 function call inside of X
+      2 collection is never read
+      2 called X on a X value
+      1 you have declared X on X. This is usually a bad idea
+      1 you appear to be counting bytes the naive way: help: consider using th
+      1 X used on a X: help: try: X
+      1 X chain can be rewritten with X: help: consider rewriting the X chain 
+      1 warning: X (lib) generated N warnings (N duplicates) (run X to apply N
+      1 warning: X (build script) generated N warning
+      1 warning: X (bin "rs_cam_gui") generated N warnings (run X to apply N s
+      1 warning: X (bin "rs_cam_cli") generated N warnings (run X to apply N s
+      1 warning: the following packages contain code that will be rejected by 
+      1 unnecessary trailing comma: help: remove the trailing comma
+      1 this pattern matching can be expressed using equality: help: try: X
+      1 the following explicit lifetimes could be elided: 'op
+      1 struct constructor field order is inconsistent with struct definition 
+      1 strict comparison of X or X arrays
+      1 parameter of type X should be generalized over different hashers
+      1 only a X in X-then statement
+      1 manual X impl does not include all fields
+      1 called X on a X value: help: try: X
+      1 boolean to int conversion using if: help: replace with from: X
+      1 avoid using X when not needed: help: remove this call
+      1 assigning the result of X may be inefficient
+      1 an exclusive range would be more readable: help: use: X
+      1 all if blocks contain the same code at the start
