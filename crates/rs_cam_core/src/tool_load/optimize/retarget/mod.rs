@@ -20,9 +20,8 @@ pub mod deflection;
 pub mod power;
 
 /// One retargeter per load-driving gate. The verdict type is gate-
-/// specific at the trait level; Step 7 swaps the existing flat `Verdict`
-/// for typed verdicts (`ChiploadVerdict`, `PowerVerdict`,
-/// `DeflectionVerdict`) — that change is local to each retargeter file.
+/// specific at the trait level: each implementation names its own typed
+/// verdict (`ChiploadVerdict`, `PowerVerdict`, `DeflectionVerdict`).
 pub trait Retargeter {
     type Verdict;
 

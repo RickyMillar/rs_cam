@@ -523,9 +523,8 @@ fn is_not_applicable(reason: Option<&UnmodeledReason>) -> bool {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Typed verdict scaffolding (G16 Step 7a). Lives alongside the legacy
-// flat `Verdict` until the per-gate evaluators migrate. No consumers
-// read these yet.
+// The typed verdicts. `ToolpathLoadVerdict` carries one per gate, and
+// the GUI, the export layer and the MCP wire format all read them.
 // ─────────────────────────────────────────────────────────────────────
 
 /// Coarse outcome shared across all gate verdicts. Lets UI / export /
@@ -996,9 +995,9 @@ pub struct ChiploadMetric {
     pub bounds: ChipBounds,
 }
 
-/// Typed chipload verdict. Replaces the flat `Verdict` once the
-/// chipload evaluator migrates (Step 7d). Carries both bounds-approach
-/// metrics on the within case and the triggering metric on exceed.
+/// Typed chipload verdict. The chipload gate returns this. It carries
+/// both bounds-approach metrics on the within case and the triggering
+/// metric on exceed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ChiploadVerdict {
