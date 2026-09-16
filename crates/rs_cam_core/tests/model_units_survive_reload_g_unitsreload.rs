@@ -96,7 +96,7 @@ fn extent(polygons: &[Polygon2]) -> (f64, f64) {
 fn via_project_file(path: &Path, kind: ModelKind, units: ModelUnits) -> Vec<Polygon2> {
     let toml = format!(
         r#"
-version = 1
+format_version = 3
 name = "units-reload-fixture"
 
 [[models]]
