@@ -82,7 +82,6 @@
 //! work", which is read off [`crate::tier_map::drop_call_count`] — see
 //! `tests/tier_map_cache_t3.rs`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::interrupt::CancelCheck;
@@ -144,23 +143,22 @@ pub struct TierMapCacheStats {
     pub hits: u64,
 }
 
-static BUILDS: AtomicU64 = AtomicU64::new(0);
-static HITS: AtomicU64 = AtomicU64::new(0);
+/// This cache's own counters. The mechanism is shared
+/// ([`crate::memo::CacheCounters`]); the static is per cache, by the same
+/// rule as the capacity and the key.
+static COUNTERS: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
 
 /// Read the counters.
 #[must_use]
 pub fn stats() -> TierMapCacheStats {
-    TierMapCacheStats {
-        builds: BUILDS.load(Ordering::Relaxed),
-        hits: HITS.load(Ordering::Relaxed),
-    }
+    let (builds, hits) = COUNTERS.read();
+    TierMapCacheStats { builds, hits }
 }
 
 /// Zero the counters. The cached values themselves are untouched, so this
 /// cannot change any result.
 pub fn reset_stats() {
-    BUILDS.store(0, Ordering::Relaxed);
-    HITS.store(0, Ordering::Relaxed);
+    COUNTERS.reset();
 }
 
 /// Number of live entries. Test hook for the capacity bound.
@@ -200,11 +198,11 @@ pub fn cached_tier_map(
 ) -> Result<Arc<TierMap>, TierMapError> {
     let key = TierMapKey::new(ladder, params);
     if let Some(hit) = get(mesh, &key) {
-        HITS.fetch_add(1, Ordering::Relaxed);
+        COUNTERS.record_hit();
         return Ok(hit);
     }
     let built = Arc::new(compute_tier_map(mesh, index, ladder, params, cancel)?);
-    BUILDS.fetch_add(1, Ordering::Relaxed);
+    COUNTERS.record_build();
     tracing::debug!(
         target: "rs_cam_core::tier_map_cache",
         tiers = built.tier_count,

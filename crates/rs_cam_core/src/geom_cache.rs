@@ -96,7 +96,6 @@
 //! `geom cache build kind=index` line; a regression that reintroduces
 //! per-toolpath rebuilding shows up as eight.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::compute::transform::SetupTransformInfo;
@@ -169,40 +168,36 @@ pub struct GeomCacheStats {
     pub transform_hits: u64,
 }
 
-static INDEX_BUILDS: AtomicU64 = AtomicU64::new(0);
-static INDEX_HITS: AtomicU64 = AtomicU64::new(0);
-static SILHOUETTE_BUILDS: AtomicU64 = AtomicU64::new(0);
-static SILHOUETTE_HITS: AtomicU64 = AtomicU64::new(0);
-static TRANSFORM_BUILDS: AtomicU64 = AtomicU64::new(0);
-static TRANSFORM_HITS: AtomicU64 = AtomicU64::new(0);
+/// This cache's own counters, one pair per memoised product. The mechanism
+/// is shared ([`crate::memo::CacheCounters`]); the statics are per cache and,
+/// here, per product.
+static INDEX: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
+static SILHOUETTE: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
+static TRANSFORM: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
 
 /// Read the counters. This is the measurement instrument for G8: the point of
 /// the change is that these `*_builds` stay at one per model across a whole
 /// `generate_all` instead of rising with the toolpath count.
 #[must_use]
 pub fn stats() -> GeomCacheStats {
+    let (index_builds, index_hits) = INDEX.read();
+    let (silhouette_builds, silhouette_hits) = SILHOUETTE.read();
+    let (transform_builds, transform_hits) = TRANSFORM.read();
     GeomCacheStats {
-        index_builds: INDEX_BUILDS.load(Ordering::Relaxed),
-        index_hits: INDEX_HITS.load(Ordering::Relaxed),
-        silhouette_builds: SILHOUETTE_BUILDS.load(Ordering::Relaxed),
-        silhouette_hits: SILHOUETTE_HITS.load(Ordering::Relaxed),
-        transform_builds: TRANSFORM_BUILDS.load(Ordering::Relaxed),
-        transform_hits: TRANSFORM_HITS.load(Ordering::Relaxed),
+        index_builds,
+        index_hits,
+        silhouette_builds,
+        silhouette_hits,
+        transform_builds,
+        transform_hits,
     }
 }
 
 /// Zero the counters. For harnesses that want a per-run delta; the cached
 /// values themselves are untouched, so this cannot change any result.
 pub fn reset_stats() {
-    for counter in [
-        &INDEX_BUILDS,
-        &INDEX_HITS,
-        &SILHOUETTE_BUILDS,
-        &SILHOUETTE_HITS,
-        &TRANSFORM_BUILDS,
-        &TRANSFORM_HITS,
-    ] {
-        counter.store(0, Ordering::Relaxed);
+    for counters in [&INDEX, &SILHOUETTE, &TRANSFORM] {
+        counters.reset();
     }
 }
 
@@ -250,11 +245,11 @@ fn put(mesh: &Arc<TriangleMesh>, write: impl FnOnce(&mut Entry)) {
 #[must_use]
 pub fn cached_auto_index(mesh: &Arc<TriangleMesh>) -> Arc<SpatialIndex> {
     if let Some(hit) = get(mesh, |entry| entry.index.clone()) {
-        INDEX_HITS.fetch_add(1, Ordering::Relaxed);
+        INDEX.record_hit();
         return hit;
     }
     let built = Arc::new(SpatialIndex::build_auto(mesh));
-    INDEX_BUILDS.fetch_add(1, Ordering::Relaxed);
+    INDEX.record_build();
     tracing::debug!(
         target: "rs_cam_core::geom_cache",
         kind = "index",
@@ -319,11 +314,11 @@ pub fn lazy_auto_index(mesh: &Arc<TriangleMesh>) -> Arc<LazyIndex> {
 #[must_use]
 pub fn cached_silhouette(mesh: &Arc<TriangleMesh>) -> Arc<Vec<Polygon2>> {
     if let Some(hit) = get(mesh, |entry| entry.silhouette.clone()) {
-        SILHOUETTE_HITS.fetch_add(1, Ordering::Relaxed);
+        SILHOUETTE.record_hit();
         return hit;
     }
     let built = Arc::new(crate::boundary::model_silhouette(mesh, None));
-    SILHOUETTE_BUILDS.fetch_add(1, Ordering::Relaxed);
+    SILHOUETTE.record_build();
     tracing::debug!(
         target: "rs_cam_core::geom_cache",
         kind = "silhouette",
@@ -353,11 +348,11 @@ pub fn cached_transform(mesh: &Arc<TriangleMesh>, info: &SetupTransformInfo) -> 
             .filter(|(k, _)| *k == key)
             .map(|(_, m)| Arc::clone(m))
     }) {
-        TRANSFORM_HITS.fetch_add(1, Ordering::Relaxed);
+        TRANSFORM.record_hit();
         return hit;
     }
     let built = Arc::new(info.apply_to_mesh(mesh));
-    TRANSFORM_BUILDS.fetch_add(1, Ordering::Relaxed);
+    TRANSFORM.record_build();
     tracing::debug!(
         target: "rs_cam_core::geom_cache",
         kind = "transform",

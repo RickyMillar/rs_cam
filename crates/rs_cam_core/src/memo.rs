@@ -14,14 +14,69 @@
 //! memo owns no lock, so each cache keeps the lock scope its own doc
 //! describes: the lock covers the lookup and the insert, never the build.
 //!
-//! [`crate::finish_surface_cache`] is deliberately not a member. It keys the
-//! mesh by CONTENT, because no call site on its path holds an `Arc` to hang a
-//! `Weak` on (its module doc argues this at length), so it has neither the
-//! `Weak` identity nor the dead-mesh sweep this memo is built around.
+//! [`crate::finish_surface_cache`] is deliberately not a member of the TABLE.
+//! It keys the mesh by CONTENT, because no call site on its path holds an
+//! `Arc` to hang a `Weak` on (its module doc argues this at length), so it has
+//! neither the `Weak` identity nor the dead-mesh sweep this memo is built
+//! around. It does share [`CacheCounters`], which is independent of the table.
+//!
+//! [`CacheCounters`] is the second mechanism this module owns. All four map
+//! caches counted builds and hits with a hand-written pair of `AtomicU64`
+//! statics and a hand-written `stats()` / `reset_stats()` pair until
+//! 2026-09-17. The STATICS stay with each cache, by the same rule as the
+//! capacity and the key: `geom_cache` holds three of them, one per memoised
+//! product, and each cache keeps its own public stats struct.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 use crate::mesh::TriangleMesh;
+
+/// One cache's cumulative build and hit counters, since process start.
+///
+/// `Relaxed` throughout: the counters are a diagnostic, never a
+/// synchronisation edge. A reader can see a build and its hit in either
+/// order, which no consumer depends on.
+#[derive(Debug, Default)]
+pub struct CacheCounters {
+    builds: AtomicU64,
+    hits: AtomicU64,
+}
+
+impl CacheCounters {
+    /// Zeroed counters, for a `static`.
+    pub(crate) const fn new() -> Self {
+        Self {
+            builds: AtomicU64::new(0),
+            hits: AtomicU64::new(0),
+        }
+    }
+
+    /// Count one build.
+    pub(crate) fn record_build(&self) {
+        self.builds.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Count one hit.
+    pub(crate) fn record_hit(&self) {
+        self.hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Read the counters as `(builds, hits)`.
+    pub(crate) fn read(&self) -> (u64, u64) {
+        (
+            self.builds.load(Ordering::Relaxed),
+            self.hits.load(Ordering::Relaxed),
+        )
+    }
+
+    /// Zero the counters. The cached values themselves are untouched, so this
+    /// cannot change any result.
+    pub(crate) fn reset(&self) {
+        self.builds.store(0, Ordering::Relaxed);
+        self.hits.store(0, Ordering::Relaxed);
+    }
+}
 
 struct MemoEntry<K, V> {
     /// Liveness-checked identity key — see the module doc on why this is a

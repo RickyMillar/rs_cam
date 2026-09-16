@@ -47,7 +47,6 @@
 //! one an MCP `reach_map` call with a tolerance override asks for — an agent
 //! probing tolerances must not evict what the viewport is drawing.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::interrupt::{CancelCheck, Cancelled};
@@ -100,23 +99,22 @@ pub struct ReachMapCacheStats {
     pub hits: u64,
 }
 
-static BUILDS: AtomicU64 = AtomicU64::new(0);
-static HITS: AtomicU64 = AtomicU64::new(0);
+/// This cache's own counters. The mechanism is shared
+/// ([`crate::memo::CacheCounters`]); the static is per cache, by the same
+/// rule as the capacity and the key.
+static COUNTERS: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
 
 /// Read the counters.
 #[must_use]
 pub fn stats() -> ReachMapCacheStats {
-    ReachMapCacheStats {
-        builds: BUILDS.load(Ordering::Relaxed),
-        hits: HITS.load(Ordering::Relaxed),
-    }
+    let (builds, hits) = COUNTERS.read();
+    ReachMapCacheStats { builds, hits }
 }
 
 /// Zero the counters. The cached values themselves are untouched, so this
 /// cannot change any result.
 pub fn reset_stats() {
-    BUILDS.store(0, Ordering::Relaxed);
-    HITS.store(0, Ordering::Relaxed);
+    COUNTERS.reset();
 }
 
 /// Number of live entries. Test hook for the capacity bound.
@@ -153,7 +151,7 @@ pub fn cached_reach_map(
     let mesh = &request.mesh;
     let key = ReachMapKey::new(request);
     if let Some(hit) = get(mesh, &key) {
-        HITS.fetch_add(1, Ordering::Relaxed);
+        COUNTERS.record_hit();
         return Ok(hit);
     }
     let built = Arc::new(
@@ -166,7 +164,7 @@ pub fn cached_reach_map(
         )?
         .with_ids(request.tool_id, request.model_id),
     );
-    BUILDS.fetch_add(1, Ordering::Relaxed);
+    COUNTERS.record_build();
     tracing::debug!(
         target: "rs_cam_core::reach_map_cache",
         cells = built.cells.len(),

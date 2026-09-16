@@ -135,7 +135,6 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::finish_setup::{
@@ -263,23 +262,22 @@ pub struct FinishSurfaceCacheStats {
     pub hits: u64,
 }
 
-static BUILDS: AtomicU64 = AtomicU64::new(0);
-static HITS: AtomicU64 = AtomicU64::new(0);
+/// This cache's own counters. The mechanism is shared
+/// ([`crate::memo::CacheCounters`]); the static is per cache, by the same
+/// rule as the capacity and the key.
+static COUNTERS: crate::memo::CacheCounters = crate::memo::CacheCounters::new();
 
 /// Read the counters.
 #[must_use]
 pub fn stats() -> FinishSurfaceCacheStats {
-    FinishSurfaceCacheStats {
-        builds: BUILDS.load(Ordering::Relaxed),
-        hits: HITS.load(Ordering::Relaxed),
-    }
+    let (builds, hits) = COUNTERS.read();
+    FinishSurfaceCacheStats { builds, hits }
 }
 
 /// Zero the counters. The cached surfaces themselves are untouched, so this
 /// cannot change any result.
 pub fn reset_stats() {
-    BUILDS.store(0, Ordering::Relaxed);
-    HITS.store(0, Ordering::Relaxed);
+    COUNTERS.reset();
 }
 
 /// Number of live entries. Test hook for the capacity bound.
@@ -327,13 +325,13 @@ pub fn cached_finish_surface(
         resolution: ResolutionKey::new(resolution),
     };
     if let Some(hit) = get(&key) {
-        HITS.fetch_add(1, Ordering::Relaxed);
+        COUNTERS.record_hit();
         return Ok(hit);
     }
     let built = Arc::new(build_finish_surface_with_policy_and_cancel(
         mesh, index, cutter, resolution, cancel,
     )?);
-    BUILDS.fetch_add(1, Ordering::Relaxed);
+    COUNTERS.record_build();
     tracing::debug!(
         target: "rs_cam_core::finish_surface_cache",
         rows = built.rows(),
