@@ -105,17 +105,12 @@ const JUSTIFIED: &[Justified] = &[
         reason: "storing a simulation leaves the session's `Some`, so `stale` is empty \
                  and `simulation_cleared` is false (`session/command.rs`)",
     },
-    Justified {
-        path: "src/controller/io.rs",
-        needle: "Command::SetProjectName(",
-        reason: "a builder over a session no surface has adopted; the caller rebuilds \
-                 `GuiState` from scratch, so no runtime row exists to stamp",
-    },
-    Justified {
-        path: "src/controller/io.rs",
-        needle: "Command::ReplaceSetupsAndToolpaths(",
-        reason: "the same builder, over the same unadopted session",
-    },
+    // C01 (`41f0b243`) deleted the legacy project loader in
+    // `src/controller/io.rs`. Its two rows — `Command::SetProjectName(`
+    // and `Command::ReplaceSetupsAndToolpaths(` — named the builder over
+    // a session no surface had adopted. Both sites are gone, so the rows
+    // go with them: `every_justified_discard_still_names_a_real_site`
+    // requires each row to match exactly one site.
 ];
 
 /// The batch CLI holds no runtime row to stamp.
