@@ -117,7 +117,7 @@ pub struct NoticeStack {
 impl NoticeStack {
     /// The default cap. Four rows is what fits beside a panel without
     /// displacing the thing the operator is actually looking at.
-    pub const DEFAULT_CAP: usize = 4;
+    pub(crate) const DEFAULT_CAP: usize = 4;
 
     pub fn new(notices: Vec<Notice>) -> Self {
         Self {

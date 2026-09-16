@@ -1320,6 +1320,12 @@ pub fn set_overlay(state: &mut AppState, row: &OverlayRow, on: bool) {
 }
 
 /// What [`apply_overlays`] did.
+///
+/// **Test door.** Stays `pub` for two reasons: it is the return type of
+/// `pub fn apply_overlays`, and `crates/rs_cam_viz/tests/overlays_registry.rs`
+/// binds that return at fifteen sites. The test never writes the type name,
+/// so the S29 instrument, which counts name occurrences, read this row as
+/// own-file-only (S29, tech debt 2026-09-16).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ApplyReport {
     /// id → the value now in force.
@@ -1408,7 +1414,7 @@ pub fn switch_workspace(state: &mut AppState, target: Workspace) {
 /// an operator override survives a round trip through a workspace that does
 /// not care about it. And the write goes through [`set_overlay`], so a
 /// default can never break per-surface exclusivity.
-pub fn apply_workspace_defaults(state: &mut AppState, target: Workspace) {
+pub(crate) fn apply_workspace_defaults(state: &mut AppState, target: Workspace) {
     let displaced = std::mem::take(&mut state.overlays.displaced);
     for (id, value) in displaced {
         if let Some(row) = row(id) {

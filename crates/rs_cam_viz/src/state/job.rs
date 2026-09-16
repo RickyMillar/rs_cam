@@ -73,7 +73,7 @@ impl SetupFrame {
     /// compute path while core left it alone (G-POLYTRANSFORM-DUP; the
     /// closed-rings-only rule is G-PROFILE-FLIP, documented at
     /// `SetupTransformInfo::apply_to_polygons`).
-    pub fn transform_info(
+    pub(crate) fn transform_info(
         &self,
         stock: &StockConfig,
     ) -> rs_cam_core::compute::transform::SetupTransformInfo {

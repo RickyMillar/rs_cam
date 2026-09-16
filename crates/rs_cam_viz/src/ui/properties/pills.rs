@@ -109,7 +109,7 @@ impl<'a> PillSuggestion<'a> {
 
     /// Record a click without splitting (tests).
     #[cfg(test)]
-    pub fn record_click(&self) {
+    pub(crate) fn record_click(&self) {
         PillClick {
             field: self.field,
             clicked: self.clicked,

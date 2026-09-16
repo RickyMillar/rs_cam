@@ -40,7 +40,7 @@ pub const RING_OFFSET: f32 = 1.0;
 /// `egui::Plugin` is a trait, not a struct, so the registration is a unit
 /// type rather than a closure.
 #[derive(Default)]
-pub struct FocusRing;
+pub(crate) struct FocusRing;
 
 impl egui::Plugin for FocusRing {
     fn debug_name(&self) -> &'static str {
@@ -76,7 +76,7 @@ pub fn paint(ctx: &egui::Context) {
 }
 
 /// Paint one ring around `rect`.
-pub fn paint_ring(ctx: &egui::Context, rect: egui::Rect) {
+pub(crate) fn paint_ring(ctx: &egui::Context, rect: egui::Rect) {
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("rs_cam_focus_ring"),

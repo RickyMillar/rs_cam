@@ -9,7 +9,9 @@ use crate::state::simulation::ToolpathTraceAvailability;
 /// same green as a pass is the same defect as a vendor band in the same
 /// green as a pass. Trace availability is generator-debug provenance and
 /// carries no verdict at all, so the four are separated by their WORD.
-pub fn trace_availability_badge(availability: ToolpathTraceAvailability) -> Option<&'static str> {
+pub(crate) fn trace_availability_badge(
+    availability: ToolpathTraceAvailability,
+) -> Option<&'static str> {
     match availability {
         ToolpathTraceAvailability::None => None,
         ToolpathTraceAvailability::Semantic => Some("SEM"),

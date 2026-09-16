@@ -236,7 +236,7 @@ impl FrameLoopBeat {
     /// rarely and correctly. Reported as a fact, with no health verdict
     /// attached, because there is no threshold that would separate "dispatch
     /// is broken" from "nobody has called anything".
-    pub fn pump_age(&self) -> Option<Duration> {
+    pub(crate) fn pump_age(&self) -> Option<Duration> {
         if self.pumps.load(Ordering::Acquire) == 0 {
             return None;
         }
@@ -315,7 +315,7 @@ impl FrameLoopBeat {
 
     /// How long the in-progress frame has been running, or `None` when the
     /// loop is between frames. A large value is C6's long in-band read.
-    pub fn current_frame_age(&self) -> Option<Duration> {
+    pub(crate) fn current_frame_age(&self) -> Option<Duration> {
         if !self.in_frame() {
             return None;
         }

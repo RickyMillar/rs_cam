@@ -62,7 +62,7 @@ pub enum UndoAction {
 /// The provenance is the fifth member since WP8. Without it the flush
 /// below cannot record the OLD provenance on the undo entry, and an undo
 /// restores values under a stamp that describes different ones.
-pub type ToolpathSnapshot = (
+pub(crate) type ToolpathSnapshot = (
     ToolpathId,
     OperationConfig,
     DressupConfig,

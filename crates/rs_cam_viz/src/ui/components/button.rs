@@ -47,7 +47,7 @@ impl Variant {
 
     /// The pressed fill.
     #[must_use]
-    pub fn pressed_fill(self) -> egui::Color32 {
+    pub(crate) fn pressed_fill(self) -> egui::Color32 {
         match self {
             Self::Primary => tokens::ACCENT_PRESSED,
             Self::Default => tokens::SURFACE_OVERLAY,

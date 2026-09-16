@@ -408,6 +408,9 @@ pub enum OptimizeStageMark {
 /// A pure value, so a test reads the window's list without an egui pass.
 /// The draw picks the glyph for the [`OptimizeStageMark`]; this type holds
 /// no colour and no glyph.
+///
+/// Stays `pub`: it is the return element of `pub fn OptimizeRun::stage_rows`,
+/// so a crate-private form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone)]
 pub struct OptimizeStageRow {
     /// Where the search stands on this rung.

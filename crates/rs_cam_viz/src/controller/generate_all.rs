@@ -14,6 +14,9 @@ use rs_cam_core::session::ToolpathConfig;
 use crate::state::toolpath::{StockSource, ToolpathId};
 
 /// Which ops one `generate_all` covers, and which of them force the ladder.
+///
+/// Stays `pub`: it is the return type of `pub fn generate_all_scope`, so a
+/// crate-private form raises `private_interfaces` (S29, 2026-09-16).
 pub struct GenerateAllScope {
     /// Every enabled toolpath, in project order — the round-1 submission set.
     pub enabled: Vec<ToolpathId>,
@@ -221,7 +224,7 @@ pub struct FixpointPlan {
 impl FixpointPlan {
     /// A plan that does exactly what `generate_all` did before A/M11.
     #[must_use]
-    pub fn single_pass() -> Self {
+    pub(crate) fn single_pass() -> Self {
         Self {
             enabled: false,
             resolution_mm: None,

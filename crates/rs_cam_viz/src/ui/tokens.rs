@@ -326,13 +326,13 @@ pub const LANE_SCALE: [Color32; 4] = [LANE_IDLE, LANE_QUEUED, LANE_RUNNING, LANE
 // never reads (`DESIGN_SPEC.md` §10.3).
 
 /// `TextStyle::Heading`. Panel title, modal step title.
-pub const SIZE_HEADING: f32 = 15.0;
+pub(crate) const SIZE_HEADING: f32 = 15.0;
 /// `TextStyle::Body`. Default label and sentence.
 pub const SIZE_BODY: f32 = 13.0;
 /// `TextStyle::Button`. Every button.
-pub const SIZE_BUTTON: f32 = 13.0;
+pub(crate) const SIZE_BUTTON: f32 = 13.0;
 /// `TextStyle::Monospace`. EVERY measured value.
-pub const SIZE_NUMERIC: f32 = 13.0;
+pub(crate) const SIZE_NUMERIC: f32 = 13.0;
 /// `TextStyle::Small`. Units, provenance, supporting sentence.
 ///
 /// Raising this slot from 9 to 11 is the single highest-leverage line in the
@@ -341,9 +341,9 @@ pub const SIZE_NUMERIC: f32 = 13.0;
 /// floor without editing a single call site.
 pub const SIZE_CAPTION: f32 = 11.0;
 /// Helper rung. A window title, a page title. Rare.
-pub const SIZE_DISPLAY: f32 = 20.0;
+pub(crate) const SIZE_DISPLAY: f32 = 20.0;
 /// Helper rung. A section header.
-pub const SIZE_SUBHEAD: f32 = 12.0;
+pub(crate) const SIZE_SUBHEAD: f32 = 12.0;
 /// Helper rung. Chip text ONLY. The one rung allowed below 11 points.
 pub const SIZE_MICRO: f32 = 10.0;
 

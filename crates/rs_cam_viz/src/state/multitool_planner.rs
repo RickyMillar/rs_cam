@@ -343,7 +343,7 @@ impl MultitoolPlannerState {
     /// radius descending — the same sort the core planner applies), so the
     /// spec's per-tier list lines up with the emitted tiers.
     #[must_use]
-    pub fn ladder_tier_strategies(&self) -> Vec<rs_cam_core::session::TierStrategy> {
+    pub(crate) fn ladder_tier_strategies(&self) -> Vec<rs_cam_core::session::TierStrategy> {
         let mut rows: Vec<&PlannerToolRow> = self.tools.iter().filter(|t| t.selected).collect();
         rows.sort_by(|a, b| b.cusp_radius_mm.total_cmp(&a.cusp_radius_mm));
         rows.iter().map(|r| r.strategy).collect()

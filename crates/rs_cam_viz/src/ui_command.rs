@@ -69,22 +69,22 @@ pub use rs_cam_core::session::{CommandKind, Reach, Surfaces};
 pub struct NoArgs;
 
 /// Which tree node the operator selected.
-pub type SelectArgs = Selection;
+pub(crate) type SelectArgs = Selection;
 
 /// Which stored camera angle to take.
-pub type SetViewPresetArgs = ViewPreset;
+pub(crate) type SetViewPresetArgs = ViewPreset;
 
 /// Which face the operator asked to look at.
-pub type PreviewOrientationArgs = FaceUp;
+pub(crate) type PreviewOrientationArgs = FaceUp;
 
 /// Which workspace to show.
-pub type SwitchWorkspaceArgs = Workspace;
+pub(crate) type SwitchWorkspaceArgs = Workspace;
 
 /// Which toolpath to show or hide.
-pub type ToggleToolpathVisibilityArgs = ToolpathId;
+pub(crate) type ToggleToolpathVisibilityArgs = ToolpathId;
 
 /// Which toolpath to open in the simulation workspace.
-pub type InspectToolpathInSimulationArgs = ToolpathId;
+pub(crate) type InspectToolpathInSimulationArgs = ToolpathId;
 
 /// Which move to move playback to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,22 +190,22 @@ pub struct SetUiViewArgs {
 }
 
 /// Whether the project feeds rollup is on screen.
-pub type SetProjectFeedsOpenArgs = bool;
+pub(crate) type SetProjectFeedsOpenArgs = bool;
 
 /// Which sort order the project rollup table takes.
-pub type SetFeedsProjectSortArgs = ProjectFeedsSort;
+pub(crate) type SetFeedsProjectSortArgs = ProjectFeedsSort;
 
 /// Where to put the drag-to-explore overlay point, or `None` to clear it.
-pub type SetFeedsExploreArgs = Option<NomogramExplore>;
+pub(crate) type SetFeedsExploreArgs = Option<NomogramExplore>;
 
 /// Which project rollup row to select or deselect.
-pub type ToggleFeedsProjectRowArgs = ToolpathId;
+pub(crate) type ToggleFeedsProjectRowArgs = ToolpathId;
 
 /// Whether the project rollup draws its scatter overlay.
-pub type SetFeedsProjectScatterArgs = bool;
+pub(crate) type SetFeedsProjectScatterArgs = bool;
 
 /// Whether every project rollup row is selected.
-pub type SetFeedsProjectSelectAllArgs = bool;
+pub(crate) type SetFeedsProjectSelectAllArgs = bool;
 
 /// Which export-gate verdicts the operator accepts.
 ///
@@ -220,10 +220,10 @@ pub struct SetToolLoadOverrideArgs {
 }
 
 /// Which project rollup row of the optimizer to select or deselect.
-pub type ToggleOptimizeProjectRowArgs = usize;
+pub(crate) type ToggleOptimizeProjectRowArgs = usize;
 
 /// Whether export emits the previous geometry of an edited operation.
-pub type SetStaleExportPolicyArgs = StaleResultPolicy;
+pub(crate) type SetStaleExportPolicyArgs = StaleResultPolicy;
 
 /// Which library tool to delete.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -257,10 +257,10 @@ pub struct MoveLibraryToolArgs {
 }
 
 /// The name of the catalog to create.
-pub type CreateToolCatalogArgs = String;
+pub(crate) type CreateToolCatalogArgs = String;
 
 /// The name of the catalog to delete.
-pub type DeleteToolCatalogArgs = String;
+pub(crate) type DeleteToolCatalogArgs = String;
 
 /// Which catalog to rename, and what to call it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,13 +272,13 @@ pub struct RenameToolCatalogArgs {
 }
 
 /// The name of the catalog to de-duplicate.
-pub type DedupeToolCatalogArgs = String;
+pub(crate) type DedupeToolCatalogArgs = String;
 
 /// The library name to save the project machine under.
-pub type SaveMachineToLibraryArgs = String;
+pub(crate) type SaveMachineToLibraryArgs = String;
 
 /// The library machine to delete.
-pub type DeleteMachineFromLibraryArgs = String;
+pub(crate) type DeleteMachineFromLibraryArgs = String;
 
 /// Which library machine to rename, and what to call it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -328,7 +328,7 @@ pub struct GetNotificationsArgs {
 }
 
 /// Which tool catalog to list.
-pub type ListToolCatalogArgs = String;
+pub(crate) type ListToolCatalogArgs = String;
 
 // ── The registry ─────────────────────────────────────────────────────
 

@@ -41,7 +41,7 @@ impl RestCandidate {
 }
 
 /// The candidates of one setup, in plan order (`SetupData::toolpath_indices`).
-pub fn setup_candidates(session: &ProjectSession, setup_idx: usize) -> Vec<RestCandidate> {
+pub(crate) fn setup_candidates(session: &ProjectSession, setup_idx: usize) -> Vec<RestCandidate> {
     session
         .list_setups()
         .get(setup_idx)

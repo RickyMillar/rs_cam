@@ -29,6 +29,10 @@ impl Default for SpanKindFilter {
 }
 
 /// Per-toolpath move-type visibility. Defaults to both-visible.
+///
+/// Stays `pub`: it is the value type of the `pub` field
+/// `ViewportState::toolpath_move_visibility`, so a crate-private form raises
+/// `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolpathMoveVisibility {
     pub show_cutting: bool,

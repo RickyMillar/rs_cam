@@ -70,7 +70,7 @@ impl ToolpathEntryInit {
         }
     }
 
-    pub fn new_toolpath(
+    pub(crate) fn new_toolpath(
         id: ToolpathId,
         name: String,
         tool_id: ToolId,
@@ -86,7 +86,10 @@ impl ToolpathEntryInit {
         )
     }
 
-    pub fn from_loaded_state(
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn from_loaded_state(
         id: ToolpathId,
         name: String,
         tool_id: ToolId,
@@ -96,7 +99,14 @@ impl ToolpathEntryInit {
         Self::new(id, name, tool_id, model_id, operation)
     }
 
-    pub fn duplicate_from(source: &ToolpathEntry, new_id: ToolpathId, new_name: String) -> Self {
+    /// **Test door.** The only caller is [`ToolpathEntry::duplicate_as`],
+    /// which is itself a test door (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn duplicate_from(
+        source: &ToolpathEntry,
+        new_id: ToolpathId,
+        new_name: String,
+    ) -> Self {
         Self {
             id: new_id,
             name: new_name,
@@ -262,11 +272,17 @@ impl ToolpathEntry {
         ))
     }
 
-    pub fn duplicate_as(&self, new_id: ToolpathId, new_name: String) -> Self {
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn duplicate_as(&self, new_id: ToolpathId, new_name: String) -> Self {
         Self::from_init(ToolpathEntryInit::duplicate_from(self, new_id, new_name))
     }
 
-    pub fn clear_runtime_state(&mut self) {
+    /// **Test door.** The `#[cfg(test)]` module of this file is the only
+    /// caller. No production path reads it (S29, tech debt 2026-09-16).
+    #[cfg(test)]
+    pub(crate) fn clear_runtime_state(&mut self) {
         self.status = ComputeStatus::Pending;
         self.result = None;
         self.stale_since = None;

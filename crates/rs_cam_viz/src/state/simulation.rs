@@ -99,6 +99,9 @@ pub struct SimulationRuntimeMetrics {
     pub move_count: usize,
 }
 
+/// **Dead in production.** Only [`SimulationState::runtime_hotspots`] builds one, and
+/// that reader's only caller is this file's test module. S29 keeps it `pub`
+/// for the reason recorded on that reader.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SimulationRuntimeHotspot {
     pub toolpath_id: ToolpathId,
@@ -113,6 +116,9 @@ pub struct SimulationRuntimeHotspot {
     pub debug_span_id: Option<u64>,
 }
 
+/// **Dead in production.** Only [`SimulationState::current_cut_sample`] builds one, and
+/// that reader's only caller is this file's test module. S29 keeps it `pub`
+/// for the reason recorded on that reader.
 #[derive(Debug, Clone)]
 pub struct ActiveCutSample {
     pub toolpath_id: ToolpathId,
@@ -1280,7 +1286,7 @@ impl SimulationState {
     /// stored report (O(collisions)), never recomputed, so it is safe
     /// to call at frame rate (the 2026-06-11 setup-tab lag was the
     /// diagnostics path re-running the full collision sweep per frame).
-    pub fn holder_collision_counts_by_tp(&self) -> Vec<(ToolpathId, usize)> {
+    pub(crate) fn holder_collision_counts_by_tp(&self) -> Vec<(ToolpathId, usize)> {
         let mut counts: Vec<(ToolpathId, usize)> = Vec::new();
         if let Some(report) = self.checks.collision_report.as_ref() {
             for collision in &report.collisions {
@@ -1295,7 +1301,10 @@ impl SimulationState {
         counts
     }
 
-    pub fn boundary_for_toolpath_id(&self, toolpath_id: ToolpathId) -> Option<&ToolpathBoundary> {
+    pub(crate) fn boundary_for_toolpath_id(
+        &self,
+        toolpath_id: ToolpathId,
+    ) -> Option<&ToolpathBoundary> {
         self.boundaries()
             .iter()
             .find(|boundary| boundary.id == toolpath_id)
@@ -1332,6 +1341,12 @@ impl SimulationState {
         }
     }
 
+    /// **Dead in production.** The only caller is this file's test module.
+    /// S29 (tech debt 2026-09-16) keeps it `pub`: the crate-private form
+    /// marks `SimulationRuntimeProfile`'s cumulative arrays as never read,
+    /// and W4 changes visibility and doc lines only. The whole
+    /// runtime-profile reader cluster is recorded as W4 residue in
+    /// `planning/tech_debt_2026-09-16/TECH_DEBT_PLAN.md`.
     pub fn semantic_runtime_metrics(
         &mut self,
         gui: &GuiState,
@@ -1361,6 +1376,12 @@ impl SimulationState {
             .and_then(|trace| trace.hotspots.get(hotspot_index))
     }
 
+    /// **Dead in production.** The only caller is this file's test module.
+    /// S29 (tech debt 2026-09-16) keeps it `pub`: the crate-private form
+    /// marks `SimulationRuntimeProfile`'s cumulative arrays as never read,
+    /// and W4 changes visibility and doc lines only. The whole
+    /// runtime-profile reader cluster is recorded as W4 residue in
+    /// `planning/tech_debt_2026-09-16/TECH_DEBT_PLAN.md`.
     pub fn current_cut_sample(&self) -> Option<ActiveCutSample> {
         let (boundary_index, toolpath_id, local_move) = self.current_local_toolpath_move()?;
         let trace = self.results.as_ref()?.cut_trace.as_ref()?;
@@ -1382,6 +1403,12 @@ impl SimulationState {
         })
     }
 
+    /// **Dead in production.** The only caller is this file's test module.
+    /// S29 (tech debt 2026-09-16) keeps it `pub`: the crate-private form
+    /// marks `SimulationRuntimeProfile`'s cumulative arrays as never read,
+    /// and W4 changes visibility and doc lines only. The whole
+    /// runtime-profile reader cluster is recorded as W4 residue in
+    /// `planning/tech_debt_2026-09-16/TECH_DEBT_PLAN.md`.
     #[allow(clippy::indexing_slicing)] // child_index from parent's child list, bounded by trace.items
     pub fn runtime_hotspots(
         &mut self,
@@ -1449,7 +1476,7 @@ impl SimulationState {
     }
 
     #[allow(clippy::indexing_slicing)] // active_index from active_item_index() bounded by trace.items
-    pub fn playback_semantic_item(
+    pub(crate) fn playback_semantic_item(
         &mut self,
         gui: &GuiState,
         max_feed_mm_min: f64,
@@ -1469,7 +1496,7 @@ impl SimulationState {
         })
     }
 
-    pub fn semantic_item_by_id(
+    pub(crate) fn semantic_item_by_id(
         &mut self,
         gui: &GuiState,
         max_feed_mm_min: f64,
@@ -1566,7 +1593,7 @@ impl SimulationState {
         })
     }
 
-    pub fn trace_target_for_span(
+    pub(crate) fn trace_target_for_span(
         &mut self,
         gui: &GuiState,
         max_feed_mm_min: f64,
@@ -1663,7 +1690,7 @@ impl SimulationState {
         })
     }
 
-    pub fn current_debug_annotation_with_index(
+    pub(crate) fn current_debug_annotation_with_index(
         &self,
         gui: &GuiState,
     ) -> Option<(ToolpathId, usize, ToolpathDebugAnnotation)> {

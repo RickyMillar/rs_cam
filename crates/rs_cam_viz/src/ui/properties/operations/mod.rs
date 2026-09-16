@@ -1613,7 +1613,7 @@ const MODEL_HALF_WIDTH_FRACTION: f32 = 0.2;
 /// This is a pure read of the context, kept apart from the drawing, so the
 /// sentry asserts the DECISION rather than a pixel.
 #[must_use]
-pub fn model_profile(ctx: &HeightContext) -> ModelProfile {
+pub(crate) fn model_profile(ctx: &HeightContext) -> ModelProfile {
     match (ctx.model_top_z, ctx.model_bottom_z) {
         (Some(top), Some(bottom)) => {
             if (top - bottom).abs() <= MODEL_FLAT_EPS_MM {
