@@ -1372,11 +1372,11 @@ pub fn json_str(data: serde_json::Value) -> String {
 pub fn build_info() -> serde_json::Value {
     serde_json::json!({
         "crate_version": env!("CARGO_PKG_VERSION"),
-        "core_version": rs_cam_core::build_info::CORE_VERSION,
+        "core_version": rs_cam_core::util::build_info::CORE_VERSION,
         // git short-sha (with -dirty suffix) of the rs_cam_core build,
         // captured by its build.rs. Authoritative "which commit is this".
-        "git_desc": rs_cam_core::build_info::GIT_DESC,
-        "build_timestamp": rs_cam_core::build_info::BUILD_TIMESTAMP,
+        "git_desc": rs_cam_core::util::build_info::GIT_DESC,
+        "build_timestamp": rs_cam_core::util::build_info::BUILD_TIMESTAMP,
         "git_sha": option_env!("VERGEN_GIT_SHA"),
         "features": [
             "stale_defaults",

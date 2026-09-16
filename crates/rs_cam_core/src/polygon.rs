@@ -466,7 +466,7 @@ pub enum OffsetFailure {
     ///
     /// `assertion` is the panic payload's message, e.g. *"start index should
     /// be less than or equal to end index if polyline is open"*. There is no
-    /// source location: see [`crate::panic_message`] for why a library
+    /// source location: see [`crate::util::panic_message`] for why a library
     /// primitive cannot recover one.
     ///
     /// **Debug/release divergence applies** (Checkpoint C, Q4 option a). Most
@@ -629,7 +629,7 @@ fn offset_one(polygon: &Polygon2, distance: f64) -> (Vec<Polygon2>, Option<Offse
         Ok(Ok(v)) => (v, None),
         Ok(Err(reason)) => (Vec::new(), Some(OffsetFailure::RejectedInput { reason })),
         Err(payload) => {
-            let assertion = crate::panic_message::panic_payload_message(payload.as_ref());
+            let assertion = crate::util::panic_message::panic_payload_message(payload.as_ref());
             tracing::warn!(
                 distance,
                 exterior_verts = polygon.exterior.len(),
@@ -723,7 +723,7 @@ fn remove_redundant_contained(pline: &Polyline<f64>, pos_equal_eps: f64) -> Redu
         Ok(Some(reduced)) => RedundantOutcome::Reduced(reduced),
         Ok(None) => RedundantOutcome::Unchanged,
         Err(payload) => {
-            let assertion = crate::panic_message::panic_payload_message(payload.as_ref());
+            let assertion = crate::util::panic_message::panic_payload_message(payload.as_ref());
             tracing::warn!(
                 vertex_count = pline.vertex_count(),
                 assertion = %assertion,
@@ -1291,7 +1291,7 @@ impl RingGroup {
         })) {
             Ok(v) => v,
             Err(payload) => {
-                let assertion = crate::panic_message::panic_payload_message(payload.as_ref());
+                let assertion = crate::util::panic_message::panic_payload_message(payload.as_ref());
                 tracing::warn!(
                     distance,
                     boundary_verts = self.boundary.vertex_count(),

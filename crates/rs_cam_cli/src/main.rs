@@ -437,9 +437,9 @@ fn main() -> Result<()> {
             println!(
                 "rs_cam_cli {}\nrs_cam_core {}\ngit {}\nbuilt {}",
                 env!("CARGO_PKG_VERSION"),
-                rs_cam_core::build_info::CORE_VERSION,
-                rs_cam_core::build_info::GIT_DESC,
-                rs_cam_core::build_info::BUILD_TIMESTAMP,
+                rs_cam_core::util::build_info::CORE_VERSION,
+                rs_cam_core::util::build_info::GIT_DESC,
+                rs_cam_core::util::build_info::BUILD_TIMESTAMP,
             );
             return Ok(());
         }

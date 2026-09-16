@@ -979,7 +979,7 @@ fn spawn_toolpath_lane(
             }));
 
             if let Err(panic_payload) = caught {
-                let msg = rs_cam_core::panic_message::panic_payload_message(&*panic_payload);
+                let msg = rs_cam_core::util::panic_message::panic_payload_message(&*panic_payload);
                 tracing::error!("rs_cam crashed due to internal error (toolpath worker): {msg}");
 
                 // Reset lane state so subsequent jobs can still run.
@@ -1118,7 +1118,7 @@ fn spawn_analysis_lane(
             }));
 
             if let Err(panic_payload) = caught {
-                let msg = rs_cam_core::panic_message::panic_payload_message(&*panic_payload);
+                let msg = rs_cam_core::util::panic_message::panic_payload_message(&*panic_payload);
                 tracing::error!("rs_cam crashed due to internal error (analysis worker): {msg}");
 
                 // Reset lane state so subsequent jobs can still run.
@@ -1281,7 +1281,8 @@ fn spawn_job_lane(
             {
                 Ok(answer) => answer,
                 Err(panic_payload) => {
-                    let msg = rs_cam_core::panic_message::panic_payload_message(&*panic_payload);
+                    let msg =
+                        rs_cam_core::util::panic_message::panic_payload_message(&*panic_payload);
                     tracing::error!("rs_cam crashed due to internal error (job worker): {msg}");
                     Err(ComputeError::Message(format!("the job panicked: {msg}")))
                 }
@@ -1464,7 +1465,7 @@ fn spawn_reach_lane(
             }));
 
             if let Err(panic_payload) = caught {
-                let msg = rs_cam_core::panic_message::panic_payload_message(&*panic_payload);
+                let msg = rs_cam_core::util::panic_message::panic_payload_message(&*panic_payload);
                 tracing::error!("rs_cam crashed due to internal error (reach worker): {msg}");
 
                 let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());

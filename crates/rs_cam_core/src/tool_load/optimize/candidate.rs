@@ -17,10 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::feeds::vendor_lookup::MatchedRow;
-use crate::panic_message::panic_payload_message;
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
 use crate::tool_load::verdict::ToolpathLoadVerdict;
 use crate::tool_load::{ToolpathLoadContext, evaluate_toolpath};
+use crate::util::panic_message::panic_payload_message;
 
 use super::axes::SearchAxis;
 use super::bounds;
@@ -587,7 +587,7 @@ pub(crate) fn refine_stage2(
     clippy::indexing_slicing
 )]
 mod tests {
-    use crate::panic_message::panic_payload_message;
+    use crate::util::panic_message::panic_payload_message;
 
     // R1 isolation seam: the payload shapes catch_unwind hands back for
     // the panic styles the geometry stack actually produces.

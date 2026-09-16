@@ -1,6 +1,6 @@
 //! Build script: capture git short-sha, dirty flag, and the commit
 //! timestamp so the running binary can report exactly which commit it
-//! was built from. Surfaced via `rs_cam_core::build_info`.
+//! was built from. Surfaced via `rs_cam_core::util::build_info`.
 //!
 //! IMPORTANT — must produce DETERMINISTIC output for a given
 //! (HEAD, dirty) state. cargo recompiles the crate whenever this
