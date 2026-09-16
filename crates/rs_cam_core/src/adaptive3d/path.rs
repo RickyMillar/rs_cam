@@ -10,6 +10,72 @@ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::radial_profile::RadialProfileLUT;
 use crate::slope::SurfaceHeightmap;
+
+/// The Z levels a flat shelf in the surface asks for, top-down order not
+/// guaranteed.
+///
+/// Histogram the surface heights at `tolerance` resolution and take every bin
+/// holding more than 2% of the cells as a flat feature. A level lands
+/// `stock_to_leave` above the bin centre, and only when it sits inside the
+/// working range and no further than one bin from an `existing_levels` entry.
+///
+/// **One implementation.** `adaptive3d::mod`'s
+/// `test_flat_area_detection_finds_shelf` re-implemented this walk verbatim
+/// until 2026-09-17, so a change to the detector left the test green.
+///
+/// Uncovered padding counts in the denominator (see `GridZ`): the grid runs
+/// one envelope radius past the mesh bbox, so the cell total over-counts and
+/// the 2% threshold is correspondingly harder to clear on small models. C2
+/// audit 2026-07-30: LEFT AS IS — every adaptive3d Z-level plan in the repo's
+/// history is calibrated against this denominator, and re-basing it on
+/// covered cells only changes flat-level insertion on every existing job.
+/// Recorded, not silently changed.
+// SAFETY: `bin` is tested against `n_bins`, which is `histogram.len()`.
+#[allow(clippy::indexing_slicing)]
+pub(crate) fn flat_shelf_levels(
+    surface: &SurfaceHeightmap,
+    surface_bottom: f64,
+    stock_top_z: f64,
+    tolerance: f64,
+    stock_to_leave: f64,
+    z_bottom: f64,
+    existing_levels: &[f64],
+) -> Vec<f64> {
+    let total_cells = surface.z_or_bbox_floor_values().len();
+    if total_cells == 0 {
+        return Vec::new();
+    }
+    // Build histogram of surface Z values binned at tolerance resolution
+    let bin_size = tolerance.max(0.05);
+    let z_min_surf = surface_bottom;
+    let n_bins = ((stock_top_z - z_min_surf) / bin_size).ceil() as usize + 1;
+    let mut histogram = vec![0u32; n_bins];
+    for &sz in surface.z_or_bbox_floor_values() {
+        let bin = ((sz - z_min_surf) / bin_size).floor() as usize;
+        if bin < n_bins {
+            histogram[bin] += 1;
+        }
+    }
+    // Bins with >2% of total cells represent flat features
+    let threshold = (total_cells as f64 * 0.02) as u32;
+    let mut flat_levels = Vec::new();
+    for (i, &count) in histogram.iter().enumerate() {
+        if count > threshold {
+            let flat_z = z_min_surf + (i as f64 + 0.5) * bin_size + stock_to_leave;
+            // Only insert if within the working range and not too close to
+            // existing levels
+            if flat_z > z_bottom + bin_size && flat_z < stock_top_z - bin_size {
+                let too_close = existing_levels
+                    .iter()
+                    .any(|&zl| (zl - flat_z).abs() < bin_size);
+                if !too_close {
+                    flat_levels.push(flat_z);
+                }
+            }
+        }
+    }
+    flat_levels
+}
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};
 #[cfg(not(target_arch = "wasm32"))]
@@ -499,49 +565,20 @@ pub(super) fn adaptive_3d_segments(
 
     // Fix 5: Flat area detection — histogram surface Z, insert levels at shelves
     if params.detect_flat_areas {
-        // Uncovered padding counts in the denominator (see `GridZ`): the
-        // grid runs one envelope radius past the mesh bbox, so `total_cells`
-        // over-counts and the 2% flat-shelf threshold is correspondingly
-        // harder to clear on small models. C2 audit 2026-07-30: LEFT AS IS —
-        // every adaptive3d Z-level plan in the repo's history is calibrated
-        // against this denominator, and re-basing it on covered cells only
-        // changes flat-level insertion on every existing job. Recorded, not
-        // silently changed.
-        let total_cells = surface_hm.z_or_bbox_floor_values().len();
-        if total_cells > 0 {
-            // Build histogram of surface Z values binned at tolerance resolution
-            let bin_size = params.tolerance.max(0.05);
-            let z_min_surf = surface_bottom;
-            let z_max_surf = params.stock_top_z;
-            let n_bins = ((z_max_surf - z_min_surf) / bin_size).ceil() as usize + 1;
-            let mut histogram = vec![0u32; n_bins];
-            for &sz in surface_hm.z_or_bbox_floor_values() {
-                let bin = ((sz - z_min_surf) / bin_size).floor() as usize;
-                if bin < n_bins {
-                    histogram[bin] += 1;
-                }
-            }
-            // Bins with >2% of total cells represent flat features
-            let threshold = (total_cells as f64 * 0.02) as u32;
-            let mut flat_levels = Vec::new();
-            for (i, &count) in histogram.iter().enumerate() {
-                if count > threshold {
-                    let flat_z = z_min_surf + (i as f64 + 0.5) * bin_size + params.stock_to_leave;
-                    // Only insert if within the working range and not too close to existing levels
-                    if flat_z > z_bottom + bin_size && flat_z < params.stock_top_z - bin_size {
-                        let too_close = z_levels.iter().any(|&zl| (zl - flat_z).abs() < bin_size);
-                        if !too_close {
-                            flat_levels.push(flat_z);
-                        }
-                    }
-                }
-            }
-            if !flat_levels.is_empty() {
-                debug!(count = flat_levels.len(), "Detected flat area Z levels");
-                z_levels.extend(flat_levels);
-                z_levels.sort_by(|a, b| b.total_cmp(a)); // Top-down order
-                z_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
-            }
+        let flat_levels = flat_shelf_levels(
+            &surface_hm,
+            surface_bottom,
+            params.stock_top_z,
+            params.tolerance,
+            params.stock_to_leave,
+            z_bottom,
+            &z_levels,
+        );
+        if !flat_levels.is_empty() {
+            debug!(count = flat_levels.len(), "Detected flat area Z levels");
+            z_levels.extend(flat_levels);
+            z_levels.sort_by(|a, b| b.total_cmp(a)); // Top-down order
+            z_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
         }
     }
 

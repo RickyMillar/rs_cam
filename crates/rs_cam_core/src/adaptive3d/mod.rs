@@ -1145,33 +1145,22 @@ mod tests {
         let covered = vec![true; z_values.len()];
         let shm = SurfaceHeightmap::from_parts(z_values, covered, rows, cols, 0.0, 0.0, cell_size);
 
-        // Histogram detection logic (same as in adaptive_3d_segments)
+        // The PRODUCTION detector, not a copy of it. This test held a
+        // verbatim re-implementation of the histogram until 2026-09-17, so a
+        // change to the real detector left it green (Q6).
         let tolerance: f64 = 0.1;
         let stock_to_leave: f64 = 0.5;
         let stock_top: f64 = 25.0;
-        let total_cells = shm.z_or_bbox_floor_values().len();
-        let bin_size = tolerance.max(0.05);
-        let z_min_surf = 0.0;
-        let z_max_surf = stock_top;
-        let n_bins = ((z_max_surf - z_min_surf) / bin_size).ceil() as usize + 1;
-        let mut histogram = vec![0u32; n_bins];
-        for &sz in shm.z_or_bbox_floor_values() {
-            let bin = ((sz - z_min_surf) / bin_size).floor() as usize;
-            if bin < n_bins {
-                histogram[bin] += 1;
-            }
-        }
-        let threshold = (total_cells as f64 * 0.02) as u32;
-        let mut flat_levels = Vec::new();
         let z_bottom = 0.0 + stock_to_leave;
-        for (i, &count) in histogram.iter().enumerate() {
-            if count > threshold {
-                let flat_z = z_min_surf + (i as f64 + 0.5) * bin_size + stock_to_leave;
-                if flat_z > z_bottom + bin_size && flat_z < stock_top - bin_size {
-                    flat_levels.push(flat_z);
-                }
-            }
-        }
+        let flat_levels = super::path::flat_shelf_levels(
+            &shm,
+            0.0,
+            stock_top,
+            tolerance,
+            stock_to_leave,
+            z_bottom,
+            &[],
+        );
 
         // Should detect the shelf at z≈10 (+stock_to_leave=0.5 → 10.5)
         let found_shelf = flat_levels.iter().any(|&z| (z - 10.5).abs() < 1.0);
