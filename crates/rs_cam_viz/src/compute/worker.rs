@@ -25,7 +25,7 @@ mod test_fixture;
 )]
 mod tests;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,11 +34,10 @@ use std::sync::mpsc;
 use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
-use rs_cam_core::collision::{CollisionReport, RapidCollision};
-use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+use rs_cam_core::collision::CollisionReport;
+use rs_cam_core::dexel_stock::StockCutDirection;
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
@@ -170,25 +169,17 @@ pub struct SimulationRequest {
     pub rapid_feed_mm_min: f64,
     /// Optional model mesh for deviation computation (sim_z vs model_z).
     pub model_mesh: Option<Arc<TriangleMesh>>,
-    /// F-035 plumbing — the active `MachineProfile.kinematics` (or
-    /// `None` if the profile carries no kinematics block). The viz
-    /// controller copies this from
-    /// `self.state.session.machine().kinematics` at submit time so
-    /// the worker can forward it into the core
-    /// `SimulationRequest::kinematics`. When `None`, the core path
-    /// keeps `kinematics: None` and runtime + gates stay byte-
-    /// identical to pre-F-034 / pre-F-035.
-    pub kinematics: Option<rs_cam_core::machine_kinematics::MachineKinematics>,
-    /// F-035 — when `true` AND `kinematics` is `Some`, the simulator
-    /// stamps a per-move predicted-feed map on the trace and the
-    /// chipload + power gates consume it. Default `false` keeps the
-    /// GUI's gate verdicts byte-identical to pre-F-035.
-    pub use_predicted_feed_in_gates: bool,
-    /// F-034/F-035 — the machine's `max_feed_mm_min` cap, forwarded
-    /// alongside `kinematics` so the integrator can clamp commanded
-    /// feeds inside the same envelope the controller would. Defaults
-    /// to the same value as `rapid_feed_mm_min` when not specified.
-    pub max_feed_mm_min: f64,
+    /// F-034/F-035 plumbing, in core's own type. The viz controller
+    /// builds this from `self.state.session.machine()` at submit time and
+    /// the worker forwards it verbatim onto
+    /// `rs_cam_core::compute::simulate::SimulationRequest::kinematics`.
+    /// `None` — the shipped default, because no preset carries a
+    /// kinematics block — keeps runtime and gates byte-identical to
+    /// pre-F-034 / pre-F-035.
+    ///
+    /// The viz held the three members of this context as three loose
+    /// fields until 2026-09-17, which is a mirror of core's struct.
+    pub kinematics: Option<rs_cam_core::compute::simulate::KinematicsContext>,
     /// S5 — leave a prefix snapshot behind for the next simulation to resume
     /// from (`rs_cam_core::compute::sim_prefix`).
     ///
@@ -242,50 +233,25 @@ pub struct PlaybackToolpath {
     pub stock_bbox: rs_cam_core::geo::BoundingBox3,
 }
 
+/// The simulation lane's answer: one core simulation, plus the two
+/// viewport-only artifacts core carries no slot for.
+///
+/// **One simulation type, not a mirror.** Every field of the simulation
+/// itself lives on [`rs_cam_core::compute::simulate::SimulationResult`].
+/// The viz held a hand-written twin of that field list until 2026-09-17,
+/// and one map site copied twelve fields into core's type by hand, so a
+/// new core field dropped out of the session's copy in silence. That is
+/// the class of defect C04 found after a CLI mirror had dropped eleven
+/// fields.
 pub struct SimulationResult {
-    pub mesh: StockMesh,
-    pub total_moves: usize,
-    pub deviations: Option<Vec<f32>>,
-    /// Pointwise per-dexel-column deviations, forwarded verbatim from
-    /// `rs_cam_core::compute::simulate::SimulationResult::column_deviations`.
-    /// The honest instrument for quality metrics — the per-vertex
-    /// `deviations` above are corner-averaged mesh samples suitable for
-    /// display, not histograms (P2.g Task 1).
-    pub column_deviations: Option<Vec<rs_cam_core::compute::simulate::ColumnDeviation>>,
-    pub boundaries: Vec<SimBoundary>,
-    /// `Arc`-shared with the core result — see
-    /// `rs_cam_core::compute::simulate::SimulationResult::checkpoints` (S5).
-    pub checkpoints: Vec<Arc<SimCheckpointMesh>>,
+    /// The simulation, in core's own type. Read its field docs there.
+    pub core: rs_cam_core::compute::simulate::SimulationResult,
     /// Pre-transformed toolpath data for incremental playback.
     /// Each entry: (toolpath, tool_config, direction).
     pub playback_data: Vec<PlaybackToolpath>,
-    /// Rapid-through-stock collisions detected during simulation.
-    pub rapid_collisions: Vec<RapidCollision>,
-    /// Move indices with rapid collisions (for timeline markers).
-    pub rapid_collision_move_indices: Vec<usize>,
-    pub cut_trace: Option<Arc<rs_cam_core::simulation_cut::SimulationCutTrace>>,
+    /// Where the run wrote its cut-trace artifact — a viz-only filesystem
+    /// concern, so core carries no slot for it.
     pub cut_trace_path: Option<PathBuf>,
-    /// True when the requested resolution was coarsened to fit within grid limits.
-    pub resolution_clamped: bool,
-    /// The dexel COLUMN grid cell this simulation actually used (mm),
-    /// forwarded verbatim from
-    /// `rs_cam_core::compute::simulate::SimulationResult::column_grid_cell_mm`.
-    ///
-    /// B7 divergence 2 (2026-08-06): this is a property of the TRACE, and it
-    /// is not the same quantity as `SimulationState::resolution`, which is
-    /// the dial the NEXT simulation will use. The measurability floors are
-    /// cell-size dependent, so a reader that consults the dial can return a
-    /// different `NotMeasurable` verdict from core's on identical evidence.
-    /// Carried so the GUI's narration can ask the same question core's does.
-    pub column_grid_cell_mm: f64,
-    /// Per-toolpath snapshots of the material stock *before* that toolpath
-    /// carves — forwarded verbatim from the core
-    /// `rs_cam_core::compute::simulate::SimulationResult::prior_stocks`.
-    /// Retained on `SimulationResults` (F.4) so the submit-time
-    /// `FromRemainingStock` gate can look a toolpath's snapshot up by id
-    /// directly, instead of re-deriving it from `boundaries()` /
-    /// `checkpoints()` position arithmetic.
-    pub prior_stocks: HashMap<ToolpathId, Arc<TriDexelStock>>,
 }
 
 pub struct CollisionRequest {

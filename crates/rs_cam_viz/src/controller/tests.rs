@@ -20,8 +20,8 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::{
     AddModelArgs, AddSetupArgs, AddToolpathArgs, AdoptResultArgs, Command,
     InvalidateToolpathInputsArgs, LoadedModel, ProjectSessionBuilder, ReplaceToolpathConfigArgs,
-    ReplaceToolsArgs, SetBoundaryConfigArgs, SetFeedsProvenanceArgs, SetProjectNameArgs,
-    SetSetupFaceArgs, SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs,
+    ReplaceToolsArgs, SetBoundaryConfigArgs, SetFeedsProvenanceArgs, SetSetupFaceArgs,
+    SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs,
     SetToolpathEnabledArgs, ToolpathConfig,
 };
 
@@ -222,31 +222,33 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
         .compute
         .drained
         .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
-            mesh: rs_cam_core::simulation::StockMesh {
-                vertices: Vec::new(),
-                indices: Vec::new(),
-                colors: Vec::new(),
+            core: rs_cam_core::compute::simulate::SimulationResult {
+                mesh: rs_cam_core::simulation::StockMesh {
+                    vertices: Vec::new(),
+                    indices: Vec::new(),
+                    colors: Vec::new(),
+                },
+                total_moves: 8,
+                deviations: None,
+                column_deviations: None,
+                boundaries: vec![crate::compute::worker::SimBoundary {
+                    id: ToolpathId(0),
+                    name: "Adaptive 3D".to_owned(),
+                    tool_name: "Tool".to_owned(),
+                    start_move: 2,
+                    end_move: 8,
+                    direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                }],
+                checkpoints: Vec::new(),
+                rapid_collisions: Vec::new(),
+                rapid_collision_move_indices: Vec::new(),
+                cut_trace: None,
+                column_grid_cell_mm: 0.5,
+                resolution_clamped: false,
+                prior_stocks: std::collections::HashMap::new(),
             },
-            total_moves: 8,
-            deviations: None,
-            column_deviations: None,
-            boundaries: vec![crate::compute::worker::SimBoundary {
-                id: ToolpathId(0),
-                name: "Adaptive 3D".to_owned(),
-                tool_name: "Tool".to_owned(),
-                start_move: 2,
-                end_move: 8,
-                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
-            }],
-            checkpoints: Vec::new(),
             playback_data: Vec::new(),
-            rapid_collisions: Vec::new(),
-            rapid_collision_move_indices: Vec::new(),
-            cut_trace: None,
             cut_trace_path: None,
-            column_grid_cell_mm: 0.5,
-            resolution_clamped: false,
-            prior_stocks: std::collections::HashMap::new(),
         }))));
 
     controller.drain_compute_results();
@@ -596,14 +598,10 @@ fn fixture_projects_load_2d_and_3d_models() {
 
 #[test]
 fn controller_save_open_and_export_smoke() {
+    // L8 deleted the `SetProjectName` row. The name was never read
+    // here: the fixture carries tools and setups, so a save and a reopen
+    // pass the "looks like a CAM project" check without one.
     let mut controller = sample_controller();
-    let _ = controller
-        .state
-        .session
-        .apply(Command::SetProjectName(SetProjectNameArgs {
-            name: "Smoke".to_owned(),
-        }))
-        .expect("a project name moves no generation input");
     let generated = {
         let mut toolpath = Toolpath::new();
         toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
@@ -730,41 +728,43 @@ fn simulation_results_capture_setup_boundaries() {
         .drained
         .push(ComputeMessage::Simulation(Ok(Box::new(
             crate::compute::SimulationResult {
-                mesh: rs_cam_core::simulation::StockMesh {
-                    vertices: Vec::new(),
-                    indices: Vec::new(),
-                    colors: Vec::new(),
+                core: rs_cam_core::compute::simulate::SimulationResult {
+                    mesh: rs_cam_core::simulation::StockMesh {
+                        vertices: Vec::new(),
+                        indices: Vec::new(),
+                        colors: Vec::new(),
+                    },
+                    total_moves: 20,
+                    deviations: None,
+                    column_deviations: None,
+                    boundaries: vec![
+                        crate::compute::worker::SimBoundary {
+                            id: ToolpathId(0),
+                            name: "Adaptive 3D".to_owned(),
+                            tool_name: "End Mill".to_owned(),
+                            start_move: 0,
+                            end_move: 10,
+                            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                        },
+                        crate::compute::worker::SimBoundary {
+                            id: tp2_id,
+                            name: "Profile".to_owned(),
+                            tool_name: "End Mill".to_owned(),
+                            start_move: 10,
+                            end_move: 20,
+                            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                        },
+                    ],
+                    checkpoints: Vec::new(),
+                    rapid_collisions: Vec::new(),
+                    rapid_collision_move_indices: Vec::new(),
+                    cut_trace: None,
+                    column_grid_cell_mm: 0.5,
+                    resolution_clamped: false,
+                    prior_stocks: std::collections::HashMap::new(),
                 },
-                total_moves: 20,
-                deviations: None,
-                column_deviations: None,
-                boundaries: vec![
-                    crate::compute::worker::SimBoundary {
-                        id: ToolpathId(0),
-                        name: "Adaptive 3D".to_owned(),
-                        tool_name: "End Mill".to_owned(),
-                        start_move: 0,
-                        end_move: 10,
-                        direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
-                    },
-                    crate::compute::worker::SimBoundary {
-                        id: tp2_id,
-                        name: "Profile".to_owned(),
-                        tool_name: "End Mill".to_owned(),
-                        start_move: 10,
-                        end_move: 20,
-                        direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
-                    },
-                ],
-                checkpoints: Vec::new(),
                 playback_data: Vec::new(),
-                rapid_collisions: Vec::new(),
-                rapid_collision_move_indices: Vec::new(),
-                cut_trace: None,
                 cut_trace_path: None,
-                column_grid_cell_mm: 0.5,
-                resolution_clamped: false,
-                prior_stocks: std::collections::HashMap::new(),
             },
         ))));
 
@@ -1294,20 +1294,22 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
         .compute
         .drained
         .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
-            mesh,
-            total_moves,
-            deviations: None,
-            column_deviations: None,
-            boundaries,
-            checkpoints: Vec::new(),
+            core: rs_cam_core::compute::simulate::SimulationResult {
+                mesh,
+                total_moves,
+                deviations: None,
+                column_deviations: None,
+                boundaries,
+                checkpoints: Vec::new(),
+                rapid_collisions: Vec::new(),
+                rapid_collision_move_indices: Vec::new(),
+                cut_trace: None,
+                column_grid_cell_mm: 0.5,
+                resolution_clamped: false,
+                prior_stocks: std::collections::HashMap::new(),
+            },
             playback_data: Vec::new(),
-            rapid_collisions: Vec::new(),
-            rapid_collision_move_indices: Vec::new(),
-            cut_trace: None,
             cut_trace_path: None,
-            column_grid_cell_mm: 0.5,
-            resolution_clamped: false,
-            prior_stocks: std::collections::HashMap::new(),
         }))));
 
     controller.drain_compute_results();
@@ -2540,8 +2542,6 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
         kinematics: None,
-        use_predicted_feed_in_gates: false,
-        max_feed_mm_min: 5_000.0,
         memoize_prefix: false,
     };
 
@@ -2554,7 +2554,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
     )
     .expect("viz simulation completes");
 
-    let cut_trace = result.cut_trace.as_ref().expect("metric cut trace");
+    let cut_trace = result.core.cut_trace.as_ref().expect("metric cut trace");
 
     let mut first_pass_axials: Vec<f64> = cut_trace
         .samples
@@ -3284,24 +3284,26 @@ impl ComputeBackend for RestChainBackend {
         }
         self.drained
             .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
-                mesh: rs_cam_core::simulation::StockMesh {
-                    vertices: Vec::new(),
-                    indices: Vec::new(),
-                    colors: Vec::new(),
+                core: rs_cam_core::compute::simulate::SimulationResult {
+                    mesh: rs_cam_core::simulation::StockMesh {
+                        vertices: Vec::new(),
+                        indices: Vec::new(),
+                        colors: Vec::new(),
+                    },
+                    total_moves: 0,
+                    deviations: None,
+                    column_deviations: None,
+                    boundaries: Vec::new(),
+                    checkpoints: Vec::new(),
+                    rapid_collisions: Vec::new(),
+                    rapid_collision_move_indices: Vec::new(),
+                    cut_trace: None,
+                    column_grid_cell_mm: 0.5,
+                    resolution_clamped: false,
+                    prior_stocks,
                 },
-                total_moves: 0,
-                deviations: None,
-                column_deviations: None,
-                boundaries: Vec::new(),
-                checkpoints: Vec::new(),
                 playback_data: Vec::new(),
-                rapid_collisions: Vec::new(),
-                rapid_collision_move_indices: Vec::new(),
-                cut_trace: None,
                 cut_trace_path: None,
-                column_grid_cell_mm: 0.5,
-                resolution_clamped: false,
-                prior_stocks,
             }))));
     }
 

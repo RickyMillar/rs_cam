@@ -357,8 +357,6 @@ fn long_simulation_request() -> SimulationRequest {
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
         kinematics: None,
-        use_predicted_feed_in_gates: false,
-        max_feed_mm_min: 5_000.0,
         memoize_prefix: false,
     }
 }
@@ -405,8 +403,6 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
         kinematics: None,
-        use_predicted_feed_in_gates: false,
-        max_feed_mm_min: 5_000.0,
         memoize_prefix: false,
     }
 }
@@ -1529,8 +1525,6 @@ fn multi_setup_top_bottom_simulation() {
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
         kinematics: None,
-        use_predicted_feed_in_gates: false,
-        max_feed_mm_min: 5_000.0,
         memoize_prefix: false,
     };
 
@@ -1545,22 +1539,25 @@ fn multi_setup_top_bottom_simulation() {
     };
 
     // Should have 2 boundaries (one per toolpath)
-    assert_eq!(result.boundaries.len(), 2);
-    assert_eq!(result.boundaries[0].direction, StockCutDirection::FromTop);
+    assert_eq!(result.core.boundaries.len(), 2);
     assert_eq!(
-        result.boundaries[1].direction,
+        result.core.boundaries[0].direction,
+        StockCutDirection::FromTop
+    );
+    assert_eq!(
+        result.core.boundaries[1].direction,
         StockCutDirection::FromBottom
     );
 
     // Should have 2 checkpoints (one per setup)
-    assert_eq!(result.checkpoints.len(), 2);
+    assert_eq!(result.core.checkpoints.len(), 2);
 
     // Should have playback data for both toolpaths
     assert_eq!(result.playback_data.len(), 2);
 
     // Checkpoints store GLOBAL-frame stocks (for playback).
     // checkpoint[0] = after top-setup: global stock with top cut at Z=15
-    let after_top = &result.checkpoints[0].stock;
+    let after_top = &result.core.checkpoints[0].stock;
     let (r, c) = after_top.z_grid.world_to_cell(25.0, 25.0).unwrap();
     let ray = after_top.z_grid.ray(r, c);
     assert_eq!(ray.len(), 1, "after top cut: one segment");
@@ -1574,7 +1571,7 @@ fn multi_setup_top_bottom_simulation() {
     // checkpoint[1] = after both setups: global stock with top + bottom cuts
     // Top cut at Z=15 (from top), bottom cut at Z=5 (from bottom).
     // Remaining material: Z=5 to Z=15.
-    let after_both = &result.checkpoints[1].stock;
+    let after_both = &result.core.checkpoints[1].stock;
     let (r, c) = after_both.z_grid.world_to_cell(25.0, 25.0).unwrap();
     let ray = after_both.z_grid.ray(r, c);
     assert_eq!(ray.len(), 1, "after both cuts: one segment");
@@ -1591,7 +1588,7 @@ fn multi_setup_top_bottom_simulation() {
 
     // Final composited mesh should have non-zero vertex data
     assert!(
-        !result.mesh.vertices.is_empty(),
+        !result.core.mesh.vertices.is_empty(),
         "composited mesh should not be empty"
     );
 }
@@ -1672,8 +1669,6 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
         kinematics: None,
-        use_predicted_feed_in_gates: false,
-        max_feed_mm_min: 5_000.0,
         memoize_prefix: false,
     };
 
@@ -1688,10 +1683,10 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
     };
 
     // Checkpoints store GLOBAL-frame stocks for playback.
-    assert_eq!(result.checkpoints.len(), 2);
+    assert_eq!(result.core.checkpoints.len(), 2);
 
     // Checkpoint 0: global stock after top-setup cut at Z=7
-    let cp0 = &result.checkpoints[0].stock;
+    let cp0 = &result.core.checkpoints[0].stock;
     let (r, c) = cp0.z_grid.world_to_cell(15.0, 15.0).unwrap();
     let ray = cp0.z_grid.ray(r, c);
     assert_eq!(ray.len(), 1);
@@ -1703,7 +1698,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
     );
 
     // Checkpoint 1: global stock after both cuts (top at Z=7, bottom at Z=3)
-    let cp1 = &result.checkpoints[1].stock;
+    let cp1 = &result.core.checkpoints[1].stock;
     let (r, c) = cp1.z_grid.world_to_cell(15.0, 15.0).unwrap();
     let ray = cp1.z_grid.ray(r, c);
     assert_eq!(ray.len(), 1);
@@ -1714,9 +1709,12 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
     );
 
     // Boundary directions are correct
-    assert_eq!(result.boundaries[0].direction, StockCutDirection::FromTop);
     assert_eq!(
-        result.boundaries[1].direction,
+        result.core.boundaries[0].direction,
+        StockCutDirection::FromTop
+    );
+    assert_eq!(
+        result.core.boundaries[1].direction,
         StockCutDirection::FromBottom
     );
 }
@@ -1734,7 +1732,7 @@ fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
         panic!("expected successful simulation");
     };
 
-    let trace = result.cut_trace.as_ref().expect("cut trace");
+    let trace = result.core.cut_trace.as_ref().expect("cut trace");
     assert!(trace.summary.sample_count > 0);
     assert!(trace.summary.total_runtime_s > 0.0);
     assert!(
@@ -1825,8 +1823,6 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
         kinematics: None,
-        use_predicted_feed_in_gates: false,
-        max_feed_mm_min: 5_000.0,
         memoize_prefix: false,
     };
 
@@ -1927,8 +1923,6 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
         kinematics: None,
-        use_predicted_feed_in_gates: false,
-        max_feed_mm_min: 5_000.0,
         memoize_prefix: false,
     };
 
@@ -2026,8 +2020,6 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
         kinematics: None,
-        use_predicted_feed_in_gates: false,
-        max_feed_mm_min: 5_000.0,
         memoize_prefix: false,
     };
 
@@ -2060,7 +2052,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
          global stock height"
     );
 
-    let cp = result.checkpoints.last().expect("one checkpoint");
+    let cp = result.core.checkpoints.last().expect("one checkpoint");
     assert!(
         cp.stock_local_to_global.is_some(),
         "a lateral setup's checkpoint must publish its local stock, since that is \
@@ -2096,7 +2088,7 @@ fn simulation_metrics_capture_emits_semantic_cut_summaries() {
         panic!("expected successful simulation");
     };
 
-    let trace = result.cut_trace.as_ref().expect("cut trace");
+    let trace = result.core.cut_trace.as_ref().expect("cut trace");
     let summary = trace
         .semantic_summaries
         .iter()
@@ -2206,8 +2198,6 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
         kinematics: None,
-        use_predicted_feed_in_gates: false,
-        max_feed_mm_min: 5_000.0,
         memoize_prefix: false,
     };
 
@@ -2217,7 +2207,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
     let result = super::execute::run_simulation_with_phase(&request, &cancel, |_phase| {}, None)
         .expect("viz simulation completes");
 
-    let cut_trace = result.cut_trace.as_ref().expect("metric cut trace");
+    let cut_trace = result.core.cut_trace.as_ref().expect("metric cut trace");
 
     // Filter to non-plunge linear cutting samples on the first-pass Z plane
     // (Z = -2 ± 0.5). Pre-fix every such sample reads

@@ -115,21 +115,11 @@ fn build_core_simulation_request(
         spindle_rpm: req.spindle_rpm,
         rapid_feed_mm_min: req.rapid_feed_mm_min,
         model_mesh: req.model_mesh.clone(),
-        // F-035 — the viz `SimulationRequest` now carries the active
-        // `MachineProfile.kinematics` + `max_feed_mm_min` + the
-        // `use_predicted_feed_in_gates` flag. When kinematics is
-        // `Some`, build the core `KinematicsContext` so the
-        // simulator's F-034 cycle-time override and F-035 predicted-
-        // feed plumbing fire in the GUI sim path. When kinematics is
-        // `None` (the default for every shipped preset), this stays
+        // F-034/F-035 — the viz request carries core's own
+        // `KinematicsContext`, so this is a forward, not a rebuild.
+        // `None` (the default for every shipped preset) keeps the run
         // byte-identical to pre-F-034 / pre-F-035.
-        kinematics: req
-            .kinematics
-            .map(|kin| rs_cam_core::compute::simulate::KinematicsContext {
-                kinematics: kin,
-                max_feed_mm_min: req.max_feed_mm_min.max(1.0),
-                use_predicted_feed_in_gates: req.use_predicted_feed_in_gates,
-            }),
+        kinematics: req.kinematics,
     }
 }
 
@@ -239,16 +229,10 @@ where
     // Build viz-only playback data (global-frame toolpaths for viewport replay).
     let playback_data = build_playback_data(req);
 
-    // Core and viz share the one boundary type (re-exported).
-    let boundaries = core_result.boundaries;
-
-    // Core and viz now share the same SimCheckpointMesh type (re-exported).
-    let checkpoints = core_result.checkpoints;
-
     // Write cut-trace artifact to disk (viz-only filesystem concern).
-    let (cut_trace, cut_trace_path) = if let Some(trace) = core_result.cut_trace {
-        let artifact = build_simulation_cut_artifact(req, (*trace).clone());
-        let path = match rs_cam_core::simulation_cut::write_simulation_cut_artifact(
+    let cut_trace_path = if let Some(trace) = core_result.cut_trace.as_ref() {
+        let artifact = build_simulation_cut_artifact(req, (**trace).clone());
+        match rs_cam_core::simulation_cut::write_simulation_cut_artifact(
             &simulation_metric_artifact_dir(),
             "simulation_metrics",
             &artifact,
@@ -269,27 +253,15 @@ where
                 tracing::warn!("Failed to write simulation cut artifact: {error}");
                 None
             }
-        };
-        (Some(trace), path)
+        }
     } else {
-        (None, None)
+        None
     };
 
     Ok(SimulationResult {
-        mesh: core_result.mesh,
-        total_moves: core_result.total_moves,
-        deviations: core_result.deviations,
-        column_deviations: core_result.column_deviations,
-        boundaries,
-        checkpoints,
+        core: core_result,
         playback_data,
-        rapid_collisions: core_result.rapid_collisions,
-        rapid_collision_move_indices: core_result.rapid_collision_move_indices,
-        cut_trace,
         cut_trace_path,
-        resolution_clamped: core_result.resolution_clamped,
-        column_grid_cell_mm: core_result.column_grid_cell_mm,
-        prior_stocks: core_result.prior_stocks,
     })
 }
 

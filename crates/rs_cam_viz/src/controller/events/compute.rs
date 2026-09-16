@@ -623,7 +623,7 @@ impl<B: ComputeBackend> AppController<B> {
                         // the cut trace is attached below, after the
                         // modulation post-pass rewrites it.
                         let mut adopted = core_simulation_from_lane(&simulation);
-                        if simulation.resolution_clamped {
+                        if simulation.core.resolution_clamped {
                             self.push_notification(
                                 "Sim resolution was coarsened to fit grid limits — \
                                  consider reducing stock size or increasing resolution"
@@ -631,7 +631,7 @@ impl<B: ComputeBackend> AppController<B> {
                                 crate::controller::Severity::Warning,
                             );
                         }
-                        if simulation.mesh.indices.is_empty() {
+                        if simulation.core.mesh.indices.is_empty() {
                             self.push_notification(
                                 "Simulation produced an empty mesh — \
                                  try increasing resolution or check stock dimensions"
@@ -639,7 +639,7 @@ impl<B: ComputeBackend> AppController<B> {
                                 crate::controller::Severity::Warning,
                             );
                         }
-                        let boundaries = simulation.boundaries.clone();
+                        let boundaries = simulation.core.boundaries.clone();
 
                         let setup_boundaries = {
                             let mut sbs = Vec::new();
@@ -669,6 +669,7 @@ impl<B: ComputeBackend> AppController<B> {
                         };
 
                         let checkpoints: Vec<_> = simulation
+                            .core
                             .checkpoints
                             .into_iter()
                             .map(|checkpoint| crate::state::simulation::SimCheckpoint {
@@ -680,19 +681,21 @@ impl<B: ComputeBackend> AppController<B> {
                         // F.4 — retain the per-toolpath (and phantom)
                         // prior-stock snapshots so the submit-time
                         // FromRemainingStock gate can look them up by id.
-                        let prior_stocks = simulation.prior_stocks;
+                        let prior_stocks = simulation.core.prior_stocks;
 
-                        if !simulation.rapid_collisions.is_empty() {
+                        if !simulation.core.rapid_collisions.is_empty() {
                             tracing::warn!(
                                 "{} rapid collisions detected",
-                                simulation.rapid_collisions.len()
+                                simulation.core.rapid_collisions.len()
                             );
                         }
-                        self.state.simulation.checks.rapid_collisions = simulation.rapid_collisions;
+                        self.state.simulation.checks.rapid_collisions =
+                            simulation.core.rapid_collisions;
                         self.state.simulation.checks.rapid_collision_move_indices =
-                            simulation.rapid_collision_move_indices;
+                            simulation.core.rapid_collision_move_indices;
 
-                        self.state.simulation.playback.display_deviations = simulation.deviations;
+                        self.state.simulation.playback.display_deviations =
+                            simulation.core.deviations;
                         self.state.simulation.playback.display_mesh = None;
                         self.state.simulation.playback.display_mesh_move = None;
                         self.state.simulation.playback.last_mesh_upload_at = None;
@@ -707,17 +710,17 @@ impl<B: ComputeBackend> AppController<B> {
                         };
 
                         self.state.simulation.results = Some(SimulationResults {
-                            mesh: simulation.mesh,
-                            total_moves: simulation.total_moves,
+                            mesh: simulation.core.mesh,
+                            total_moves: simulation.core.total_moves,
                             boundaries,
                             setup_boundaries,
                             checkpoints,
                             selected_toolpaths: None,
                             playback_data: simulation.playback_data,
                             stock_bbox,
-                            cut_trace: simulation.cut_trace,
+                            cut_trace: simulation.core.cut_trace,
                             cut_trace_path: simulation.cut_trace_path,
-                            column_grid_cell_mm: simulation.column_grid_cell_mm,
+                            column_grid_cell_mm: simulation.core.column_grid_cell_mm,
                             prior_stocks,
                         });
 
@@ -2206,10 +2209,11 @@ impl<B: ComputeBackend> AppController<B> {
 
 /// Build the core simulation the session stores from the lane's answer.
 ///
-/// N12 item 10. The two types carry ONE simulation. The viz one adds the
-/// playback stream and the trace artifact path, which are the viewport's
-/// own and which core carries no slot for; core's own
-/// `ProjectSession::run_simulation` stores every other field.
+/// N12 item 10. There is ONE simulation type. The lane's answer holds
+/// core's own record, plus the playback stream and the trace artifact
+/// path, which are the viewport's own and which core carries no slot for.
+/// This used to copy twelve fields by hand (D11); it is now a clone of
+/// core's record with the trace slot cleared.
 ///
 /// What the copy SHARES, each behind an `Arc`: the per-toolpath
 /// checkpoints and the prior stocks. What it COPIES: the display mesh,
@@ -2225,18 +2229,7 @@ impl<B: ComputeBackend> AppController<B> {
 fn core_simulation_from_lane(
     simulation: &crate::compute::SimulationResult,
 ) -> rs_cam_core::compute::simulate::SimulationResult {
-    rs_cam_core::compute::simulate::SimulationResult {
-        mesh: simulation.mesh.clone(),
-        total_moves: simulation.total_moves,
-        deviations: simulation.deviations.clone(),
-        column_deviations: simulation.column_deviations.clone(),
-        boundaries: simulation.boundaries.clone(),
-        checkpoints: simulation.checkpoints.clone(),
-        rapid_collisions: simulation.rapid_collisions.clone(),
-        rapid_collision_move_indices: simulation.rapid_collision_move_indices.clone(),
-        cut_trace: None,
-        resolution_clamped: simulation.resolution_clamped,
-        column_grid_cell_mm: simulation.column_grid_cell_mm,
-        prior_stocks: simulation.prior_stocks.clone(),
-    }
+    let mut adopted = simulation.core.clone();
+    adopted.cut_trace = None;
+    adopted
 }

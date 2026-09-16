@@ -34,7 +34,7 @@ and are NOT touched by this programme's fix waves.
 | 13 | S25 | C | M | 29 `pub` items used only from tests and not declared fixtures → `pub(crate)` + `#[cfg(test)]` scope or move into the test | W2 core ✅ dab59c0e; viz HELD (see the Wave 2b table); power-calcs open |
 | 14 | L8 | C | S | three `Command` variants with no production constructor (`ReplaceSetupsAndToolpaths`, `SetProjectName`, `SetMachineRef`) | W1 (ruled) |
 | 15 | L7 | C | S | a trace with no `provenance` block is treated as fresh; the one producer is the CLI | W1 (ruled) |
-| 16 | D11 | D | M | viz mirrors core's two simulation structs by hand (the class that dropped 11 fields in C04); inherits G-MCPSIMMIRROR / WP28 | W3 |
+| 16 | D11 | D | M | viz mirrors core's two simulation structs by hand (the class that dropped 11 fields in C04); inherits G-MCPSIMMIRROR / WP28 | W3 ✅ |
 | 17 | D13 | D | M | each finding's operator sentence is written twice (`from_generation.rs` vs `narrate.rs`) and the copies already differ | W3 |
 | 18 | D12 | D | M | two "mesh surface Z at (x, y)" readers with different containment tests (`monge.rs` vs `reach_map.rs`) | W3 |
 | 19 | D4, D5, D6, D7, D8, D9 | D | S each | CLI string coercers; panic-payload readers; library `list_in`/`rename_in`; four `polyline_length`s; four cache counter scaffolds; two dashed-line emitters | W3 D5 ✅ |
@@ -134,6 +134,7 @@ by the closing docs commit, exactly as the Wave 2b table was.
 
 | id | commit | note |
 |---|---|---|
+| D11 | — | The viz `SimulationResult` becomes core's record plus the two viewport-only artifacts (`playback_data`, `cut_trace_path`), so `core_simulation_from_lane`'s twelve-field hand copy becomes a clone with the trace slot cleared. The viz `SimulationRequest`'s three loose fields (`kinematics`, `max_feed_mm_min`, `use_predicted_feed_in_gates`) become core's own `KinematicsContext`; the `.max(1.0)` feed clamp moves to the submit site. **PART OF THE FINDING REFUTED.** The finding's "keep core's structs, add a `SimulationRequestExtras`" does not fit the request: `SimulationRequest.groups` is an ADAPTER, not a mirror — viz `SetupSimToolpath` carries a `ToolConfig` that core's `SimToolpathEntry` replaces with a built `ToolDefinition`, and `build_core_simulation_request` carries the F-024 identity-frame rule (`local_to_global: None` ⇒ `local_stock_bbox: None`). Moving that to the controller is a simulation-flow change, which G-MCPSIMMIRROR / WP28 holds. `groups` and `memoize_prefix` stay viz-side. The C22(b) re-export pattern also does not fit, because neither viz struct was field-identical to core's |
 | D5 | — | `rs_cam_core::panic_message` becomes `pub`; the viz worker copy and the viz panic hook both delegate. The finding names two readers; a third stood in `rs_cam_viz/src/bin/main.rs:140`. Core's fallback text `"non-string panic payload"` wins over viz's `"unknown panic"`, per the finding; no test pins either string |
 
 ## Progress

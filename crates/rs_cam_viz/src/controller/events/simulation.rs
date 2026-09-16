@@ -258,7 +258,19 @@ impl<B: ComputeBackend> AppController<B> {
 
         let machine = self.state.session.machine();
         let max_feed_mm_min = machine.max_feed_mm_min.max(1.0);
-        let kinematics = machine.kinematics;
+        // F-034/F-035 — build core's own context here, so the worker
+        // forwards one value instead of re-assembling three loose fields.
+        let kinematics = machine.kinematics.map(|kinematics| {
+            rs_cam_core::compute::simulate::KinematicsContext {
+                kinematics,
+                max_feed_mm_min,
+                // The GUI does not yet expose a toggle for this; `false`
+                // preserves pre-F-035 gate verdicts. When the GUI grows an
+                // opt-in (F-036 territory), it reads off the simulation
+                // panel state and threads here.
+                use_predicted_feed_in_gates: false,
+            }
+        });
         self.compute.submit_simulation(SimulationRequest {
             groups,
             stock_bbox,
@@ -272,17 +284,7 @@ impl<B: ComputeBackend> AppController<B> {
                 max_feed_mm_min
             },
             model_mesh,
-            // F-035 — forward the active machine kinematics + max feed
-            // so the worker can populate the core
-            // `KinematicsContext`. The GUI doesn't yet expose a
-            // toggle for `use_predicted_feed_in_gates`; the flag
-            // defaults to `false`, preserving pre-F-035 gate
-            // verdicts. When the GUI grows an opt-in (F-036
-            // territory), the toggle reads off the simulation panel
-            // state and threads here.
             kinematics,
-            use_predicted_feed_in_gates: false,
-            max_feed_mm_min,
             memoize_prefix,
         });
     }
