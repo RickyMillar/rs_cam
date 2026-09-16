@@ -37,10 +37,10 @@ pub use command::{
     ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs, SetAlignmentPinDrillHolesArgs,
     SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs, SetDrillSelectedHolesArgs,
     SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineKinematicsArgs,
-    SetMachineRefArgs, SetPostConfigArgs, SetProjectNameArgs, SetRestAnalysisConfigArgs,
-    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
-    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs,
-    SetToolParamArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
+    SetPostConfigArgs, SetProjectNameArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs,
+    SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
+    SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs,
+    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
     SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathToolArgs,
     Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
@@ -1457,10 +1457,6 @@ pub struct ProjectSession {
     pub(crate) stock: StockConfig,
     pub(crate) post: ProjectPostConfig,
     pub(crate) machine: crate::machine::MachineProfile,
-    /// Name of the library machine this project references, if any. When
-    /// set, `machine` was resolved from the library on load and is
-    /// re-persisted as an offline fallback alongside the ref.
-    pub(crate) machine_ref: Option<String>,
 
     // Loaded state
     pub(crate) models: Vec<LoadedModel>,
@@ -1507,7 +1503,6 @@ impl ProjectSession {
             stock: StockConfig::default(),
             post: ProjectPostConfig::default(),
             machine: crate::machine::MachineProfile::default(),
-            machine_ref: None,
             models: Vec::new(),
             tools: Vec::new(),
             setups: vec![SetupData {
@@ -1702,17 +1697,6 @@ impl ProjectSession {
     /// Machine profile.
     pub fn machine(&self) -> &crate::machine::MachineProfile {
         &self.machine
-    }
-
-    /// Name of the library machine this project references, if any.
-    pub fn machine_ref(&self) -> Option<&str> {
-        self.machine_ref.as_deref()
-    }
-
-    /// Set (or clear) the library machine reference. Persisted on save;
-    /// the referenced library file overrides the inline machine on load.
-    pub(crate) fn set_machine_ref(&mut self, machine_ref: Option<String>) {
-        self.machine_ref = machine_ref;
     }
 
     /// All loaded tools.
@@ -2343,81 +2327,6 @@ mod tests {
         assert_eq!(tp.operation.op_type(), OperationType::Profile);
         let expected = OperationConfig::new_default(OperationType::Profile);
         assert_eq!(tp.operation.op_type(), expected.op_type());
-    }
-
-    /// Snapshot model: the `machine_ref` field is retained on the file
-    /// struct only so legacy projects still PARSE — it is no longer a
-    /// live link (the session loader drops it; see
-    /// `legacy_machine_ref_dropped_on_session_load`).
-    #[test]
-    fn legacy_machine_ref_field_still_parses_for_backcompat() {
-        use super::project_file::{ProjectFile, ProjectJobSection};
-        let make = |job: ProjectJobSection| ProjectFile {
-            format_version: 3,
-            job,
-            tools: Vec::new(),
-            models: Vec::new(),
-            setups: Vec::new(),
-        };
-        // An old file with machine_ref must still deserialize (we read the
-        // field, then drop it on load).
-        let project = make(ProjectJobSection {
-            name: "Ref Job".to_owned(),
-            machine_ref: Some("shapeoko_pro_xxl".to_owned()),
-            ..ProjectJobSection::default()
-        });
-        let toml_str = toml::to_string_pretty(&project).unwrap();
-        let back: ProjectFile = toml::from_str(&toml_str).unwrap();
-        assert_eq!(back.job.machine_ref.as_deref(), Some("shapeoko_pro_xxl"));
-
-        // No machine_ref → key omitted (skip_serializing_if), so files
-        // written under the snapshot model never carry it.
-        let plain = make(ProjectJobSection::default());
-        let plain_toml = toml::to_string_pretty(&plain).unwrap();
-        assert!(
-            !plain_toml.contains("machine_ref"),
-            "absent machine_ref should be omitted: {plain_toml}"
-        );
-    }
-
-    /// Snapshot migration: loading a project that carries a legacy
-    /// `machine_ref` drops the ref (session reports `None`) and keeps the
-    /// inline `[job.machine]` as authoritative.
-    #[test]
-    fn legacy_machine_ref_dropped_on_session_load() {
-        use super::project_file::{ProjectFile, ProjectJobSection};
-        let mut inline = crate::machine::MachineProfile::generic_wood_router();
-        inline.name = "Inline Wins".to_owned();
-        let project = ProjectFile {
-            format_version: 3,
-            job: ProjectJobSection {
-                name: "Legacy Ref".to_owned(),
-                machine: inline,
-                machine_ref: Some("some_library_machine".to_owned()),
-                ..ProjectJobSection::default()
-            },
-            tools: Vec::new(),
-            models: Vec::new(),
-            setups: Vec::new(),
-        };
-        let toml_str = toml::to_string_pretty(&project).unwrap();
-        let dir = std::env::temp_dir().join(format!("rscam_snap_{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("legacy_ref.toml");
-        std::fs::write(&path, toml_str).unwrap();
-
-        let session = ProjectSession::load(&path).unwrap();
-        assert_eq!(
-            session.machine_ref(),
-            None,
-            "legacy machine_ref must be dropped on load (snapshot model)"
-        );
-        assert_eq!(
-            session.machine().name,
-            "Inline Wins",
-            "inline machine must remain authoritative"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

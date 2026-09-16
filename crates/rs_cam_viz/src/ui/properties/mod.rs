@@ -368,9 +368,9 @@ fn machine_panel_fields_moved(
 /// Install a whole machine profile through `Command::SetMachine`.
 ///
 /// The row clears the cached simulation: timing and feed modulation read
-/// the machine, and geometry does not. It does NOT clear `machine_ref` —
-/// a profile that arrives from the library is a snapshot of a named
-/// machine, and the link survives.
+/// the machine, and geometry does not. A profile that arrives from the
+/// library is a snapshot of a named machine; L6 deleted the reference
+/// field, so there is no link left to keep or clear.
 fn apply_machine(state: &mut AppState, machine: rs_cam_core::machine::MachineProfile) {
     use rs_cam_core::session::{Command, SetMachineArgs};
     let command = Command::SetMachine(SetMachineArgs {
@@ -1857,9 +1857,7 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
     );
 
     // One `SetMachine` for the whole profile. `set_machine` writes the
-    // profile alone, so it cannot put back a library link the kinematics
-    // row dropped — `machine_ref` is a session field, not a profile
-    // field.
+    // profile alone.
     if edit.committed && machine_panel_fields_moved(&draft, state.session.machine()) {
         apply_machine(state, draft.clone());
     }

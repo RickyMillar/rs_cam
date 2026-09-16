@@ -776,18 +776,6 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
-            (Command, SetMachineRef, "set_machine_ref", SetMachineRefArgs, Effects,
-             Surfaces {
-                 gui: Reach::Skip(
-                     "no GUI control writes the library reference on its own",
-                 ),
-                 mcp: Reach::Skip(
-                     "load_machine_from_library writes the machine; nothing writes the name",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
-             }),
             (Job, GenerateToolpath, "generate_toolpath", GenerateToolpathArgs,
              ToolpathComputeResult,
              Surfaces {
@@ -1511,8 +1499,6 @@ pub struct SetStockSourceArgs {
 /// (§19 ruling 2). One row therefore serves the wire tool and the GUI
 /// machine panel alike.
 ///
-/// The command keeps `machine_ref`. A library profile is a snapshot of a
-/// named machine, so the caller states whether the link survives.
 #[derive(Debug, Clone)]
 pub struct SetMachineArgs {
     /// The whole machine profile to adopt.
@@ -1525,9 +1511,6 @@ pub struct SetMachineArgs {
 /// onto the machine's current limits, and refusing a value that is not
 /// positive and finite, belong to the surface that collected the
 /// numbers: it is what reports the refusal to the operator.
-///
-/// The command clears `machine_ref`. The values are inline now, so they
-/// no longer describe the named library machine.
 #[derive(Debug, Clone)]
 pub struct SetMachineKinematicsArgs {
     /// The kinematics block to write.
@@ -1935,17 +1918,6 @@ pub struct SetFeedsProvenanceArgs {
     pub index: usize,
     /// The provenance to install.
     pub feeds_provenance: Box<FeedsProvenance>,
-}
-
-/// The arguments of the `set_machine_ref` command.
-///
-/// The reference names a machine library file. A save persists it, and
-/// a load lets the referenced file override the inline machine. `None`
-/// clears the reference, which leaves the inline machine in charge.
-#[derive(Debug, Clone)]
-pub struct SetMachineRefArgs {
-    /// The library reference to install.
-    pub machine_ref: Option<String>,
 }
 
 /// Splits the registry's rows by kind, and emits the [`Command`],
@@ -2463,15 +2435,6 @@ impl ProjectSession {
             Command::ReplaceTools(args) => Ok(self.replace_tools(args.tools)),
             Command::SetFeedsProvenance(args) => {
                 self.set_feeds_provenance(args.index, *args.feeds_provenance)
-            }
-            Command::SetMachineRef(args) => {
-                let SetMachineRefArgs { machine_ref } = args;
-                // The setter reports nothing, so the arm runs it inside
-                // the one `Effects` construction site. The reference is
-                // save metadata and moves no generation input.
-                Ok(self.with_effects(None, move |session| {
-                    session.set_machine_ref(machine_ref);
-                }))
             }
             Command::RestoreToolpathSnapshot(args) => {
                 let RestoreToolpathSnapshotArgs {

@@ -256,11 +256,6 @@ const ALL_SKIP_ALLOW_LIST: &[(&str, &str)] = &[
         "WP15a row. The registry's own GUI reason reads: the optimizer carries the stamp in restore_toolpath_snapshot since WP8. \
          MEASURED 2026-09-14: no production `Command` literal.",
     ),
-    (
-        "set_machine_ref",
-        "WP15a row. The registry's own GUI reason reads: no GUI control writes the library reference on its own. \
-         MEASURED 2026-09-14: no production `Command` literal.",
-    ),
 ];
 
 /// Every row whose three surfaces all read `Reach::Skip`.

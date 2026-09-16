@@ -1290,12 +1290,6 @@ impl RsCamApp {
             kin.jerk_mm_s3 = Some(v);
         }
 
-        let machine_ref_before = self
-            .controller
-            .state()
-            .session
-            .machine_ref()
-            .map(str::to_owned);
         let per_axis = match kin.acceleration_xyz_mm_s2 {
             Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
             None => serde_json::Value::Null,
@@ -1313,7 +1307,6 @@ impl RsCamApp {
             "jerk_mm_s3": kin.jerk_mm_s3,
             "per_axis_was_set_before": had_per_axis,
             "per_axis_rate_was_set_before": had_per_axis_rate,
-            "machine_library_link_cleared": machine_ref_before,
         });
         CorePlan::Apply(
             Command::SetMachineKinematics(SetMachineKinematicsArgs {
@@ -1805,8 +1798,7 @@ impl RsCamApp {
             | CommandId::InvalidateToolpathInputs
             | CommandId::UpdateStockFromBbox
             | CommandId::ReplaceTools
-            | CommandId::SetFeedsProvenance
-            | CommandId::SetMachineRef => {
+            | CommandId::SetFeedsProvenance => {
                 CoreReply::quiet(mutation_error_json(&format!("Error: {error}"), field))
             }
         }
@@ -2633,8 +2625,7 @@ impl RsCamApp {
             | CommandId::InvalidateToolpathInputs
             | CommandId::UpdateStockFromBbox
             | CommandId::ReplaceTools
-            | CommandId::SetFeedsProvenance
-            | CommandId::SetMachineRef => CoreReply::quiet(mutation_error_json(
+            | CommandId::SetFeedsProvenance => CoreReply::quiet(mutation_error_json(
                 &format!(
                     "Error: '{}' is not a wire mutation; no MCP tool dispatches it.",
                     id.wire_name()

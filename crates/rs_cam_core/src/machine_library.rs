@@ -5,8 +5,8 @@
 //! **snapshot** semantics: importing a machine COPIES it into the
 //! project's inline `[job.machine]`, which is then authoritative. Later
 //! edits to a library file never reach existing projects — re-import to
-//! pick up a change. There is no live `machine_ref` link (a legacy one is
-//! dropped on load and migrated into the inline copy).
+//! pick up a change. There is no reference link of any kind; L6 deleted
+//! the pre-snapshot one.
 //!
 //! Directory resolution (first that is set wins):
 //! 1. `$RS_CAM_MACHINE_DIR` — explicit override (used by tests / CI).
@@ -196,7 +196,7 @@ pub fn rename(old: &str, new: &str) -> Result<(), MachineLibraryError> {
 // the project (see the GUI Machine panel / MCP `load_machine_from_library`),
 // and later edits to a library file never reach existing projects. The old
 // live-reference `resolve`/`resolve_in` were removed when the model switched
-// to snapshot (legacy `machine_ref` is now dropped on load).
+// to snapshot, and L6 deleted the reference field itself.
 
 #[cfg(test)]
 #[allow(

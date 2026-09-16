@@ -243,9 +243,6 @@ pub fn run_project_command(
     // compare wall-clock against the integrator's prediction and
     // exercise modulation end-to-end.
     if inject_shapeoko_kinematics {
-        // `SetMachineKinematics` also clears `machine_ref`: the values
-        // are inline now, so they no longer describe the named library
-        // machine. The hatch write left a stale link behind.
         let _ = apply_command(
             &mut session,
             Command::SetMachineKinematics(SetMachineKinematicsArgs {

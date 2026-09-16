@@ -1722,13 +1722,6 @@ impl ProjectSession {
     /// Before WP4 the method wrote the field and invalidated nothing, so
     /// a stale simulation survived a profile swap; every caller then had
     /// to remember a separate invalidation call.
-    ///
-    /// The method does NOT clear `machine_ref`. A profile that arrives
-    /// from the library is a snapshot of a named machine, and the
-    /// caller states whether the link survives. The two GRBL doors,
-    /// [`Self::set_machine_kinematics`] and
-    /// [`Self::import_machine_settings`], DO clear it: they write inline
-    /// numbers that no library entry published.
     #[instrument(skip(self, machine))]
     pub(crate) fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {
         self.with_effects(None, move |session| {
@@ -1737,7 +1730,7 @@ impl ProjectSession {
         })
     }
 
-    /// Write the machine's kinematics block and drop the library link.
+    /// Write the machine's kinematics block.
     ///
     /// The door of the `SetMachineKinematics` command row. The caller
     /// supplies the finished block: the merge of a partial per-axis
@@ -1745,8 +1738,6 @@ impl ProjectSession {
     /// non-positive value, belong to the surface that collected the
     /// numbers.
     ///
-    /// The link drops because the values are inline now and no longer
-    /// describe the named library machine.
     #[instrument(skip(self, kinematics))]
     pub(crate) fn set_machine_kinematics(
         &mut self,
@@ -1754,7 +1745,6 @@ impl ProjectSession {
     ) -> Effects {
         self.with_effects(None, move |session| {
             session.machine.kinematics = Some(kinematics);
-            session.machine_ref = None;
             session.simulation = None;
         })
     }
@@ -1781,7 +1771,6 @@ impl ProjectSession {
             if let Some(max_feed) = max_feed_mm_min {
                 session.machine.max_feed_mm_min = max_feed;
             }
-            session.machine_ref = None;
             session.simulation = None;
         })
     }

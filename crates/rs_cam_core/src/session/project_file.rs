@@ -135,12 +135,6 @@ pub struct ProjectJobSection {
     pub post: ProjectPostConfig,
     #[serde(default)]
     pub machine: crate::machine::MachineProfile,
-    /// LEGACY. Machines now use snapshot semantics (the inline `machine`
-    /// is authoritative; see `machine_library`). This field is retained
-    /// only so old project files still parse — it is read then dropped on
-    /// load, and never written back (snapshot files omit it).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub machine_ref: Option<String>,
 }
 
 fn default_job_name() -> String {
@@ -1116,23 +1110,15 @@ pub(super) fn build_session_from_project(
     let next_model_id = models.iter().map(|m| m.id).max().map_or(0, |m| m + 1);
 
     // Machines use snapshot semantics (like `[[tools]]`): the inline
-    // `[job.machine]` copy is authoritative. A legacy `machine_ref` is no
-    // longer a live link — it's dropped on load (the inline machine is
-    // migrated forward as-is). Re-save to persist the snapshot.
-    if let Some(name) = &project.job.machine_ref {
-        tracing::info!(
-            "project '{}': legacy machine_ref {name:?} dropped — machines are now stored \
-             inline (snapshot model). Re-save to clear it from the file.",
-            project.job.name
-        );
-    }
+    // `[job.machine]` copy is authoritative. L6 deleted the pre-snapshot
+    // `machine_ref` link. A file that still carries the key loads, and
+    // the reader ignores it.
 
     Ok(super::ProjectSession {
         name: project.job.name.clone(),
         stock,
         post: project.job.post,
         machine: project.job.machine,
-        machine_ref: None,
         models,
         tools,
         setups,
