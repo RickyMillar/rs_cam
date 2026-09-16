@@ -514,7 +514,10 @@ impl OptimizeOutcome {
     /// Construct a `TradeOff` outcome. `recommended_index` is always
     /// `None` — trade-offs require explicit user acceptance via the
     /// modal.
-    pub(crate) fn trade_off(candidates: Vec<OptimizeCandidate>, narrative: OutcomeNarrative) -> Self {
+    pub(crate) fn trade_off(
+        candidates: Vec<OptimizeCandidate>,
+        narrative: OutcomeNarrative,
+    ) -> Self {
         Self {
             kind: OutcomeKind::TradeOff,
             candidates,
