@@ -135,11 +135,9 @@ pub(crate) fn find_matched_lut_row(
     ctx: &EvaluationContext,
     commanded_doc_mm: Option<f64>,
 ) -> Option<MatchedRow> {
-    // F3.4 — delegate to the canonical chipload-envelope resolver.
-    // Pre-F3.4 this took the first of `enumerate_matching_rows` (no
-    // V-bit angle gate, RPM-only rows eligible), so the optimizer
-    // could retarget against a different envelope than the gate's
-    // verdict.
+    // F3.4 — delegate to the canonical chipload-envelope resolver, so
+    // the optimizer retargets against the same envelope the gate's
+    // verdict was judged by.
     crate::tool_load::chipload::matched_chip_envelope(
         tool,
         material,
