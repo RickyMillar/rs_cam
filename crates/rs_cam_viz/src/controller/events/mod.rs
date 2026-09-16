@@ -1003,6 +1003,12 @@ impl<B: ComputeBackend> AppController<B> {
         // a **suggested, never-simulated** single value, and before this it
         // did so with no clamp at all — hazard (c) in a second neighbourhood.
         // The accepted number is not re-solved; only the safety clamps run.
+        // Q1: the bbox of the model this toolpath machines. The clamp
+        // stage reads `SuggestContext::model_bbox`; this site used to
+        // pass `None`. Bound before the closure below, which borrows
+        // `self`. `upstream_leftover_stock_mm` stays `None`: no lookup
+        // here gives it, and v1 does not read it.
+        let model_bbox = self.state.session.model_bbox(tc.model_id);
         let clamp_warnings = self
             .state
             .session
@@ -1020,7 +1026,10 @@ impl<B: ComputeBackend> AppController<B> {
                     &machine,
                     &material,
                     pass_role,
-                    rs_cam_core::feeds::suggest::SuggestContext::default(),
+                    rs_cam_core::feeds::suggest::SuggestContext {
+                        model_bbox: model_bbox.as_ref(),
+                        ..rs_cam_core::feeds::suggest::SuggestContext::default()
+                    },
                 )
             })
             .unwrap_or_default();
@@ -1195,6 +1204,11 @@ impl<B: ComputeBackend> AppController<B> {
         let Some(mut draft) = self.state.session.toolpath_configs().get(idx).cloned() else {
             return Err(format!("toolpath {} disappeared", toolpath_id.0));
         };
+        // Q1: the bbox of the model this toolpath machines. The apply
+        // funnel's clamp stage reads `SuggestContext::model_bbox`; this
+        // site used to pass `None`. `upstream_leftover_stock_mm` stays
+        // `None`: no lookup here gives it, and v1 does not read it.
+        let model_bbox = self.state.session.model_bbox(draft.model_id);
         rs_cam_core::feeds::suggest::apply(
             &rec,
             scope,
@@ -1205,7 +1219,10 @@ impl<B: ComputeBackend> AppController<B> {
                 machine: &machine,
                 material: &material,
                 pass_role,
-                suggest: rs_cam_core::feeds::suggest::SuggestContext::default(),
+                suggest: rs_cam_core::feeds::suggest::SuggestContext {
+                    model_bbox: model_bbox.as_ref(),
+                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
+                },
             },
         );
         let command = Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {

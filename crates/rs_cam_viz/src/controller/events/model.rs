@@ -740,6 +740,7 @@ impl<B: ComputeBackend> AppController<B> {
                     stock_bbox,
                     stock_padding,
                 );
+                let model_bbox = self.state.session.model_bbox(model_id);
                 let suggested = self
                     .state
                     .session
@@ -757,7 +758,17 @@ impl<B: ComputeBackend> AppController<B> {
                                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                                 stock_ctx: &stock_ctx,
                                 spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                                context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+                                // Q1: the bbox the runtime-sanity
+                                // back-off reads. `model_id` is already
+                                // resolved above. The stock reaches
+                                // Suggest through `stock_ctx`, so
+                                // `SuggestContext::stock` stays empty.
+                                // `upstream_leftover_stock_mm` stays
+                                // `None`: no lookup here gives it.
+                                context: rs_cam_core::feeds::suggest::SuggestContext {
+                                    model_bbox: model_bbox.as_ref(),
+                                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
+                                },
                             },
                         )
                         .ok()
