@@ -170,12 +170,23 @@ findings needed code, landed as R1-R3 (see Phase 3b in the plan):
 Commits: R1 `f4e88be2`, R2 `8e485ad2`, R3 `8db8793b`. Workspace clippy
 gate re-run clean on the closed tree (see Gates).
 
-## Hand-off: one pre-existing red test, not touched by this programme
+## Hand-off: three pre-existing red viz tests, not touched by this programme
 
-`rs_cam_viz` `controller::tests::the_primary_and_the_builder_agree_about_a_runnable_project_ur3`
-fails at `tests.rs:1139` ("fixture 1: the sample project must start
-ungenerated"). `sample_project_into` inserts a `ToolpathRuntime` with
-`result = Some(..)` by construction, so the UR3 assertion (`7b4e18f6`,
-2026-09-15, the UI review session) contradicts its own fixture. The
-programme range `18584671..HEAD` does not touch `controller/tests.rs`.
-Left for the UI review session that owns UR3.
+`cargo test -p rs_cam_viz -q --lib` on the closed tree: 390 passed,
+3 failed, all in `controller/tests.rs`, which the programme range
+`18584671..HEAD` does not touch. The same three fail identically at the
+baseline commit `18584671` (run in a throwaway worktree):
+
+- `the_primary_and_the_builder_agree_about_a_runnable_project_ur3`
+  (`:1139`, "fixture 1: the sample project must start ungenerated"):
+  `sample_project_into` inserts a `ToolpathRuntime` with a result by
+  construction, so the UR3 assertion contradicts its own fixture.
+- `simulation_staleness_tracks_edits` (`:867`, "Fresh simulation should
+  not be stale").
+- `freshness_does_not_outrank_a_collision` (`:5311`, badge chip reads
+  "1 safety", the test expects "collision").
+
+All three sit in the UI review session's UR3/UP4 work (`7b4e18f6`,
+2026-09-15). Left for that session. The viz `tests/` integration suite
+as a whole was not run (it links many binaries and exceeds the small-gate
+allowance); every item ran its named integration sentries instead.
