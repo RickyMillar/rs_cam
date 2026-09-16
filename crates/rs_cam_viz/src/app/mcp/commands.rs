@@ -363,17 +363,19 @@ impl RsCamApp {
                     .and_then(|e| e.to_str())
                     .unwrap_or("")
                     .to_lowercase();
-                let imported = match ext.as_str() {
-                    "stl" => crate::io::import::import_stl(file_path, 0, 1.0),
-                    "dxf" => crate::io::import::import_dxf(file_path, 0, 1.0),
-                    "svg" => crate::io::import::import_svg(file_path, 0, 1.0),
-                    "step" | "stp" => crate::io::import::import_step(file_path, 0, 1.0),
-                    _ => {
-                        return CorePlan::Answered(json_str(serde_json::json!({
-                            "error": format!("Unsupported file format '.{ext}'. Use .stl, .dxf, .svg, .step, or .stp")
-                        })));
-                    }
+                // C10: one extension table, in `rs_cam_core::io`. This arm
+                // used to carry its own copy.
+                let Some(kind) = rs_cam_core::io::infer_kind_from_path(file_path) else {
+                    return CorePlan::Answered(json_str(serde_json::json!({
+                        "error": format!("Unsupported file format '.{ext}'. Use .stl, .dxf, .svg, .step, or .stp")
+                    })));
                 };
+                let imported = crate::io::import::import_model(
+                    file_path,
+                    0,
+                    kind,
+                    rs_cam_core::compute::stock_config::ModelUnits::Millimeters,
+                );
                 let model = match imported {
                     Ok(model) => model,
                     Err(e) => {

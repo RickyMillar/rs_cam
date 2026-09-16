@@ -120,7 +120,7 @@ With legacy support removed (C01), this phase is pure deletion + API
 alignment: core becomes the single project I/O layer with no converter to
 maintain.
 
-- [ ] **C10 — additive core API** (I01 step 3). `pub` the model-kind helper
+- [x] **C10 — additive core API** (I01 step 3). `pub` the model-kind helper
   as `io::infer_kind_from_path`; delete `project_file::infer_model_kind`,
   viz `io/project.rs::infer_model_kind`, and
   `controller/io.rs::kind_from_extension`. Add a typed

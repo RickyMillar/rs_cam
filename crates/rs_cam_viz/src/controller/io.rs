@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::session::{
-    AddModelArgs, AdoptModelGeometryArgs, Command, Effects, ProjectSession, SetPostConfigArgs,
-    SetStockConfigArgs,
+    AddModelArgs, AdoptModelGeometryArgs, Command, Effects, ProjectLoadWarning, ProjectSession,
+    SetPostConfigArgs, SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -406,7 +406,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// `format_version = 3` and core reads it; a file core refuses now
     /// fails to open, and the operator reads the reason.
     pub fn open_job_from_path(&mut self, path: &Path) -> Result<(), VizError> {
-        let session = ProjectSession::load(path)?;
+        let (session, load_warnings) = ProjectSession::load_with_warnings(path)?;
         // Populate GUI state from session.
         let mut gui = GuiState::new();
         gui.file_path = Some(path.to_path_buf());
@@ -414,7 +414,13 @@ impl<B: ComputeBackend> AppController<B> {
         gui.post = GuiState::post_from_session(session.post_config());
 
         let loaded_at = Instant::now();
-        let mut warning_messages = Vec::new();
+        // C10: the loader reports what it could not do. This function used
+        // to re-derive the same sentences from the loaded session, which
+        // is how the GUI and the loader came to word one fact two ways.
+        let mut warning_messages: Vec<String> = load_warnings
+            .iter()
+            .map(ProjectLoadWarning::message)
+            .collect();
 
         // Populate toolpath runtime entries.
         for tc in session.toolpath_configs() {
@@ -447,47 +453,6 @@ impl<B: ComputeBackend> AppController<B> {
                 rt.stale_since = Some(loaded_at);
             }
             gui.toolpath_rt.insert(tc.id, rt);
-
-            // Warn about missing tool/model references
-            let tool_exists = session.tools().iter().any(|t| t.id.0 == tc.tool_id);
-            if !tool_exists {
-                warning_messages.push(format!(
-                    "Toolpath '{}' references missing tool id {} and needs reassignment.",
-                    tc.name, tc.tool_id
-                ));
-            }
-            let model_exists = session.models().iter().any(|m| m.id == tc.model_id);
-            if !model_exists {
-                warning_messages.push(format!(
-                    "Toolpath '{}' references missing model id {} and needs reassignment.",
-                    tc.name, tc.model_id
-                ));
-            }
-        }
-
-        // Warn about models that failed to load.
-        for m in session.models() {
-            let has_geometry = m.mesh.is_some() || m.polygons.is_some();
-            if !has_geometry {
-                // G-MODELRELINK: say what actually went wrong.
-                // `load_error` holds the loader's own reason and was
-                // rendered NOWHERE — so a corrupt STL, an unreadable
-                // DXF and a genuinely absent file all reported "was
-                // not found", sending the operator to look for a file
-                // that was sitting right there.
-                warning_messages.push(match &m.load_error {
-                    Some(detail) => format!(
-                        "Model '{}' could not be loaded from '{}': {detail}",
-                        m.name,
-                        m.path.display()
-                    ),
-                    None => format!(
-                        "Model '{}' could not be loaded because '{}' was not found.",
-                        m.name,
-                        m.path.display()
-                    ),
-                });
-            }
         }
 
         // Warn when the alignment pins cannot register the flip they

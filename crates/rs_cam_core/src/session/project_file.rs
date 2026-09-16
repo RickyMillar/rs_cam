@@ -63,6 +63,53 @@ fn check_format_version(project: &ProjectFile) -> Result<(), SessionError> {
     })
 }
 
+/// Something a project load noticed, kept for the operator to read.
+///
+/// The loader does not fail on any of these. It loads what it can. It then
+/// reports what it could not. The GUI shows `message()` in the load
+/// warnings window. A headless caller may ignore the list.
+///
+/// The type lives here because the loader is the only producer. Before
+/// C10 the GUI re-derived the same sentences from the loaded session.
+/// That is how the two loaders in I01 came to word one fact two ways.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectLoadWarning {
+    /// A model section named a file the loader could not read.
+    ModelLoadFailed {
+        name: String,
+        path: PathBuf,
+        detail: String,
+    },
+    /// A tool section carried a tool-type token the vocabulary does not
+    /// hold. The loader substitutes an end mill.
+    UnknownToolType { tool: String, token: String },
+    /// A toolpath names a tool id no `[[tools]]` section defines.
+    MissingToolReference { toolpath: String, tool_id: usize },
+    /// A toolpath names a model id no `[[models]]` section defines.
+    MissingModelReference { toolpath: String, model_id: usize },
+}
+
+impl ProjectLoadWarning {
+    /// The operator-facing sentence for this warning.
+    pub fn message(&self) -> String {
+        match self {
+            Self::ModelLoadFailed { name, path, detail } => format!(
+                "Model '{name}' could not be loaded from '{}': {detail}",
+                path.display()
+            ),
+            Self::UnknownToolType { tool, token } => {
+                format!("Tool '{tool}' has unknown tool type '{token}' — defaulted to End Mill.")
+            }
+            Self::MissingToolReference { toolpath, tool_id } => format!(
+                "Toolpath '{toolpath}' references missing tool id {tool_id} and needs reassignment."
+            ),
+            Self::MissingModelReference { toolpath, model_id } => format!(
+                "Toolpath '{toolpath}' references missing model id {model_id} and needs reassignment."
+            ),
+        }
+    }
+}
+
 /// Job-level settings (name, stock, post).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectJobSection {
@@ -519,24 +566,36 @@ pub(crate) fn stock_from_project(ps: &ProjectStockConfig) -> StockConfig {
 /// [`ToolType::parse_lenient`] vocabulary (T8). Pre-T8 this had its own
 /// alias table and a SILENT `_ => EndMill` — an unknown token (or a viz
 /// legacy alias like `ball`) became an end mill with no trace.
-pub(crate) fn parse_tool_type(s: &str) -> ToolType {
+pub(crate) fn parse_tool_type(
+    s: &str,
+    tool_name: &str,
+    warnings: &mut Vec<ProjectLoadWarning>,
+) -> ToolType {
     ToolType::parse_lenient(s).unwrap_or_else(|| {
         tracing::warn!(
             tool_type = s,
             "unknown tool type in project file — defaulting to end_mill"
         );
+        warnings.push(ProjectLoadWarning::UnknownToolType {
+            tool: tool_name.to_owned(),
+            token: s.to_owned(),
+        });
         ToolType::EndMill
     })
 }
 
-pub(crate) fn tool_from_project_section(ts: &ProjectToolSection, idx: usize) -> ToolConfig {
+pub(crate) fn tool_from_project_section(
+    ts: &ProjectToolSection,
+    idx: usize,
+    warnings: &mut Vec<ProjectLoadWarning>,
+) -> ToolConfig {
     let tool_id = ts.id.unwrap_or(idx);
     let tool_number = ts.tool_number.unwrap_or(tool_id + 1) as u32;
     ToolConfig {
         id: ToolId(tool_id),
         name: ts.name.clone(),
         tool_number,
-        tool_type: parse_tool_type(&ts.tool_type),
+        tool_type: parse_tool_type(&ts.tool_type, &ts.name, warnings),
         diameter: ts.diameter,
         cutting_length: ts.cutting_length,
         helix_deg: ts.helix_deg,
@@ -574,18 +633,6 @@ fn parse_cut_direction(s: &str) -> crate::compute::tool_config::BitCutDirection 
     }
 }
 
-pub(crate) fn infer_model_kind(path: &Path) -> Option<ModelKind> {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .and_then(|ext| match ext.to_ascii_lowercase().as_str() {
-            "stl" => Some(ModelKind::Stl),
-            "svg" => Some(ModelKind::Svg),
-            "dxf" => Some(ModelKind::Dxf),
-            "step" | "stp" => Some(ModelKind::Step),
-            _ => None,
-        })
-}
-
 /// Resolve a stored model path against the project file's own directory.
 ///
 /// G-MODELRELINK (F4.3): this rule used to live inside
@@ -617,7 +664,7 @@ pub(crate) fn load_model_geometry(
 
     let kind = model
         .kind
-        .or_else(|| infer_model_kind(&full_path))
+        .or_else(|| crate::io::infer_kind_from_path(&full_path))
         .ok_or_else(|| SessionError::ModelLoad {
             name: model.name.clone(),
             detail: format!("Cannot determine file type for '{}'", full_path.display()),
@@ -864,6 +911,7 @@ pub(super) fn validate_looks_like_cam_project(
 pub(super) fn build_session_from_project(
     project: ProjectFile,
     base_dir: &Path,
+    warnings: &mut Vec<ProjectLoadWarning>,
 ) -> Result<super::ProjectSession, SessionError> {
     validate_looks_like_cam_project(&project, None)?;
     check_format_version(&project)?;
@@ -875,7 +923,7 @@ pub(super) fn build_session_from_project(
         .tools
         .iter()
         .enumerate()
-        .map(|(idx, ts)| tool_from_project_section(ts, idx))
+        .map(|(idx, ts)| tool_from_project_section(ts, idx, warnings))
         .collect();
 
     // Load models
@@ -887,7 +935,9 @@ pub(super) fn build_session_from_project(
         // and the error placeholder) share this binding, so a model that
         // failed to load still carries the path that was actually searched.
         let model_path = resolve_model_path(&model_section.path, base_dir);
-        let model_kind = model_section.kind.or_else(|| infer_model_kind(&model_path));
+        let model_kind = model_section
+            .kind
+            .or_else(|| crate::io::infer_kind_from_path(&model_path));
         let model_units = model_section.units;
 
         match load_model_geometry(model_section, base_dir) {
@@ -963,6 +1013,11 @@ pub(super) fn build_session_from_project(
                     error = %e,
                     "Failed to load model, skipping"
                 );
+                warnings.push(ProjectLoadWarning::ModelLoadFailed {
+                    name: model_section.name.clone(),
+                    path: model_path.clone(),
+                    detail: e.to_string(),
+                });
                 models.push(LoadedModel {
                     id: model_id,
                     name: model_section.name.clone(),
@@ -1122,6 +1177,24 @@ pub(super) fn build_session_from_project(
                 keep_out_zones: Vec::new(),
                 toolpath_indices: tp_indices,
                 pause_message: None,
+            });
+        }
+    }
+
+    // A toolpath that names a tool or a model the file does not define
+    // cannot generate. The GUI used to re-derive these two sentences from
+    // the loaded session; the loader knows the same fact first.
+    for tc in &toolpath_configs {
+        if !tools.iter().any(|t| t.id.0 == tc.tool_id) {
+            warnings.push(ProjectLoadWarning::MissingToolReference {
+                toolpath: tc.name.clone(),
+                tool_id: tc.tool_id,
+            });
+        }
+        if !models.iter().any(|m| m.id == tc.model_id) {
+            warnings.push(ProjectLoadWarning::MissingModelReference {
+                toolpath: tc.name.clone(),
+                model_id: tc.model_id,
             });
         }
     }

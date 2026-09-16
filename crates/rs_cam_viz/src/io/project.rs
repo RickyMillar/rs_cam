@@ -972,7 +972,7 @@ fn load_legacy_model(
     warnings: &mut Vec<ProjectLoadWarning>,
 ) -> LoadedModel {
     let resolved_path = resolve_model_path(project_path, raw_input);
-    let kind = infer_model_kind(&resolved_path).unwrap_or(ModelKind::Svg);
+    let kind = rs_cam_core::io::infer_kind_from_path(&resolved_path).unwrap_or(ModelKind::Svg);
     let units = default_units_for_kind(kind);
     let name = default_model_name(&resolved_path, kind);
 
@@ -1013,7 +1013,7 @@ fn load_model_section(
 ) -> LoadedModel {
     let kind = model
         .kind
-        .or_else(|| infer_model_kind(Path::new(&model.path)))
+        .or_else(|| rs_cam_core::io::infer_kind_from_path(Path::new(&model.path)))
         .unwrap_or(ModelKind::Svg);
     let units = model.units.unwrap_or_else(|| default_units_for_kind(kind));
     let name = if model.name.is_empty() {
@@ -1304,18 +1304,6 @@ fn resolve_model_path(project_path: &Path, stored_path: &str) -> PathBuf {
             .parent()
             .map(|dir| dir.join(&path))
             .unwrap_or(path)
-    }
-}
-
-fn infer_model_kind(path: &Path) -> Option<ModelKind> {
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some(ext) if ext.eq_ignore_ascii_case("stl") => Some(ModelKind::Stl),
-        Some(ext) if ext.eq_ignore_ascii_case("svg") => Some(ModelKind::Svg),
-        Some(ext) if ext.eq_ignore_ascii_case("dxf") => Some(ModelKind::Dxf),
-        Some(ext) if ext.eq_ignore_ascii_case("step") || ext.eq_ignore_ascii_case("stp") => {
-            Some(ModelKind::Step)
-        }
-        _ => None,
     }
 }
 

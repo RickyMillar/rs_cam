@@ -70,17 +70,14 @@ pub(crate) const MODEL_FILE_EXTENSIONS: &[&str] = &[
 /// Classify a selected model path into the import event used by every UI
 /// import route.
 pub(crate) fn model_import_event(path: PathBuf) -> Option<AppEvent> {
-    match path
-        .extension()
-        .and_then(std::ffi::OsStr::to_str)
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("stl") => Some(AppEvent::ImportStl(path)),
-        Some("svg") => Some(AppEvent::ImportSvg(path)),
-        Some("dxf") => Some(AppEvent::ImportDxf(path)),
-        Some("step" | "stp") => Some(AppEvent::ImportStep(path)),
-        _ => None,
+    use rs_cam_core::compute::stock_config::ModelKind;
+    // C10: one extension table, in `rs_cam_core::io`. This arm used to
+    // carry its own copy, and so did three other sites.
+    match rs_cam_core::io::infer_kind_from_path(&path)? {
+        ModelKind::Stl => Some(AppEvent::ImportStl(path)),
+        ModelKind::Svg => Some(AppEvent::ImportSvg(path)),
+        ModelKind::Dxf => Some(AppEvent::ImportDxf(path)),
+        ModelKind::Step => Some(AppEvent::ImportStep(path)),
     }
 }
 

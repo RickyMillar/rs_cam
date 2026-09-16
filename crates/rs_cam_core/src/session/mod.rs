@@ -59,8 +59,8 @@ pub use multitool::{
 // Re-export all public project_file types so external crates see no path change.
 pub use project_file::{
     ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
-    ProjectModelSection, ProjectPostConfig, ProjectSetupSection, ProjectStockConfig,
-    ProjectToolSection, ProjectToolpathSection, SUPPORTED_FORMAT_VERSION,
+    ProjectLoadWarning, ProjectModelSection, ProjectPostConfig, ProjectSetupSection,
+    ProjectStockConfig, ProjectToolSection, ProjectToolpathSection, SUPPORTED_FORMAT_VERSION,
 };
 
 use crate::ids::ToolpathId;
@@ -345,7 +345,7 @@ impl LoadedModel {
             kind,
             units,
         };
-        let resolved_kind = kind.or_else(|| project_file::infer_model_kind(path));
+        let resolved_kind = kind.or_else(|| crate::io::infer_kind_from_path(path));
         let geometry = project_file::load_model_geometry(&section, base_dir)?;
         let mut drill_targets: Arc<Vec<DrillTarget>> = Arc::new(Vec::new());
         let mut layers: Arc<Vec<String>> = Arc::new(Vec::new());
@@ -1521,24 +1521,54 @@ impl ProjectSession {
     }
 
     /// Load a project from a TOML file path.
+    ///
+    /// The load warnings are discarded. A surface that shows them calls
+    /// [`Self::load_with_warnings`].
     pub fn load(path: &Path) -> Result<Self, SessionError> {
+        Self::load_with_warnings(path).map(|(session, _)| session)
+    }
+
+    /// Load a project, and report what the loader noticed on the way.
+    ///
+    /// Each warning names something the loader could not do:
+    ///
+    /// - It could not read a model file.
+    /// - It did not know a tool type, so it used an end mill.
+    /// - A toolpath names a tool or a model the file does not define.
+    ///
+    /// None of these fails the load. The GUI shows them in its load
+    /// warnings window.
+    pub fn load_with_warnings(
+        path: &Path,
+    ) -> Result<(Self, Vec<ProjectLoadWarning>), SessionError> {
         let content = std::fs::read_to_string(path)?;
         let project: ProjectFile =
             toml::from_str(&content).map_err(|e| SessionError::TomlParse(e.to_string()))?;
         project_file::validate_looks_like_cam_project(&project, Some(path))?;
         let base_dir = path.parent().unwrap_or(Path::new("."));
-        let mut session = Self::from_project_file(project, base_dir)?;
+        let (mut session, warnings) = Self::from_project_file_with_warnings(project, base_dir)?;
         if (session.name == "Untitled" || session.name.trim().is_empty())
             && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
         {
             session.name = stem.to_owned();
         }
-        Ok(session)
+        Ok((session, warnings))
     }
 
     /// Construct a session from a parsed project file.
     pub fn from_project_file(project: ProjectFile, base_dir: &Path) -> Result<Self, SessionError> {
-        project_file::build_session_from_project(project, base_dir)
+        Self::from_project_file_with_warnings(project, base_dir).map(|(session, _)| session)
+    }
+
+    /// Construct a session from a parsed project file, with the warnings
+    /// [`Self::load_with_warnings`] describes.
+    pub fn from_project_file_with_warnings(
+        project: ProjectFile,
+        base_dir: &Path,
+    ) -> Result<(Self, Vec<ProjectLoadWarning>), SessionError> {
+        let mut warnings = Vec::new();
+        let session = project_file::build_session_from_project(project, base_dir, &mut warnings)?;
+        Ok((session, warnings))
     }
 
     // ── Queries ────────────────────────────────────────────────────
@@ -2450,21 +2480,31 @@ mod tests {
     /// to EndMill here but BallNose in the viz legacy loader.
     #[test]
     fn tool_type_parsing() {
-        assert!(matches!(parse_tool_type("end_mill"), ToolType::EndMill));
-        assert!(matches!(parse_tool_type("ball_nose"), ToolType::BallNose));
-        assert!(matches!(parse_tool_type("bull_nose"), ToolType::BullNose));
-        assert!(matches!(parse_tool_type("v_bit"), ToolType::VBit));
+        let mut warnings = Vec::new();
+        let mut parse = |token: &str| parse_tool_type(token, "Tool", &mut warnings);
+        assert!(matches!(parse("end_mill"), ToolType::EndMill));
+        assert!(matches!(parse("ball_nose"), ToolType::BallNose));
+        assert!(matches!(parse("bull_nose"), ToolType::BullNose));
+        assert!(matches!(parse("v_bit"), ToolType::VBit));
         assert!(matches!(
-            parse_tool_type("tapered_ball_nose"),
+            parse("tapered_ball_nose"),
             ToolType::TaperedBallNose
         ));
-        assert!(matches!(parse_tool_type("unknown"), ToolType::EndMill));
+        assert!(matches!(parse("unknown"), ToolType::EndMill));
         // T8 unified-vocabulary additions (were EndMill via wildcard).
-        assert!(matches!(parse_tool_type("ball"), ToolType::BallNose));
-        assert!(matches!(
-            parse_tool_type("tapered_ball"),
-            ToolType::TaperedBallNose
-        ));
+        assert!(matches!(parse("ball"), ToolType::BallNose));
+        assert!(matches!(parse("tapered_ball"), ToolType::TaperedBallNose));
+
+        // C10: the substitution is reported, not only traced. One token
+        // was unknown, so the channel carries exactly one warning.
+        assert_eq!(
+            warnings,
+            vec![ProjectLoadWarning::UnknownToolType {
+                tool: "Tool".to_owned(),
+                token: "unknown".to_owned(),
+            }],
+            "the loader must report the end-mill substitution"
+        );
     }
 
     /// Create a session with one tool and one Pocket toolpath for mutation tests.
