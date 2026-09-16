@@ -1838,10 +1838,9 @@ pub fn reach_map_for_mesh(
         tolerance_mm,
         margin_mm: 0.5,
     };
-    let never_cancel = || false;
-    // SAFETY: `never_cancel` never fires, so the walk cannot return
+    // SAFETY: `NeverCancel` never fires, so the walk cannot return
     // `Cancelled`; the fallback map is unreachable and carries no verdict.
-    compute_reach_map(mesh, &index, cutter, &params, &never_cancel).unwrap_or(ReachMap {
+    let fallback = ReachMap {
         nx: 0,
         ny: 0,
         origin_x: 0.0,
@@ -1862,5 +1861,13 @@ pub fn reach_map_for_mesh(
         cell_floor_mm: Vec::new(),
         tool_id: None,
         model_id: None,
-    })
+    };
+    compute_reach_map(
+        mesh,
+        &index,
+        cutter,
+        &params,
+        &crate::interrupt::NeverCancel,
+    )
+    .unwrap_or(fallback)
 }

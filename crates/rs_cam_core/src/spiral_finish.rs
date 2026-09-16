@@ -111,8 +111,6 @@ impl crate::compute::spans::RuntimeLabel for SpiralFinishRuntimeAnnotation {
     }
 }
 
-// infallible: cancel closure always returns false, so Cancelled is unreachable
-#[allow(clippy::expect_used)]
 pub fn spiral_finish_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -121,17 +119,17 @@ pub fn spiral_finish_toolpath_structured_annotated(
     debug: Option<&ToolpathDebugContext>,
     boundary_regions: Option<&RegionSet<'_>>,
 ) -> (Toolpath, Vec<SpiralFinishRuntimeAnnotation>) {
-    let never_cancel = || false;
-    spiral_finish_toolpath_structured_annotated_with_cancel(
-        mesh,
-        index,
-        cutter,
-        params,
-        debug,
-        boundary_regions,
-        &never_cancel,
-    )
-    .expect("non-cancellable spiral finish toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        spiral_finish_toolpath_structured_annotated_with_cancel(
+            mesh,
+            index,
+            cutter,
+            params,
+            debug,
+            boundary_regions,
+            cancel,
+        )
+    })
 }
 
 /// Cancellable variant of [`spiral_finish_toolpath_structured_annotated`].

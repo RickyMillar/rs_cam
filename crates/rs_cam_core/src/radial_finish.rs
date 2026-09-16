@@ -50,17 +50,15 @@ impl Default for RadialFinishParams {
 /// come from `point_drop_cutter`. Even-numbered spokes run center-to-edge;
 /// odd-numbered spokes run edge-to-center (zigzag linking). Between spokes
 /// the tool rapids to `safe_z`.
-// infallible: cancel closure always returns false, so Cancelled is unreachable
-#[allow(clippy::expect_used)]
 pub fn radial_finish_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &RadialFinishParams,
 ) -> Toolpath {
-    let never_cancel = || false;
-    radial_finish_toolpath_with_cancel(mesh, index, cutter, params, None, &never_cancel)
-        .expect("non-cancellable radial finish toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        radial_finish_toolpath_with_cancel(mesh, index, cutter, params, None, cancel)
+    })
 }
 
 /// Cancellable variant of [`radial_finish_toolpath`]. Polls `cancel` once

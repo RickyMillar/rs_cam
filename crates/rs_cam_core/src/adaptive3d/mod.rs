@@ -405,17 +405,15 @@ pub struct Adaptive3dRuntimeAnnotation {
 /// the STL mesh surface with constant engagement control. Multi-level
 /// passes from top to bottom, waterline boundary cleanup at each level.
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
-// infallible: cancel closure always returns false, so Cancelled is unreachable
-#[allow(clippy::expect_used)]
 pub fn adaptive_3d_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &Adaptive3dParams,
 ) -> Toolpath {
-    let never_cancel = || false;
-    adaptive_3d_toolpath_with_cancel(mesh, index, cutter, params, &never_cancel)
-        .expect("non-cancellable adaptive3d should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        adaptive_3d_toolpath_with_cancel(mesh, index, cutter, params, cancel)
+    })
 }
 
 pub fn adaptive_3d_toolpath_with_cancel(
@@ -448,7 +446,6 @@ pub fn adaptive_3d_toolpath_traced_with_cancel(
 /// Like `adaptive_3d_toolpath` but also returns annotations for simulation display.
 /// Each annotation is `(move_index, label)`.
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
-// infallible: cancel closure always returns false, so Cancelled is unreachable
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
 /// only callers. No production path reads it.
 #[allow(clippy::expect_used)]
@@ -458,9 +455,9 @@ pub fn adaptive_3d_toolpath_annotated(
     cutter: &dyn MillingCutter,
     params: &Adaptive3dParams,
 ) -> (Toolpath, Vec<(usize, String)>) {
-    let never_cancel = || false;
-    adaptive_3d_toolpath_annotated_with_cancel(mesh, index, cutter, params, &never_cancel)
-        .expect("non-cancellable adaptive3d should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        adaptive_3d_toolpath_annotated_with_cancel(mesh, index, cutter, params, cancel)
+    })
 }
 
 pub fn adaptive_3d_toolpath_annotated_with_cancel(

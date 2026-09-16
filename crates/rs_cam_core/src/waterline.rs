@@ -59,8 +59,6 @@ pub struct WaterlineParams {
 /// Generate a single waterline contour at a given Z height.
 ///
 /// Returns boundary CL points organized as closed loops.
-// infallible: cancel closure always returns false, so Cancelled is unreachable
-#[allow(clippy::expect_used)]
 pub fn waterline_contours(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -68,9 +66,9 @@ pub fn waterline_contours(
     z: f64,
     sampling: f64,
 ) -> Vec<Vec<P3>> {
-    let never_cancel = || false;
-    waterline_contours_with_cancel(mesh, index, cutter, z, sampling, &never_cancel)
-        .expect("non-cancellable waterline contours should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        waterline_contours_with_cancel(mesh, index, cutter, z, sampling, cancel)
+    })
 }
 
 /// Inclusive-bounds epsilon for waterline's Z ladder.
@@ -129,8 +127,6 @@ fn floor_contour(points: &[P3], closed: bool) -> Vec<P3> {
 /// Generate waterline toolpaths at multiple Z heights.
 ///
 /// Z heights are generated from start_z down to final_z with the given step.
-// infallible: cancel closure always returns false, so Cancelled is unreachable
-#[allow(clippy::expect_used)]
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(
     start_z, final_z, z_step,
     tri_count = mesh.triangles.len(),
@@ -144,19 +140,11 @@ pub fn waterline_toolpath(
     z_step: f64,
     params: &WaterlineParams,
 ) -> Toolpath {
-    let never_cancel = || false;
-    waterline_toolpath_with_cancel(
-        mesh,
-        index,
-        cutter,
-        start_z,
-        final_z,
-        z_step,
-        params,
-        None,
-        &never_cancel,
-    )
-    .expect("non-cancellable waterline should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        waterline_toolpath_with_cancel(
+            mesh, index, cutter, start_z, final_z, z_step, params, None, cancel,
+        )
+    })
 }
 
 /// `boundary_regions` (P2.3): after each Z level's closed contours come back

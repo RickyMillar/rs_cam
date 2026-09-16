@@ -47,11 +47,9 @@ pub struct PocketParams {
     stepover = params.stepover,
 ))]
 pub fn pocket_toolpath(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
-    let never_cancel = || false;
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
-    #[allow(clippy::expect_used)]
-    pocket_toolpath_with_cancel(polygon, params, &never_cancel)
-        .expect("non-cancellable pocket toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        pocket_toolpath_with_cancel(polygon, params, cancel)
+    })
 }
 
 /// Cancellable variant of [`pocket_toolpath`]. Polls `cancel` once per
@@ -132,11 +130,9 @@ pub fn pocket_toolpath_at_levels_reported_with_cancel(
 ///
 /// Useful for visualization or when you need the geometry separately.
 pub fn pocket_contours(polygon: &Polygon2, tool_radius: f64, stepover: f64) -> Vec<Vec<P2>> {
-    let never_cancel = || false;
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
-    #[allow(clippy::expect_used)]
-    pocket_contours_with_cancel(polygon, tool_radius, stepover, &never_cancel)
-        .expect("non-cancellable pocket contours should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        pocket_contours_with_cancel(polygon, tool_radius, stepover, cancel)
+    })
 }
 
 /// Checkpoint C, Q3 (F-10): what stopped a pocket ring cascade, when it was

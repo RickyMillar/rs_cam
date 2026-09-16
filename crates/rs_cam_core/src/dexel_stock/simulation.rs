@@ -40,8 +40,12 @@ impl TriDexelStock {
         cutter: &dyn MillingCutter,
         direction: StockCutDirection,
     ) {
-        let never_cancel = || false;
-        let _ = self.simulate_toolpath_with_cancel(toolpath, cutter, direction, &never_cancel);
+        let _ = self.simulate_toolpath_with_cancel(
+            toolpath,
+            cutter,
+            direction,
+            &crate::interrupt::NeverCancel,
+        );
     }
 
     /// Simulate with cancellation support.
@@ -843,7 +847,6 @@ impl TriDexelStock {
         start_move: usize,
         end_move: usize,
     ) {
-        let never_cancel = || false;
         let _ = self.replay_moves(
             toolpath,
             lut,
@@ -851,7 +854,7 @@ impl TriDexelStock {
             direction,
             start_move,
             end_move,
-            &never_cancel,
+            &crate::interrupt::NeverCancel,
             None,
         );
     }

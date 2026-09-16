@@ -217,8 +217,8 @@ pub fn batch_push_cutter(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
 ) {
-    let never_cancel = || false;
-    let _ = batch_push_cutter_with_cancel(fibers, mesh, index, cutter, &never_cancel);
+    let _ =
+        batch_push_cutter_with_cancel(fibers, mesh, index, cutter, &crate::interrupt::NeverCancel);
 }
 
 pub fn batch_push_cutter_with_cancel(

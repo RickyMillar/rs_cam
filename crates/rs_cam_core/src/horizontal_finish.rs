@@ -65,7 +65,6 @@ struct FlatRegion {
 /// 3. For each region, raster across the XY bounding box, including only points
 ///    where the underlying triangle is flat.
 /// 4. Insert rapids to skip non-flat stretches; retract between regions.
-// infallible: cancel closure always returns false, so Cancelled is unreachable
 #[allow(clippy::indexing_slicing, clippy::expect_used)]
 pub fn horizontal_finish_toolpath(
     mesh: &TriangleMesh,
@@ -73,9 +72,9 @@ pub fn horizontal_finish_toolpath(
     cutter: &dyn MillingCutter,
     params: &HorizontalFinishParams,
 ) -> Toolpath {
-    let never_cancel = || false;
-    horizontal_finish_toolpath_with_cancel(mesh, index, cutter, params, None, &never_cancel)
-        .expect("non-cancellable horizontal finish toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        horizontal_finish_toolpath_with_cancel(mesh, index, cutter, params, None, cancel)
+    })
 }
 
 /// Cancellable variant of [`horizontal_finish_toolpath`]. Polls `cancel`

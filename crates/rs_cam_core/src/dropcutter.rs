@@ -94,8 +94,6 @@ impl DropCutterGrid {
 ///
 /// Generates a regular grid covering the mesh XY extent (plus one cutter radius margin),
 /// with the specified step-over distance.
-// infallible: cancel closure always returns false, so Cancelled is unreachable
-#[allow(clippy::expect_used)]
 pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -104,17 +102,9 @@ pub fn batch_drop_cutter<C: MillingCutter + ?Sized>(
     direction_deg: f64,
     min_z: f64,
 ) -> DropCutterGrid {
-    let never_cancel = || false;
-    batch_drop_cutter_with_cancel(
-        mesh,
-        index,
-        cutter,
-        step_over,
-        direction_deg,
-        min_z,
-        &never_cancel,
-    )
-    .expect("non-cancellable drop-cutter should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        batch_drop_cutter_with_cancel(mesh, index, cutter, step_over, direction_deg, min_z, cancel)
+    })
 }
 
 pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(

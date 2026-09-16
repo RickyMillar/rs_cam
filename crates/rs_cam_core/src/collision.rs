@@ -187,14 +187,13 @@ pub fn check_collisions_interpolated(
     index: &SpatialIndex,
     step_mm: f64,
 ) -> CollisionReport {
-    let never_cancel = || false;
     match check_collisions_interpolated_with_cancel(
         toolpath,
         assembly,
         mesh,
         index,
         step_mm,
-        &never_cancel,
+        &crate::interrupt::NeverCancel,
     ) {
         Ok(report) => report,
         Err(_) => CollisionReport {

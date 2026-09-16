@@ -130,11 +130,9 @@ pub fn project_curve_toolpath(
     cutter: &dyn MillingCutter,
     params: &ProjectCurveParams,
 ) -> Toolpath {
-    let never_cancel = || false;
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
-    #[allow(clippy::expect_used)]
-    project_curve_toolpath_with_cancel(polygon, mesh, index, cutter, params, &never_cancel)
-        .expect("non-cancellable project-curve toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        project_curve_toolpath_with_cancel(polygon, mesh, index, cutter, params, cancel)
+    })
 }
 
 /// Cancellable variant of [`project_curve_toolpath`]. Polls `cancel` every

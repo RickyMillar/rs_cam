@@ -464,7 +464,6 @@ impl crate::compute::spans::RuntimeLabel for RampFinishRuntimeAnnotation {
     }
 }
 
-// infallible: cancel closure always returns false, so Cancelled is unreachable
 #[allow(clippy::indexing_slicing, clippy::expect_used)]
 pub fn ramp_finish_toolpath_structured_annotated(
     mesh: &TriangleMesh,
@@ -474,17 +473,17 @@ pub fn ramp_finish_toolpath_structured_annotated(
     debug: Option<&ToolpathDebugContext>,
     boundary_regions: Option<&RegionSet<'_>>,
 ) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>, RampReachClamp) {
-    let never_cancel = || false;
-    ramp_finish_toolpath_structured_annotated_with_cancel(
-        mesh,
-        index,
-        cutter,
-        params,
-        debug,
-        boundary_regions,
-        &never_cancel,
-    )
-    .expect("non-cancellable ramp finish toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        ramp_finish_toolpath_structured_annotated_with_cancel(
+            mesh,
+            index,
+            cutter,
+            params,
+            debug,
+            boundary_regions,
+            cancel,
+        )
+    })
 }
 
 /// Cancellable variant of [`ramp_finish_toolpath_structured_annotated`].

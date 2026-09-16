@@ -128,7 +128,6 @@ fn erode_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> V
     dilated_inv.iter().map(|&v| !v).collect()
 }
 
-// infallible: cancel closure always returns false, so Cancelled is unreachable
 #[allow(
     clippy::indexing_slicing,
     clippy::too_many_arguments,
@@ -153,25 +152,25 @@ fn generate_steep_passes(
     plunge_rate: f64,
     safe_z: f64,
 ) -> Toolpath {
-    let never_cancel = || false;
-    generate_steep_passes_with_cancel(
-        mesh,
-        index,
-        cutter,
-        slope_map,
-        steep_expanded,
-        z_top,
-        z_bottom,
-        z_step,
-        sampling,
-        stock_to_leave,
-        feed_rate,
-        plunge_rate,
-        safe_z,
-        None,
-        &never_cancel,
-    )
-    .expect("non-cancellable steep-pass generation should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        generate_steep_passes_with_cancel(
+            mesh,
+            index,
+            cutter,
+            slope_map,
+            steep_expanded,
+            z_top,
+            z_bottom,
+            z_step,
+            sampling,
+            stock_to_leave,
+            feed_rate,
+            plunge_rate,
+            safe_z,
+            None,
+            cancel,
+        )
+    })
 }
 
 /// Cancellable variant of [`generate_steep_passes`]. Polls `cancel` once per
@@ -362,7 +361,6 @@ fn generate_steep_passes_with_cancel(
     Ok(tp)
 }
 
-// infallible: cancel closure always returns false, so Cancelled is unreachable
 #[allow(
     clippy::indexing_slicing,
     clippy::too_many_arguments,
@@ -384,22 +382,22 @@ fn generate_shallow_passes(
     plunge_rate: f64,
     safe_z: f64,
 ) -> Toolpath {
-    let never_cancel = || false;
-    generate_shallow_passes_with_cancel(
-        mesh,
-        index,
-        cutter,
-        shallow_eroded,
-        slope_map,
-        stepover,
-        stock_to_leave,
-        feed_rate,
-        plunge_rate,
-        safe_z,
-        None,
-        &never_cancel,
-    )
-    .expect("non-cancellable shallow-pass generation should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        generate_shallow_passes_with_cancel(
+            mesh,
+            index,
+            cutter,
+            shallow_eroded,
+            slope_map,
+            stepover,
+            stock_to_leave,
+            feed_rate,
+            plunge_rate,
+            safe_z,
+            None,
+            cancel,
+        )
+    })
 }
 
 /// Cancellable variant of [`generate_shallow_passes`]. Polls `cancel` once
@@ -564,8 +562,6 @@ pub fn steep_shallow_generation_resolution(
 /// Splits the surface into steep and shallow regions based on slope angle,
 /// then generates waterline passes for steep areas and parallel raster passes
 /// for shallow areas, with configurable overlap and wall clearance.
-// infallible: cancel closure always returns false, so Cancelled is unreachable
-#[allow(clippy::expect_used)]
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(threshold = params.threshold_angle))]
 pub fn steep_shallow_toolpath(
     mesh: &TriangleMesh,
@@ -573,9 +569,9 @@ pub fn steep_shallow_toolpath(
     cutter: &dyn MillingCutter,
     params: &SteepShallowParams,
 ) -> Toolpath {
-    let never_cancel = || false;
-    steep_shallow_toolpath_with_cancel(mesh, index, cutter, params, None, &never_cancel)
-        .expect("non-cancellable steep/shallow toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        steep_shallow_toolpath_with_cancel(mesh, index, cutter, params, None, cancel)
+    })
 }
 
 /// Where each half of the merged toolpath ended up.

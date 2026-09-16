@@ -133,11 +133,9 @@ fn sample_chunk(
 /// This produces a V-groove that exactly meets the design outline when
 /// the V-bit half-angle matches the specified value.
 pub fn vcarve_toolpath(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
-    let never_cancel = || false;
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
-    #[allow(clippy::expect_used)]
-    vcarve_toolpath_with_cancel(polygon, params, &never_cancel)
-        .expect("non-cancellable vcarve toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        vcarve_toolpath_with_cancel(polygon, params, cancel)
+    })
 }
 
 /// Cancellable variant of [`vcarve_toolpath`]. Checks `cancel` as its very

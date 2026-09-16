@@ -111,7 +111,6 @@ pub struct SurfaceHeightmap {
 
 impl SurfaceHeightmap {
     /// Build via rayon-parallelized drop-cutter queries at each grid cell.
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
     #[allow(clippy::too_many_arguments, clippy::expect_used)]
     pub fn from_mesh(
         mesh: &TriangleMesh,
@@ -124,20 +123,11 @@ impl SurfaceHeightmap {
         cell_size: f64,
         min_z: f64,
     ) -> Self {
-        let never_cancel = || false;
-        Self::from_mesh_with_cancel(
-            mesh,
-            index,
-            cutter,
-            origin_x,
-            origin_y,
-            rows,
-            cols,
-            cell_size,
-            min_z,
-            &never_cancel,
-        )
-        .expect("non-cancellable surface heightmap should never be cancelled")
+        crate::interrupt::run_uncancellable(|cancel| {
+            Self::from_mesh_with_cancel(
+                mesh, index, cutter, origin_x, origin_y, rows, cols, cell_size, min_z, cancel,
+            )
+        })
     }
 
     #[allow(clippy::too_many_arguments)]

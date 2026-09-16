@@ -257,11 +257,9 @@ pub fn depth_stepped_toolpath<F>(depth: &DepthStepping, safe_z: f64, operation: 
 where
     F: Fn(f64) -> Toolpath,
 {
-    let never_cancel = || false;
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
-    #[allow(clippy::expect_used)]
-    depth_stepped_toolpath_with_cancel(depth, safe_z, |z| Ok(operation(z)), &never_cancel)
-        .expect("non-cancellable depth-stepped toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        depth_stepped_toolpath_with_cancel(depth, safe_z, |z| Ok(operation(z)), cancel)
+    })
 }
 
 /// Cancellable variant of [`depth_stepped_toolpath`]. Polls `cancel` once per
@@ -326,11 +324,9 @@ pub fn toolpath_at_levels<F>(levels: &[f64], safe_z: f64, operation: F) -> Toolp
 where
     F: Fn(f64) -> Toolpath,
 {
-    let never_cancel = || false;
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
-    #[allow(clippy::expect_used)]
-    toolpath_at_levels_with_cancel(levels, safe_z, |z| Ok(operation(z)), &never_cancel)
-        .expect("non-cancellable depth-stepped toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        toolpath_at_levels_with_cancel(levels, safe_z, |z| Ok(operation(z)), cancel)
+    })
 }
 
 /// Cancellable variant of [`toolpath_at_levels`] — the single choke point for

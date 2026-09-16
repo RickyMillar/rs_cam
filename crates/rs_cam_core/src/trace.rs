@@ -117,11 +117,9 @@ pub fn trace_polygons_at_z(polygons: &[Polygon2], z: f64, params: &TraceParams) 
 /// Convenience wrapper around [`trace_polygon_at_z`] that handles multi-pass
 /// depth stepping automatically when `depth > depth_per_pass`.
 pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
-    let never_cancel = || false;
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
-    #[allow(clippy::expect_used)]
-    trace_toolpath_with_cancel(polygon, params, &never_cancel)
-        .expect("non-cancellable trace toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        trace_toolpath_with_cancel(polygon, params, cancel)
+    })
 }
 
 /// Cancellable variant of [`trace_toolpath`]. Polls `cancel` once per Z

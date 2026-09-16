@@ -1901,7 +1901,6 @@ pub(crate) fn emit_paths_with_entry_stock_reported(
     (tp, annotations, report)
 }
 
-// infallible: cancel closure always returns false, so Cancelled is unreachable
 #[allow(clippy::expect_used, clippy::too_many_arguments)]
 pub fn pencil_toolpath_structured_annotated(
     mesh: &TriangleMesh,
@@ -1922,25 +1921,25 @@ pub fn pencil_toolpath_structured_annotated(
     // `detector == RestDepth`; left untouched otherwise.
     rest_regions_out: &mut Option<Vec<Polygon2>>,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
-    let never_cancel = || false;
-    pencil_toolpath_structured_annotated_with_cancel(
-        mesh,
-        index,
-        cutter,
-        params,
-        initial_stock,
-        debug,
-        rest_grid_out,
-        rest_regions_out,
-        // Wave D1: this legacy entry point predates the tip-float channel
-        // and has no slot to return it through. Callers that need the
-        // finding (the op adapter does) call the cancellable form.
-        &mut None,
-        // G-LINKVISIBLE: same reading for the link report.
-        &mut None,
-        &never_cancel,
-    )
-    .expect("non-cancellable pencil toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        pencil_toolpath_structured_annotated_with_cancel(
+            mesh,
+            index,
+            cutter,
+            params,
+            initial_stock,
+            debug,
+            rest_grid_out,
+            rest_regions_out,
+            // Wave D1: this legacy entry point predates the tip-float channel
+            // and has no slot to return it through. Callers that need the
+            // finding (the op adapter does) call the cancellable form.
+            &mut None,
+            // G-LINKVISIBLE: same reading for the link report.
+            &mut None,
+            cancel,
+        )
+    })
 }
 
 /// Diameter (mm) of the vanishingly small "surface probe" ball substituted

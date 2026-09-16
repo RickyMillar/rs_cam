@@ -26,6 +26,35 @@ impl fmt::Display for Cancelled {
 
 impl std::error::Error for Cancelled {}
 
+/// A [`CancelCheck`] that cannot fire.
+///
+/// Every generator publishes a cancellable form and an uncancellable
+/// convenience wrapper over it. Twenty-six of those wrappers each built their
+/// own `|| false` closure and each carried their own
+/// `#[allow(clippy::expect_used)]` over the `Result` it made unreachable.
+/// This type and [`run_uncancellable`] are the one copy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NeverCancel;
+
+impl CancelCheck for NeverCancel {
+    fn cancelled(&self) -> bool {
+        false
+    }
+}
+
+/// Run a cancellable computation under [`NeverCancel`] and return its answer.
+///
+/// This holds the workspace's ONE `expect` for the idiom. A `Cancelled` here
+/// cannot come from the caller, because [`NeverCancel::cancelled`] returns
+/// `false` unconditionally — it could only mean the computation invented a
+/// cancellation it was never told about, which is a defect in that
+/// computation and must not be mapped to a silent empty answer.
+// SAFETY: unreachable by construction — see the paragraph above.
+#[allow(clippy::expect_used)]
+pub fn run_uncancellable<T>(run: impl FnOnce(&NeverCancel) -> Result<T, Cancelled>) -> T {
+    run(&NeverCancel).expect("a computation run under NeverCancel reported cancellation")
+}
+
 #[inline]
 pub fn check_cancel(cancel: &dyn CancelCheck) -> Result<(), Cancelled> {
     if cancel.cancelled() {

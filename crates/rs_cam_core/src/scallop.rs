@@ -1154,7 +1154,6 @@ fn dropped_arc_length_mm(ring: &[(P3, bool)]) -> f64 {
 /// external `scallop_untouched_standing_h4` sentry, which cannot see a
 /// private item — can drive the cascade directly without a full mesh or
 /// toolpath generation.
-// infallible: cancel closure always returns false, so Cancelled is unreachable
 #[allow(clippy::too_many_arguments, clippy::expect_used)]
 pub fn generate_scallop_rings(
     boundary: &Polygon2,
@@ -1170,25 +1169,25 @@ pub fn generate_scallop_rings(
     max_rings: usize,
     chord_tolerance: f64,
 ) -> RingCascade {
-    let never_cancel = || false;
-    generate_scallop_rings_with_cancel(
-        boundary,
-        mesh,
-        index,
-        cutter,
-        slope_map,
-        heightmap,
-        cusp_r,
-        scallop_height,
-        stock_to_leave,
-        min_z,
-        max_rings,
-        chord_tolerance,
-        ScallopStepoverPolicy::SHIPPED,
-        None,
-        &never_cancel,
-    )
-    .expect("non-cancellable scallop ring generation should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        generate_scallop_rings_with_cancel(
+            boundary,
+            mesh,
+            index,
+            cutter,
+            slope_map,
+            heightmap,
+            cusp_r,
+            scallop_height,
+            stock_to_leave,
+            min_z,
+            max_rings,
+            chord_tolerance,
+            ScallopStepoverPolicy::SHIPPED,
+            None,
+            cancel,
+        )
+    })
 }
 
 /// Cancellable variant of [`generate_scallop_rings`]. Polls `cancel` once per
@@ -1876,8 +1875,6 @@ impl crate::compute::spans::RuntimeLabel for ScallopRuntimeAnnotation {
     }
 }
 
-// infallible: cancel closure always returns false, so Cancelled is unreachable
-#[allow(clippy::expect_used)]
 pub fn scallop_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1885,17 +1882,11 @@ pub fn scallop_toolpath_structured_annotated(
     params: &ScallopParams,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport) {
-    let never_cancel = || false;
-    scallop_toolpath_structured_annotated_with_cancel(
-        mesh,
-        index,
-        cutter,
-        params,
-        debug,
-        None,
-        &never_cancel,
-    )
-    .expect("non-cancellable scallop toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        scallop_toolpath_structured_annotated_with_cancel(
+            mesh, index, cutter, params, debug, None, cancel,
+        )
+    })
 }
 
 /// Cancellable variant of [`scallop_toolpath_structured_annotated`]. Polls

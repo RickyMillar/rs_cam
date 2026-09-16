@@ -125,11 +125,7 @@ fn normalise_oneway(mut lines: Vec<[crate::geo::P2; 2]>, angle: f64) -> Vec<[cra
 /// `stock_offset`), then fills it with zigzag passes. If `depth > 0`,
 /// multiple passes are generated using depth stepping.
 pub fn face_toolpath(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
-    let never_cancel = || false;
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
-    #[allow(clippy::expect_used)]
-    face_toolpath_with_cancel(bounds, params, &never_cancel)
-        .expect("non-cancellable face toolpath should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| face_toolpath_with_cancel(bounds, params, cancel))
 }
 
 /// Cancellable variant of [`face_toolpath`]. Checks `cancel` as its very

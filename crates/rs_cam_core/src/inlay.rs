@@ -287,11 +287,9 @@ fn polygon_bounds(polygon: &Polygon2) -> (f64, f64, f64, f64) {
 /// a separate piece of stock. When the plug is glued into the pocket and the
 /// top sanded flush, the inlay design is revealed.
 pub fn inlay_toolpaths(polygon: &Polygon2, params: &InlayParams) -> InlayResult {
-    let never_cancel = || false;
-    // infallible: cancel closure always returns false, so Cancelled is unreachable
-    #[allow(clippy::expect_used)]
-    inlay_toolpaths_with_cancel(polygon, params, &never_cancel)
-        .expect("non-cancellable inlay toolpaths should never be cancelled")
+    crate::interrupt::run_uncancellable(|cancel| {
+        inlay_toolpaths_with_cancel(polygon, params, cancel)
+    })
 }
 
 /// Cancellable variant of [`inlay_toolpaths`]
