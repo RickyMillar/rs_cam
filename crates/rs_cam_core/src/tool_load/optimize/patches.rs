@@ -8,8 +8,6 @@
 //! debug logs and MCP outcomes.
 
 use crate::compute::catalog::{OperationConfig, OperationParams, OperationType};
-#[allow(unused_imports)]
-use OperationParams as _;
 
 use super::axes::SearchAxis;
 

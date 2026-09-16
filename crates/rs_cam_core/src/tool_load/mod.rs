@@ -413,7 +413,6 @@ pub struct ToolpathLoadContext<'a> {
     /// locality classifier (G17 D6) and the span-aware steady-state
     /// gate filter (G17 D7). `None` when no annotated toolpath is
     /// available; classifiers degrade to engagement-only labels.
-    #[allow(clippy::struct_field_names)]
     pub spans: Option<&'a [crate::trace::toolpath_spans::Span]>,
     /// `DrillOp` payload for drill toolpaths — `Some` for
     /// `OperationType::{Drill, AlignmentPinDrill}`, `None` otherwise.
