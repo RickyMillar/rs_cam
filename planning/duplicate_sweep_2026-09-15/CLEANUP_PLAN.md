@@ -60,7 +60,7 @@ two disagree.
 
 ## Phase 0 — tooling (no product code)
 
-- [ ] **C00 — sweep-script test filter** (I05 item 3, review gap).
+- [x] **C00 — sweep-script test filter** (I05 item 3, review gap).
   `scripts/duplicate_sweep.py`: drop chunks inside inline `#[cfg(test)]`
   modules so the re-run verification (C99) is meaningful. Owner: any.
 
