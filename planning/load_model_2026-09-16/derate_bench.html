@@ -200,42 +200,52 @@ tr.base td:first-child{color:var(--ink-2)}
   font-style:normal; letter-spacing:0; text-transform:none;
   font-size:12px; font-weight:400; color:var(--ink-3);
 }
-.proto-screen{padding:26px 26px 22px; max-width:760px}
+.proto-screen{padding:26px 26px 22px; max-width:780px}
 .proto-head{
   font-family:var(--display); font-weight:600;
   font-size:clamp(22px,3.4vw,31px); line-height:1.12;
-  margin:0 0 10px; letter-spacing:.01em; text-wrap:balance;
+  margin:0 0 8px; letter-spacing:.01em; text-wrap:balance;
 }
-.proto-sub{margin:0 0 22px; color:var(--ink-2); font-size:14.5px; max-width:60ch}
+.proto-sub{margin:0 0 24px; color:var(--ink-2); font-size:14.5px; max-width:62ch}
 .proto-sub b{color:var(--ink)}
-.lim{
-  display:grid; grid-template-columns:1fr auto auto;
-  gap:10px 14px; align-items:center;
-  padding:11px 0; border-top:1px solid var(--rule-2);
-}
+
+/* one row per limit, all the same shape: a value, a bar from 0 to the limit */
+.lim{padding:14px 0; border-top:1px solid var(--rule-2)}
 .lim:last-of-type{border-bottom:1px solid var(--rule-2)}
-.lim-name{font-weight:500; font-size:14px}
-.lim-name small{display:block; color:var(--ink-3); font-weight:400; font-size:12px; margin-top:1px}
+.lim-top{
+  display:flex; flex-wrap:wrap; gap:4px 12px;
+  align-items:baseline; justify-content:space-between;
+}
+.lim-name{font-weight:500; font-size:14.5px}
+.lim-i{
+  display:inline-block; margin-left:6px; width:15px; height:15px;
+  line-height:15px; text-align:center; border-radius:50%;
+  font-size:10px; font-weight:700; font-style:normal;
+  background:var(--track); color:var(--ink-3); cursor:help;
+  vertical-align:1px;
+}
+.lim-i:hover, .lim-i:focus-visible{background:var(--accent); color:var(--panel)}
 .lim-val{
-  font-family:var(--mono); font-size:13.5px; font-variant-numeric:tabular-nums;
-  color:var(--ink-2); white-space:nowrap;
+  font-family:var(--mono); font-size:13.5px;
+  font-variant-numeric:tabular-nums; color:var(--ink-2); white-space:nowrap;
 }
 .lim-val b{color:var(--ink)}
-.tag{
-  font-size:10.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
-  padding:3px 8px; border-radius:2px; white-space:nowrap;
+.lim-bar{
+  height:6px; background:var(--track); border-radius:3px;
+  margin-top:10px; position:relative; overflow:hidden;
 }
-.t-measured{background:var(--ok-soft); color:var(--ok)}
-.t-calc{background:var(--accent-soft); color:var(--accent)}
-.t-thumb{background:var(--warn-soft); color:var(--warn)}
-.t-none{background:var(--unknown-soft); color:var(--unknown)}
-.lim.binds{background:var(--warn-soft); margin:0 -12px; padding-left:12px; padding-right:12px}
-.proto-foot{margin:20px 0 0; font-size:13px; color:var(--ink-2); line-height:1.55; max-width:64ch}
-@media (max-width:640px){
-  .proto-screen{padding:20px 16px 18px}
-  .lim{grid-template-columns:1fr auto; }
-  .lim .tag{grid-column:2}
+.lim-bar i{position:absolute; inset:0 auto 0 0; border-radius:3px}
+.lim-bar.unset{
+  background:repeating-linear-gradient(135deg,
+    var(--track) 0 5px, transparent 5px 10px);
+  border:1px solid var(--rule);
 }
+.lim-scale{
+  display:flex; justify-content:space-between;
+  margin-top:5px; font-family:var(--mono); font-size:10.5px; color:var(--ink-3);
+}
+.proto-foot{margin:22px 0 0; font-size:13px; color:var(--ink-2); line-height:1.55; max-width:66ch}
+@media (max-width:640px){ .proto-screen{padding:20px 16px 18px} }
 
 .chartwrap{padding:16px 16px 10px}
 canvas{width:100%; height:270px; display:block}
@@ -897,93 +907,123 @@ function drawHelix(){
 
 // ---- the UX prototype ----
 //
-// Every limit the engine applies, each carrying how much we actually KNOW
-// about it. That is the whole proposal: the confidence tag, not the number.
+// Every limit is the SAME kind of thing: a value, and a bar from zero to its
+// limit. No badge says one is better evidenced than another — a limit is a
+// limit, and the operator wants to know how close they are to each.
 //
-// The measurement it exists to answer: across 54 recipes the rigidity cap
-// set the depth on 100 % and the power constraint bound on 4 %. The only
-// limit that ever fires is the one with no source behind it, and today's UI
-// gives the operator no way to tell that apart from a measured one.
-//
-// RUBBING_FLOOR is feeds::RUBBING_FLOOR_MM_TOOTH. DOC_ROUGHING is
-// machine.rs RigidityProfile::doc_roughing_factor for the generic router.
+// Where a limit came from lives behind the ⓘ, in Simplified Technical
+// English, and it names the SETTING that produced it. A limit the operator
+// cannot trace to a setting is a limit they cannot act on.
 const RUBBING_FLOOR = 0.025;
 const DOC_ROUGHING = 0.20;
 
-function renderPrototype(m){
+function limitRows(m){
   const r = model(P);
   const avail = availableKw(m, P.rpm);
-  const rigidityCap = DOC_ROUGHING * D;
+  const machineName = m === "vfd" ? "Shapeoko 1.5 kW VFD" : "Makita router";
   const thrust = usableThrust(P.gantry);
+  const g = GANTRIES[P.gantry];
 
-  // `used` is the share of the limit consumed. `null` means we cannot say,
-  // which is a state the UI must be able to show without faking a number.
-  const limits = [
-    { name:"Chip thickness",  note:"too thin and the tooth rubs instead of slicing",
-      value:`${P.fz.toFixed(4)} mm/tooth`, floor:true,
-      used: RUBBING_FLOOR / Math.max(P.fz, 1e-9),
-      tag:"measured", cls:"t-measured",
-      why:"Vendor chipload rows, plus a force model fitted to published wood cutting data and corroborated against two independent datasets." },
-    { name:"Spindle power", note:"what the motor can turn",
-      value:`${r.powerKw.toFixed(3)} of ${avail.toFixed(3)} kW`,
-      used: r.powerKw / Math.max(avail, 1e-9),
-      tag:"measured", cls:"t-measured",
-      why:"The machine's own power curve, and a cutting model whose coefficient lands within about 10 % of two wood datasets." },
-    { name:"Tool deflection", note:"how far the cutter bends off line",
-      value:`${r.sideForce.toFixed(1)} N side load`, used:null,
-      tag:"calculated", cls:"t-calc",
-      why:"A beam model on the real tool geometry — diameter, stickout, core fraction. Sound physics, no bench validation." },
-    { name:"Machine rigidity", note:"how deep this machine is trusted to cut",
-      value:`${P.ap.toFixed(2)} of ${rigidityCap.toFixed(2)} mm depth`,
-      used: P.ap / Math.max(rigidityCap, 1e-9),
-      tag:"rule of thumb", cls:"t-thumb",
-      why:"0.20 × tool diameter. No source. It knows nothing about the material, the tool, the spindle or how the part is held — and it sets the depth on essentially every recipe." },
-    { name:"Gantry push", note:"the force before the drive skips a step",
-      value:`${r.gantry.toFixed(1)} N`, used:null,
-      tag:"not checked", cls:"t-none",
-      why:`Nothing in the engine asks this. The ${thrust.toFixed(0)} N figure elsewhere on this page is research, not a rating — no manufacturer publishes one.` },
+  return [
+    {
+      name: "Chip thickness", unit: "mm/tooth",
+      value: RUBBING_FLOOR, limit: P.fz,
+      shown: `${P.fz.toFixed(4)} of ${RUBBING_FLOOR.toFixed(3)} floor`,
+      from: "Material and tool",
+      why: "The chip must be thicker than the rubbing floor. Below the floor "
+         + "the tooth rubs and does not cut. The floor is 0.025 mm per tooth. "
+         + "It comes from the material and from the matched vendor row. "
+         + "To move this limit, change the material or the tool.",
+    },
+    {
+      name: "Spindle power", unit: "kW",
+      value: r.powerKw, limit: avail,
+      shown: `${r.powerKw.toFixed(3)} of ${avail.toFixed(3)}`,
+      from: "Machine profile",
+      why: `The machine profile sets this limit. The spindle gives `
+         + `${avail.toFixed(3)} kW at ${P.rpm.toFixed(0)} rpm, after the `
+         + `safety factor. The machine is the ${machineName}. `
+         + `To move this limit, change the machine or the spindle speed.`,
+    },
+    {
+      name: "Tool side force", unit: "N",
+      value: r.sideForce, limit: null,
+      shown: `${r.sideForce.toFixed(1)}`,
+      from: "Tool geometry",
+      why: "The tool geometry sets this force. The force bends the cutter "
+         + "away from the line of the cut. This page does not set a limit "
+         + "for it. The engine calculates a limit from the tool diameter, "
+         + "the stickout and the material. To move the force, change the "
+         + "tool or the depth of cut.",
+    },
+    {
+      name: "Depth of cut", unit: "mm",
+      value: P.ap, limit: DOC_ROUGHING * D,
+      shown: `${P.ap.toFixed(2)} of ${(DOC_ROUGHING * D).toFixed(2)}`,
+      from: "Machine profile and tool",
+      why: `The machine profile sets this limit. It is ${DOC_ROUGHING.toFixed(2)} `
+         + `times the tool diameter, which is ${(DOC_ROUGHING * D).toFixed(2)} mm `
+         + `for this Ø${D.toFixed(0)} mm tool. The value is a rule of thumb. It `
+         + `has no published source. It does not change with the material, the `
+         + `spindle or the workholding. To move this limit, change the machine `
+         + `or the tool diameter.`,
+    },
+    {
+      name: "Gantry push", unit: "N",
+      value: r.gantry, limit: null,
+      shown: `${r.gantry.toFixed(1)}`,
+      from: "Not set by any setting",
+      why: `No setting sets this limit. The engine does not calculate the `
+         + `force the gantry can push. The ${thrust.toFixed(0)} N figure used `
+         + `elsewhere on this page comes from research on a ${g.label}. It is `
+         + `not a rating. No manufacturer publishes one. A measurement on the `
+         + `machine would set it.`,
+    },
   ];
+}
 
-  // The binding limit is the one closest to its own ceiling, among those we
-  // can actually evaluate. A limit we cannot evaluate must never be ranked
-  // as comfortable.
-  const scored = limits.filter(l => l.used !== null);
-  const worst = scored.reduce((a, b) => (b.used > a.used ? b : a), scored[0]);
-  const pct = Math.round(worst.used * 100);
+function renderPrototype(m){
+  const rows = limitRows(m);
+  const scored = rows.filter(l => l.limit !== null && l.limit > 0);
+  const used = l => l.value / l.limit;
+  const worst = scored.reduce((a, b) => (used(b) > used(a) ? b : a), scored[0]);
+  const pct = Math.round(used(worst) * 100);
+  const unset = rows.length - scored.length;
 
-  el("#p-head").textContent = worst.used > 1
-    ? `This cut asks for more than your machine gives.`
-    : `This cut runs at ${pct} % of what your machine can give.`;
+  el("#p-head").textContent = used(worst) > 1
+    ? "This cut is past a limit."
+    : `This cut runs at ${pct} % of its closest limit.`;
 
-  const unknown = limits.filter(l => l.used === null).length;
   el("#p-sub").innerHTML =
-    `<b>${worst.name}</b> is the limit that binds${worst.used > 1
-      ? `, and the cut is over it by ${Math.round((worst.used - 1) * 100)} %`
-      : ""}. ` +
-    (worst.tag === "rule of thumb"
-      ? `It is a <b>rule of thumb</b>, not a measurement — so the number that decides your cut is the one we know least about.`
-      : `That limit is ${worst.tag}.`) +
-    ` ${unknown} of ${limits.length} limits cannot be evaluated at all.`;
+    `<b>${worst.name}</b> is the closest limit${used(worst) > 1
+      ? `. The cut is past it by ${Math.round((used(worst) - 1) * 100)} %` : ""}. ` +
+    `${unset} of ${rows.length} limits are not set, so this page cannot say ` +
+    `how close the cut is to them.`;
 
-  el("#p-limits").innerHTML = limits.map(l => {
-    const state = l.used === null ? "—"
-      : l.floor ? (l.used > 1 ? `${Math.round(l.used * 100)} % — too thin` : "clear")
-      : `${Math.round(l.used * 100)} %`;
-    return `<div class="lim${l === worst ? " binds" : ""}" title="${l.why}">
-      <span class="lim-name">${l.name}<small>${l.note}</small></span>
-      <span class="lim-val">${l.value} &nbsp;<b>${state}</b></span>
-      <span class="tag ${l.cls}">${l.tag}</span>
+  el("#p-limits").innerHTML = rows.map(l => {
+    const has = l.limit !== null && l.limit > 0;
+    const f = has ? used(l) : 0;
+    const colour = !has ? "var(--ink-3)"
+      : f > 1 ? "var(--over)" : f > 0.85 ? "var(--warn)" : "var(--ok)";
+    return `<div class="lim">
+      <div class="lim-top">
+        <span class="lim-name">${l.name}<i class="lim-i" tabindex="0"
+          title="${l.why.replace(/"/g, "&quot;")}">i</i></span>
+        <span class="lim-val">${l.shown} ${l.unit} &nbsp;<b>${
+          has ? `${Math.round(f * 100)} %` : "limit not set"}</b></span>
+      </div>
+      <div class="lim-bar${has ? "" : " unset"}">${
+        has ? `<i style="width:${Math.min(100, f * 100)}%;background:${colour}"></i>` : ""}</div>
+      <div class="lim-scale"><span>0</span><span>${l.from}</span><span>limit</span></div>
     </div>`;
   }).join("");
 
   el("#p-foot").innerHTML =
-    `Every row carries how much we actually know about it, and that is the whole ` +
-    `proposal — no new physics, just honesty about which numbers are earned. ` +
-    `Across 54 recipes the <b>rule of thumb set the depth on 100 %</b> and the ` +
-    `measured power limit bound on 4 %. An operator who can see that asks the ` +
-    `right question; one shown five bare numbers cannot. Hover any row for its ` +
-    `backing. Two of the five become <em>measured</em> after half an hour with a ` +
-    `luggage scale and a dial indicator.`;
+    `Every limit is drawn the same way, from zero to its own limit, so they can ` +
+    `be compared at a glance. Hover the <b>ⓘ</b> on any row to read what sets ` +
+    `that limit and which setting moves it.<br><br>` +
+    `A limit that is not set shows no bar. It is never drawn as a comfortable ` +
+    `one. Two of the five are in that state today.`;
 }
 
 el("#machine").addEventListener("change", render);
