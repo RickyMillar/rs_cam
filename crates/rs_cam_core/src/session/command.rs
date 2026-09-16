@@ -642,7 +642,9 @@ macro_rules! for_each_command {
             (Command, ReplaceSetupsAndToolpaths, "replace_setups_and_toolpaths",
              ReplaceSetupsAndToolpathsArgs, Effects,
              Surfaces {
-                 gui: Reach::Reached,
+                 gui: Reach::Skip(
+                     "C01 deleted the legacy project reader, the only GUI caller",
+                 ),
                  mcp: Reach::Skip(
                      "no MCP tool replaces the whole plan; the wire edits one row at a time",
                  ),
@@ -652,7 +654,9 @@ macro_rules! for_each_command {
              }),
             (Command, SetProjectName, "set_project_name", SetProjectNameArgs, Effects,
              Surfaces {
-                 gui: Reach::Reached,
+                 gui: Reach::Skip(
+                     "C01 deleted the legacy project reader; a load takes the name from the file",
+                 ),
                  mcp: Reach::Skip(
                      "no MCP tool renames the project; the wire has no such mutation",
                  ),

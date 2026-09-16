@@ -148,7 +148,78 @@ const MCP_SOURCES: &[&str] = &[
     "src/compute/worker/gen_parity_p0_tests.rs",
 ];
 
-/// The view sources, comments stripped, excluding the MCP wire files.
+/// The index of the ITEM line a `#[cfg(test)]` attribute introduces.
+///
+/// Such an attribute is followed by an `#[allow(...)]` block that runs
+/// over several lines, and the module declaration sits after it. The walk
+/// consumes whole attributes by counting their brackets, then stops on
+/// the first line that opens an item.
+fn item_line_after_attributes(lines: &[&str], attribute: usize) -> Option<usize> {
+    let mut index = attribute + 1;
+    let mut depth = 0_i64;
+    while index < lines.len() {
+        let text = lines[index].trim();
+        if depth == 0 && !text.is_empty() && !text.starts_with("#[") {
+            return Some(index);
+        }
+        let opens = text.matches('(').count() + text.matches('[').count();
+        let closes = text.matches(')').count() + text.matches(']').count();
+        depth += opens as i64;
+        depth -= closes as i64;
+        index += 1;
+    }
+    None
+}
+
+/// One source text with every inline `#[cfg(test)] mod … { … }` removed.
+///
+/// The block runs from the attribute to the line that closes it, found by
+/// counting braces. The crate is `cargo fmt` clean, so the count is not
+/// confused by a brace inside a string literal at this depth.
+///
+/// **A construction inside a test module is not a caller.** This rule
+/// comes from `production_writes_go_through_apply_wp15a`, whose scan is
+/// the sibling of this one. The two disagreed until C01: `app/export.rs`
+/// builds `Command::SetProjectName` in its own test module, and that was
+/// read here as a GUI caller while wp15a read it as none. A row cannot be
+/// both reached and skipped, so both scans now apply the same rule. The
+/// helper is duplicated because the two are separate test binaries.
+fn without_inline_test_modules(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut index = 0_usize;
+    while index < lines.len() {
+        let line = lines[index];
+        let opens_a_test_module = line.trim() == "#[cfg(test)]"
+            && item_line_after_attributes(&lines, index).is_some_and(|item| {
+                let item_text = lines[item].trim();
+                item_text.starts_with("mod ") && item_text.ends_with('{')
+            });
+        if !opens_a_test_module {
+            kept.push(line);
+            index += 1;
+            continue;
+        }
+        let mut depth = 0_i64;
+        let mut opened = false;
+        while index < lines.len() {
+            let current = lines[index];
+            depth += current.matches('{').count() as i64;
+            if current.contains('{') {
+                opened = true;
+            }
+            depth -= current.matches('}').count() as i64;
+            index += 1;
+            if opened && depth <= 0 {
+                break;
+            }
+        }
+    }
+    kept.join("\n")
+}
+
+/// The view sources, comments and inline test modules stripped, excluding
+/// the MCP wire files.
 fn gui_source_text() -> String {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let skip: Vec<PathBuf> = MCP_SOURCES.iter().map(|r| root.join(r)).collect();
@@ -157,7 +228,11 @@ fn gui_source_text() -> String {
         .into_iter()
         .filter(|p| !skip.contains(p))
         .inspect(|_| kept += 1)
-        .map(|p| strip_comments(&std::fs::read_to_string(&p).unwrap_or_default()))
+        .map(|p| {
+            without_inline_test_modules(&strip_comments(
+                &std::fs::read_to_string(&p).unwrap_or_default(),
+            ))
+        })
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
