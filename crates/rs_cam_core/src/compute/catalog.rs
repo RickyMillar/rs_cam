@@ -926,11 +926,6 @@ impl OperationConfig {
         self.spec().default_auto_regen
     }
 
-    pub fn ui_style(&self) -> (UiOperationFamily, UiProcessRole) {
-        let spec = self.spec();
-        (spec.ui_family, spec.ui_process_role)
-    }
-
     pub fn feeds_style(&self) -> (FeedsOperationFamily, PassRole) {
         let spec = self.spec();
         (spec.feeds_family, spec.feeds_pass_role)
@@ -2669,7 +2664,7 @@ impl OperationConfig {
     }
 }
 
-/// Stock context for [`OperationConfig::new_default_with_ctx`] and
+/// Stock context for
 /// [`OperationConfig::apply_stock_defaults`]. Carries the few stock
 /// dimensions a sensible per-op depth default needs to know about.
 #[derive(Debug, Clone, Copy)]
@@ -2701,17 +2696,6 @@ impl NewDefaultCtx {
 }
 
 impl OperationConfig {
-    /// Construct a fresh op config and immediately apply stock-aware
-    /// depth defaults via [`Self::apply_stock_defaults`]. This is the
-    /// preferred constructor at production sites (controller/MCP) where
-    /// the session's stock is in scope; tests can keep using
-    /// [`Self::new_default`].
-    pub fn new_default_with_ctx(op_type: OperationType, ctx: &NewDefaultCtx) -> Self {
-        let mut cfg = Self::new_default(op_type);
-        cfg.apply_stock_defaults(ctx);
-        cfg
-    }
-
     /// Apply stock-aware overrides to depth-style fields that the
     /// per-config `Default` impl can't see (it has no stock context).
     /// Roadmap B.1–B.3: drop_cutter `min_z`, face `depth`, pocket /

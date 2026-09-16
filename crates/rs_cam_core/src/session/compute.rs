@@ -5771,18 +5771,6 @@ impl ProjectSession {
         let diag = self.diagnostics_with_evidence(evidence);
         crate::diagnostics::diagnose_project_diagnostics(&diag)
     }
-
-    /// Export diagnostics as JSON files to an output directory.
-    #[instrument(skip(self))]
-    pub fn export_diagnostics_json(&self, output_dir: &Path) -> Result<(), SessionError> {
-        std::fs::create_dir_all(output_dir)?;
-        let diag = self.diagnostics();
-        let json = serde_json::to_string_pretty(&diag)
-            .map_err(|e| SessionError::Export(format!("Failed to serialize diagnostics: {e}")))?;
-        let path = output_dir.join("summary.json");
-        std::fs::write(&path, json)
-            .map_err(|e| SessionError::Export(format!("Failed to write {}: {e}", path.display())))
-    }
 }
 
 /// Outcome of scanning every toolpath's air-cut percentage against its

@@ -1854,11 +1854,6 @@ impl ProjectSession {
         self.setups.iter().enumerate().find(|(_, s)| s.id == id)
     }
 
-    /// Collect all toolpath semantic IDs.
-    pub fn all_toolpath_ids(&self) -> Vec<ToolpathId> {
-        self.toolpath_configs.iter().map(|tc| tc.id).collect()
-    }
-
     /// Mutable access to all toolpath configs.
     ///
     /// Prefer named mutation methods: [`set_toolpath_enabled()`](Self::set_toolpath_enabled),

@@ -19,7 +19,7 @@ and are NOT touched by this programme's fix waves.
 
 | rank | id | tier | cost | claim | wave |
 |---|---|---|---|---|---|
-| 1 | Q1 | A | M | `SuggestContext.model_bbox` is never populated by any surface, so the runtime-sanity stepover back-off never fires; `first_model_bbox` exists in the same file as the Suggest call | W1 |
+| 1 | Q1 | A | M | `SuggestContext.model_bbox` is never populated by any surface, so the runtime-sanity stepover back-off never fires; `first_model_bbox` exists in the same file as the Suggest call | W1 ✅ a98b7fca (two doors; remainder recorded below) |
 | 2 | L1 | A | S | the load-time dressup migration rewrites a v3 operator value and reports only to `tracing::info!`; must push a `ProjectLoadWarning` like its sibling `parse_tool_type` | W1 ✅ 625a4b6d |
 | 3 | L2 (report arm) | A | S | `stock_to_leave_radial` is inert in the planner but still `ParamDef::required` and emits no `DeprecatedDialFinding` — the exact hole that machinery exists to close | W1 ✅ dbc00a15 (deleted, not reported) |
 | 4 | L3 + L4 (+D1) | B | S | `_legacy_feeds_auto` and the top-level `toolpaths` pre-setup reader read pre-v3 shapes that `check_format_version` already refuses; delete both | W1 (ruled: delete L4 too) ✅ 9c720ea3 |
