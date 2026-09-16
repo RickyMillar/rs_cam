@@ -2281,6 +2281,12 @@ fn modulate_annotated_against_trace(
     // zero-engagement short-circuits.
     let mut radial_num = vec![0.0_f64; move_count];
     let mut axial_num = vec![0.0_f64; move_count];
+    // T-11: the absolute axial engagement in mm, carried alongside the
+    // fraction. `axial_num` holds a fraction of the tool's FLUTE LENGTH, so
+    // it cannot be turned back into a depth without the flute length. The
+    // dexel already measures the millimetres; carry them rather than
+    // re-derive them.
+    let mut axial_mm_num = vec![0.0_f64; move_count];
     let mut weight_sum = vec![0.0_f64; move_count];
     for sample in &cut_trace.samples {
         if sample.toolpath_id != toolpath_id {
@@ -2307,6 +2313,8 @@ fn modulate_annotated_against_trace(
             // there, `0.0` legitimately means "air" (see its doc).
             axial_num[sample.move_index] +=
                 sample.engagement.axial_doc_fraction.unwrap_or(0.0).max(0.0) * w;
+            // T-11: the absolute reading, same time weighting.
+            axial_mm_num[sample.move_index] += sample.axial_doc_mm.max(0.0) * w;
             weight_sum[sample.move_index] += w;
         }
     }
@@ -2324,6 +2332,9 @@ fn modulate_annotated_against_trace(
             #[allow(clippy::indexing_slicing)]
             // SAFETY: i < move_count by construction.
             let axial = axial_num[i] / w;
+            #[allow(clippy::indexing_slicing)]
+            // SAFETY: i < move_count by construction.
+            let axial_mm = axial_mm_num[i] / w;
             // Apply the planner engagement on lateral clearing /
             // finishing cuts only — entry helix, ramp, and linking
             // moves are not the spiral's flat-load wraps, so they
@@ -2350,6 +2361,7 @@ fn modulate_annotated_against_trace(
             PerMoveEngagement {
                 radial_woc_fraction: radial,
                 axial_doc_fraction: axial,
+                axial_doc_mm: axial_mm,
             }
         })
         .collect();

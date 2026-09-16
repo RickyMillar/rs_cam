@@ -277,6 +277,10 @@ fn modulation_skips_lead_in_lead_out_moves() {
         .map(|_| PerMoveEngagement {
             radial_woc_fraction: 0.5,
             axial_doc_fraction: 0.5,
+            // T-11: both caps are `None` here, so the depth is never read.
+            // `1.0` is what the pre-T-11 `nominal 2.0 x fraction 0.5`
+            // returned, kept so this lead-in test cannot shift.
+            axial_doc_mm: 1.0,
         })
         .collect();
     let kinematics = MachineKinematics::generic_wood_router();

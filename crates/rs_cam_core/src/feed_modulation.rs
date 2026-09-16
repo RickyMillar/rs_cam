@@ -162,9 +162,22 @@ pub struct PerMoveEngagement {
     /// leaves its feed at the commanded value).
     pub radial_woc_fraction: f64,
     /// Mean axial DOC fraction across the move's cutting samples.
-    /// Used by the constrained-max solver to derive deflection +
-    /// power limits.
+    ///
+    /// **This is a fraction of the tool's FLUTE LENGTH**, not of the
+    /// operation's depth per pass — see `dexel_stock::simulation`, which
+    /// writes it as `axial_engagement_mm / flute_length`. It is kept for
+    /// the zero-engagement short-circuits, which only test it against
+    /// zero. **Do not multiply it by a depth**; T-11 did exactly that and
+    /// read every cut about ten times too shallow. Use
+    /// [`Self::axial_doc_mm`] for the depth.
     pub axial_doc_fraction: f64,
+    /// T-11 (2026-09-16) — mean axial engagement in MILLIMETRES across
+    /// the move's cutting samples, straight off `CutSample::axial_doc_mm`.
+    ///
+    /// The dexel measures this directly, so nothing needs to re-derive it.
+    /// `0.0` means the move had no measured cutting engagement, which the
+    /// solver treats the same way it treats an air move.
+    pub axial_doc_mm: f64,
 }
 
 /// Optional deflection-cap inputs for the constrained-max solver.
@@ -571,21 +584,56 @@ fn max_safe_feed_for_move(
     }
 }
 
+/// The axial depth this move actually cuts, in mm.
+///
+/// ## T-11 (2026-09-16) — what this used to compute, and why it was wrong
+///
+/// It used to return `ctx.nominal_axial_doc_mm * engagement.axial_doc_fraction`.
+/// That multiplied a depth in mm by a fraction of a DIFFERENT quantity: the
+/// dexel writes `axial_doc_fraction` as `axial_engagement_mm / flute_length`
+/// (`dexel_stock::simulation`), not as a fraction of the nominal depth. The
+/// product was `mm x (mm / flute_length)`, which is not a depth.
+///
+/// The error factor was `flute_length / nominal_axial_doc_mm`, and it always
+/// read too SHALLOW, because a pass is always shallower than the flute. A
+/// 2 mm pass on a tool with a 25 mm flute came out at 0.16 mm, 12.5x low.
+/// This value scales both the deflection cap and the power cap in the
+/// constrained-max solver, so both were far too permissive and the modulator
+/// handed out feeds the machine should not have been given. Those feeds reach
+/// the post-sim power verdict through `trace.predicted_feeds`
+/// (`session::compute` stamps them), so the defect also broke the very
+/// gate-versus-modulation agreement that stamping exists to create.
+///
+/// Every fixture pinned `axial_doc_fraction` at `1.0` — the single value at
+/// which the wrong expression returns the right answer — so no test could
+/// fail on it. See `planning/TECH_DEBT_REGISTER.md` T-11.
+///
+/// It now reads the millimetre measurement the dexel already took, which is
+/// what `Engagement::axial_doc_fraction`'s own doc comment directs a caller
+/// to do.
 fn effective_axial_mm(engagement: PerMoveEngagement, ctx: &ModulationContext<'_>) -> f64 {
-    let axial = ctx.nominal_axial_doc_mm.max(0.0);
-    if axial > 0.0 {
-        axial * engagement.axial_doc_fraction.clamp(0.0, 1.0)
-    } else {
-        // No nominal axial signal (no cutting samples): fall back to the
-        // power-cap's engagement diameter as a proxy DOC. The deflection
-        // cap carries no diameter now (it works off compliance + the
-        // affine coefficients), so only `power_inputs` contributes here.
-        engagement.axial_doc_fraction.clamp(0.0, 1.0)
-            * ctx
-                .power_inputs
-                .map(|p| p.engagement_diameter_mm)
-                .unwrap_or(0.0)
+    let measured = engagement.axial_doc_mm;
+    if measured > 0.0 {
+        return measured;
     }
+    // No per-move measurement. Fall back to the toolpath's nominal depth,
+    // which `session::compute` derives as the maximum measured axial
+    // engagement over the toolpath's cutting samples — a real reading, not a
+    // fabricated one.
+    let nominal = ctx.nominal_axial_doc_mm.max(0.0);
+    if nominal > 0.0 {
+        return nominal;
+    }
+    // Neither a per-move nor a per-toolpath axial signal exists, which means
+    // the trace carried no cutting samples for this path. Returning the
+    // engagement diameter here is a proxy, not a measurement: it keeps the
+    // pre-T-11 behaviour for legacy and analytical traces rather than
+    // silently disabling both caps, and the caller treats a zero as an air
+    // move. The deflection cap carries no diameter (it works off compliance
+    // plus the affine coefficients), so only `power_inputs` contributes.
+    ctx.power_inputs
+        .map(|p| p.engagement_diameter_mm)
+        .unwrap_or(0.0)
 }
 
 /// F-036 — "target band-mid" per-move feed (legacy heuristic).
@@ -899,6 +947,9 @@ mod tests {
         let engagement = PerMoveEngagement {
             radial_woc_fraction: 1.0,
             axial_doc_fraction: 1.0,
+            // T-11: the depth is now read in mm, not derived from the
+            // fraction. 2.0 is what `nominal x fraction` meant here.
+            axial_doc_mm: 2.0,
         };
         // Large kinematic cap so deflection is the binding constraint.
         let (feed_cap, binding) = max_safe_feed_for_move(engagement, &ctx, 1.0e9);
@@ -963,14 +1014,23 @@ mod tests {
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
         ];
         let k = shapeoko();
@@ -991,14 +1051,23 @@ mod tests {
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
         ];
         let k = shapeoko();
@@ -1024,10 +1093,16 @@ mod tests {
             PerMoveEngagement {
                 radial_woc_fraction: 0.1,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 0.1,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
         ];
         let k = shapeoko();
@@ -1059,6 +1134,9 @@ mod tests {
         let engagement = PerMoveEngagement {
             radial_woc_fraction: 0.01,
             axial_doc_fraction: 1.0,
+            // T-11: the depth is now read in mm, not derived from the
+            // fraction. 2.0 is what `nominal x fraction` meant here.
+            axial_doc_mm: 2.0,
         };
         // Light engagement inflates the chip-thinning target well past
         // the cap, so the clamp — not the natural target — decides the
@@ -1086,10 +1164,16 @@ mod tests {
             PerMoveEngagement {
                 radial_woc_fraction: 0.1,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 0.1,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
         ];
         let k = shapeoko();
@@ -1113,14 +1197,23 @@ mod tests {
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             },
         ];
         let k = shapeoko();
@@ -1146,6 +1239,9 @@ mod tests {
             .map(|_| PerMoveEngagement {
                 radial_woc_fraction: 0.1,
                 axial_doc_fraction: 1.0,
+                // T-11: the depth is now read in mm, not derived from the
+                // fraction. 2.0 is what `nominal x fraction` meant here.
+                axial_doc_mm: 2.0,
             })
             .collect();
         let k = shapeoko();
@@ -1187,11 +1283,17 @@ mod tests {
                         PerMoveEngagement {
                             radial_woc_fraction: 1.0,
                             axial_doc_fraction: 1.0,
+                            // T-11: the depth is now read in mm, not derived from the
+                            // fraction. 2.0 is what `nominal x fraction` meant here.
+                            axial_doc_mm: 2.0,
                         }
                     } else {
                         PerMoveEngagement {
                             radial_woc_fraction: 0.2,
                             axial_doc_fraction: 1.0,
+                            // T-11: the depth is now read in mm, not derived from the
+                            // fraction. 2.0 is what `nominal x fraction` meant here.
+                            axial_doc_mm: 2.0,
                         }
                     }
                 })

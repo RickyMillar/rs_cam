@@ -95,6 +95,9 @@ fn constrained_max_emits_max_feed_when_chipload_max_binds() {
                 PerMoveEngagement {
                     radial_woc_fraction: 1.0,
                     axial_doc_fraction: 1.0,
+                    // T-11: the depth is now read in mm, not derived from the
+                    // fraction. 2.0 is what `nominal x fraction` meant here.
+                    axial_doc_mm: 2.0,
                 }
             }
         })
@@ -134,6 +137,9 @@ fn constrained_max_raises_feed_when_under_band_on_light_engagement() {
                 PerMoveEngagement {
                     radial_woc_fraction: 0.25,
                     axial_doc_fraction: 1.0,
+                    // T-11: the depth is now read in mm, not derived from the
+                    // fraction. 2.0 is what `nominal x fraction` meant here.
+                    axial_doc_mm: 2.0,
                 }
             }
         })
@@ -170,6 +176,9 @@ fn constrained_max_binds_on_deflection_for_long_tool() {
                 PerMoveEngagement {
                     radial_woc_fraction: 1.0,
                     axial_doc_fraction: 1.0,
+                    // T-11: the depth is now read in mm, not derived from the
+                    // fraction. 2.0 is what `nominal x fraction` meant here.
+                    axial_doc_mm: 2.0,
                 }
             }
         })
@@ -218,6 +227,9 @@ fn constrained_max_binds_on_power_for_low_rpm() {
                 PerMoveEngagement {
                     radial_woc_fraction: 1.0,
                     axial_doc_fraction: 1.0,
+                    // T-11: the depth is now read in mm, not derived from the
+                    // fraction. 2.0 is what `nominal x fraction` meant here.
+                    axial_doc_mm: 2.0,
                 }
             }
         })
@@ -276,6 +288,9 @@ fn aggressiveness_below_one_emits_proportional_feed() {
                 PerMoveEngagement {
                     radial_woc_fraction: 1.0,
                     axial_doc_fraction: 1.0,
+                    // T-11: the depth is now read in mm, not derived from the
+                    // fraction. 2.0 is what `nominal x fraction` meant here.
+                    axial_doc_mm: 2.0,
                 }
             }
         })
@@ -309,11 +324,17 @@ fn modulation_summary_matches_per_move_binding_distribution() {
                 PerMoveEngagement {
                     radial_woc_fraction: 1.0,
                     axial_doc_fraction: 1.0,
+                    // T-11: the depth is now read in mm, not derived from the
+                    // fraction. 2.0 is what `nominal x fraction` meant here.
+                    axial_doc_mm: 2.0,
                 }
             } else {
                 PerMoveEngagement {
                     radial_woc_fraction: 0.3,
                     axial_doc_fraction: 1.0,
+                    // T-11: the depth is now read in mm, not derived from the
+                    // fraction. 2.0 is what `nominal x fraction` meant here.
+                    axial_doc_mm: 2.0,
                 }
             }
         })

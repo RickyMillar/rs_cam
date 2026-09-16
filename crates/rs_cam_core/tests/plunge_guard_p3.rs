@@ -79,6 +79,11 @@ fn engaged() -> PerMoveEngagement {
     PerMoveEngagement {
         radial_woc_fraction: 1.0,
         axial_doc_fraction: 1.0,
+        // T-11: this fixture disables both caps (`deflection_inputs` and
+        // `power_inputs` are `None`), so the depth is never read. `0.0`
+        // is what the pre-T-11 expression returned here, kept so this
+        // plunge-guard test cannot shift on a depth it does not test.
+        axial_doc_mm: 0.0,
     }
 }
 
