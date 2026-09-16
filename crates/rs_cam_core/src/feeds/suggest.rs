@@ -1160,6 +1160,9 @@ impl FieldApplyPreview {
     /// Write this one field into `operation` and stamp its provenance. Nothing
     /// else on the operation moves — that is the whole contract of a per-field
     /// pill, and `pill_writes_clamped_value_g_pillclamp.rs` pins it.
+    ///
+    /// Test door:
+    /// `crates/rs_cam_core/tests/pill_writes_clamped_value_g_pillclamp.rs`.
     pub fn write_to(
         &self,
         operation: &mut OperationConfig,
@@ -1269,6 +1272,10 @@ pub fn preview_field_applies(
 }
 
 /// One field of [`preview_field_applies`].
+///
+/// Test door:
+/// `crates/rs_cam_core/tests/pill_writes_clamped_value_g_pillclamp.rs` and
+/// `crates/rs_cam_viz/tests/apply_contract_a3.rs`.
 // SAFETY: one field of the dry run, so it carries the whole
 // `preview_field_applies` argument list plus the field selector.
 #[allow(clippy::too_many_arguments)]

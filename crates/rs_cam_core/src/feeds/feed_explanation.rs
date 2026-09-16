@@ -262,6 +262,8 @@ impl LutBandStage {
     /// The unit FAMILY, without the vendor-convention qualifier — equal
     /// to [`CommandedStage::unit`], which is what makes
     /// [`FeedExplanation::commanded_over_band_max`] a legitimate ratio.
+    ///
+    /// Test door: `crates/rs_cam_core/tests/feed_explanation_record_t1.rs`.
     #[must_use]
     pub const fn unit_family(&self) -> &'static str {
         ADVANCE_PER_TOOTH
@@ -386,6 +388,8 @@ impl FeedExplanation {
     ///
     /// This is a *prediction of* stage 4, never a replacement for it:
     /// the record always reports the gate's own observation as stage 4.
+    ///
+    /// Test door: `crates/rs_cam_core/tests/feed_explanation_record_t1.rs`.
     #[must_use]
     pub fn predicted_gate_observation_mm(&self) -> Option<f64> {
         let feed_ratio = self.achieved_feed.median_ratio.unwrap_or(1.0);
