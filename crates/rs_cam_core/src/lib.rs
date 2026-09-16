@@ -68,6 +68,8 @@ pub mod gcode;
 pub mod gcode_validator;
 pub mod geo;
 pub mod geom_cache;
+// The walk grid `tier_map` and `reach_map` share; private to the crate.
+mod grid;
 pub mod grid2;
 pub mod grid_field;
 pub mod horizontal_finish;
@@ -82,6 +84,8 @@ pub mod machine_library;
 pub mod marching_squares;
 pub mod material;
 pub mod measurement;
+// The bounded mesh-identity memo the map caches share; private to the crate.
+mod memo;
 pub mod mesh;
 pub mod metrology;
 pub mod monotone_cells;

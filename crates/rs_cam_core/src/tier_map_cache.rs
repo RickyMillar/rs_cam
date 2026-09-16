@@ -83,9 +83,10 @@
 //! `tests/tier_map_cache_t3.rs`.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::interrupt::CancelCheck;
+use crate::memo::MeshMemo;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tier_map::{
     ResidualTreatment, TierLadder, TierMap, TierMapError, TierMapParams, compute_tier_map,
@@ -127,29 +128,13 @@ impl TierMapKey {
     }
 }
 
-struct Entry {
-    /// Liveness-checked identity key — see the module doc on why this is a
-    /// `Weak` and not a raw pointer.
-    mesh: Weak<TriangleMesh>,
-    key: TierMapKey,
-    map: Arc<TierMap>,
-}
+/// The table itself is [`crate::memo::MeshMemo`]: `Weak` mesh identity,
+/// dead-mesh sweep and oldest-first eviction at [`CAPACITY`].
+type Table = MeshMemo<TierMapKey, Arc<TierMap>, CAPACITY>;
 
-impl Entry {
-    /// True when this entry is for `mesh` *and* `mesh` is the same live
-    /// object it was created for.
-    fn matches(&self, mesh: &Arc<TriangleMesh>, key: &TierMapKey) -> bool {
-        self.key == *key
-            && self
-                .mesh
-                .upgrade()
-                .is_some_and(|live| Arc::ptr_eq(&live, mesh))
-    }
-}
-
-fn table() -> &'static Mutex<Vec<Entry>> {
-    static TABLE: OnceLock<Mutex<Vec<Entry>>> = OnceLock::new();
-    TABLE.get_or_init(|| Mutex::new(Vec::new()))
+fn table() -> &'static Mutex<Table> {
+    static TABLE: OnceLock<Mutex<Table>> = OnceLock::new();
+    TABLE.get_or_init(|| Mutex::new(Table::new()))
 }
 
 /// Cumulative counters for the memo, since process start.
@@ -181,7 +166,7 @@ pub fn reset_stats() {
 /// Number of live entries. Test hook for the capacity bound.
 #[must_use]
 pub fn cache_len() -> usize {
-    table().lock().map_or(0, |t| t.len())
+    table().lock().map_or(0, |t| t.entry_count())
 }
 
 /// Drop every entry. Not needed for correctness — a stale entry is
@@ -248,33 +233,16 @@ pub fn peek_tier_map(
 }
 
 fn get(mesh: &Arc<TriangleMesh>, key: &TierMapKey) -> Option<Arc<TierMap>> {
-    let table = table().lock().ok()?;
-    table
-        .iter()
-        .find(|entry| entry.matches(mesh, key))
-        .map(|entry| Arc::clone(&entry.map))
+    table().lock().ok()?.get(mesh, key)
 }
 
+/// Insert or replace the map for this (mesh identity, key). The memo sweeps
+/// entries whose mesh is gone, so a closed model's map is released at the
+/// next plan rather than held for the life of the process.
 fn put(mesh: &Arc<TriangleMesh>, key: TierMapKey, map: Arc<TierMap>) {
-    let Ok(mut table) = table().lock() else {
-        return;
-    };
-    // Sweep entries whose mesh is gone, so a closed model's map is released
-    // at the next plan rather than held for the life of the process.
-    table.retain(|entry| entry.mesh.strong_count() > 0);
-
-    if let Some(entry) = table.iter_mut().find(|entry| entry.matches(mesh, &key)) {
-        entry.map = map;
-        return;
+    if let Ok(mut table) = table().lock() {
+        table.put(mesh, key, map);
     }
-    while table.len() >= CAPACITY {
-        table.remove(0);
-    }
-    table.push(Entry {
-        mesh: Arc::downgrade(mesh),
-        key,
-        map,
-    });
 }
 
 #[cfg(test)]

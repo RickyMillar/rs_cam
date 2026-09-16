@@ -107,7 +107,7 @@ two disagree.
   collision fix). Fold `debug_trace.rs:530-568` and `semantic_trace.rs:1205-1243`
   onto it. Keep the prune contract. Risk: low-med. Gate:
   `cargo test -p rs_cam_core -q` + artifact-writing sentries.
-- [ ] **C06 — `walk_rows` drop-site answer** (I02, review condition).
+- [x] **C06 — `walk_rows` drop-site answer** (I02, review condition).
   Before merging tier/reach `walk_rows`: determine whether reach's
   different drop site is a latent perf regression. If yes, fix in reach
   first; if no, merge with `walk_rows(Option<&AtomicU64>)` keeping
@@ -169,7 +169,7 @@ maintain.
   `ToolpathBoundary` + 3 map sites; (c) rewrite viz inline test fixtures with
   `..SimulationCutSample::test_fixture()`. Risk: low-med. Gate:
   `cargo test -p rs_cam_viz -q`.
-- [ ] **C23 — core memo module** (I02). `crates/rs_cam_core/src/memo.rs`
+- [x] **C23 — core memo module** (I02). `crates/rs_cam_core/src/memo.rs`
   (`MeshMemo<K, V, const CAPACITY>`); migrate `tier_map_cache`,
   `reach_map_cache`, `geom_cache`, `finish_surface_cache` (4th member found
   by I02). Keep per-cache CAPACITY/key shapes (deliberate). Shared

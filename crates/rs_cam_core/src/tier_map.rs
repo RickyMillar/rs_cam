@@ -128,20 +128,17 @@
 //! # Cancellation
 //!
 //! The walk polls the cancel token **once per grid row**, in *both* passes —
-//! `walk_rows` is the one site that does it, so the granularity cannot
-//! drift between the two arms or between the parallel and serial builds.
+//! [`crate::grid::walk_rows`] is the one site that does it, so the
+//! granularity cannot drift between the two arms, between the parallel and
+//! serial builds, or between this map and [`crate::reach_map`].
 //! `rest_field`'s walk has no polling at all, which is why a rest analysis on
 //! a big board cannot be interrupted; this one can.
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
-
 use crate::dropcutter::point_is_over_mesh_xy;
-#[cfg(not(feature = "parallel"))]
-use crate::interrupt::check_cancel;
+use crate::grid::{GridSpec, walk_rows};
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{CLPoint, MillingCutter, drop_cutter_can_contact};
@@ -735,23 +732,14 @@ fn classify_cell(
     (label, reference_z as f32, drops)
 }
 
-/// The grid a walk lays over the mesh bbox. Same row-major convention as
-/// [`TierMap`], which it becomes.
-#[derive(Debug, Clone, Copy)]
-struct GridSpec {
-    nx: usize,
-    ny: usize,
-    origin_x: f64,
-    origin_y: f64,
-    cell_mm: f64,
-}
-
+/// The ladder's own [`GridSpec`] constructor. The grid type and its
+/// accessors live in [`crate::grid`]; the padding rule is this module's.
 impl GridSpec {
     /// Pad past the mesh bbox by the finest tool's envelope plus the margin,
     /// so the outer ring of cells is genuinely non-contact and a consumer's
     /// distance transform has somewhere to start. Same rule as
     /// `rest_field::detect_rest_valleys`.
-    fn new(mesh: &TriangleMesh, ladder: &TierLadder<'_>, params: &TierMapParams) -> Self {
+    fn for_ladder(mesh: &TriangleMesh, ladder: &TierLadder<'_>, params: &TierMapParams) -> Self {
         let cell_mm = params.cell_mm.max(1e-3);
         let finest_envelope = ladder.finest().map_or(0.0, |t| t.envelope_radius_mm());
         let pad_mm = finest_envelope + params.margin_mm.max(0.0);
@@ -768,68 +756,6 @@ impl GridSpec {
             cell_mm,
         }
     }
-
-    fn cell_count(&self) -> usize {
-        self.nx * self.ny
-    }
-
-    fn x_of(&self, col: usize) -> f64 {
-        self.origin_x + col as f64 * self.cell_mm
-    }
-
-    fn y_of(&self, row: usize) -> f64 {
-        self.origin_y + row as f64 * self.cell_mm
-    }
-}
-
-/// Run `row_fn` over every grid row and concatenate the results, polling
-/// `cancel` **once per row** and folding each row's drop count into
-/// [`DROP_CALLS`].
-///
-/// The one site both passes and both build configurations share, so the
-/// cancellation granularity the module doc promises cannot drift between them.
-fn walk_rows<T: Send>(
-    grid: &GridSpec,
-    cancel: &(dyn CancelCheck + Sync),
-    row_fn: impl Fn(usize) -> (Vec<T>, u64) + Sync,
-) -> Result<Vec<T>, TierMapError> {
-    let cells: Vec<T> = {
-        #[cfg(feature = "parallel")]
-        {
-            use std::sync::atomic::AtomicBool;
-            let cancelled = AtomicBool::new(false);
-            let collected: Vec<T> = (0..grid.ny)
-                .into_par_iter()
-                .flat_map(|row| {
-                    // One poll per row — the granularity `rest_field`'s
-                    // walk lacks entirely.
-                    if cancelled.load(Ordering::Relaxed) || cancel.cancelled() {
-                        cancelled.store(true, Ordering::Relaxed);
-                        return Vec::new();
-                    }
-                    let (cells, drops) = row_fn(row);
-                    DROP_CALLS.fetch_add(drops, Ordering::Relaxed);
-                    cells
-                })
-                .collect();
-            if cancelled.load(Ordering::Relaxed) {
-                return Err(TierMapError::Cancelled);
-            }
-            collected
-        }
-        #[cfg(not(feature = "parallel"))]
-        {
-            let mut collected: Vec<T> = Vec::with_capacity(grid.cell_count());
-            for row in 0..grid.ny {
-                check_cancel(cancel)?;
-                let (cells, drops) = row_fn(row);
-                DROP_CALLS.fetch_add(drops, Ordering::Relaxed);
-                collected.extend(cells);
-            }
-            collected
-        }
-    };
-    Ok(cells)
 }
 
 /// [`ResidualTreatment::Raw`]: one pass, one index query per cell.
@@ -854,7 +780,9 @@ fn raw_walk(
             .collect();
         (cells, drops)
     };
-    Ok(walk_rows(grid, cancel, row_cells)?.into_iter().unzip())
+    Ok(walk_rows(grid, cancel, Some(&DROP_CALLS), row_cells)?
+        .into_iter()
+        .unzip())
 }
 
 /// Central finite difference of the reference-drop plane at `(row, col)`,
@@ -947,7 +875,7 @@ fn compensated_walk(
             .collect();
         (cells, drops)
     };
-    let reference = walk_rows(grid, cancel, reference_row)?;
+    let reference = walk_rows(grid, cancel, Some(&DROP_CALLS), reference_row)?;
 
     let tier_row = |row: usize| -> (Vec<u8>, u64) {
         let y = grid.y_of(row);
@@ -976,7 +904,7 @@ fn compensated_walk(
             .collect();
         (cells, drops)
     };
-    let labels = walk_rows(grid, cancel, tier_row)?;
+    let labels = walk_rows(grid, cancel, Some(&DROP_CALLS), tier_row)?;
 
     let finest_z = reference.iter().map(|z| *z as f32).collect();
     Ok((labels, finest_z))
@@ -1001,7 +929,7 @@ pub fn compute_tier_map(
     params: &TierMapParams,
     cancel: &(dyn CancelCheck + Sync),
 ) -> Result<TierMap, TierMapError> {
-    let grid = GridSpec::new(mesh, ladder, params);
+    let grid = GridSpec::for_ladder(mesh, ladder, params);
     let (labels, finest_z) = match params.treatment {
         ResidualTreatment::Raw => raw_walk(mesh, index, ladder, params, &grid, cancel)?,
         ResidualTreatment::SlopeCompensated => {

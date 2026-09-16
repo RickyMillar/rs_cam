@@ -97,9 +97,10 @@
 //! per-toolpath rebuilding shows up as eight.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::compute::transform::SetupTransformInfo;
+use crate::memo::MeshMemo;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 
@@ -138,37 +139,23 @@ impl TransformKey {
     }
 }
 
+/// The three memoised products of one mesh. They are built independently, so
+/// an entry can hold any subset of them.
+#[derive(Default)]
 struct Entry {
-    /// Liveness-checked identity key — see the module doc on why this is a
-    /// `Weak` and not a raw pointer.
-    mesh: Weak<TriangleMesh>,
     index: Option<Arc<SpatialIndex>>,
     silhouette: Option<Arc<Vec<Polygon2>>>,
     transformed: Option<(TransformKey, Arc<TriangleMesh>)>,
 }
 
-impl Entry {
-    fn new(mesh: &Arc<TriangleMesh>) -> Self {
-        Self {
-            mesh: Arc::downgrade(mesh),
-            index: None,
-            silhouette: None,
-            transformed: None,
-        }
-    }
+/// The table itself is [`crate::memo::MeshMemo`]: `Weak` mesh identity (the
+/// module doc above argues why that is not a raw pointer), dead-mesh sweep
+/// and oldest-first eviction at [`CAPACITY`]. The key is the mesh alone.
+type Table = MeshMemo<(), Entry, CAPACITY>;
 
-    /// True when this entry is for `mesh` *and* `mesh` is the same live
-    /// object it was created for.
-    fn matches(&self, mesh: &Arc<TriangleMesh>) -> bool {
-        self.mesh
-            .upgrade()
-            .is_some_and(|live| Arc::ptr_eq(&live, mesh))
-    }
-}
-
-fn table() -> &'static Mutex<Vec<Entry>> {
-    static TABLE: OnceLock<Mutex<Vec<Entry>>> = OnceLock::new();
-    TABLE.get_or_init(|| Mutex::new(Vec::new()))
+fn table() -> &'static Mutex<Table> {
+    static TABLE: OnceLock<Mutex<Table>> = OnceLock::new();
+    TABLE.get_or_init(|| Mutex::new(Table::new()))
 }
 
 /// Cumulative counters for the memo, since process start.
@@ -222,7 +209,7 @@ pub fn reset_stats() {
 /// Number of live entries. Test hook for the capacity bound.
 #[must_use]
 pub fn cache_len() -> usize {
-    table().lock().map_or(0, |t| t.len())
+    table().lock().map_or(0, |t| t.entry_count())
 }
 
 /// Drop every entry. Not needed for correctness — a stale entry is
@@ -241,34 +228,19 @@ pub fn clear() {
 /// other threads behind. Two threads racing the same miss both build, and the
 /// second insert wins; the results are equal by construction, so the race
 /// costs one redundant build and nothing else.
-fn get<T>(mesh: &Arc<TriangleMesh>, read: impl Fn(&Entry) -> Option<T>) -> Option<T> {
-    let table = table().lock().ok()?;
-    table
-        .iter()
-        .find(|entry| entry.matches(mesh))
-        .and_then(read)
+fn get<T>(mesh: &Arc<TriangleMesh>, read: impl FnOnce(&Entry) -> Option<T>) -> Option<T> {
+    table().lock().ok()?.read(mesh, &(), read)
 }
 
 /// Insert or update the entry for `mesh` via `write`, evicting as needed.
+///
+/// The memo sweeps entries whose mesh is gone. That is what keeps a closed
+/// model's index (and its transformed copy) from being retained for the life
+/// of the process.
 fn put(mesh: &Arc<TriangleMesh>, write: impl FnOnce(&mut Entry)) {
-    let Ok(mut table) = table().lock() else {
-        return;
-    };
-    // Sweep entries whose mesh is gone. This is what keeps a closed model's
-    // index (and its transformed copy) from being retained for the life of
-    // the process.
-    table.retain(|entry| entry.mesh.strong_count() > 0);
-
-    if let Some(entry) = table.iter_mut().find(|entry| entry.matches(mesh)) {
-        write(entry);
-        return;
+    if let Ok(mut table) = table().lock() {
+        table.write(mesh, (), Entry::default, write);
     }
-    while table.len() >= CAPACITY {
-        table.remove(0);
-    }
-    let mut entry = Entry::new(mesh);
-    write(&mut entry);
-    table.push(entry);
 }
 
 /// [`SpatialIndex::build_auto`] over `mesh`, built at most once per mesh.

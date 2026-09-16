@@ -131,8 +131,7 @@ use rayon::prelude::*;
 
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
-#[cfg(not(feature = "parallel"))]
-use crate::interrupt::check_cancel;
+use crate::grid::{GridSpec, walk_rows};
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
@@ -918,22 +917,14 @@ fn plane_z_at(tri: &crate::geo::Triangle, x: f64, y: f64) -> Option<f64> {
     z.is_finite().then_some(z)
 }
 
-/// The grid a walk lays over the mesh bbox. Same row-major convention as
-/// [`ReachMap`], which it becomes.
-#[derive(Debug, Clone, Copy)]
-struct GridSpec {
-    nx: usize,
-    ny: usize,
-    origin_x: f64,
-    origin_y: f64,
-    cell_mm: f64,
-}
-
+/// This map's own [`GridSpec`] constructors. The grid type and its
+/// accessors live in [`crate::grid`]; the padding and coarsening rules are
+/// this module's.
 impl GridSpec {
     /// Pad past the mesh bbox by the cutter's envelope plus the margin, so
     /// the min-filter kernel has source cells all round the part, then
     /// coarsen until the grid fits [`MAX_REACH_CELLS`].
-    fn new(mesh: &TriangleMesh, cutter: &dyn MillingCutter, params: &ReachMapParams) -> Self {
+    fn for_reach(mesh: &TriangleMesh, cutter: &dyn MillingCutter, params: &ReachMapParams) -> Self {
         let pad_mm = cutter.envelope_radius_mm().max(0.0) + params.margin_mm.max(0.0);
         let bbox = &mesh.bbox;
         let span_x = (bbox.max.x - bbox.min.x).max(0.0);
@@ -968,55 +959,6 @@ impl GridSpec {
             origin_y: min_y - margin_cells as f64 * cell_mm,
             cell_mm,
         }
-    }
-
-    fn x_of(&self, col: usize) -> f64 {
-        self.origin_x + col as f64 * self.cell_mm
-    }
-
-    fn y_of(&self, row: usize) -> f64 {
-        self.origin_y + row as f64 * self.cell_mm
-    }
-}
-
-/// Run `row_fn` over every grid row and concatenate the results, polling
-/// `cancel` once per row.
-///
-/// One site for both build configurations, so the cancellation granularity
-/// cannot drift between them — the same rule
-/// [`crate::tier_map`]'s `walk_rows` keeps.
-fn walk_rows<T: Send>(
-    grid: &GridSpec,
-    cancel: &(dyn CancelCheck + Sync),
-    row_fn: impl Fn(usize) -> Vec<T> + Sync,
-) -> Result<Vec<T>, Cancelled> {
-    #[cfg(feature = "parallel")]
-    {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        let cancelled = AtomicBool::new(false);
-        let collected: Vec<T> = (0..grid.ny)
-            .into_par_iter()
-            .flat_map(|row| {
-                if cancelled.load(Ordering::Relaxed) || cancel.cancelled() {
-                    cancelled.store(true, Ordering::Relaxed);
-                    return Vec::new();
-                }
-                row_fn(row)
-            })
-            .collect();
-        if cancelled.load(Ordering::Relaxed) {
-            return Err(Cancelled);
-        }
-        Ok(collected)
-    }
-    #[cfg(not(feature = "parallel"))]
-    {
-        let mut collected: Vec<T> = Vec::with_capacity(grid.nx * grid.ny);
-        for row in 0..grid.ny {
-            check_cancel(cancel)?;
-            collected.extend(row_fn(row));
-        }
-        Ok(collected)
     }
 }
 
@@ -1441,7 +1383,10 @@ fn drop_and_surface_planes(
             })
             .collect()
     };
-    Ok(walk_rows(grid, cancel, row_fn)?.into_iter().unzip())
+    // A reach row has no drop count of its own to report.
+    Ok(walk_rows(grid, cancel, None, |row| (row_fn(row), 0))?
+        .into_iter()
+        .unzip())
 }
 
 /// The CL plane read at an arbitrary XY by bilinear interpolation, in grid
@@ -1640,7 +1585,10 @@ fn gap_plane(
             })
             .collect()
     };
-    Ok(walk_rows(grid, cancel, row_fn)?.into_iter().unzip())
+    // A reach row has no drop count of its own to report.
+    Ok(walk_rows(grid, cancel, None, |row| (row_fn(row), 0))?
+        .into_iter()
+        .unzip())
 }
 
 /// The per-cell floor at the grid cell nearest `(x, y)`, or `NaN` off the
@@ -1792,7 +1740,7 @@ pub fn compute_reach_map(
     params: &ReachMapParams,
     cancel: &(dyn CancelCheck + Sync),
 ) -> Result<ReachMap, Cancelled> {
-    let grid = GridSpec::new(mesh, cutter, params);
+    let grid = GridSpec::for_reach(mesh, cutter, params);
     let (tip_z, surface_z) = drop_and_surface_planes(mesh, index, cutter, &grid, cancel)?;
     let kernel = profile_kernel(cutter, grid.cell_mm);
     let rim_erosion_mm = cutter.envelope_radius_mm().max(0.0);

@@ -31,10 +31,13 @@
 //!   `-0.0` and `0.0` are distinct and `NaN` is an exact bit pattern rather
 //!   than a value that never equals itself.
 //!
-//! The tool and model **ids** are deliberately NOT in the key: they are
-//! display payload stamped onto the answer
-//! ([`crate::reach_map::ReachMap::with_ids`]), and two different ids over the
-//! same mesh and the same shape have the same reach.
+//! The tool and model **ids** ARE in the key, and have been since the file's
+//! first commit. They are display payload stamped onto the answer
+//! ([`crate::reach_map::ReachMap::with_ids`]), so two different ids over the
+//! same mesh and the same shape describe the same reach — but a hit serves
+//! the stamped answer, so leaving the ids out would hand one tool's map back
+//! carrying the other tool's id. The extra miss is the safe side, and
+//! `tests/reach_map_p5.rs` pins the stamped ids.
 //!
 //! # What bounds it
 //!
@@ -45,9 +48,10 @@
 //! probing tolerances must not evict what the viewport is drawing.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::interrupt::{CancelCheck, Cancelled};
+use crate::memo::MeshMemo;
 use crate::mesh::TriangleMesh;
 use crate::reach_map::{ReachMap, ReachMapRequest, compute_reach_map};
 use crate::tool_shape_key::ToolShapeKey;
@@ -80,27 +84,13 @@ impl ReachMapKey {
     }
 }
 
-struct Entry {
-    /// Liveness-checked identity key — see the module doc on why this is a
-    /// `Weak` and not a raw pointer.
-    mesh: Weak<TriangleMesh>,
-    key: ReachMapKey,
-    map: Arc<ReachMap>,
-}
+/// The table itself is [`crate::memo::MeshMemo`]: `Weak` mesh identity,
+/// dead-mesh sweep and oldest-first eviction at [`CAPACITY`].
+type Table = MeshMemo<ReachMapKey, Arc<ReachMap>, CAPACITY>;
 
-impl Entry {
-    fn matches(&self, mesh: &Arc<TriangleMesh>, key: &ReachMapKey) -> bool {
-        self.key == *key
-            && self
-                .mesh
-                .upgrade()
-                .is_some_and(|live| Arc::ptr_eq(&live, mesh))
-    }
-}
-
-fn table() -> &'static Mutex<Vec<Entry>> {
-    static TABLE: OnceLock<Mutex<Vec<Entry>>> = OnceLock::new();
-    TABLE.get_or_init(|| Mutex::new(Vec::new()))
+fn table() -> &'static Mutex<Table> {
+    static TABLE: OnceLock<Mutex<Table>> = OnceLock::new();
+    TABLE.get_or_init(|| Mutex::new(Table::new()))
 }
 
 /// Cumulative counters for the memo, since process start.
@@ -132,7 +122,7 @@ pub fn reset_stats() {
 /// Number of live entries. Test hook for the capacity bound.
 #[must_use]
 pub fn cache_len() -> usize {
-    table().lock().map_or(0, |t| t.len())
+    table().lock().map_or(0, |t| t.entry_count())
 }
 
 /// Drop every entry. Not needed for correctness — a stale entry is
@@ -189,31 +179,14 @@ pub fn cached_reach_map(
 }
 
 fn get(mesh: &Arc<TriangleMesh>, key: &ReachMapKey) -> Option<Arc<ReachMap>> {
-    let table = table().lock().ok()?;
-    table
-        .iter()
-        .find(|entry| entry.matches(mesh, key))
-        .map(|entry| Arc::clone(&entry.map))
+    table().lock().ok()?.get(mesh, key)
 }
 
+/// Insert or replace the map for this (mesh identity, key). The memo sweeps
+/// entries whose mesh is gone, so a closed model's map is released at the
+/// next selection rather than held for the life of the process.
 fn put(mesh: &Arc<TriangleMesh>, key: ReachMapKey, map: Arc<ReachMap>) {
-    let Ok(mut table) = table().lock() else {
-        return;
-    };
-    // Sweep entries whose mesh is gone, so a closed model's map is released
-    // at the next selection rather than held for the life of the process.
-    table.retain(|entry| entry.mesh.strong_count() > 0);
-
-    if let Some(entry) = table.iter_mut().find(|entry| entry.matches(mesh, &key)) {
-        entry.map = map;
-        return;
+    if let Ok(mut table) = table().lock() {
+        table.put(mesh, key, map);
     }
-    while table.len() >= CAPACITY {
-        table.remove(0);
-    }
-    table.push(Entry {
-        mesh: Arc::downgrade(mesh),
-        key,
-        map,
-    });
 }
