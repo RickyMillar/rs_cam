@@ -312,27 +312,6 @@ pub fn transform_mesh(
     setup.transform_info(stock).apply_to_mesh(mesh)
 }
 
-/// Transform a StockMesh's vertices from global frame to a setup's local frame.
-/// Modifies the mesh in place — vertices are stored as flat [x, y, z, ...] f32.
-#[allow(clippy::indexing_slicing)] // stride-3 loop bounded by mesh.vertices.len()
-pub fn transform_heightmap_mesh(
-    mesh: &mut rs_cam_core::simulation::StockMesh,
-    setup: &SetupFrame,
-    stock: &StockConfig,
-) {
-    for i in (0..mesh.vertices.len()).step_by(3) {
-        let p = rs_cam_core::geo::P3::new(
-            mesh.vertices[i] as f64,
-            mesh.vertices[i + 1] as f64,
-            mesh.vertices[i + 2] as f64,
-        );
-        let local = setup.transform_point(p, stock);
-        mesh.vertices[i] = local.x as f32;
-        mesh.vertices[i + 1] = local.y as f32;
-        mesh.vertices[i + 2] = local.z as f32;
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {

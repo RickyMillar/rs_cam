@@ -62,7 +62,6 @@ use std::time::Instant;
 use crate::compute::{ComputeBackend, ComputeLane, LaneSnapshot, ThreadedComputeBackend};
 use crate::error::VizError;
 use crate::state::AppState;
-use crate::state::simulation::SimulationState;
 use crate::ui::AppEvent;
 
 /// How long a reach-map request may sit in `Computing` over an idle, empty
@@ -264,20 +263,6 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub fn state_and_events_mut(&mut self) -> (&mut AppState, &mut Vec<AppEvent>) {
         (&mut self.state, &mut self.events)
-    }
-
-    pub fn simulation_viewport_and_events_mut(
-        &mut self,
-    ) -> (
-        &mut SimulationState,
-        &mut crate::state::viewport::ViewportState,
-        &mut Vec<AppEvent>,
-    ) {
-        (
-            &mut self.state.simulation,
-            &mut self.state.viewport,
-            &mut self.events,
-        )
     }
 
     pub fn events_mut(&mut self) -> &mut Vec<AppEvent> {

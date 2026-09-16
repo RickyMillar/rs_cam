@@ -28,14 +28,6 @@ impl Default for SpanKindFilter {
     }
 }
 
-impl SpanKindFilter {
-    /// True iff every kind is visible — lets the renderer skip the per-move
-    /// classify cost in the common case.
-    pub fn all_visible(&self) -> bool {
-        self.show_entry && self.show_lead_out && self.show_link_bridge && self.show_dressup
-    }
-}
-
 /// Per-toolpath move-type visibility. Defaults to both-visible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolpathMoveVisibility {

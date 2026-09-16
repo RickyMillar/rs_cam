@@ -11,7 +11,6 @@ use std::sync::Arc;
 use rs_cam_core::feeds::FeedsResult;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::reach_map::ReachMap;
-use rs_cam_core::session::ToolpathConfig;
 
 use super::job::{PostConfig, PostFormat};
 use super::toolpath::ToolpathId;
@@ -54,17 +53,6 @@ impl ToolpathRuntime {
             debug_trace_path: None,
         }
     }
-
-    /// Clear all computed/cached state (e.g. after param change or on load).
-    pub fn clear_runtime(&mut self) {
-        self.status = ComputeStatus::Pending;
-        self.result = None;
-        self.stale_since = None;
-        self.feeds_result = None;
-        self.debug_trace = None;
-        self.semantic_trace = None;
-        self.debug_trace_path = None;
-    }
 }
 
 // ── Per-setup state (W9 / P-2) ────────────────────────────────────────
@@ -77,17 +65,6 @@ impl ToolpathRuntime {
 // `SetupData` and are persisted; the Setup properties panel already had
 // `&mut SetupData` in hand, so it writes straight through to the session
 // and there is no overlay left to keep in sync.
-
-// ── Combined view for UI code ─────────────────────────────────────────
-
-/// A read-only combined view of a toolpath's config (from session) and
-/// runtime state (from GUI overlay).  Used by UI drawing code.
-pub struct ToolpathView<'a> {
-    pub config: &'a ToolpathConfig,
-    pub runtime: &'a ToolpathRuntime,
-    /// Index in the session's `toolpath_configs` vec.
-    pub index: usize,
-}
 
 // ── Per-tool reach map overlay (P5) ───────────────────────────────────
 
