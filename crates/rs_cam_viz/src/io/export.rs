@@ -1,7 +1,7 @@
 use rs_cam_core::gcode::{
-    ControllerCompensation, GcodePhase, GcodeSetupPhase, PhaseTool, ToolLoadExportPolicy,
-    WizardOverlay, export_gcode_multi_setup_with_overlay_checked,
-    export_gcode_phases_with_overlay_checked, replace_rapids_with_feed,
+    GcodePhase, GcodeSetupPhase, PhaseTool, ToolLoadExportPolicy, WizardOverlay,
+    export_gcode_multi_setup_with_overlay_checked, export_gcode_phases_with_overlay_checked,
+    replace_rapids_with_feed,
 };
 use rs_cam_core::gcode_validator::{MachineSafety, Severity, validate_machine_safety};
 use rs_cam_core::session::ProjectSession;
@@ -41,7 +41,6 @@ use crate::state::freshness::{FreshnessState, freshness_at};
 use crate::state::job::ToolConfig;
 use crate::state::runtime::{GuiState, StaleResultPolicy};
 use crate::state::simulation::SimulationState;
-use crate::state::toolpath::{CompensationType, OperationConfig, ProfileSide};
 
 /// Pull the wizard's per-job overrides into a `WizardOverlay` for the
 /// emit step. The default overlay (no fields set) is byte-identical to
@@ -338,25 +337,8 @@ fn gcode_phase_for_session_toolpath<'a>(
         post_gcode: tc.post_gcode.as_deref(),
         tool: tool.map(phase_tool_for_export),
         coolant: tc.coolant,
-        controller_compensation: controller_comp_for_session_toolpath(tc),
+        controller_compensation: rs_cam_core::gcode::controller_compensation_for(tc),
     })
-}
-
-fn controller_comp_for_session_toolpath(
-    tc: &rs_cam_core::session::ToolpathConfig,
-) -> Option<ControllerCompensation> {
-    if let OperationConfig::Profile(ref cfg) = tc.operation
-        && cfg.compensation == CompensationType::InControl
-    {
-        let dir = match (cfg.side, cfg.climb) {
-            (ProfileSide::Outside, true) => ControllerCompensation::Right,
-            (ProfileSide::Outside, false) => ControllerCompensation::Left,
-            (ProfileSide::Inside, true) => ControllerCompensation::Left,
-            (ProfileSide::Inside, false) => ControllerCompensation::Right,
-        };
-        return Some(dir);
-    }
-    None
 }
 
 /// The cut trace lives on viz `SimulationState`, not on `session.simulation`.

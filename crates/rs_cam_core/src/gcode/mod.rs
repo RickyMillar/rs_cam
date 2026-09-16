@@ -371,7 +371,7 @@ pub fn export_gcode_checked(
                 coolant: tc.coolant,
                 pre_gcode: tc.pre_gcode.as_deref(),
                 post_gcode: tc.post_gcode.as_deref(),
-                controller_compensation: controller_comp_for_project_toolpath(tc),
+                controller_compensation: controller_compensation_for(tc),
             })
         })
         .collect();
@@ -799,7 +799,17 @@ fn refuse_inch_units(post: &PostDefinition, overlay: &WizardOverlay) -> Result<(
     Ok(())
 }
 
-fn controller_comp_for_project_toolpath(
+/// The controller-side cutter compensation a toolpath asks for.
+///
+/// A Profile operation that compensates `InControl` emits G41 or G42.
+/// The side and the cut direction together decide which one. Every
+/// other operation, and a Profile that compensates in the computer,
+/// returns `None`.
+///
+/// **This is the one mapping.** The viz export door called its own copy
+/// until 2026-09-16, so two doors could emit different words for one
+/// toolpath.
+pub fn controller_compensation_for(
     tc: &crate::session::ToolpathConfig,
 ) -> Option<ControllerCompensation> {
     use crate::compute::{CompensationType, OperationConfig};
@@ -1032,6 +1042,83 @@ mod tests {
     use crate::geo::P3;
     use crate::ids::ToolpathId;
     use crate::toolpath::Toolpath;
+
+    /// A toolpath that runs `operation`, with every other field neutral.
+    fn toolpath_running(
+        operation: crate::compute::OperationConfig,
+    ) -> crate::session::ToolpathConfig {
+        crate::session::ToolpathConfig {
+            id: ToolpathId(0),
+            name: "Test Op".to_owned(),
+            enabled: true,
+            operation,
+            dressups: crate::compute::config::DressupConfig::default(),
+            heights: crate::compute::config::HeightsConfig::default(),
+            tool_id: 0,
+            model_id: 0,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: crate::compute::config::BoundaryConfig::default(),
+            boundary_inherit: true,
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            stock_source: crate::compute::config::StockSource::Fresh,
+            coolant: CoolantMode::Off,
+            face_selection: None,
+            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            planner_origin: None,
+        }
+    }
+
+    /// The side and the cut direction pick G41 or G42. Cutter comp in the
+    /// computer, and every non-Profile operation, ask the controller for
+    /// nothing.
+    #[test]
+    fn controller_compensation_follows_the_side_and_the_direction() {
+        use crate::compute::{CompensationType, OperationConfig, PocketConfig, ProfileConfig};
+        use crate::profile::ProfileSide;
+
+        let profile = |side: ProfileSide, climb: bool, compensation: CompensationType| {
+            toolpath_running(OperationConfig::Profile(ProfileConfig {
+                side,
+                climb,
+                compensation,
+                ..ProfileConfig::default()
+            }))
+        };
+        let in_control = CompensationType::InControl;
+
+        assert_eq!(
+            controller_compensation_for(&profile(ProfileSide::Outside, true, in_control)),
+            Some(ControllerCompensation::Right),
+        );
+        assert_eq!(
+            controller_compensation_for(&profile(ProfileSide::Outside, false, in_control)),
+            Some(ControllerCompensation::Left),
+        );
+        assert_eq!(
+            controller_compensation_for(&profile(ProfileSide::Inside, true, in_control)),
+            Some(ControllerCompensation::Left),
+        );
+        assert_eq!(
+            controller_compensation_for(&profile(ProfileSide::Inside, false, in_control)),
+            Some(ControllerCompensation::Right),
+        );
+        assert!(
+            controller_compensation_for(&profile(
+                ProfileSide::Outside,
+                true,
+                CompensationType::InComputer
+            ))
+            .is_none()
+        );
+        assert!(
+            controller_compensation_for(&toolpath_running(OperationConfig::Pocket(
+                PocketConfig::default()
+            )))
+            .is_none()
+        );
+    }
 
     /// "No load evaluation performed" report — what callers without a
     /// `ProjectSession` (CLI job path, fixture captures) pass.

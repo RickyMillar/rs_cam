@@ -158,7 +158,7 @@ maintain.
   `ui/export_wizard.rs:304`), `format_cycle` (`optimize_modal.rs:1152` /
   `optimize_project.rs:537`), `format_delta` (`optimize_modal.rs:953` /
   `optimize_project.rs:516`). Risk: low. Gate: `cargo test -p rs_cam_viz -q`.
-- [ ] **C21 — `controller_compensation_for` mapping to core gcode**
+- [x] **C21 — `controller_compensation_for` mapping to core gcode**
   (I06b). Make core `gcode`'s (side×climb)→G41/G42 mapping `pub`; viz
   `io/export.rs:345` delegates. Sentries: F16 G41→G40 round-trip +
   `program_builder.rs` comp tests. Risk: low.
