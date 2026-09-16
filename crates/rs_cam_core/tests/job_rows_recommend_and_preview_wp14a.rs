@@ -91,7 +91,6 @@ fn adaptive3d_op() -> OperationConfig {
         stepover: 1.2,
         depth_per_pass: 2.0,
         stock_to_leave_axial: 0.2,
-        stock_to_leave_radial: 0.2,
         feed_rate: 2500.0,
         plunge_rate: 500.0,
         tolerance: 0.25,

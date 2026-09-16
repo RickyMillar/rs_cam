@@ -599,19 +599,11 @@ impl Default for DropCutterConfig {
 pub struct Adaptive3dConfig {
     pub stepover: f64,
     pub depth_per_pass: f64,
-    /// Deprecated + inert sidewall leave allowance. NOT honored by the
-    /// planner: `adaptive3d`'s drop-cutter / dexel heightmap engine only
-    /// supports a single vertical (Z) leave offset — see
-    /// `compute::execute::adaptive3d_effective_stock_to_leave`, which
-    /// consumes `stock_to_leave_axial` alone. The GUI dial for this field
-    /// was removed 2026-07-06 (finishing_stack_review_2026-07.md F.1 —
-    /// decided against building the wall-offset mechanism). The field is
-    /// kept solely so existing project `.toml` files with this key still
-    /// deserialize; changing it has no effect on generated toolpaths.
-    pub stock_to_leave_radial: f64,
     /// Vertical leave allowance above the surface heightmap. The only
-    /// leave-stock dial the `adaptive3d` planner actually applies (see
-    /// `stock_to_leave_radial` above).
+    /// leave-stock dial the `adaptive3d` planner applies, and since L2
+    /// the only one it carries: the drop-cutter / dexel heightmap engine
+    /// offsets in Z alone. See
+    /// `compute::execute::adaptive3d_effective_stock_to_leave`.
     pub stock_to_leave_axial: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -702,14 +694,6 @@ fn default_stay_down_clearance_mm() -> f64 {
     0.5
 }
 
-/// The shipped default of the inert `stock_to_leave_radial` dial.
-///
-/// L2: the deprecated-dial report compares the project's value against
-/// this one, so the report and the `Default` impl read one number.
-pub(crate) const fn default_adaptive3d_stock_to_leave_radial() -> f64 {
-    0.5
-}
-
 fn default_min_region_cut_length_mm() -> f64 {
     // Threshold tuned against the Wanaka Back Rough wall-clock measurement
     // (F-038 finding, 2026-05-27). At 5.0 mm the entry-plunge count dropped
@@ -726,7 +710,6 @@ impl Default for Adaptive3dConfig {
         Self {
             stepover: 2.0,
             depth_per_pass: 3.0,
-            stock_to_leave_radial: default_adaptive3d_stock_to_leave_radial(),
             stock_to_leave_axial: 0.5,
             feed_rate: 1500.0,
             plunge_rate: 500.0,

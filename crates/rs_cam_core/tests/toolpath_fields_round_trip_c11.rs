@@ -174,8 +174,9 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     let reference_id = session.tools()[1].id;
 
     // The rough operation. Its Adaptive3d block pins that an operation's
-    // own parameters reach the file, which is what the deleted 3D test
-    // asserted through `stock_to_leave_radial`.
+    // own parameters reach the file. L2 deleted the inert
+    // `stock_to_leave_radial` dial this arm used to pin, so the arm now
+    // pins `stock_to_leave_axial` — the leave dial the planner reads.
     run(
         &mut session,
         Command::AddToolpath(AddToolpathArgs {
@@ -184,7 +185,6 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
                 cutter_id,
                 "Roughing",
                 OperationConfig::Adaptive3d(Adaptive3dConfig {
-                    stock_to_leave_radial: 0.7,
                     stock_to_leave_axial: 0.4,
                     ..Adaptive3dConfig::default()
                 }),
@@ -283,7 +283,7 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     session.save(&path).unwrap();
     let written = std::fs::read_to_string(&path).unwrap();
     assert!(
-        written.contains("stock_to_leave_radial = 0.7"),
+        written.contains("stock_to_leave_axial = 0.4"),
         "the operation block must reach the file:\n{written}"
     );
 
@@ -294,11 +294,9 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     assert!(matches!(
         loaded.toolpath_configs()[0].operation,
         OperationConfig::Adaptive3d(Adaptive3dConfig {
-            stock_to_leave_radial,
             stock_to_leave_axial,
             ..
-        }) if (stock_to_leave_radial - 0.7).abs() < 1e-9
-            && (stock_to_leave_axial - 0.4).abs() < 1e-9
+        }) if (stock_to_leave_axial - 0.4).abs() < 1e-9
     ));
 
     let finish = &loaded.toolpath_configs()[1];

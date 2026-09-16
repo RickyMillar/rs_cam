@@ -848,8 +848,10 @@ fn job_params_for(
         OperationType::Adaptive3d => {
             p.push(("stepover", json!(op.stepover.unwrap_or(2.0))));
             p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
+            // L2 deleted the inert radial leave. The job file's single
+            // `stock_to_leave` key now feeds the axial dial alone,
+            // which is the only one the planner reads.
             let stl = op.stock_to_leave.unwrap_or(0.5);
-            p.push(("stock_to_leave_radial", json!(stl)));
             p.push(("stock_to_leave_axial", json!(stl)));
             p.push(("tolerance", json!(op.tolerance.unwrap_or(0.1))));
             p.push((

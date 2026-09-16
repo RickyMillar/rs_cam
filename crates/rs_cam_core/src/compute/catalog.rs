@@ -1747,10 +1747,6 @@ const DROP_CUTTER_PARAMS: &[ParamDef] = &[
 const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
     ParamDef::required("stepover", "f64"),
     ParamDef::required("depth_per_pass", "f64"),
-    // L2: deprecated and inert — the planner reads
-    // `stock_to_leave_axial` alone. A caller that omits it loses
-    // nothing, so the registry stops demanding it.
-    ParamDef::optional("stock_to_leave_radial", "f64"),
     ParamDef::required("stock_to_leave_axial", "f64"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
@@ -2822,19 +2818,6 @@ pub fn feed_optimization_unavailable_reason(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-
-    /// L2: the registry must not demand a dial the planner ignores.
-    #[test]
-    fn the_inert_adaptive3d_radial_leave_is_not_required() {
-        let row = param_defs_for_type(OperationType::Adaptive3d)
-            .iter()
-            .find(|p| p.name == "stock_to_leave_radial")
-            .expect("adaptive3d still carries the radial leave param");
-        assert!(
-            row.optional,
-            "an inert dial is not a required parameter: {row:?}"
-        );
-    }
 
     #[test]
     fn operation_catalog_is_exhaustive_and_consistent() {

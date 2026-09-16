@@ -7536,7 +7536,6 @@ mod tests {
             stepover: 1.2,
             depth_per_pass: 3.0,
             stock_to_leave_axial: 0.5,
-            stock_to_leave_radial: 0.5,
             feed_rate: 2500.0,
             plunge_rate: 500.0,
             tolerance: 0.25,

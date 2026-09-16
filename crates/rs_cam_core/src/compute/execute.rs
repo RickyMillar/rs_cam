@@ -1859,8 +1859,7 @@ pub(crate) fn generate_adaptive(
     ))
 }
 
-/// Collapse the two user-facing leave-stock dials into the single scalar
-/// the adaptive3d planner actually consumes.
+/// Read the single leave-stock scalar the adaptive3d planner consumes.
 ///
 /// The planner (`crate::adaptive3d::{path,clearing,search}`) is a
 /// drop-cutter / dexel heightmap engine: every use of `stock_to_leave`
@@ -1868,20 +1867,12 @@ pub(crate) fn generate_adaptive(
 /// the Z direction — z-level floors, waterline lift, and gouge-guard
 /// drape all key off a single vertical offset from `point_drop_cutter`.
 /// There is no wall-normal / horizontal offset path (no polygon inset,
-/// no lateral shift of the EDT-derived contours), so a true *radial*
-/// (sidewall) leave allowance cannot be honored by this geometry engine
-/// today.
+/// no lateral shift of the EDT-derived contours), so this engine cannot
+/// honour a radial (sidewall) leave allowance at all.
 ///
-/// Given that, silently taking `max(axial, radial)` (the pre-fix
-/// behaviour) is dishonest: an operator who sets `radial = 0.5` with
-/// `axial = 0.0` (protect walls only, machine flats to true height)
-/// instead got a 0.5 mm floor raised everywhere, including flats with
-/// no adjacent wall. The axial-only policy below at least means the
-/// single dial the engine *does* implement (the Z leave) reflects
-/// exactly what the operator asked for on that axis; `stock_to_leave_radial`
-/// is kept on `Adaptive3dConfig` for file/GUI round-trip and to seed a
-/// future wall-offset implementation, but is deliberately NOT consumed
-/// here until the planner grows a real radial mechanism.
+/// L2 deleted the inert `stock_to_leave_radial` dial that used to sit
+/// beside the axial one. A caller that wants a wall offset needs a
+/// planner mechanism first, not a dial the planner drops.
 fn adaptive3d_effective_stock_to_leave(
     cfg: &crate::compute::operation_configs::Adaptive3dConfig,
 ) -> f64 {
@@ -4757,37 +4748,25 @@ mod tests {
         );
     }
 
-    /// F-XXX regression: adaptive3d's planner only supports a vertical
-    /// (Z) leave — `stock_to_leave_radial` must NOT silently raise the
-    /// effective leave via `max()`. A user protecting sidewalls only
-    /// (`radial = 0.5`, `axial = 0.0`) should get the Z floor they asked
-    /// for (0.0, i.e. no floor raise on flats), not the radial value
-    /// bleeding into the axial dial.
+    /// F-XXX regression, re-based by L2: adaptive3d's planner supports a
+    /// vertical (Z) leave and nothing else. The reader passes the axial
+    /// dial through untouched. It must never raise the value — the
+    /// deleted radial dial used to bleed into it through a `max()`.
     #[test]
     fn adaptive3d_stock_to_leave_is_axial_only() {
         use crate::compute::operation_configs::Adaptive3dConfig;
 
-        let sidewall_only = Adaptive3dConfig {
+        let no_leave = Adaptive3dConfig {
             stock_to_leave_axial: 0.0,
-            stock_to_leave_radial: 0.5,
             ..Adaptive3dConfig::default()
         };
-        assert_eq!(adaptive3d_effective_stock_to_leave(&sidewall_only), 0.0);
+        assert_eq!(adaptive3d_effective_stock_to_leave(&no_leave), 0.0);
 
         let axial_only = Adaptive3dConfig {
             stock_to_leave_axial: 0.3,
-            stock_to_leave_radial: 0.0,
             ..Adaptive3dConfig::default()
         };
         assert_eq!(adaptive3d_effective_stock_to_leave(&axial_only), 0.3);
-
-        // Both set: still axial, not max().
-        let both = Adaptive3dConfig {
-            stock_to_leave_axial: 0.2,
-            stock_to_leave_radial: 0.8,
-            ..Adaptive3dConfig::default()
-        };
-        assert_eq!(adaptive3d_effective_stock_to_leave(&both), 0.2);
     }
 
     /// Build a default tool definition and config for a given tool type.

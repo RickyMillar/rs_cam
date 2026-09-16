@@ -280,7 +280,6 @@ kind = "adaptive3d"
 [setups.toolpaths.operation.params]
 stepover = 2.0
 depth_per_pass = 3.0
-stock_to_leave_radial = 0.5
 stock_to_leave_axial = 5.0
 feed_rate = 1500.0
 plunge_rate = 500.0
@@ -761,7 +760,6 @@ kind = "adaptive3d"
 [setups.toolpaths.operation.params]
 stepover = 0.8
 depth_per_pass = 3.0
-stock_to_leave_radial = 0.5
 stock_to_leave_axial = 0.5
 feed_rate = 1500.0
 plunge_rate = 500.0
