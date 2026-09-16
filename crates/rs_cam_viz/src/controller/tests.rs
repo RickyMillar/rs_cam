@@ -5362,7 +5362,9 @@ fn freshness_does_not_outrank_a_collision() {
 
     let (chip, role) =
         workspace_bar::readiness_badge(&controller.state).expect("a collision must be reported");
-    assert!(chip.contains("collision"), "{chip}");
+    // UR2 (ec7c6acc): one shared safety text replaces the two per-tab
+    // spellings. The count, not the word "collision", is the claim.
+    assert_eq!(chip, "1 safety");
     // UP4: the badge producers hand back a ROLE now, not a colour, so the
     // `role_for` shim in the bar is gone and a safety badge cannot drift
     // onto a non-safety hue.
