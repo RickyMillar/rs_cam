@@ -96,6 +96,18 @@ fn both_doors_apply_a_step_models_declared_units() {
          declared units. mm span {mm_x}, inch span {inch_x}"
     );
 
+    // C13: the declared units are what the model RECORDS, for every
+    // kind. This arm used to record `Millimeters` after it had scaled the
+    // geometry, so a save wrote `units = millimeters` for an
+    // inch-authored file, and the next load re-imported the source 25.4
+    // times too small — the same defect at the other door.
+    assert_eq!(
+        as_inches.units,
+        Some(ModelUnits::Inches),
+        "the import door must keep the declared units, so a save and a \
+         reload re-apply the same scale"
+    );
+
     // The project door, same file, same declared units.
     let tmp = tempdir_for_test("step_units");
     let model_dst = tmp.join("occt-cube.step");

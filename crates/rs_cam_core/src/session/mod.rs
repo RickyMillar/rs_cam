@@ -349,34 +349,16 @@ impl LoadedModel {
         };
         let resolved_kind = kind.or_else(|| crate::io::infer_kind_from_path(path));
         let geometry = project_file::load_model_geometry(&section, base_dir)?;
-        let mut drill_targets: Arc<Vec<DrillTarget>> = Arc::new(Vec::new());
-        let mut layers: Arc<Vec<String>> = Arc::new(Vec::new());
-        let (mesh, polygons, enriched_mesh) = match geometry {
-            LoadedGeometry::Mesh(mesh) => (Some(Arc::new(mesh)), None, None),
-            LoadedGeometry::Polygons(polys, targets, layer_names) => {
-                drill_targets = Arc::new(targets);
-                layers = Arc::new(layer_names);
-                (None, Some(Arc::new(polys)), None)
-            }
-            LoadedGeometry::Enriched(enriched) => {
-                let mesh_arc = Arc::clone(&enriched.mesh);
-                (Some(mesh_arc), None, Some(Arc::new(enriched)))
-            }
-        };
-        Ok(Self {
+        // C13: one builder. This arm used to spell the three geometry
+        // cases out again, and it wrote `winding_report: None` for a mesh.
+        Ok(crate::io::model_from_geometry(
+            geometry,
             id,
-            name: name.to_owned(),
-            mesh,
-            polygons,
-            drill_targets,
-            layers,
-            path: path.to_path_buf(),
-            kind: resolved_kind,
+            name.to_owned(),
+            path,
+            resolved_kind,
             units,
-            enriched_mesh,
-            winding_report: None,
-            load_error: None,
-        })
+        ))
     }
 
     /// Construct a placeholder model for a file that failed to load.

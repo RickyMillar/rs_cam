@@ -145,7 +145,7 @@ maintain.
   only if live viz code still needs them after the deletion. Risk: med
   (delete surface), low (no replacement to get right). Gate:
   `cargo test -p rs_cam_viz -q`.
-- [ ] **C13 — collapse the two in-core model doors** (I01 step 6, drift item 9).
+- [x] **C13 — collapse the two in-core model doors** (I01 step 6, drift item 9).
   `io::load_model_file` vs `project_file::load_model_geometry`: single door,
   keeping `winding_report` and the four documented divergences as one
   behavior. Risk: med-high (G-UNITSRELOAD/G-STEPUNITS territory). Gate:

@@ -17,7 +17,6 @@ use crate::compute::transform::{FaceUp, ZRotation};
 use crate::debug_trace::ToolpathDebugOptions;
 use crate::enriched_mesh::FaceGroupId;
 use crate::gcode::CoolantMode;
-use crate::mesh::TriangleMesh;
 
 // ── Project file types (TOML deserialization) ──────────────────────────
 
@@ -670,100 +669,24 @@ pub(crate) fn load_model_geometry(
             detail: format!("Cannot determine file type for '{}'", full_path.display()),
         })?;
 
-    // G-UNITSRELOAD (2026-08-22). This scale must reach EVERY geometry kind,
-    // not just the mesh. `ModelUnits`' own doc still says "units of the
-    // imported STL" — it predates 2D import, and when the SVG/DXF arms were
-    // added below they simply never consumed it, while the interactive door
-    // (`io::load_model_file`) always did. A project file stores the model's
-    // *path* and its declared units, not its geometry, so both doors
-    // re-import the same file and must agree: an inch-authored DXF used to
-    // come back 25.4x smaller after a save/reload, silently, with the stock
-    // still at its saved size because `update_from_bbox` runs on import and
-    // not on load. Sentried by `model_units_survive_reload_g_unitsreload.rs`,
-    // which asserts the two doors agree rather than asserting a magic size.
+    // G-UNITSRELOAD (2026-08-22). The declared units must reach EVERY
+    // geometry kind. A project file stores the model's *path* and its
+    // declared units, not its geometry, so both doors re-import the same
+    // file and must agree. An inch-authored DXF used to come back 25.4x
+    // smaller after a save and a reload, silently, with the stock still at
+    // its saved size. C13 removed the second reader that made such a
+    // divergence possible; `model_units_survive_reload_g_unitsreload.rs`
+    // still asserts the two doors agree.
     let scale = model
         .units
         .as_ref()
         .map(|u| u.scale_factor())
         .unwrap_or(1.0);
 
-    match kind {
-        ModelKind::Stl => {
-            let mesh = TriangleMesh::from_stl_scaled(&full_path, scale).map_err(|e| {
-                SessionError::ModelLoad {
-                    name: model.name.clone(),
-                    detail: format!("STL load failed: {e}"),
-                }
-            })?;
-            Ok(LoadedGeometry::Mesh(mesh))
-        }
-        ModelKind::Dxf => {
-            let import = crate::dxf_input::load_dxf_full(&full_path, 5.0).map_err(|e| {
-                SessionError::ModelLoad {
-                    name: model.name.clone(),
-                    detail: format!("DXF load failed: {e}"),
-                }
-            })?;
-            let mut polygons = import.polygons;
-            let mut drill_targets = import.drill_targets;
-            crate::io::apply_uniform_scale_2d(&mut polygons, scale);
-            crate::io::apply_uniform_scale_targets(&mut drill_targets, scale);
-            Ok(LoadedGeometry::Polygons(
-                polygons,
-                drill_targets,
-                import.layers,
-            ))
-        }
-        ModelKind::Svg => {
-            let polys = crate::svg_input::load_svg(&full_path, 0.1).map_err(|e| {
-                SessionError::ModelLoad {
-                    name: model.name.clone(),
-                    detail: format!("SVG load failed: {e}"),
-                }
-            })?;
-            let mut polys = polys;
-            crate::io::apply_uniform_scale_2d(&mut polys, scale);
-            // Same classifier as `io::load_model_file` (the two doors must
-            // agree — G-UNITSRELOAD): circle-like rings are the drill targets.
-            let drill_targets = crate::svg_input::circle_like_drill_targets(&polys);
-            let layers = crate::svg_input::circle_like_layers(&drill_targets);
-            Ok(LoadedGeometry::Polygons(polys, drill_targets, layers))
-        }
-        ModelKind::Step => {
-            #[cfg(feature = "step")]
-            {
-                let mut enriched = crate::step_input::load_step(&full_path, 0.1).map_err(|e| {
-                    SessionError::ModelLoad {
-                        name: model.name.clone(),
-                        detail: format!("STEP load failed: {e}"),
-                    }
-                })?;
-                // G-STEPUNITS: apply the declared units here, as
-                // `io::load_model_file` does. `truck-stepio`'s reader
-                // performs no unit conversion, so `ModelUnits` is the ONLY
-                // one a STEP file gets. This arm used to bind `scale` above
-                // and never read it, so a project that declared inches
-                // re-imported its model 25.4 times too small. Fourth
-                // divergence in this loader pair; G-UNITSRELOAD closed the
-                // third. `apply_uniform_scale` moves the BREP data as well
-                // as the mesh, so face selection survives.
-                if (scale - 1.0).abs() > 1e-9 {
-                    enriched.apply_uniform_scale(scale);
-                }
-                // Preserve BREP topology — the parallel `io::load_model_file`
-                // loader already does this. Downgrading to a flat mesh here
-                // (the prior bug) silently broke face-selective operations.
-                Ok(LoadedGeometry::Enriched(enriched))
-            }
-            #[cfg(not(feature = "step"))]
-            {
-                Err(SessionError::ModelLoad {
-                    name: model.name.clone(),
-                    detail: "STEP support not enabled (compile with --features step)".to_owned(),
-                })
-            }
-        }
-    }
+    crate::io::load_geometry(&full_path, kind, scale).map_err(|detail| SessionError::ModelLoad {
+        name: model.name.clone(),
+        detail,
+    })
 }
 
 /// Convert a TOML toolpath section into a session `ToolpathConfig`.
@@ -941,71 +864,36 @@ pub(super) fn build_session_from_project(
         let model_units = model_section.units;
 
         match load_model_geometry(model_section, base_dir) {
-            Ok(LoadedGeometry::Mesh(mesh)) => {
-                tracing::info!(
-                    name = %model_section.name,
-                    tris = mesh.triangles.len(),
-                    "Loaded mesh model"
-                );
-                models.push(LoadedModel {
-                    id: model_id,
-                    name: model_section.name.clone(),
-                    mesh: Some(Arc::new(mesh)),
-                    polygons: None,
-                    drill_targets: Arc::new(Vec::new()),
-                    layers: Arc::new(Vec::new()),
-                    path: model_path,
-                    kind: model_kind,
-                    units: model_units,
-                    enriched_mesh: None,
-                    winding_report: None,
-                    load_error: None,
-                });
-            }
-            Ok(LoadedGeometry::Polygons(polys, drill_targets, layers)) => {
-                tracing::info!(
-                    name = %model_section.name,
-                    polygons = polys.len(),
-                    drill_targets = drill_targets.len(),
-                    "Loaded 2D model"
-                );
-                models.push(LoadedModel {
-                    id: model_id,
-                    name: model_section.name.clone(),
-                    mesh: None,
-                    polygons: Some(Arc::new(polys)),
-                    drill_targets: Arc::new(drill_targets),
-                    layers: Arc::new(layers),
-                    path: model_path,
-                    kind: model_kind,
-                    units: model_units,
-                    enriched_mesh: None,
-                    winding_report: None,
-                    load_error: None,
-                });
-            }
-            Ok(LoadedGeometry::Enriched(enriched)) => {
-                tracing::info!(
-                    name = %model_section.name,
-                    tris = enriched.mesh.triangles.len(),
-                    faces = enriched.face_count(),
-                    "Loaded enriched (BREP) model"
-                );
-                let mesh_arc = Arc::clone(&enriched.mesh);
-                models.push(LoadedModel {
-                    id: model_id,
-                    name: model_section.name.clone(),
-                    mesh: Some(mesh_arc),
-                    polygons: None,
-                    drill_targets: Arc::new(Vec::new()),
-                    layers: Arc::new(Vec::new()),
-                    path: model_path,
-                    kind: model_kind,
-                    units: model_units,
-                    enriched_mesh: Some(Arc::new(enriched)),
-                    winding_report: None,
-                    load_error: None,
-                });
+            Ok(geometry) => {
+                match &geometry {
+                    LoadedGeometry::Mesh(mesh) => tracing::info!(
+                        name = %model_section.name,
+                        tris = mesh.triangles.len(),
+                        "Loaded mesh model"
+                    ),
+                    LoadedGeometry::Polygons(polys, drill_targets, _) => tracing::info!(
+                        name = %model_section.name,
+                        polygons = polys.len(),
+                        drill_targets = drill_targets.len(),
+                        "Loaded 2D model"
+                    ),
+                    LoadedGeometry::Enriched(enriched) => tracing::info!(
+                        name = %model_section.name,
+                        tris = enriched.mesh.triangles.len(),
+                        faces = enriched.face_count(),
+                        "Loaded enriched (BREP) model"
+                    ),
+                }
+                // C13: one builder, so the project door keeps the
+                // `winding_report` the import door has always reported.
+                models.push(crate::io::model_from_geometry(
+                    geometry,
+                    model_id,
+                    model_section.name.clone(),
+                    &model_path,
+                    model_kind,
+                    model_units,
+                ));
             }
             Err(e) => {
                 tracing::warn!(
