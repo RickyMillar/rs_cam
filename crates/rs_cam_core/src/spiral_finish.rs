@@ -101,21 +101,6 @@ pub fn spiral_finish_toolpath(
     tp
 }
 
-/// Cancellable variant of [`spiral_finish_toolpath`].
-#[allow(clippy::expect_used)]
-pub fn spiral_finish_toolpath_with_cancel(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &SpiralFinishParams,
-    cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled> {
-    let (tp, _) = spiral_finish_toolpath_structured_annotated_with_cancel(
-        mesh, index, cutter, params, None, None, cancel,
-    )?;
-    Ok(tp)
-}
-
 impl crate::compute::spans::RuntimeLabel for SpiralFinishRuntimeAnnotation {
     fn move_index(&self) -> usize {
         self.move_index
@@ -306,21 +291,6 @@ pub fn spiral_finish_toolpath_structured_annotated_with_cancel(
     }
 
     Ok((tp, annotations))
-}
-
-pub fn spiral_finish_toolpath_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &SpiralFinishParams,
-    debug: Option<&ToolpathDebugContext>,
-) -> (Toolpath, Vec<(usize, String)>) {
-    let (tp, annotations) =
-        spiral_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug, None);
-    (
-        tp,
-        crate::compute::spans::runtime_annotations_to_labels(&annotations),
-    )
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────

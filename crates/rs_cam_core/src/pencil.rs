@@ -2492,22 +2492,6 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     Ok((tp, annotations))
 }
 
-pub fn pencil_toolpath_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &PencilParams,
-    debug: Option<&ToolpathDebugContext>,
-) -> (Toolpath, Vec<(usize, String)>) {
-    let (tp, annotations) = pencil_toolpath_structured_annotated(
-        mesh, index, cutter, params, None, debug, &mut None, &mut None,
-    );
-    (
-        tp,
-        crate::compute::spans::runtime_annotations_to_labels(&annotations),
-    )
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {

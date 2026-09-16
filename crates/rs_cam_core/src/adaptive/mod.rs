@@ -278,20 +278,6 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
     Ok((tp, annotations))
 }
 
-pub fn adaptive_toolpath_annotated_traced_with_cancel(
-    polygon: &Polygon2,
-    params: &AdaptiveParams,
-    cancel: &dyn CancelCheck,
-    debug: Option<&ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<(usize, String)>), Cancelled> {
-    let (tp, annotations) =
-        adaptive_toolpath_structured_annotated_traced_with_cancel(polygon, params, cancel, debug)?;
-    Ok((
-        tp,
-        crate::compute::spans::runtime_annotations_to_labels(&annotations),
-    ))
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

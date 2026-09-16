@@ -454,21 +454,6 @@ pub fn ramp_finish_toolpath(
     tp
 }
 
-/// Cancellable variant of [`ramp_finish_toolpath`].
-#[allow(clippy::expect_used)]
-pub fn ramp_finish_toolpath_with_cancel(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &RampFinishParams,
-    cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled> {
-    let (tp, _, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
-        mesh, index, cutter, params, None, None, cancel,
-    )?;
-    Ok(tp)
-}
-
 impl crate::compute::spans::RuntimeLabel for RampFinishRuntimeAnnotation {
     fn move_index(&self) -> usize {
         self.move_index
@@ -876,21 +861,6 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     }
 
     Ok((tp, annotations, reach_clamp))
-}
-
-pub fn ramp_finish_toolpath_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &RampFinishParams,
-    debug: Option<&ToolpathDebugContext>,
-) -> (Toolpath, Vec<(usize, String)>) {
-    let (tp, annotations, _clamp) =
-        ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug, None);
-    (
-        tp,
-        crate::compute::spans::runtime_annotations_to_labels(&annotations),
-    )
 }
 
 #[cfg(test)]

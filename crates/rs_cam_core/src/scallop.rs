@@ -2804,21 +2804,6 @@ pub fn scallop_toolpath_research_with_stage(
     Ok((tp, annotations, report, trace))
 }
 
-pub fn scallop_toolpath_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &ScallopParams,
-    debug: Option<&ToolpathDebugContext>,
-) -> (Toolpath, Vec<(usize, String)>) {
-    let (tp, annotations, _report) =
-        scallop_toolpath_structured_annotated(mesh, index, cutter, params, debug);
-    (
-        tp,
-        crate::compute::spans::runtime_annotations_to_labels(&annotations),
-    )
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
