@@ -100,7 +100,7 @@ two disagree.
   delete the mirror entirely if string forms align. Risk: med (sweep
   baselines change — coordinate with anyone mid-sweep). Gate:
   `cargo test -p rs_cam_cli -q`.
-- [ ] **C05 — artifact writers: collision-safe naming** (I04, review-confirmed).
+- [x] **C05 — artifact writers: collision-safe naming** (I04, review-confirmed).
   New `crates/rs_cam_core/src/artifact_io.rs`: host
   `sanitize_filename_component` (byte-identical ×3 today) and one writer
   using `simulation_cut.rs:1758-1788`'s pid+`WRITE_SEQ` naming (the August

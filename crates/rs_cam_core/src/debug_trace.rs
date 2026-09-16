@@ -1,10 +1,7 @@
-use crate::ids::ToolpathId;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 pub const TOOLPATH_DEBUG_SCHEMA_VERSION: u32 = 1;
 
@@ -120,38 +117,6 @@ pub struct ToolpathDebugTrace {
     pub spans: Vec<ToolpathDebugSpan>,
     pub hotspots: Vec<ToolpathHotspot>,
     pub annotations: Vec<ToolpathDebugAnnotation>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ToolpathDebugArtifact {
-    pub schema_version: u32,
-    pub toolpath_id: ToolpathId,
-    pub toolpath_name: String,
-    pub operation_label: String,
-    pub tool_summary: String,
-    pub request_snapshot: Value,
-    pub trace: ToolpathDebugTrace,
-}
-
-impl ToolpathDebugArtifact {
-    pub fn new(
-        toolpath_id: ToolpathId,
-        toolpath_name: impl Into<String>,
-        operation_label: impl Into<String>,
-        tool_summary: impl Into<String>,
-        request_snapshot: Value,
-        trace: ToolpathDebugTrace,
-    ) -> Self {
-        Self {
-            schema_version: TOOLPATH_DEBUG_SCHEMA_VERSION,
-            toolpath_id,
-            toolpath_name: toolpath_name.into(),
-            operation_label: operation_label.into(),
-            tool_summary: tool_summary.into(),
-            request_snapshot,
-            trace,
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -527,46 +492,6 @@ impl Drop for ToolpathDebugScope {
     }
 }
 
-pub fn write_toolpath_debug_artifact(
-    dir: &Path,
-    file_stem: &str,
-    artifact: &ToolpathDebugArtifact,
-) -> std::io::Result<PathBuf> {
-    std::fs::create_dir_all(dir)?;
-    let timestamp_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let file_name = format!(
-        "{}_{}.json",
-        timestamp_ms,
-        sanitize_filename_component(file_stem)
-    );
-    let path = dir.join(file_name);
-    let payload = serde_json::to_vec_pretty(artifact)?;
-    std::fs::write(&path, payload)?;
-    Ok(path)
-}
-
-fn sanitize_filename_component(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            output.push(ch.to_ascii_lowercase());
-        } else if matches!(ch, '-' | '_') {
-            output.push(ch);
-        } else {
-            output.push('_');
-        }
-    }
-    let output = output.trim_matches('_');
-    if output.is_empty() {
-        "toolpath_debug".to_owned()
-    } else {
-        output.to_owned()
-    }
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -644,33 +569,5 @@ mod tests {
         assert_eq!(trace.hotspots[0].pass_count, 3);
         assert_eq!(trace.hotspots[0].step_count, 30);
         assert_eq!(trace.hotspots[0].low_yield_exit_count, 1);
-    }
-
-    #[test]
-    fn artifact_writer_creates_json_file() {
-        let recorder = ToolpathDebugRecorder::new("Pocket 1", "Pocket");
-        let trace = recorder.finish();
-        let artifact = ToolpathDebugArtifact::new(
-            ToolpathId(1),
-            "Pocket 1",
-            "Pocket",
-            "6.35mm End Mill",
-            serde_json::json!({"stepover": 2.0}),
-            trace,
-        );
-
-        let dir = std::env::temp_dir().join(format!(
-            "rs_cam_debug_artifact_{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock before epoch")
-                .as_nanos()
-        ));
-        let path = write_toolpath_debug_artifact(&dir, "Pocket 1", &artifact)
-            .expect("write debug artifact");
-        let text = std::fs::read_to_string(&path).expect("read debug artifact");
-        assert!(text.contains("\"toolpath_name\": \"Pocket 1\""));
-        std::fs::remove_file(path).ok();
-        std::fs::remove_dir(dir).ok();
     }
 }

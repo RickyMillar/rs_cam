@@ -24,6 +24,8 @@ pub mod adaptive3d;
 pub mod adaptive_shared;
 pub mod arc_util;
 pub mod arcfit;
+// Shared JSON-artifact naming and writing; private to the crate.
+mod artifact_io;
 pub mod boundary;
 pub mod build_info;
 pub mod chamfer;

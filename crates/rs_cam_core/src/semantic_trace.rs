@@ -8,7 +8,6 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, PartialEq, Eq, DeriveSerialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1202,44 +1201,15 @@ fn bbox_overlap_volume(left: &BoundingBox3, right: &BoundingBox3) -> Option<f64>
         .then_some(overlap_x * overlap_y * overlap_z.max(1.0))
 }
 
+/// Write one semantic-trace artifact into `dir` and return its path.
+///
+/// Naming and collision safety live in [`crate::artifact_io`].
 pub fn write_toolpath_trace_artifact(
     dir: &Path,
     file_stem: &str,
     artifact: &ToolpathTraceArtifact,
 ) -> std::io::Result<PathBuf> {
-    std::fs::create_dir_all(dir)?;
-    let timestamp_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let file_name = format!(
-        "{}_{}.json",
-        timestamp_ms,
-        sanitize_filename_component(file_stem)
-    );
-    let path = dir.join(file_name);
-    let payload = serde_json::to_vec_pretty(artifact)?;
-    std::fs::write(&path, payload)?;
-    Ok(path)
-}
-
-fn sanitize_filename_component(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            output.push(ch.to_ascii_lowercase());
-        } else if matches!(ch, '-' | '_') {
-            output.push(ch);
-        } else {
-            output.push('_');
-        }
-    }
-    let output = output.trim_matches('_');
-    if output.is_empty() {
-        "toolpath_trace".to_owned()
-    } else {
-        output.to_owned()
-    }
+    crate::artifact_io::write_json_artifact(dir, file_stem, "toolpath_trace", artifact)
 }
 
 #[cfg(test)]
@@ -1662,8 +1632,8 @@ mod tests {
 
         let dir = std::env::temp_dir().join(format!(
             "rs_cam_trace_artifact_{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
                 .expect("clock before epoch")
                 .as_nanos()
         ));

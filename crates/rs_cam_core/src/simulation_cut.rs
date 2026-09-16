@@ -1755,36 +1755,17 @@ impl SemanticSummaryAccumulator {
     }
 }
 
+/// Write one simulation cut-trace artifact into `dir` and return its path.
+///
+/// Naming and collision safety live in [`crate::artifact_io`]: the name keeps
+/// the millisecond stamp as its first `_`-field, which
+/// [`prune_simulation_cut_artifacts`] parses for age.
 pub fn write_simulation_cut_artifact(
     dir: &Path,
     file_stem: &str,
     artifact: &SimulationCutArtifact,
 ) -> std::io::Result<PathBuf> {
-    std::fs::create_dir_all(dir)?;
-    let timestamp_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    // A millisecond stamp alone is NOT unique: two writers in the same
-    // process (parallel tests; a busy worker) can finish in the same
-    // millisecond, silently share one path, and then one owner's cleanup
-    // deletes the other's artifact. Pid + per-process sequence make the
-    // name unique across concurrent sessions too;
-    // `prune_simulation_cut_artifacts` reads only the first `_`-field, so
-    // its age parse is unaffected.
-    static WRITE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let seq = WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let file_name = format!(
-        "{}_{}-{}_{}.json",
-        timestamp_ms,
-        std::process::id(),
-        seq,
-        sanitize_filename_component(file_stem)
-    );
-    let path = dir.join(file_name);
-    let payload = serde_json::to_vec_pretty(artifact)?;
-    std::fs::write(&path, payload)?;
-    Ok(path)
+    crate::artifact_io::write_json_artifact(dir, file_stem, "simulation_cut_trace", artifact)
 }
 
 /// Dumps younger than this are never pruned, whatever the count: concurrent
@@ -1841,25 +1822,6 @@ pub fn prune_simulation_cut_artifacts(dir: &Path, keep: usize) -> usize {
         .take(excess)
         .filter(|(_, path)| std::fs::remove_file(path).is_ok())
         .count()
-}
-
-fn sanitize_filename_component(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            output.push(ch.to_ascii_lowercase());
-        } else if matches!(ch, '-' | '_') {
-            output.push(ch);
-        } else {
-            output.push('_');
-        }
-    }
-    let output = output.trim_matches('_');
-    if output.is_empty() {
-        "simulation_cut_trace".to_owned()
-    } else {
-        output.to_owned()
-    }
 }
 
 #[cfg(test)]
@@ -2930,14 +2892,22 @@ mod tests {
 
     #[test]
     fn sanitize_filename_handles_special_chars() {
-        assert_eq!(sanitize_filename_component("Adaptive 3D"), "adaptive_3d");
+        use crate::artifact_io::sanitize_filename_component;
+        const FALLBACK: &str = "simulation_cut_trace";
         assert_eq!(
-            sanitize_filename_component("my/file:name.ext"),
+            sanitize_filename_component("Adaptive 3D", FALLBACK),
+            "adaptive_3d"
+        );
+        assert_eq!(
+            sanitize_filename_component("my/file:name.ext", FALLBACK),
             "my_file_name_ext"
         );
-        assert_eq!(sanitize_filename_component("---test---"), "---test---");
-        assert_eq!(sanitize_filename_component(""), "simulation_cut_trace");
-        assert_eq!(sanitize_filename_component("___"), "simulation_cut_trace");
+        assert_eq!(
+            sanitize_filename_component("---test---", FALLBACK),
+            "---test---"
+        );
+        assert_eq!(sanitize_filename_component("", FALLBACK), FALLBACK);
+        assert_eq!(sanitize_filename_component("___", FALLBACK), FALLBACK);
     }
 
     // ── P3: transit-span gating of peak-axial-DOC ───────────────────────
