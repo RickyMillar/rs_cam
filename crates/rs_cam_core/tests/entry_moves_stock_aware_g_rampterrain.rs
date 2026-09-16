@@ -31,8 +31,8 @@ use common::meshes::height_field;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::execute::apply_dressups;
+use rs_cam_core::dressup::entry_audit::{buried_fed_chords, is_entry_intent};
 use rs_cam_core::dressup::{EntrySurfaceProbe, OffMeshEntry};
-use rs_cam_core::entry_audit::{buried_fed_chords, is_entry_intent};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::surface::dropcutter::point_drop_cutter;
@@ -365,7 +365,7 @@ fn lead_in_arcs_never_cut_below_surface() {
 /// and a genuine helix still fit (the fix must not kill real arcs).
 #[test]
 fn refit_arcs_reject_z_bumps_but_keep_real_arcs() {
-    use rs_cam_core::arcfit::fit_arcs;
+    use rs_cam_core::dressup::arcfit::fit_arcs;
     use rs_cam_core::toolpath::MoveType;
 
     let arc_run = |z_of: &dyn Fn(f64) -> f64| -> Toolpath {

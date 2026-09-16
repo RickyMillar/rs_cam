@@ -13,7 +13,7 @@
 //!
 //! Runs AFTER arc-fitting (curved runs become G2/G3 first; this cleans up the
 //! residual linear segments) and is span-aware exactly like
-//! [`crate::arcfit::fit_arcs`]: it never merges across a `RapidOrderBarrier` or
+//! [`crate::dressup::arcfit::fit_arcs`]: it never merges across a `RapidOrderBarrier` or
 //! `DepthPass` boundary, tags nothing new, and remaps input spans through the
 //! N-to-M collapse. When `spans_valid` is `false`, spans pass through untouched.
 //!
@@ -36,7 +36,7 @@ use std::ops::Range;
 
 /// Two feed rates within this many mm/min are treated as the same run.
 ///
-/// Shared with [`crate::arcfit`], which groups consecutive linear moves by
+/// Shared with [`crate::dressup::arcfit`], which groups consecutive linear moves by
 /// the same same-feed criterion before fitting arcs.
 pub(crate) const FEED_EPS: f64 = 1e-6;
 

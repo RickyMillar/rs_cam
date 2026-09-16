@@ -1137,7 +1137,7 @@ pub struct SimulationOptions {
     ///   keeping the optimizer's candidate ranking un-conflated.
     ///
     /// The algorithm itself lives in
-    /// `crate::feed_modulation::adaptive_feed_modulate`; see
+    /// `crate::dressup::feed_modulation::adaptive_feed_modulate`; see
     /// `planning/acceptance_loop/findings/F-036b-feed-modulation-flag-plumbing.md`.
     pub adaptive_feed_modulation: bool,
     /// F-039 — which modulation algorithm runs when
@@ -1152,7 +1152,7 @@ pub struct SimulationOptions {
     /// active `MachineProfile` carries `kinematics` and the LUT has
     /// a chipload band for the toolpath; otherwise both strategies
     /// short-circuit to a no-op.
-    pub modulation_strategy: crate::feed_modulation::ModulationStrategy,
+    pub modulation_strategy: crate::dressup::feed_modulation::ModulationStrategy,
     /// F-039 — aggressiveness scalar applied to the constrained-max
     /// limit before the chipload-min floor.
     ///
@@ -1175,7 +1175,8 @@ impl Default for SimulationOptions {
             use_predicted_feed_in_gates: false,
             // Checkpoint J-3, 2026-08-13 (operator, BINDING): was `false`.
             adaptive_feed_modulation: true,
-            modulation_strategy: crate::feed_modulation::ModulationStrategy::ConstrainedMax,
+            modulation_strategy:
+                crate::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
             modulation_aggressiveness: 1.0,
         }
     }

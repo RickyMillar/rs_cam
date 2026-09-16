@@ -2113,11 +2113,12 @@ fn optimized_candidate(
         toolpath_id,
         Some(&cut_trace),
     )?;
-    let band = crate::feed_modulation::ChiploadBand::new(band_range.start, band_range.end)?;
+    let band =
+        crate::dressup::feed_modulation::ChiploadBand::new(band_range.start, band_range.end)?;
     // ConstrainedMax @ aggressiveness 1.0 — the "bomber feeds" operating
     // point and the `SimulationOptions` default, so the advisor times the
     // same path the user gets after a default sim.
-    let strategy = crate::feed_modulation::ModulationStrategy::ConstrainedMax;
+    let strategy = crate::dressup::feed_modulation::ModulationStrategy::ConstrainedMax;
     let aggressiveness = 1.0;
 
     let (modulated, outcome) = modulate_annotated_against_trace(
@@ -2187,17 +2188,17 @@ fn modulate_annotated_against_trace(
     tool_cfg: &ToolConfig,
     toolpath_id: ToolpathId,
     cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
-    band: crate::feed_modulation::ChiploadBand,
+    band: crate::dressup::feed_modulation::ChiploadBand,
     kinematics: crate::machine::kinematics::MachineKinematics,
     max_feed: f64,
     rapid_feed: f64,
-    strategy: crate::feed_modulation::ModulationStrategy,
+    strategy: crate::dressup::feed_modulation::ModulationStrategy,
     aggressiveness: f64,
 ) -> Option<(
     crate::toolpath::Toolpath,
-    crate::feed_modulation::ModulationOutcome,
+    crate::dressup::feed_modulation::ModulationOutcome,
 )> {
-    use crate::feed_modulation::{
+    use crate::dressup::feed_modulation::{
         DeflectionLimitInputs, ModulationContext, PerMoveEngagement, PowerLimitInputs,
         adaptive_feed_modulate,
     };
@@ -4130,7 +4131,7 @@ impl ProjectSession {
         // record, walk it once per cutting toolpath, aggregate samples
         // into a `Vec<PerMoveEngagement>` keyed by `move_index`, look
         // up the vendor LUT's chipload band, and call
-        // [`crate::feed_modulation::adaptive_feed_modulate`] on a
+        // [`crate::dressup::feed_modulation::adaptive_feed_modulate`] on a
         // mutable clone of the toolpath. The modulated toolpath replaces
         // the cached `Arc<AnnotatedToolpath>` in `self.results` so the
         // downstream G-code emitter
@@ -4190,15 +4191,15 @@ impl ProjectSession {
         tool_cfg: &ToolConfig,
         toolpath_id: ToolpathId,
         cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
-        band: crate::feed_modulation::ChiploadBand,
+        band: crate::dressup::feed_modulation::ChiploadBand,
         kinematics: crate::machine::kinematics::MachineKinematics,
         max_feed: f64,
         rapid_feed: f64,
-        strategy: crate::feed_modulation::ModulationStrategy,
+        strategy: crate::dressup::feed_modulation::ModulationStrategy,
         aggressiveness: f64,
     ) -> Option<(
         crate::toolpath::Toolpath,
-        crate::feed_modulation::ModulationOutcome,
+        crate::dressup::feed_modulation::ModulationOutcome,
     )> {
         modulate_annotated_against_trace(
             &FeedContext {
@@ -4276,7 +4277,7 @@ impl ProjectSession {
     /// time-weighted into a `Vec<PerMoveEngagement>` keyed by
     /// `move_index`, looks up the vendor LUT chipload band, builds the
     /// `ModulationContext`, and calls
-    /// [`crate::feed_modulation::adaptive_feed_modulate`] on a `clone`
+    /// [`crate::dressup::feed_modulation::adaptive_feed_modulate`] on a `clone`
     /// of the cached `Arc<AnnotatedToolpath>::toolpath`. When the
     /// modulator reports any feed change, the `Arc<AnnotatedToolpath>`
     /// in `self.results` is swapped for a new one wrapping the modulated
@@ -4308,7 +4309,7 @@ impl ProjectSession {
         // Engagement aggregation + `ModulationContext` build now live in the
         // shared `modulate_annotated_against_trace`; this pass only needs the
         // chipload band to gate which toolpaths are eligible.
-        use crate::feed_modulation::ChiploadBand;
+        use crate::dressup::feed_modulation::ChiploadBand;
 
         let Some(cut_trace_ref) = cut_trace.as_deref() else {
             return;

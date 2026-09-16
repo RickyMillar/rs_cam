@@ -101,7 +101,8 @@ pub fn run_fixpoint_ladder(label: &str, s: &mut ProjectSession) {
 
     let final_opts = SimulationOptions {
         adaptive_feed_modulation: true,
-        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_strategy:
+            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
         modulation_aggressiveness: 1.0,
         ..Default::default()
     };

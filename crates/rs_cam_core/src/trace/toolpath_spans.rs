@@ -997,7 +997,7 @@ impl MoveRemap {
     ///
     /// A bounding remap cannot see this on its own: only a REORDER can
     /// interleave strangers into a contiguous claim, so this is the extra
-    /// rule [`crate::tsp`] applies to spans and
+    /// rule [`crate::dressup::tsp`] applies to spans and
     /// [`crate::trace::transform_provenance::MoveProvenance::Permutation`] applies
     /// to every other index-carrying channel. One predicate, so the two can
     /// never disagree about what "scattered" means.
@@ -1071,12 +1071,12 @@ impl MoveRemap {
     /// This is the canonical "walk spans through a `MoveRemap`, drop
     /// collapsed spans" contract shared by every span-preserving toolpath
     /// transform that only *narrows or merges* moves in place — dressups
-    /// ([`crate::dressup`]), arc-fitting ([`crate::arcfit`]), and path
-    /// simplification ([`crate::condition`]). Callers append their own
+    /// ([`crate::dressup`]), arc-fitting ([`crate::dressup::arcfit`]), and path
+    /// simplification ([`crate::dressup::condition`]). Callers append their own
     /// transform-introduced spans (e.g. `Entry`, `DressupArtifact`,
     /// `GeometryRefit`, `LinkBridge`) to the returned vec afterward.
     ///
-    /// TSP's reordering pass ([`crate::tsp`]) additionally has to detect
+    /// TSP's reordering pass ([`crate::dressup::tsp`]) additionally has to detect
     /// *foreign-move intrusion* — a permutation can interleave moves from
     /// other spans into a span's new bounding range, which a plain bounding
     /// remap can't see. `tsp::remap_spans` delegates its per-span core to

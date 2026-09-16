@@ -5,6 +5,18 @@
 //!
 //! - **Ramp entry**: Replace vertical plunges with helical or ramped entry
 //! - **Tab/bridge**: Insert material tabs to hold parts during profile cutting
+//!
+//! The folder holds the other post-generation transforms too: arc fitting,
+//! segment conditioning, feed optimisation, feed modulation, rapid
+//! ordering and the entry burial audit. The G-code post-processor is
+//! `gcode::post`, which is a different layer.
+
+pub mod arcfit;
+pub mod condition;
+pub mod entry_audit;
+pub mod feed_modulation;
+pub mod feedopt;
+pub mod tsp;
 
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;

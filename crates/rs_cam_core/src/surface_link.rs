@@ -597,7 +597,7 @@ pub struct RelinkReport {
 /// `planning/unified_v3_design.md` §9.
 ///
 /// A "fragment" is a maximal run of non-`Rapid` moves — the same split
-/// [`crate::tsp::optimize_rapid_order`] uses, so the two passes agree on
+/// [`crate::dressup::tsp::optimize_rapid_order`] uses, so the two passes agree on
 /// what is atomic. Fragment interiors are copied VERBATIM; only the
 /// junctions between them are rewritten, which is what makes the cut
 /// geometry provably unchanged except at the (previously airborne)

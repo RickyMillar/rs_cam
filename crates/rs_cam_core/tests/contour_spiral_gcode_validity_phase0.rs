@@ -30,8 +30,8 @@
 use rs_cam_core::adaptive::{
     AdaptiveParams, CleanupStrategy, EngagementMeasure, PathStrategy2d, adaptive_toolpath,
 };
-use rs_cam_core::arcfit::fit_arcs;
-use rs_cam_core::condition::merge_linear_runs;
+use rs_cam_core::dressup::arcfit::fit_arcs;
+use rs_cam_core::dressup::condition::merge_linear_runs;
 use rs_cam_core::gcode::{emit_gcode, post};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::polygon::Polygon2;

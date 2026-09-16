@@ -101,7 +101,7 @@ use common::session::{
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::simulate::SimulationResult;
-use rs_cam_core::feed_modulation::ModulationStrategy;
+use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
 use rs_cam_core::session::{
     AdoptSimulationArgs, Command, CommandId, CommandKind, Job, JobHandle, OptimizeToolpathArgs,
     OptimizeToolpathHandle, ProjectSession, SetStockConfigArgs, SimulationOptions,

@@ -22,7 +22,7 @@ pub fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64 {
 /// via `α = acos(1 − a_e/R)`; this maps the fraction back to
 /// `a_e/D = a_e/(2R) = (1 − cos(2π·f)) / 2`. The result is exactly the
 /// `radial_woc_fraction` field of
-/// [`crate::feed_modulation::PerMoveEngagement`] — `0.0` = air,
+/// [`crate::dressup::feed_modulation::PerMoveEngagement`] — `0.0` = air,
 /// `0.5` = half-immersion, `1.0` = full slot.
 ///
 /// `f_arc` is clamped to `[0, 0.5]` (0.5 = full-slot leading arc, π

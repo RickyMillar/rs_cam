@@ -77,8 +77,8 @@ mod common;
 
 use common::meshes::disconnected_hemispheres;
 use rs_cam_core::compute::operation_configs::ScallopConfig;
+use rs_cam_core::dressup::entry_audit::{buried_fed_chords, fed_moves_outside_region};
 use rs_cam_core::dressup::{EntrySurfaceProbe, OffMeshEntry};
-use rs_cam_core::entry_audit::{buried_fed_chords, fed_moves_outside_region};
 use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::polygon::Polygon2;

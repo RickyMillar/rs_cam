@@ -90,7 +90,8 @@ fn p1_headless_ab_full_chain_intent_decomposition() {
     // live P0 baseline (which the GUI produced with modulation on).
     let final_opts = SimulationOptions {
         adaptive_feed_modulation: true,
-        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_strategy:
+            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
         modulation_aggressiveness: 1.0,
         ..Default::default()
     };

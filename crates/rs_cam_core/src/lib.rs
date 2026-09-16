@@ -21,10 +21,8 @@
 
 pub mod adaptive;
 pub mod adaptive3d;
-pub mod arcfit;
 pub mod classify_probe;
 pub mod compute;
-pub mod condition;
 pub mod conformal_spiral;
 pub mod crease_paths;
 pub mod crest_lines;
@@ -32,10 +30,7 @@ pub mod dexel_stock;
 pub mod diagnostics;
 pub mod direction_field;
 pub mod dressup;
-pub mod entry_audit;
 pub mod export;
-pub mod feed_modulation;
-pub mod feedopt;
 pub mod feeds;
 pub mod finish_planner;
 pub mod finish_setup;
@@ -73,7 +68,6 @@ pub mod tool;
 pub mod tool_load;
 pub mod toolpath;
 pub mod trace;
-pub mod tsp;
 pub mod unified_finish;
 pub mod util;
 

@@ -130,7 +130,7 @@ pub struct ModulationSummary {
 }
 
 /// Stable serialised tag for the modulation strategy used. Mirrors
-/// the runtime [`crate::feed_modulation::ModulationStrategy`] enum;
+/// the runtime [`crate::dressup::feed_modulation::ModulationStrategy`] enum;
 /// duplicated here to keep `verdict.rs` free of feed-modulation
 /// dependencies (the verdict types live closer to the public
 /// reporting surface).

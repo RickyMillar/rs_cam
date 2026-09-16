@@ -44,7 +44,7 @@
 //! transform does not merely translate span indices, it *emits* spans
 //! (`Entry`, `DressupArtifact`, `GeometryRefit`, `LinkBridge`), and the reorder transform
 //! additionally has to drop spans whose contents a permutation interleaved
-//! with foreign moves ([`crate::tsp`]'s foreign-intrusion filter). No generic
+//! with foreign moves ([`crate::dressup::tsp`]'s foreign-intrusion filter). No generic
 //! consumer can do that. Spans therefore cannot be forgotten for a different
 //! structural reason: they are inside the value the transform returns, and
 //! the only way to get that value out is to reconcile everything else.
@@ -106,7 +106,7 @@ pub enum MoveProvenance {
     /// foreign-intrusion rule a permutation needs: if the bounding range a
     /// claim maps onto also contains moves from outside the claim, the claim
     /// is DROPPED rather than silently widened to cover strangers. Mirrors
-    /// [`crate::tsp`]'s span filter, on the same predicate
+    /// [`crate::dressup::tsp`]'s span filter, on the same predicate
     /// ([`MoveRemap::foreign_intrusion`]).
     Permutation(MoveRemap),
     /// Insertion-only boundary mapping: `m[i]` is the first output index

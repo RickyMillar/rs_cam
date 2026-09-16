@@ -155,9 +155,15 @@ fn g5_tsp_rapid_order_scaling() {
     for &n in &sizes {
         let tp = scattered_segments(n);
         // One warm-up (allocator + page faults), then the measured run.
-        let _ = rs_cam_core::tsp::optimize_rapid_order(AnnotatedToolpath::new(tp.clone()), 5.0);
+        let _ = rs_cam_core::dressup::tsp::optimize_rapid_order(
+            AnnotatedToolpath::new(tp.clone()),
+            5.0,
+        );
         let t0 = Instant::now();
-        let out = rs_cam_core::tsp::optimize_rapid_order(AnnotatedToolpath::new(tp.clone()), 5.0);
+        let out = rs_cam_core::dressup::tsp::optimize_rapid_order(
+            AnnotatedToolpath::new(tp.clone()),
+            5.0,
+        );
         let dt = t0.elapsed().as_secs_f64();
         assert!(
             out.toolpath.moves.len() > n,

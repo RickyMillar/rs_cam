@@ -61,7 +61,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::entry_audit::{fed_moves_outside_region, is_entry_intent};
+use rs_cam_core::dressup::entry_audit::{fed_moves_outside_region, is_entry_intent};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ToolpathId;
@@ -381,7 +381,7 @@ fn checkpoint_zero_removes_nothing_outside_the_pocket_outline() {
                 use_predicted_feed_in_gates: false,
                 adaptive_feed_modulation: false,
                 modulation_strategy:
-                    rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+                    rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
                 modulation_aggressiveness: 1.0,
             },
             &cancel,

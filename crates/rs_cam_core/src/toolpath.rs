@@ -415,7 +415,7 @@ impl Toolpath {
 ///
 /// It is not an accel-friendliness floor. A move must be `F²/(2A)` long for
 /// the planner to reach feed `F` — metres, not microns, on a real machine —
-/// and that is [`crate::condition::merge_linear_runs`]'s job: an RDP pass at
+/// and that is [`crate::dressup::condition::merge_linear_runs`]'s job: an RDP pass at
 /// a caller-chosen conditioning tolerance, run after arc fitting, which
 /// collapses whole runs rather than dropping individual points. The two do
 /// not overlap and must not be conflated: this one removes output that no

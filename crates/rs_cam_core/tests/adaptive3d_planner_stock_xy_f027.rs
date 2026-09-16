@@ -231,7 +231,8 @@ fn as013_terrain_model_edge_axial_within_commanded_dpp_f027() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_strategy:
+            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
         modulation_aggressiveness: 1.0,
     };
     session
@@ -382,7 +383,8 @@ fn as013_terrain_model_edge_band_outlier_count_bounded_f027() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_strategy:
+            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
         modulation_aggressiveness: 1.0,
     };
     session

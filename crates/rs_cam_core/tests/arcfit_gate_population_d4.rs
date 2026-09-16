@@ -73,9 +73,9 @@
 
 use std::f64::consts::TAU;
 
-use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::apply_dogbones;
+use rs_cam_core::dressup::arcfit::fit_arcs;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::stock::simulation_cut::SimulationCutSample;
@@ -668,7 +668,8 @@ fn verdict_delta_probe_on_the_committed_fixture() {
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
-        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_strategy:
+            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
         modulation_aggressiveness: 1.0,
     };
     let _ = session.generate_all(&[], &cancel);

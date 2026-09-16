@@ -750,7 +750,7 @@ impl<B: ComputeBackend> AppController<B> {
                             let opts = rs_cam_core::session::SimulationOptions {
                                 adaptive_feed_modulation: true,
                                 modulation_strategy:
-                                    rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+                                    rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
                                 modulation_aggressiveness: 1.0,
                                 ..Default::default()
                             };

@@ -141,7 +141,7 @@ fn median(mut xs: Vec<f64>) -> Option<f64> {
 #[test]
 #[ignore = "instrument run: needs the user-local wanaka200 project and a full simulation"]
 fn wanaka_front_rough_plunge_guard_ab() {
-    use rs_cam_core::feed_modulation::ModulationStrategy;
+    use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
     use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs, SimulationOptions};
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;

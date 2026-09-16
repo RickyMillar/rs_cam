@@ -20,7 +20,7 @@
 //! narration with false positives (H2.6, `TOOL_SCALE_SEMANTICS.md` §5;
 //! pinned by `tests/tool_scale_semantics_pr2.rs`).
 
-use crate::condition::FEED_EPS;
+use crate::dressup::condition::FEED_EPS;
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::trace::narrate::LARGE_ARC_RADIUS_MULTIPLIER;

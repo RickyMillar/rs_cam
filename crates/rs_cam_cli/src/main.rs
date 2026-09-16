@@ -894,9 +894,9 @@ fn main() -> Result<()> {
                 .collect();
             let strategy = match modulation_strategy.as_str() {
                 "band-mid" | "bandmid" | "band_mid" => {
-                    rs_cam_core::feed_modulation::ModulationStrategy::BandMid
+                    rs_cam_core::dressup::feed_modulation::ModulationStrategy::BandMid
                 }
-                _ => rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+                _ => rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
             };
             let spindle_strat_override = spindle_strategy.as_deref().and_then(|s| match s {
                 "match_chart" => Some(rs_cam_core::feeds::SpindleStrategy::MatchChart),

@@ -84,7 +84,7 @@ fn two_segment_toolpath() -> Toolpath {
 
 #[test]
 fn synthesized_rapids_are_tagged_retract_or_linking() {
-    let out = rs_cam_core::tsp::optimize_rapid_order(
+    let out = rs_cam_core::dressup::tsp::optimize_rapid_order(
         AnnotatedToolpath::new(two_segment_toolpath()),
         10.0,
     )
@@ -125,7 +125,8 @@ fn the_reorder_never_invents_a_drilling_move() {
         "precondition: the input carries no Drilling move"
     );
 
-    let out = rs_cam_core::tsp::optimize_rapid_order(AnnotatedToolpath::new(input), 10.0).toolpath;
+    let out = rs_cam_core::dressup::tsp::optimize_rapid_order(AnnotatedToolpath::new(input), 10.0)
+        .toolpath;
 
     assert!(
         !out.moves.iter().any(|m| m.intent == MoveIntent::Drilling),

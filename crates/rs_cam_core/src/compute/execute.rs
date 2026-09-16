@@ -3920,7 +3920,7 @@ fn apply_dressup_traced(
 /// channels passes [`ReconcileSet::empty`] and says so.
 /// The height below which THIS operation's rapids are its own internal
 /// linking rather than group framing — the per-op value C1 threads into
-/// [`crate::tsp::optimize_rapid_order_with_provenance`], where it stops
+/// [`crate::dressup::tsp::optimize_rapid_order_with_provenance`], where it stops
 /// the reorder from taking a canned cycle apart.
 ///
 /// Returns `None` for every family whose rapids already live at `safe_z`,
@@ -4035,7 +4035,9 @@ pub fn apply_dressups(
                 scope.set_param(SemanticKey::SafeZ, safe_z);
                 scope.set_param(SemanticKey::BarrierCount, barrier_count);
             },
-            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z, link_ceiling),
+            |at| {
+                crate::dressup::tsp::optimize_rapid_order_with_provenance(at, safe_z, link_ceiling)
+            },
         );
     }
 
@@ -4284,7 +4286,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, tolerance);
             },
-            |at| crate::arcfit::fit_arcs_with_provenance(at, tolerance, tool_radius),
+            |at| crate::dressup::arcfit::fit_arcs_with_provenance(at, tolerance, tool_radius),
         );
     }
 
@@ -4307,7 +4309,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, merge_tol);
             },
-            |at| crate::condition::merge_linear_runs_with_provenance(at, merge_tol),
+            |at| crate::dressup::condition::merge_linear_runs_with_provenance(at, merge_tol),
         );
     }
 
@@ -4331,7 +4333,9 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
-            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z, link_ceiling),
+            |at| {
+                crate::dressup::tsp::optimize_rapid_order_with_provenance(at, safe_z, link_ceiling)
+            },
         );
     }
 
@@ -4382,7 +4386,7 @@ pub fn apply_dressups(
         let nominal = nominal_feed_rate;
         let max_rate = cfg.feed_max_rate;
         let ramp_rate = cfg.feed_ramp_rate;
-        let params = crate::feedopt::FeedOptParams {
+        let params = crate::dressup::feedopt::FeedOptParams {
             nominal_feed_rate: nominal,
             max_feed_rate: max_rate,
             // WP21: the ceiling is the operator's own dial and the floor is
@@ -4419,7 +4423,7 @@ pub fn apply_dressups(
             // spans pass through untouched. The claim is made explicitly rather
             // than by omission.
             |at| {
-                Transformed::index_preserving(crate::feedopt::optimize_feed_rates(
+                Transformed::index_preserving(crate::dressup::feedopt::optimize_feed_rates(
                     at, cut, stock, &params,
                 ))
             },

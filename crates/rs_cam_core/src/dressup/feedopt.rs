@@ -57,7 +57,7 @@ pub struct FeedOptParams {
     /// The pass caps any move `kinematic_utilization::classify_move` calls
     /// [`crate::machine::kinematic_utilization::MotionClass::Plunge`] at this rate,
     /// whatever the move's intent tag says. It is the same geometric guard
-    /// [`crate::feed_modulation::adaptive_feed_modulate`] carries (P3,
+    /// [`crate::dressup::feed_modulation::adaptive_feed_modulate`] carries (P3,
     /// 2026-09-07), and both read one classifier.
     ///
     /// `None` means the caller held no operation, and the cap does not

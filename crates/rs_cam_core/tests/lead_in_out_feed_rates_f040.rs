@@ -239,7 +239,7 @@ fn lead_out_feed_rate_applied_when_set() {
 
 #[test]
 fn modulation_skips_lead_in_lead_out_moves() {
-    use rs_cam_core::feed_modulation::{
+    use rs_cam_core::dressup::feed_modulation::{
         ChiploadBand, ModulationContext, ModulationStrategy, PerMoveEngagement,
         adaptive_feed_modulate,
     };

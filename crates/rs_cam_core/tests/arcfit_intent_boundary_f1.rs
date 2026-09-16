@@ -49,8 +49,8 @@
 )]
 
 use rs_cam_core::{
-    arcfit::fit_arcs,
     dressup::apply_lead_in_out_with_feeds,
+    dressup::arcfit::fit_arcs,
     geo::P3,
     toolpath::{Move, MoveIntent, MoveType, Toolpath},
     trace::toolpath_spans::AnnotatedToolpath,

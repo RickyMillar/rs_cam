@@ -1,7 +1,7 @@
 //! Phase 3 sentries — the modulator's GEOMETRIC plunge guard
 //! (`planning/machine_kinematics_confidence_2026-09-07.md`).
 //!
-//! The defect: [`rs_cam_core::feed_modulation::adaptive_feed_modulate`]
+//! The defect: [`rs_cam_core::dressup::feed_modulation::adaptive_feed_modulate`]
 //! skipped plunges by INTENT tag only. The adaptive3d rough emits its
 //! vertical step-down and re-entry descents as plain cutting moves, so
 //! they fell through the filter and every strategy lifted them to the
@@ -32,7 +32,7 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::feed_modulation::{
+use rs_cam_core::dressup::feed_modulation::{
     BindingConstraint, ChiploadBand, ModulationContext, ModulationStrategy, PerMoveEngagement,
     adaptive_feed_modulate,
 };

@@ -54,7 +54,7 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::feed_modulation::{
+use rs_cam_core::dressup::feed_modulation::{
     ChiploadBand, ModulationContext, ModulationStrategy, PerMoveEngagement, PowerLimitInputs,
     adaptive_feed_modulate,
 };

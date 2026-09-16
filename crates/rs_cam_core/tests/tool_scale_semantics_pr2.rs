@@ -31,8 +31,8 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::compute::tool_config::ToolMaterial;
+use rs_cam_core::dressup::arcfit::fit_arcs;
 use rs_cam_core::finish_setup::{
     build_classification_surface_with_cancel, build_finish_surface_with_cancel,
     build_finish_surface_with_cell_size_and_cancel,

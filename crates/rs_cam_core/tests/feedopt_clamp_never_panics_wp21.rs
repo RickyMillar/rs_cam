@@ -65,7 +65,7 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::feedopt::{FeedOptParams, optimize_feed_rates};
+use rs_cam_core::dressup::feedopt::{FeedOptParams, optimize_feed_rates};
 use rs_cam_core::geo::P3;
 use rs_cam_core::session::{
     GenObserver, GenerateToolpathArgs, GenerateToolpathHandle, Job, JobHandle, ProjectSession,

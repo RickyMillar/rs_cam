@@ -13,8 +13,8 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use std::path::Path;
 
-use rs_cam_core::arcfit::fit_arcs;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+use rs_cam_core::dressup::arcfit::fit_arcs;
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::arc_util::linearize_arc;
 use rs_cam_core::geometry::contour_extract::weave_contours;

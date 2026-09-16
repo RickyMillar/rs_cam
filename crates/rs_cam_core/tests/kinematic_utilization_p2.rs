@@ -525,7 +525,7 @@ fn headroom_estimate_is_positive_and_below_the_feed_rise() {
 #[test]
 #[ignore = "instrument run: needs the user-local wanaka200 project and a full simulation"]
 fn wanaka_front_rough_reports_the_plunge_class_peak() {
-    use rs_cam_core::feed_modulation::ModulationStrategy;
+    use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
     use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs, SimulationOptions};
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;

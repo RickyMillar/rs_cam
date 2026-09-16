@@ -819,7 +819,7 @@ fn scattered_segments(n: usize) -> Toolpath {
 }
 
 fn bench_gen_rapid_order(c: &mut Criterion) {
-    use rs_cam_core::tsp::optimize_rapid_order;
+    use rs_cam_core::dressup::tsp::optimize_rapid_order;
 
     let mut group = c.benchmark_group("gen_rapid_order");
     group.sample_size(10);
@@ -1124,7 +1124,8 @@ fn bench_sim_e2e_small(c: &mut Criterion) {
             auto_resolution: false,
             use_predicted_feed_in_gates: false,
             adaptive_feed_modulation: false,
-            modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+            modulation_strategy:
+                rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
             modulation_aggressiveness: 1.0,
         };
         group.bench_function(

@@ -151,7 +151,8 @@ fn sim_options(resolution: f64) -> SimulationOptions {
         // A feed-modulation pass between the toolpath and the numbers
         // would make this a measurement of two things.
         adaptive_feed_modulation: false,
-        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_strategy:
+            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
         modulation_aggressiveness: 1.0,
     }
 }
