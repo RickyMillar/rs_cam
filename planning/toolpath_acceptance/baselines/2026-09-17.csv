@@ -1,0 +1,19 @@
+case_id,op_kind,status,resolution_mm,chipload_kind,chipload_observed_mm_tooth,deflection_kind,deflection_peak_mm,power_kind,power_peak_kw,rapid_collision_count,avg_engagement,peak_axial_doc_mm,drill_chip_welding_kind,drill_chip_welding_observed,drill_peck_kind,drill_plunge_kind,notes
+AS001,pocket,ok,0.5,exceeds_low,0.030000,within,0.0087,within,0.0863,0,0.3441,2.000,,,,,
+AS002,adaptive,ok,0.5,within,0.083333,within,0.0086,within,0.1042,0,0.3820,3.000,,,,,
+AS003,profile,ok,0.5,within,0.084826,within,0.0122,within,0.0869,0,0.7425,2.000,,,,,
+AS004,face,ok,0.5,exceeds_high,0.093750,within,0.0027,within,0.0159,0,0.2984,0.500,,,,,
+AS005,zigzag,ok,0.5,exceeds_high,0.075262,within,0.0103,within,0.1012,0,0.3136,2.000,,,,,
+AS006,rest,generation_failed,0.5,,,,,,,,,,,,,,"Operation failed: Previous tool not set for rest machining; param_warnings=prev_tool_radius=3: Invalid parameter: unknown parameter 'prev_tool_radius' for Rest Machining operation. Valid parameters: prev_tool_id, stepover, depth, depth_per_pass, feed_rate, plunge_rate, angle, spindle_rpm"
+AS007,trace,ok,0.5,unmodeled_novendordata,,within,0.0019,within,0.0046,0,0.5358,0.167,,,,,
+AS008,v_carve,ok,0.5,unmodeled_novendordata,,within,0.0001,within,0.0002,0,0.0112,0.097,,,,,
+AS009,chamfer,ok,0.5,within,0.030000,within,0.0014,within,0.0191,0,0.8182,1.100,,,,,"param_warnings=width=1: Invalid parameter: unknown parameter 'width' for Chamfer operation. Valid parameters: chamfer_width, tip_offset, feed_rate, plunge_rate, spindle_rpm"
+AS010,inlay,ok,0.5,within,0.026667,within,0.0021,within,0.0356,0,0.0043,1.763,,,,,
+AS011,drill,ok,0.5,"unmodeled_notapplicableforop(""drill cycle — no continuous engagement"")",,"unmodeled_notapplicableforop(""drill cycle — no continuous engagement"")",,"unmodeled_notapplicableforop(""drill cycle — no continuous engagement"")",,0,,,within,1.000,within,within,
+AS012,alignment_pin_drill,ok,0.5,"unmodeled_notapplicableforop(""drill cycle — no continuous engagement"")",,"unmodeled_notapplicableforop(""drill cycle — no continuous engagement"")",,"unmodeled_notapplicableforop(""drill cycle — no continuous engagement"")",,0,,,within,0.667,within,within,"param_warnings=depth=10: Invalid parameter: unknown parameter 'depth' for Pin Drill operation. Valid parameters: holes, spoilboard_penetration, cycle, peck_depth, feed_rate, retract_z, spindle_rpm"
+AS013,adaptive3d,ok,0.5,within,0.073529,within,0.0087,within,0.1027,0,0.0769,3.743,,,,,
+AS014,drop_cutter,ok,0.5,exceeds_high,0.021053,within,0.0984,exceeds,1.0065,0,0.2688,42.465,,,,,
+AS015,scallop,ok,0.5,exceeds_high,0.022857,within,0.0632,within,0.1506,0,0.0214,6.753,,,,,
+AS016,waterline,generation_empty,0.5,,,,,,,,,,,,,,toolpath has 0 moves; param_warnings=
+AS017,horizontal_finish,ok,0.5,unmodeled_novendordata,,within,0.0536,within,0.3015,0,0.0584,11.594,,,,,
+AS018,project_curve,generation_failed,0.5,,,,,,,,,,,,,,Operation failed: Missing geometry: Operation requires 2D geometry; param_warnings=
