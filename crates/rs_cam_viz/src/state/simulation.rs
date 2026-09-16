@@ -9,7 +9,7 @@ use super::runtime::GuiState;
 use super::toolpath::ToolpathId;
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::debug_trace::{ToolpathDebugAnnotation, ToolpathDebugBounds2};
-use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::geo::{BoundingBox3, P3, V3};
 use rs_cam_core::semantic_trace::{
     ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticTrace,
@@ -515,17 +515,12 @@ pub enum StockVizMode {
     ByHeight,
 }
 
-/// Per-toolpath boundary in the simulation: toolpath ID and cumulative move count at its end.
-#[derive(Debug, Clone)]
-pub struct ToolpathBoundary {
-    pub id: ToolpathId,
-    pub name: String,
-    pub tool_name: String,
-    pub start_move: usize,
-    pub end_move: usize,
-    /// Cut direction for this toolpath's setup.
-    pub direction: StockCutDirection,
-}
+/// Per-toolpath boundary in the simulation: toolpath ID and cumulative
+/// move count at its end.
+///
+/// The core type, under the name the viz surfaces use. Viz held a
+/// field-identical copy until 2026-09-16.
+pub use rs_cam_core::compute::simulate::SimBoundary as ToolpathBoundary;
 
 /// Per-setup boundary in the simulation: marks where a setup begins.
 #[derive(Debug, Clone)]

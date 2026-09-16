@@ -201,17 +201,7 @@ pub struct SimulationRequest {
     pub memoize_prefix: bool,
 }
 
-pub struct SimBoundary {
-    pub id: ToolpathId,
-    pub name: String,
-    pub tool_name: String,
-    pub start_move: usize,
-    pub end_move: usize,
-    /// Cut direction for this toolpath's setup.
-    pub direction: StockCutDirection,
-}
-
-pub use rs_cam_core::compute::simulate::SimCheckpointMesh;
+pub use rs_cam_core::compute::simulate::{SimBoundary, SimCheckpointMesh};
 
 /// One entry in the live-sim playback stream: a pre-transformed toolpath, the
 /// tool config, the cut direction to stamp it with, and (for drill operations)

@@ -639,18 +639,7 @@ impl<B: ComputeBackend> AppController<B> {
                                 crate::controller::Severity::Warning,
                             );
                         }
-                        let boundaries: Vec<_> = simulation
-                            .boundaries
-                            .iter()
-                            .map(|boundary| crate::state::simulation::ToolpathBoundary {
-                                id: boundary.id,
-                                name: boundary.name.clone(),
-                                tool_name: boundary.tool_name.clone(),
-                                start_move: boundary.start_move,
-                                end_move: boundary.end_move,
-                                direction: boundary.direction,
-                            })
-                            .collect();
+                        let boundaries = simulation.boundaries.clone();
 
                         let setup_boundaries = {
                             let mut sbs = Vec::new();
@@ -2241,18 +2230,7 @@ fn core_simulation_from_lane(
         total_moves: simulation.total_moves,
         deviations: simulation.deviations.clone(),
         column_deviations: simulation.column_deviations.clone(),
-        boundaries: simulation
-            .boundaries
-            .iter()
-            .map(|boundary| rs_cam_core::compute::simulate::SimBoundary {
-                id: boundary.id,
-                name: boundary.name.clone(),
-                tool_name: boundary.tool_name.clone(),
-                start_move: boundary.start_move,
-                end_move: boundary.end_move,
-                direction: boundary.direction,
-            })
-            .collect(),
+        boundaries: simulation.boundaries.clone(),
         checkpoints: simulation.checkpoints.clone(),
         rapid_collisions: simulation.rapid_collisions.clone(),
         rapid_collision_move_indices: simulation.rapid_collision_move_indices.clone(),

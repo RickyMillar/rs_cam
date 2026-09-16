@@ -259,7 +259,12 @@ pub struct KinematicsContext {
 }
 
 /// Metadata for one toolpath boundary in the simulation timeline.
-#[derive(Clone)]
+///
+/// **This is the one boundary type.** The viz worker and the viz
+/// simulation state each carried a field-identical copy until
+/// 2026-09-16, and three map sites copied one into the other. A new
+/// field on one copy dropped out at every hop.
+#[derive(Clone, Debug)]
 pub struct SimBoundary {
     pub id: ToolpathId,
     pub name: String,

@@ -5,8 +5,8 @@ use super::helpers::{
 #[cfg(test)]
 use super::test_fixture::{RequestSpec, board, no_dressups, request, retract_z, stock_bbox};
 use super::{
-    Arc, AtomicBool, ComputeError, ComputeRequest, SimBoundary, SimulationRequest,
-    SimulationResult, ToolpathPhaseTracker, ToolpathResult,
+    Arc, AtomicBool, ComputeError, ComputeRequest, SimulationRequest, SimulationResult,
+    ToolpathPhaseTracker, ToolpathResult,
 };
 #[cfg(test)]
 use crate::state::job::{ToolConfig, ToolId, ToolType};
@@ -239,19 +239,8 @@ where
     // Build viz-only playback data (global-frame toolpaths for viewport replay).
     let playback_data = build_playback_data(req);
 
-    // Convert core boundaries (usize ids) to viz boundaries (ToolpathId).
-    let boundaries: Vec<SimBoundary> = core_result
-        .boundaries
-        .into_iter()
-        .map(|b| SimBoundary {
-            id: b.id,
-            name: b.name,
-            tool_name: b.tool_name,
-            start_move: b.start_move,
-            end_move: b.end_move,
-            direction: b.direction,
-        })
-        .collect();
+    // Core and viz share the one boundary type (re-exported).
+    let boundaries = core_result.boundaries;
 
     // Core and viz now share the same SimCheckpointMesh type (re-exported).
     let checkpoints = core_result.checkpoints;
