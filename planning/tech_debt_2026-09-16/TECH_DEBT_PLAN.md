@@ -200,7 +200,7 @@ and `cargo fmt --all -- --check` reports no diff. No heavy gate ran
 | L13 | `a76a6752` | — | — | — | Doc only, as the finding directs. `rs_cam_core::simulation` is the name `rs_cam_viz::app::gpu_upload` uses for `StockMesh` at two production sites, so it is not legacy and it does not move: a rename is not mechanical. **Recorded while reading it:** the module's other two re-exports, `linearize_arc` and `RadialProfileLUT`, have no reader through this path. That is a deletion, not a visibility change, so it is residue below |
 | S29 `rs_cam_mcp` | `7f709f30` | 2 | 0 | 2 | No wire type changed and `tests/snapshots/mcp_wire_surface.json` is untouched. The two test doors, `BoundedResponse::insert_section` and `ResponseBudget::try_charge`, went behind `#[cfg(test)]`: every shipped handler builds its sections with `insert_always` and `cap_json_values` |
 | S29 `rs_cam_cli` | `352a3fe4` | 4 | 0 | 0 | The crate ships one binary and no library target, so a `pub` item here exported nothing. All four rows demote clean |
-| S29 `rs_cam_viz` | `8d0e7b9a` | 51 | 9 | 4 | 62 rows listed, 2 already deleted by S3, 60 swept. Restored: 3 for `private_interfaces` (`GenerateAllScope`, `OptimizeStageRow`, `ToolpathMoveVisibility`), 1 test door (`ApplyReport`), and 5 for a dead cluster (see residue). The 4 `#[cfg(test)]` doors are in `state/toolpath/entry.rs` |
+| S29 `rs_cam_viz` | `8d0e7b9a` | 47 | 8 | 5 | 62 rows listed, 2 already deleted by S3, 60 swept. Restored: 3 for `private_interfaces` (`GenerateAllScope`, `OptimizeStageRow`, `ToolpathMoveVisibility`) and 5 for a dead cluster (see residue). Test doors: `ApplyReport` restored to `pub` for an external harness, and 4 put behind `#[cfg(test)]` in `state/toolpath/entry.rs`. **The commit title says "fifty-one", which double-counts.** 51 is 60 minus the 8 restored, so it also holds the 4 gated doors; under the column rule used here — demoted plus restored plus test door equals the rows swept — the demoted count is 47 |
 | S29 `rs_cam_core` | `50eabb24` | 74 | 13 | 16 | 138 rows listed; 25 belong to the power-calcs owner (`feeds/**`, `tool_load/**`), 1 is the S33 hold, 9 are already deleted, 103 swept. Restored: 12 for `private_interfaces`, 1 for a cross-crate reader (`ToolSummary`, read by `rs_cam_cli::project`). Test doors: 3 restored to `pub` for an external harness (`OperationParamSchema`, `GeomCacheStats`, `CompactSpiral`) and 13 put behind `#[cfg(test)]` |
 
 ### What the sweep proves about the instrument
@@ -232,6 +232,11 @@ and doc lines only, so none of them landed here.
 2. **Two unread re-exports.** `rs_cam_core::simulation` re-exports
    `linearize_arc` and `RadialProfileLUT`; nothing reads either through that
    path.
+3. **Workspace rustdoc.** `cargo doc --workspace --no-deps` reports 160
+   `private_intra_doc_links` and 95 `unresolved link` warnings. All of them
+   pre-date this programme; `6630faf3` cleared the 16 this wave added. The
+   quality gates in `CLAUDE.md` do not include `cargo doc`, so the backlog
+   is recorded, not scheduled.
 
 ## Progress
 
@@ -240,9 +245,9 @@ and doc lines only, so none of them landed here.
 W4 closed 2026-09-17, seven commits on master, in queue order: S30
 `b80d4ab3`, L12 `bbee10e7`, L13 `a76a6752`, S29 `rs_cam_mcp` `7f709f30`,
 S29 `rs_cam_cli` `352a3fe4`, S29 `rs_cam_viz` `8d0e7b9a`, S29
-`rs_cam_core` `50eabb24`. Totals across the four crates: 131 items
-demoted, 22 restored to `pub` with a doc line naming what holds them
-there, 22 test doors. The plan cells were filled by this note, because a
+`rs_cam_core` `50eabb24`. Totals across the four crates: 127 items
+demoted, 21 restored to `pub` with a doc line naming what holds them
+there, 23 test doors; with S30 and L12 the wave carries 25 test doors. The plan cells were filled by this note, because a
 commit cannot carry its own hash.
 
 **Count correction.** "For the power-calcs owner" says eight S29 rows.
