@@ -646,7 +646,7 @@ const COMPOSITE_MARGIN_PX: f64 = 6.0;
 /// Render a composite 6-view PNG of the stock (4 iso corners + top + bottom).
 ///
 /// Returns raw RGBA pixel buffer and dimensions. Use the `image` crate to
-/// encode to PNG/JPEG in test code, or [`save_mesh_composite_png`].
+/// encode to PNG/JPEG in test code.
 ///
 /// The camera is anchored to `stock.stock_bbox`. **For a mixed-setup project
 /// that is not enough**: `session::compute` hands non-identity setups a
@@ -834,21 +834,6 @@ pub fn render_mesh_composite(
     height: u32,
 ) -> Vec<u8> {
     render_mesh_composite_in_frame(mesh, None, width, height)
-}
-
-/// Render a 6-view composite and save as PNG.
-///
-/// Convenience wrapper around [`render_mesh_composite`] that encodes the
-/// RGBA pixels to a PNG file on disk.
-pub fn save_mesh_composite_png(
-    mesh: &crate::stock_mesh::StockMesh,
-    path: &std::path::Path,
-    width: u32,
-    height: u32,
-) -> Result<(), String> {
-    let pixels = render_mesh_composite(mesh, width, height);
-    image::save_buffer(path, &pixels, width, height, image::ColorType::Rgba8)
-        .map_err(|e| format!("PNG save failed: {e}"))
 }
 
 /// Core of the composite renderer.
