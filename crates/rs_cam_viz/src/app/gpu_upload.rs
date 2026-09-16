@@ -11,7 +11,7 @@ use crate::render::toolpath_render::{self, ToolpathGpuData};
 use crate::render::upload_cache;
 use crate::state::Workspace;
 use crate::state::job::{
-    self, Setup, SetupId, height_context_from_session, session_fixture_bbox,
+    self, SetupFrame, SetupId, height_context_from_session, session_fixture_bbox,
     session_fixture_clearance_bbox, session_keep_out_bbox, transform_mesh,
 };
 use crate::state::selection::Selection;
@@ -170,7 +170,11 @@ impl RsCamApp {
         // Everything is always displayed in the active setup's local coordinate
         // frame ("machine view").  Toolpaths, simulation, mesh, stock — all at
         // (0,0,0)-relative local coords.
-        let active_setup_ref: Option<Setup> = {
+        // The frame and the id of the active setup. The id selects that
+        // setup's own fixtures, keep-outs and toolpaths; the frame places
+        // them. They are read out together because the session borrow ends
+        // with this block.
+        let (active_setup_ref, active_setup_id): (Option<SetupFrame>, Option<SetupId>) = {
             let state = self.controller.state();
             let sel = &state.selection;
             let setup_id = match sel {
@@ -195,7 +199,10 @@ impl RsCamApp {
             } else {
                 state.session.list_setups().first()
             };
-            session_setup.map(|sd| Setup::for_transforms(SetupId(sd.id), sd.face_up, sd.z_rotation))
+            match session_setup {
+                Some(sd) => (Some(SetupFrame::of(sd)), Some(SetupId(sd.id))),
+                None => (None, None),
+            }
         };
         let use_local_frame = active_setup_ref.is_some();
 
@@ -234,9 +241,9 @@ impl RsCamApp {
         // identically sized replacement. A `Weak` reserves the allocation
         // outright, so the address cannot be reissued at all.
         let frame_key = upload_cache::FrameKey {
-            setup: active_setup_ref
-                .as_ref()
-                .map(|s| (s.id, s.face_up, s.z_rotation)),
+            setup: active_setup_id
+                .zip(active_setup_ref)
+                .map(|(id, s)| (id, s.face_up, s.z_rotation)),
             stock: stock.clone(),
         };
         let mut plain_mesh_ids = Vec::new();
@@ -364,7 +371,7 @@ impl RsCamApp {
                 }
             };
 
-            let setup_for_model = |model_id: usize| -> Option<Setup> {
+            let setup_for_model = |model_id: usize| -> Option<SetupFrame> {
                 let state = self.controller.state();
                 let tc = state
                     .session
@@ -373,16 +380,12 @@ impl RsCamApp {
                     .find(|tc| tc.model_id == model_id)?;
                 let setup_idx = state.session.setup_of_toolpath_id(tc.id)?;
                 let sd = state.session.list_setups().get(setup_idx)?;
-                Some(Setup::for_transforms(
-                    SetupId(sd.id),
-                    sd.face_up,
-                    sd.z_rotation,
-                ))
+                Some(SetupFrame::of(sd))
             };
 
             let ring_to_lines = |ring: &[rs_cam_core::geo::P2],
                                  close: bool,
-                                 setup_opt: Option<&Setup>,
+                                 setup_opt: Option<&SetupFrame>,
                                  poly_z: f32,
                                  verts: &mut Vec<LineVertex>| {
                 if ring.len() < 2 {
@@ -432,11 +435,7 @@ impl RsCamApp {
                 };
                 // Prefer the setup that actually uses this model; fall back to
                 // the current active/selected setup.
-                let model_setup = setup_for_model(model.id).or_else(|| {
-                    active_setup_ref
-                        .as_ref()
-                        .map(|s| Setup::for_transforms(s.id, s.face_up, s.z_rotation))
-                });
+                let model_setup = setup_for_model(model.id).or(active_setup_ref);
                 // Draw slightly above the setup's local stock top to avoid
                 // z-fighting. When no setup is known, fall back to world-frame
                 // stock top.
@@ -564,7 +563,7 @@ impl RsCamApp {
 
             // Helper: forward-transform a bbox into the setup's local frame.
             // After transforming corners, min/max may swap, so rebuild via from_points.
-            let transform_bbox = |bb: BoundingBox3, setup: &Setup| -> BoundingBox3 {
+            let transform_bbox = |bb: BoundingBox3, setup: &SetupFrame| -> BoundingBox3 {
                 let corners = [
                     P3::new(bb.min.x, bb.min.y, bb.min.z),
                     P3::new(bb.max.x, bb.min.y, bb.min.z),
@@ -581,13 +580,8 @@ impl RsCamApp {
             // Only show fixtures/keepouts/pins from the active setup (each
             // setup has its own local frame, so mixing them is wrong).
             // Get the active setup's session data for fixtures/keepouts/pins.
-            let active_session_setup = active_setup_ref.as_ref().and_then(|s| {
-                state
-                    .session
-                    .list_setups()
-                    .iter()
-                    .find(|sd| sd.id == s.id.0)
-            });
+            let active_session_setup = active_setup_id
+                .and_then(|sid| state.session.list_setups().iter().find(|sd| sd.id == sid.0));
 
             // P6 — five overlays share this one line buffer, and each is now
             // filtered into it by its OWN registry flag: fixtures,
@@ -940,9 +934,6 @@ impl RsCamApp {
             Selection::Toolpath(id) => Some(id),
             _ => None,
         };
-        // Determine which setup is active for filtering toolpath display
-        let active_setup_id = active_setup_ref.as_ref().map(|s| s.id);
-
         // Iterate session toolpath configs + GUI runtime
         {
             let state = self.controller.state();

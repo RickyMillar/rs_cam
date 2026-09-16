@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use rs_cam_core::geo::BoundingBox3;
 // Serialize/Deserialize not directly needed in this file any more — every
 // persisted type it names is defined (and derived) in core.
@@ -31,219 +29,39 @@ pub use rs_cam_core::session::{Corner, DatumConfig, XYDatum, ZDatum};
 
 // FlipAxis and AlignmentPin are now re-exported from core::compute::stock_config above.
 
-/// Kind of workholding fixture.
+/// The orientation half of a setup: what the transform helpers need.
+///
+/// **This is a frame descriptor, not a model of a setup.** The setup is
+/// `rs_cam_core::session::SetupData`, and it is the only one. This type
+/// is `(FaceUp, ZRotation)` with names, so a draw site that has released
+/// its borrow of the session can still place geometry.
+///
+/// C12 deleted the second data model this file used to carry —
+/// `JobState`, a `Setup` with fixtures and toolpaths, `Fixture` and
+/// `KeepOutZone`. Only the legacy project reader built them, and C01 and
+/// C11 deleted that reader. Every live fixture and keep-out edit already
+/// builds the CORE type and dispatches a command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FixtureKind {
-    Clamp,
-    Vise,
-    VacuumPod,
-    Custom,
-}
-
-impl FixtureKind {
-    pub const ALL: &[FixtureKind] = &[
-        FixtureKind::Clamp,
-        FixtureKind::Vise,
-        FixtureKind::VacuumPod,
-        FixtureKind::Custom,
-    ];
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            FixtureKind::Clamp => "Clamp",
-            FixtureKind::Vise => "Vise",
-            FixtureKind::VacuumPod => "Vacuum Pod",
-            FixtureKind::Custom => "Custom",
-        }
-    }
-}
-
-/// A physical workholding device positioned on the machine table.
-#[derive(Debug, Clone)]
-pub struct Fixture {
-    pub id: FixtureId,
-    pub name: String,
-    pub kind: FixtureKind,
-    pub enabled: bool,
-    /// Position of the fixture's min corner in workpiece coordinates (mm).
-    pub origin_x: f64,
-    pub origin_y: f64,
-    pub origin_z: f64,
-    /// Dimensions of the fixture bounding box (mm).
-    pub size_x: f64,
-    pub size_y: f64,
-    pub size_z: f64,
-    /// Extra clearance around the fixture for tool avoidance (mm).
-    pub clearance: f64,
-}
-
-impl Fixture {
-    pub fn new_default(id: FixtureId) -> Self {
-        Self {
-            id,
-            name: format!("Fixture {}", id.0 + 1),
-            kind: FixtureKind::Clamp,
-            enabled: true,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            origin_z: 0.0,
-            size_x: 30.0,
-            size_y: 15.0,
-            size_z: 20.0,
-            clearance: 3.0,
-        }
-    }
-
-    /// Physical bounding box of the fixture.
-    pub fn bbox(&self) -> BoundingBox3 {
-        use rs_cam_core::geo::P3;
-        BoundingBox3 {
-            min: P3::new(self.origin_x, self.origin_y, self.origin_z),
-            max: P3::new(
-                self.origin_x + self.size_x,
-                self.origin_y + self.size_y,
-                self.origin_z + self.size_z,
-            ),
-        }
-    }
-
-    /// Bounding box inflated by the clearance margin (used for avoidance).
-    pub fn clearance_bbox(&self) -> BoundingBox3 {
-        use rs_cam_core::geo::P3;
-        let c = self.clearance;
-        BoundingBox3 {
-            min: P3::new(self.origin_x - c, self.origin_y - c, self.origin_z),
-            max: P3::new(
-                self.origin_x + self.size_x + c,
-                self.origin_y + self.size_y + c,
-                self.origin_z + self.size_z,
-            ),
-        }
-    }
-
-    /// XY footprint (clearance bbox projected) as a polygon for boundary subtraction.
-    pub fn footprint(&self) -> rs_cam_core::polygon::Polygon2 {
-        let bb = self.clearance_bbox();
-        rs_cam_core::polygon::Polygon2::rectangle(bb.min.x, bb.min.y, bb.max.x, bb.max.y)
-    }
-}
-
-/// A rectangular region the tool must avoid (XY only, full Z extent).
-#[derive(Debug, Clone)]
-pub struct KeepOutZone {
-    pub id: KeepOutId,
-    pub name: String,
-    pub enabled: bool,
-    /// Position of the zone's min corner (mm).
-    pub origin_x: f64,
-    pub origin_y: f64,
-    /// Dimensions of the zone (mm).
-    pub size_x: f64,
-    pub size_y: f64,
-}
-
-impl KeepOutZone {
-    pub fn new_default(id: KeepOutId) -> Self {
-        Self {
-            id,
-            name: format!("Keep-Out {}", id.0 + 1),
-            enabled: true,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            size_x: 20.0,
-            size_y: 20.0,
-        }
-    }
-
-    /// 3D bounding box, extending from the stock Z range.
-    pub fn bbox(&self, stock: &StockConfig) -> rs_cam_core::geo::BoundingBox3 {
-        rs_cam_core::geo::BoundingBox3 {
-            min: rs_cam_core::geo::P3::new(self.origin_x, self.origin_y, stock.origin_z),
-            max: rs_cam_core::geo::P3::new(
-                self.origin_x + self.size_x,
-                self.origin_y + self.size_y,
-                stock.origin_z + stock.z,
-            ),
-        }
-    }
-
-    /// XY footprint as a polygon for boundary subtraction.
-    pub fn footprint(&self) -> rs_cam_core::polygon::Polygon2 {
-        rs_cam_core::polygon::Polygon2::rectangle(
-            self.origin_x,
-            self.origin_y,
-            self.origin_x + self.size_x,
-            self.origin_y + self.size_y,
-        )
-    }
-}
-
-/// A named group of toolpaths sharing a common workholding context.
-pub struct Setup {
-    pub id: SetupId,
-    pub name: String,
+pub struct SetupFrame {
     pub face_up: FaceUp,
     pub z_rotation: ZRotation,
-    pub datum: DatumConfig,
-    pub fixtures: Vec<Fixture>,
-    pub keep_out_zones: Vec<KeepOutZone>,
-    pub toolpaths: Vec<super::toolpath::ToolpathEntry>,
-    /// Models relevant to this setup. Empty means all models are available.
-    pub model_ids: Vec<ModelId>,
-    /// Optional override for the M0 pause message emitted between this setup
-    /// and the next. `None` falls back to `Setup change: <name>`. The actual
-    /// re-zero / probe / home gcode is expected to live in the operator's
-    /// sender macros (g-Sender / UGS / CNCjs) — this just instructs them.
-    pub pause_message: Option<String>,
 }
 
-impl Setup {
-    /// Build a minimal `Setup` for transform computations only (no fixtures/toolpaths).
-    /// Use when you have session `SetupData` and only need `transform_point`,
-    /// `effective_stock`, `needs_transform`, etc.
-    pub fn for_transforms(id: SetupId, face_up: FaceUp, z_rotation: ZRotation) -> Self {
+impl SetupFrame {
+    /// The frame a setup's orientation names.
+    pub fn new(face_up: FaceUp, z_rotation: ZRotation) -> Self {
         Self {
-            id,
-            name: String::new(),
             face_up,
             z_rotation,
-            datum: DatumConfig::default(),
-            fixtures: Vec::new(),
-            keep_out_zones: Vec::new(),
-            toolpaths: Vec::new(),
-            model_ids: Vec::new(),
-            pause_message: None,
         }
     }
 
-    pub fn new(id: SetupId, name: String) -> Self {
-        Self {
-            id,
-            name,
-            face_up: FaceUp::default(),
-            z_rotation: ZRotation::default(),
-            datum: DatumConfig::default(),
-            fixtures: Vec::new(),
-            keep_out_zones: Vec::new(),
-            toolpaths: Vec::new(),
-            model_ids: Vec::new(),
-            pause_message: None,
-        }
+    /// The frame of a core setup record.
+    pub fn of(setup: &rs_cam_core::session::SetupData) -> Self {
+        Self::new(setup.face_up, setup.z_rotation)
     }
 
-    /// Models available in this setup. Returns all models if `model_ids` is empty.
-    pub fn available_models<'a>(&self, all_models: &'a [LoadedModel]) -> Vec<&'a LoadedModel> {
-        if self.model_ids.is_empty() {
-            all_models.iter().collect()
-        } else {
-            all_models
-                .iter()
-                .filter(|m| self.model_ids.contains(&ModelId(m.id)))
-                .collect()
-        }
-    }
-
-    /// Core's setup-transform descriptor for this setup against `stock`.
+    /// Core's setup-transform descriptor for this frame against `stock`.
     ///
     /// The setup-transform algorithm family (world→local point, mesh, and
     /// polygon transforms) lives in
@@ -341,6 +159,12 @@ impl Setup {
     /// Whether this setup requires geometry transforms (non-identity orientation).
     pub fn needs_transform(&self) -> bool {
         self.face_up != FaceUp::Top || self.z_rotation != ZRotation::Deg0
+    }
+}
+
+impl Default for SetupFrame {
+    fn default() -> Self {
+        Self::new(FaceUp::default(), ZRotation::default())
     }
 }
 
@@ -511,7 +335,7 @@ pub fn session_keep_out_bbox(
 /// [`rs_cam_core::compute::transform::SetupTransformInfo::apply_to_mesh`].
 pub fn transform_mesh(
     mesh: &rs_cam_core::mesh::TriangleMesh,
-    setup: &Setup,
+    setup: &SetupFrame,
     stock: &StockConfig,
 ) -> rs_cam_core::mesh::TriangleMesh {
     setup.transform_info(stock).apply_to_mesh(mesh)
@@ -522,7 +346,7 @@ pub fn transform_mesh(
 #[allow(clippy::indexing_slicing)] // stride-3 loop bounded by mesh.vertices.len()
 pub fn transform_heightmap_mesh(
     mesh: &mut rs_cam_core::simulation::StockMesh,
-    setup: &Setup,
+    setup: &SetupFrame,
     stock: &StockConfig,
 ) {
     for i in (0..mesh.vertices.len()).step_by(3) {
@@ -535,354 +359,6 @@ pub fn transform_heightmap_mesh(
         mesh.vertices[i] = local.x as f32;
         mesh.vertices[i + 1] = local.y as f32;
         mesh.vertices[i + 2] = local.z as f32;
-    }
-}
-
-/// The full job state.
-pub struct JobState {
-    pub name: String,
-    pub file_path: Option<PathBuf>,
-    pub dirty: bool,
-    pub models: Vec<LoadedModel>,
-    pub stock: StockConfig,
-    pub tools: Vec<ToolConfig>,
-    pub post: PostConfig,
-    pub machine: rs_cam_core::machine::MachineProfile,
-    /// Library machine this job references, if any. When set, `machine`
-    /// was resolved from the library on load and is re-saved as a
-    /// fallback alongside the ref.
-    pub machine_ref: Option<String>,
-    pub setups: Vec<Setup>,
-    /// Monotonic counter incremented on every edit (for staleness detection).
-    pub edit_counter: u64,
-    next_model_id: usize,
-    next_tool_id: usize,
-    next_toolpath_id: usize,
-    next_setup_id: usize,
-    next_fixture_id: usize,
-    next_keep_out_id: usize,
-}
-
-impl JobState {
-    pub fn new() -> Self {
-        Self {
-            name: "Untitled".to_owned(),
-            file_path: None,
-            dirty: false,
-            models: Vec::new(),
-            stock: StockConfig::default(),
-            tools: Vec::new(),
-            post: PostConfig::default(),
-            machine: rs_cam_core::machine::MachineProfile::default(),
-            machine_ref: None,
-            setups: vec![Setup::new(SetupId(0), "Setup 1".into())],
-            edit_counter: 0,
-            next_model_id: 0,
-            next_tool_id: 0,
-            next_toolpath_id: 0,
-            next_setup_id: 1,
-            next_fixture_id: 0,
-            next_keep_out_id: 0,
-        }
-    }
-
-    pub fn next_model_id(&mut self) -> ModelId {
-        let id = ModelId(self.next_model_id);
-        self.next_model_id += 1;
-        id
-    }
-
-    pub fn next_tool_id(&mut self) -> ToolId {
-        let id = ToolId(self.next_tool_id);
-        self.next_tool_id += 1;
-        id
-    }
-
-    pub fn next_toolpath_id(&mut self) -> super::toolpath::ToolpathId {
-        let id = super::toolpath::ToolpathId(self.next_toolpath_id);
-        self.next_toolpath_id += 1;
-        id
-    }
-
-    pub fn next_setup_id(&mut self) -> SetupId {
-        let id = SetupId(self.next_setup_id);
-        self.next_setup_id += 1;
-        id
-    }
-
-    pub fn next_fixture_id(&mut self) -> FixtureId {
-        let id = FixtureId(self.next_fixture_id);
-        self.next_fixture_id += 1;
-        id
-    }
-
-    pub fn next_keep_out_id(&mut self) -> KeepOutId {
-        let id = KeepOutId(self.next_keep_out_id);
-        self.next_keep_out_id += 1;
-        id
-    }
-
-    /// Iterate over all toolpaths (flat view across all setups).
-    pub fn all_toolpaths(&self) -> impl Iterator<Item = &super::toolpath::ToolpathEntry> {
-        self.setups.iter().flat_map(|setup| setup.toolpaths.iter())
-    }
-
-    /// Mutable iteration over all toolpaths (flat view across all setups).
-    pub fn all_toolpaths_mut(
-        &mut self,
-    ) -> impl Iterator<Item = &mut super::toolpath::ToolpathEntry> {
-        self.setups
-            .iter_mut()
-            .flat_map(|setup| setup.toolpaths.iter_mut())
-    }
-
-    /// Find a toolpath by ID across all setups.
-    pub fn find_toolpath(
-        &self,
-        id: super::toolpath::ToolpathId,
-    ) -> Option<&super::toolpath::ToolpathEntry> {
-        self.all_toolpaths().find(|toolpath| toolpath.id == id)
-    }
-
-    /// Build a [`HeightContext`] for resolving a toolpath's heights from current stock/model state.
-    ///
-    /// Model Z extents are reported in the setup-local frame (accounting for
-    /// face-up flip, Z rotation, and stock origin translation).
-    pub fn height_context_for(
-        &self,
-        tp: &super::toolpath::ToolpathEntry,
-    ) -> super::toolpath::HeightContext {
-        let sb = self.stock.bbox();
-        let raw_mb = self
-            .models
-            .iter()
-            .find(|m| m.id == tp.model_id.0)
-            .and_then(|m| m.bbox());
-        // Apply the owning setup's transform so model_top_z / model_bottom_z
-        // are in setup-local coordinates.
-        let setup = self
-            .setups
-            .iter()
-            .find(|s| s.toolpaths.iter().any(|t| t.id == tp.id));
-        let mb = match (raw_mb, setup) {
-            (Some(b), Some(s)) => {
-                let info = s.transform_info(&self.stock);
-                Some(setup_local_bbox(&b, &info))
-            }
-            (Some(b), None) => Some(b),
-            _ => None,
-        };
-        super::toolpath::HeightContext {
-            safe_z: self.post.safe_z,
-            op_depth: tp.operation.default_depth_for_heights(),
-            stock_top_z: sb.max.z,
-            stock_bottom_z: sb.min.z,
-            model_top_z: mb.map(|b| b.max.z),
-            model_bottom_z: mb.map(|b| b.min.z),
-        }
-    }
-
-    /// Find a mutable toolpath by ID across all setups.
-    pub fn find_toolpath_mut(
-        &mut self,
-        id: super::toolpath::ToolpathId,
-    ) -> Option<&mut super::toolpath::ToolpathEntry> {
-        self.all_toolpaths_mut().find(|toolpath| toolpath.id == id)
-    }
-
-    /// Total toolpath count across all setups.
-    pub fn toolpath_count(&self) -> usize {
-        self.setups.iter().map(|setup| setup.toolpaths.len()).sum()
-    }
-
-    /// Add a toolpath to the default (first) setup.
-    pub fn push_toolpath(&mut self, entry: super::toolpath::ToolpathEntry) {
-        if let Some(setup) = self.setups.first_mut() {
-            setup.toolpaths.push(entry);
-        }
-    }
-
-    /// Add a toolpath to a specific setup.
-    pub fn push_toolpath_to_setup(
-        &mut self,
-        setup_id: SetupId,
-        entry: super::toolpath::ToolpathEntry,
-    ) {
-        if let Some(setup) = self.setups.iter_mut().find(|setup| setup.id == setup_id) {
-            setup.toolpaths.push(entry);
-        }
-    }
-
-    /// Remove a toolpath by ID from whatever setup contains it.
-    pub fn remove_toolpath(&mut self, id: super::toolpath::ToolpathId) {
-        for setup in &mut self.setups {
-            setup.toolpaths.retain(|toolpath| toolpath.id != id);
-        }
-    }
-
-    /// Move a toolpath one position earlier within its setup. Returns true if moved.
-    pub fn move_toolpath_up(&mut self, id: super::toolpath::ToolpathId) -> bool {
-        for setup in &mut self.setups {
-            if let Some(pos) = setup
-                .toolpaths
-                .iter()
-                .position(|toolpath| toolpath.id == id)
-            {
-                if pos > 0 {
-                    setup.toolpaths.swap(pos, pos - 1);
-                    return true;
-                }
-                return false;
-            }
-        }
-        false
-    }
-
-    /// Move a toolpath one position later within its setup. Returns true if moved.
-    pub fn move_toolpath_down(&mut self, id: super::toolpath::ToolpathId) -> bool {
-        for setup in &mut self.setups {
-            if let Some(pos) = setup
-                .toolpaths
-                .iter()
-                .position(|toolpath| toolpath.id == id)
-            {
-                if pos + 1 < setup.toolpaths.len() {
-                    setup.toolpaths.swap(pos, pos + 1);
-                    return true;
-                }
-                return false;
-            }
-        }
-        false
-    }
-
-    /// Iterate toolpaths with a global index (for color assignment and stable ordering).
-    pub fn toolpaths_enumerated(
-        &self,
-    ) -> impl Iterator<Item = (usize, &super::toolpath::ToolpathEntry)> {
-        self.setups
-            .iter()
-            .flat_map(|setup| setup.toolpaths.iter())
-            .enumerate()
-    }
-
-    /// Return the setup that owns a given toolpath ID.
-    pub fn setup_of_toolpath(&self, id: super::toolpath::ToolpathId) -> Option<SetupId> {
-        self.setups
-            .iter()
-            .find(|setup| setup.toolpaths.iter().any(|toolpath| toolpath.id == id))
-            .map(|setup| setup.id)
-    }
-
-    /// Reorder a toolpath within its current setup to a target index. Returns true if moved.
-    pub fn reorder_toolpath(&mut self, id: super::toolpath::ToolpathId, target_idx: usize) -> bool {
-        for setup in &mut self.setups {
-            if let Some(pos) = setup
-                .toolpaths
-                .iter()
-                .position(|toolpath| toolpath.id == id)
-            {
-                let clamped = target_idx.min(setup.toolpaths.len().saturating_sub(1));
-                if pos != clamped {
-                    let entry = setup.toolpaths.remove(pos);
-                    setup.toolpaths.insert(clamped, entry);
-                    return true;
-                }
-                return false;
-            }
-        }
-        false
-    }
-
-    /// Move a toolpath from its current setup to a target setup at a given index. Returns true if moved.
-    pub fn move_toolpath_to_setup(
-        &mut self,
-        id: super::toolpath::ToolpathId,
-        target_setup_id: SetupId,
-        index: usize,
-    ) -> bool {
-        // Find and remove from source setup
-        let mut entry = None;
-        for setup in &mut self.setups {
-            if let Some(pos) = setup
-                .toolpaths
-                .iter()
-                .position(|toolpath| toolpath.id == id)
-            {
-                entry = Some(setup.toolpaths.remove(pos));
-                break;
-            }
-        }
-        let Some(entry) = entry else {
-            return false;
-        };
-
-        // Insert into target setup
-        if let Some(target) = self
-            .setups
-            .iter_mut()
-            .find(|setup| setup.id == target_setup_id)
-        {
-            let clamped = index.min(target.toolpaths.len());
-            target.toolpaths.insert(clamped, entry);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Mark the job as edited (increments edit counter for staleness tracking).
-    pub fn mark_edited(&mut self) {
-        self.dirty = true;
-        self.edit_counter += 1;
-    }
-
-    pub fn sync_next_ids(&mut self) {
-        self.next_model_id = self
-            .models
-            .iter()
-            .map(|m| m.id)
-            .max()
-            .map_or(0, |id| id + 1);
-        self.next_tool_id = self
-            .tools
-            .iter()
-            .map(|t| t.id.0)
-            .max()
-            .map_or(0, |id| id + 1);
-        self.next_toolpath_id = self
-            .setups
-            .iter()
-            .flat_map(|setup| setup.toolpaths.iter())
-            .map(|toolpath| toolpath.id.0)
-            .max()
-            .map_or(0, |id| id + 1);
-        self.next_setup_id = self
-            .setups
-            .iter()
-            .map(|setup| setup.id.0)
-            .max()
-            .map_or(0, |id| id + 1);
-        self.next_fixture_id = self
-            .setups
-            .iter()
-            .flat_map(|setup| setup.fixtures.iter())
-            .map(|fixture| fixture.id.0)
-            .max()
-            .map_or(0, |id| id + 1);
-        self.next_keep_out_id = self
-            .setups
-            .iter()
-            .flat_map(|setup| setup.keep_out_zones.iter())
-            .map(|keep_out| keep_out.id.0)
-            .max()
-            .map_or(0, |id| id + 1);
-    }
-}
-
-impl Default for JobState {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -927,7 +403,7 @@ mod tests {
             origin_z: -19.0,
             ..StockConfig::default()
         };
-        let setup = Setup::for_transforms(SetupId(0), FaceUp::Top, ZRotation::Deg0);
+        let setup = SetupFrame::new(FaceUp::Top, ZRotation::Deg0);
         let shift = setup.emission_to_display_shift(&stock);
         assert_eq!((shift.x, shift.y, shift.z), (-3.0, 4.0, 19.0));
     }
@@ -938,8 +414,8 @@ mod tests {
     fn emission_shift_non_identity_is_zero() {
         let stock = stock_with_offset();
         for setup in [
-            Setup::for_transforms(SetupId(0), FaceUp::Bottom, ZRotation::Deg0),
-            Setup::for_transforms(SetupId(0), FaceUp::Top, ZRotation::Deg90),
+            SetupFrame::new(FaceUp::Bottom, ZRotation::Deg0),
+            SetupFrame::new(FaceUp::Top, ZRotation::Deg90),
         ] {
             let shift = setup.emission_to_display_shift(&stock);
             assert_eq!((shift.x, shift.y, shift.z), (0.0, 0.0, 0.0));
@@ -959,11 +435,7 @@ mod tests {
 
             for &face in FaceUp::ALL {
                 for &rot in ZRotation::ALL {
-                    let setup = Setup {
-                        face_up: face,
-                        z_rotation: rot,
-                        ..Setup::new(SetupId(0), "Test".to_owned())
-                    };
+                    let setup = SetupFrame::new(face, rot);
 
                     let transformed = setup.transform_point(point, &stock);
                     let recovered = setup.inverse_transform_point(transformed, &stock);
@@ -1009,11 +481,7 @@ mod tests {
 
         for &face in FaceUp::ALL {
             for &rot in ZRotation::ALL {
-                let setup = Setup {
-                    face_up: face,
-                    z_rotation: rot,
-                    ..Setup::new(SetupId(0), "Test".to_owned())
-                };
+                let setup = SetupFrame::new(face, rot);
 
                 for &point in &test_points {
                     let transformed = setup.transform_point(point, &stock);
@@ -1038,11 +506,7 @@ mod tests {
     #[test]
     fn face_up_bottom_flips_z() {
         let stock = stock_at_origin();
-        let setup = Setup {
-            face_up: FaceUp::Bottom,
-            z_rotation: ZRotation::Deg0,
-            ..Setup::new(SetupId(0), "Test".to_owned())
-        };
+        let setup = SetupFrame::new(FaceUp::Bottom, ZRotation::Deg0);
 
         // A point at the top of the stock (z = stock.z) should map to z = 0
         let top_point = P3::new(50.0, 40.0, stock.z);
@@ -1069,7 +533,7 @@ mod tests {
     #[test]
     fn identity_setup_is_passthrough() {
         let stock = stock_at_origin();
-        let setup = Setup::new(SetupId(0), "Test".to_owned());
+        let setup = SetupFrame::default();
 
         let point = P3::new(30.0, 20.0, 10.0);
         let transformed = setup.transform_point(point, &stock);
@@ -1088,11 +552,7 @@ mod tests {
     #[test]
     fn z_rotation_90_swaps_axes() {
         let stock = stock_at_origin();
-        let setup = Setup {
-            face_up: FaceUp::Top,
-            z_rotation: ZRotation::Deg90,
-            ..Setup::new(SetupId(0), "Test".to_owned())
-        };
+        let setup = SetupFrame::new(FaceUp::Top, ZRotation::Deg90);
 
         // The origin (0,0,z) should map to (D, 0, z) under 90 deg rotation
         // since Deg90 formula: new_x = D - y, new_y = x
@@ -1126,16 +586,12 @@ mod tests {
     /// face and the arm is `(x, z, D-y)`. The world-face meaning itself is
     /// pinned in core by
     /// `tests/face_up_names_follow_drafting_convention_g_frontname.rs`; this
-    /// one stays as the viz-side check that `Setup::transform_point`
+    /// one stays as the viz-side check that `SetupFrame::transform_point`
     /// delegates to it rather than growing its own copy of the arithmetic.
     #[test]
     fn face_up_front_rotates_y_z() {
         let stock = stock_at_origin();
-        let setup = Setup {
-            face_up: FaceUp::Front,
-            z_rotation: ZRotation::Deg0,
-            ..Setup::new(SetupId(0), "Test".to_owned())
-        };
+        let setup = SetupFrame::new(FaceUp::Front, ZRotation::Deg0);
 
         // Front: new = (x, z, D-y) where D = stock.y
         let point = P3::new(30.0, 20.0, 10.0);
@@ -1165,11 +621,7 @@ mod tests {
 
         for &face in FaceUp::ALL {
             for &rot in ZRotation::ALL {
-                let setup = Setup {
-                    face_up: face,
-                    z_rotation: rot,
-                    ..Setup::new(SetupId(0), "Test".to_owned())
-                };
+                let setup = SetupFrame::new(face, rot);
 
                 // A point in the interior of the stock
                 let point = P3::new(stock.x * 0.3, stock.y * 0.3, stock.z * 0.3);
@@ -1222,12 +674,6 @@ mod tests {
         );
         // Corner: 4 variants
         assert_eq!(Corner::ALL.len(), 4, "Corner::ALL out of sync with enum");
-        // FixtureKind: 4 variants
-        assert_eq!(
-            FixtureKind::ALL.len(),
-            4,
-            "FixtureKind::ALL out of sync with enum"
-        );
     }
 
     #[test]

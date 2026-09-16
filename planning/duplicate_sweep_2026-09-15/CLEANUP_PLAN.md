@@ -133,7 +133,7 @@ maintain.
   import to core's type (review gap). Move the legacy round-trip tests
   (`io/project.rs:1824-1911`) to the new converter before deleting.
   Risk: med. Gate: `cargo test -p rs_cam_viz -q`.
-- [ ] **C12 — delete the legacy format support outright** (I01 step 5;
+- [x] **C12 — delete the legacy format support outright** (I01 step 5;
   **DECIDED 2026-09-16: no `project_legacy` converter needed**). Delete
   viz `LegacyProjectFile`, `load_legacy_project`, `load_legacy_model`,
   `restore_project_*`, `build_session_from_legacy_job`
