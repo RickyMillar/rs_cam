@@ -66,7 +66,7 @@ two disagree.
 
 ## Phase 1 — live-bug drift fixes (highest priority, independent)
 
-- [ ] **C01 — delete the legacy fallback entirely** (I01 step 1;
+- [x] **C01 — delete the legacy fallback entirely** (I01 step 1;
   **DECIDED 2026-09-16: no legacy-format support — rs_cam is still in
   development, old project files will not be supported**). Delete the
   catch-every-`SessionError` fallback at `controller/io.rs:526-540`, the

@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::session::{
-    AddModelArgs, AdoptModelGeometryArgs, Command, Effects, ProjectSession, ProjectSessionBuilder,
-    ReplaceSetupsAndToolpathsArgs, SetPostConfigArgs, SetProjectNameArgs, SetStockConfigArgs,
+    AddModelArgs, AdoptModelGeometryArgs, Command, Effects, ProjectSession, SetPostConfigArgs,
+    SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -291,7 +291,7 @@ impl<B: ComputeBackend> AppController<B> {
         let previous_kind = model.kind;
         let name = model.name.clone();
 
-        let Some(kind) = kind_from_extension(new_path) else {
+        let Some(kind) = rs_cam_core::io::infer_kind_from_path(new_path) else {
             self.push_notification(
                 format!(
                     "Cannot relink '{name}': '{}' is not a model file rs_cam reads",
@@ -395,181 +395,143 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(())
     }
 
+    /// Open a project file through the one core loader.
+    ///
+    /// There is no second loader behind this one (I01 drift 3). This arm
+    /// used to catch every `SessionError` and re-read the file with the
+    /// viz parser, whose sections all carried serde defaults. A file core
+    /// refused therefore re-opened as an empty project and reported
+    /// success, and a project file that core parses but the viz parser
+    /// shapes differently loaded through the wrong schema. Core writes
+    /// `format_version = 3` and core reads it; a file core refuses now
+    /// fails to open, and the operator reads the reason.
     pub fn open_job_from_path(&mut self, path: &Path) -> Result<(), VizError> {
-        match ProjectSession::load(path) {
-            Ok(session) => {
-                // Populate GUI state from session.
-                let mut gui = GuiState::new();
-                gui.file_path = Some(path.to_path_buf());
-                gui.dirty = false;
-                gui.post = GuiState::post_from_session(session.post_config());
+        let session = ProjectSession::load(path)?;
+        // Populate GUI state from session.
+        let mut gui = GuiState::new();
+        gui.file_path = Some(path.to_path_buf());
+        gui.dirty = false;
+        gui.post = GuiState::post_from_session(session.post_config());
 
-                let loaded_at = Instant::now();
-                let mut warning_messages = Vec::new();
+        let loaded_at = Instant::now();
+        let mut warning_messages = Vec::new();
 
-                // Populate toolpath runtime entries.
-                for tc in session.toolpath_configs() {
-                    // G-LOADREGEN (F2.6, operator ruling on R0.1 §7 Q2):
-                    // a load requests regeneration for 2.5D operations
-                    // only, respecting each operation's own dial. Opening
-                    // a 3D job should not silently start minutes of
-                    // compute the operator did not ask for.
-                    //
-                    // This used to force `auto_regen = true` on EVERY
-                    // operation regardless of `default_auto_regen()`, so
-                    // `process_auto_regen` submitted all of them 500 ms
-                    // after load — including the 3D families the card
-                    // labels MAN. That load-time sweep is the precondition
-                    // the G-REGEN-RACE reproduction is built on (see
-                    // `controller/tests.rs`, the G-REGEN-RACE section): an
-                    // agent's `generate_all` arriving while one of those
-                    // submits is still the lane's ACTIVE job resubmits it.
-                    // The race itself stays fixed by
-                    // `ToolpathSubmitOutcome` and is still needed, because
-                    // 2.5D operations still auto-regenerate on load.
-                    //
-                    // A manual-regen operation therefore loads with no
-                    // result and no request: its freshness reads
-                    // `NoResult`, which every surface renders as pending
-                    // work, never as a failure.
-                    let auto_regen = tc.operation.default_auto_regen();
-                    let mut rt = ToolpathRuntime::new(auto_regen);
-                    if auto_regen {
-                        rt.stale_since = Some(loaded_at);
-                    }
-                    gui.toolpath_rt.insert(tc.id, rt);
-
-                    // Warn about missing tool/model references
-                    let tool_exists = session.tools().iter().any(|t| t.id.0 == tc.tool_id);
-                    if !tool_exists {
-                        warning_messages.push(format!(
-                            "Toolpath '{}' references missing tool id {} and needs reassignment.",
-                            tc.name, tc.tool_id
-                        ));
-                    }
-                    let model_exists = session.models().iter().any(|m| m.id == tc.model_id);
-                    if !model_exists {
-                        warning_messages.push(format!(
-                            "Toolpath '{}' references missing model id {} and needs reassignment.",
-                            tc.name, tc.model_id
-                        ));
-                    }
-                }
-
-                // Warn about models that failed to load.
-                for m in session.models() {
-                    let has_geometry = m.mesh.is_some() || m.polygons.is_some();
-                    if !has_geometry {
-                        // G-MODELRELINK: say what actually went wrong.
-                        // `load_error` holds the loader's own reason and was
-                        // rendered NOWHERE — so a corrupt STL, an unreadable
-                        // DXF and a genuinely absent file all reported "was
-                        // not found", sending the operator to look for a file
-                        // that was sitting right there.
-                        warning_messages.push(match &m.load_error {
-                            Some(detail) => format!(
-                                "Model '{}' could not be loaded from '{}': {detail}",
-                                m.name,
-                                m.path.display()
-                            ),
-                            None => format!(
-                                "Model '{}' could not be loaded because '{}' was not found.",
-                                m.name,
-                                m.path.display()
-                            ),
-                        });
-                    }
-                }
-
-                // Warn when the alignment pins cannot register the flip they
-                // are for. This is the check that would have caught a real
-                // project whose pins were centre-symmetric rather than
-                // mirror-symmetric: under `FaceUp::Bottom`'s `y -> D-y`
-                // neither hole landed on a dowel, so the part could not have
-                // re-seated — and nothing said so until the operator was at
-                // the machine. Deduped because a `Top` setup contributes only
-                // the bounds line, and a project with several setups would
-                // otherwise repeat it.
-                for setup in session.list_setups() {
-                    warning_messages.extend(
-                        session
-                            .stock_config()
-                            .validate_pins_for_flip(setup.face_up)
-                            .warnings(),
-                    );
-                }
-                // NOT `dedup()` — that only collapses ADJACENT duplicates, and
-                // a two-setup project interleaves them: setup 1 contributes
-                // bounds + flip + keying, setup 2 contributes bounds again, so
-                // the two identical bounds lines are never neighbours. Keep
-                // first occurrence, drop later repeats, preserve order.
-                {
-                    let mut seen = std::collections::HashSet::new();
-                    warning_messages.retain(|m| seen.insert(m.clone()));
-                }
-
-                for message in &warning_messages {
-                    tracing::warn!("{message}");
-                }
-
-                self.state.session = session;
-                self.state.gui = gui;
-                self.state.selection = Selection::None;
-                self.state.simulation = SimulationState::new();
-                self.collision_positions.clear();
-                self.pending_upload = true;
-                self.load_warnings = warning_messages;
-                self.show_load_warnings = !self.load_warnings.is_empty();
-                tracing::info!("Loaded project via unified session path");
-                Ok(())
+        // Populate toolpath runtime entries.
+        for tc in session.toolpath_configs() {
+            // G-LOADREGEN (F2.6, operator ruling on R0.1 §7 Q2):
+            // a load requests regeneration for 2.5D operations
+            // only, respecting each operation's own dial. Opening
+            // a 3D job should not silently start minutes of
+            // compute the operator did not ask for.
+            //
+            // This used to force `auto_regen = true` on EVERY
+            // operation regardless of `default_auto_regen()`, so
+            // `process_auto_regen` submitted all of them 500 ms
+            // after load — including the 3D families the card
+            // labels MAN. That load-time sweep is the precondition
+            // the G-REGEN-RACE reproduction is built on (see
+            // `controller/tests.rs`, the G-REGEN-RACE section): an
+            // agent's `generate_all` arriving while one of those
+            // submits is still the lane's ACTIVE job resubmits it.
+            // The race itself stays fixed by
+            // `ToolpathSubmitOutcome` and is still needed, because
+            // 2.5D operations still auto-regenerate on load.
+            //
+            // A manual-regen operation therefore loads with no
+            // result and no request: its freshness reads
+            // `NoResult`, which every surface renders as pending
+            // work, never as a failure.
+            let auto_regen = tc.operation.default_auto_regen();
+            let mut rt = ToolpathRuntime::new(auto_regen);
+            if auto_regen {
+                rt.stale_since = Some(loaded_at);
             }
-            Err(session_err) => {
-                tracing::warn!("Session load failed ({session_err}), falling back to viz loader");
-                let loaded = crate::io::project::load_project(path)?;
-                let warning_messages: Vec<_> = loaded
-                    .warnings
-                    .iter()
-                    .map(|warning| warning.message())
-                    .collect();
-                for message in &warning_messages {
-                    tracing::warn!("{message}");
-                }
+            gui.toolpath_rt.insert(tc.id, rt);
 
-                // Build session from the legacy-loaded job, then populate gui
-                let job = loaded.job;
-                let session = build_session_from_legacy_job(&job);
-                let mut gui = GuiState::new();
-                gui.file_path = Some(path.to_path_buf());
-                gui.dirty = false;
-                gui.post = job.post.clone();
-
-                let loaded_at = Instant::now();
-                for tp in job.all_toolpaths() {
-                    // G-LOADREGEN: the legacy loader already carried a
-                    // per-operation `auto_regen` from the file; the
-                    // regeneration REQUEST now follows it too, instead of
-                    // being set on every operation and then ignored by the
-                    // sweep for the manual ones.
-                    let mut rt = ToolpathRuntime::new(tp.auto_regen);
-                    if tp.auto_regen {
-                        rt.stale_since = Some(loaded_at);
-                    }
-                    gui.toolpath_rt.insert(tp.id, rt);
-                }
-
-                self.state.session = session;
-                self.state.gui = gui;
-                self.state.selection = Selection::None;
-                self.state.simulation = SimulationState::new();
-                self.collision_positions.clear();
-                self.pending_upload = true;
-                self.load_warnings = warning_messages;
-                self.show_load_warnings = !self.load_warnings.is_empty();
-                Ok(())
+            // Warn about missing tool/model references
+            let tool_exists = session.tools().iter().any(|t| t.id.0 == tc.tool_id);
+            if !tool_exists {
+                warning_messages.push(format!(
+                    "Toolpath '{}' references missing tool id {} and needs reassignment.",
+                    tc.name, tc.tool_id
+                ));
+            }
+            let model_exists = session.models().iter().any(|m| m.id == tc.model_id);
+            if !model_exists {
+                warning_messages.push(format!(
+                    "Toolpath '{}' references missing model id {} and needs reassignment.",
+                    tc.name, tc.model_id
+                ));
             }
         }
-    }
 
+        // Warn about models that failed to load.
+        for m in session.models() {
+            let has_geometry = m.mesh.is_some() || m.polygons.is_some();
+            if !has_geometry {
+                // G-MODELRELINK: say what actually went wrong.
+                // `load_error` holds the loader's own reason and was
+                // rendered NOWHERE — so a corrupt STL, an unreadable
+                // DXF and a genuinely absent file all reported "was
+                // not found", sending the operator to look for a file
+                // that was sitting right there.
+                warning_messages.push(match &m.load_error {
+                    Some(detail) => format!(
+                        "Model '{}' could not be loaded from '{}': {detail}",
+                        m.name,
+                        m.path.display()
+                    ),
+                    None => format!(
+                        "Model '{}' could not be loaded because '{}' was not found.",
+                        m.name,
+                        m.path.display()
+                    ),
+                });
+            }
+        }
+
+        // Warn when the alignment pins cannot register the flip they
+        // are for. This is the check that would have caught a real
+        // project whose pins were centre-symmetric rather than
+        // mirror-symmetric: under `FaceUp::Bottom`'s `y -> D-y`
+        // neither hole landed on a dowel, so the part could not have
+        // re-seated — and nothing said so until the operator was at
+        // the machine. Deduped because a `Top` setup contributes only
+        // the bounds line, and a project with several setups would
+        // otherwise repeat it.
+        for setup in session.list_setups() {
+            warning_messages.extend(
+                session
+                    .stock_config()
+                    .validate_pins_for_flip(setup.face_up)
+                    .warnings(),
+            );
+        }
+        // NOT `dedup()` — that only collapses ADJACENT duplicates, and
+        // a two-setup project interleaves them: setup 1 contributes
+        // bounds + flip + keying, setup 2 contributes bounds again, so
+        // the two identical bounds lines are never neighbours. Keep
+        // first occurrence, drop later repeats, preserve order.
+        {
+            let mut seen = std::collections::HashSet::new();
+            warning_messages.retain(|m| seen.insert(m.clone()));
+        }
+
+        for message in &warning_messages {
+            tracing::warn!("{message}");
+        }
+
+        self.state.session = session;
+        self.state.gui = gui;
+        self.state.selection = Selection::None;
+        self.state.simulation = SimulationState::new();
+        self.collision_positions.clear();
+        self.pending_upload = true;
+        self.load_warnings = warning_messages;
+        self.show_load_warnings = !self.load_warnings.is_empty();
+        tracing::info!("Loaded project via unified session path");
+        Ok(())
+    }
     pub fn export_gcode(&self) -> Result<String, VizError> {
         crate::io::export::export_gcode_from_session(
             &self.state.session,
@@ -617,185 +579,5 @@ impl<B: ComputeBackend> AppController<B> {
                 .as_ref()
                 .and_then(|r| r.cut_trace.as_ref()),
         )
-    }
-}
-
-// ── Legacy fallback: build session from viz JobState ─────────────────
-
-/// Build a `ProjectSession` from a legacy-loaded `JobState`.
-fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSession {
-    // The WP7a builder is the door for verbatim construction: it keeps
-    // every supplied tool id and model id, and it runs no bounding-box
-    // fit. `add_model` renumbers, which would break every stored
-    // `ToolpathConfig::model_id`, and that is why this function reached
-    // for the `models_mut` hatch before.
-    //
-    // **The id counters move.** `build()` raises `next_model_id` and
-    // `next_tool_id` above every supplied id. The hatch push raised
-    // neither, so a later import could take an id a loaded model already
-    // held.
-    let mut builder = ProjectSessionBuilder::new()
-        .stock(job.stock.clone())
-        .post(GuiState::post_to_session(&job.post))
-        .machine(job.machine.clone());
-    for tool in &job.tools {
-        builder = builder.tool(tool.clone());
-    }
-    for m in &job.models {
-        builder = builder.model(rs_cam_core::session::LoadedModel {
-            id: m.id,
-            name: m.name.clone(),
-            mesh: m.mesh.clone(),
-            polygons: m.polygons.clone(),
-            drill_targets: std::sync::Arc::clone(&m.drill_targets),
-            layers: std::sync::Arc::clone(&m.layers),
-            path: m.path.clone(),
-            kind: m.kind,
-            units: m.units,
-            enriched_mesh: m.enriched_mesh.clone(),
-            winding_report: m.winding_report,
-            load_error: m.load_error.clone(),
-        });
-    }
-    let mut session = builder.build();
-    // WP19 `let _ =`: this function builds a session no surface has
-    // adopted. The caller rebuilds `GuiState` from scratch, so no
-    // runtime row exists to stamp and no viewport holds a simulation.
-    let _ = session.apply(Command::SetProjectName(SetProjectNameArgs {
-        name: job.name.clone(),
-    }));
-
-    let mut session_setups = Vec::new();
-    let mut session_tp_configs = Vec::new();
-
-    for setup in &job.setups {
-        let mut tp_indices = Vec::new();
-        for tp in &setup.toolpaths {
-            let tp_index = session_tp_configs.len();
-            tp_indices.push(tp_index);
-            session_tp_configs.push(rs_cam_core::session::ToolpathConfig {
-                id: tp.id,
-                name: tp.name.clone(),
-                enabled: tp.enabled,
-                operation: tp.operation.clone(),
-                dressups: tp.dressups.clone(),
-                heights: tp.heights.clone(),
-                tool_id: tp.tool_id.0,
-                model_id: tp.model_id.0,
-                pre_gcode: if tp.pre_gcode.is_empty() {
-                    None
-                } else {
-                    Some(tp.pre_gcode.clone())
-                },
-                post_gcode: if tp.post_gcode.is_empty() {
-                    None
-                } else {
-                    Some(tp.post_gcode.clone())
-                },
-                boundary: tp.boundary.clone(),
-                // Dead dial (UX-R03-009): the GUI no longer carries it;
-                // the core field is written `false` for file compatibility.
-                boundary_inherit: false,
-                rest_analysis: tp.rest_analysis.clone(),
-                stock_source: tp.stock_source,
-                coolant: tp.coolant,
-                face_selection: tp.face_selection.clone(),
-                debug_options: tp.debug_options,
-                feeds_provenance: tp.feeds_provenance.clone(),
-                // Carried the same way `feeds_provenance` is: the fallback
-                // loader sets it on the entry when the file has one, so a
-                // legacy-rescued plan keeps its tier provenance.
-                planner_origin: tp.planner_origin.clone(),
-            });
-        }
-
-        session_setups.push(rs_cam_core::session::SetupData {
-            id: setup.id.0,
-            name: setup.name.clone(),
-            face_up: setup.face_up,
-            z_rotation: setup.z_rotation,
-            // W9 / P-2: the fallback loader always read these two off
-            // the file and then dropped them here, so even the path
-            // that DID parse the datum lost it. Carried through now.
-            datum: setup.datum.clone(),
-            model_ids: setup.model_ids.clone(),
-            fixtures: setup
-                .fixtures
-                .iter()
-                .map(|f| rs_cam_core::session::Fixture {
-                    id: f.id,
-                    name: f.name.clone(),
-                    kind: match f.kind {
-                        crate::state::job::FixtureKind::Clamp => {
-                            rs_cam_core::session::FixtureKind::Clamp
-                        }
-                        crate::state::job::FixtureKind::Vise => {
-                            rs_cam_core::session::FixtureKind::Vise
-                        }
-                        crate::state::job::FixtureKind::VacuumPod => {
-                            rs_cam_core::session::FixtureKind::VacuumPod
-                        }
-                        crate::state::job::FixtureKind::Custom => {
-                            rs_cam_core::session::FixtureKind::Custom
-                        }
-                    },
-                    enabled: f.enabled,
-                    origin_x: f.origin_x,
-                    origin_y: f.origin_y,
-                    origin_z: f.origin_z,
-                    size_x: f.size_x,
-                    size_y: f.size_y,
-                    size_z: f.size_z,
-                    clearance: f.clearance,
-                })
-                .collect(),
-            keep_out_zones: setup
-                .keep_out_zones
-                .iter()
-                .map(|k| rs_cam_core::session::KeepOutZone {
-                    id: k.id,
-                    name: k.name.clone(),
-                    enabled: k.enabled,
-                    origin_x: k.origin_x,
-                    origin_y: k.origin_y,
-                    size_x: k.size_x,
-                    size_y: k.size_y,
-                })
-                .collect(),
-            toolpath_indices: tp_indices,
-            pause_message: setup.pause_message.clone(),
-        });
-    }
-
-    // WP19 `let _ =`: the same builder, over the same unadopted session.
-    // The row bumps every revision and drops the simulation; neither
-    // answer has a surface to reach yet.
-    let _ = session.apply(Command::ReplaceSetupsAndToolpaths(
-        ReplaceSetupsAndToolpathsArgs {
-            setups: session_setups,
-            toolpath_configs: session_tp_configs,
-        },
-    ));
-    session
-}
-
-/// The model kind a file extension names, or `None` when rs_cam does not
-/// read that extension (G-MODELRELINK).
-///
-/// Mirrors the `match` in `app::mcp::commands`' `import_model` arm; core's
-/// `project_file::infer_model_kind` is `pub(crate)` and not reachable from
-/// this crate.
-fn kind_from_extension(path: &Path) -> Option<ModelKind> {
-    match path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("stl") => Some(ModelKind::Stl),
-        Some("dxf") => Some(ModelKind::Dxf),
-        Some("svg") => Some(ModelKind::Svg),
-        Some("step" | "stp") => Some(ModelKind::Step),
-        _ => None,
     }
 }
