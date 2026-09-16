@@ -151,13 +151,6 @@ pub fn format_json_value(value: &serde_json::Value) -> String {
     }
 }
 
-pub fn json_f64(value: Option<&serde_json::Value>) -> Option<f64> {
-    value.and_then(|value| match value {
-        serde_json::Value::Number(number) => number.as_f64(),
-        _ => None,
-    })
-}
-
 pub fn debug_span_math_summary(kind: &str) -> Option<&'static str> {
     match kind {
         "surface_heightmap" => {

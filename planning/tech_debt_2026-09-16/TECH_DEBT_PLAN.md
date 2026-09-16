@@ -115,6 +115,7 @@ carries the change, so this table is filled by the closing docs commit.
 | S3 | — | `io/presets.rs` (280 lines) went out in `0761b14d`; this commit removes the dangling `pub mod presets;` that left the tree unbuildable |
 | S4 | — | eight dead `SimulationState` read doors, 170 lines; the `SimulationSemanticCutSummary` import goes with them and `ToolpathDebugBounds2` moves into the test module |
 | S18 | — | five dead view-state items, 62 lines; the `ToolpathConfig` and `SimulationState` imports and the "Combined view for UI code" header go with them. `transform_heightmap_mesh` is NOT held: `CLEANUP_PLAN.md` C12 planned to rework it, C12 is `[x]` done (`51394156`), and it landed with no caller |
+| S19 (viz rows) | — | `json_f64` deleted, 7 lines. `row_hover_tint` is HELD: it implements `ui_premium_2026-09-13/DESIGN_SPEC.md:580` §4.7 "Hover tints the whole row one ramp step", and its own doc cites §4.7. Same class as the S1 hold; the ui-premium account owns the call |
 
 ## Progress
 
