@@ -506,7 +506,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn export_svg_preview(&self) -> Result<String, VizError> {
-        use rs_cam_core::viz::toolpath_to_svg;
+        use rs_cam_core::export::viz::toolpath_to_svg;
 
         let toolpaths: Vec<_> = self
             .state

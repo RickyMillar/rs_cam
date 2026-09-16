@@ -70,7 +70,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
-use rs_cam_core::fingerprint::{ToolpathFingerprint, diff_fingerprints};
+use rs_cam_core::export::fingerprint::{ToolpathFingerprint, diff_fingerprints};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::Toolpath;

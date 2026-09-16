@@ -414,7 +414,7 @@ impl SweepArtifacts {
         let toolpath_svg = if tp.moves.is_empty() {
             None
         } else {
-            Some(crate::viz::toolpath_to_svg(tp, 800.0, 600.0))
+            Some(crate::export::viz::toolpath_to_svg(tp, 800.0, 600.0))
         };
 
         let svg_summary = toolpath_svg.as_ref().map(|svg| extract_svg_summary(svg));
@@ -1938,7 +1938,7 @@ mod tests {
     #[test]
     fn svg_summary_extraction() {
         let tp = make_test_toolpath();
-        let svg = crate::viz::toolpath_to_svg(&tp, 400.0, 300.0);
+        let svg = crate::export::viz::toolpath_to_svg(&tp, 400.0, 300.0);
         let summary = extract_svg_summary(&svg);
 
         // Should have both cutting and rapid lines

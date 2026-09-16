@@ -14,8 +14,8 @@
 //! 5. Preview + validator findings inline.
 //! 6. Save with summary.
 
+use rs_cam_core::export::gcode_validator::{Finding, Severity, validate};
 use rs_cam_core::gcode::{CoolantMode, PostDefinition, PostFormat, Units, WcsCode};
-use rs_cam_core::gcode_validator::{Finding, Severity, validate};
 
 use super::AppEvent;
 use super::readiness::{self, CycleTimeBasisExt};

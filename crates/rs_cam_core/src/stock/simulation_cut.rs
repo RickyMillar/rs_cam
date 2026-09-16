@@ -1760,7 +1760,7 @@ impl SemanticSummaryAccumulator {
 
 /// Write one simulation cut-trace artifact into `dir` and return its path.
 ///
-/// Naming and collision safety live in [`crate::artifact_io`]: the name keeps
+/// Naming and collision safety live in [`crate::export::artifact_io`]: the name keeps
 /// the millisecond stamp as its first `_`-field, which
 /// [`prune_simulation_cut_artifacts`] parses for age.
 pub fn write_simulation_cut_artifact(
@@ -1768,7 +1768,12 @@ pub fn write_simulation_cut_artifact(
     file_stem: &str,
     artifact: &SimulationCutArtifact,
 ) -> std::io::Result<PathBuf> {
-    crate::artifact_io::write_json_artifact(dir, file_stem, "simulation_cut_trace", artifact)
+    crate::export::artifact_io::write_json_artifact(
+        dir,
+        file_stem,
+        "simulation_cut_trace",
+        artifact,
+    )
 }
 
 /// Dumps younger than this are never pruned, whatever the count: concurrent
@@ -2895,7 +2900,7 @@ mod tests {
 
     #[test]
     fn sanitize_filename_handles_special_chars() {
-        use crate::artifact_io::sanitize_filename_component;
+        use crate::export::artifact_io::sanitize_filename_component;
         const FALLBACK: &str = "simulation_cut_trace";
         assert_eq!(
             sanitize_filename_component("Adaptive 3D", FALLBACK),

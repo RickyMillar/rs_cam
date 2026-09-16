@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use std::path::Path;
 use tracing::info;
 
-use rs_cam_core::fingerprint::{
+use rs_cam_core::export::fingerprint::{
     ParameterSweepResult, StockFingerprint, SweepArtifacts, SweepVariant, ToolpathFingerprint,
     diff_fingerprints,
 };
@@ -287,7 +287,7 @@ fn write_json(path: &Path, value: &impl serde::Serialize) -> Result<()> {
 }
 
 fn write_toolpath_svg(path: &Path, tp: &rs_cam_core::toolpath::Toolpath) {
-    let svg = rs_cam_core::viz::toolpath_to_svg(tp, 800.0, 600.0);
+    let svg = rs_cam_core::export::viz::toolpath_to_svg(tp, 800.0, 600.0);
     let _ = std::fs::write(path, svg);
 }
 
@@ -335,7 +335,7 @@ fn simulate_and_export(
     // Export composite stock PNG
     let w: u32 = 900;
     let h: u32 = 600;
-    let pixels = rs_cam_core::fingerprint::render_stock_composite(&stock, w, h);
+    let pixels = rs_cam_core::export::fingerprint::render_stock_composite(&stock, w, h);
     if let Some(img) = image::RgbaImage::from_raw(w, h, pixels) {
         let _ = img.save(output_dir.join(format!("{prefix}_stock.png")));
     }

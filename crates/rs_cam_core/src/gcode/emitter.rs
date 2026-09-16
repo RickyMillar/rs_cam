@@ -102,7 +102,7 @@ fn unsupported_mcode_in_line(line: &str, denylist: &[u32]) -> Option<u32> {
     if denylist.is_empty() {
         return None;
     }
-    let cleaned = crate::gcode_validator::strip_comments(line).to_uppercase();
+    let cleaned = crate::export::gcode_validator::strip_comments(line).to_uppercase();
     let bytes = cleaned.as_bytes();
     let mut i = 0;
     while let Some(&b) = bytes.get(i) {

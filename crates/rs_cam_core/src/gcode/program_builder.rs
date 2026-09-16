@@ -419,7 +419,7 @@ fn push_final_retract(program: &mut Program) {
 fn dangerous_modal_words(snippet: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     for line in snippet.lines() {
-        let cleaned = crate::gcode_validator::strip_comments(line).to_uppercase();
+        let cleaned = crate::export::gcode_validator::strip_comments(line).to_uppercase();
         let bytes = cleaned.as_bytes();
         let mut i = 0;
         while let Some(&b) = bytes.get(i) {

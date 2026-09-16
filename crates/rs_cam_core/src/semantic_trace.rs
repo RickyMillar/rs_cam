@@ -1178,13 +1178,13 @@ fn bbox_overlap_volume(left: &BoundingBox3, right: &BoundingBox3) -> Option<f64>
 
 /// Write one semantic-trace artifact into `dir` and return its path.
 ///
-/// Naming and collision safety live in [`crate::artifact_io`].
+/// Naming and collision safety live in [`crate::export::artifact_io`].
 pub fn write_toolpath_trace_artifact(
     dir: &Path,
     file_stem: &str,
     artifact: &ToolpathTraceArtifact,
 ) -> std::io::Result<PathBuf> {
-    crate::artifact_io::write_json_artifact(dir, file_stem, "toolpath_trace", artifact)
+    crate::export::artifact_io::write_json_artifact(dir, file_stem, "toolpath_trace", artifact)
 }
 
 #[cfg(test)]

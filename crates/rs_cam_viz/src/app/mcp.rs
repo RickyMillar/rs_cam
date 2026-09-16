@@ -3560,21 +3560,21 @@ impl super::RsCamApp {
                 .get(cp_idx)
                 .filter(|_| !local_framed_stock)
             {
-                rs_cam_core::fingerprint::render_stock_composite_in_frame(
+                rs_cam_core::export::fingerprint::render_stock_composite_in_frame(
                     cp.stock(),
                     &world_frame,
                     w,
                     h,
                 )
             } else if let Some(cp) = results.checkpoints.get(cp_idx) {
-                rs_cam_core::fingerprint::render_mesh_composite_in_frame(
+                rs_cam_core::export::fingerprint::render_mesh_composite_in_frame(
                     cp.mesh(),
                     Some(&world_frame),
                     w,
                     h,
                 )
             } else {
-                rs_cam_core::fingerprint::render_mesh_composite_in_frame(
+                rs_cam_core::export::fingerprint::render_mesh_composite_in_frame(
                     &results.mesh,
                     Some(&world_frame),
                     w,
@@ -3603,7 +3603,7 @@ impl super::RsCamApp {
                     Vec::new()
                 };
 
-            let html = rs_cam_core::viz::stock_mesh_to_3d_html(
+            let html = rs_cam_core::export::viz::stock_mesh_to_3d_html(
                 &sim_mesh_in_world_frame(&results.mesh, session),
                 &toolpaths,
                 &format!("{} -- Simulation", session.name()),
@@ -3799,11 +3799,11 @@ impl super::RsCamApp {
             // colour they were looking at.
             // F4: when the reach shading is the subject, the moves must not
             // bury it. See `CompositeSubject` for the measurement.
-            let mut subject = rs_cam_core::fingerprint::CompositeSubject::Moves;
+            let mut subject = rs_cam_core::export::fingerprint::CompositeSubject::Moves;
             let bg = if reach_overlay.unwrap_or(false) {
                 match self.reach_overlay_background(index) {
                     Ok(mesh) => {
-                        subject = rs_cam_core::fingerprint::CompositeSubject::Background;
+                        subject = rs_cam_core::export::fingerprint::CompositeSubject::Background;
                         Some(mesh)
                     }
                     Err(message) => return text(message),
@@ -3822,7 +3822,7 @@ impl super::RsCamApp {
             } else {
                 None
             };
-            let pixels = rs_cam_core::fingerprint::render_toolpath_composite_subject(
+            let pixels = rs_cam_core::export::fingerprint::render_toolpath_composite_subject(
                 &result.annotated,
                 bg.as_ref(),
                 None,
@@ -3832,11 +3832,11 @@ impl super::RsCamApp {
                 subject,
             );
             let layer_note = match subject {
-                rs_cam_core::fingerprint::CompositeSubject::Background => {
+                rs_cam_core::export::fingerprint::CompositeSubject::Background => {
                     " \u{2014} reach shading at full brightness, moves drawn thin and \
                      dimmed so the shading reads from above"
                 }
-                rs_cam_core::fingerprint::CompositeSubject::Moves => "",
+                rs_cam_core::export::fingerprint::CompositeSubject::Moves => "",
             };
             match image::save_buffer(Path::new(path), &pixels, w, h, image::ColorType::Rgba8) {
                 Ok(()) => text(format!(
@@ -3852,8 +3852,10 @@ impl super::RsCamApp {
             let bounds = [
                 bbox.min.x, bbox.min.y, bbox.min.z, bbox.max.x, bbox.max.y, bbox.max.z,
             ];
-            let html =
-                rs_cam_core::viz::toolpath_standalone_3d_html(result.toolpath(), Some(bounds));
+            let html = rs_cam_core::export::viz::toolpath_standalone_3d_html(
+                result.toolpath(),
+                Some(bounds),
+            );
 
             match std::fs::write(path, &html) {
                 Ok(()) => text(format!(

@@ -34,8 +34,8 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::export::gcode_validator::validate;
 use rs_cam_core::gcode::PostFormat;
-use rs_cam_core::gcode_validator::validate;
 use std::path::PathBuf;
 
 const FIXTURES: &[&str] = &[

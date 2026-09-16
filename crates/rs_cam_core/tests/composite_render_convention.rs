@@ -28,7 +28,7 @@
 use std::path::PathBuf;
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
-use rs_cam_core::fingerprint::{
+use rs_cam_core::export::fingerprint::{
     CompositePanel, composite_panel_layout, render_mesh_composite, render_stock_composite,
     render_stock_composite_in_frame,
 };

@@ -23,8 +23,6 @@ pub mod adaptive;
 pub mod adaptive3d;
 pub mod adaptive_shared;
 pub mod arcfit;
-// Shared JSON-artifact naming and writing; private to the crate.
-mod artifact_io;
 pub mod chamfer;
 pub mod classify_probe;
 pub mod compute;
@@ -42,15 +40,14 @@ pub mod drill;
 pub mod drill_metrics;
 pub mod drill_op;
 pub mod entry_audit;
+pub mod export;
 pub mod face;
 pub mod feed_modulation;
 pub mod feedopt;
 pub mod feeds;
-pub mod fingerprint;
 pub mod finish_planner;
 pub mod finish_setup;
 pub mod gcode;
-pub mod gcode_validator;
 pub mod geo;
 // The walk grid `tier_map` and `reach_map` share; private to the crate.
 pub mod geometry;
@@ -99,7 +96,6 @@ pub mod tsp;
 pub mod unified_finish;
 pub mod util;
 pub mod vcarve;
-pub mod viz;
 pub mod waterline;
 pub mod zigzag;
 

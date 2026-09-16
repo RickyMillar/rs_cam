@@ -631,7 +631,7 @@ fn main() -> Result<()> {
             }
 
             if let Some(svg_out) = &svg {
-                let svg_content = rs_cam_core::viz::toolpath_to_svg(toolpath, 800.0, 600.0);
+                let svg_content = rs_cam_core::export::viz::toolpath_to_svg(toolpath, 800.0, 600.0);
                 std::fs::write(svg_out, &svg_content).context("Failed to write SVG file")?;
                 info!(path = %svg_out.display(), "Wrote SVG preview");
             }
@@ -713,7 +713,7 @@ fn main() -> Result<()> {
                         }
                     });
 
-                    use rs_cam_core::viz::SimPhase;
+                    use rs_cam_core::export::viz::SimPhase;
                     let sim_phases: Vec<SimPhase> = job_result
                         .phases
                         .iter()
@@ -724,13 +724,13 @@ fn main() -> Result<()> {
                         })
                         .collect();
 
-                    rs_cam_core::viz::stacked_simulation_3d_html(
+                    rs_cam_core::export::viz::stacked_simulation_3d_html(
                         &sim_phases,
                         &stock,
                         source_mesh.as_ref(),
                     )
                 } else {
-                    rs_cam_core::viz::toolpath_standalone_3d_html(toolpath, None)
+                    rs_cam_core::export::viz::toolpath_standalone_3d_html(toolpath, None)
                 };
                 std::fs::write(&view_path, &html).context("Failed to write 3D viewer file")?;
                 info!(path = %view_path.display(), "Wrote 3D viewer");

@@ -193,7 +193,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
             "Generated toolpath"
         );
         if let Some(svg_path) = &args.svg {
-            let svg = rs_cam_core::viz::toolpath_to_svg(toolpath, 800.0, 600.0);
+            let svg = rs_cam_core::export::viz::toolpath_to_svg(toolpath, 800.0, 600.0);
             std::fs::write(svg_path, svg)
                 .with_context(|| format!("writing SVG to {}", svg_path.display()))?;
             info!(path = %svg_path.display(), "Wrote toolpath SVG");

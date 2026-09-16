@@ -1,6 +1,6 @@
 use crate::state::wizard::OutputLayout;
 use crate::ui::components::format::slugify;
-use rs_cam_core::gcode_validator::{Severity, validate};
+use rs_cam_core::export::gcode_validator::{Severity, validate};
 use std::path::Path;
 
 use super::RsCamApp;

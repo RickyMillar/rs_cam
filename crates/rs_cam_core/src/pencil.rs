@@ -2927,7 +2927,7 @@ mod tests {
         rasterize_topdown(&tp, w, h, mesh.bbox.min.z, mesh.bbox.max.z)
             .save(&out)
             .unwrap();
-        let svg = crate::viz::toolpath_to_svg(&tp, w as f64, h as f64);
+        let svg = crate::export::viz::toolpath_to_svg(&tp, w as f64, h as f64);
         std::fs::write(out.replace(".png", ".svg"), svg).unwrap();
         assert!(
             moves > 0,

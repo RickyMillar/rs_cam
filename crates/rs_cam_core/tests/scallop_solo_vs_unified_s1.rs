@@ -822,7 +822,7 @@ fn wanaka_scallop_solo_vs_unified_s1() {
             rs_cam_core::dexel_stock::StockCutDirection::FromTop,
         );
         let (w, h) = (1800u32, 1200u32);
-        let pixels = rs_cam_core::fingerprint::render_stock_composite(&stock, w, h);
+        let pixels = rs_cam_core::export::fingerprint::render_stock_composite(&stock, w, h);
         if let Some(img) = image::RgbaImage::from_raw(w, h, pixels) {
             let _ = img.save(out.join("iso_milled.png"));
         }

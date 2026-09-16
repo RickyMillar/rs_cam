@@ -1,9 +1,9 @@
+use rs_cam_core::export::gcode_validator::{MachineSafety, Severity, validate_machine_safety};
 use rs_cam_core::gcode::{
     GcodePhase, GcodeSetupPhase, PhaseTool, ToolLoadExportPolicy, WizardOverlay,
     export_gcode_multi_setup_with_overlay_checked, export_gcode_phases_with_overlay_checked,
     replace_rapids_with_feed,
 };
-use rs_cam_core::gcode_validator::{MachineSafety, Severity, validate_machine_safety};
 use rs_cam_core::session::ProjectSession;
 
 /// Run the machine-safety pass over freshly emitted G-code and log any

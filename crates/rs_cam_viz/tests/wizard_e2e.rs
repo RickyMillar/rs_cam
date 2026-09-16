@@ -194,7 +194,7 @@ fn wizard_single_file_save_writes_valid_gcode() {
     );
 
     // Validator runs without panicking and returns a finite list.
-    let findings = rs_cam_core::gcode_validator::validate(&gcode, PostFormat::Grbl);
+    let findings = rs_cam_core::export::gcode_validator::validate(&gcode, PostFormat::Grbl);
     println!("single-file findings: {}", findings.len());
 
     let dir = temp_dir("single");

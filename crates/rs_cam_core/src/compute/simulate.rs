@@ -2248,8 +2248,11 @@ mod tests {
         );
 
         // Render composite PNG for visual verification
-        let pixels =
-            crate::fingerprint::render_stock_composite(&result.checkpoints[1].stock, 600, 400);
+        let pixels = crate::export::fingerprint::render_stock_composite(
+            &result.checkpoints[1].stock,
+            600,
+            400,
+        );
         assert!(
             pixels.len() == 600 * 400 * 4,
             "composite PNG has expected pixel count"

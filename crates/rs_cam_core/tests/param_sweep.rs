@@ -25,11 +25,11 @@ use rs_cam_core::{
     chamfer::ChamferParams,
     dexel_stock::{StockCutDirection, TriDexelStock},
     drill::{DrillCycle, DrillParams},
-    face::{FaceDirection, FaceParams},
-    fingerprint::{
+    export::fingerprint::{
         FingerprintDiff, ParameterSweepResult, StockFingerprint, SweepArtifacts, SweepVariant,
         ToolpathFingerprint, diff_fingerprints,
     },
+    face::{FaceDirection, FaceParams},
     geo::{BoundingBox3, P2},
     horizontal_finish::HorizontalFinishParams,
     inlay::InlayParams,
@@ -69,7 +69,7 @@ fn write_json(path: &std::path::Path, value: &impl serde::Serialize) {
 }
 
 fn write_svg(path: &std::path::Path, tp: &Toolpath) {
-    let svg = rs_cam_core::viz::toolpath_to_svg(tp, 800.0, 600.0);
+    let svg = rs_cam_core::export::viz::toolpath_to_svg(tp, 800.0, 600.0);
     std::fs::write(path, svg).unwrap();
 }
 
@@ -162,7 +162,7 @@ where
 fn write_stock_png(path: &std::path::Path, stock: &TriDexelStock) {
     let w: u32 = 900;
     let h: u32 = 600;
-    let pixels = rs_cam_core::fingerprint::render_stock_composite(stock, w, h);
+    let pixels = rs_cam_core::export::fingerprint::render_stock_composite(stock, w, h);
     let img = image::RgbaImage::from_raw(w, h, pixels).unwrap();
     img.save(path).unwrap();
 }

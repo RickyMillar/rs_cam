@@ -839,7 +839,7 @@ pub fn reach_colors(gaps: &[f32], floors: &[f32], ramp: ReachRamp) -> Vec<[f32; 
 }
 
 /// The model surface as a renderable mesh coloured by reach — the form the
-/// headless composite renderer ([`crate::fingerprint::render_toolpath_composite`])
+/// headless composite renderer ([`crate::export::fingerprint::render_toolpath_composite`])
 /// takes a background in.
 ///
 /// One vertex per model vertex and the model's own index buffer, so the
