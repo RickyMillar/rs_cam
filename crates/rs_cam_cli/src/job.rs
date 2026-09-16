@@ -107,7 +107,7 @@ pub struct JobFile {
 
 /// A setup definition for multi-setup jobs. Each setup can have its own output file.
 #[derive(Deserialize, Serialize)]
-pub struct SetupDef {
+pub(crate) struct SetupDef {
     pub name: String,
     /// Per-setup output file. If absent, uses the global job output.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -115,7 +115,7 @@ pub struct SetupDef {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct JobConfig {
+pub(crate) struct JobConfig {
     pub output: PathBuf,
     #[serde(default = "default_post")]
     pub post: String,
@@ -388,7 +388,7 @@ fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
 // ── Operation execution ────────────────────────────────────────────────
 
 /// Result of a single operation within a job.
-pub struct OpResult {
+pub(crate) struct OpResult {
     pub toolpath: Toolpath,
     pub cutter: rs_cam_core::tool::ToolDefinition,
     pub label: String,

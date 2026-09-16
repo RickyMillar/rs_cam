@@ -184,7 +184,7 @@ pub fn run_smoke(input_csv: &Path, output: &Path, resolution: f64) -> Result<()>
 /// `changes` is the non-failing channel — movement that is legitimate (or
 /// at least not a regression) but must not pass unremarked.
 #[derive(Debug, Default)]
-pub struct DiffOutcome {
+pub(crate) struct DiffOutcome {
     pub regressions: Vec<String>,
     pub changes: Vec<String>,
 }
