@@ -58,15 +58,6 @@
 //! translates the world model by `−stock_origin` — the same contract as
 //! `SimulationRequest::model_mesh`.
 
-//! # Per-owner attribution
-//!
-//! [`super::ownership::attribute_above_spec`] partitions this audit's
-//! above-spec population by band-cell ownership (Track H V1 finding 2): a
-//! region POLYGON is not a band's territory, so an audit that reasons over
-//! polygons reads a Shallow op as failed on steep inclusions it never
-//! owned. The partition's `unowned` class is the located G-UNIONCOV gap
-//! signal.
-
 use crate::dexel_stock::TriDexelStock;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::metrology::monge::surface_z;
