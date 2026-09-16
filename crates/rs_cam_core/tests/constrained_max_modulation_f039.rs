@@ -40,7 +40,7 @@ use rs_cam_core::feed_modulation::{
     PerMoveEngagement, PowerLimitInputs, adaptive_feed_modulate,
 };
 use rs_cam_core::geo::P3;
-use rs_cam_core::machine_kinematics::MachineKinematics;
+use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
 fn shapeoko() -> MachineKinematics {

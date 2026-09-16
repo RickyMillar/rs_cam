@@ -50,7 +50,7 @@ use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
-use rs_cam_core::machine_kinematics::{MachineKinematics, compute_cycle_time};
+use rs_cam_core::machine::kinematics::{MachineKinematics, compute_cycle_time};
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SetMachineArgs, SimulationOptions, ToolpathConfig,
 };

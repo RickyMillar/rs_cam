@@ -372,7 +372,7 @@ fn apply_machine(state: &mut AppState, machine: rs_cam_core::machine::MachinePro
 /// numbers are inline now and no library entry published them.
 fn apply_machine_kinematics(
     state: &mut AppState,
-    kinematics: Option<rs_cam_core::machine_kinematics::MachineKinematics>,
+    kinematics: Option<rs_cam_core::machine::kinematics::MachineKinematics>,
 ) {
     let Some(kinematics) = kinematics else {
         return;
@@ -395,7 +395,7 @@ fn apply_machine_kinematics(
 /// the one it has.
 fn apply_machine_import(
     state: &mut AppState,
-    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: rs_cam_core::machine::kinematics::MachineKinematics,
     max_feed_mm_min: Option<f64>,
 ) {
     use rs_cam_core::session::{Command, ImportMachineSettingsArgs};
@@ -2082,8 +2082,8 @@ fn draw_grbl_import(
         }
 
         if !buf.trim().is_empty() {
-            let imp = rs_cam_core::machine_kinematics::MachineKinematics::from_grbl_settings(&buf);
-            let default_delta = rs_cam_core::machine_kinematics::default_junction_deviation_mm();
+            let imp = rs_cam_core::machine::kinematics::MachineKinematics::from_grbl_settings(&buf);
+            let default_delta = rs_cam_core::machine::kinematics::default_junction_deviation_mm();
             let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
                 || imp.max_feed_mm_min.is_some()
                 || imp.arc_tolerance_mm.is_some()

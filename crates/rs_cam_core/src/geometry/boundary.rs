@@ -316,7 +316,7 @@ pub fn clip_toolpath_to_boundary_with_provenance(
 ///
 /// The descent this walk emits is pure-vertical BY CONSTRUCTION — the rapid
 /// before it goes to the target's own XY — so it is a plunge in
-/// [`crate::kinematic_utilization::classify_move`]'s terms too, not only by
+/// [`crate::machine::kinematic_utilization::classify_move`]'s terms too, not only by
 /// its tag. The rate does not depend on that: a descent that also moved in
 /// XY would still be tagged `EntryPlunge`, the modulator would still never
 /// touch it, and the plunge dial would still be the only rate that bounds

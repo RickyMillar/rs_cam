@@ -58,7 +58,7 @@ use std::path::{Path, PathBuf};
 
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::region_set::RegionSet;
-use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+use rs_cam_core::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::metrology::costing::{
     CandidateCost, CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,

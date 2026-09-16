@@ -1173,7 +1173,7 @@ impl super::RsCamApp {
     /// omitted rather than printed as a zero, because a zero utilization and
     /// an unmeasured utilization are opposite facts.
     fn kinematics_narration_sentence(
-        util: &rs_cam_core::kinematic_utilization::ToolpathKinematicUtilization,
+        util: &rs_cam_core::machine::kinematic_utilization::ToolpathKinematicUtilization,
     ) -> Option<String> {
         let mut utilization: Option<f64> = None;
         if util.is_measured() {
@@ -1228,11 +1228,11 @@ impl super::RsCamApp {
         // (G-MODEXPORT class); until it lands, this surface states what it
         // reads and names the surface that does carry the emitted figure.
         let provenance = match util.feeds_provenance {
-            rs_cam_core::kinematic_utilization::FeedsProvenance::Planned => {
+            rs_cam_core::machine::kinematic_utilization::FeedsProvenance::Planned => {
                 "planned — this surface narrates the pre-modulation plan; the \
                  emitted reading is in get_tool_load_report after a simulation"
             }
-            rs_cam_core::kinematic_utilization::FeedsProvenance::Emitted => {
+            rs_cam_core::machine::kinematic_utilization::FeedsProvenance::Emitted => {
                 util.feeds_provenance.qualifier()
             }
         };

@@ -1334,7 +1334,7 @@ impl RsCamApp {
         p: &rs_cam_mcp::server::ImportMachineSettingsParam,
         mut before: CoreBefore,
     ) -> CorePlan {
-        use rs_cam_core::machine_kinematics::{MachineKinematics, default_junction_deviation_mm};
+        use rs_cam_core::machine::kinematics::{MachineKinematics, default_junction_deviation_mm};
         let imp = MachineKinematics::from_grbl_settings(&p.dump);
         let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
             || imp.max_feed_mm_min.is_some()

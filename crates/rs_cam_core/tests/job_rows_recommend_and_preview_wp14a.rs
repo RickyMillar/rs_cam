@@ -67,13 +67,13 @@ use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, RegionOrdering,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::machine::strategy_advisor::StrategyRecommendation;
 use rs_cam_core::session::{
     AddToolArgs, Command, CommandId, CommandKind, Job, JobHandle, MultitoolPlanSpec,
     MultitoolPreview, PreviewTierMapArgs, PreviewTierMapHandle, ProjectSession,
     RecommendClearingStrategyArgs, RecommendClearingStrategyHandle, SessionError,
 };
 use rs_cam_core::session::{execute_preview_tier_map, execute_recommend_clearing_strategy};
-use rs_cam_core::strategy_advisor::StrategyRecommendation;
 
 // ── fixtures ─────────────────────────────────────────────────────────
 

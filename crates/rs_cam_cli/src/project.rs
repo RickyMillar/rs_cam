@@ -236,7 +236,7 @@ pub fn run_project_command(
             &mut session,
             Command::SetMachineKinematics(SetMachineKinematicsArgs {
                 kinematics: Box::new(
-                    rs_cam_core::machine_kinematics::MachineKinematics::shapeoko_xxl_stock(),
+                    rs_cam_core::machine::kinematics::MachineKinematics::shapeoko_xxl_stock(),
                 ),
             }),
         )?;
@@ -836,7 +836,7 @@ fn fmt_opt_u32(v: Option<u32>) -> String {
 /// function never prints a zero for an absent reading, because a zero
 /// utilization and an unmeasured utilization are opposite facts.
 fn kinematics_report_line(
-    util: &rs_cam_core::kinematic_utilization::ToolpathKinematicUtilization,
+    util: &rs_cam_core::machine::kinematic_utilization::ToolpathKinematicUtilization,
 ) -> Option<String> {
     let mut bound: Vec<String> = Vec::new();
     if let Some(bindings) = util.bindings.as_ref() {

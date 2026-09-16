@@ -966,7 +966,7 @@ fn draw_toolpath_status_flags(
 /// Every field is guarded on its own `Option`; an unmeasured reading is
 /// omitted, never rendered as a zero.
 fn kinematics_pill(
-    util: &rs_cam_core::kinematic_utilization::ToolpathKinematicUtilization,
+    util: &rs_cam_core::machine::kinematic_utilization::ToolpathKinematicUtilization,
 ) -> Option<(String, String)> {
     let mut utilization: Option<f64> = None;
     if util.is_measured() {
@@ -1007,7 +1007,7 @@ fn kinematics_pill(
     // Phase 3 — say WHICH feeds were read. The modulator runs after a
     // simulation, so before one this pill describes the plan, not the motion
     // the post-processor emits (`feedback_measure_emitted_motion`).
-    use rs_cam_core::kinematic_utilization::FeedsProvenance;
+    use rs_cam_core::machine::kinematic_utilization::FeedsProvenance;
     lines.push(format!("({})", util.feeds_provenance.qualifier()));
     let planned = util.feeds_provenance == FeedsProvenance::Planned;
     let suffix = if planned { " planned" } else { "" };

@@ -1158,7 +1158,7 @@ fn unit_vec(p0: &P3, p1: &P3) -> [f64; 3] {
 /// matching the conservative planner convention (clean accel/decel transition).
 ///
 /// P2 (2026-09-07): `pub` so
-/// [`crate::kinematic_utilization`] reads the SAME corner model the two
+/// [`crate::machine::kinematic_utilization`] reads the SAME corner model the two
 /// integrators read. Do not reimplement it.
 // Shared integrator helper: the corner geometry genuinely needs both
 // directions, both commanded feeds, corner accel, δ, the optional clamp,

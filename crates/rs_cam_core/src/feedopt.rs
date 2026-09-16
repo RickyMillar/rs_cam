@@ -55,7 +55,7 @@ pub struct FeedOptParams {
     /// WP22 (G-FEEDOPTPLUNGE) — the OPERATION's own plunge rate (mm/min).
     ///
     /// The pass caps any move `kinematic_utilization::classify_move` calls
-    /// [`crate::kinematic_utilization::MotionClass::Plunge`] at this rate,
+    /// [`crate::machine::kinematic_utilization::MotionClass::Plunge`] at this rate,
     /// whatever the move's intent tag says. It is the same geometric guard
     /// [`crate::feed_modulation::adaptive_feed_modulate`] carries (P3,
     /// 2026-09-07), and both read one classifier.
@@ -127,8 +127,8 @@ fn estimate_engagement(
 /// unchanged and `spans_valid` is preserved.
 ///
 /// WP22 (G-FEEDOPTPLUNGE): the pass caps a move the shared classifier
-/// [`crate::kinematic_utilization::classify_move`] calls
-/// [`crate::kinematic_utilization::MotionClass::Plunge`] at
+/// [`crate::machine::kinematic_utilization::classify_move`] calls
+/// [`crate::machine::kinematic_utilization::MotionClass::Plunge`] at
 /// [`FeedOptParams::plunge_rate_mm_min`]. The cap reads GEOMETRY, never the
 /// move's intent tag. Set the field to `None` to disable it.
 pub fn optimize_feed_rates(
@@ -233,8 +233,8 @@ fn optimize_feed_rates_inner(
                     && adjusted > cap
                 {
                     let delta = [cx - prev.x, cy - prev.y, cz - prev.z];
-                    if crate::kinematic_utilization::classify_move(mv.move_type, delta)
-                        == crate::kinematic_utilization::MotionClass::Plunge
+                    if crate::machine::kinematic_utilization::classify_move(mv.move_type, delta)
+                        == crate::machine::kinematic_utilization::MotionClass::Plunge
                     {
                         adjusted = cap;
                     }

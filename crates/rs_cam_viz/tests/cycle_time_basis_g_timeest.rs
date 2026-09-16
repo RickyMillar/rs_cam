@@ -23,7 +23,7 @@
 //! Evidence class: pure-function unit tests over
 //! [`rs_cam_core::session::toolpath_cycle_time`] (the single decision all
 //! surfaces now route through, moved from viz to core by WP9) plus one
-//! integrator arithmetic check against `rs_cam_core::machine_kinematics`. No
+//! integrator arithmetic check against `rs_cam_core::machine::kinematics`. No
 //! egui is rendered; the basis → rendered-string mapping is read from source
 //! at each surface.
 
@@ -38,7 +38,7 @@ use std::collections::BTreeMap;
 
 use rs_cam_core::ToolpathId;
 use rs_cam_core::geo::P3;
-use rs_cam_core::machine_kinematics::{CycleTimeBreakdown, MachineKinematics, compute_cycle_time};
+use rs_cam_core::machine::kinematics::{CycleTimeBreakdown, MachineKinematics, compute_cycle_time};
 use rs_cam_core::session::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
 use rs_cam_core::stock::simulation_cut::{
     SimulationCutTrace, SimulationToolpathCutSummary, ToolpathKinematicRuntime,

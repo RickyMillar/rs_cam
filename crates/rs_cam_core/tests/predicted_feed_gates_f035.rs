@@ -61,7 +61,7 @@ use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
-use rs_cam_core::machine_kinematics::MachineKinematics;
+use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{

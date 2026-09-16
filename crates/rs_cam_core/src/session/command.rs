@@ -113,8 +113,8 @@ use crate::compute::config::DressupConfig;
 use crate::compute::simulate::SimulationResult;
 use crate::feeds::FeedsProvenance;
 use crate::geometry::enriched_mesh::FaceGroupId;
+use crate::machine::strategy_advisor::StrategyRecommendation;
 use crate::stock::simulation_cut::SimulationCutTrace;
-use crate::strategy_advisor::StrategyRecommendation;
 use crate::tool_load::optimize::OptimizeOutcome;
 
 /// Declares every command, query and job row once.
@@ -1489,7 +1489,7 @@ pub struct SetMachineArgs {
 #[derive(Debug, Clone)]
 pub struct SetMachineKinematicsArgs {
     /// The kinematics block to write.
-    pub kinematics: Box<crate::machine_kinematics::MachineKinematics>,
+    pub kinematics: Box<crate::machine::kinematics::MachineKinematics>,
 }
 
 /// The arguments of the `import_machine_settings` command.
@@ -1501,7 +1501,7 @@ pub struct SetMachineKinematicsArgs {
 #[derive(Debug, Clone)]
 pub struct ImportMachineSettingsArgs {
     /// The kinematics block the dump describes.
-    pub kinematics: Box<crate::machine_kinematics::MachineKinematics>,
+    pub kinematics: Box<crate::machine::kinematics::MachineKinematics>,
     /// The travel rate the dump published, in millimetres per minute.
     /// `None` means the dump published none, and the machine keeps the
     /// rate it has.

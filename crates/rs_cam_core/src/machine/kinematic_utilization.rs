@@ -23,9 +23,9 @@
 //! # One physics site
 //!
 //! Every peak velocity comes from
-//! [`crate::machine_kinematics::move_kinematics`]. Every junction
+//! [`crate::machine::kinematics::move_kinematics`]. Every junction
 //! velocity comes from
-//! [`crate::machine_kinematics::junction_velocity`]. The instrument
+//! [`crate::machine::kinematics::junction_velocity`]. The instrument
 //! reproduces the integrator's sequencing exactly: it skips the seed
 //! move and every degenerate move, it takes an arc on its chord, and it
 //! floors a rapid's commanded rate at the machine travel rate. It never
@@ -41,7 +41,7 @@
 //! under-states the accel and decel ramps. It is acceptable here
 //! because both sides of every ratio use the same measure. Do NOT
 //! compare `fed_time_s` against
-//! [`crate::machine_kinematics::compute_cycle_time`]: that function
+//! [`crate::machine::kinematics::compute_cycle_time`]: that function
 //! integrates the ramps and it includes rapids and the jerk penalty.
 //!
 //! # The `JunctionBound` caveat (Phase 1, binding)
@@ -70,7 +70,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::ToolpathId;
-use crate::machine_kinematics::{
+use crate::machine::kinematics::{
     KinematicBinding, MachineKinematics, junction_velocity, move_kinematics,
 };
 use crate::toolpath::{MoveType, Toolpath};
@@ -364,7 +364,7 @@ pub struct ToolpathKinematicUtilization {
     ///
     /// Every display surface reads this field. `headroom_estimate`
     /// re-solves every move through
-    /// [`crate::machine_kinematics::move_kinematics`], so calling it
+    /// [`crate::machine::kinematics::move_kinematics`], so calling it
     /// from a render loop or an MCP handler costs one full solve per
     /// row per frame. It is also the only headroom reading that
     /// survives serialisation, because [`Self::moves`] does not.
@@ -406,7 +406,7 @@ impl ToolpathKinematicUtilization {
     /// operator asks about.
     ///
     /// The method re-solves each fed move through
-    /// [`crate::machine_kinematics::move_kinematics`] with
+    /// [`crate::machine::kinematics::move_kinematics`] with
     /// `commanded × feed_scale`, then compares the two summed times.
     ///
     /// This is a FIRST-ORDER estimate. It holds the junction velocities

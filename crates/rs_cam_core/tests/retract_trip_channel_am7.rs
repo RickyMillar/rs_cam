@@ -403,11 +403,11 @@ fn intra_region_hookup_ships_on_by_operator_ruling() {
 
     let o_trips = compute_retract_trips(o.toolpath(), None).total;
     let n_trips = compute_retract_trips(n.toolpath(), None).total;
-    let kin = rs_cam_core::machine_kinematics::MachineKinematics::default();
+    let kin = rs_cam_core::machine::kinematics::MachineKinematics::default();
     let o_s =
-        rs_cam_core::machine_kinematics::compute_cycle_time(o.toolpath(), &kin, 3000.0, 6000.0);
+        rs_cam_core::machine::kinematics::compute_cycle_time(o.toolpath(), &kin, 3000.0, 6000.0);
     let n_s =
-        rs_cam_core::machine_kinematics::compute_cycle_time(n.toolpath(), &kin, 3000.0, 6000.0);
+        rs_cam_core::machine::kinematics::compute_cycle_time(n.toolpath(), &kin, 3000.0, 6000.0);
     let (o_area, _) = rs_cam_core::measurement::swept_footprint_area(
         o_moves,
         0.5,

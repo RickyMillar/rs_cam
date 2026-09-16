@@ -36,7 +36,7 @@
 )]
 
 use rs_cam_core::geo::P3;
-use rs_cam_core::machine_kinematics::{
+use rs_cam_core::machine::kinematics::{
     KinematicBinding, MachineKinematics, compute_cycle_time_breakdown, move_kinematics,
     predicted_feeds_for_toolpath,
 };

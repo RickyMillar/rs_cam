@@ -473,7 +473,7 @@ pub struct SimulationToolpathCutSummary {
     /// On the project-wide summary this is the field-wise sum across
     /// toolpaths the integrator walked.
     #[serde(default)]
-    pub runtime_by_intent: Option<crate::machine_kinematics::CycleTimeBreakdown>,
+    pub runtime_by_intent: Option<crate::machine::kinematics::CycleTimeBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -572,7 +572,7 @@ pub struct SimulationCutSummary {
     /// On the project-wide summary this is the field-wise sum across
     /// toolpaths the integrator walked.
     #[serde(default)]
-    pub runtime_by_intent: Option<crate::machine_kinematics::CycleTimeBreakdown>,
+    pub runtime_by_intent: Option<crate::machine::kinematics::CycleTimeBreakdown>,
 }
 
 // ── LH-1: air cut has TWO denominators; both must be named ──────────────
@@ -767,7 +767,7 @@ pub fn rebase_cutting_times(
     samples: &[SimulationCutSample],
     toolpath_id: ToolpathId,
     modulated_feeds: &BTreeMap<(ToolpathId, usize), (f64, crate::tool_load::BindingConstraint)>,
-    breakdown: &crate::machine_kinematics::CycleTimeBreakdown,
+    breakdown: &crate::machine::kinematics::CycleTimeBreakdown,
 ) -> Option<RebasedCuttingTimes> {
     // The dexel marks a move `is_cutting = false` for `MoveType::Rapid`
     // and for a `Linear` move tagged `MoveIntent::Retract`. The
@@ -827,7 +827,7 @@ pub fn rebase_cutting_times(
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ToolpathKinematicRuntime {
     pub toolpath_id: crate::ids::ToolpathId,
-    pub breakdown: crate::machine_kinematics::CycleTimeBreakdown,
+    pub breakdown: crate::machine::kinematics::CycleTimeBreakdown,
 }
 
 /// Publish a set of kinematics-integrated runtimes onto a trace: the
@@ -865,7 +865,7 @@ pub struct ToolpathKinematicRuntime {
 /// still reach the project total.
 pub(crate) fn publish_cycle_times(
     trace: &mut SimulationCutTrace,
-    per_toolpath: &BTreeMap<ToolpathId, crate::machine_kinematics::CycleTimeBreakdown>,
+    per_toolpath: &BTreeMap<ToolpathId, crate::machine::kinematics::CycleTimeBreakdown>,
 ) {
     // The list is written first and separately because it answers a different
     // question from `toolpath_summaries`: "was this integrated?", not "does
@@ -879,7 +879,7 @@ pub(crate) fn publish_cycle_times(
         })
         .collect();
 
-    let mut project_breakdown = crate::machine_kinematics::CycleTimeBreakdown::default();
+    let mut project_breakdown = crate::machine::kinematics::CycleTimeBreakdown::default();
     for tp_summary in &mut trace.toolpath_summaries {
         if let Some(&b) = per_toolpath.get(&tp_summary.toolpath_id) {
             tp_summary.total_runtime_s = b.total_s;
@@ -978,7 +978,7 @@ pub struct SimulationCutTrace {
     /// commanded feed. This is acceptable for v1 because the map is
     /// re-derivable from the toolpath IR + kinematics at any time.
     #[serde(skip)]
-    pub predicted_feeds: crate::machine_kinematics::PredictedFeedMap,
+    pub predicted_feeds: crate::machine::kinematics::PredictedFeedMap,
     /// F-039 — per-`(toolpath_id, move_index)` emitted feed
     /// (mm/min) plus the binding constraint that drove it.
     /// Populated by `apply_adaptive_feed_modulation` when the
@@ -1053,7 +1053,7 @@ impl SimulationCutTrace {
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
             toolpath_runtimes: Vec::new(),
-            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
+            predicted_feeds: crate::machine::kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
             modulation_summaries: std::collections::BTreeMap::new(),
         }
@@ -1255,7 +1255,7 @@ impl SimulationCutTrace {
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
             toolpath_runtimes: Vec::new(),
-            predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
+            predicted_feeds: crate::machine::kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
             modulation_summaries: std::collections::BTreeMap::new(),
         }

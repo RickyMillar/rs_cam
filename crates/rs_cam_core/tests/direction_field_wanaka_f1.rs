@@ -402,7 +402,7 @@ fn relink_and_cost(
     index: &SpatialIndex,
     cutter: &BallEndmill,
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     safe_z: f64,
 ) -> CandidateCost {
     let ctx = CostingContext {
@@ -934,7 +934,7 @@ struct Fixture<'a> {
     mesh: &'a TriangleMesh,
     index: &'a SpatialIndex,
     cutter: &'a BallEndmill,
-    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: rs_cam_core::machine::kinematics::MachineKinematics,
     /// `mesh.bbox.max.z + 5.0`, as the reference instrument computes it.
     safe_z: f64,
     /// `mesh.bbox.min.z - 0.1`, as the reference instrument computes it.
@@ -1245,7 +1245,7 @@ fn stage_e(
 #[test]
 #[ignore = "evidence run — needs the operator's wanaka mesh (not in repo) and the region-1 capture"]
 fn wanaka_direction_field_f1() {
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
 
     let mesh_path = Path::new(WANAKA_MESH);
     if !mesh_path.exists() {
@@ -2592,7 +2592,7 @@ fn print_pre_registration() {
 #[test]
 #[ignore = "evidence run — needs the operator's wanaka mesh (not in repo) and the region-1 capture"]
 fn wanaka_direction_field_segmented_f1() {
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
 
     let mesh_path = Path::new(WANAKA_MESH);
     if !mesh_path.exists() {

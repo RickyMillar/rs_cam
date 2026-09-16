@@ -58,7 +58,7 @@ pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_ma
 pub const PROJECT_ENTRY_LOAD: &str = "project.entry_load";
 /// Phase 4 (2026-09-07). The plunge-class BACKSTOP: a vertical-dominant fed
 /// descent in the EMITTED motion runs faster in Z than the operation's own
-/// `plunge_rate`. Measured by [`crate::kinematic_utilization`] on the stored
+/// `plunge_rate`. Measured by [`crate::machine::kinematic_utilization`] on the stored
 /// moves after the machine's rate clamp, for every tool and every operation
 /// family — not on the plan, and not on a configured number.
 ///

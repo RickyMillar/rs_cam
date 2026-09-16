@@ -822,7 +822,7 @@ pub struct ExecutionContext<'a> {
     /// builders that have a machine profile in scope populate `Some`;
     /// callers without one (or that never reach a linking decision) pass
     /// `None`.
-    pub link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    pub link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
     /// P2.5's generic rest-analysis config, threaded through so an adapter
     /// can run its OWN in-op rest-depth pass instead of (or in addition
     /// to) the generic post-generation attach below — currently only
@@ -3508,7 +3508,7 @@ pub(crate) fn execute_operation_annotated_with_regions(
     // family's emit-time surface-link-vs-retract decision costs
     // candidates against. `None` is a byte-identical no-op — the
     // legacy distance-only hookup decision.
-    link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
     // G-DRILLPICK-FRAME: the setup's world→local transform, for the
     // config-carried coordinates the driver's geometry pipeline never
     // touches. `None` = identity setup = no-op. See

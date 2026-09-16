@@ -271,7 +271,7 @@ pub struct FinishingLinkStage<'a> {
     pub boundary: Option<&'a crate::geometry::region_set::RegionSet<'a>>,
     /// Machine envelope used to cost a candidate against the retract it would
     /// replace (F-034 integrator).
-    pub link_kinematics: Option<&'a crate::machine_kinematics::LinkKinematics>,
+    pub link_kinematics: Option<&'a crate::machine::kinematics::LinkKinematics>,
 }
 
 impl<'a> FinishingLinkStage<'a> {
@@ -456,7 +456,7 @@ pub struct RelinkParams<'a> {
     /// when it is actually faster — the same decision
     /// [`crate::pencil::emit_paths`] makes. `None` keeps any gouge-safe
     /// link within `hookup_distance`.
-    pub link_kinematics: Option<&'a crate::machine_kinematics::LinkKinematics>,
+    pub link_kinematics: Option<&'a crate::machine::kinematics::LinkKinematics>,
     /// Visit fragments nearest-first (from the previous fragment's exit)
     /// instead of in emitted order. Forward-only: a fragment is never
     /// reversed, so its cut direction — and therefore climb/conventional —
@@ -1026,7 +1026,7 @@ pub fn relink_fragments_with_kinds(
                 Some(lk) => {
                     let mut costed = pts.clone();
                     costed.push(entry);
-                    let surface_t = crate::machine_kinematics::surface_link_time(
+                    let surface_t = crate::machine::kinematics::surface_link_time(
                         from,
                         &costed,
                         params.feed_rate,
@@ -1034,7 +1034,7 @@ pub fn relink_fragments_with_kinds(
                         lk.max_feed_mm_min,
                         lk.rapid_feed_mm_min,
                     );
-                    let retract_t = crate::machine_kinematics::retract_link_time(
+                    let retract_t = crate::machine::kinematics::retract_link_time(
                         from,
                         entry,
                         params.safe_z,

@@ -1741,7 +1741,7 @@ impl ProjectSession {
     #[instrument(skip(self, kinematics))]
     pub(crate) fn set_machine_kinematics(
         &mut self,
-        kinematics: crate::machine_kinematics::MachineKinematics,
+        kinematics: crate::machine::kinematics::MachineKinematics,
     ) -> Effects {
         self.with_effects(None, move |session| {
             session.machine.kinematics = Some(kinematics);
@@ -1763,7 +1763,7 @@ impl ProjectSession {
     #[instrument(skip(self, kinematics))]
     pub(crate) fn import_machine_settings(
         &mut self,
-        kinematics: crate::machine_kinematics::MachineKinematics,
+        kinematics: crate::machine::kinematics::MachineKinematics,
         max_feed_mm_min: Option<f64>,
     ) -> Effects {
         self.with_effects(None, move |session| {

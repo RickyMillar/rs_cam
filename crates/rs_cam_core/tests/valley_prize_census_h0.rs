@@ -1048,10 +1048,10 @@ fn relink_and_cost_under(
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     regime: &LinkRegime<'_>,
 ) -> CandidateCost {
-    use rs_cam_core::machine_kinematics::{LinkKinematics, compute_cycle_time};
+    use rs_cam_core::machine::kinematics::{LinkKinematics, compute_cycle_time};
 
     let link_kinematics = LinkKinematics {
         kinematics: *kinematics,
@@ -1254,11 +1254,11 @@ struct CutSample {
 /// is not load-bearing.
 fn attribute_cutting(
     toolpath: &rs_cam_core::toolpath::Toolpath,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     total_time_s: f64,
     inside: &dyn Fn(P2) -> bool,
 ) -> (Split, Vec<CutSample>, f64) {
-    use rs_cam_core::machine_kinematics::predicted_feeds_for_toolpath;
+    use rs_cam_core::machine::kinematics::predicted_feeds_for_toolpath;
     use rs_cam_core::toolpath::{MoveIntent, MoveType};
 
     let feeds =
@@ -1753,7 +1753,7 @@ struct EvalCtx<'a> {
     /// V0-att's `s_shipped` is a per-region dial, so the attribution arm
     /// cannot be computed without it.
     region_of: &'a [i32],
-    kinematics: &'a rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &'a rs_cam_core::machine::kinematics::MachineKinematics,
     rows: &'a [RegionRow],
 }
 
@@ -2730,7 +2730,7 @@ fn wanaka_valley_prize_census_h0() {
          \x20  This arm does not depend on either mask, so it is costed ONCE.\n"
     );
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
     use rs_cam_core::surface_link::LinkCeiling;
     let kinematics = MachineKinematics {
         acceleration_mm_s2: MACHINE_ACCEL_SCALAR,

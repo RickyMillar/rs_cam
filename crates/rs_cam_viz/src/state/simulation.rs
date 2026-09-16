@@ -328,7 +328,7 @@ impl SpanAggregate {
     pub fn ingest(
         &mut self,
         sample: &SimulationCutSample,
-        predicted_feeds: &rs_cam_core::machine_kinematics::PredictedFeedMap,
+        predicted_feeds: &rs_cam_core::machine::kinematics::PredictedFeedMap,
     ) {
         self.n_samples += 1;
         if !sample.is_cutting {

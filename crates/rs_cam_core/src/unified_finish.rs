@@ -104,7 +104,7 @@ use crate::finish_setup::{
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::machine_kinematics::{LinkKinematics, retract_link_time, surface_link_time};
+use crate::machine::kinematics::{LinkKinematics, retract_link_time, surface_link_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pencil::PencilParams;
 use crate::polygon::Polygon2;
@@ -3841,9 +3841,9 @@ mod tests {
         assert!(strippable_preamble(&odd).is_none());
     }
 
-    fn test_link_kinematics() -> crate::machine_kinematics::LinkKinematics {
-        crate::machine_kinematics::LinkKinematics {
-            kinematics: crate::machine_kinematics::MachineKinematics::default(),
+    fn test_link_kinematics() -> crate::machine::kinematics::LinkKinematics {
+        crate::machine::kinematics::LinkKinematics {
+            kinematics: crate::machine::kinematics::MachineKinematics::default(),
             max_feed_mm_min: 3000.0,
             rapid_feed_mm_min: 5000.0,
         }

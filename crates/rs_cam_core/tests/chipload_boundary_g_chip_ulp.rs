@@ -109,7 +109,7 @@ use rs_cam_core::feeds::{
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
-use rs_cam_core::machine_kinematics::PredictedFeedMap;
+use rs_cam_core::machine::kinematics::PredictedFeedMap;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::stock::simulation_cut::{
     Engagement, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,

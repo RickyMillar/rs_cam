@@ -20,7 +20,7 @@
 //! path but the machine decelerates into every loop. Which wins is set by
 //! **acceleration**, so the decision is *measured*, not looked up: run the
 //! real accel-aware integrator
-//! ([`compute_cycle_time`](crate::machine_kinematics::compute_cycle_time))
+//! ([`compute_cycle_time`](crate::machine::kinematics::compute_cycle_time))
 //! over each candidate's actual toolpath at the machine's
 //! [`effective_kinematics`](crate::machine::MachineProfile::effective_kinematics)
 //! and compare. On a rigid VMC the spiral's shorter path wins; on a belt
@@ -39,7 +39,7 @@
 
 use crate::compute::operation_configs::ClearingStrategy;
 use crate::machine::MachineProfile;
-use crate::machine_kinematics::compute_cycle_time;
+use crate::machine::kinematics::compute_cycle_time;
 use crate::toolpath::Toolpath;
 
 /// Which constraint bound a candidate's load-limited params — the
@@ -251,7 +251,7 @@ fn build_reason(
 mod tests {
     use super::*;
     use crate::geo::P3;
-    use crate::machine_kinematics::MachineKinematics;
+    use crate::machine::kinematics::MachineKinematics;
     use crate::toolpath::Toolpath;
 
     /// A long-straight raster: 8 passes of 250 mm along X stepping in Y.

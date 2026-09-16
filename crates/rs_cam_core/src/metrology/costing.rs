@@ -5,7 +5,7 @@
 //! (`relink_and_cost_under`, the most complete of the six instrument
 //! copies). Candidate constructors hand it raw toolpaths; it applies the
 //! SAME production relink to every arm and then prices the linked motion
-//! with `crate::machine_kinematics::compute_cycle_time`.
+//! with `crate::machine::kinematics::compute_cycle_time`.
 //!
 //! # The two time scales (measurement contract, rule 3)
 //!
@@ -33,7 +33,7 @@
 //! [`CostingFeeds`].
 
 use crate::geometry::region_set::RegionSet;
-use crate::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+use crate::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::surface_link::LinkCeiling;
 use crate::tool::MillingCutter;

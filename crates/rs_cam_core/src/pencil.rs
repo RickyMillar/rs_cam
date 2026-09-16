@@ -175,15 +175,15 @@ pub struct PencilParams {
     /// P1 quantitative linker (unified-finishing-pass W4a): the machine
     /// envelope [`emit_paths`] costs a surface-link candidate against a
     /// retract-link candidate with, using the F-034 cycle-time
-    /// integrator ([`crate::machine_kinematics::surface_link_time`] /
-    /// [`crate::machine_kinematics::retract_link_time`]). `hookup_distance`
+    /// integrator ([`crate::machine::kinematics::surface_link_time`] /
+    /// [`crate::machine::kinematics::retract_link_time`]). `hookup_distance`
     /// remains the candidate CAP — a gap must still be within it to be
     /// considered for a surface link at all — but which link actually
     /// gets emitted is decided by integrated time, not distance, once
     /// this is `Some`. `None` keeps the legacy behaviour: emit a surface
     /// link whenever `build_surface_link` succeeds within
     /// `hookup_distance`.
-    pub link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    pub link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
     /// G-LINKSTAGE: a SEPARATE, usually shorter, cap on the gap a CLEARANCE
     /// HOP may span — the link that lifts clear of standing material and
     /// descends again ([`plan_link_lift`]). `None` (the shipped value) means
@@ -1528,8 +1528,8 @@ fn plan_link_lift(
 /// now only the CANDIDATE cap — a gap has to be within it (and gouge-safe via
 /// [`build_surface_link`]) to be considered at all — but which link actually
 /// gets emitted is decided by integrated time
-/// ([`crate::machine_kinematics::surface_link_time`] vs.
-/// [`crate::machine_kinematics::retract_link_time`]), never by raw
+/// ([`crate::machine::kinematics::surface_link_time`] vs.
+/// [`crate::machine::kinematics::retract_link_time`]), never by raw
 /// distance/feed, whenever `params.link_kinematics` is `Some`. The P0
 /// unified-finishing probe (`planning/unified_finishing_pass_plan.md`) found
 /// the naive distance/feed estimate misjudges wall-clock by up to 10× on
@@ -1766,7 +1766,7 @@ pub(crate) fn emit_paths_with_entry_stock_reported(
                         // comparison errs against the link.
                         let mut costed_path = candidate.points().to_vec();
                         costed_path.push(first);
-                        let surface_t = crate::machine_kinematics::surface_link_time(
+                        let surface_t = crate::machine::kinematics::surface_link_time(
                             end,
                             &costed_path,
                             params.feed_rate,
@@ -1780,7 +1780,7 @@ pub(crate) fn emit_paths_with_entry_stock_reported(
                         // check lives in the post-generation
                         // `optimize_entry_descents` pass), so it must not
                         // assume a descent it can't guarantee is safe.
-                        let retract_t = crate::machine_kinematics::retract_link_time(
+                        let retract_t = crate::machine::kinematics::retract_link_time(
                             end,
                             first,
                             params.safe_z,
@@ -3065,9 +3065,9 @@ mod tests {
 
         // A modest, unremarkable machine — the point of both tests is the
         // FEED rate ratio, not exotic accel/kinematics behaviour.
-        let kin = crate::machine_kinematics::MachineKinematics {
+        let kin = crate::machine::kinematics::MachineKinematics {
             acceleration_mm_s2: 300.0,
-            ..crate::machine_kinematics::MachineKinematics::default()
+            ..crate::machine::kinematics::MachineKinematics::default()
         };
         let params = PencilParams {
             hookup_distance: 20.0,
@@ -3075,7 +3075,7 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 15.0,
             sampling: 1.0,
-            link_kinematics: Some(crate::machine_kinematics::LinkKinematics {
+            link_kinematics: Some(crate::machine::kinematics::LinkKinematics {
                 kinematics: kin,
                 max_feed_mm_min: 6000.0,
                 rapid_feed_mm_min: 5000.0,

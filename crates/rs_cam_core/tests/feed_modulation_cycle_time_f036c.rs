@@ -54,7 +54,7 @@ use rs_cam_core::ids::ToolpathId;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use rs_cam_core::machine_kinematics::MachineKinematics;
+use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs, SimulationOptions};
 
 const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";

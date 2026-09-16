@@ -30,10 +30,10 @@
 
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::kinematic_utilization::{
+use rs_cam_core::machine::kinematic_utilization::{
     MotionClass, ToolpathKinematicUtilization, analyse_toolpath, classify_move,
 };
-use rs_cam_core::machine_kinematics::{KinematicBinding, MachineKinematics};
+use rs_cam_core::machine::kinematics::{KinematicBinding, MachineKinematics};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 /// Machine travel-rate cap (mm/min) — the user's `$110/$111`.

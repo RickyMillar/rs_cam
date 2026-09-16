@@ -83,7 +83,7 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::feedopt::{FeedOptParams, optimize_feed_rates};
 use rs_cam_core::geo::P3;
-use rs_cam_core::kinematic_utilization::{MotionClass, classify_move};
+use rs_cam_core::machine::kinematic_utilization::{MotionClass, classify_move};
 use rs_cam_core::session::{
     GenObserver, GenerateToolpathArgs, GenerateToolpathHandle, Job, JobHandle, ProjectSession,
     ToolpathComputeResult, execute_job,

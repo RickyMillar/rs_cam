@@ -101,7 +101,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::DressupConfig;
 use rs_cam_core::compute::operation_configs::ScallopConfig;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::machine_kinematics::{MachineKinematics, compute_cycle_time};
+use rs_cam_core::machine::kinematics::{MachineKinematics, compute_cycle_time};
 use rs_cam_core::measurement::{
     DEFAULT_FOOTPRINT_CELL_MM, swept_footprint_area, swept_footprint_mm2_per_s,
 };

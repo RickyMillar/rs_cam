@@ -491,10 +491,10 @@ fn relink_and_cost_under(
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     regime: &LinkRegime<'_>,
 ) -> CandidateCost {
-    use rs_cam_core::machine_kinematics::{LinkKinematics, compute_cycle_time};
+    use rs_cam_core::machine::kinematics::{LinkKinematics, compute_cycle_time};
 
     let link_kinematics = LinkKinematics {
         kinematics: *kinematics,
@@ -1291,11 +1291,11 @@ struct Split {
 /// distance cross-check agreed to 0.04 pp.
 fn attribute_cutting(
     toolpath: &Toolpath,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     total_time_s: f64,
     inside: &dyn Fn(P2) -> bool,
 ) -> Split {
-    use rs_cam_core::machine_kinematics::predicted_feeds_for_toolpath;
+    use rs_cam_core::machine::kinematics::predicted_feeds_for_toolpath;
 
     let feeds =
         predicted_feeds_for_toolpath(toolpath, kinematics, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
@@ -1468,7 +1468,7 @@ struct ArmReport {
 #[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_valley_branch_falsifier_h1() {
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
     use rs_cam_core::surface_link::LinkCeiling;
 
     eprintln!(

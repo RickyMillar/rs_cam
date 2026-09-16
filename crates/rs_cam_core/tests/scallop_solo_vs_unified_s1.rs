@@ -48,7 +48,7 @@ use rs_cam_core::finish_setup::{
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::region_set::RegionSet;
-use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+use rs_cam_core::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::scallop::{
     RingSource, ScallopDirection, ScallopParams, ScallopRingBudget, ScallopStepoverPolicy,

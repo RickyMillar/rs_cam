@@ -295,7 +295,7 @@ pub struct GenContext {
     prior_stock: Option<Arc<crate::dexel_stock::TriDexelStock>>,
     /// The machine envelope the pencil family's emit-time link decision
     /// costs candidates against, built from `self.machine`.
-    link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
     /// `self.stock.material`. The drill gates read the workpiece's own
     /// hardness (F-016).
     material: crate::material::Material,
@@ -1053,10 +1053,10 @@ const ADVISOR_CANDIDATE_STRATEGIES: [ClearingStrategy; 2] = [
 /// measured wall-clock minimum), so a conservative "unconstrained" default is
 /// honest until a power-gate signal is threaded in.
 ///
-/// [`LoadRegime`]: crate::strategy_advisor::LoadRegime
+/// [`LoadRegime`]: crate::machine::strategy_advisor::LoadRegime
 fn regime_from_suggest_warnings(
     warnings: &[crate::feeds::suggest::SuggestWarning],
-) -> crate::strategy_advisor::LoadRegime {
+) -> crate::machine::strategy_advisor::LoadRegime {
     use crate::feeds::suggest::SuggestWarning;
     let deflection_bound = warnings.iter().any(|w| match w {
         SuggestWarning::DppCappedByDeflection { .. } => true,
@@ -1064,9 +1064,9 @@ fn regime_from_suggest_warnings(
         _ => false,
     });
     if deflection_bound {
-        crate::strategy_advisor::LoadRegime::ToolLimited
+        crate::machine::strategy_advisor::LoadRegime::ToolLimited
     } else {
-        crate::strategy_advisor::LoadRegime::Unconstrained
+        crate::machine::strategy_advisor::LoadRegime::Unconstrained
     }
 }
 
@@ -1081,8 +1081,8 @@ fn regime_from_suggest_warnings(
 /// heuristic (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §5.4).
 fn regime_from_binding(
     summary: &crate::tool_load::ModulationSummary,
-) -> crate::strategy_advisor::LoadRegime {
-    use crate::strategy_advisor::LoadRegime;
+) -> crate::machine::strategy_advisor::LoadRegime {
+    use crate::machine::strategy_advisor::LoadRegime;
     use crate::tool_load::BindingConstraint;
     let dominant = summary
         .binding_constraint_distribution
@@ -1607,7 +1607,7 @@ impl ProjectSession {
     /// clearing toolpath off a *single shared* [`resolve_generation_inputs`]
     /// resolution (only the strategy varies — geometry / heights / stock
     /// frame are resolved once), and (3) ranks them via
-    /// [`crate::strategy_advisor::recommend_strategy`], which times each path
+    /// [`crate::machine::strategy_advisor::recommend_strategy`], which times each path
     /// through the accel-aware integrator at this machine's
     /// [`effective_kinematics`](crate::machine::MachineProfile::effective_kinematics).
     ///
@@ -1623,7 +1623,8 @@ impl ProjectSession {
         &self,
         index: usize,
         cancel: &AtomicBool,
-    ) -> Result<Option<crate::strategy_advisor::StrategyRecommendation>, SessionError> {
+    ) -> Result<Option<crate::machine::strategy_advisor::StrategyRecommendation>, SessionError>
+    {
         let handle = self.capture_recommend_clearing_strategy(index, cancel)?;
         execute_recommend_clearing_strategy(&handle, cancel)
     }
@@ -1815,7 +1816,7 @@ impl RecommendClearingStrategyHandle {
 /// params off to the deflection / power limits, (2) plans the clearing
 /// toolpath off the handle's single shared resolution, (3) simulates and
 /// modulates that candidate, and (4) ranks them through
-/// [`crate::strategy_advisor::recommend_strategy`], which times each path
+/// [`crate::machine::strategy_advisor::recommend_strategy`], which times each path
 /// through the accel-aware integrator.
 ///
 /// Returns `Ok(None)` when the operation is not an `Adaptive3d` op or no
@@ -1832,8 +1833,8 @@ impl RecommendClearingStrategyHandle {
 pub fn execute_recommend_clearing_strategy(
     handle: &RecommendClearingStrategyHandle,
     cancel: &AtomicBool,
-) -> Result<Option<crate::strategy_advisor::StrategyRecommendation>, SessionError> {
-    use crate::strategy_advisor::{StrategyCandidate, recommend_strategy};
+) -> Result<Option<crate::machine::strategy_advisor::StrategyRecommendation>, SessionError> {
+    use crate::machine::strategy_advisor::{StrategyCandidate, recommend_strategy};
 
     let resolved = &handle.inputs;
     let context = &handle.context;
@@ -1851,7 +1852,7 @@ pub fn execute_recommend_clearing_strategy(
     let mut planned: Vec<(
         ClearingStrategy,
         crate::toolpath::Toolpath,
-        crate::strategy_advisor::LoadRegime,
+        crate::machine::strategy_advisor::LoadRegime,
     )> = Vec::new();
     for &strategy in ADVISOR_CANDIDATE_STRATEGIES.iter() {
         if cancel.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1882,7 +1883,10 @@ pub fn execute_recommend_clearing_strategy(
             }
             // Suggest refused (e.g. a material without primary-source Kc).
             // Still worth timing at the raw params; regime is unknown.
-            Err(_) => (op, crate::strategy_advisor::LoadRegime::Unconstrained),
+            Err(_) => (
+                op,
+                crate::machine::strategy_advisor::LoadRegime::Unconstrained,
+            ),
         };
         // Plan the clearing toolpath — no recorders / dressups / persist;
         // the raw path is what we time.
@@ -2049,7 +2053,7 @@ pub fn execute_optimize_toolpath(
 /// Strategy-advisor companion to
 /// [`execute_recommend_clearing_strategy`]: turn a raw candidate path into
 /// the *optimized* path the user would actually run, plus its binding
-/// [`LoadRegime`](crate::strategy_advisor::LoadRegime). It simulates the
+/// [`LoadRegime`](crate::machine::strategy_advisor::LoadRegime). It simulates the
 /// candidate in isolation to capture per-move engagement, then routes it
 /// through the shared F-039 core
 /// (`modulate_annotated_against_trace`) so the timed path carries
@@ -2071,10 +2075,10 @@ fn optimized_candidate(
     cancel: &AtomicBool,
 ) -> Option<(
     crate::toolpath::Toolpath,
-    crate::strategy_advisor::LoadRegime,
+    crate::machine::strategy_advisor::LoadRegime,
 )> {
     // Modulate against the SAME kinematics + feed envelope
-    // [`recommend_strategy`](crate::strategy_advisor::recommend_strategy)
+    // [`recommend_strategy`](crate::machine::strategy_advisor::recommend_strategy)
     // times the candidate with, so the optimized feeds are clamped to the
     // exact ceilings they're then timed against. `effective_kinematics`
     // (never `None` — falls back to the generic-wood-router profile) is
@@ -2129,7 +2133,7 @@ fn optimized_candidate(
     let regime = outcome
         .build_summary(operation.feed_rate(), aggressiveness, strategy)
         .map(|s| regime_from_binding(&s))
-        .unwrap_or(crate::strategy_advisor::LoadRegime::Unconstrained);
+        .unwrap_or(crate::machine::strategy_advisor::LoadRegime::Unconstrained);
     Some((modulated, regime))
 }
 
@@ -2176,7 +2180,7 @@ fn modulate_annotated_against_trace(
     toolpath_id: ToolpathId,
     cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
     band: crate::feed_modulation::ChiploadBand,
-    kinematics: crate::machine_kinematics::MachineKinematics,
+    kinematics: crate::machine::kinematics::MachineKinematics,
     max_feed: f64,
     rapid_feed: f64,
     strategy: crate::feed_modulation::ModulationStrategy,
@@ -3245,7 +3249,7 @@ impl ProjectSession {
         // same accessor pattern `apply_adaptive_feed_modulation` uses
         // (`effective_kinematics` never `None`; `cutting_feed_ceiling_mm_min`
         // for the cutting-feed cap, `max_feed_mm_min` for the travel rate).
-        let link_kinematics = Some(crate::machine_kinematics::LinkKinematics {
+        let link_kinematics = Some(crate::machine::kinematics::LinkKinematics {
             kinematics: self.machine.effective_kinematics(),
             max_feed_mm_min: self.machine.cutting_feed_ceiling_mm_min().max(1.0),
             rapid_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
@@ -4175,7 +4179,7 @@ impl ProjectSession {
         toolpath_id: ToolpathId,
         cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
         band: crate::feed_modulation::ChiploadBand,
-        kinematics: crate::machine_kinematics::MachineKinematics,
+        kinematics: crate::machine::kinematics::MachineKinematics,
         max_feed: f64,
         rapid_feed: f64,
         strategy: crate::feed_modulation::ModulationStrategy,
@@ -4235,17 +4239,17 @@ impl ProjectSession {
     fn reintegrate_toolpath(
         &self,
         toolpath_id: ToolpathId,
-        kinematics: &crate::machine_kinematics::MachineKinematics,
+        kinematics: &crate::machine::kinematics::MachineKinematics,
         max_feed: f64,
         rapid_feed: f64,
-    ) -> Option<crate::machine_kinematics::CycleTimeBreakdown> {
+    ) -> Option<crate::machine::kinematics::CycleTimeBreakdown> {
         let (idx, _) = self
             .toolpath_configs
             .iter()
             .enumerate()
             .find(|(_, tc)| tc.id == toolpath_id)?;
         let result_slot = self.results.get(&idx)?;
-        Some(crate::machine_kinematics::compute_cycle_time_breakdown(
+        Some(crate::machine::kinematics::compute_cycle_time_breakdown(
             &result_slot.annotated().toolpath,
             kinematics,
             max_feed,
@@ -4466,7 +4470,7 @@ impl ProjectSession {
             // and N2 is the same defect re-opened on this path.
             let mut per_toolpath_runtime: std::collections::BTreeMap<
                 ToolpathId,
-                crate::machine_kinematics::CycleTimeBreakdown,
+                crate::machine::kinematics::CycleTimeBreakdown,
             > = std::collections::BTreeMap::new();
             for entry in &trace.toolpath_runtimes {
                 // A toolpath with no config or no cached result cannot be
@@ -4815,7 +4819,7 @@ impl ProjectSession {
     /// over the move list the CALLER holds.
     ///
     /// This is the single construction site for
-    /// [`crate::kinematic_utilization::analyse_toolpath`] in the session.
+    /// [`crate::machine::kinematic_utilization::analyse_toolpath`] in the session.
     /// It takes `toolpath` rather than fetching one, because a caller that
     /// already holds a result must be measured on THAT result. The GUI's
     /// MCP narration is the case: it narrates the move list on its own
@@ -4835,7 +4839,7 @@ impl ProjectSession {
     /// machine — that is the "one physics site" ruling of the Phase 1 plan.
     ///
     /// `trace` is the simulation the caller is reading, or `None`. It decides
-    /// only the reading's [`crate::kinematic_utilization::FeedsProvenance`],
+    /// only the reading's [`crate::machine::kinematic_utilization::FeedsProvenance`],
     /// never a number. Pass the trace the caller displays beside this reading;
     /// the GUI keeps its trace on viz state, so the session's own
     /// `self.simulation` is the wrong source there.
@@ -4844,7 +4848,7 @@ impl ProjectSession {
         index: usize,
         toolpath: &crate::toolpath::Toolpath,
         trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
-    ) -> Option<crate::kinematic_utilization::ToolpathKinematicUtilization> {
+    ) -> Option<crate::machine::kinematic_utilization::ToolpathKinematicUtilization> {
         let tc = self.toolpath_configs.get(index)?;
         if !tc.enabled {
             return None;
@@ -4856,7 +4860,7 @@ impl ProjectSession {
         } else {
             self.machine.max_feed_mm_min.max(1.0)
         };
-        let mut util = crate::kinematic_utilization::analyse_toolpath(
+        let mut util = crate::machine::kinematic_utilization::analyse_toolpath(
             toolpath,
             tc.id,
             &kinematics,
@@ -4885,8 +4889,8 @@ impl ProjectSession {
         id: ToolpathId,
         toolpath: &crate::toolpath::Toolpath,
         trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
-    ) -> crate::kinematic_utilization::FeedsProvenance {
-        use crate::kinematic_utilization::FeedsProvenance;
+    ) -> crate::machine::kinematic_utilization::FeedsProvenance {
+        use crate::machine::kinematic_utilization::FeedsProvenance;
         let Some(trace) = trace else {
             return FeedsProvenance::Planned;
         };
@@ -4917,7 +4921,7 @@ impl ProjectSession {
         &self,
         index: usize,
         trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
-    ) -> Option<crate::kinematic_utilization::ToolpathKinematicUtilization> {
+    ) -> Option<crate::machine::kinematic_utilization::ToolpathKinematicUtilization> {
         let result = self.results.get(&index)?;
         self.kinematic_utilization_of(index, &result.annotated().toolpath, trace)
     }
@@ -4934,7 +4938,7 @@ impl ProjectSession {
         trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     ) -> std::collections::BTreeMap<
         ToolpathId,
-        crate::kinematic_utilization::ToolpathKinematicUtilization,
+        crate::machine::kinematic_utilization::ToolpathKinematicUtilization,
     > {
         (0..self.toolpath_configs.len())
             .filter_map(|idx| {
@@ -7652,9 +7656,9 @@ mod tests {
         assert!(
             matches!(
                 regime,
-                crate::strategy_advisor::LoadRegime::ToolLimited
-                    | crate::strategy_advisor::LoadRegime::MachineLimited
-                    | crate::strategy_advisor::LoadRegime::Unconstrained
+                crate::machine::strategy_advisor::LoadRegime::ToolLimited
+                    | crate::machine::strategy_advisor::LoadRegime::MachineLimited
+                    | crate::machine::strategy_advisor::LoadRegime::Unconstrained
             ),
             "regime must be a modelled binding value derived from the optimized path"
         );

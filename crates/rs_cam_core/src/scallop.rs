@@ -85,7 +85,7 @@ pub struct ScallopParams {
     /// retract it would replace (F-034 integrator). `None` keeps any
     /// gouge-safe link within [`Self::intra_pass_hookup_mm`] — correct only
     /// when the caller knows rapid and feed rates are comparable.
-    pub link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    pub link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

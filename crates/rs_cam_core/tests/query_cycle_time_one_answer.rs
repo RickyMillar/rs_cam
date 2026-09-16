@@ -51,7 +51,7 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::machine_kinematics::CycleTimeBreakdown;
+use rs_cam_core::machine::kinematics::CycleTimeBreakdown;
 use rs_cam_core::session::{
     AdoptResultArgs, Command, CommandId, CommandKind, CycleTime, CycleTimeBasis, LoadedModel,
     ProjectSession, ProjectSessionBuilder, Query, QueryAnswer, ToolpathConfig,

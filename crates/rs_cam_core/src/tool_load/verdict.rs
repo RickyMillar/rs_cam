@@ -69,7 +69,7 @@ pub enum BindingConstraint {
     ///
     /// The modulator's other five bounds are lateral-cutting physics. This
     /// one is not: the classifier
-    /// ([`crate::kinematic_utilization::classify_move`]) reads the move's
+    /// ([`crate::machine::kinematic_utilization::classify_move`]) reads the move's
     /// own vector, and a descent inside the plunge cone cuts on its centre,
     /// where the chipload band does not apply. The adaptive3d rough emits
     /// its step-down descents as plain cutting moves, so before this guard
@@ -268,7 +268,8 @@ pub struct ToolpathLoadVerdict {
     /// Report-only and additive: no gate, threshold or severity reads
     /// it, and nothing in export consumes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kinematic_utilization: Option<crate::kinematic_utilization::ToolpathKinematicUtilization>,
+    pub kinematic_utilization:
+        Option<crate::machine::kinematic_utilization::ToolpathKinematicUtilization>,
 }
 
 impl ToolpathLoadVerdict {

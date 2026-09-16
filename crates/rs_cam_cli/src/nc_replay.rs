@@ -16,7 +16,7 @@
 
 use anyhow::{Context, Result};
 use rs_cam_core::geo::P3;
-use rs_cam_core::machine_kinematics::{MachineKinematics, compute_cycle_time};
+use rs_cam_core::machine::kinematics::{MachineKinematics, compute_cycle_time};
 use rs_cam_core::toolpath::Toolpath;
 use std::path::{Path, PathBuf};
 

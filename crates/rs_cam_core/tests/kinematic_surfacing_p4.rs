@@ -30,10 +30,10 @@
 
 use rs_cam_core::ToolpathId;
 use rs_cam_core::diagnostics::{Severity, ids};
-use rs_cam_core::kinematic_utilization::{
+use rs_cam_core::machine::kinematic_utilization::{
     BindingFractions, PlungeClassObservation, RampObservation, ToolpathKinematicUtilization,
 };
-use rs_cam_core::machine_kinematics::MachineKinematics;
+use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::stock::sim_measurability::MeasurabilityReport;
 use rs_cam_core::stock::sim_triage::{SimulationTriage, TriageInputs, plunge_class_finding};
 use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
@@ -88,7 +88,7 @@ fn utilization(population: usize, peak_ratio: Option<f64>) -> ToolpathKinematicU
         // Phase 3 (2026-09-07): the surfacing layer reads this only to
         // qualify its own wording; the finding does not branch on it, so
         // the healthy reading is the emitted one.
-        feeds_provenance: rs_cam_core::kinematic_utilization::FeedsProvenance::Emitted,
+        feeds_provenance: rs_cam_core::machine::kinematic_utilization::FeedsProvenance::Emitted,
     }
 }
 

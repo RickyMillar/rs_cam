@@ -10,7 +10,7 @@
 //!
 //! The fix is a cap the move's own GEOMETRY decides, taken from the
 //! shared classifier
-//! [`rs_cam_core::kinematic_utilization::classify_move`], so the guard
+//! [`rs_cam_core::machine::kinematic_utilization::classify_move`], so the guard
 //! and the Phase 2 instrument can never disagree about what a plunge is.
 //!
 //! These sentries pin the four things that can drift:
@@ -37,7 +37,7 @@ use rs_cam_core::feed_modulation::{
     adaptive_feed_modulate,
 };
 use rs_cam_core::geo::P3;
-use rs_cam_core::machine_kinematics::MachineKinematics;
+use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
 /// The operation plunge rate every fixture here is graded against.

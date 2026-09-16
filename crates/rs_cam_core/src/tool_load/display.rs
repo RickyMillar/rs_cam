@@ -39,7 +39,7 @@ use crate::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 #[must_use]
 pub fn achieved_advance_per_tooth(
     sample: &SimulationCutSample,
-    predicted_feeds: &crate::machine_kinematics::PredictedFeedMap,
+    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
 ) -> Option<AdvancePerToothMm> {
     AdvancePerToothMm::from_achieved(
         AchievedFeedMmMin::new(super::effective_feed_for_sample(sample, predicted_feeds)),

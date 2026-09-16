@@ -243,7 +243,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         ChiploadBand, ModulationContext, ModulationStrategy, PerMoveEngagement,
         adaptive_feed_modulate,
     };
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
 
     let cut_feed = 1500.0;
     let li_feed = 500.0;

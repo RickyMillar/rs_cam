@@ -64,7 +64,7 @@ use crate::stock::simulation_cut::SimulationCutSample;
 #[inline]
 pub fn effective_feed_for_sample(
     sample: &SimulationCutSample,
-    predicted_feeds: &crate::machine_kinematics::PredictedFeedMap,
+    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
 ) -> f64 {
     if predicted_feeds.is_empty() {
         return sample.feed_rate_mm_min;

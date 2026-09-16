@@ -50,7 +50,7 @@ use crate::diagnostics::{
     Severity, Source, ids,
 };
 use crate::ids::ToolpathId;
-use crate::kinematic_utilization::ToolpathKinematicUtilization;
+use crate::machine::kinematic_utilization::ToolpathKinematicUtilization;
 use crate::stock::collision::RapidCollision;
 use crate::stock::sim_measurability::MeasurabilityReport;
 use crate::stock::simulation_cut::SimulationCutTrace;
@@ -885,7 +885,7 @@ fn entry_load_finding(trace: &SimulationCutTrace, toolpath_id: ToolpathId) -> Op
 /// the ramp angle and the chipload gate governs it, so its Z component
 /// exceeding `plunge_rate` is not a hazard. Only a vertical-dominant descent
 /// is a plunge (centre cutting, chip evacuation, tip load), and only that
-/// class is graded here. [`crate::kinematic_utilization`] does the
+/// class is graded here. [`crate::machine::kinematic_utilization`] does the
 /// classification; this function only reads the verdict.
 ///
 /// NON-BLOCKING. `fix: None`, no export gate reads it, and it grades EMITTED

@@ -51,7 +51,7 @@ use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_can
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::grid_field::distance_transform_2d;
 use rs_cam_core::geometry::region_set::RegionSet;
-use rs_cam_core::machine_kinematics::MachineKinematics;
+use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::maps::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::maps::tier_map::{
     ResidualTreatment, TierLadder, TierMap, TierMapParams, compute_tier_map,
@@ -138,7 +138,7 @@ fn relink_and_cost_under(
     kinematics: &MachineKinematics,
     regime: &LinkRegime<'_>,
 ) -> CandidateCost {
-    use rs_cam_core::machine_kinematics::{LinkKinematics, compute_cycle_time};
+    use rs_cam_core::machine::kinematics::{LinkKinematics, compute_cycle_time};
 
     let link_kinematics = LinkKinematics {
         kinematics: *kinematics,

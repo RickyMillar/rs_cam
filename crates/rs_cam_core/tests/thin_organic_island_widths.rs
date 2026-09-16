@@ -687,7 +687,7 @@ fn stage_d(
     stepover: f64,
 ) {
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine_kinematics::{MachineKinematics, compute_cycle_time};
+    use rs_cam_core::machine::kinematics::{MachineKinematics, compute_cycle_time};
     use rs_cam_core::scallop::{
         ScallopDirection, ScallopParams, scallop_toolpath_structured_annotated_with_cancel,
     };
@@ -757,7 +757,7 @@ fn stage_d(
         // `intra_region_hookup_mm = 25.0` (unified_finish's Step 4). Comparing
         // an unrelinked raster against a natively-chained cascade would be
         // rigged in the cascade's favour, so relink the raster the same way.
-        let lk = rs_cam_core::machine_kinematics::LinkKinematics {
+        let lk = rs_cam_core::machine::kinematics::LinkKinematics {
             kinematics: kin,
             max_feed_mm_min: MAX_FEED_MM_MIN,
             rapid_feed_mm_min: RAPID_FEED_MM_MIN,
@@ -895,7 +895,7 @@ fn stage_e(
     stepover: f64,
 ) {
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+    use rs_cam_core::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
     use rs_cam_core::toolpath::raster_toolpath_from_grid;
 
     println!("========== STAGE E — does SWEEP ANGLE matter? (the operator's read) ==========\n");
@@ -1055,7 +1055,7 @@ fn stage_f(
     cell: f64,
 ) {
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+    use rs_cam_core::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
     use rs_cam_core::toolpath::raster_toolpath_from_grid;
 
     println!("========== STAGE F — is the best angle PREDICTABLE from the polygon? ==========\n");
@@ -1263,7 +1263,7 @@ fn stage_g(
     stepover: f64,
 ) {
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+    use rs_cam_core::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
     use rs_cam_core::surface_link::LinkCeiling;
     use rs_cam_core::toolpath::raster_toolpath_from_grid;
 
@@ -1887,7 +1887,7 @@ fn relink_and_cost(
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     safe_z: f64,
 ) -> CandidateCost {
     relink_and_cost_under(
@@ -1907,7 +1907,7 @@ fn relink_and_cost_under(
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     regime: LinkRegime<'_>,
 ) -> CandidateCost {
     let ctx = CostingContext {
@@ -1980,7 +1980,7 @@ fn stage_j(
     regions: &[RegionCells],
 ) {
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
 
     println!("========== STAGE J — E1 fair A/B: undivided vs monotone cells ==========\n");
     println!(
@@ -2095,7 +2095,7 @@ fn stage_k(
     stepover: f64,
 ) {
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
 
     let Some(zero) = zero_regions.first() else {
         println!("========== STAGE K — SKIP: no Shallow region 1 ==========\n");
@@ -2542,7 +2542,7 @@ fn cost_under_arms(
     grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     polygons: &[Polygon2],
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     arms: &[LinkRegime<'_>],
 ) -> Vec<CandidateCost> {
     let effective_min_z = input.mesh.bbox.min.z - 0.1;
@@ -2623,7 +2623,7 @@ fn delta(undivided: &CandidateCost, celled: &CandidateCost) -> f64 {
 
 fn stage_l(input: &A3Inputs<'_>, regions: &[RegionCells]) {
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
     use rs_cam_core::surface_link::LinkCeiling;
 
     println!("========== STAGE L — A3: the §0g/§0h decision table under a REAL ceiling ==========");
@@ -2793,7 +2793,7 @@ fn stage_l_region_one(
     input: &A3Inputs<'_>,
     regions: &[RegionCells],
     arms: &[LinkRegime<'_>; 2],
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
 ) {
     use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::surface_link::LinkCeiling;
@@ -3396,7 +3396,7 @@ fn cost_plans_under_arms(
     plans: &[CellPlan],
     order: &[usize],
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     arms: &[LinkRegime<'_>],
 ) -> Vec<CandidateCost> {
     let effective_min_z = input.mesh.bbox.min.z - 0.1;
@@ -3530,7 +3530,7 @@ fn print_global_pca_rows(
     input: &A3Inputs<'_>,
     region: &RegionCells,
     arms: &[LinkRegime<'_>],
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     recorded: Option<[(usize, f64); 2]>,
 ) -> Option<f64> {
     use rs_cam_core::geometry::region_set::RegionSet;
@@ -3621,7 +3621,7 @@ fn stage_m_region(
     region: &RegionCells,
     region_index: usize,
     arms: &[LinkRegime<'_>; 2],
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
 ) -> Option<StageMTotals> {
     use rs_cam_core::geometry::region_set::RegionSet;
 
@@ -3827,7 +3827,7 @@ fn stage_m_region(
 }
 
 fn stage_m(input: &A3Inputs<'_>, regions: &[RegionCells]) {
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
     use rs_cam_core::surface_link::LinkCeiling;
 
     println!(
@@ -4225,9 +4225,9 @@ impl CellCandidates {
 /// prints how often the proxy's pick disagrees with the region-level outcome.
 fn cell_pattern_proxy_s(
     toolpath: &rs_cam_core::toolpath::Toolpath,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
 ) -> f64 {
-    rs_cam_core::machine_kinematics::compute_cycle_time(
+    rs_cam_core::machine::kinematics::compute_cycle_time(
         toolpath,
         kinematics,
         MAX_FEED_MM_MIN,
@@ -4309,7 +4309,7 @@ fn cell_contour_candidate(
 fn build_cell_candidates(
     input: &A3Inputs<'_>,
     cells: &[Polygon2],
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     safe_z: f64,
 ) -> Vec<CellCandidates> {
     use rs_cam_core::geometry::region_set::RegionSet;
@@ -4385,7 +4385,7 @@ fn cost_picks_under_arms(
     cells: &[CellCandidates],
     picks: &[CellPattern],
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     arms: &[LinkRegime<'_>],
 ) -> Vec<CandidateCost> {
     arms.iter()
@@ -4534,7 +4534,7 @@ fn stage_n_region(
     region: &RegionCells,
     region_index: usize,
     arms: &[LinkRegime<'_>; 2],
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
 ) -> Option<StageNTotals> {
     use rs_cam_core::geometry::region_set::RegionSet;
 
@@ -4747,7 +4747,7 @@ fn stage_n_region(
 }
 
 fn stage_n(input: &A3Inputs<'_>, regions: &[RegionCells]) {
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
     use rs_cam_core::surface_link::LinkCeiling;
 
     println!("========== STAGE N — D2: per-cell PATTERN, contour rings vs raster ==========");

@@ -170,7 +170,7 @@ pub(crate) fn matched_chip_envelope(
 /// rather than of two transcriptions staying in step.
 fn achieved_feed_per_tooth_mm(
     sample: &crate::stock::simulation_cut::SimulationCutSample,
-    predicted_feeds: &crate::machine_kinematics::PredictedFeedMap,
+    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
 ) -> Option<f64> {
     super::display::achieved_advance_per_tooth(sample, predicted_feeds)
         .map(crate::feeds::AdvancePerToothMm::mm)
@@ -1238,7 +1238,7 @@ mod tests {
     /// the 95 %-of-commanded-feed filter and the tests that exercise it —
     /// is byte-identical.
     fn trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
-        let mut predicted_feeds = crate::machine_kinematics::PredictedFeedMap::new();
+        let mut predicted_feeds = crate::machine::kinematics::PredictedFeedMap::new();
         for s in &samples {
             let divisor = f64::from(s.spindle_rpm) * f64::from(s.flute_count);
             predicted_feeds.insert(

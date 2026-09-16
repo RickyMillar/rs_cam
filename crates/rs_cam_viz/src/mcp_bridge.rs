@@ -1120,7 +1120,7 @@ fn render_optimize_outcome(
 /// The `recommend_clearing_strategy` reply.
 fn render_strategy_recommendation(
     index: usize,
-    rec: Option<&rs_cam_core::strategy_advisor::StrategyRecommendation>,
+    rec: Option<&rs_cam_core::machine::strategy_advisor::StrategyRecommendation>,
 ) -> String {
     let Some(rec) = rec else {
         return json_str(serde_json::json!({

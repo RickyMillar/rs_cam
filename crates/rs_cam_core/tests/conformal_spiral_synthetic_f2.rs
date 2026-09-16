@@ -645,7 +645,7 @@ fn relink_and_cost(
     index: &SpatialIndex,
     cutter: &BallEndmill,
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
-    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
     safe_z: f64,
 ) -> CandidateCost {
     let ctx = CostingContext {
@@ -2553,7 +2553,7 @@ struct Fixture<'a> {
     mesh: &'a TriangleMesh,
     index: &'a SpatialIndex,
     cutter: &'a BallEndmill,
-    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: rs_cam_core::machine::kinematics::MachineKinematics,
     /// `mesh.bbox.max.z + 5.0`, as the reference instruments compute it.
     safe_z: f64,
     /// `mesh.bbox.min.z - 0.1`, as the reference instruments compute it.
@@ -8080,7 +8080,7 @@ fn plan_analytic_arm(
 
 fn arm_sphere(
     cutter: &BallEndmill,
-    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: rs_cam_core::machine::kinematics::MachineKinematics,
     stepover_mm: f64,
     params: &SpiralParams,
 ) {
@@ -8221,7 +8221,7 @@ fn arm_sphere(
 
 fn arm_wavy(
     cutter: &BallEndmill,
-    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: rs_cam_core::machine::kinematics::MachineKinematics,
     stepover_mm: f64,
     params: &SpiralParams,
 ) {
@@ -8779,7 +8779,7 @@ fn ribbon_cell_mask(cells: usize) -> Vec<bool> {
 
 fn arm_ribbon(
     cutter: &BallEndmill,
-    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: rs_cam_core::machine::kinematics::MachineKinematics,
     stepover_mm: f64,
     params: &SpiralParams,
 ) {
@@ -9330,7 +9330,7 @@ fn band_raster_wall(
 
 fn arm_band(
     cutter: &BallEndmill,
-    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: rs_cam_core::machine::kinematics::MachineKinematics,
     stepover_mm: f64,
     params: &SpiralParams,
 ) {
@@ -9859,7 +9859,7 @@ fn arm_band(
 /// of printing, so an excerpt cannot be quoted without the label.
 fn arm_terrain(
     cutter: &BallEndmill,
-    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    kinematics: rs_cam_core::machine::kinematics::MachineKinematics,
     stepover_mm: f64,
     params: &SpiralParams,
 ) {
@@ -10121,7 +10121,7 @@ fn arm_terrain(
 #[test]
 #[ignore = "evidence run — long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process, plus THREE direction_field Poisson solves + marching-triangles extractions per analytic arm since 2026-08-31 — the curvature field, the synthesis §4.3 sweep field and the operator's medial-axis field, the last of which additionally builds one distance-transform grid per region); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
 fn terrain_small_conformal_spiral_f2() {
-    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::machine::kinematics::MachineKinematics;
 
     eprintln!(
         "\n########## PHASE F2 — conformal-spiral evidence, SIX ARMS, ANALYTIC FIRST ##########\n"

@@ -112,8 +112,8 @@
 )]
 
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::kinematic_utilization::{MotionClass, analyse_toolpath};
-use rs_cam_core::machine_kinematics::MachineKinematics;
+use rs_cam_core::machine::kinematic_utilization::{MotionClass, analyse_toolpath};
+use rs_cam_core::machine::kinematics::MachineKinematics;
 
 /// Machine travel-rate cap (mm/min) — the user's `$110/$111`.
 const MAX_FEED: f64 = 10_000.0;

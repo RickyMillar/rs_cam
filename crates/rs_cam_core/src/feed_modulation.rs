@@ -49,8 +49,8 @@
 //! strategy then lifts that descent to the lateral chipload band. So
 //! [`adaptive_feed_modulate`] adds one GEOMETRIC cap after the strategy
 //! decides: a move the shared classifier
-//! ([`crate::kinematic_utilization::classify_move`]) calls
-//! [`crate::kinematic_utilization::MotionClass::Plunge`] is capped at
+//! ([`crate::machine::kinematic_utilization::classify_move`]) calls
+//! [`crate::machine::kinematic_utilization::MotionClass::Plunge`] is capped at
 //! [`ModulationContext::plunge_rate_mm_min`] and reports
 //! [`BindingConstraint::PlungeRate`]. The intent skip is UNCHANGED — a
 //! tagged plunge still keeps its operator-tuned feed exactly.
@@ -61,7 +61,7 @@
 use std::collections::BTreeMap;
 
 use crate::feeds::force::DeflectionCapRefusal;
-use crate::machine_kinematics::{MachineKinematics, predicted_feeds_for_toolpath};
+use crate::machine::kinematics::{MachineKinematics, predicted_feeds_for_toolpath};
 use crate::tool_load::power::PowerModelInputs;
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
@@ -784,8 +784,8 @@ pub fn adaptive_feed_modulate(
             let prev = toolpath.moves[i - 1].target;
             let curr = toolpath.moves[i].target;
             let delta = [curr.x - prev.x, curr.y - prev.y, curr.z - prev.z];
-            if crate::kinematic_utilization::classify_move(move_type, delta)
-                == crate::kinematic_utilization::MotionClass::Plunge
+            if crate::machine::kinematic_utilization::classify_move(move_type, delta)
+                == crate::machine::kinematic_utilization::MotionClass::Plunge
                 && new_feed > ctx.plunge_rate_mm_min
             {
                 new_feed = ctx.plunge_rate_mm_min;

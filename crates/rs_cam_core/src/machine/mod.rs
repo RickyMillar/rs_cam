@@ -2,10 +2,17 @@
 //!
 //! Defines spindle configuration, power model, rigidity factors, and
 //! machine presets. Ported from reference/shapeoko_feeds_and_speeds/src/machine_profile.rs.
+//!
+//! The folder holds the machine model: this profile, the kinematics, the
+//! utilisation instrument and the strategy advisor that reads them.
+
+pub mod kinematic_utilization;
+pub mod kinematics;
+pub mod strategy_advisor;
 
 use serde::{Deserialize, Serialize};
 
-use crate::machine_kinematics::MachineKinematics;
+use crate::machine::kinematics::MachineKinematics;
 
 /// Spindle speed control type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,7 +107,7 @@ pub struct MachineProfile {
     /// integrator. **`None` for every built-in preset** — the absence
     /// of kinematics IS the feature flag for F-034. When `Some`, the
     /// simulator routes `total_runtime_s` through
-    /// [`crate::machine_kinematics::compute_cycle_time`] instead of
+    /// [`crate::machine::kinematics::compute_cycle_time`] instead of
     /// the naive dexel-sample sum. When `None`, behavior is byte-
     /// identical to pre-F-034.
     #[serde(default)]

@@ -33,8 +33,8 @@ use rs_cam_core::compute::operation_configs::{
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::machine::strategy_advisor::LoadRegime;
 use rs_cam_core::session::{AddToolpathArgs, Command, ProjectSession, ToolpathConfig};
-use rs_cam_core::strategy_advisor::LoadRegime;
 
 /// Load `ux_3d_terrain.toml` and add the AS013-shape adaptive3d toolpath
 /// (6 mm end mill, depth_per_pass=3, stepover=1.2) — the same fixture the

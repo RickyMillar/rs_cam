@@ -252,7 +252,7 @@ pub struct SimulationRequest {
 /// calibration byte-identical.
 #[derive(Debug, Clone, Copy)]
 pub struct KinematicsContext {
-    pub kinematics: crate::machine_kinematics::MachineKinematics,
+    pub kinematics: crate::machine::kinematics::MachineKinematics,
     pub max_feed_mm_min: f64,
     /// F-035 — when `true`, additionally stamp predicted achieved
     /// feeds on the resulting `SimulationCutTrace::predicted_feeds`
@@ -1451,7 +1451,7 @@ where
 }
 
 /// F-034: walk every toolpath in the request, recompute its runtime
-/// using [`crate::machine_kinematics::compute_cycle_time_breakdown`],
+/// using [`crate::machine::kinematics::compute_cycle_time_breakdown`],
 /// and rewrite the per-toolpath + project-wide `total_runtime_s` slots
 /// on `trace`. Also attaches the `MoveIntent`-bucketed
 /// `runtime_by_intent` breakdown (P0 unified-finishing probe) at both
@@ -1470,7 +1470,7 @@ fn apply_kinematics_cycle_time(
     request: &SimulationRequest,
     ctx: KinematicsContext,
 ) {
-    use crate::machine_kinematics::{
+    use crate::machine::kinematics::{
         CycleTimeBreakdown, compute_cycle_time_breakdown, predicted_feeds_for_toolpath,
     };
 
@@ -1483,7 +1483,7 @@ fn apply_kinematics_cycle_time(
     // `MoveDigest` construction logic but are intentionally separate
     // functions to keep the runtime-only override (F-034) and the
     // gate plumbing (F-035) independently flag-gated.
-    let mut predicted_feeds: crate::machine_kinematics::PredictedFeedMap = BTreeMap::new();
+    let mut predicted_feeds: crate::machine::kinematics::PredictedFeedMap = BTreeMap::new();
     for group in &request.groups {
         for entry in &group.toolpaths {
             let b = compute_cycle_time_breakdown(
