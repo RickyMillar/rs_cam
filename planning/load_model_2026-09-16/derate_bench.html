@@ -182,7 +182,61 @@ tr.base td:first-child{color:var(--ink-2)}
 .d-down{color:var(--ok)} .d-up{color:var(--over)} .d-flat{color:var(--ink-3)}
 .fixes{font-weight:600}
 
+
 /* ---- chart ---- */
+/* ---- the UX prototype ---- */
+.proto{
+  margin-top:30px; border:1px solid var(--rule); border-radius:4px;
+  background:var(--panel); overflow:hidden;
+}
+.proto-tag{
+  display:flex; flex-wrap:wrap; gap:6px 12px; align-items:baseline;
+  padding:10px 16px; background:var(--panel-2);
+  border-bottom:1px solid var(--rule);
+  font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:600;
+}
+.proto-tag em{
+  font-style:normal; letter-spacing:0; text-transform:none;
+  font-size:12px; font-weight:400; color:var(--ink-3);
+}
+.proto-screen{padding:26px 26px 22px; max-width:760px}
+.proto-head{
+  font-family:var(--display); font-weight:600;
+  font-size:clamp(22px,3.4vw,31px); line-height:1.12;
+  margin:0 0 10px; letter-spacing:.01em; text-wrap:balance;
+}
+.proto-sub{margin:0 0 22px; color:var(--ink-2); font-size:14.5px; max-width:60ch}
+.proto-sub b{color:var(--ink)}
+.lim{
+  display:grid; grid-template-columns:1fr auto auto;
+  gap:10px 14px; align-items:center;
+  padding:11px 0; border-top:1px solid var(--rule-2);
+}
+.lim:last-of-type{border-bottom:1px solid var(--rule-2)}
+.lim-name{font-weight:500; font-size:14px}
+.lim-name small{display:block; color:var(--ink-3); font-weight:400; font-size:12px; margin-top:1px}
+.lim-val{
+  font-family:var(--mono); font-size:13.5px; font-variant-numeric:tabular-nums;
+  color:var(--ink-2); white-space:nowrap;
+}
+.lim-val b{color:var(--ink)}
+.tag{
+  font-size:10.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+  padding:3px 8px; border-radius:2px; white-space:nowrap;
+}
+.t-measured{background:var(--ok-soft); color:var(--ok)}
+.t-calc{background:var(--accent-soft); color:var(--accent)}
+.t-thumb{background:var(--warn-soft); color:var(--warn)}
+.t-none{background:var(--unknown-soft); color:var(--unknown)}
+.lim.binds{background:var(--warn-soft); margin:0 -12px; padding-left:12px; padding-right:12px}
+.proto-foot{margin:20px 0 0; font-size:13px; color:var(--ink-2); line-height:1.55; max-width:64ch}
+@media (max-width:640px){
+  .proto-screen{padding:20px 16px 18px}
+  .lim{grid-template-columns:1fr auto; }
+  .lim .tag{grid-column:2}
+}
+
 .chartwrap{padding:16px 16px 10px}
 canvas{width:100%; height:270px; display:block}
 .legend{display:flex; flex-wrap:wrap; gap:8px 20px; padding:4px 16px 16px; font-size:12.5px; color:var(--ink-2)}
@@ -274,6 +328,18 @@ footer code{font-family:var(--mono); font-size:12px}
     </div>
     <div id="helixwhatif" style="margin:18px -16px 0"></div>
     <p class="hint" id="helixnote" style="margin-top:18px; font-family:var(--body); font-size:13px; color:var(--ink-2); line-height:1.5"></p>
+  </div>
+</div>
+
+<div class="proto">
+  <div class="proto-tag">Prototype — not shipped
+    <em>What the operator would see, if every limit said how much we actually know</em>
+  </div>
+  <div class="proto-screen">
+    <h2 class="proto-head" id="p-head"></h2>
+    <p class="proto-sub" id="p-sub"></p>
+    <div id="p-limits"></div>
+    <p class="proto-foot" id="p-foot"></p>
   </div>
 </div>
 
@@ -488,6 +554,7 @@ function render(){
   renderLevers(m);
   drawChart(m);
   drawHelix();
+  renderPrototype(m);
 }
 
 function renderVerdict(L, m){
@@ -575,7 +642,7 @@ function renderLevers(m){
   el("#levers").innerHTML = html;
 }
 
-/* ---- chart ---- */
+
 function drawChart(m){
   const cv = el("#chart");
   const dpr = window.devicePixelRatio || 1;
@@ -825,6 +892,98 @@ function drawHelix(){
     `Adding it to the power model would <b>overstate</b> the bill, not correct it. ` +
     `The one real helix effect on power is the last row: the edge is physically ` +
     `longer than the depth it covers.`;
+}
+
+
+// ---- the UX prototype ----
+//
+// Every limit the engine applies, each carrying how much we actually KNOW
+// about it. That is the whole proposal: the confidence tag, not the number.
+//
+// The measurement it exists to answer: across 54 recipes the rigidity cap
+// set the depth on 100 % and the power constraint bound on 4 %. The only
+// limit that ever fires is the one with no source behind it, and today's UI
+// gives the operator no way to tell that apart from a measured one.
+//
+// RUBBING_FLOOR is feeds::RUBBING_FLOOR_MM_TOOTH. DOC_ROUGHING is
+// machine.rs RigidityProfile::doc_roughing_factor for the generic router.
+const RUBBING_FLOOR = 0.025;
+const DOC_ROUGHING = 0.20;
+
+function renderPrototype(m){
+  const r = model(P);
+  const avail = availableKw(m, P.rpm);
+  const rigidityCap = DOC_ROUGHING * D;
+  const thrust = usableThrust(P.gantry);
+
+  // `used` is the share of the limit consumed. `null` means we cannot say,
+  // which is a state the UI must be able to show without faking a number.
+  const limits = [
+    { name:"Chip thickness",  note:"too thin and the tooth rubs instead of slicing",
+      value:`${P.fz.toFixed(4)} mm/tooth`, floor:true,
+      used: RUBBING_FLOOR / Math.max(P.fz, 1e-9),
+      tag:"measured", cls:"t-measured",
+      why:"Vendor chipload rows, plus a force model fitted to published wood cutting data and corroborated against two independent datasets." },
+    { name:"Spindle power", note:"what the motor can turn",
+      value:`${r.powerKw.toFixed(3)} of ${avail.toFixed(3)} kW`,
+      used: r.powerKw / Math.max(avail, 1e-9),
+      tag:"measured", cls:"t-measured",
+      why:"The machine's own power curve, and a cutting model whose coefficient lands within about 10 % of two wood datasets." },
+    { name:"Tool deflection", note:"how far the cutter bends off line",
+      value:`${r.sideForce.toFixed(1)} N side load`, used:null,
+      tag:"calculated", cls:"t-calc",
+      why:"A beam model on the real tool geometry — diameter, stickout, core fraction. Sound physics, no bench validation." },
+    { name:"Machine rigidity", note:"how deep this machine is trusted to cut",
+      value:`${P.ap.toFixed(2)} of ${rigidityCap.toFixed(2)} mm depth`,
+      used: P.ap / Math.max(rigidityCap, 1e-9),
+      tag:"rule of thumb", cls:"t-thumb",
+      why:"0.20 × tool diameter. No source. It knows nothing about the material, the tool, the spindle or how the part is held — and it sets the depth on essentially every recipe." },
+    { name:"Gantry push", note:"the force before the drive skips a step",
+      value:`${r.gantry.toFixed(1)} N`, used:null,
+      tag:"not checked", cls:"t-none",
+      why:`Nothing in the engine asks this. The ${thrust.toFixed(0)} N figure elsewhere on this page is research, not a rating — no manufacturer publishes one.` },
+  ];
+
+  // The binding limit is the one closest to its own ceiling, among those we
+  // can actually evaluate. A limit we cannot evaluate must never be ranked
+  // as comfortable.
+  const scored = limits.filter(l => l.used !== null);
+  const worst = scored.reduce((a, b) => (b.used > a.used ? b : a), scored[0]);
+  const pct = Math.round(worst.used * 100);
+
+  el("#p-head").textContent = worst.used > 1
+    ? `This cut asks for more than your machine gives.`
+    : `This cut runs at ${pct} % of what your machine can give.`;
+
+  const unknown = limits.filter(l => l.used === null).length;
+  el("#p-sub").innerHTML =
+    `<b>${worst.name}</b> is the limit that binds${worst.used > 1
+      ? `, and the cut is over it by ${Math.round((worst.used - 1) * 100)} %`
+      : ""}. ` +
+    (worst.tag === "rule of thumb"
+      ? `It is a <b>rule of thumb</b>, not a measurement — so the number that decides your cut is the one we know least about.`
+      : `That limit is ${worst.tag}.`) +
+    ` ${unknown} of ${limits.length} limits cannot be evaluated at all.`;
+
+  el("#p-limits").innerHTML = limits.map(l => {
+    const state = l.used === null ? "—"
+      : l.floor ? (l.used > 1 ? `${Math.round(l.used * 100)} % — too thin` : "clear")
+      : `${Math.round(l.used * 100)} %`;
+    return `<div class="lim${l === worst ? " binds" : ""}" title="${l.why}">
+      <span class="lim-name">${l.name}<small>${l.note}</small></span>
+      <span class="lim-val">${l.value} &nbsp;<b>${state}</b></span>
+      <span class="tag ${l.cls}">${l.tag}</span>
+    </div>`;
+  }).join("");
+
+  el("#p-foot").innerHTML =
+    `Every row carries how much we actually know about it, and that is the whole ` +
+    `proposal — no new physics, just honesty about which numbers are earned. ` +
+    `Across 54 recipes the <b>rule of thumb set the depth on 100 %</b> and the ` +
+    `measured power limit bound on 4 %. An operator who can see that asks the ` +
+    `right question; one shown five bare numbers cannot. Hover any row for its ` +
+    `backing. Two of the five become <em>measured</em> after half an hour with a ` +
+    `luggage scale and a dial indicator.`;
 }
 
 el("#machine").addEventListener("change", render);
