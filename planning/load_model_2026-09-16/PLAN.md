@@ -212,3 +212,39 @@ Wrong, and corrected above:
 
 The prototype stays in `derate_bench.html` as a design record. **It is not the
 implementation target.** `verdict_badge` is.
+
+---
+
+## 7. Two refinements from the final core survey
+
+Neither changes the order of work.
+
+**Chip thickness exists in four distinct forms on the sample**, and they are
+not interchangeable: `SimulationCutSample::effective_chip_thickness_mm` is
+what the gate reads, `Engagement::mean_chip_thickness_mm` and
+`::peak_chip_thickness_mm` are arc statistics, and
+`SimulationCutSample::chipload_mm_per_tooth` is the commanded advance. A
+distribution must name which one it drew. This is the same confusion
+`feed_explanation` was written to end — four disagreeing chipload numbers with
+nothing saying they were different quantities.
+
+**No scalar summary carries a chip-thickness extreme** except
+`KinematicsSummary`, and `peak_engagement` is computed by the accumulator but
+never published on the per-toolpath summary. So a distribution at toolpath
+scope cannot be assembled from existing summary fields. It must come from the
+gate's own `ChiploadMetric`, which already carries the observed value, the
+named statistic and the bounds together. That is the right source anyway.
+
+## 8. A note on citations in this package
+
+The three surveys were run while another session was restructuring the tree.
+They were instructed mid-flight to cite by SYMBOL first and path second.
+
+That was not precautionary. Two citations moved during a ten-minute survey —
+a comment in `feeds/mod.rs` and `PlungeStressWarning` — and a third could not
+be separated from the surveyor's own mis-citation, which the survey says
+plainly rather than quietly correcting.
+
+**Every line number in this package should be treated as approximate. Every
+symbol name should be treated as exact.** Anyone acting on these documents
+should search for the symbol, not open the line.
