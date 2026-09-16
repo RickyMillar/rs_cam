@@ -23,7 +23,7 @@ need a register.
 | T-7 | Two definitions of "teeth in cut", differing by helix wrap | open |
 | T-8 | The power derate thins the chip, and only half the power responds | open — one sentry red |
 | T-9 | A feed clamped onto a ceiling ships one rounding step above it | open |
-| T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs data |
+| T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating |
 
 ---
 
@@ -307,10 +307,16 @@ force is 22-34 N. As wattage that is 1.4-3.3 W, under 1 % of the spindle
 power — which is why a power model cannot see it. Against a hobby gantry's
 thrust it is significant.
 
-The force is set by the chip thickness, not by the feed rate. At a constant
-chip thickness of 0.0625 mm/tooth the feed can go from 1 125 to 4 500
-mm/min and the gantry force does not move from 28.0 N, while the spindle
-power goes from 269 to 1 076 W.
+The force does not respond to the feed rate at all. At a constant chip
+thickness of 0.0625 mm/tooth the feed can go from 1 125 to 4 500 mm/min
+and the gantry force does not move, while the spindle power goes from 269
+to 1 076 W.
+
+It responds to the DEPTH and the WIDTH, and barely to the chip thickness.
+Cut each dial to a third of its value and the push moves by -67 % (depth),
+-45 % (width) and -6 % (chipload). At a chipload of zero the push is still
+93 % of its full value, because the edge term carries the load and the edge
+term contains no chipload.
 
 **Why nothing catches it:** the limit is not weakly enforced. It is absent.
 No test can fail on a constraint the crate does not state.
@@ -319,18 +325,28 @@ No test can fail on a constraint the crate does not state.
 push, and it reports no warning. The user finds out when the machine loses
 position in the middle of a job.
 
-**This is a research question before it is a coding question.** It needs:
+**Research done 2026-09-16** — `planning/load_model_2026-09-16/THRUST_RESEARCH.md`.
+Two of the three unknowns are now answered.
 
-1. A rated axis thrust per machine profile, in newtons. `MachineProfile`
-   carries no such field. Without it there is no denominator, and a made-up
-   constant is worse than the present honest silence.
-2. A feed-force ratio. The affine model in `feeds/force.rs` gives the
-   tangential force. The feed-direction component is a fraction of it that
-   changes with the immersion angle and the cut direction. The numbers above
-   use 0.5 as a placeholder. A real value needs a literature anchor of the
-   same standard as `force.rs` uses, or a measurement.
-3. A decision on the lever to pull when it binds. Per `DERATE_SPEC.md`,
-   probably a thinner chip or a narrower cut, and never a slower feed.
+1. **The axis thrust — still the blocker.** `MachineProfile` carries no such
+   field, and no maker publishes a rating. The research gives ballpark
+   figures that span 20:1 across machine classes: a belt gantry skips at a
+   measured 85 N, a ballscrew is a derived 1 074 N and a rack and pinion a
+   derived 1 537 N. A skip happens at 0.5 to 0.6 of stall. One constant for
+   every machine is therefore not an option, and every non-belt figure is
+   derived arithmetic that nobody has measured.
+2. **The feed-force ratio — answered, and 0.5 was wrong.** It is geometry,
+   not a fitted constant: the peak of
+   `-(F_t*cos(phi) + K_r*F_t*sin(phi))` over the engagement arc. The peak
+   ratio runs 0.53 to 1.0 and never approaches 0.5. In the adaptive band it
+   is 0.79 to 0.97, so the placeholder understated the load by about two.
+3. **The lever — answered.** Reduce the depth, then the width. Never the
+   feed rate, and thinning the chip moves the push by 6 %.
+
+**What is still missing:** a measured skip threshold for any machine that is
+not belt driven, and a check on whether the frame rather than the motor sets
+the real limit. The one piece of evidence on that point, a Shapeoko belt
+thread, says the drive compliance dominated.
 
 ---
 

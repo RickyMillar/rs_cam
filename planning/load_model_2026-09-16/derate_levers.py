@@ -39,9 +39,24 @@ MAKITA_KW = 0.71
 MAKITA_SAFETY = 0.80
 
 # NOT in the Rust. There is no gantry force model. See T-10.
-# Both of these are placeholders until THRUST_RESEARCH.md lands.
-FEED_FORCE_RATIO_PLACEHOLDER = 0.5
-AXIS_THRUST_N_PLACEHOLDER = 100.0
+# These come from THRUST_RESEARCH.md (2026-09-16), which is research, not a
+# measurement of our own. Treat every number below as a ballpark.
+
+# Axis thrust at the point the machine loses position, in newtons.
+# "measured" means somebody pulled the axis against a scale until it skipped.
+# "derived" means motor torque and drive geometry, with no measurement.
+AXIS_THRUST_N = {
+    "belt_measured":      (85.0, "Shapeoko Pro X axis, measured skip"),
+    "belt_stall":        (132.0, "Shapeoko 3, derived stall — NOT usable"),
+    "ballscrew_derived": (1074.0, "Onefinity X-50 1610, derived"),
+    "rack_derived":      (1537.0, "Avid PRO NEMA 34, derived, one drive"),
+}
+# A skip happens well below stall. Three measured points against one derived
+# point put the usable fraction at 0.5 to 0.6. Belt machines only.
+SAFE_FRACTION_OF_STALL = 0.55
+
+# The old placeholder, kept only so the checks can show what it got wrong.
+SUPERSEDED_RATIO_PLACEHOLDER = 0.5
 
 
 # --- The model --------------------------------------------------------------
@@ -109,14 +124,46 @@ class Cut:
         )
         return shear_slope * self.feed_mm_min + edge
 
-    def gantry_force_n(self, ratio: float = FEED_FORCE_RATIO_PLACEHOLDER) -> float:
-        """NOT MODELLED IN THE RUST. The mean push along the feed direction.
+    def feed_force_ratio(self, climb: bool = True, kr: float = 0.15) -> float:
+        """Peak feed-direction force divided by peak tangential force.
 
-        The ratio is a placeholder. See T-10. Do not treat this as a
-        prediction. It exists to show the SHAPE of the dependency, which is
-        the part that does not depend on the unknown constant.
+        This is geometry, not a fitted constant. The feed force at edge angle
+        phi is `-(F_t*cos(phi) + K_r*F_t*sin(phi))`. The ratio is the peak of
+        that over the engagement arc, divided by the peak tangential force.
+
+        The PEAK is the right statistic. A stepper skips on the worst tooth,
+        not on the average one.
+
+        `kr` is the radial-to-tangential ratio. For clear softwood it is below
+        0.2 (Caceres 2018, white spruce, four rake angles). Metal uses 0.3 to
+        0.5. The low wood value pushes this ratio TOWARD 1.0, so wood is the
+        demanding case. See THRUST_RESEARCH.md section 2.4.
         """
-        return ratio * self.lateral_force_n * self.teeth_in_cut
+        psi = self.psi_rad
+        if psi <= 0.0:
+            return 0.0
+        lo, hi = (math.pi - psi, math.pi) if climb else (0.0, psi)
+        peak_t = peak_f = 0.0
+        ks, f_edge = self.coefficients
+        steps = 400
+        for i in range(steps + 1):
+            phi = lo + (hi - lo) * i / steps
+            ft = ks * self.fz_mm * math.sin(phi) + f_edge
+            ff = -(ft * math.cos(phi) + kr * ft * math.sin(phi))
+            peak_t = max(peak_t, ft)
+            peak_f = max(peak_f, abs(ff))
+        return peak_f / peak_t if peak_t > 0.0 else 0.0
+
+    def gantry_force_n(self, ratio: float | None = None,
+                       climb: bool = True) -> float:
+        """NOT MODELLED IN THE RUST. The peak push along the feed direction.
+
+        See T-10. Do not treat this as a prediction. The SHAPE of the
+        dependency is sound; the magnitude rests on research, not on a
+        measurement of our own machine.
+        """
+        r = self.feed_force_ratio(climb) if ratio is None else ratio
+        return r * self.lateral_force_n * self.teeth_in_cut
 
 
 def available_kw(model: str, rpm: float) -> float:
@@ -165,10 +212,9 @@ def verify_against_rust() -> None:
         f"computed {cut.spindle_power_kw() * 1000:.1f} W",
     )
     check(
-        "the reference cut pushes 28.0 N",
-        close(cut.gantry_force_n(), 28.0, tol=5e-3),
-        f"computed {cut.gantry_force_n():.2f} N at ratio "
-        f"{FEED_FORCE_RATIO_PLACEHOLDER}",
+        "the reference cut bends the tool with 69.5 N",
+        close(cut.lateral_force_n, 69.5, tol=5e-3),
+        f"computed {cut.lateral_force_n:.2f} N",
     )
     crossover = LIT_FEDGE_N_PER_MM / LIT_KS_N_PER_MM2
     check(
@@ -282,18 +328,22 @@ def rule_3_deflection() -> None:
     )
 
 
-def rule_4_gantry(thrust_n: float, ratio: float) -> None:
-    """The gantry force. Not modelled. See T-10."""
+def rule_4_gantry(gantry: str, climb: bool) -> None:
+    """The gantry force. Not modelled in the Rust. See T-10."""
+    stall, note = AXIS_THRUST_N[gantry]
+    usable = stall * SAFE_FRACTION_OF_STALL
     print("\nRule 4 — the gantry force follows the chip, not the feed rate")
-    print(f"         PLACEHOLDER thrust {thrust_n:.0f} N, ratio {ratio:.2f}. "
-          f"See T-10.")
+    print(f"         {note}: {stall:.0f} N, usable {usable:.0f} N at "
+          f"{SAFE_FRACTION_OF_STALL:.0%} of it.")
+    print(f"         Cut direction: {'climb' if climb else 'conventional'}. "
+          f"Research figures, not our measurement. See T-10.")
     base = Cut()
 
     print(f"\n         {'rpm':>7} {'feed':>9} {'gantry N':>9} {'spindle W':>10}")
     forces = []
     for rpm in (4500.0, 9000.0, 18000.0):
         cut = replace(base, rpm=rpm)
-        f = cut.gantry_force_n(ratio)
+        f = cut.gantry_force_n(climb=climb)
         forces.append(f)
         print(f"         {rpm:>7.0f} {cut.feed_mm_min:>9.0f} {f:>9.1f} "
               f"{cut.spindle_power_kw() * 1000:>10.0f}")
@@ -308,19 +358,47 @@ def rule_4_gantry(thrust_n: float, ratio: float) -> None:
     for fz in (0.025, 0.0625, 0.100):
         cut = replace(base, fz_mm=fz)
         print(f"         {fz:>7.4f} {cut.feed_mm_min:>9.0f} "
-              f"{cut.gantry_force_n(ratio):>9.1f} "
+              f"{cut.gantry_force_n(climb=climb):>9.1f} "
               f"{cut.spindle_power_kw() * 1000:>10.0f}")
 
-    thick = replace(base, fz_mm=0.100)
-    thin = replace(base, fz_mm=0.025)
+    # Which dial actually moves the push? Cut each one to a third.
+    print(f"\n         Each dial cut to a third of its value:")
+    here = base.gantry_force_n(climb=climb)
+    print(f"         {'dial':<26}{'gantry N':>9}{'change':>9}")
+    print(f"         {'as it stands':<26}{here:>9.1f}{'':>9}")
+    moved = {}
+    for name, cut in (
+        ("chipload", replace(base, fz_mm=base.fz_mm / 3.0)),
+        ("depth of cut", replace(base, ap_mm=base.ap_mm / 3.0)),
+        ("width of cut", replace(base, ae_mm=base.ae_mm / 3.0)),
+    ):
+        f = cut.gantry_force_n(climb=climb)
+        moved[name] = f / here - 1.0
+        print(f"         {name:<26}{f:>9.1f}{moved[name]:>8.0%}")
+
     check(
-        "a thicker chip does change it",
-        thick.gantry_force_n(ratio) > 1.2 * thin.gantry_force_n(ratio),
-        f"{thin.gantry_force_n(ratio):.1f} -> "
-        f"{thick.gantry_force_n(ratio):.1f} N for a 4x chipload",
+        "the depth of cut is the strongest dial on the gantry push",
+        moved["depth of cut"] < moved["width of cut"] < moved["chipload"],
+        f"depth {moved['depth of cut']:.0%}, width "
+        f"{moved['width of cut']:.0%}, chipload {moved['chipload']:.0%}",
+    )
+    check(
+        "thinning the chip barely moves the gantry push",
+        abs(moved["chipload"]) < 0.15,
+        f"a chipload cut to a third moves the push by "
+        f"{moved['chipload']:.0%}. The edge term carries the load, and the "
+        f"edge term has no chipload in it.",
+    )
+    zero_chip = replace(base, fz_mm=1e-9)
+    check(
+        "most of the push survives a chipload of zero",
+        zero_chip.gantry_force_n(climb=climb) > 0.8 * here,
+        f"{zero_chip.gantry_force_n(climb=climb):.1f} N of {here:.1f} N "
+        f"= {zero_chip.gantry_force_n(climb=climb) / here:.0%} remains. "
+        f"Depth and width are the levers, NOT chipload.",
     )
 
-    watts = base.gantry_force_n(ratio) * base.feed_mm_min / 60_000.0
+    watts = base.gantry_force_n(climb=climb) * base.feed_mm_min / 60_000.0
     check(
         "the gantry force is invisible to a power model",
         watts < 0.01 * base.spindle_power_kw() * 1000.0,
@@ -328,17 +406,44 @@ def rule_4_gantry(thrust_n: float, ratio: float) -> None:
         f"{base.spindle_power_kw() * 1000:.0f} W at the spindle — "
         f"under 1 %. This is why no power gate can catch it.",
     )
-    print(f"\n         Against the placeholder thrust: "
-          f"{base.gantry_force_n(ratio) / thrust_n * 100:.0f} % used. "
-          f"This number means nothing until T-10 has real data.")
+
+
+def rule_5_the_ratio_is_not_a_half() -> None:
+    """The finding from THRUST_RESEARCH.md that moves the numbers."""
+    print("\nRule 5 — the feed-force ratio is near 1.0, not 0.5")
+    base = Cut()
+    print(f"\n         {'ae/D':>6} {'conventional':>13} {'climb':>8}")
+    worst = 1.0
+    for frac in (0.05, 0.10, 0.20, 0.50, 1.00):
+        cut = replace(base, ae_mm=frac * base.diameter_mm)
+        conv = cut.feed_force_ratio(climb=False)
+        clmb = cut.feed_force_ratio(climb=True)
+        worst = min(worst, conv, clmb)
+        print(f"         {frac:>6.2f} {conv:>13.2f} {clmb:>8.2f}")
+
+    check(
+        "the ratio never drops to the old 0.5 placeholder",
+        worst > SUPERSEDED_RATIO_PLACEHOLDER,
+        f"the lowest peak ratio at any immersion is {worst:.2f}, above "
+        f"{SUPERSEDED_RATIO_PLACEHOLDER} — the placeholder was too low "
+        f"everywhere, not just in the adaptive band",
+    )
+    adaptive = replace(base, ae_mm=0.10 * base.diameter_mm)
+    r = adaptive.feed_force_ratio(climb=False)
+    check(
+        "in the adaptive band the placeholder was low by about 2x",
+        1.6 < r / SUPERSEDED_RATIO_PLACEHOLDER < 2.1,
+        f"at ae/D 0.10 the ratio is {r:.2f}, which is "
+        f"{r / SUPERSEDED_RATIO_PLACEHOLDER:.2f}x the old placeholder",
+    )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--thrust", type=float, default=AXIS_THRUST_N_PLACEHOLDER,
-                    help="axis thrust in N (placeholder; see T-10)")
-    ap.add_argument("--ratio", type=float, default=FEED_FORCE_RATIO_PLACEHOLDER,
-                    help="feed force / tangential force (placeholder)")
+    ap.add_argument("--gantry", choices=sorted(AXIS_THRUST_N),
+                    default="belt_measured", help="which axis thrust figure")
+    ap.add_argument("--conventional", action="store_true",
+                    help="conventional cutting (the default is climb)")
     args = ap.parse_args()
 
     print("=" * 70)
@@ -349,7 +454,8 @@ def main() -> int:
     rule_1_feed_cap()
     rule_2_power()
     rule_3_deflection()
-    rule_4_gantry(args.thrust, args.ratio)
+    rule_4_gantry(args.gantry, not args.conventional)
+    rule_5_the_ratio_is_not_a_half()
 
     print("\n" + "=" * 70)
     if FAILURES:

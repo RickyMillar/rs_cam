@@ -105,6 +105,10 @@ select:focus-visible,input:focus-visible,button:focus-visible{
   font-variant-numeric:tabular-nums; color:var(--ink);
 }
 .ctl-top output i{font-style:normal; color:var(--ink-3); font-weight:400}
+.ctl.sel{display:flex; flex-direction:column; gap:5px}
+.ctl.sel>label{font-size:13px; color:var(--ink-2); font-weight:500}
+.ctl.sel select{font-size:13.5px; padding:7px 8px}
+.hint{margin:1px 0 0; font-size:11.5px; color:var(--ink-3); font-family:var(--mono)}
 input[type=range]{
   -webkit-appearance:none; appearance:none; width:100%;
   height:20px; background:transparent; margin:2px 0 0; cursor:grab;
@@ -235,7 +239,7 @@ footer code{font-family:var(--mono); font-size:12px}
       <table>
         <thead><tr>
           <th>Dial</th><th>Feed<br>of cap</th><th>Spindle<br>of limit</th>
-          <th>Side force<br>no limit</th><th>Gantry push<br>of guess</th>
+          <th>Side force<br>no limit</th><th>Gantry push<br>of thrust</th>
         </tr></thead>
         <tbody id="levers"></tbody>
       </table>
@@ -260,10 +264,14 @@ footer code{font-family:var(--mono); font-size:12px}
   <code>A · (Ks·MRR + F_edge·ap·Vc·duty)</code>. Both match
   <code>crates/rs_cam_core</code>, checked by <code>derate_levers.py</code>.</p>
   <p><b>The gantry push is not a prediction.</b> No thrust model exists in the
-  codebase. The push shown assumes the feed force is half the tangential force,
-  and it is compared against a thrust you set by hand. The <em>shape</em> of the
-  dependency is sound; the absolute number is a placeholder until real figures
-  land. This is register item T-10.</p>
+  codebase — this is register item T-10. The feed force is computed from the
+  engagement geometry as the peak of
+  <code>-(F_t·cos φ + K_r·F_t·sin φ)</code> with <code>K_r = 0.15</code> for
+  softwood, which runs 0.53 to 1.0 of the tangential force. The thrust it is
+  compared against comes from <code>THRUST_RESEARCH.md</code>: no maker
+  publishes a rating, the belt figure is one hobbyist's fish-scale measurement,
+  and the ballscrew and rack figures are derived arithmetic that nobody has
+  checked against a machine.</p>
 </footer>
 </div>
 
@@ -276,8 +284,22 @@ const MACHINES = {
   router: {label:"Makita router", ratedKw:0.71, ratedRpm:0,     safety:0.80, maxFeed:5000, constantTorque:false},
 };
 
+// Axis thrust at the point the machine loses position. From
+// THRUST_RESEARCH.md. No maker publishes a rating, so "measured" means a
+// hobbyist pulled the axis against a scale and "derived" means arithmetic
+// on motor torque that nobody has checked against a machine.
+const GANTRIES = {
+  belt:      {label:"Belt gantry — Shapeoko, X-Carve", stall:85,   kind:"measured skip", derate:1.00},
+  ballscrew: {label:"Ballscrew — Onefinity X-50",      stall:1074, kind:"derived, unmeasured", derate:0.55},
+  rack:      {label:"Rack and pinion — Avid NEMA 34",  stall:1537, kind:"derived, unmeasured", derate:0.55},
+};
+// Clear softwood. Caceres 2018, white spruce, four rake angles. Metal runs
+// 0.3-0.5; the LOW wood value pushes the feed ratio toward 1.0, so wood is
+// the demanding case.
+const KR_WOOD = 0.15;
+
 const P = {
-  rpm:9000, fz:0.0625, ap:8.4, ae:4.2, kc:35.1, thrust:100, ratio:0.50,
+  rpm:9000, fz:0.0625, ap:8.4, ae:4.2, kc:35.1, gantry:"belt", climb:true,
 };
 
 const CONTROLS = [
@@ -286,7 +308,6 @@ const CONTROLS = [
   {k:"ap",    label:"Depth of cut",      min:0.5,  max:12,    step:0.1,    unit:"mm",      fmt:v=>v.toFixed(1)},
   {k:"ae",    label:"Width of cut",      min:0.5,  max:12,    step:0.1,    unit:"mm",      fmt:v=>v.toFixed(1)},
   {k:"kc",    label:"Wood hardness Kc",  min:16,   max:76,    step:0.5,    unit:"N/mm²",   fmt:v=>v.toFixed(1)},
-  {k:"thrust",label:"Gantry thrust",     min:20,   max:400,   step:5,      unit:"N (guess)",fmt:v=>v.toFixed(0)},
 ];
 
 const D = 12, Z = 4;
@@ -307,8 +328,34 @@ function model(p){
     feed, psi, duty, h, sideForce,
     powerKw: shear * feed + edgeKw,
     edgeShare: (shear * feed + edgeKw) > 0 ? edgeKw / (shear * feed + edgeKw) : 0,
-    gantry: p.ratio * sideForce * duty,
+    gantry: feedForceRatio(p, ks, fe, psi) * sideForce * duty,
   };
+}
+
+// Peak feed-direction force over peak tangential force, across the engagement
+// arc. This is geometry, not a fitted constant. The PEAK is the right
+// statistic: a stepper skips on the worst tooth, not the average one.
+// The old code used a flat 0.5, which understates the load by about two in
+// the adaptive band. See THRUST_RESEARCH.md section 2.
+function feedForceRatio(p, ks, fe, psi){
+  if (psi <= 0) return 0;
+  const lo = p.climb ? Math.PI - psi : 0;
+  const hi = p.climb ? Math.PI : psi;
+  let peakT = 0, peakF = 0;
+  const N = 240;
+  for (let i = 0; i <= N; i++){
+    const phi = lo + (hi - lo) * i / N;
+    const ft = ks * p.fz * Math.sin(phi) + fe;
+    const ff = -(ft * Math.cos(phi) + KR_WOOD * ft * Math.sin(phi));
+    if (ft > peakT) peakT = ft;
+    if (Math.abs(ff) > peakF) peakF = Math.abs(ff);
+  }
+  return peakT > 0 ? peakF / peakT : 0;
+}
+
+function usableThrust(key){
+  const G = GANTRIES[key];
+  return G.stall * G.derate;
 }
 
 function availableKw(m, rpm){
@@ -329,7 +376,7 @@ function limits(p, m){
     {key:"side",  name:"Tool side force", note:"what bends the cutter",
      value:r.sideForce, ceiling:null, unit:"N", dp:1, known:true},
     {key:"gantry",name:"Gantry push", note:"what skips a step",
-     value:r.gantry, ceiling:p.thrust, unit:"N", dp:1, known:false},
+     value:r.gantry, ceiling:usableThrust(p.gantry), unit:"N", dp:1, known:false},
   ];
 }
 
@@ -345,12 +392,32 @@ function buildControls(){
         <output id="o-${c.k}"></output>
       </div>
       <input type="range" id="s-${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${P[c.k]}">
-    </div>`).join("");
+    </div>`).join("") + `
+    <div class="ctl sel">
+      <label for="s-dir">Cut direction</label>
+      <select id="s-dir">
+        <option value="climb" selected>Climb</option>
+        <option value="conv">Conventional</option>
+      </select>
+    </div>
+    <div class="ctl sel">
+      <label for="s-gantry">Gantry</label>
+      <select id="s-gantry">${Object.entries(GANTRIES).map(([k,g]) =>
+        `<option value="${k}">${g.label}</option>`).join("")}</select>
+      <p class="hint" id="gantry-hint"></p>
+    </div>`;
+
   CONTROLS.forEach(c => {
     el(`#s-${c.k}`).addEventListener("input", e => {
       P[c.k] = parseFloat(e.target.value);
       render();
     });
+  });
+  el("#s-dir").addEventListener("change", e => {
+    P.climb = e.target.value === "climb"; render();
+  });
+  el("#s-gantry").addEventListener("change", e => {
+    P.gantry = e.target.value; render();
   });
 }
 
@@ -362,6 +429,10 @@ function render(){
     el(`#o-${c.k}`).innerHTML = `${c.fmt(P[c.k])} <i>${c.unit}</i>`;
   });
 
+  const G = GANTRIES[P.gantry];
+  el("#gantry-hint").textContent =
+    `${G.stall} N ${G.kind}${G.derate < 1 ? `, derated to ${Math.round(G.stall*G.derate)} N` : ""}`;
+
   const L = limits(P, m);
 
   el("#gauges").innerHTML = L.map(l => {
@@ -371,7 +442,7 @@ function render(){
       cls = "var(--ink-3)"; chip = "c-unknown"; label = "no ceiling modelled";
     } else if (!l.known){
       cls = "var(--unknown)"; chip = "c-unknown";
-      label = `${Math.round(frac*100)} % of a guessed thrust`;
+      label = `${Math.round(frac*100)} % — thrust is research, not our measurement`;
     } else if (frac > 1){
       cls = "var(--over)"; chip = "c-over"; label = `over by ${Math.round((frac-1)*100)} %`;
     } else if (frac > 0.85){
@@ -429,10 +500,11 @@ function renderVerdict(L, m){
       where it is.`;
     v.style.borderLeftColor = "var(--warn)";
   } else {
-    head = "Past the gantry thrust you set";
-    body = `Remember this ceiling is a number you typed, not one the engine knows. The
-      push follows the <b>chip thickness</b>, not the feed rate — thin the chip or
-      narrow the cut.`;
+    head = "Past what the gantry can push";
+    body = `This ceiling is research, not a number the engine knows — see the note below.
+      The push ignores the feed rate entirely, and thinning the chip barely touches it:
+      the edge force carries the load and has no chipload in it. <b>Take a shallower
+      cut first, then a narrower one.</b>`;
     v.style.borderLeftColor = "var(--unknown)";
   }
   v.querySelector("h2").textContent = head;

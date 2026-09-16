@@ -118,7 +118,29 @@ appearing to act.
 
 ### 4. Gantry feed force binds
 
-**Not modelled. See the gap below.**
+**Lever: reduce the depth of cut, then the width. NOT the chip thickness.**
+
+Still not modelled — see the gap below — but the research of 2026-09-16
+settled which lever it would need, and the answer is not the one this
+document first gave.
+
+Measured on the reference cut, each dial cut to a third of its value:
+
+| Dial | Gantry push | Change |
+|---|---|---|
+| as it stands | 38.4 N | |
+| chipload 0.0625 -> 0.0208 | 35.9 N | **-6 %** |
+| width ae 4.2 -> 1.4 | 21.1 N | -45 % |
+| depth ap 8.4 -> 2.8 | 12.8 N | **-67 %** |
+
+At a chipload of zero the push is still 93 % of its full value. The edge term
+carries the gantry load, and the edge term contains no chipload. Depth and
+width scale it; chip thickness barely touches it.
+
+This corrects the first version of this document, which said the gantry force
+is "set by chip thickness". The part that was right is that it does not
+respond to the FEED RATE at all: hold the chipload and take the feed from
+1 125 to 4 500 mm/min, and the push does not move off 38.4 N.
 
 ---
 
@@ -137,18 +159,40 @@ significant against a hobby gantry's thrust.
 **What it needs before it can be built:**
 
 1. **A rated axis thrust per machine profile**, in newtons.
-   `MachineProfile` carries no such field. This is the blocker: without it
-   there is no denominator, and a fabricated constant would be worse than
-   the current honest silence (the `ADVICE.md` R6 argument).
-2. **A feed-force ratio.** The affine model gives tangential force; the
-   feed-direction component is a fraction of it that varies with immersion
-   and cut direction. The tables above assume 0.5 as a placeholder. A real
-   value needs either a literature anchor of the same standard as
-   `force.rs`'s, or a measurement.
-3. **A decision on what to do when it binds** — per §2's pattern, likely
-   "thinner chip or narrower cut", never "slower feed".
+   `MachineProfile` carries no such field. This is still the blocker.
+   `THRUST_RESEARCH.md` now gives ballpark figures, and they span 20:1
+   across machine classes, so one constant for all machines is not an
+   option:
 
-Logged in `TECH_DEBT_REGISTER.md` as T-10.
+   | Class | Thrust | Kind |
+   |---|---|---|
+   | Belt gantry (Shapeoko, X-Carve) | **85 N** | measured skip |
+   | Belt gantry | 132-220 N | derived stall, not usable |
+   | Ballscrew (Onefinity X-50) | 1 074 N | derived, unmeasured |
+   | Rack and pinion (Avid NEMA 34) | 1 537 N | derived, unmeasured |
+
+   A skip happens at 0.5 to 0.6 of stall. No maker publishes a thrust
+   rating, so every figure above is derived or measured by a hobbyist.
+
+2. **A feed-force ratio — RESOLVED, and 0.5 was wrong.** The ratio is not a
+   fitted constant. It falls out of the engagement geometry:
+   `F_feed(phi) = -(F_t*cos(phi) + K_r*F_t*sin(phi))`. The peak over the
+   engagement arc runs **0.53 to 1.0**, and it never approaches 0.5. In the
+   adaptive clearing band (ae/D 0.05 to 0.20) it is **0.79 to 0.97**, so the
+   old placeholder understated the feed load by about a factor of two exactly
+   where a hobby router removes most of its material. Use the peak, not the
+   mean: a stepper skips on the worst tooth.
+
+   `K_r` for clear softwood is below 0.2 (Caceres 2018, white spruce). Metal
+   uses 0.3 to 0.5. The LOW wood value pushes the ratio toward 1.0, so wood
+   is the demanding case, not the easy one.
+
+3. **A decision on what to do when it binds** — settled above: reduce the
+   depth first, then the width. Never the feed rate, and thinning the chip
+   is close to useless.
+
+Logged in `TECH_DEBT_REGISTER.md` as T-10. The research is in
+`THRUST_RESEARCH.md`, and `derate_levers.py` checks every rule here.
 
 ---
 
