@@ -90,13 +90,13 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, RegionOrdering,
 };
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SimulationOptions, ToolpathConfig,
 };
 use rs_cam_core::stock::simulation_cut::CutKinematics;
 use rs_cam_core::tool_load::DeflectionVerdict;
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// Load `ux_3d_terrain.toml` and add an AS013-shape adaptive3d toolpath.
 fn build_as013_terrain_session() -> ProjectSession {

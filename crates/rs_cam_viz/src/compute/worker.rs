@@ -39,7 +39,7 @@ use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::stock::collision::CollisionReport;
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 use super::{
     CancelOutcome, ComputeBackend, ComputeError, ComputeLane, ComputeMessage, GenerationControl,
@@ -100,8 +100,8 @@ pub struct ComputeResult {
     /// `Some`.
     pub revision: Option<u64>,
     pub result: Result<ToolpathResult, ComputeError>,
-    pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
-    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
+    pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<PathBuf>,
 }
 
@@ -111,7 +111,7 @@ pub struct SetupSimToolpath {
     pub name: String,
     pub annotated: Arc<AnnotatedToolpath>,
     pub tool: ToolConfig,
-    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
     /// Per-toolpath spindle RPM override. `None` means use the simulation
     /// request's project/post default RPM.
     pub spindle_rpm: Option<u32>,
@@ -496,7 +496,7 @@ impl ToolpathPhaseTracker {
     }
 }
 
-impl rs_cam_core::debug_trace::ToolpathPhaseSink for ToolpathPhaseTracker {
+impl rs_cam_core::trace::debug_trace::ToolpathPhaseSink for ToolpathPhaseTracker {
     fn set_phase(&self, phase: Option<String>) {
         self.replace_phase(phase);
     }

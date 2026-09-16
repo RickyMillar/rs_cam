@@ -15,7 +15,6 @@
 //! From Fusion 360 docs: "passes follow sloping and vertical walls to maintain
 //! the stepover."
 
-use crate::debug_trace::ToolpathDebugContext;
 use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
@@ -26,6 +25,7 @@ use crate::scallop_math::variable_stepover;
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
+use crate::trace::debug_trace::ToolpathDebugContext;
 
 use tracing::info;
 
@@ -2731,7 +2731,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
             None => (legacy, None),
         };
         let (linked, rep) = crate::surface_link::relink_fragments_with_kinds(
-            crate::toolpath_spans::AnnotatedToolpath::new(tp),
+            crate::trace::toolpath_spans::AnnotatedToolpath::new(tp),
             mesh,
             index,
             cutter,
@@ -2768,7 +2768,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
         // no hand-rolled `old -> new` lookup.
         tp = {
             let mut channels =
-                crate::transform_provenance::ReconcileSet::new(None, Some(&mut annotations));
+                crate::trace::transform_provenance::ReconcileSet::new(None, Some(&mut annotations));
             linked.reconcile(&mut channels).into_inner().toolpath
         };
     }

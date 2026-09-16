@@ -24,7 +24,7 @@ use rs_cam_core::session::{
     GenerateToolpathArgs, Job, JobHandle, LoadedModel, ProjectSessionBuilder,
     ToolpathComputeResult, ToolpathConfig,
 };
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 use super::{ComputeRequest, VizExtras};
 use crate::state::job::ToolConfig;
@@ -128,7 +128,7 @@ pub(super) struct RequestSpec {
     pub stock_source: StockSource,
     pub boundary: BoundaryConfig,
     pub rest_analysis: RestAnalysisConfig,
-    pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
+    pub debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions,
     /// Rest regions a SOURCE toolpath publishes.
     ///
     /// `Some` adds a second toolpath to the session, seeds its cached
@@ -156,7 +156,7 @@ impl RequestSpec {
             stock_source: StockSource::Fresh,
             boundary: BoundaryConfig::default(),
             rest_analysis: RestAnalysisConfig::default(),
-            debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
             rest_source_regions: None,
         }
     }

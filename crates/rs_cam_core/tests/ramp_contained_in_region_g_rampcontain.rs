@@ -61,7 +61,6 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::entry_audit::{fed_moves_outside_region, is_entry_intent};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::{P2, P3};
@@ -72,6 +71,7 @@ use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// Ø6 flat end mill.
 const TOOL_RADIUS_MM: f64 = 3.0;

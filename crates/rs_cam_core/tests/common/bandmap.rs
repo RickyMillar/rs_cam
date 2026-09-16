@@ -65,7 +65,7 @@
 use std::path::PathBuf;
 
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::toolpath_spans::{Span, SpanKind};
+use rs_cam_core::trace::toolpath_spans::{Span, SpanKind};
 
 /// Resolve (and create) `target/<subdir>/` under the workspace root. The
 /// donors' two copies of this pattern (`p2c_headless_ab_wanaka.rs`'s

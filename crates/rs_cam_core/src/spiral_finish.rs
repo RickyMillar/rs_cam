@@ -12,7 +12,6 @@
 //! 3. Drop-cutter each spiral point onto the mesh.
 //! 4. Build a single continuous toolpath segment.
 
-use crate::debug_trace::ToolpathDebugContext;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -22,6 +21,7 @@ use crate::polygon::Polygon2;
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
+use crate::trace::debug_trace::ToolpathDebugContext;
 
 /// Cadence for cooperative-cancel polling inside the dense per-point spiral
 /// loops below — checked every this-many points rather than every point, to

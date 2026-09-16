@@ -29,7 +29,6 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{FaceConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::diagnostics::{Diagnostic, Severity, ids};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
@@ -37,6 +36,7 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     AddToolpathArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 // ── helpers ─────────────────────────────────────────────────────────
 

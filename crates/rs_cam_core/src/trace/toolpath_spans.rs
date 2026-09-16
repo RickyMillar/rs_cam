@@ -998,7 +998,7 @@ impl MoveRemap {
     /// A bounding remap cannot see this on its own: only a REORDER can
     /// interleave strangers into a contiguous claim, so this is the extra
     /// rule [`crate::tsp`] applies to spans and
-    /// [`crate::transform_provenance::MoveProvenance::Permutation`] applies
+    /// [`crate::trace::transform_provenance::MoveProvenance::Permutation`] applies
     /// to every other index-carrying channel. One predicate, so the two can
     /// never disagree about what "scattered" means.
     pub fn foreign_intrusion(

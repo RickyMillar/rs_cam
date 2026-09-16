@@ -75,10 +75,12 @@ use rs_cam_core::{
     geo::P3,
     geometry::boundary::clip_annotated_to_boundary_set,
     polygon::Polygon2,
-    semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, ToolpathSemanticTrace},
     toolpath::Toolpath,
-    toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
-    transform_provenance::ReconcileSet,
+    trace::semantic_trace::{
+        ToolpathSemanticKind, ToolpathSemanticRecorder, ToolpathSemanticTrace,
+    },
+    trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
+    trace::transform_provenance::ReconcileSet,
 };
 
 // ── Fingerprints ─────────────────────────────────────────────────────────

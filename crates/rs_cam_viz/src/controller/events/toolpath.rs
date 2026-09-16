@@ -190,7 +190,7 @@ impl<B: ComputeBackend> AppController<B> {
             stock_source: crate::state::toolpath::StockSource::Fresh,
             coolant: rs_cam_core::gcode::CoolantMode::Off,
             face_selection: None,
-            debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance,
             planner_origin: None,
         };

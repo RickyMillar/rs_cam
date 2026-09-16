@@ -1126,7 +1126,7 @@ mod tests {
         tool: &crate::tool::ToolDefinition,
         material: &crate::material::Material,
         sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
-        spans: Option<&[crate::toolpath_spans::Span]>,
+        spans: Option<&[crate::trace::toolpath_spans::Span]>,
         operation_family: LutOperationFamily,
         pass_role: LutPassRole,
         operation_feed_rate_mm_min: f64,

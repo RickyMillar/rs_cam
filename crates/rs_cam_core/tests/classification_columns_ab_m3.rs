@@ -108,8 +108,8 @@ use rs_cam_core::compute::simulate::ColumnDeviation;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_core::semantic_trace::{SemanticKey, ToolpathSemanticKind};
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
+use rs_cam_core::trace::semantic_trace::{SemanticKey, ToolpathSemanticKind};
 
 use common::session::{mesh_model, pinned_heights, single_op_session_with};
 

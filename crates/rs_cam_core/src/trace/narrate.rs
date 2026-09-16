@@ -9,13 +9,13 @@ use crate::ids::ToolpathId;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
-use crate::debug_trace::ToolpathDebugTrace;
 use crate::geo::P3;
-use crate::semantic_trace::{SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace};
 use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::{Move, MoveType, Toolpath};
-use crate::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
+use crate::trace::debug_trace::ToolpathDebugTrace;
+use crate::trace::semantic_trace::{SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace};
+use crate::trace::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
 
 const Z_EPSILON_MM: f64 = 0.05;
 /// Threshold for flagging arc moves whose radius is suspiciously large
@@ -785,7 +785,7 @@ fn summarize_z_levels_from_spans<'a, I>(
     semantic_trace: Option<&ToolpathSemanticTrace>,
 ) -> Vec<ZLevelSummary>
 where
-    I: Iterator<Item = &'a crate::toolpath_spans::Span>,
+    I: Iterator<Item = &'a crate::trace::toolpath_spans::Span>,
 {
     let mut levels = Vec::<ZLevelSummary>::new();
     for span in depth_passes {
@@ -1502,7 +1502,10 @@ fn fallback_semantic_region_count_at_z(trace: &ToolpathSemanticTrace, z: f64) ->
         .count()
 }
 
-fn semantic_item_matches_z(item: &crate::semantic_trace::ToolpathSemanticItem, z: f64) -> bool {
+fn semantic_item_matches_z(
+    item: &crate::trace::semantic_trace::ToolpathSemanticItem,
+    z: f64,
+) -> bool {
     if let Some(z_level) = item
         .params
         .get(SemanticKey::ZLevel)
@@ -2155,11 +2158,11 @@ mod tests {
     use crate::compute::build_cutter;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::geo::P3;
-    use crate::semantic_trace::{
+    use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
+    use crate::trace::semantic_trace::{
         ToolpathSemanticItem, ToolpathSemanticParams, ToolpathSemanticSummary,
     };
-    use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
-    use crate::toolpath_spans::{AnnotatedToolpath, Span, SpanKind, SpanPayload};
+    use crate::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind, SpanPayload};
 
     /// Tooth of S2.3: when a DepthPass span legitimately covers moves whose
     /// raw Z values straddle the pass plane (e.g. an entry move at z=22.5
@@ -2351,7 +2354,7 @@ mod tests {
         counters.insert("planner_cut_mm".to_owned(), 4846.0);
         counters.insert("planner_cut_path_points".to_owned(), 1234.0);
 
-        let span = crate::debug_trace::ToolpathDebugSpan {
+        let span = crate::trace::debug_trace::ToolpathDebugSpan {
             id: 1,
             parent_id: None,
             kind: "z_level_clear".to_owned(),
@@ -2365,11 +2368,11 @@ mod tests {
             exit_reason: None,
             counters,
         };
-        let debug_trace = crate::debug_trace::ToolpathDebugTrace {
-            schema_version: crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION,
+        let debug_trace = crate::trace::debug_trace::ToolpathDebugTrace {
+            schema_version: crate::trace::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION,
             toolpath_name: "Back Rough".to_owned(),
             operation_label: "adaptive3d".to_owned(),
-            summary: crate::debug_trace::ToolpathDebugSummary {
+            summary: crate::trace::debug_trace::ToolpathDebugSummary {
                 total_elapsed_us: 1000,
                 span_count: 1,
                 hotspot_count: 0,
@@ -2421,7 +2424,7 @@ mod tests {
         params.insert(SemanticKey::AgentWalkCutLengthMm, 456.0_f64);
         params.insert(SemanticKey::ResidualCleanupCellCount, 0usize);
         ToolpathSemanticTrace {
-            schema_version: crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION,
+            schema_version: crate::trace::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION,
             toolpath_name: "Back Rough".to_owned(),
             operation_label: "adaptive3d".to_owned(),
             summary: ToolpathSemanticSummary {

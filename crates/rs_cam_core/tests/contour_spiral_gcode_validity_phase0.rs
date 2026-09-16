@@ -36,7 +36,7 @@ use rs_cam_core::gcode::{emit_gcode, post};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::toolpath::{MoveType, Toolpath, simplify_path_3d};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 const R: f64 = 3.175;
 const STEPOVER: f64 = 2.0;

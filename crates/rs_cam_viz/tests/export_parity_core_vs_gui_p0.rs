@@ -158,7 +158,7 @@ use rs_cam_core::session::{
     ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::io::export::export_gcode_from_session_with_policy;
 use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy};
 use rs_cam_viz::state::simulation::SimulationState;

@@ -55,7 +55,7 @@
 //! dressup / TSP / arc-fit chain with `spans_valid == true`.)
 
 use rs_cam_core::stock::simulation_cut::SimulationCutSample;
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
+use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
 
 /// One rung of the commanded ladder.
 #[derive(Debug, Clone, Copy)]

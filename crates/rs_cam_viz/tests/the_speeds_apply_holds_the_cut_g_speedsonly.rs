@@ -42,7 +42,7 @@ use rs_cam_core::session::{
     AdoptResultArgs, Command, ProjectSessionBuilder, ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
     GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,

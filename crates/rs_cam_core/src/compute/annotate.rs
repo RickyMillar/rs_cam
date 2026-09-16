@@ -6,9 +6,9 @@
 //! events and opens/closes semantic scopes so that the toolpath viewer can
 //! display a structured breakdown of the algorithm's behaviour.
 
-use crate::semantic_trace::{SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind};
 use crate::toolpath::Toolpath;
-use crate::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
+use crate::trace::semantic_trace::{SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind};
+use crate::trace::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -203,7 +203,7 @@ pub(super) fn annotate_drill_spans(
 }
 
 fn bind_span_scope(
-    scope: &crate::semantic_trace::ToolpathSemanticScope,
+    scope: &crate::trace::semantic_trace::ToolpathSemanticScope,
     toolpath: &Toolpath,
     span: &Span,
 ) {
@@ -229,9 +229,9 @@ pub(super) fn annotate_adaptive3d(
     let tp_len = toolpath.moves.len();
 
     // We track open scopes so we can bind them when the next event arrives.
-    let mut region_scope: Option<crate::semantic_trace::ToolpathSemanticScope> = None;
+    let mut region_scope: Option<crate::trace::semantic_trace::ToolpathSemanticScope> = None;
     let mut region_ctx: Option<ToolpathSemanticContext> = None;
-    let mut level_scope: Option<crate::semantic_trace::ToolpathSemanticScope> = None;
+    let mut level_scope: Option<crate::trace::semantic_trace::ToolpathSemanticScope> = None;
     let mut level_ctx: Option<ToolpathSemanticContext> = None;
 
     for (i, ann) in events.iter().enumerate() {
@@ -390,7 +390,7 @@ pub(super) fn annotate_adaptive3d(
 }
 
 fn set_z_level_plan_metrics(
-    scope: &crate::semantic_trace::ToolpathSemanticScope,
+    scope: &crate::trace::semantic_trace::ToolpathSemanticScope,
     metrics: &crate::adaptive3d::ZLevelPlanMetrics,
 ) {
     if !metrics.available {

@@ -23,7 +23,6 @@ pub(crate) use material_grid::MaterialGrid;
 pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug};
 use path::{apply_residue_mop_cleanup, segments_to_toolpath};
 
-use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel_stock::TriDexelStock;
 use crate::interrupt::{CancelCheck, Cancelled};
 pub(crate) use crate::ops::adaptive_shared::{
@@ -32,6 +31,7 @@ pub(crate) use crate::ops::adaptive_shared::{
 };
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
+use crate::trace::debug_trace::ToolpathDebugContext;
 
 /// How the planner cleans up residue left by the main adaptive spiral.
 ///
@@ -1376,7 +1376,8 @@ mod tests {
             slot_clearing: true,
             ..default_params(2.0, 1.5)
         };
-        let recorder = crate::debug_trace::ToolpathDebugRecorder::new("Adaptive", "2D Rough");
+        let recorder =
+            crate::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive", "2D Rough");
         let ctx = recorder.root_context();
         let never_cancel = || false;
 

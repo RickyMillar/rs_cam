@@ -190,12 +190,12 @@ use crate::dexel_stock::TriDexelStock;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
 use crate::ops::drill_op::DrillOp;
-use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::stock::collision::RapidCollision;
 use crate::stock::simulation_cut::SimulationCutSample;
 use crate::stock::stock_mesh::StockMesh;
 use crate::tool::{EngagementMode, MillingCutter, ToolDefinition};
-use crate::toolpath_spans::AnnotatedToolpath;
+use crate::trace::semantic_trace::ToolpathSemanticTrace;
+use crate::trace::toolpath_spans::AnnotatedToolpath;
 
 /// Default ceiling on what one snapshot may own, in bytes.
 ///

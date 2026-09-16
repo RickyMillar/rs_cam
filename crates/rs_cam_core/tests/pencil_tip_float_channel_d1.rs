@@ -62,7 +62,6 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::{PencilConfig, WaterlineConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::diagnostics::{Diagnostic, Severity, ids};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
@@ -70,6 +69,7 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::measurement::{MeasurementDomain, MeasurementStage};
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 // ── Fixture ──────────────────────────────────────────────────────────────
 

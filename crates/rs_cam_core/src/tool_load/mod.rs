@@ -414,7 +414,7 @@ pub struct ToolpathLoadContext<'a> {
     /// gate filter (G17 D7). `None` when no annotated toolpath is
     /// available; classifiers degrade to engagement-only labels.
     #[allow(clippy::struct_field_names)]
-    pub spans: Option<&'a [crate::toolpath_spans::Span]>,
+    pub spans: Option<&'a [crate::trace::toolpath_spans::Span]>,
     /// `DrillOp` payload for drill toolpaths — `Some` for
     /// `OperationType::{Drill, AlignmentPinDrill}`, `None` otherwise.
     /// Drives the `drill_gates` field on the resulting verdict

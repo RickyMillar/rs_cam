@@ -42,9 +42,9 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, PocketConfig, ProfileConfig, TraceConfig, ZigzagConfig,
 };
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{AddToolpathArgs, Command, ProjectSession, ToolpathConfig};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// `SearchPolicy` hard floor for DOC and stepover axes.
 const FLOOR_MM: f64 = 0.05;

@@ -73,7 +73,7 @@ use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy, export_gcode_checked
 use rs_cam_core::geo::P3;
 use rs_cam_core::session::{AdoptResultArgs, Command, ProjectSession, ToolpathComputeResult};
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 mod common;
 use common::make_endmill_6mm;

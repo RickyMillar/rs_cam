@@ -38,7 +38,7 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::{Move, MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 
 // ── A backend that computes nothing; the wave under test is the drain ──
 

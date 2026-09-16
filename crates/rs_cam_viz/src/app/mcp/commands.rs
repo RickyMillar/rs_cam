@@ -908,7 +908,7 @@ impl RsCamApp {
             stock_source: rs_cam_core::compute::config::StockSource::default(),
             coolant: rs_cam_core::gcode::CoolantMode::default(),
             face_selection: None,
-            debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance,
             planner_origin: None,
         };

@@ -38,8 +38,8 @@ use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::surface::dropcutter::point_drop_cutter;
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
-use rs_cam_core::transform_provenance::ReconcileSet;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
 const RIDGE_HEIGHT_MM: f64 = 6.0;
 const SAFE_Z: f64 = 15.0;
@@ -277,7 +277,7 @@ fn unclipped_ramp_keeps_two_legs() {
 #[test]
 fn lead_in_arcs_never_cut_below_surface() {
     use rs_cam_core::dressup::apply_lead_in_out_with_provenance;
-    use rs_cam_core::transform_provenance::ReconcileSet;
+    use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
     let mesh = ridge_mesh();
     let index = SpatialIndex::build_auto(&mesh);

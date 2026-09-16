@@ -50,7 +50,6 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
 use rs_cam_core::compute::stock_config::{ModelId, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::session::{
@@ -58,6 +57,7 @@ use rs_cam_core::session::{
     ProjectSessionBuilder, Reach, SetMachineArgs, SetSetupModelsArgs, SetStockConfigArgs,
     SetToolpathDebugOptionsArgs, SetToolpathHeightsArgs, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// The clearance height the heights arm writes.
 const EDITED_CLEARANCE_Z_MM: f64 = 12.5;
@@ -131,7 +131,7 @@ fn empty_model(name: &str) -> LoadedModel {
 fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
     rs_cam_core::session::ToolpathComputeResult {
         op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(std::sync::Arc::new(
-            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                 rs_cam_core::toolpath::Toolpath::new(),
             ),
         )),

@@ -92,7 +92,7 @@ use rs_cam_core::{
     scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{MoveIntent, MoveType, Toolpath},
-    transform_provenance::ReconcileSet,
+    trace::transform_provenance::ReconcileSet,
 };
 
 // ── Common helpers ───────────────────────────────────────────────────────
@@ -165,7 +165,10 @@ fn dressup_with_links(link_max_distance: f64) -> DressupConfig {
 /// exactly that case: `compute/execute.rs::generate_face` ships
 /// `generated_with_depth_run_spans`, so its cross-depth links are blocked
 /// in production and only unblocked by a span-less fixture.
-fn production_spans(tp: &Toolpath, op: OperationType) -> Vec<rs_cam_core::toolpath_spans::Span> {
+fn production_spans(
+    tp: &Toolpath,
+    op: OperationType,
+) -> Vec<rs_cam_core::trace::toolpath_spans::Span> {
     use rs_cam_core::compute::spans::{spans_from_cutting_runs, spans_from_depth_runs};
     match op {
         // Depth-stepped adapters: real Z-transition barriers, derived from
@@ -184,7 +187,7 @@ fn production_spans(tp: &Toolpath, op: OperationType) -> Vec<rs_cam_core::toolpa
 fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: f64) -> Toolpath {
     let spans = production_spans(&tp, op);
     apply_dressups(
-        rs_cam_core::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans),
+        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans),
         cfg,
         1000.0,
         // WP22: no operation in scope, so the plunge cap does not apply.
@@ -218,7 +221,7 @@ fn dressup_with_caps(
     tool_diameter: f64,
 ) -> Toolpath {
     apply_dressups(
-        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp),
+        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
         cfg,
         1000.0,
         // WP22: no operation in scope, so the plunge cap does not apply.
@@ -1547,7 +1550,7 @@ fn nominal_z_levels(tp: &Toolpath, range: std::ops::Range<usize>) -> Vec<f64> {
 #[test]
 fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
     use rs_cam_core::finish_planner::FinishPlannerParams;
-    use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanKind};
+    use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, SpanKind};
     use rs_cam_core::unified_finish::{
         RegionKind, UnifiedFinishParams, unified_finish_spans, unified_finish_toolpath_with_cancel,
     };
@@ -1801,7 +1804,7 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
         STEEP_HALF_LABEL, SteepShallowParams, steep_shallow_spans,
         steep_shallow_toolpath_split_with_cancel,
     };
-    use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanKind};
+    use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, SpanKind};
 
     // Four disconnected islands: on a single contiguous dome each Z level
     // holds one contour and the shallow half is one serpentine, so there is

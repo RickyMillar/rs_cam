@@ -38,7 +38,7 @@ use rs_cam_core::session::{
     ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
     export_combined_gcode_from_session, export_gcode_from_session,

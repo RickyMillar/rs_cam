@@ -21,11 +21,11 @@
 use std::f64::consts::{FRAC_PI_2, PI};
 
 use crate::stock::simulation_cut::SimulationCutSample;
-use crate::toolpath_spans::{Span, SpanId, SpanKind};
+use crate::trace::toolpath_spans::{Span, SpanId, SpanKind};
 
 /// Resolves [`SpanId`]s recorded on a sample's `span_path` back to their
 /// owning [`Span`]s. Constructed from
-/// [`crate::toolpath_spans::AnnotatedToolpath::spans`] — typically
+/// [`crate::trace::toolpath_spans::AnnotatedToolpath::spans`] — typically
 /// `SpanLookup::new(&annotated.spans)`.
 ///
 /// Stays a borrow of the original spans slice; cheap to build per

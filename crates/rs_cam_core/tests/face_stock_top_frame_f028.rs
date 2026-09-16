@@ -67,13 +67,13 @@ use rs_cam_core::compute::OperationConfig;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{FaceConfig, PocketConfig, PocketPattern};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ops::face::FaceDirection;
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SimulationOptions, ToolpathConfig,
 };
 use rs_cam_core::tool_load::{ChiploadVerdict, DeflectionVerdict};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn ux_step_plate_mdf_path() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

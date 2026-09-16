@@ -41,8 +41,8 @@ use rs_cam_core::ops::project_curve::{
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
-use rs_cam_core::transform_provenance::ReconcileSet;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
 /// A flat square mesh covering xy in [x0, x1] × [y0, y1] at z = 0.
 fn flat_mesh(x0: f64, x1: f64, y0: f64, y1: f64) -> TriangleMesh {

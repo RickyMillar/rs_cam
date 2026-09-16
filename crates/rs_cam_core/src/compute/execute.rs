@@ -9,19 +9,19 @@ use crate::compute::catalog::{OperationConfig, OperationTransformCapabilities, O
 use crate::compute::config::{DressupConfig, DressupEntryStyle, ResolvedHeights};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::{ToolConfig, ToolType};
-use crate::debug_trace::ToolpathDebugContext;
 use crate::geo::BoundingBox3;
 use crate::geometry::region_set::RegionSet;
 use crate::io::dxf_input::DrillTarget;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
-use crate::semantic_trace::{
-    SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope,
-};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
-use crate::toolpath_spans::AnnotatedToolpath;
-use crate::transform_provenance::{ReconcileSet, Transformed};
+use crate::trace::debug_trace::ToolpathDebugContext;
+use crate::trace::semantic_trace::{
+    SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope,
+};
+use crate::trace::toolpath_spans::AnnotatedToolpath;
+use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 
 // ── Error type ────────────────────────────────────────────────────────
 
@@ -567,7 +567,7 @@ fn record_derived_stepover(
 /// families whose generator explicitly tags transients at emission.
 fn generated_with_spans(
     toolpath: Toolpath,
-    mut spans: Vec<crate::toolpath_spans::Span>,
+    mut spans: Vec<crate::trace::toolpath_spans::Span>,
 ) -> GeneratedToolpath {
     spans.extend(crate::compute::spans::spans_from_move_intents(&toolpath));
     AnnotatedToolpath::with_spans(toolpath, spans)
@@ -4677,7 +4677,7 @@ mod tests {
     use crate::geo::{BoundingBox3, P3};
     use crate::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphere};
     use crate::polygon::Polygon2;
-    use crate::toolpath_spans::SpanKind;
+    use crate::trace::toolpath_spans::SpanKind;
 
     #[test]
     fn drill_holes_come_from_targets_or_picks_never_centroids() {
@@ -5882,14 +5882,14 @@ mod tests {
             result
                 .spans
                 .iter()
-                .any(|span| span.kind == crate::toolpath_spans::SpanKind::DepthPass),
+                .any(|span| span.kind == crate::trace::toolpath_spans::SpanKind::DepthPass),
             "trace should emit DepthPass spans"
         );
         assert!(
             result
                 .spans
                 .iter()
-                .any(|span| span.kind == crate::toolpath_spans::SpanKind::Region),
+                .any(|span| span.kind == crate::trace::toolpath_spans::SpanKind::Region),
             "trace should emit per-chain Region spans"
         );
         result
@@ -5929,7 +5929,7 @@ mod tests {
         // C4: role queries, not label parsing. A test that asserted on the
         // label shape would have kept passing if the roles were wrong, and
         // would break on a purely cosmetic label edit — exactly backwards.
-        use crate::toolpath_spans::RegionSpanRole;
+        use crate::trace::toolpath_spans::RegionSpanRole;
         let hole_count = result
             .spans
             .iter()
@@ -5946,7 +5946,7 @@ mod tests {
             result
                 .spans
                 .iter()
-                .all(|span| span.kind != crate::toolpath_spans::SpanKind::DepthPass),
+                .all(|span| span.kind != crate::trace::toolpath_spans::SpanKind::DepthPass),
             "drill must not emit DepthPass spans because they act as TSP barriers"
         );
         result
@@ -5963,7 +5963,8 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let polys = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
         let levels = op.cutting_levels(heights.top_z);
-        let recorder = crate::semantic_trace::ToolpathSemanticRecorder::new("Trace", "Trace");
+        let recorder =
+            crate::trace::semantic_trace::ToolpathSemanticRecorder::new("Trace", "Trace");
         let ctx = recorder.root_context();
 
         let _ = execute_operation_annotated(
@@ -5991,14 +5992,15 @@ mod tests {
             semantic
                 .items
                 .iter()
-                .any(|item| item.kind == crate::semantic_trace::ToolpathSemanticKind::DepthLevel),
+                .any(|item| item.kind
+                    == crate::trace::semantic_trace::ToolpathSemanticKind::DepthLevel),
             "trace should emit DepthLevel semantic items"
         );
         assert!(
             semantic
                 .items
                 .iter()
-                .any(|item| item.kind == crate::semantic_trace::ToolpathSemanticKind::Chain),
+                .any(|item| item.kind == crate::trace::semantic_trace::ToolpathSemanticKind::Chain),
             "trace should emit Chain semantic items"
         );
     }
@@ -6010,7 +6012,8 @@ mod tests {
         let heights = test_heights();
         let bbox = test_stock_bbox();
         let cancel = AtomicBool::new(false);
-        let recorder = crate::semantic_trace::ToolpathSemanticRecorder::new("Drill", "Drill");
+        let recorder =
+            crate::trace::semantic_trace::ToolpathSemanticRecorder::new("Drill", "Drill");
         let ctx = recorder.root_context();
 
         let _ = execute_operation_annotated(
@@ -6038,14 +6041,14 @@ mod tests {
             semantic
                 .items
                 .iter()
-                .any(|item| item.kind == crate::semantic_trace::ToolpathSemanticKind::Hole),
+                .any(|item| item.kind == crate::trace::semantic_trace::ToolpathSemanticKind::Hole),
             "drill should emit Hole semantic items"
         );
         assert!(
             semantic
                 .items
                 .iter()
-                .any(|item| item.kind == crate::semantic_trace::ToolpathSemanticKind::Cycle),
+                .any(|item| item.kind == crate::trace::semantic_trace::ToolpathSemanticKind::Cycle),
             "drill should emit Cycle semantic items"
         );
     }
@@ -6068,8 +6071,10 @@ mod tests {
         let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
         let mut stock = crate::dexel_stock::TriDexelStock::from_bounds(&test_stock_bbox(), 2.0);
         let cutter = build_cutter(&tool_cfg);
-        let recorder =
-            crate::semantic_trace::ToolpathSemanticRecorder::new("FeedOpt nominal", "Pocket");
+        let recorder = crate::trace::semantic_trace::ToolpathSemanticRecorder::new(
+            "FeedOpt nominal",
+            "Pocket",
+        );
         let semantic_root = recorder.root_context();
 
         let _result = apply_dressups(

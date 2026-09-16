@@ -3,7 +3,7 @@ use super::gpu_safety::{self, GpuLimits};
 use egui_wgpu::wgpu;
 use rs_cam_core::feeds::{AdvancePerToothMm, ChiploadBandClass, VendorChiploadBand};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanClass};
+use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, SpanClass};
 use std::collections::HashMap;
 
 // Re-export palette from centralized colors module for backward compatibility.
@@ -1197,7 +1197,7 @@ mod tests {
     fn span_aware_renderer_colors_entry_distinct_from_default() {
         use rs_cam_core::geo::P3;
         use rs_cam_core::toolpath::{Move, MoveIntent, MoveType};
-        use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+        use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 
         // Build a 3-move toolpath: rapid → cut(entry) → cut(default).
         let mut tp = Toolpath::new();

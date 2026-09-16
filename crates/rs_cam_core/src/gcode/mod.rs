@@ -574,7 +574,7 @@ pub fn project_load_report(
         // F2.2: spans invalidated by a transform (TSP split) are
         // corrupted ancestry — pass None so the gates fall back to the
         // per-sample `in_transit_span` flag instead of misclassifying.
-        let spans: Option<&[crate::toolpath_spans::Span]> = project
+        let spans: Option<&[crate::trace::toolpath_spans::Span]> = project
             .get_result(idx)
             .filter(|r| r.annotated().spans_valid)
             .map(|r| r.annotated().spans.as_slice());
@@ -1097,7 +1097,7 @@ mod tests {
             stock_source: crate::compute::config::StockSource::Fresh,
             coolant: CoolantMode::Off,
             face_selection: None,
-            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             planner_origin: None,
         }

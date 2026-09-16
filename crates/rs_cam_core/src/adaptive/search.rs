@@ -5,9 +5,9 @@
 
 use super::material_grid::CELL_MATERIAL;
 use super::{EngagementMeasure, MaterialGrid, angle_diff, refine_angle_bracket};
-use crate::debug_trace::ToolpathDebugBounds2;
 use crate::geo::P2;
 use crate::polygon::Polygon2;
+use crate::trace::debug_trace::ToolpathDebugBounds2;
 
 use std::f64::consts::{PI, TAU};
 

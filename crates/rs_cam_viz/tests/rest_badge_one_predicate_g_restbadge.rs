@@ -162,7 +162,7 @@ fn add(state: &mut AppState, setup_idx: usize, tc: ToolpathConfig) -> ToolpathId
 fn generated_result() -> rs_cam_core::session::ToolpathComputeResult {
     rs_cam_core::session::ToolpathComputeResult {
         op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(std::sync::Arc::new(
-            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                 rs_cam_core::toolpath::Toolpath::new(),
             ),
         )),

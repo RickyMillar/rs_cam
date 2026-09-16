@@ -65,8 +65,8 @@ use rs_cam_core::geometry::boundary::clip_toolpath_to_boundary_set_with_provenan
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
-use rs_cam_core::transform_provenance::ReconcileSet;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
 // ── Fixture ─────────────────────────────────────────────────────────────
 

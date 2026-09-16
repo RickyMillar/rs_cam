@@ -424,7 +424,12 @@ fn draw_signal_spine(
             let bands: Vec<(f64, f64, bool)> = spans
                 .iter()
                 .enumerate()
-                .filter(|(_, s)| matches!(s.kind, rs_cam_core::toolpath_spans::SpanKind::DepthPass))
+                .filter(|(_, s)| {
+                    matches!(
+                        s.kind,
+                        rs_cam_core::trace::toolpath_spans::SpanKind::DepthPass
+                    )
+                })
                 .map(|(idx, s)| {
                     let g_start = (boundary.start_move + s.start_move) as f64;
                     let g_end = (boundary.start_move + s.end_move) as f64;
@@ -1545,7 +1550,7 @@ fn paint_span_subband(
     total_width: f32,
     events: &mut Vec<AppEvent>,
 ) {
-    use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
+    use rs_cam_core::trace::toolpath_spans::{SpanKind, SpanPayload};
 
     let Some(boundary) = sim.boundaries().iter().find(|b| b.id == tp_id).cloned() else {
         return;
@@ -1818,8 +1823,11 @@ fn paint_span_subband(
     }
 }
 
-fn ribbon_span_label(span: &rs_cam_core::toolpath_spans::Span, fallback_index: u32) -> String {
-    use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
+fn ribbon_span_label(
+    span: &rs_cam_core::trace::toolpath_spans::Span,
+    fallback_index: u32,
+) -> String {
+    use rs_cam_core::trace::toolpath_spans::{SpanKind, SpanPayload};
 
     if !span.label.is_empty() {
         return span.label.clone().into_owned();

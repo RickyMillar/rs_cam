@@ -73,7 +73,7 @@ use rs_cam_core::session::{
 };
 use rs_cam_core::tool::FlatEndmill;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 mod common;
 use common::session::{polygon_model, single_op_session_with, square_polygon, stock_under};

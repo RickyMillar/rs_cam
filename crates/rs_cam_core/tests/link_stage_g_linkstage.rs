@@ -53,8 +53,8 @@ use rs_cam_core::surface_link::{
 };
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
-use rs_cam_core::transform_provenance::ReconcileSet;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
 // ── Fixture ─────────────────────────────────────────────────────────────
 

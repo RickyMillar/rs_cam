@@ -47,7 +47,6 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::Adaptive3dConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{
@@ -56,6 +55,7 @@ use rs_cam_core::session::{
     SetRestAnalysisConfigArgs, SetStockSourceArgs, SetToolpathDebugOptionsArgs,
     SetToolpathEnabledArgs, SetToolpathHeightsArgs, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// One directory for this test file, removed at the end.
 fn temp_dir(name: &str) -> PathBuf {

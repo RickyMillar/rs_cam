@@ -62,7 +62,7 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::stock::simulation_cut::SimulationMetricOptions;
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 const STOCK_X: f64 = 100.0;
 const STOCK_Y: f64 = 80.0;

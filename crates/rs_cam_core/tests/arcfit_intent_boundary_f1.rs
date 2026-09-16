@@ -53,7 +53,7 @@ use rs_cam_core::{
     dressup::apply_lead_in_out_with_feeds,
     geo::P3,
     toolpath::{Move, MoveIntent, MoveType, Toolpath},
-    toolpath_spans::AnnotatedToolpath,
+    trace::toolpath_spans::AnnotatedToolpath,
 };
 
 /// Arc-fit tolerance used throughout. Matches `DressupConfig::default()`.
@@ -352,7 +352,7 @@ fn f1_sentry_lead_out_is_not_swallowed_by_the_finishing_arc() {
 /// they agree.
 #[test]
 fn f1_sentry_span_and_intent_agree_on_the_fitted_arcs() {
-    use rs_cam_core::toolpath_spans::{Span, SpanKind};
+    use rs_cam_core::trace::toolpath_spans::{Span, SpanKind};
 
     let (r, z, feed, plunge) = (6.0, -2.0, 1000.0, 300.0);
     let safe_z = 10.0;
@@ -422,7 +422,7 @@ fn f1_sentry_span_and_intent_agree_on_the_fitted_arcs() {
 /// because TSP reordering and `execute`'s barrier-count branch also read it.
 #[test]
 fn f1_sentry_no_arc_straddles_a_region_boundary() {
-    use rs_cam_core::toolpath_spans::{Span, SpanKind};
+    use rs_cam_core::trace::toolpath_spans::{Span, SpanKind};
 
     let (r, z, feed) = (8.0, -2.0, 1000.0);
     let pt = |k: usize| {

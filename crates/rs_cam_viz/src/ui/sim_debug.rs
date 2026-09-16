@@ -42,9 +42,9 @@ pub fn draw_trace_badge(ui: &mut egui::Ui, availability: ToolpathTraceAvailabili
 }
 
 pub fn semantic_kind_label(
-    kind: &rs_cam_core::semantic_trace::ToolpathSemanticKind,
+    kind: &rs_cam_core::trace::semantic_trace::ToolpathSemanticKind,
 ) -> &'static str {
-    use rs_cam_core::semantic_trace::ToolpathSemanticKind;
+    use rs_cam_core::trace::semantic_trace::ToolpathSemanticKind;
 
     match kind {
         ToolpathSemanticKind::Operation => "Operation",
@@ -93,10 +93,10 @@ pub fn semantic_kind_label(
 // SAFETY: every index below is a literal in `0..6` and `SPAN_SCALE` has six
 // entries, so each one is in bounds at compile time.
 pub fn semantic_kind_color(
-    kind: &rs_cam_core::semantic_trace::ToolpathSemanticKind,
+    kind: &rs_cam_core::trace::semantic_trace::ToolpathSemanticKind,
 ) -> egui::Color32 {
     use crate::ui::tokens::SPAN_SCALE;
-    use rs_cam_core::semantic_trace::ToolpathSemanticKind;
+    use rs_cam_core::trace::semantic_trace::ToolpathSemanticKind;
 
     match kind {
         ToolpathSemanticKind::Operation => SPAN_SCALE[0],

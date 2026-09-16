@@ -4,7 +4,7 @@ use std::sync::Arc;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span};
+use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span};
 
 use crate::state::job::{ModelId, ToolId};
 
@@ -35,7 +35,7 @@ pub struct ToolpathEntryInit {
     pub stock_source: StockSource,
     pub auto_regen: Option<bool>,
     pub face_selection: Option<Vec<FaceGroupId>>,
-    pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
+    pub debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions,
 }
 
 impl ToolpathEntryInit {
@@ -66,7 +66,7 @@ impl ToolpathEntryInit {
             stock_source: StockSource::Fresh,
             auto_regen: None,
             face_selection: None,
-            debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
         }
     }
 
@@ -176,9 +176,9 @@ pub struct ToolpathEntry {
     /// `from_init`) starts hand-owned at `None` so a re-plan cannot
     /// delete the copy.
     pub planner_origin: Option<rs_cam_core::session::PlannerOrigin>,
-    pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
-    pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
-    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    pub debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions,
+    pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
+    pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<PathBuf>,
 }
 
@@ -186,8 +186,8 @@ pub struct ToolpathEntry {
 pub struct ToolpathResult {
     pub annotated: Arc<AnnotatedToolpath>,
     pub stats: ToolpathStats,
-    pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
-    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
+    pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<PathBuf>,
     /// §6.E first-class drill-op view. `Some` for `Drill` /
     /// `AlignmentPinDrill` configs; routed onto
@@ -370,7 +370,8 @@ mod tests {
             debug_trace_path: None,
             drill_op: None,
         });
-        let recorder = rs_cam_core::debug_trace::ToolpathDebugRecorder::new("Loaded", "DropCutter");
+        let recorder =
+            rs_cam_core::trace::debug_trace::ToolpathDebugRecorder::new("Loaded", "DropCutter");
         let trace = Arc::new(recorder.finish());
         entry.debug_trace = Some(trace);
         entry.debug_trace_path = Some(std::env::temp_dir().join("loaded_trace.json"));

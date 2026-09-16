@@ -607,7 +607,7 @@ mod tests {
         material: &crate::material::Material,
         machine: &crate::machine::MachineProfile,
         sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
-        spans: Option<&[crate::toolpath_spans::Span]>,
+        spans: Option<&[crate::trace::toolpath_spans::Span]>,
         operation_kind: crate::compute::catalog::OperationType,
         tolerance: &crate::tool_load::ToleranceBands,
     ) -> PowerVerdict {

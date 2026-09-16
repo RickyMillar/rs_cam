@@ -3,8 +3,8 @@ use rs_cam_core::compute::config::{DressupConfig, RetractStrategy};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
-use rs_cam_core::transform_provenance::ReconcileSet;
+use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
 #[allow(
     clippy::unwrap_used,

@@ -185,13 +185,13 @@ pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64
 /// to the walk for the re-entry descent (G-BOUNDARYPLUNGE). See
 /// [`clip_toolpath_to_boundary_set_with_provenance`] for what `None` means.
 pub fn clip_annotated_to_boundary_set(
-    annotated: crate::toolpath_spans::AnnotatedToolpath,
+    annotated: crate::trace::toolpath_spans::AnnotatedToolpath,
     boundaries: &[Polygon2],
     safe_z: f64,
     plunge_rate_mm_min: Option<f64>,
-) -> crate::transform_provenance::Transformed {
-    use crate::toolpath_spans::AnnotatedToolpath;
-    use crate::transform_provenance::Transformed;
+) -> crate::trace::transform_provenance::Transformed {
+    use crate::trace::toolpath_spans::AnnotatedToolpath;
+    use crate::trace::transform_provenance::Transformed;
 
     let AnnotatedToolpath {
         toolpath,
@@ -218,7 +218,8 @@ pub fn clip_annotated_to_boundary_set(
     // pairs between them — so a span that covered "the moves cutting region
     // X" still covers them, plus any retract inserted into the middle.
     // `spans_valid` therefore survives the clip.
-    let spans: Vec<crate::toolpath_spans::Span> = spans.iter().map(|s| s.remap(&mapping)).collect();
+    let spans: Vec<crate::trace::toolpath_spans::Span> =
+        spans.iter().map(|s| s.remap(&mapping)).collect();
 
     Transformed::from_mapping(
         AnnotatedToolpath {
@@ -1136,7 +1137,7 @@ mod tests {
         // Build a 3-move toolpath: outside → inside → inside, with a Region
         // span covering moves 1..3. After remap the Region should include the
         // inserted plunge between input moves 0 and 1.
-        use crate::toolpath_spans::{Span, SpanKind};
+        use crate::trace::toolpath_spans::{Span, SpanKind};
         let boundary = Polygon2::rectangle(0.0, 0.0, 100.0, 100.0);
         let mut tp = Toolpath::new();
         tp.feed_to(P3::new(-10.0, 50.0, -5.0), 1000.0);

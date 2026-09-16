@@ -7,7 +7,7 @@
 //! moves move indices around. Several channels store move indices next to the
 //! toolpath: `AnnotatedToolpath::spans`, and the semantic trace's per-item
 //! move links. Before this module, each transform built a
-//! [`MoveRemap`](crate::toolpath_spans::MoveRemap) *privately*, applied it to
+//! [`MoveRemap`](crate::trace::toolpath_spans::MoveRemap) *privately*, applied it to
 //! the spans, and dropped it. The semantic trace was only kept honest because
 //! ae10cb2's `SemanticLinkCarrier` smuggled its links through the span vector
 //! as fake spans. That is a convention: the next channel, or the next
@@ -61,9 +61,9 @@
 use std::marker::PhantomData;
 use std::ops::Range;
 
-use crate::semantic_trace::ToolpathSemanticRecorder;
 use crate::toolpath::Toolpath;
-use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap};
+use crate::trace::semantic_trace::ToolpathSemanticRecorder;
+use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap};
 
 mod sealed {
     pub trait Sealed {}
@@ -112,7 +112,7 @@ pub enum MoveProvenance {
     /// Insertion-only boundary mapping: `m[i]` is the first output index
     /// produced from input move `i`, and `m[n]` is the output move count.
     /// The shape the boundary clip and the entry-descent splitter already
-    /// hand out, and what [`crate::toolpath_spans::Span::remap`] consumes.
+    /// hand out, and what [`crate::trace::toolpath_spans::Span::remap`] consumes.
     Mapping(Vec<usize>),
 }
 
@@ -149,7 +149,7 @@ impl MoveProvenance {
     /// or (for [`Self::Permutation`]) the reorder scattered it so the
     /// bounding range would be a lie. That is the UNLINK case every
     /// index-carrying channel must handle — see
-    /// [`crate::semantic_trace::ToolpathSemanticItem::move_end`].
+    /// [`crate::trace::semantic_trace::ToolpathSemanticItem::move_end`].
     #[must_use]
     pub fn remap_range(
         &self,
@@ -294,8 +294,8 @@ impl MoveProvenance {
 ///
 /// ```
 /// use rs_cam_core::toolpath::Toolpath;
-/// use rs_cam_core::toolpath_spans::AnnotatedToolpath;
-/// use rs_cam_core::transform_provenance::{ReconcileSet, Transformed};
+/// use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+/// use rs_cam_core::trace::transform_provenance::{ReconcileSet, Transformed};
 ///
 /// let t = Transformed::index_preserving(AnnotatedToolpath::new(Toolpath::new()));
 /// // A site with no index-carrying channels says so out loud.
@@ -308,8 +308,8 @@ impl MoveProvenance {
 ///
 /// ```compile_fail
 /// use rs_cam_core::toolpath::Toolpath;
-/// use rs_cam_core::toolpath_spans::AnnotatedToolpath;
-/// use rs_cam_core::transform_provenance::Transformed;
+/// use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+/// use rs_cam_core::trace::transform_provenance::Transformed;
 ///
 /// let t = Transformed::index_preserving(AnnotatedToolpath::new(Toolpath::new()));
 /// let at = t.into_inner(); // no method `into_inner` on Transformed<Unreconciled>
@@ -320,8 +320,8 @@ impl MoveProvenance {
 /// ```compile_fail
 /// #![deny(unused_must_use)]
 /// use rs_cam_core::toolpath::Toolpath;
-/// use rs_cam_core::toolpath_spans::AnnotatedToolpath;
-/// use rs_cam_core::transform_provenance::Transformed;
+/// use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+/// use rs_cam_core::trace::transform_provenance::Transformed;
 ///
 /// fn transform(at: AnnotatedToolpath) -> Transformed { Transformed::index_preserving(at) }
 /// transform(AnnotatedToolpath::new(Toolpath::new()));
@@ -426,7 +426,7 @@ impl<S: ReconcileState> Transformed<S> {
 ///
 /// ```compile_fail
 /// use rs_cam_core::toolpath::Toolpath;
-/// use rs_cam_core::transform_provenance::{MoveProvenance, RemapConsumer};
+/// use rs_cam_core::trace::transform_provenance::{MoveProvenance, RemapConsumer};
 ///
 /// struct MyChannel;
 /// impl RemapConsumer for MyChannel {
@@ -440,7 +440,7 @@ pub trait RemapConsumer: sealed::Sealed {
 }
 
 /// The semantic trace's per-item move links
-/// ([`crate::semantic_trace::ToolpathSemanticItem::move_start`] /
+/// ([`crate::trace::semantic_trace::ToolpathSemanticItem::move_start`] /
 /// `move_end`).
 ///
 /// Replaces ae10cb2's `SemanticLinkCarrier`: instead of smuggling each link
@@ -538,7 +538,7 @@ impl RemapConsumer for ScallopAnnotationChannel<'_> {
 /// claim it is.
 ///
 /// ```compile_fail
-/// use rs_cam_core::transform_provenance::ReconcileSet;
+/// use rs_cam_core::trace::transform_provenance::ReconcileSet;
 /// // The registered channels are not optional to MENTION, only to own.
 /// let mut set = ReconcileSet::new();
 /// ```
@@ -630,7 +630,11 @@ mod tests {
         // Two moves inserted after old move 1.
         let mapping = vec![0, 1, 3, 4];
         let prov = MoveProvenance::Mapping(mapping.clone());
-        let span = crate::toolpath_spans::Span::new(1, 3, crate::toolpath_spans::SpanKind::Region);
+        let span = crate::trace::toolpath_spans::Span::new(
+            1,
+            3,
+            crate::trace::toolpath_spans::SpanKind::Region,
+        );
         let remapped = span.remap(&mapping);
         let via_prov = prov.remap_range(1, 3, 4).unwrap();
         assert_eq!(

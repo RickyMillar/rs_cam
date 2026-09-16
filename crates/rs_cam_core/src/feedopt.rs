@@ -25,7 +25,7 @@ use crate::stock::dexel::ray_top;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
-use crate::toolpath_spans::AnnotatedToolpath;
+use crate::trace::toolpath_spans::AnnotatedToolpath;
 
 /// Parameters for feed rate optimization.
 pub struct FeedOptParams {
@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn optimize_feed_rates_preserves_spans() {
-        use crate::toolpath_spans::{Span, SpanKind};
+        use crate::trace::toolpath_spans::{Span, SpanKind};
 
         let tool = FlatEndmill::new(10.0, 25.0);
         let params = default_params();
@@ -446,7 +446,8 @@ mod tests {
             Span::new(1, n_moves, SpanKind::DepthPass).with_label("pass-0"),
             Span::boundary(1, SpanKind::RapidOrderBarrier).with_label("barrier"),
         ];
-        let mut annotated = crate::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans.clone());
+        let mut annotated =
+            crate::trace::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans.clone());
         annotated.spans_valid = true;
 
         let result = optimize_feed_rates(annotated, &tool, &mut stock, &params);
@@ -460,7 +461,7 @@ mod tests {
 
     #[test]
     fn optimize_feed_rates_preserves_invalid_spans_flag() {
-        use crate::toolpath_spans::{Span, SpanKind};
+        use crate::trace::toolpath_spans::{Span, SpanKind};
 
         let tool = FlatEndmill::new(10.0, 25.0);
         let params = default_params();
@@ -472,7 +473,8 @@ mod tests {
         tp.feed_to(P3::new(20.0, 10.0, 5.0), 1000.0);
 
         let spans = vec![Span::new(0, tp.moves.len(), SpanKind::Operation)];
-        let mut annotated = crate::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans.clone());
+        let mut annotated =
+            crate::trace::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans.clone());
         annotated.spans_valid = false;
 
         let result = optimize_feed_rates(annotated, &tool, &mut stock, &params);

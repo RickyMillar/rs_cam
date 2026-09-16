@@ -27,13 +27,13 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::ops::drill_metrics::chip_welding_threshold;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn unit_square_at(cx: f64, cy: f64) -> Polygon2 {
     Polygon2::new(vec![

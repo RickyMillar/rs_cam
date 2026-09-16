@@ -694,14 +694,14 @@ pub fn render_stock_composite_in_frame(
 /// rendered dimmed as spatial context with full z-buffer interaction.
 ///
 /// Cutting segments are coloured by
-/// [`crate::toolpath_spans::AnnotatedToolpath::classify_span_path`] — the same
+/// [`crate::trace::toolpath_spans::AnnotatedToolpath::classify_span_path`] — the same
 /// decision the live 3D viewport makes, not a second copy of it (X-1). Entry /
 /// LeadOut / LinkBridge / DressupArtifact get distinct colours; GeometryRefit
 /// does not, because an arc-fitted move is ordinary cutting geometry; ordinary
 /// cuts carry the per-`DepthPass` lightness shift. Toolpaths without spans fall
 /// back to the plain green/orange cut/rapid scheme.
 pub fn render_toolpath_composite(
-    annotated: &crate::toolpath_spans::AnnotatedToolpath,
+    annotated: &crate::trace::toolpath_spans::AnnotatedToolpath,
     background_mesh: Option<&crate::stock::stock_mesh::StockMesh>,
     width: u32,
     height: u32,
@@ -764,7 +764,7 @@ impl CompositeSubject {
 /// one scale and one origin. Retract heights above the stock still show: the
 /// frame expands to cover the mesh, it never clips it away.
 pub(crate) fn render_toolpath_composite_in_frame(
-    annotated: &crate::toolpath_spans::AnnotatedToolpath,
+    annotated: &crate::trace::toolpath_spans::AnnotatedToolpath,
     background_mesh: Option<&crate::stock::stock_mesh::StockMesh>,
     frame: Option<&crate::geo::BoundingBox3>,
     width: u32,
@@ -785,7 +785,7 @@ pub(crate) fn render_toolpath_composite_in_frame(
 /// `render_toolpath_composite_in_frame` with the choice of which layer is
 /// the subject — see [`CompositeSubject`].
 pub fn render_toolpath_composite_subject(
-    annotated: &crate::toolpath_spans::AnnotatedToolpath,
+    annotated: &crate::trace::toolpath_spans::AnnotatedToolpath,
     background_mesh: Option<&crate::stock::stock_mesh::StockMesh>,
     frame: Option<&crate::geo::BoundingBox3>,
     width: u32,

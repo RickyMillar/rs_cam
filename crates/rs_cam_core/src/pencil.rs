@@ -23,7 +23,6 @@ use std::collections::HashMap;
 use tracing::{info, warn};
 
 use crate::compute::config::TipFloatFinding;
-use crate::debug_trace::ToolpathDebugContext;
 use crate::geo::{P3, V3, polyline_length, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -36,6 +35,7 @@ use crate::surface::dropcutter::point_drop_cutter;
 use crate::surface_link::build_surface_link;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
+use crate::trace::debug_trace::ToolpathDebugContext;
 
 /// Which valley-detection front-end the pencil generator uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

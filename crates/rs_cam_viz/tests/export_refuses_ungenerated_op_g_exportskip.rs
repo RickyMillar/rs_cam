@@ -42,7 +42,7 @@ use rs_cam_core::session::{
     ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
     blocking_toolpath_message, blocking_toolpaths, export_combined_gcode_from_session,

@@ -29,7 +29,6 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
@@ -38,6 +37,7 @@ use rs_cam_core::session::{
 use rs_cam_core::tool_load::optimize::{
     NoProgress, OutcomeKind, optimize_project, optimize_toolpath,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// Build a session with the demo_pocket SVG, an end mill, and a
 /// pocket op. Returns the session and the toolpath index. Returns

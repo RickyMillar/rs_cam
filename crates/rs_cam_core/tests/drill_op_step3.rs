@@ -170,7 +170,7 @@ fn append_drill_cylinders_adds_geometry() {
 #[test]
 fn opdata_drill_carries_both_representations() {
     let drill = flat_drill(2.0, [2.5, 2.5], 10.0, 4.0);
-    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+    let annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
         rs_cam_core::toolpath::Toolpath::new(),
     ));
     let op_data = OpData::DrillOp(Arc::new(drill), Arc::clone(&annotated));

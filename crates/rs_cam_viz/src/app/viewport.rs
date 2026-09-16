@@ -917,7 +917,7 @@ fn span_path_tooltip(
     toolpath_id: crate::state::toolpath::ToolpathId,
     move_index: usize,
 ) -> Option<String> {
-    use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
+    use rs_cam_core::trace::toolpath_spans::{SpanKind, SpanPayload};
     let rt = state.gui.toolpath_rt.get(&toolpath_id)?;
     let result = rt.result.as_ref()?;
     if !result.spans_valid() {

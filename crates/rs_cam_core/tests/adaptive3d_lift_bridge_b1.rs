@@ -35,7 +35,6 @@ use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, RegionOrdering,
 };
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -43,6 +42,7 @@ use rs_cam_core::mesh::{TriangleMesh, make_test_hemisphere};
 use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// Translate a mesh so its bounding box minimum sits at the given point.
 fn translate_mesh(mut mesh: TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {

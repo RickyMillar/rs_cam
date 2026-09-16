@@ -52,7 +52,7 @@ use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
+use rs_cam_core::trace::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
 use common::session::{generate, mesh_model, pinned_heights, single_op_session_with};
 

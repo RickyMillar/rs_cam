@@ -10,8 +10,8 @@ use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
-use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap};
-use crate::transform_provenance::Transformed;
+use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap};
+use crate::trace::transform_provenance::Transformed;
 
 /// Build a gouge-safe, surface-following link between two cut points whose XY gap
 /// is within `hookup_distance`, so consecutive passes join without retracting to
@@ -1290,7 +1290,7 @@ mod tests {
         cutter: &dyn MillingCutter,
         params: &RelinkParams<'_>,
     ) -> (crate::toolpath::Toolpath, RelinkReport) {
-        use crate::transform_provenance::ReconcileSet;
+        use crate::trace::transform_provenance::ReconcileSet;
         let (transformed, report) = relink_fragments(
             AnnotatedToolpath::new(tp.clone()),
             mesh,
@@ -1372,7 +1372,7 @@ mod tests {
     /// provenance, so a channel that follows it cannot be silently orphaned.
     #[test]
     fn relink_provenance_accounts_for_every_input_move() {
-        use crate::transform_provenance::ReconcileSet;
+        use crate::trace::transform_provenance::ReconcileSet;
         let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
         let index = SpatialIndex::build(&mesh, 5.0);
         let tool = BallEndmill::new(2.0, 25.0);

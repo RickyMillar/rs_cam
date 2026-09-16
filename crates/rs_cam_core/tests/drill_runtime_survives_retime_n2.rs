@@ -63,7 +63,6 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
@@ -75,6 +74,7 @@ use rs_cam_core::session::{
     ToolpathConfig,
 };
 use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// The AS001 pocket, which produces an engagement summary.
 const POCKET: ToolpathId = ToolpathId(0);

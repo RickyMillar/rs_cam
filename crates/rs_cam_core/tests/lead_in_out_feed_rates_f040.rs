@@ -20,7 +20,7 @@
 use rs_cam_core::dressup::apply_lead_in_out_with_feeds;
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// Build a minimal profile-style toolpath: rapid to start, plunge, two cut
 /// moves at depth, retract. apply_lead_in_out reads this pattern and

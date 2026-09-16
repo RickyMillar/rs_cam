@@ -61,7 +61,6 @@ use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, Stock
 use crate::compute::operation_configs::PocketConfig;
 use crate::compute::stock_config::{ModelKind, ModelUnits};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use crate::debug_trace::ToolpathDebugOptions;
 use crate::gcode::CoolantMode;
 use crate::geo::P2;
 use crate::ids::ToolpathId;
@@ -70,6 +69,7 @@ use crate::material::{Material, WoodSpecies};
 use crate::polygon::Polygon2;
 use crate::session::{LoadedModel, ProjectSession, ToolpathConfig};
 use crate::tool_load::verdict::{ChipSide, ChiploadVerdict};
+use crate::trace::debug_trace::ToolpathDebugOptions;
 
 use super::axes::{AxisContext, SearchAxis};
 use super::candidate::candidate_sim_options;

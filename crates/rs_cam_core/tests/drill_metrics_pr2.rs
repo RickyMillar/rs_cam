@@ -23,12 +23,12 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::{AlignmentPin, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::session::{
     ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn make_drill_tool(diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);

@@ -335,7 +335,7 @@ fn long_simulation_request() -> SimulationRequest {
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(99),
                 name: "Long Sim".to_owned(),
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                     toolpath,
                 )),
                 tool,
@@ -378,7 +378,7 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(1),
                 name: "Metrics".to_owned(),
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                     toolpath,
                 )),
                 tool,
@@ -409,14 +409,15 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
 
 fn small_simulation_request_with_semantic_metrics(enabled: bool) -> SimulationRequest {
     let mut req = small_simulation_request_with_metrics(enabled);
-    let recorder = rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("Metrics", "Metrics");
+    let recorder =
+        rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("Metrics", "Metrics");
     let root = recorder.root_context();
     let op = root.start_item(
-        rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation,
+        rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation,
         "Metrics",
     );
     let pass = op.context().start_item(
-        rs_cam_core::semantic_trace::ToolpathSemanticKind::Pass,
+        rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Pass,
         "Pass 1",
     );
     if let Some(toolpath) = req.groups.first().and_then(|group| group.toolpaths.first()) {
@@ -695,32 +696,34 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
         .items
         .iter()
         .find(|item| {
-            item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Entry
+            item.kind == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Entry
                 && item.label == "Helix entry"
         })
         .expect("helix entry item should be present");
     assert_eq!(
         helix
             .params
-            .get(rs_cam_core::semantic_trace::SemanticKey::Radius),
+            .get(rs_cam_core::trace::semantic_trace::SemanticKey::Radius),
         Some(&serde_json::json!(DressupConfig::default().helix_radius))
     );
     assert_eq!(
         helix
             .params
-            .get(rs_cam_core::semantic_trace::SemanticKey::Pitch),
+            .get(rs_cam_core::trace::semantic_trace::SemanticKey::Pitch),
         Some(&serde_json::json!(DressupConfig::default().helix_pitch))
     );
 
     let boundary_clip = semantic_trace
         .items
         .iter()
-        .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::BoundaryClip)
+        .find(|item| {
+            item.kind == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::BoundaryClip
+        })
         .expect("boundary clip item should be present");
     assert_eq!(
         boundary_clip
             .params
-            .get(rs_cam_core::semantic_trace::SemanticKey::Containment),
+            .get(rs_cam_core::trace::semantic_trace::SemanticKey::Containment),
         Some(&serde_json::json!("center"))
     );
     assert!(
@@ -943,14 +946,13 @@ fn adaptive3d_semantic_trace_records_runtime_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
     assert!(
-        semantic_trace
-            .items
-            .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::DepthLevel),
+        semantic_trace.items.iter().any(|item| item.kind
+            == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::DepthLevel),
         "expected depth-level semantics from generic span annotation"
     );
 
@@ -978,7 +980,8 @@ fn adaptive_semantic_trace_records_runtime_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1001,7 +1004,8 @@ fn profile_semantic_trace_records_depth_and_finish_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1022,14 +1026,13 @@ fn drill_semantic_trace_records_cycle_children() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Hole),
+            .any(|item| item.kind == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Hole),
         "expected drill Hole semantic item"
     );
     assert!(
-        semantic_trace
-            .items
-            .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Cycle),
+        semantic_trace.items.iter().any(
+            |item| item.kind == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Cycle
+        ),
         "expected drill Cycle semantic item"
     );
 }
@@ -1050,7 +1053,8 @@ fn steep_shallow_semantic_trace_splits_steep_and_shallow_regions() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1071,7 +1075,8 @@ fn pencil_semantic_trace_records_chain_and_offset_pass_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1092,7 +1097,8 @@ fn scallop_semantic_trace_records_band_and_ring_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1113,7 +1119,8 @@ fn ramp_finish_semantic_trace_records_terrace_and_ramp_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1134,7 +1141,8 @@ fn spiral_finish_semantic_trace_records_band_and_ring_structure() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1155,7 +1163,8 @@ fn radial_finish_semantic_trace_records_ray_angles() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1176,7 +1185,8 @@ fn horizontal_finish_semantic_trace_records_slice_passes() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1197,7 +1207,8 @@ fn project_curve_semantic_trace_records_source_curve_groups() {
         semantic_trace
             .items
             .iter()
-            .any(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::Operation),
+            .any(|item| item.kind
+                == rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Operation),
         "expected top-level Operation scope"
     );
 }
@@ -1376,12 +1387,14 @@ fn analysis_requests_replace_stale_work() {
     backend.submit_simulation(long_simulation_request());
     thread::sleep(Duration::from_millis(20));
     backend.submit_collision(CollisionRequest {
-        annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new({
-            let mut toolpath = Toolpath::new();
-            toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
-            toolpath.feed_to(P3::new(0.0, 0.0, -1.0), 300.0);
-            toolpath
-        })),
+        annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+            {
+                let mut toolpath = Toolpath::new();
+                toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
+                toolpath.feed_to(P3::new(0.0, 0.0, -1.0), 300.0);
+                toolpath
+            },
+        )),
         tool: ToolConfig::new_default(ToolId(1), ToolType::EndMill),
         mesh: Arc::new(make_test_flat(20.0)),
         obstacles: Vec::new(),
@@ -1477,9 +1490,9 @@ fn multi_setup_top_bottom_simulation() {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(1),
                     name: "Top Cut".to_owned(),
-                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
-                        top_tp,
-                    )),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(top_tp),
+                    ),
                     tool: tool.clone(),
                     semantic_trace: None,
                     spindle_rpm: None,
@@ -1495,9 +1508,9 @@ fn multi_setup_top_bottom_simulation() {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(2),
                     name: "Bottom Cut".to_owned(),
-                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
-                        bottom_tp,
-                    )),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(bottom_tp),
+                    ),
                     tool,
                     semantic_trace: None,
                     spindle_rpm: None,
@@ -1625,7 +1638,9 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(1),
                     name: "Top".to_owned(),
-                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp1)),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp1),
+                    ),
                     tool: tool.clone(),
                     semantic_trace: None,
                     spindle_rpm: None,
@@ -1641,7 +1656,9 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                 toolpaths: vec![SetupSimToolpath {
                     id: ToolpathId(2),
                     name: "Bottom".to_owned(),
-                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp2)),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp2),
+                    ),
                     tool,
                     semantic_trace: None,
                     spindle_rpm: None,
@@ -1803,7 +1820,9 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(42),
                 name: "Drill".to_owned(),
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+                    tp,
+                )),
                 tool,
                 semantic_trace: None,
                 spindle_rpm: None,
@@ -1896,7 +1915,9 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(7),
                 name: "Drill (back)".to_owned(),
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+                    tp,
+                )),
                 tool,
                 semantic_trace: None,
                 spindle_rpm: None,
@@ -1993,7 +2014,9 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(11),
                 name: "Front groove".to_owned(),
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+                    tp,
+                )),
                 tool,
                 semantic_trace: None,
                 spindle_rpm: None,
@@ -2173,7 +2196,9 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(1),
                 name: "AS001 Pocket Pass 1".to_owned(),
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+                    tp,
+                )),
                 tool,
                 semantic_trace: None,
                 spindle_rpm: Some(18_000),
@@ -2336,7 +2361,7 @@ fn worker_reconciles_semantic_links_with_debug_options_disabled() {
         .iter()
         .filter(|i| {
             i.params
-                .get(rs_cam_core::semantic_trace::SemanticKey::MoveScope)
+                .get(rs_cam_core::trace::semantic_trace::SemanticKey::MoveScope)
                 .is_some()
         })
         .collect();

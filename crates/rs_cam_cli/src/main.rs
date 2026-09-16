@@ -487,7 +487,7 @@ fn main() -> Result<()> {
                             "_",
                         )
                     );
-                    match rs_cam_core::semantic_trace::write_toolpath_trace_artifact(
+                    match rs_cam_core::trace::semantic_trace::write_toolpath_trace_artifact(
                         trace_dir, &file_stem, artifact,
                     ) {
                         Ok(path) => info!(path = %path.display(), "Wrote debug trace artifact"),

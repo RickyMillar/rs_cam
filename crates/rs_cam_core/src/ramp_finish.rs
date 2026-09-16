@@ -15,7 +15,6 @@
 //! 4. Interpolate between matched contours to create continuous helical descent
 //! 5. Apply slope confinement to restrict to steep regions
 
-use crate::debug_trace::ToolpathDebugContext;
 use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
@@ -26,6 +25,7 @@ use crate::ops::waterline::waterline_contours;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};
+use crate::trace::debug_trace::ToolpathDebugContext;
 
 use tracing::info;
 

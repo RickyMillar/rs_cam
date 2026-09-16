@@ -84,7 +84,7 @@ use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
+use rs_cam_core::trace::toolpath_spans::{SpanKind, SpanPayload};
 
 // ── Fixture constants ───────────────────────────────────────────────────
 //

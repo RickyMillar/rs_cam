@@ -46,8 +46,8 @@ mod common;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{ScallopConfig, SpiralFinishConfig, TraceConfig};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::semantic_trace::ToolpathSemanticKind;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::trace::semantic_trace::ToolpathSemanticKind;
 
 use common::meshes::sawtooth_plate;
 use common::session::{

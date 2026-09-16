@@ -1,8 +1,8 @@
-use crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION;
 use crate::ids::ToolpathId;
 use crate::ops::drill_metrics::{DrillSample, DrillToolpathSummary};
-use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
-use crate::toolpath_spans::SpanId;
+use crate::trace::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION;
+use crate::trace::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
+use crate::trace::toolpath_spans::SpanId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -201,7 +201,7 @@ pub struct SimulationCutSample {
     pub removed_volume_est_mm3: f64,
     pub mrr_mm3_s: f64,
     pub semantic_item_id: Option<u64>,
-    /// Indices into [`crate::toolpath_spans::AnnotatedToolpath::spans`] for
+    /// Indices into [`crate::trace::toolpath_spans::AnnotatedToolpath::spans`] for
     /// every non-boundary span covering this sample's move. Outermost-first
     /// (Operation, then DepthPass, …). Empty when the toolpath had no spans.
     #[serde(default)]
@@ -1727,7 +1727,7 @@ impl SemanticSummaryAccumulator {
     fn finish(
         self,
         toolpath_id: ToolpathId,
-        item: &crate::semantic_trace::ToolpathSemanticItem,
+        item: &crate::trace::semantic_trace::ToolpathSemanticItem,
     ) -> SimulationSemanticCutSummary {
         SimulationSemanticCutSummary {
             toolpath_id,
@@ -1841,8 +1841,8 @@ pub fn prune_simulation_cut_artifacts(dir: &Path, keep: usize) -> usize {
 )]
 mod tests {
     use super::*;
-    use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder};
     use crate::toolpath::Toolpath;
+    use crate::trace::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder};
 
     /// C2: an unmeasured axial-DOC fraction must not be averaged in as a
     /// zero. The mean is taken over the samples that carried one — the same
@@ -2069,8 +2069,8 @@ mod tests {
     #[test]
     fn issues_and_hotspots_inherit_span_path_from_first_sample() {
         let span_path = vec![
-            crate::toolpath_spans::SpanId(0),
-            crate::toolpath_spans::SpanId(1),
+            crate::trace::toolpath_spans::SpanId(0),
+            crate::trace::toolpath_spans::SpanId(1),
         ];
         let trace = SimulationCutTrace::from_samples(
             0.5,

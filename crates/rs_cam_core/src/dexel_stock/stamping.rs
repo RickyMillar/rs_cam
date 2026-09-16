@@ -13,14 +13,14 @@ use super::band::GridBand;
 use super::tile_mip::TileMaxTop;
 use crate::geo::P3;
 use crate::ids::ToolpathId;
-use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::stock::dexel::{
     DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
 };
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::tool::MillingCutter;
-use crate::toolpath_spans::SpanId;
+use crate::trace::semantic_trace::ToolpathSemanticTrace;
+use crate::trace::toolpath_spans::SpanId;
 
 // ── Sub-cell coverage helpers (F.a, see DEXEL_Z_ONLY_INVESTIGATION.md §6.F) ─
 

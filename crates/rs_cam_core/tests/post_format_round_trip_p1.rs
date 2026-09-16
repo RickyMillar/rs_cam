@@ -57,7 +57,6 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::{CoolantMode, PostFormat, ToolLoadExportPolicy, export_gcode_checked};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -65,6 +64,7 @@ use rs_cam_core::session::{
     AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
     ProjectSessionBuilder, SetPostConfigArgs, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// A closed 50 x 40 rectangle. Written to disk because the project file
 /// stores a model *path*: an in-memory synthetic model cannot survive

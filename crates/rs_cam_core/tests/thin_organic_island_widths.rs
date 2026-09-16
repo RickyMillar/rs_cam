@@ -777,13 +777,13 @@ fn stage_d(
             airborne_links_may_leave_territory: false,
         };
         let (linked, rep) = rs_cam_core::surface_link::relink_fragments(
-            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raster),
+            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raster),
             mesh,
             index,
             cutter,
             &rp,
         );
-        let mut channels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+        let mut channels = rs_cam_core::trace::transform_provenance::ReconcileSet::new(None, None);
         let raster = linked.reconcile(&mut channels).into_inner().toolpath;
         let r_time = compute_cycle_time(&raster, &kin, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
         let r_cut = raster.total_cutting_distance();
@@ -823,13 +823,13 @@ fn stage_d(
         // toolpath regardless of which generator produced it, so anything less
         // here would rig the comparison the other way.
         let (clinked, crep) = rs_cam_core::surface_link::relink_fragments(
-            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(cascade),
+            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(cascade),
             mesh,
             index,
             cutter,
             &rp,
         );
-        let mut cchannels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+        let mut cchannels = rs_cam_core::trace::transform_provenance::ReconcileSet::new(None, None);
         let cascade = clinked.reconcile(&mut cchannels).into_inner().toolpath;
         println!(
             "       (cascade relinked: {} fragments, {} linked, {} kept retracts)",
@@ -967,13 +967,13 @@ fn stage_e(
                 airborne_links_may_leave_territory: false,
             };
             let (linked, rep) = rs_cam_core::surface_link::relink_fragments(
-                rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raster),
+                rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raster),
                 mesh,
                 index,
                 cutter,
                 &rp,
             );
-            let mut ch = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+            let mut ch = rs_cam_core::trace::transform_provenance::ReconcileSet::new(None, None);
             let tp = linked.reconcile(&mut ch).into_inner().toolpath;
             let t = compute_cycle_time(&tp, &kin, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
             if let Some(row) = table.get_mut(ri) {
@@ -1203,13 +1203,13 @@ fn stage_f(
                 airborne_links_may_leave_territory: false,
             };
             let (linked, _rep) = rs_cam_core::surface_link::relink_fragments(
-                rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raster),
+                rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raster),
                 mesh,
                 index,
                 cutter,
                 &rp,
             );
-            let mut ch = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+            let mut ch = rs_cam_core::trace::transform_provenance::ReconcileSet::new(None, None);
             let tp = linked.reconcile(&mut ch).into_inner().toolpath;
             times.push(compute_cycle_time(
                 &tp,
@@ -1355,13 +1355,13 @@ fn stage_g(
                 airborne_links_may_leave_territory: ceiling.is_some(),
             };
             let (linked, rep) = rs_cam_core::surface_link::relink_fragments(
-                rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raster),
+                rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raster),
                 mesh,
                 index,
                 cutter,
                 &rp,
             );
-            let mut ch = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+            let mut ch = rs_cam_core::trace::transform_provenance::ReconcileSet::new(None, None);
             let tp = linked.reconcile(&mut ch).into_inner().toolpath;
             let t = compute_cycle_time(&tp, &kin, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
             if label == "no ceiling" {

@@ -12,7 +12,6 @@
 //! - Multi-level: Z levels from stock_top down to mesh surface
 //! - Boundary cleanup: waterline contours (not polygon offset contours)
 
-use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled};
@@ -20,6 +19,7 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::stock::dexel::ray_top;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
+use crate::trace::debug_trace::ToolpathDebugContext;
 
 use tracing::info;
 
@@ -1560,7 +1560,8 @@ mod tests {
             clearing_strategy: ClearingStrategy3d::AgentSearch,
             ..default_params()
         };
-        let recorder = crate::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
+        let recorder =
+            crate::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
         let ctx = recorder.root_context();
         let never_cancel = || false;
 

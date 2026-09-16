@@ -33,8 +33,8 @@ use rs_cam_core::{
     compute::execute::apply_dressups,
     geo::P3,
     toolpath::Toolpath,
-    toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
-    transform_provenance::ReconcileSet,
+    trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
+    trace::transform_provenance::ReconcileSet,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────

@@ -1900,7 +1900,7 @@ impl ProjectSession {
     pub(crate) fn set_toolpath_debug_options(
         &mut self,
         index: usize,
-        debug_options: crate::debug_trace::ToolpathDebugOptions,
+        debug_options: crate::trace::debug_trace::ToolpathDebugOptions,
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(Some(index), move |session| {
             let tc = session
@@ -2123,9 +2123,9 @@ mod tests {
         AlignmentPinDrillConfig, PencilConfig, PocketConfig, RestConfig,
     };
     use crate::compute::stock_config::FixtureId;
-    use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
     use crate::session::{Fixture, FixtureKind, KeepOutZone, ToolpathComputeResult};
+    use crate::trace::debug_trace::ToolpathDebugOptions;
 
     fn make_session() -> ProjectSession {
         ProjectSession::new_empty()
@@ -2162,7 +2162,9 @@ mod tests {
     fn fake_result() -> ToolpathComputeResult {
         ToolpathComputeResult {
             op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(
-                crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
+                crate::trace::toolpath_spans::AnnotatedToolpath::new(
+                    crate::toolpath::Toolpath::new(),
+                ),
             )),
             stats: ToolpathStats::default(),
             debug_trace: None,

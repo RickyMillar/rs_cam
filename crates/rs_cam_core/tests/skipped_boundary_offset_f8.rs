@@ -44,7 +44,7 @@ use rs_cam_core::geometry::boundary::{UserOffsetOutcome, apply_user_boundary_off
 use rs_cam_core::polygon::{Polygon2, offset_polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// A shrink big enough to eat the square whole: the operator asked for a
 /// boundary 10 mm inside a 2 mm region.
@@ -181,7 +181,7 @@ fn a_collapsed_user_offset_reaches_the_clip_as_a_reported_pass_through() {
     let stock_bbox = BoundingBox3::from_points([P3::new(0.0, 0.0, -5.0), P3::new(TINY, TINY, 0.0)]);
 
     let recorder =
-        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("f8-sentry", "Pocket");
+        rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("f8-sentry", "Pocket");
     let semantic_ctx = recorder.root_context();
     let mut findings = GenerationFindings::default();
 
@@ -199,7 +199,7 @@ fn a_collapsed_user_offset_reaches_the_clip_as_a_reported_pass_through() {
         // keeps the crossing move's cut feed (this test's pinned behaviour).
         None,
         &semantic_ctx,
-        &mut rs_cam_core::transform_provenance::ReconcileSet::new(Some(&recorder), None),
+        &mut rs_cam_core::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
         &mut findings,
     )
     .expect("a genuine collapse passes through — only a FAILURE refuses");

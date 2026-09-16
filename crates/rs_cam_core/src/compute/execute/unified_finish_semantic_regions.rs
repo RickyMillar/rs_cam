@@ -39,11 +39,11 @@ use crate::compute::operation_configs::UnifiedFinishConfig;
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::geo::BoundingBox3;
 use crate::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
-use crate::narrate::narrate_toolpath;
-use crate::semantic_trace::{
+use crate::trace::narrate::narrate_toolpath;
+use crate::trace::semantic_trace::{
     ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticRecorder, ToolpathSemanticTrace,
 };
-use crate::toolpath_spans::{AnnotatedToolpath, RegionSpanRole, SpanKind};
+use crate::trace::toolpath_spans::{AnnotatedToolpath, RegionSpanRole, SpanKind};
 use std::sync::atomic::AtomicBool;
 
 // ── Fixture ──────────────────────────────────────────────────────────────

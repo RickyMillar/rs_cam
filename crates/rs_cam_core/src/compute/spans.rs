@@ -1,7 +1,7 @@
 //! Build [`Span`]s from operation runtime events.
 //!
 //! This is the bridge between op-specific `RuntimeAnnotation` events and the
-//! generic span model in [`crate::toolpath_spans`]. Each generator can still
+//! generic span model in [`crate::trace::toolpath_spans`]. Each generator can still
 //! return its own events for narration/debug/semantic trace construction; this
 //! module translates the subset that is structurally meaningful into [`Span`]s
 //! for the dressup pipeline.
@@ -9,7 +9,7 @@
 use std::ops::Range;
 
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
-use crate::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
+use crate::trace::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
 /// Build the default span vector for an operation's freshly-generated toolpath.
 ///
@@ -93,7 +93,7 @@ where
 /// deepest cutting Z is used as the inferred level.
 ///
 /// The emitted `DepthPass` starts also become rapid-order barriers through
-/// [`crate::toolpath_spans::AnnotatedToolpath::rapid_order_barriers`], so use
+/// [`crate::trace::toolpath_spans::AnnotatedToolpath::rapid_order_barriers`], so use
 /// this only for operations where depth order matters.
 pub fn spans_from_depth_runs(toolpath: &Toolpath, levels: &[f64]) -> Vec<Span> {
     let runs = cutting_runs(toolpath);
@@ -628,7 +628,7 @@ mod tests {
         Adaptive3dRuntimeAnnotation, Adaptive3dRuntimeEvent, ZLevelPlanMetrics,
     };
     use crate::toolpath::Toolpath;
-    use crate::toolpath_spans::AnnotatedToolpath;
+    use crate::trace::toolpath_spans::AnnotatedToolpath;
 
     fn metrics() -> ZLevelPlanMetrics {
         ZLevelPlanMetrics::default()

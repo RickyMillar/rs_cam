@@ -35,7 +35,6 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::Adaptive3dConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
@@ -43,6 +42,7 @@ use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::MoveType;
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// Flat two-triangle surface at `z`, spanning XY [10, 50] x [10, 50].
 fn flat_quad_mesh(z: f64) -> TriangleMesh {

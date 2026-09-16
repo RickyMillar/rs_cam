@@ -48,8 +48,8 @@ use common::tools::ball_tool_config;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::ScallopConfig;
-use rs_cam_core::semantic_trace::ToolpathSemanticKind;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::trace::semantic_trace::ToolpathSemanticKind;
 
 const HALF_MM: f64 = 20.0;
 const PERIOD_MM: f64 = 6.0;

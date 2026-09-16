@@ -21,13 +21,13 @@ use crate::stock::dexel::DexelGrid;
 use crate::geo::P3;
 use crate::geometry::arc_util::linearize_arc_into;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::stock::collision::RapidClearanceCheck;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::tool::{EngagementMode, MillingCutter};
 use crate::toolpath::{MoveType, Toolpath};
-use crate::toolpath_spans::SpanId;
+use crate::trace::semantic_trace::ToolpathSemanticTrace;
+use crate::trace::toolpath_spans::SpanId;
 use rayon::prelude::*;
 
 impl TriDexelStock {

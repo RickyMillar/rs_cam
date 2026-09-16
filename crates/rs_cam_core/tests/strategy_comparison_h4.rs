@@ -254,10 +254,12 @@ use rs_cam_core::measurement::{
     swept_footprint_mm2_per_s,
 };
 use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_core::semantic_trace::{SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace};
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions};
 use rs_cam_core::tool::MillingCutter;
 use rs_cam_core::toolpath::Move;
+use rs_cam_core::trace::semantic_trace::{
+    SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace,
+};
 
 use common::meshes::grooved_block;
 use common::scallop_oracle::quantile;

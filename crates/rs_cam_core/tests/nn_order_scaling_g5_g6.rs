@@ -49,8 +49,8 @@ use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::surface_link::{RelinkParams, relink_fragments};
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
-use rs_cam_core::transform_provenance::ReconcileSet;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
 // ── fixtures ────────────────────────────────────────────────────────────
 

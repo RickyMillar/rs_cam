@@ -16,7 +16,7 @@ use rs_cam_core::tool_load::verdict::{
     ChipSide, ChiploadVerdict, CriterionKind, CriterionStatus, LoadState,
 };
 use rs_cam_core::tool_load::{Confidence, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason};
-use rs_cam_core::toolpath_spans::{Span, SpanKind, SpanPayload};
+use rs_cam_core::trace::toolpath_spans::{Span, SpanKind, SpanPayload};
 
 pub fn draw(
     ui: &mut egui::Ui,

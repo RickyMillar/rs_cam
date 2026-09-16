@@ -452,7 +452,7 @@ fn evaluate_candidate_inner(
     // locality labels). F2.2: also None when a transform invalidated
     // the spans (TSP split) — corrupted ancestry must not stamp gate
     // verdicts.
-    let spans: Option<&[crate::toolpath_spans::Span]> = session_ref
+    let spans: Option<&[crate::trace::toolpath_spans::Span]> = session_ref
         .get_result(toolpath_index)
         .filter(|r| r.annotated().spans_valid)
         .map(|r| r.annotated().spans.as_slice());

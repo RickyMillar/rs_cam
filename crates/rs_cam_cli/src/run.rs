@@ -18,12 +18,12 @@ use rs_cam_core::compute::ModelUnits;
 use rs_cam_core::compute::catalog::{OpCategory, OperationConfig, OperationType};
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
     SetPostConfigArgs, SetToolParamArgs, SetToolpathParamArgs, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 use crate::command::apply_command;
 

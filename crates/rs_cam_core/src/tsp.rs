@@ -7,8 +7,8 @@ use std::ops::Range;
 
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveIntent, MoveType, Toolpath};
-use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, RemapIndex, Span, SpanKind};
-use crate::transform_provenance::{ReconcileSet, Transformed};
+use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap, RemapIndex, Span, SpanKind};
+use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 
 /// Z tolerance for deciding whether a rapid reaches the group-framing
 /// ceiling. Both sides of that comparison are heights derived from the
@@ -664,7 +664,7 @@ fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize, moves: &[Move]) 
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;
-    use crate::toolpath_spans::{Span, SpanKind};
+    use crate::trace::toolpath_spans::{Span, SpanKind};
 
     fn make_segment_toolpath(points: &[P3], safe_z: f64, feed_rate: f64) -> Vec<Move> {
         let mut moves = Vec::new();

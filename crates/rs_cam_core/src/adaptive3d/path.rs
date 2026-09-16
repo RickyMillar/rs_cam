@@ -1,7 +1,6 @@
 //! 3D adaptive orchestration: main loop over Z levels + segment →
 //! toolpath conversion for adaptive3d.
 
-use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -10,6 +9,7 @@ use crate::ops::adaptive_shared::target_engagement_fraction;
 use crate::stock::dexel::ray_subtract_above;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::surface::slope::SurfaceHeightmap;
+use crate::trace::debug_trace::ToolpathDebugContext;
 
 /// The Z levels a flat shelf in the surface asks for, top-down order not
 /// guaranteed.

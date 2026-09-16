@@ -22,10 +22,10 @@
 
 use crate::condition::FEED_EPS;
 use crate::geo::P3;
-use crate::narrate::LARGE_ARC_RADIUS_MULTIPLIER;
 use crate::toolpath::{Move, MoveType, Toolpath};
-use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
-use crate::transform_provenance::{ReconcileSet, Transformed};
+use crate::trace::narrate::LARGE_ARC_RADIUS_MULTIPLIER;
+use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
+use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 
 /// Fit arcs to a toolpath, replacing linear segments with G2/G3 where possible.
 ///

@@ -31,7 +31,6 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::config::{DeprecatedDialFinding, ToolpathStats};
 use rs_cam_core::compute::operation_configs::PencilConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
@@ -42,6 +41,7 @@ use rs_cam_core::pencil::{
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn wanaka_taper() -> TaperedBallEndmill {
     TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)

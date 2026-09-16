@@ -13,7 +13,7 @@ use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool_load::verdict::{
     Confidence, CriterionKind, LoadState, ToolpathLoadVerdict, UnmodeledReason,
 };
-use rs_cam_core::toolpath_spans::{Span, SpanKind, SpanPayload};
+use rs_cam_core::trace::toolpath_spans::{Span, SpanKind, SpanPayload};
 
 /// Left panel in simulation workspace: slim operation list with visibility and jump controls.
 pub fn draw(
@@ -810,7 +810,7 @@ pub fn draw(
     #[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
     fn draw_semantic_item_row(
         ui: &mut egui::Ui,
-        trace: &rs_cam_core::semantic_trace::ToolpathSemanticTrace,
+        trace: &rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace,
         index: &crate::state::simulation::SimulationSemanticIndex,
         sim: &mut SimulationState,
         boundary: &crate::state::simulation::ToolpathBoundary,

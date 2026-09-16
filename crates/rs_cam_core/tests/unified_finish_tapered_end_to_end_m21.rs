@@ -85,18 +85,18 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
 use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::semantic_trace::{ToolpathSemanticItem, ToolpathSemanticKind};
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::MoveIntent;
-use rs_cam_core::toolpath_spans::{RegionSpanRole, SpanKind};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
+use rs_cam_core::trace::semantic_trace::{ToolpathSemanticItem, ToolpathSemanticKind};
+use rs_cam_core::trace::toolpath_spans::{RegionSpanRole, SpanKind};
 
 // ── Tool geometry ───────────────────────────────────────────────────────
 
@@ -317,14 +317,14 @@ fn semantic_nodes(session: &ProjectSession) -> Vec<SemanticNode> {
 fn node_from_item(item: &ToolpathSemanticItem) -> SemanticNode {
     // C4: typed keys. A typo in one of these literals used to yield an empty
     // string, i.e. a silently vacuous band/strategy assertion.
-    let string_param = |key: rs_cam_core::semantic_trace::SemanticKey| {
+    let string_param = |key: rs_cam_core::trace::semantic_trace::SemanticKey| {
         item.params
             .get(key)
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned()
     };
-    use rs_cam_core::semantic_trace::SemanticKey;
+    use rs_cam_core::trace::semantic_trace::SemanticKey;
     SemanticNode {
         band: string_param(SemanticKey::Band),
         strategy: string_param(SemanticKey::Strategy),

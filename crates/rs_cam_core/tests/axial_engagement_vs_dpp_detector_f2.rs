@@ -35,12 +35,12 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{
     AdaptiveConfig, PocketConfig, ProfileConfig, TraceConfig, ZigzagConfig,
 };
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SimulationOptions, ToolpathConfig,
 };
 use rs_cam_core::stock::simulation_cut::CutKinematics;
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// Detector tolerance: a steady-state sample may read up to 1.5× the
 /// commanded depth-per-pass (grid discretisation + Z-blend rounding),

@@ -431,7 +431,7 @@ fn evacuation_score_must_not_read_fully_cleared_on_an_inadequate_peck() {
 #[test]
 fn summary_peck_count_matches_the_emitted_drill_peck_spans() {
     use rs_cam_core::compute::spans::spans_from_drill_holes;
-    use rs_cam_core::toolpath_spans::RegionSpanRole;
+    use rs_cam_core::trace::toolpath_spans::RegionSpanRole;
 
     let depth = 10.0;
     let peck = 3.0;

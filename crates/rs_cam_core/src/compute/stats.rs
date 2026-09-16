@@ -1,12 +1,12 @@
 use super::config::{RetractTripCount, ToolpathStats};
 use super::execute::GenerationFindings;
 use crate::toolpath::{MoveType, Toolpath};
-use crate::toolpath_spans::Span;
+use crate::trace::toolpath_spans::Span;
 
 /// Compute basic toolpath statistics (move count, cutting distance, rapid
 /// distance, retract trip count). Convenience wrapper over
 /// [`compute_stats_with_spans`] for callers with no
-/// [`crate::toolpath_spans::AnnotatedToolpath`] in scope — the retract-trip
+/// [`crate::trace::toolpath_spans::AnnotatedToolpath`] in scope — the retract-trip
 /// in/out split will be `None` (spans-free callers cannot classify a trip
 /// against a routing node).
 pub fn compute_stats(tp: &Toolpath) -> ToolpathStats {
@@ -18,7 +18,7 @@ pub fn compute_stats(tp: &Toolpath) -> ToolpathStats {
 /// nodes (see [`compute_retract_trips`]).
 ///
 /// Pass `None` — not an empty slice — when spans are absent or untrusted.
-/// A caller holding an [`crate::toolpath_spans::AnnotatedToolpath`] must
+/// A caller holding an [`crate::trace::toolpath_spans::AnnotatedToolpath`] must
 /// resolve `spans_valid == false` to `None` itself before calling this:
 /// [`RetractTripCount`]'s X-19 contract is that an untrustworthy split
 /// reports as unmeasured, never as a confident zero.
@@ -252,7 +252,7 @@ pub fn stats_with_findings(
 
 /// Count retract round trips and, when `spans` is `Some`, classify each one
 /// as inside a planner territory
-/// [`crate::toolpath_spans::RegionSpanRole::Node`] or between two nodes
+/// [`crate::trace::toolpath_spans::RegionSpanRole::Node`] or between two nodes
 /// (A/M7 gate 1).
 ///
 /// A "trip" is one maximal contiguous run of [`MoveType::Rapid`] moves —

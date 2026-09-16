@@ -55,7 +55,9 @@
 use rs_cam_core::geo::P3;
 use rs_cam_core::stock::stock_mesh::{StockMesh, toolpath_to_tube_mesh_with_spans};
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanClass, SpanKind, SpanPayload};
+use rs_cam_core::trace::toolpath_spans::{
+    AnnotatedToolpath, Span, SpanClass, SpanKind, SpanPayload,
+};
 
 const FEED: f64 = 600.0;
 /// Ribbon radius. Any positive value works — the tests read colours, not

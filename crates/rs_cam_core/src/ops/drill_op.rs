@@ -13,7 +13,7 @@
 //! `ToolpathComputeResult`.
 
 use crate::material::Material;
-use crate::toolpath_spans::AnnotatedToolpath;
+use crate::trace::toolpath_spans::AnnotatedToolpath;
 use std::sync::Arc;
 
 /// One hole in a drilling operation.

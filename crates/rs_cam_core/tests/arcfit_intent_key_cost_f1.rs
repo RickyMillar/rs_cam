@@ -45,8 +45,8 @@ use rs_cam_core::{
     compute::execute::apply_dressups,
     geo::P3,
     toolpath::{Move, MoveIntent, MoveType, Toolpath},
-    toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
-    transform_provenance::ReconcileSet,
+    trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
+    trace::transform_provenance::ReconcileSet,
 };
 
 const FEED_EPS: f64 = 1e-6;

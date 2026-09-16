@@ -60,8 +60,8 @@ use crate::polygon::Polygon2;
 use crate::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use crate::tool::{FlatEndmill, MillingCutter};
 use crate::toolpath::{Move, MoveIntent, MoveType, PLUNGE_CLEARANCE_MM, Toolpath};
-use crate::toolpath_spans::AnnotatedToolpath;
-use crate::transform_provenance::ReconcileSet;
+use crate::trace::toolpath_spans::AnnotatedToolpath;
+use crate::trace::transform_provenance::ReconcileSet;
 
 use std::sync::atomic::AtomicBool;
 

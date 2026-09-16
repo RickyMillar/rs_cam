@@ -559,7 +559,7 @@ fn materialize_case_toolpath(
         stock_source,
         coolant: rs_cam_core::gcode::CoolantMode::Off,
         face_selection: None,
-        debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+        debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         planner_origin: None,
     };

@@ -14,12 +14,12 @@ use super::{
     AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy, MaterialGrid,
     average_angles, blend_corners_to_moves, target_engagement_fraction,
 };
-use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
 use crate::geo::P2;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::ops::adaptive_shared::BlendedMove;
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
+use crate::trace::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
 
 use std::time::Instant;
 

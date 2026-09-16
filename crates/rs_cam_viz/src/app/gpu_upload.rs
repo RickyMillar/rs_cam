@@ -1421,15 +1421,15 @@ impl RsCamApp {
 /// Translate an annotated toolpath by `shift` — the display-frame adapter
 /// for identity setups, whose toolpaths emit in world coordinates while the
 /// viewport draws zero-rooted local. Delegates to
-/// [`rs_cam_core::toolpath_spans::AnnotatedToolpath::translated`], which
+/// [`rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::translated`], which
 /// re-frames every coordinate-bearing field (move targets, planner
 /// engagement samples, rest-grid heatmap) in lockstep — arc center offsets
 /// (`i`/`j` on the `MoveType`) are relative and survive translation
 /// unchanged.
 fn translate_annotated(
-    annotated: &rs_cam_core::toolpath_spans::AnnotatedToolpath,
+    annotated: &rs_cam_core::trace::toolpath_spans::AnnotatedToolpath,
     shift: rs_cam_core::geo::P3,
-) -> rs_cam_core::toolpath_spans::AnnotatedToolpath {
+) -> rs_cam_core::trace::toolpath_spans::AnnotatedToolpath {
     annotated.translated(shift)
 }
 
@@ -1480,7 +1480,7 @@ mod tests {
     use super::translate_annotated;
     use rs_cam_core::geo::P3;
     use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
-    use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+    use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
     #[test]
     fn translate_annotated_shifts_targets_and_preserves_arc_offsets() {

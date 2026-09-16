@@ -27,13 +27,13 @@ use rs_cam_core::compute::operation_configs::{
     DrillConfig, PocketConfig, ProjectCurveConfig, RestConfig,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::diagnostics::{Diagnostic, Severity, ids};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 // ── helpers ─────────────────────────────────────────────────────────
 

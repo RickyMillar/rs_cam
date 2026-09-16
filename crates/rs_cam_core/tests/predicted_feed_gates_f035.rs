@@ -57,7 +57,6 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolMaterial, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
@@ -74,6 +73,7 @@ use rs_cam_core::stock::simulation_cut::{
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::tool_load::verdict::ChipSide;
 use rs_cam_core::tool_load::{ChiploadVerdict, DeflectionVerdict, ToleranceBands, chipload};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 // ----- Shared fixtures: 6 mm carbide flat tool + LUT-nominal-arc -----
 

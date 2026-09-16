@@ -77,7 +77,6 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
@@ -87,6 +86,7 @@ use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
 use rs_cam_core::stock::simulation_cut::AirCutRatios;
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 // ── Fixture geometry ────────────────────────────────────────────────────
 

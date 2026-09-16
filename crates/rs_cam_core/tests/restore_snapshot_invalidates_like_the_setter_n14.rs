@@ -50,13 +50,13 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig, RestConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::feeds::{FeedsProvenance, ValueProvenance};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AdoptResultArgs, Command, Effects, LoadedModel, ProjectSession, ProjectSessionBuilder,
     RestoreToolpathSnapshotArgs, SetDrillSelectedHolesArgs, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// The one feed value the arms write.
 const EDITED_FEED_RATE: f64 = 4321.0;
@@ -113,7 +113,7 @@ fn empty_model(name: &str) -> LoadedModel {
 fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
     rs_cam_core::session::ToolpathComputeResult {
         op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(std::sync::Arc::new(
-            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                 rs_cam_core::toolpath::Toolpath::new(),
             ),
         )),

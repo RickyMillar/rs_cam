@@ -46,7 +46,6 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::operation_configs::Adaptive3dConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
@@ -55,6 +54,7 @@ use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SetupEvalContext, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 const STOCK_THICKNESS: f64 = 12.0;
 

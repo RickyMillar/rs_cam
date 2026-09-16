@@ -40,10 +40,10 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::{AlignmentPin, StockConfig};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{ProjectSessionBuilder, SetupEvalContext, ToolpathConfig};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 const ORIGIN_X: f64 = -20.0;
 const ORIGIN_Y: f64 = -25.0;

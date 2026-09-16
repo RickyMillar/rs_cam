@@ -13,7 +13,6 @@ use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::interrupt::Cancelled;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::stock::collision::{
     RapidClearanceCheck, RapidCollision, check_rapid_collisions_against_stock,
 };
@@ -26,7 +25,8 @@ use crate::stock::simulation_cut::{
 use crate::stock::stock_mesh::StockMesh;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
-use crate::toolpath_spans::AnnotatedToolpath;
+use crate::trace::semantic_trace::ToolpathSemanticTrace;
+use crate::trace::toolpath_spans::AnnotatedToolpath;
 
 /// A single toolpath prepared for simulation.
 pub struct SimToolpathEntry {

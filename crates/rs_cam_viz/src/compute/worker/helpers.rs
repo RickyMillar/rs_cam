@@ -68,10 +68,10 @@ pub(super) fn simulation_metric_artifact_dir() -> PathBuf {
 /// same things this function used to read field by field.
 pub(super) fn build_trace_artifact(
     req: &ComputeRequest,
-    debug_trace: Option<rs_cam_core::debug_trace::ToolpathDebugTrace>,
-    semantic_trace: Option<rs_cam_core::semantic_trace::ToolpathSemanticTrace>,
-) -> rs_cam_core::semantic_trace::ToolpathTraceArtifact {
-    rs_cam_core::semantic_trace::ToolpathTraceArtifact::new(
+    debug_trace: Option<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>,
+    semantic_trace: Option<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>,
+) -> rs_cam_core::trace::semantic_trace::ToolpathTraceArtifact {
+    rs_cam_core::trace::semantic_trace::ToolpathTraceArtifact::new(
         req.viz.toolpath_id,
         req.handle.toolpath_name().to_owned(),
         req.handle.op_label(),

@@ -1398,7 +1398,7 @@ pub struct SetToolpathDebugOptionsArgs {
     /// The index of the toolpath to write.
     pub index: usize,
     /// The debug options to record for the next generation.
-    pub debug_options: crate::debug_trace::ToolpathDebugOptions,
+    pub debug_options: crate::trace::debug_trace::ToolpathDebugOptions,
 }
 
 /// The arguments of the `add_toolpath` command.

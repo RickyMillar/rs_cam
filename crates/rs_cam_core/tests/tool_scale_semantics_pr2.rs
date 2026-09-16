@@ -40,13 +40,13 @@ use rs_cam_core::finish_setup::{
 use rs_cam_core::geo::P3;
 use rs_cam_core::measurement::CellSource;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::narrate::narrate_toolpath;
 use rs_cam_core::tool::{
     BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition,
     VBitEndmill,
 };
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::narrate::narrate_toolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 // ── Fixtures ─────────────────────────────────────────────────────────────
 

@@ -60,7 +60,6 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::diagnostics::adapters::from_static_checks::{
     ResolvedHeights, depth_beyond_stock, depth_beyond_stock_applies, diagnostics_from_static_checks,
 };
@@ -71,6 +70,7 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 const STOCK_TOP_Z: f64 = 0.0;
 const STOCK_BOTTOM_Z: f64 = -18.0;

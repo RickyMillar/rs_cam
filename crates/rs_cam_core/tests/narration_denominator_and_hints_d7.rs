@@ -26,12 +26,12 @@
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::narrate::{ToolpathNarrationContext, narrate_toolpath_with_context};
 use rs_cam_core::stock::sim_measurability::{MeasurabilityReport, SimMetric};
 use rs_cam_core::stock::simulation_cut::{Engagement, SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::narrate::{ToolpathNarrationContext, narrate_toolpath_with_context};
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// A trace whose air cut is a majority of CUTTING time but a minority of
 /// TOTAL runtime — the exact shape the two denominators disagree on.

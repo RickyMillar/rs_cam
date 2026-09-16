@@ -11,11 +11,11 @@
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::geo::{BoundingBox3, P3};
-use rs_cam_core::semantic_trace::ToolpathSemanticRecorder;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
-use rs_cam_core::transform_provenance::ReconcileSet;
+use rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder;
+use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
 #[test]
 fn boundary_clip_preserves_spans_when_all_moves_inside() {

@@ -73,7 +73,6 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
@@ -82,6 +81,7 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// Stock top in world Z for this fixture. `origin_z = -12` with `z = 12`,
 /// so the top of the material sits at 0 — the frame the shipped 2D

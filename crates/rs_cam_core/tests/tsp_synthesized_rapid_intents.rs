@@ -53,7 +53,6 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ToolpathId;
@@ -61,7 +60,8 @@ use rs_cam_core::ops::profile::ProfileSide;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 // ── Unit level: the pass itself ─────────────────────────────────────────
 

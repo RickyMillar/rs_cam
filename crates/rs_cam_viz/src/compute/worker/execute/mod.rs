@@ -27,8 +27,8 @@ const SIM_CUT_ARTIFACT_RETAIN: usize = 5;
 
 pub(super) struct ComputeExecutionOutcome {
     pub result: Result<ToolpathResult, ComputeError>,
-    pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
-    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
+    pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<std::path::PathBuf>,
 }
 
@@ -371,12 +371,12 @@ fn map_session_error(
 /// `None` means NOT WRITTEN — the write failed, and the warning says why.
 fn write_trace_artifact(
     req: &ComputeRequest,
-    debug_trace: Option<&rs_cam_core::debug_trace::ToolpathDebugTrace>,
-    semantic_trace: Option<&rs_cam_core::semantic_trace::ToolpathSemanticTrace>,
+    debug_trace: Option<&rs_cam_core::trace::debug_trace::ToolpathDebugTrace>,
+    semantic_trace: Option<&rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>,
 ) -> Option<std::path::PathBuf> {
     let artifact = build_trace_artifact(req, debug_trace.cloned(), semantic_trace.cloned());
     let file_stem = format!("{}-{}", req.viz.toolpath_id.0, req.handle.toolpath_name());
-    match rs_cam_core::semantic_trace::write_toolpath_trace_artifact(
+    match rs_cam_core::trace::semantic_trace::write_toolpath_trace_artifact(
         &debug_artifact_dir(),
         &file_stem,
         &artifact,

@@ -1093,7 +1093,7 @@ impl super::RsCamApp {
                     .map(|sim| sim.column_grid_cell_mm),
             )
         });
-        let mut context = rs_cam_core::narrate::ToolpathNarrationContext {
+        let mut context = rs_cam_core::trace::narrate::ToolpathNarrationContext {
             measurability: measurability.as_ref(),
             toolpath_id: Some(tc.id),
             toolpath_name: Some(tc.name.as_str()),
@@ -1115,7 +1115,7 @@ impl super::RsCamApp {
             // Drilling move (which called a v-carve with a drilled entry a
             // drill cycle and suppressed its air-cut anomaly). The shared
             // helper is neither — see its doc.
-            is_drill_cycle: rs_cam_core::narrate::is_drill_cycle_for_narration(
+            is_drill_cycle: rs_cam_core::trace::narrate::is_drill_cycle_for_narration(
                 tc.operation.op_type(),
                 &result.annotated.toolpath.moves,
             ),
@@ -1130,7 +1130,7 @@ impl super::RsCamApp {
         };
         context.absorb_stats(&result.stats);
 
-        let mut narration = rs_cam_core::narrate::narrate_toolpath_with_context(
+        let mut narration = rs_cam_core::trace::narrate::narrate_toolpath_with_context(
             result.annotated.as_ref(),
             semantic_trace,
             cut_trace,
@@ -1480,8 +1480,13 @@ impl super::RsCamApp {
         let mut high_engagement_passes = 0usize; // max_engagement > 0.5
         let mut over_target_sum = 0.0f64;
         let mut target_frac_first: Option<f64> = None;
-        let mut worst: Vec<(f64, u64, &rs_cam_core::debug_trace::ToolpathDebugSpan)> = Vec::new();
-        let mut worst_arc: Vec<(f64, &rs_cam_core::debug_trace::ToolpathDebugSpan)> = Vec::new();
+        let mut worst: Vec<(
+            f64,
+            u64,
+            &rs_cam_core::trace::debug_trace::ToolpathDebugSpan,
+        )> = Vec::new();
+        let mut worst_arc: Vec<(f64, &rs_cam_core::trace::debug_trace::ToolpathDebugSpan)> =
+            Vec::new();
         for span in &pass_spans {
             if let Some(reason) = span.exit_reason.as_deref() {
                 *passes_by_exit.entry(reason.to_owned()).or_insert(0) += 1;
@@ -3414,7 +3419,9 @@ impl super::RsCamApp {
             rs_cam_core::session::Command::SetToolpathDebugOptions(
                 rs_cam_core::session::SetToolpathDebugOptionsArgs {
                     index,
-                    debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions { enabled: true },
+                    debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions {
+                        enabled: true,
+                    },
                 },
             ),
         );
@@ -4449,7 +4456,7 @@ pub(crate) fn build_cut_trace_response(
     ct: &rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     req: &CutTraceRequest<'_>,
 ) -> Result<serde_json::Value, String> {
-    use rs_cam_core::toolpath_spans::{SpanId, SpanPayload};
+    use rs_cam_core::trace::toolpath_spans::{SpanId, SpanPayload};
     use rs_cam_mcp::response::{BoundedResponse, cap_json_values};
 
     // ── L-5: refuse an id that matches no toolpath ──────────────────────
@@ -4915,7 +4922,7 @@ fn build_per_depth_pass_summary(
     state: &crate::state::AppState,
     sim_trace: Option<&rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
 ) -> serde_json::Value {
-    use rs_cam_core::toolpath_spans::{SpanId, SpanKind, SpanPayload};
+    use rs_cam_core::trace::toolpath_spans::{SpanId, SpanKind, SpanPayload};
 
     let Some(trace) = sim_trace else {
         return serde_json::Value::Null;
@@ -5078,7 +5085,7 @@ fn render_per_kinematics_json(
 /// expands to. Only genuinely unparseable input (a real debug-trace kind)
 /// takes the literal path.
 fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
-    use rs_cam_core::toolpath_spans::SpanKind;
+    use rs_cam_core::trace::toolpath_spans::SpanKind;
     let Ok(kind) = parse_span_kind_filter(span_kind) else {
         // Not a structural kind at all — a literal debug-trace kind.
         return vec![span_kind.to_owned()];
@@ -5142,11 +5149,11 @@ fn map_debug_kind_to_span_kind(debug_kind: &str) -> Option<&'static str> {
 /// Map an MCP `span_kind` string (snake_case) to the `SpanKind` enum.
 ///
 /// Wave D3: the string table lives in core
-/// ([`rs_cam_core::toolpath_spans::SpanKind::as_key`], exhaustive) rather
+/// ([`rs_cam_core::trace::toolpath_spans::SpanKind::as_key`], exhaustive) rather
 /// than being transcribed here, so a new variant cannot be silently absent
 /// from the agent vocabulary.
-fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::toolpath_spans::SpanKind, String> {
-    use rs_cam_core::toolpath_spans::SpanKind;
+fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::trace::toolpath_spans::SpanKind, String> {
+    use rs_cam_core::trace::toolpath_spans::SpanKind;
     SpanKind::from_key(s).ok_or_else(|| {
         let known: Vec<&str> = SpanKind::ALL.iter().map(|k| k.as_key()).collect();
         format!(
@@ -5156,7 +5163,7 @@ fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::toolpath_spans::SpanKi
     })
 }
 
-fn span_to_json(id: usize, s: &rs_cam_core::toolpath_spans::Span) -> serde_json::Value {
+fn span_to_json(id: usize, s: &rs_cam_core::trace::toolpath_spans::Span) -> serde_json::Value {
     serde_json::json!({
         "id": id,
         "kind": s.kind.label(),
@@ -5189,7 +5196,7 @@ fn build_inspect_spans_response(
     name: &str,
     operation_label: &str,
     n_moves: usize,
-    spans: &[rs_cam_core::toolpath_spans::Span],
+    spans: &[rs_cam_core::trace::toolpath_spans::Span],
     spans_valid: bool,
     kind: Option<&str>,
     parent_id: Option<u32>,
@@ -5197,7 +5204,7 @@ fn build_inspect_spans_response(
     region_id: Option<u32>,
     max_spans: Option<usize>,
 ) -> Result<serde_json::Value, String> {
-    use rs_cam_core::toolpath_spans::{SpanKind, SpanPayload};
+    use rs_cam_core::trace::toolpath_spans::{SpanKind, SpanPayload};
 
     let kind_filter = kind.map(parse_span_kind_filter).transpose()?;
 
@@ -5300,7 +5307,7 @@ fn build_inspect_spans_response(
     }
 
     // Detail mode: collect matching spans, then truncate.
-    let matching: Vec<(usize, &rs_cam_core::toolpath_spans::Span)> = spans
+    let matching: Vec<(usize, &rs_cam_core::trace::toolpath_spans::Span)> = spans
         .iter()
         .enumerate()
         .filter(|(id, s)| {
@@ -5365,7 +5372,7 @@ mod tests {
     use super::*;
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::session::{AddToolpathArgs, Command, RemoveToolpathArgs};
-    use rs_cam_core::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
+    use rs_cam_core::trace::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
     // ── B7 divergence 3: the wrong-tool fallback ────────────────────────
     //
@@ -5464,7 +5471,7 @@ mod tests {
         rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     ) {
         use rs_cam_core::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
-        use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanId, SpanKind};
+        use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanId, SpanKind};
 
         let mut state = crate::state::AppState::default();
         let mut ids = Vec::new();
@@ -5493,7 +5500,7 @@ mod tests {
                 stock_source: crate::state::toolpath::StockSource::default(),
                 coolant: rs_cam_core::gcode::CoolantMode::Off,
                 face_selection: None,
-                debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+                debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
                 feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
                 rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
                 planner_origin: None,
@@ -5782,7 +5789,7 @@ mod tests {
     /// 33,195-span operation, so nothing here fixed a measured cost.
     #[test]
     fn inspect_spans_summary_mode_is_capped_and_says_so() {
-        use rs_cam_core::toolpath_spans::{Span, SpanKind};
+        use rs_cam_core::trace::toolpath_spans::{Span, SpanKind};
         let spans: Vec<Span> = (0..500)
             .map(|i| Span::new(i, i + 1, SpanKind::Operation))
             .collect();

@@ -42,14 +42,14 @@ use rs_cam_core::{
         BoundaryConfig, DressupConfig, DressupEntryStyle, HeightsConfig, StockSource,
     },
     compute::tool_config::{ToolConfig, ToolId},
-    debug_trace::ToolpathDebugOptions,
     gcode::CoolantMode,
-    semantic_trace::ToolpathTraceArtifact,
     session::{
         AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
         SetPostConfigArgs, SetStockConfigArgs, SetToolpathParamArgs, ToolpathConfig,
     },
     toolpath::Toolpath,
+    trace::debug_trace::ToolpathDebugOptions,
+    trace::semantic_trace::ToolpathTraceArtifact,
 };
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]

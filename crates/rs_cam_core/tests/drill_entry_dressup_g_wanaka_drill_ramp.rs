@@ -69,7 +69,7 @@ use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 const STOCK_X: f64 = 240.0;
 const STOCK_Y: f64 = 250.0;

@@ -1,7 +1,9 @@
-use crate::debug_trace::{TOOLPATH_DEBUG_SCHEMA_VERSION, ToolpathDebugBounds2, ToolpathDebugTrace};
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::toolpath::Toolpath;
+use crate::trace::debug_trace::{
+    TOOLPATH_DEBUG_SCHEMA_VERSION, ToolpathDebugBounds2, ToolpathDebugTrace,
+};
 use serde::Serialize;
 use serde::{Deserialize, Serialize as DeriveSerialize};
 use serde_json::Value;
@@ -58,14 +60,14 @@ pub enum ToolpathSemanticKind {
 ///
 /// **H4's mix tables — and any other report that groups semantic items —
 /// must be built on this enum, on
-/// [`crate::toolpath_spans::RegionSpanRole`], or on
+/// [`crate::trace::toolpath_spans::RegionSpanRole`], or on
 /// [`crate::unified_finish::RegionKind::from_span_label`]. Never on a
 /// `label`, and never on a key literal spelled out at the consumer.**
 ///
 /// Adding a parameter means adding a variant here: the match in
 /// [`Self::as_str`] is exhaustive, and [`Self::ALL`] is what
 /// [`Self::from_key`] derives from, the same contract
-/// [`crate::toolpath_spans::SpanKind::ALL`] carries.
+/// [`crate::trace::toolpath_spans::SpanKind::ALL`] carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SemanticKey {
     /// `agent_walk_cut_length_mm`
@@ -380,7 +382,7 @@ impl SemanticKey {
     }
 
     /// Inverse of [`Self::as_str`], named to match
-    /// [`crate::toolpath_spans::SpanKind::from_key`]. `None` means the key is
+    /// [`crate::trace::toolpath_spans::SpanKind::from_key`]. `None` means the key is
     /// not part of the
     /// vocabulary — treat that as a loud error, not a silent no-match.
     #[must_use]
@@ -444,7 +446,7 @@ pub struct ToolpathSemanticItem {
     /// the post-transform contract.
     pub move_start: Option<usize>,
     /// Last move this item covers, **INCLUSIVE** (the structural
-    /// [`crate::toolpath_spans::Span::end_move`] is exclusive — convert
+    /// [`crate::trace::toolpath_spans::Span::end_move`] is exclusive — convert
     /// with `move_end + 1` before comparing).
     ///
     /// # Post-transform contract (deleted-move policy)
@@ -452,7 +454,7 @@ pub struct ToolpathSemanticItem {
     /// Move links are remapped through every post-generation transform
     /// (dressups, boundary clip, entry-descent splitting) because this
     /// channel is registered in
-    /// [`crate::transform_provenance::ReconcileSet`] and no transform can
+    /// [`crate::trace::transform_provenance::ReconcileSet`] and no transform can
     /// hand its result back without reconciling (C1). When a transform
     /// deletes every move an item covered — or scatters them so the
     /// remapped bounds would be a lie (the reorder's foreign-intrusion
@@ -722,7 +724,7 @@ impl ToolpathSemanticRecorder {
     }
 
     /// Rewrite every recorded move link through one transform's provenance
-    /// report — the [`crate::transform_provenance::RemapConsumer`] body for
+    /// report — the [`crate::trace::transform_provenance::RemapConsumer`] body for
     /// this channel, kept here because it needs the private link accessors.
     ///
     /// Replaces ae10cb2's two entry points (`remap_move_links` for
@@ -732,7 +734,7 @@ impl ToolpathSemanticRecorder {
     /// its provenance either way.
     ///
     /// The rules are unchanged, and they live in
-    /// [`crate::transform_provenance::MoveProvenance::remap_range`]:
+    /// [`crate::trace::transform_provenance::MoveProvenance::remap_range`]:
     /// insertion mappings clamp exactly as [`Span::remap`] does, deletions
     /// unlink, and a reorder that scattered an item's moves unlinks it via
     /// the same foreign-intrusion predicate the span filter uses.
@@ -744,7 +746,7 @@ impl ToolpathSemanticRecorder {
     /// closed. See [`Self::rederive_geometry_for`].
     pub(crate) fn consume_provenance(
         &self,
-        provenance: &crate::transform_provenance::MoveProvenance,
+        provenance: &crate::trace::transform_provenance::MoveProvenance,
         toolpath: &Toolpath,
     ) {
         let new_move_count = toolpath.moves.len();
@@ -821,7 +823,7 @@ fn linked_range(start: usize, end_exclusive: usize, n_moves: usize) -> Option<(u
 impl ToolpathSemanticContext {
     /// The recorder this context writes into — the handle a call site needs
     /// to register this channel in a
-    /// [`crate::transform_provenance::ReconcileSet`] while it is being
+    /// [`crate::trace::transform_provenance::ReconcileSet`] while it is being
     /// handed a context to record its OWN item.
     pub fn recorder(&self) -> &ToolpathSemanticRecorder {
         &self.recorder
@@ -1088,7 +1090,7 @@ pub fn enrich_traces(
 
 fn best_item_for_span(
     span_id: u64,
-    span: &crate::debug_trace::ToolpathDebugSpan,
+    span: &crate::trace::debug_trace::ToolpathDebugSpan,
     semantic_trace: &ToolpathSemanticTrace,
 ) -> Option<usize> {
     semantic_trace
@@ -1141,7 +1143,7 @@ fn semantic_item_bbox3(item: &ToolpathSemanticItem) -> Option<BoundingBox3> {
     })
 }
 
-fn span_bbox3(span: &crate::debug_trace::ToolpathDebugSpan) -> Option<BoundingBox3> {
+fn span_bbox3(span: &crate::trace::debug_trace::ToolpathDebugSpan) -> Option<BoundingBox3> {
     let xy = span.xy_bbox?;
     let z = span.z_level?;
     Some(BoundingBox3 {
@@ -1150,7 +1152,7 @@ fn span_bbox3(span: &crate::debug_trace::ToolpathDebugSpan) -> Option<BoundingBo
     })
 }
 
-fn hotspot_bbox3(hotspot: &crate::debug_trace::ToolpathHotspot) -> BoundingBox3 {
+fn hotspot_bbox3(hotspot: &crate::trace::debug_trace::ToolpathHotspot) -> BoundingBox3 {
     let half_xy = hotspot.bucket_size_xy * 0.5;
     let half_z = hotspot.bucket_size_z.unwrap_or(1.0) * 0.5;
     let z_center = hotspot.z_bucket_center.unwrap_or(0.0);
@@ -1198,8 +1200,8 @@ pub fn write_toolpath_trace_artifact(
 mod tests {
     use super::*;
     use crate::geo::P3;
-    use crate::toolpath_spans::AnnotatedToolpath;
-    use crate::transform_provenance::{MoveProvenance, ReconcileSet, Transformed};
+    use crate::trace::toolpath_spans::AnnotatedToolpath;
+    use crate::trace::transform_provenance::{MoveProvenance, ReconcileSet, Transformed};
 
     /// C4 wire sentry. The typed key layer must be invisible on the wire:
     /// `as_str` is the only place a key string exists, and this pins the
@@ -1366,7 +1368,7 @@ mod tests {
     /// that the span vector is untouched by the reconcile.
     #[test]
     fn provenance_remaps_survivors_and_unlinks_deleted_items() {
-        use crate::toolpath_spans::MoveRemap;
+        use crate::trace::toolpath_spans::MoveRemap;
 
         let recorder = ToolpathSemanticRecorder::new("Pocket 1", "Pocket");
         let ctx = recorder.root_context();
@@ -1430,7 +1432,7 @@ mod tests {
     /// `max_x` 2.0 and reads 5.0, and `z_min` -3.0 and reads -6.0.
     #[test]
     fn clip_re_derives_geometry_it_cannot_leave_describing_deleted_moves() {
-        use crate::toolpath_spans::MoveRemap;
+        use crate::trace::toolpath_spans::MoveRemap;
 
         // A staircase: move i sits at x = i, z = -(i + 1), so the XY bbox
         // and the Z range both grow monotonically along the path — a
@@ -1626,7 +1628,7 @@ mod tests {
             schema_version: TOOLPATH_DEBUG_SCHEMA_VERSION,
             toolpath_name: "Adaptive".to_string(),
             operation_label: "Adaptive".to_string(),
-            summary: crate::debug_trace::ToolpathDebugSummary {
+            summary: crate::trace::debug_trace::ToolpathDebugSummary {
                 total_elapsed_us: 10_000,
                 span_count: 1,
                 hotspot_count: 1,
@@ -1634,7 +1636,7 @@ mod tests {
                 dominant_span_label: Some("Pass 1".to_string()),
                 dominant_span_elapsed_us: Some(10_000),
             },
-            spans: vec![crate::debug_trace::ToolpathDebugSpan {
+            spans: vec![crate::trace::debug_trace::ToolpathDebugSpan {
                 id: 7,
                 parent_id: None,
                 kind: "adaptive_pass".to_string(),
@@ -1653,7 +1655,7 @@ mod tests {
                 exit_reason: None,
                 counters: BTreeMap::new(),
             }],
-            hotspots: vec![crate::debug_trace::ToolpathHotspot {
+            hotspots: vec![crate::trace::debug_trace::ToolpathHotspot {
                 kind: "adaptive_pass".to_string(),
                 center_x: 5.0,
                 center_y: 5.0,

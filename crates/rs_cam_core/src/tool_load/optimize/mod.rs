@@ -252,7 +252,7 @@ fn optimize_toolpath_inner(
     // classifier degrades to engagement-only labels in that case.
     // F2.2: also None when a transform invalidated the spans (TSP
     // split) — corrupted ancestry must not stamp gate verdicts.
-    let baseline_spans: Option<&[crate::toolpath_spans::Span]> = session
+    let baseline_spans: Option<&[crate::trace::toolpath_spans::Span]> = session
         .get_result(toolpath_index)
         .filter(|r| r.annotated().spans_valid)
         .map(|r| r.annotated().spans.as_slice());
@@ -1051,7 +1051,7 @@ mod orchestration_skip_tests {
             stock_source: crate::compute::config::StockSource::Fresh,
             coolant: crate::gcode::CoolantMode::Off,
             face_selection: None,
-            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
             planner_origin: None,
@@ -1562,10 +1562,10 @@ mod project_rollup_tests {
     use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
     use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-    use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
     use crate::session::ToolpathConfig;
     use crate::stock::simulation_cut::{SimulationCutTrace, SimulationToolpathCutSummary};
+    use crate::trace::debug_trace::ToolpathDebugOptions;
     use std::sync::Mutex;
 
     fn make_tool() -> ToolConfig {

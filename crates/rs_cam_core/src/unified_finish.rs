@@ -95,7 +95,6 @@ use std::ops::Range;
 
 use crate::classify_probe::ClassificationSampler;
 use crate::crease_paths::centerline_cut_paths;
-use crate::debug_trace::ToolpathDebugContext;
 use crate::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use crate::finish_setup::{
     FinishResolutionPolicy, FinishSurface, SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG,
@@ -122,6 +121,7 @@ use crate::surface::rest_field::{RestFieldParams, RestReference, detect_rest_val
 use crate::surface_link::build_surface_link;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath, raster_toolpath_from_grid};
+use crate::trace::debug_trace::ToolpathDebugContext;
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -793,7 +793,7 @@ impl RegionKind {
     /// its label against string literals they carried themselves —
     /// `p2c_headless_ab_wanaka.rs`'s `label == "Pencil claims"` crease probe
     /// and `v3_cascade_ab.rs`'s four-arm `strategy_of_span`. `SpanPayload::
-    /// Region` carries a [`crate::toolpath_spans::RegionSpanRole`], which
+    /// Region` carries a [`crate::trace::toolpath_spans::RegionSpanRole`], which
     /// answers node-vs-pass, but not WHICH node: putting `RegionKind` on the
     /// payload would drag `FinishBand` and this module into `toolpath_spans`,
     /// a deliberately low-level module with no finishing dependencies.
@@ -806,7 +806,7 @@ impl RegionKind {
     /// instead of silently matching nothing.
     ///
     /// **H4's mix tables must be built on this, on `RegionSpanRole`, or on
-    /// [`crate::semantic_trace::SemanticKey`] — never on a label literal
+    /// [`crate::trace::semantic_trace::SemanticKey`] — never on a label literal
     /// spelled out at the consumer.**
     #[must_use]
     pub fn from_span_label(label: &str) -> Option<Self> {
@@ -1342,7 +1342,7 @@ impl RelinkTotals {
 ///    after `Operation` so `span_path_at` lists coarse ancestors first.
 ///    These are a SEPARATE `region_id` space from the scallop-event spans
 ///    — consumers disambiguate with
-///    [`crate::toolpath_spans::RegionSpanRole`] (`Node` here,
+///    [`crate::trace::toolpath_spans::RegionSpanRole`] (`Node` here,
 ///    `GeneratorPass` for the ring spans), never by parsing the label.
 /// 3. `RapidOrderBarrier`s at each node start, plus per-Z barriers inside
 ///    waterline (VerySteep) nodes. See
@@ -1351,9 +1351,9 @@ pub fn unified_finish_spans(
     toolpath: &Toolpath,
     annotations: &[ScallopRuntimeAnnotation],
     report: &UnifiedFinishReport,
-) -> Vec<crate::toolpath_spans::Span> {
+) -> Vec<crate::trace::toolpath_spans::Span> {
     use crate::compute::spans::{RegionNode, region_node_barriers, spans_from_labeled_events};
-    use crate::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
+    use crate::trace::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
     let mut spans = spans_from_labeled_events(
         toolpath.moves.len(),
@@ -2364,7 +2364,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 flush_ride: true,
             };
             let (linked, rep) = crate::surface_link::relink_fragments(
-                crate::toolpath_spans::AnnotatedToolpath::new(tp),
+                crate::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                 mesh,
                 index,
                 cutter,
@@ -2376,7 +2376,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
             let mut anns = anns;
             let tp = {
                 let mut channels =
-                    crate::transform_provenance::ReconcileSet::new(None, Some(&mut anns));
+                    crate::trace::transform_provenance::ReconcileSet::new(None, Some(&mut anns));
                 linked.reconcile(&mut channels).into_inner().toolpath
             };
             (tp, anns)

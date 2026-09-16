@@ -18,7 +18,7 @@
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{Command, ProjectSession, SetToolpathParamArgs, SimulationOptions};
 use rs_cam_core::stock::simulation_cut::{CutKinematics, SimulationCutSample};
-use rs_cam_core::toolpath_spans::SpanKind;
+use rs_cam_core::trace::toolpath_spans::SpanKind;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 

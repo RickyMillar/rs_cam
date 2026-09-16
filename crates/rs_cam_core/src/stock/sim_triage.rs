@@ -54,7 +54,7 @@ use crate::machine::kinematic_utilization::ToolpathKinematicUtilization;
 use crate::stock::collision::RapidCollision;
 use crate::stock::sim_measurability::MeasurabilityReport;
 use crate::stock::simulation_cut::SimulationCutTrace;
-use crate::toolpath_spans::{RegionSpanRole, SpanId};
+use crate::trace::toolpath_spans::{RegionSpanRole, SpanId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

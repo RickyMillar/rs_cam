@@ -82,7 +82,7 @@ use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::FlatEndmill;
 use rs_cam_core::tool_load::locality::{SpanLookup, is_steady_state_for_gate};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 
 /// Ø2 flat end mill — 1.0 mm envelope radius. Arc-fit's large-radius cap is
 /// `LARGE_ARC_RADIUS_MULTIPLIER` (30) × this = 30 mm, comfortably above the

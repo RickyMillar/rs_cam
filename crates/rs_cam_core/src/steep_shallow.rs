@@ -617,9 +617,9 @@ pub fn steep_shallow_toolpath_with_cancel(
 pub fn steep_shallow_spans(
     toolpath: &Toolpath,
     split: &SteepShallowSplit,
-) -> Vec<crate::toolpath_spans::Span> {
+) -> Vec<crate::trace::toolpath_spans::Span> {
     use crate::compute::spans::{RegionNode, region_node_barriers, spans_from_cutting_runs};
-    use crate::toolpath_spans::{Span, SpanKind};
+    use crate::trace::toolpath_spans::{Span, SpanKind};
 
     let mut spans = spans_from_cutting_runs(toolpath, "Steep/shallow run");
     let insert_at = 1.min(spans.len());

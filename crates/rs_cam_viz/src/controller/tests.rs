@@ -327,7 +327,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     let tp_id = controller.state.session.toolpath_configs()[0].id;
     let mut rt = ToolpathRuntime::new(true);
     rt.result = Some(ToolpathResult {
-        annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+        annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
             Toolpath::new(),
         )),
         stats: Default::default(),
@@ -622,7 +622,7 @@ fn controller_save_open_and_export_smoke() {
             revision,
             result: Box::new(rs_cam_core::session::ToolpathComputeResult {
                 op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
-                    rs_cam_core::toolpath_spans::AnnotatedToolpath::new(generated.clone()),
+                    rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(generated.clone()),
                 )),
                 stats: Default::default(),
                 debug_trace: None,
@@ -637,7 +637,7 @@ fn controller_save_open_and_export_smoke() {
         .get_mut(&ToolpathId(0))
         .unwrap()
         .result = Some(ToolpathResult {
-        annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+        annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
             generated,
         )),
         stats: Default::default(),
@@ -1318,19 +1318,22 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
 #[test]
 fn toolpath_results_persist_debug_trace_metadata() {
     let mut controller = sample_controller();
-    let recorder = rs_cam_core::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
+    let recorder =
+        rs_cam_core::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
     let ctx = recorder.root_context();
     let span = ctx.start_span("core_generate", "Generate");
     span.finish();
     let trace = Arc::new(recorder.finish());
-    let semantic_recorder =
-        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("Adaptive 3D", "3D Rough");
+    let semantic_recorder = rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new(
+        "Adaptive 3D",
+        "3D Rough",
+    );
     let semantic_root = semantic_recorder.root_context();
     let pass = semantic_root.start_item(
-        rs_cam_core::semantic_trace::ToolpathSemanticKind::Pass,
+        rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Pass,
         "Pass 1",
     );
-    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+    let annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
         Toolpath::new(),
     ));
     pass.bind_to_toolpath(&annotated.toolpath, 0, 0);
@@ -1398,16 +1401,19 @@ fn toolpath_results_persist_debug_trace_metadata() {
 #[test]
 fn cancelled_toolpath_preserves_debug_trace_metadata() {
     let mut controller = sample_controller();
-    let recorder = rs_cam_core::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
+    let recorder =
+        rs_cam_core::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
     let ctx = recorder.root_context();
     let span = ctx.start_span("adaptive_pass", "Pass 1");
     span.finish();
     let trace = Arc::new(recorder.finish());
-    let semantic_recorder =
-        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("Adaptive 3D", "3D Rough");
+    let semantic_recorder = rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new(
+        "Adaptive 3D",
+        "3D Rough",
+    );
     let semantic_root = semantic_recorder.root_context();
     let pass = semantic_root.start_item(
-        rs_cam_core::semantic_trace::ToolpathSemanticKind::Pass,
+        rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Pass,
         "Pass 1",
     );
     let toolpath = Toolpath::new();
@@ -1559,7 +1565,7 @@ fn drain_compute_results_repopulates_session_results() {
         "fixture should start with empty session.results[0]"
     );
 
-    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+    let annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
         Toolpath::new(),
     ));
 
@@ -1611,9 +1617,9 @@ fn push_toolpath_completion(
                 toolpath_id: ToolpathId(0),
                 revision,
                 result: Ok(ToolpathResult {
-                    annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
-                        Toolpath::new(),
-                    )),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(Toolpath::new()),
+                    ),
                     stats: Default::default(),
                     debug_trace: None,
                     semantic_trace: None,
@@ -1707,7 +1713,7 @@ fn drain_compute_results_clears_pending_apply_resim_on_success() {
     // in the GUI).
     let mut controller = sample_controller();
     controller.state.pending_apply_resim = Some(0);
-    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+    let annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
         Toolpath::new(),
     ));
     controller
@@ -1746,7 +1752,7 @@ fn drain_compute_results_keeps_pending_apply_resim_for_other_toolpath() {
     // post-apply sim when the matching TP's regen finishes.
     let mut controller = sample_controller();
     controller.state.pending_apply_resim = Some(42);
-    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+    let annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
         Toolpath::new(),
     ));
     controller
@@ -1881,7 +1887,7 @@ fn drain_compute_results_marks_derived_rest_dependents_stale() {
         "dependent should start non-stale"
     );
 
-    let mut annotated = rs_cam_core::toolpath_spans::AnnotatedToolpath::new(Toolpath::new());
+    let mut annotated = rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(Toolpath::new());
     annotated.rest_regions = Some(Arc::new(vec![rs_cam_core::polygon::Polygon2::rectangle(
         -5.0, -5.0, 5.0, 5.0,
     )]));
@@ -2563,7 +2569,9 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
             toolpaths: vec![SetupSimToolpath {
                 id: ToolpathId(1),
                 name: "AS001 Pocket Pass 1".to_owned(),
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+                    tp,
+                )),
                 tool,
                 semantic_trace: None,
                 spindle_rpm: Some(18_000),
@@ -3285,7 +3293,7 @@ impl ComputeBackend for RestChainBackend {
         } else {
             self.generated.insert(id);
             Ok(ToolpathResult {
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                     Toolpath::new(),
                 )),
                 stats: Default::default(),
@@ -3889,7 +3897,7 @@ impl LaneModelBackend {
             Err(crate::compute::ComputeError::Cancelled)
         } else {
             Ok(ToolpathResult {
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                     Toolpath::new(),
                 )),
                 stats: Default::default(),
@@ -4584,7 +4592,7 @@ use rs_cam_core::session::ToolpathComputeResult;
 fn core_result() -> ToolpathComputeResult {
     ToolpathComputeResult {
         op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
-            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(Toolpath::new()),
+            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(Toolpath::new()),
         )),
         stats: Default::default(),
         debug_trace: None,
@@ -4620,7 +4628,7 @@ fn generate_all_for_test<B: ComputeBackend>(controller: &mut AppController<B>) {
         rt.stale_since = None;
         if rt.result.is_none() {
             rt.result = Some(ToolpathResult {
-                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                     Toolpath::new(),
                 )),
                 stats: Default::default(),
@@ -6044,7 +6052,7 @@ fn missing_model_relink_g_modelrelink() {
     // generated) — which is the distinction the whole card vocabulary rests
     // on.
     rt.result = Some(ToolpathResult {
-        annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+        annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
             Toolpath::new(),
         )),
         stats: Default::default(),

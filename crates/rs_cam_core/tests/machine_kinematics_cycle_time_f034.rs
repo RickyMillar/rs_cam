@@ -47,7 +47,6 @@ use rs_cam_core::compute::OperationConfig;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine::kinematics::{MachineKinematics, compute_cycle_time};
@@ -55,6 +54,7 @@ use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SetMachineArgs, SimulationOptions, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn ux_2d_pocket_path() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

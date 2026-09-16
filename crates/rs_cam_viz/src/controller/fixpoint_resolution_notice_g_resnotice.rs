@@ -144,7 +144,7 @@ fn controller_with_a_chain() -> AppController<ScriptedLane> {
 
 /// Finish op 0 the way the lane would, so the round can settle.
 fn land_a_result_for(controller: &mut AppController<ScriptedLane>, tp_id: ToolpathId) {
-    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+    let annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
         rs_cam_core::toolpath::Toolpath::new(),
     ));
     controller

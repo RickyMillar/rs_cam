@@ -80,15 +80,15 @@ use crate::compute::stock_config::{
 };
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
-use crate::debug_trace::{ToolpathDebugOptions, ToolpathDebugTrace};
 use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
 use crate::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId};
 use crate::io::dxf_input::DrillTarget;
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
-use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::toolpath::Toolpath;
+use crate::trace::debug_trace::{ToolpathDebugOptions, ToolpathDebugTrace};
+use crate::trace::semantic_trace::ToolpathSemanticTrace;
 
 use crate::compute::collision_check::CollisionCheckError;
 use crate::compute::simulate::SimulationError;
@@ -947,13 +947,13 @@ impl ToolpathConfig {
 
 /// Result of generating a single toolpath.
 ///
-/// `op_data` carries either a plain [`crate::toolpath_spans::AnnotatedToolpath`]
+/// `op_data` carries either a plain [`crate::trace::toolpath_spans::AnnotatedToolpath`]
 /// or a [`crate::ops::drill_op::DrillOp`] + `AnnotatedToolpath` pair (the
 /// dual-representation invariant from §6.E of the dexel-fidelity roadmap).
 /// Spans on the annotated toolpath are emitted by operation generators;
 /// transforms (dressups, boundary clip, TSP, arc-fit, feed optimisation)
 /// either remap them or set
-/// [`AnnotatedToolpath::spans_valid`](crate::toolpath_spans::AnnotatedToolpath::spans_valid)
+/// [`AnnotatedToolpath::spans_valid`](crate::trace::toolpath_spans::AnnotatedToolpath::spans_valid)
 /// to `false` when they can't.
 ///
 /// The record derives `Debug` and `Clone` because
@@ -972,7 +972,7 @@ impl ToolpathComputeResult {
     /// Convenience accessor for the linearized annotated toolpath.
     /// Returns a reference regardless of whether `op_data` is the plain
     /// `Toolpath` or the `DrillOp` variant.
-    pub fn annotated(&self) -> &Arc<crate::toolpath_spans::AnnotatedToolpath> {
+    pub fn annotated(&self) -> &Arc<crate::trace::toolpath_spans::AnnotatedToolpath> {
         self.op_data.annotated()
     }
 
@@ -2299,7 +2299,7 @@ mod tests {
                     stock_source: crate::compute::config::StockSource::default(),
                     coolant: crate::gcode::CoolantMode::default(),
                     face_selection: None,
-                    debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+                    debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                     planner_origin: None,
@@ -2601,7 +2601,7 @@ mod tests {
                     stock_source: crate::compute::config::StockSource::default(),
                     coolant: crate::gcode::CoolantMode::default(),
                     face_selection: None,
-                    debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+                    debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                     planner_origin: None,
@@ -2683,7 +2683,9 @@ mod tests {
             0,
             ToolpathComputeResult {
                 op_data: crate::ops::drill_op::OpData::Toolpath(std::sync::Arc::new(
-                    crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
+                    crate::trace::toolpath_spans::AnnotatedToolpath::new(
+                        crate::toolpath::Toolpath::new(),
+                    ),
                 )),
                 stats: crate::compute::config::ToolpathStats::default(),
                 debug_trace: None,
@@ -2730,7 +2732,7 @@ mod tests {
             stock_source: crate::compute::config::StockSource::default(),
             coolant: crate::gcode::CoolantMode::default(),
             face_selection: None,
-            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
             planner_origin: None,

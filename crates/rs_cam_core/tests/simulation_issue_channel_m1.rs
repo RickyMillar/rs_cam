@@ -69,7 +69,6 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{PocketConfig, ProfileConfig};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{
@@ -77,6 +76,7 @@ use rs_cam_core::session::{
     ToolpathConfig,
 };
 use rs_cam_core::stock::simulation_cut::{AirCutRatios, SimulationCutIssueKind};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// `dexel_stock::stamping::FRESH_MATERIAL_THRESHOLD_MM`, restated here so
 /// the probe fails if the production constant moves without this file

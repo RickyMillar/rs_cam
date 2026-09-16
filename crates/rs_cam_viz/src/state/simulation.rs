@@ -7,12 +7,8 @@ use std::sync::{Arc, Weak};
 use super::job::SetupId;
 use super::runtime::GuiState;
 use super::toolpath::ToolpathId;
-use rs_cam_core::debug_trace::ToolpathDebugAnnotation;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::geo::{BoundingBox3, P3, V3};
-use rs_cam_core::semantic_trace::{
-    ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticTrace,
-};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::stock::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::stock::simulation_cut::{
@@ -22,7 +18,11 @@ use rs_cam_core::stock::simulation_cut::{
 use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::tool_load::ToolLoadReport;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::SpanId;
+use rs_cam_core::trace::debug_trace::ToolpathDebugAnnotation;
+use rs_cam_core::trace::semantic_trace::{
+    ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticTrace,
+};
+use rs_cam_core::trace::toolpath_spans::SpanId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolpathTraceAvailability {
@@ -1550,7 +1550,10 @@ impl SimulationState {
         &mut self,
         gui: &GuiState,
         max_feed_mm_min: f64,
-    ) -> Option<(ToolpathId, rs_cam_core::debug_trace::ToolpathDebugSpan)> {
+    ) -> Option<(
+        ToolpathId,
+        rs_cam_core::trace::debug_trace::ToolpathDebugSpan,
+    )> {
         let active = self.active_semantic_item(gui, max_feed_mm_min)?;
         let rt = gui.toolpath_rt.get(&active.toolpath_id)?;
         let trace = rt.debug_trace.as_ref()?;
@@ -2599,12 +2602,12 @@ fn issue_kind_rank(kind: SimulationIssueKind) -> u8 {
 mod tests {
     use super::*;
     use crate::state::runtime::ToolpathRuntime;
-    use rs_cam_core::debug_trace::{ToolpathDebugBounds2, ToolpathDebugRecorder};
     use rs_cam_core::dexel_stock::StockCutDirection;
-    use rs_cam_core::semantic_trace::{
+    use rs_cam_core::toolpath::Toolpath;
+    use rs_cam_core::trace::debug_trace::{ToolpathDebugBounds2, ToolpathDebugRecorder};
+    use rs_cam_core::trace::semantic_trace::{
         ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces,
     };
-    use rs_cam_core::toolpath::Toolpath;
     use std::sync::Arc;
 
     const TEST_MAX_FEED: f64 = 3000.0;
@@ -2666,7 +2669,7 @@ mod tests {
         pass_span.finish();
         debug_ctx.add_annotation(1, "Entry");
         debug_ctx.add_annotation(7, "Cleanup");
-        debug_ctx.record_hotspot(&rs_cam_core::debug_trace::HotspotRecord {
+        debug_ctx.record_hotspot(&rs_cam_core::trace::debug_trace::HotspotRecord {
             kind: "adaptive_pass".into(),
             center_x: 5.0,
             center_y: 5.0,
@@ -2703,7 +2706,7 @@ mod tests {
         rt.semantic_trace = Some(Arc::clone(&semantic_trace));
         rt.debug_trace = Some(Arc::clone(&debug_trace));
         rt.result = Some(crate::state::toolpath::ToolpathResult {
-            annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+            annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                 toolpath,
             )),
             stats: Default::default(),

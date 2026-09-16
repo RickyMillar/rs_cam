@@ -29,7 +29,6 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::VCarveConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -37,6 +36,7 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// 5-pointed star polygon (10 vertices, alternating outer/inner radius).
 /// Matches the geometry of `fixtures/demo_star.svg` in spirit: a single

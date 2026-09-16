@@ -53,7 +53,7 @@ use rs_cam_core::stock::radial_profile::RadialProfileLUT;
 use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 mod support;
 use support::rolling_field;
@@ -1042,7 +1042,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
             stock_source: StockSource::default(),
             coolant: CoolantMode::Off,
             face_selection: None,
-            debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
             planner_origin: None,

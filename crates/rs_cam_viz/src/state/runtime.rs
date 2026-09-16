@@ -32,8 +32,8 @@ pub struct ToolpathRuntime {
     pub result: Option<ToolpathResult>,
     pub stale_since: Option<std::time::Instant>,
     pub feeds_result: Option<FeedsResult>,
-    pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
-    pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
+    pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
+    pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<PathBuf>,
 }
 

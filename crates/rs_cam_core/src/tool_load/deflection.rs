@@ -387,7 +387,7 @@ mod tests {
         tool: &crate::tool::ToolDefinition,
         material: &crate::material::Material,
         sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
-        spans: Option<&[crate::toolpath_spans::Span]>,
+        spans: Option<&[crate::trace::toolpath_spans::Span]>,
         operation_kind: crate::compute::catalog::OperationType,
         tolerance: &crate::tool_load::ToleranceBands,
     ) -> DeflectionVerdict {
@@ -965,7 +965,7 @@ mod tests {
     /// the verdict reports.
     #[test]
     fn phantom_waterline_cleanup_does_not_surface_as_entry_spike() {
-        use crate::toolpath_spans::Span;
+        use crate::trace::toolpath_spans::Span;
         use std::borrow::Cow;
 
         // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7)
@@ -979,16 +979,16 @@ mod tests {
         // Steady-state sample: in DepthPass, healthy 2 mm axial DOC.
         let mut steady = cutting_sample(0, 0, 2.0, std::f64::consts::PI, 1500.0, 1.0);
         steady.span_path = vec![
-            crate::toolpath_spans::SpanId(0), // Operation
-            crate::toolpath_spans::SpanId(1), // DepthPass
+            crate::trace::toolpath_spans::SpanId(0), // Operation
+            crate::trace::toolpath_spans::SpanId(1), // DepthPass
         ];
         // Phantom sample: WaterlineCleanup ancestor, 20 mm "axial DOC"
         // (dexel bridge artifact). 10× the steady sample → would
         // produce a deflection ~10× larger if not filtered.
         let mut phantom = cutting_sample(0, 1, 20.0, std::f64::consts::PI, 1500.0, 1.0);
         phantom.span_path = vec![
-            crate::toolpath_spans::SpanId(0), // Operation
-            crate::toolpath_spans::SpanId(2), // WaterlineCleanup
+            crate::trace::toolpath_spans::SpanId(0), // Operation
+            crate::trace::toolpath_spans::SpanId(2), // WaterlineCleanup
         ];
         phantom.in_transit_span = true;
 
@@ -996,21 +996,21 @@ mod tests {
             Span {
                 start_move: 0,
                 end_move: 2,
-                kind: crate::toolpath_spans::SpanKind::Operation,
+                kind: crate::trace::toolpath_spans::SpanKind::Operation,
                 label: Cow::Borrowed("op"),
                 payload: None,
             },
             Span {
                 start_move: 0,
                 end_move: 1,
-                kind: crate::toolpath_spans::SpanKind::DepthPass,
+                kind: crate::trace::toolpath_spans::SpanKind::DepthPass,
                 label: Cow::Borrowed("pass"),
                 payload: None,
             },
             Span {
                 start_move: 1,
                 end_move: 2,
-                kind: crate::toolpath_spans::SpanKind::WaterlineCleanup,
+                kind: crate::trace::toolpath_spans::SpanKind::WaterlineCleanup,
                 label: Cow::Borrowed("cleanup"),
                 payload: None,
             },

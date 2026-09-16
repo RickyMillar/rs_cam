@@ -49,7 +49,6 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
@@ -64,6 +63,7 @@ use rs_cam_core::stock::simulation_cut::{
     AirCutRatios, Engagement, SimulationCutSample, SimulationCutTrace, rebase_cutting_times,
 };
 use rs_cam_core::tool_load::BindingConstraint;
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 // ── AS001 pocket fixture (the F-024 / F-035 / F-036b fixture) ───────────
 

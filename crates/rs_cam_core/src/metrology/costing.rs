@@ -195,13 +195,13 @@ pub fn relink_and_cost_under(
         airborne_links_may_leave_territory: regime.airborne,
     };
     let (linked, report) = crate::surface_link::relink_fragments(
-        crate::toolpath_spans::AnnotatedToolpath::new(raw),
+        crate::trace::toolpath_spans::AnnotatedToolpath::new(raw),
         ctx.mesh,
         ctx.index,
         ctx.cutter,
         &params,
     );
-    let mut channels = crate::transform_provenance::ReconcileSet::new(None, None);
+    let mut channels = crate::trace::transform_provenance::ReconcileSet::new(None, None);
     let toolpath = linked.reconcile(&mut channels).into_inner().toolpath;
     let time_s = match ctx.kinematics {
         Some(kinematics) => compute_cycle_time(

@@ -145,7 +145,7 @@ const SPAN_LINK_BRIDGE_COLOR: [f32; 3] = [0.55, 0.55, 0.6];
 const SPAN_DRESSUP_COLOR: [f32; 3] = [0.65, 0.55, 0.4];
 
 /// Per-pass lightness shift applied to [`CUT_COLOR`] from a
-/// [`crate::toolpath_spans::SpanKind::DepthPass`] `pass_index`.
+/// [`crate::trace::toolpath_spans::SpanKind::DepthPass`] `pass_index`.
 ///
 /// Deliberately the same curve as the live viewport's
 /// (`rs_cam_viz::render::toolpath_render`): a ±~9% spread cycling over four
@@ -165,7 +165,7 @@ fn pass_shifted(base: [f32; 3], pass_index: Option<u32>) -> [f32; 3] {
 }
 
 /// Convert an annotated toolpath into a tube mesh, colouring cutting segments
-/// by [`crate::toolpath_spans::AnnotatedToolpath::classify_span_path`] —
+/// by [`crate::trace::toolpath_spans::AnnotatedToolpath::classify_span_path`] —
 /// Entry → cyan, LeadOut → magenta, LinkBridge → dim grey, DressupArtifact →
 /// muted brown, ordinary cuts green with a per-depth-pass lightness shift.
 /// Rapids stay orange-red. Falls through to the move-color path if the
@@ -177,13 +177,13 @@ fn pass_shifted(base: [f32; 3], pass_index: Option<u32>) -> [f32; 3] {
 /// coloured nested spans differently in a PNG than on screen and dropped the
 /// depth-pass gradient entirely (X-1, `planning/review_2026-08-04/`); this
 /// function now only maps the shared
-/// [`crate::toolpath_spans::SpanClass`] onto colours.
+/// [`crate::trace::toolpath_spans::SpanClass`] onto colours.
 pub fn toolpath_to_tube_mesh_with_spans(
-    annotated: &crate::toolpath_spans::AnnotatedToolpath,
+    annotated: &crate::trace::toolpath_spans::AnnotatedToolpath,
     ribbon_radius: f32,
     include_rapids: bool,
 ) -> StockMesh {
-    use crate::toolpath_spans::SpanClass;
+    use crate::trace::toolpath_spans::SpanClass;
 
     if !annotated.spans_valid || annotated.spans.is_empty() {
         return toolpath_to_tube_mesh(&annotated.toolpath, ribbon_radius, include_rapids);

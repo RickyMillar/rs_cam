@@ -516,13 +516,13 @@ fn relink_and_cost_under(
         airborne_links_may_leave_territory: regime.airborne,
     };
     let (linked, report) = rs_cam_core::surface_link::relink_fragments(
-        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raw),
+        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raw),
         mesh,
         index,
         cutter,
         &params,
     );
-    let mut channels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+    let mut channels = rs_cam_core::trace::transform_provenance::ReconcileSet::new(None, None);
     let toolpath = linked.reconcile(&mut channels).into_inner().toolpath;
     let time_s = compute_cycle_time(&toolpath, kinematics, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
     CandidateCost {

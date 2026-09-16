@@ -58,8 +58,8 @@ struct ToolpathDiagnostic<'a> {
     move_count: usize,
     cutting_distance_mm: f64,
     rapid_distance_mm: f64,
-    debug_trace: Option<&'a rs_cam_core::debug_trace::ToolpathDebugTrace>,
-    semantic_trace: Option<&'a rs_cam_core::semantic_trace::ToolpathSemanticTrace>,
+    debug_trace: Option<&'a rs_cam_core::trace::debug_trace::ToolpathDebugTrace>,
+    semantic_trace: Option<&'a rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>,
     /// CLI-LOCAL, deliberately. The core diagnostic's `collision_count` is
     /// whatever holder-collision evidence its caller supplied; the CLI runs
     /// its own per-toolpath [`rs_cam_core::session::ProjectSession::collision_check`]
@@ -113,8 +113,8 @@ impl<'a> ToolpathDiagnostic<'a> {
     /// exactly what D3 found nobody had.
     fn from_core(
         core: &'a rs_cam_core::session::ToolpathDiagnostic,
-        debug_trace: Option<&'a rs_cam_core::debug_trace::ToolpathDebugTrace>,
-        semantic_trace: Option<&'a rs_cam_core::semantic_trace::ToolpathSemanticTrace>,
+        debug_trace: Option<&'a rs_cam_core::trace::debug_trace::ToolpathDebugTrace>,
+        semantic_trace: Option<&'a rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>,
         collision_count: usize,
         min_safe_stickout: Option<f64>,
     ) -> Self {

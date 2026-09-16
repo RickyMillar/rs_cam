@@ -367,10 +367,10 @@ mod tests {
         Adaptive3dConfig, DropCutterConfig, PocketConfig, ProjectCurveConfig, ProjectCurveDirection,
     };
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-    use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
     use crate::material::{Material, WoodSpecies};
     use crate::session::{ProjectSession, ToolpathConfig};
+    use crate::trace::debug_trace::ToolpathDebugOptions;
 
     fn make_tp(id: usize, name: &str, op: OperationConfig, tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {

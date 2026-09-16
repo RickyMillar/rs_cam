@@ -402,7 +402,7 @@ impl ProjectSession {
                 stock_source: StockSource::FromRemainingStock,
                 coolant: crate::gcode::CoolantMode::Off,
                 face_selection: None,
-                debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+                debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
                 operation,
                 feeds_provenance,
                 planner_origin: Some(PlannerOrigin {

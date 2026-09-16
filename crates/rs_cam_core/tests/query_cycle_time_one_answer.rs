@@ -49,7 +49,6 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::machine::kinematics::CycleTimeBreakdown;
 use rs_cam_core::session::{
@@ -60,6 +59,7 @@ use rs_cam_core::session::{
 use rs_cam_core::stock::simulation_cut::{
     SimulationCutTrace, SimulationToolpathCutSummary, ToolpathKinematicRuntime,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// The pre-fix decision, copied verbatim from
 /// `crates/rs_cam_viz/src/ui/readiness.rs:485-527`, as a frozen oracle.
@@ -198,7 +198,7 @@ fn empty_model(name: &str) -> LoadedModel {
 fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
     rs_cam_core::session::ToolpathComputeResult {
         op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(std::sync::Arc::new(
-            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                 rs_cam_core::toolpath::Toolpath::new(),
             ),
         )),

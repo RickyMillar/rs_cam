@@ -42,7 +42,7 @@ use crate::compute::operation_configs::UnifiedFinishConfig;
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::geo::BoundingBox3;
 use crate::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
-use crate::toolpath_spans::AnnotatedToolpath;
+use crate::trace::toolpath_spans::AnnotatedToolpath;
 use std::sync::atomic::AtomicBool;
 
 /// A hemisphere is the cheapest mixed-slope surface that exercises all three

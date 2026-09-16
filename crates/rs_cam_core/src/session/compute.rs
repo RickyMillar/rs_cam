@@ -17,16 +17,16 @@ use crate::compute::simulate::{
 };
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::FaceUp;
-use crate::debug_trace::ToolpathDebugRecorder;
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
-use crate::semantic_trace::{
-    SemanticKey, ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces,
-};
 use crate::stock::simulation_cut::{SimulationCutTrace, SimulationMetricOptions};
 use crate::tool::MillingCutter;
+use crate::trace::debug_trace::ToolpathDebugRecorder;
+use crate::trace::semantic_trace::{
+    SemanticKey, ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces,
+};
 
 use super::{
     AdoptResultArgs, Command, Effects, GenerateToolpathArgs, Job, JobHandle, ProjectDiagnostics,
@@ -275,7 +275,7 @@ pub struct GenContext {
     /// It gates the per-dressup ITEM contexts, which are what make a
     /// recorded trace expensive. The recorders themselves stay
     /// unconditional, because the CLI reads both traces off every result.
-    debug_options: crate::debug_trace::ToolpathDebugOptions,
+    debug_options: crate::trace::debug_trace::ToolpathDebugOptions,
     /// The RAW operation's entry-probe stock-to-leave. `None` names a
     /// prism operation, which gets no surface probe (G-RAMPTERRAIN).
     entry_probe_leave: Option<f64>,
@@ -362,7 +362,7 @@ impl GenerateToolpathHandle {
     /// A caller that writes a trace artifact of its own reads this to know
     /// whether the operator asked for one.
     #[must_use]
-    pub fn debug_options(&self) -> crate::debug_trace::ToolpathDebugOptions {
+    pub fn debug_options(&self) -> crate::trace::debug_trace::ToolpathDebugOptions {
         self.context.debug_options
     }
 
@@ -446,16 +446,16 @@ impl GenerateToolpathHandle {
 ///   needs to write the same artifact itself.
 pub struct GenObserver<'a> {
     /// Whether the per-dressup ITEM contexts are recorded.
-    debug_options: crate::debug_trace::ToolpathDebugOptions,
+    debug_options: crate::trace::debug_trace::ToolpathDebugOptions,
     /// Where the generation publishes the stage it is in. The GUI lane's
     /// `generation_status` reads the string this writes.
-    phase_sink: Option<Arc<dyn crate::debug_trace::ToolpathPhaseSink>>,
+    phase_sink: Option<Arc<dyn crate::trace::debug_trace::ToolpathPhaseSink>>,
     /// The debug span the generator records into. Filled by [`execute_job`]
     /// for the nested call; `None` on a bare observer.
-    debug_ctx: Option<&'a crate::debug_trace::ToolpathDebugContext>,
+    debug_ctx: Option<&'a crate::trace::debug_trace::ToolpathDebugContext>,
     /// The semantic item the generator records into. Filled by
     /// [`execute_job`] for the nested call; `None` on a bare observer.
-    semantic_ctx: Option<&'a crate::semantic_trace::ToolpathSemanticContext>,
+    semantic_ctx: Option<&'a crate::trace::semantic_trace::ToolpathSemanticContext>,
 }
 
 impl GenObserver<'static> {
@@ -463,7 +463,7 @@ impl GenObserver<'static> {
     #[must_use]
     pub fn none() -> Self {
         Self {
-            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
             phase_sink: None,
             debug_ctx: None,
             semantic_ctx: None,
@@ -474,14 +474,20 @@ impl GenObserver<'static> {
 impl<'a> GenObserver<'a> {
     /// Record the per-dressup items when `options.enabled`.
     #[must_use]
-    pub fn with_debug_options(mut self, options: crate::debug_trace::ToolpathDebugOptions) -> Self {
+    pub fn with_debug_options(
+        mut self,
+        options: crate::trace::debug_trace::ToolpathDebugOptions,
+    ) -> Self {
         self.debug_options = options;
         self
     }
 
     /// Publish the stage of the generation to `sink`.
     #[must_use]
-    pub fn with_phase_sink(mut self, sink: Arc<dyn crate::debug_trace::ToolpathPhaseSink>) -> Self {
+    pub fn with_phase_sink(
+        mut self,
+        sink: Arc<dyn crate::trace::debug_trace::ToolpathPhaseSink>,
+    ) -> Self {
         self.phase_sink = Some(sink);
         self
     }
@@ -491,8 +497,8 @@ impl<'a> GenObserver<'a> {
     /// [`execute_job`] owns the recorders, so it is the only caller.
     fn bound<'b>(
         &self,
-        debug: &'b crate::debug_trace::ToolpathDebugContext,
-        semantic: &'b crate::semantic_trace::ToolpathSemanticContext,
+        debug: &'b crate::trace::debug_trace::ToolpathDebugContext,
+        semantic: &'b crate::trace::semantic_trace::ToolpathSemanticContext,
     ) -> GenObserver<'b> {
         GenObserver {
             debug_options: self.debug_options,
@@ -525,12 +531,12 @@ impl<'a> GenObserver<'a> {
     }
 
     /// The debug span the generator records into.
-    fn debug_ctx(&self) -> Option<&'a crate::debug_trace::ToolpathDebugContext> {
+    fn debug_ctx(&self) -> Option<&'a crate::trace::debug_trace::ToolpathDebugContext> {
         self.debug_ctx
     }
 
     /// The semantic item the generator records into.
-    fn semantic_ctx(&self) -> Option<&'a crate::semantic_trace::ToolpathSemanticContext> {
+    fn semantic_ctx(&self) -> Option<&'a crate::trace::semantic_trace::ToolpathSemanticContext> {
         self.semantic_ctx
     }
 }
@@ -624,8 +630,10 @@ pub fn execute_job(
             // registered here once and every transform below reconciles
             // against it — dressups, the boundary clip and the
             // entry-descent split alike.
-            let mut channels =
-                crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
+            let mut channels = crate::trace::transform_provenance::ReconcileSet::new(
+                Some(&semantic_recorder),
+                None,
+            );
             observer.set_phase("Apply dressups");
             // N12 item 3: the feed-optimisation stock. The GUI worker built
             // one and this door passed `None`, so one configuration emitted
@@ -2069,7 +2077,7 @@ pub fn execute_optimize_toolpath(
 /// through the same function.
 fn optimized_candidate(
     context: &AdvisorContext,
-    annotated: &Arc<crate::toolpath_spans::AnnotatedToolpath>,
+    annotated: &Arc<crate::trace::toolpath_spans::AnnotatedToolpath>,
     tool_cfg: &ToolConfig,
     operation: &crate::compute::OperationConfig,
     cancel: &AtomicBool,
@@ -2174,7 +2182,7 @@ struct FeedContext<'a> {
 #[allow(clippy::too_many_arguments)]
 fn modulate_annotated_against_trace(
     context: &FeedContext<'_>,
-    annotated: &crate::toolpath_spans::AnnotatedToolpath,
+    annotated: &crate::trace::toolpath_spans::AnnotatedToolpath,
     operation: &crate::compute::OperationConfig,
     tool_cfg: &ToolConfig,
     toolpath_id: ToolpathId,
@@ -2532,7 +2540,7 @@ fn build_sim_request(
 /// name, the stock frame, the setup frame and the post dials.
 fn simulate_candidate_isolated(
     context: &AdvisorContext,
-    annotated: Arc<crate::toolpath_spans::AnnotatedToolpath>,
+    annotated: Arc<crate::trace::toolpath_spans::AnnotatedToolpath>,
     tool_cfg: &ToolConfig,
     operation: &crate::compute::OperationConfig,
     cancel: &AtomicBool,
@@ -3568,7 +3576,7 @@ impl ProjectSession {
     /// [`crate::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance`].
     #[allow(clippy::too_many_arguments)]
     pub fn apply_boundary_clip(
-        annotated: crate::toolpath_spans::AnnotatedToolpath,
+        annotated: crate::trace::toolpath_spans::AnnotatedToolpath,
         boundary_config: &crate::compute::config::BoundaryConfig,
         stock_bbox: &BoundingBox3,
         // G8: `&Arc` rather than `&TriangleMesh` so a `ModelSilhouette`
@@ -3584,11 +3592,13 @@ impl ProjectSession {
         tool_diameter: f64,
         safe_z: f64,
         plunge_rate_mm_min: Option<f64>,
-        semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
-        channels: &mut crate::transform_provenance::ReconcileSet<'_>,
+        semantic_ctx: &crate::trace::semantic_trace::ToolpathSemanticContext,
+        channels: &mut crate::trace::transform_provenance::ReconcileSet<'_>,
         findings: &mut crate::compute::execute::GenerationFindings,
-    ) -> Result<crate::toolpath_spans::AnnotatedToolpath, crate::compute::execute::OperationError>
-    {
+    ) -> Result<
+        crate::trace::toolpath_spans::AnnotatedToolpath,
+        crate::compute::execute::OperationError,
+    > {
         use crate::geometry::boundary::{
             ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
         };
@@ -3769,18 +3779,20 @@ impl ProjectSession {
     /// [`crate::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance`].
     #[allow(clippy::too_many_arguments)]
     pub fn apply_boundary_clip_multi(
-        annotated: crate::toolpath_spans::AnnotatedToolpath,
+        annotated: crate::trace::toolpath_spans::AnnotatedToolpath,
         boundary_config: &crate::compute::config::BoundaryConfig,
         regions: &[crate::polygon::Polygon2],
         keep_out_footprints: &[crate::polygon::Polygon2],
         tool_diameter: f64,
         safe_z: f64,
         plunge_rate_mm_min: Option<f64>,
-        semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
-        channels: &mut crate::transform_provenance::ReconcileSet<'_>,
+        semantic_ctx: &crate::trace::semantic_trace::ToolpathSemanticContext,
+        channels: &mut crate::trace::transform_provenance::ReconcileSet<'_>,
         findings: &mut crate::compute::execute::GenerationFindings,
-    ) -> Result<crate::toolpath_spans::AnnotatedToolpath, crate::compute::execute::OperationError>
-    {
+    ) -> Result<
+        crate::trace::toolpath_spans::AnnotatedToolpath,
+        crate::compute::execute::OperationError,
+    > {
         use crate::geometry::boundary::{
             ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
         };
@@ -4173,7 +4185,7 @@ impl ProjectSession {
     #[allow(clippy::too_many_arguments)]
     fn modulate_annotated_against_trace(
         &self,
-        annotated: &crate::toolpath_spans::AnnotatedToolpath,
+        annotated: &crate::trace::toolpath_spans::AnnotatedToolpath,
         operation: &crate::compute::OperationConfig,
         tool_cfg: &ToolConfig,
         toolpath_id: ToolpathId,
@@ -4394,7 +4406,7 @@ impl ProjectSession {
             if outcome.changed == 0 {
                 continue;
             }
-            let new_annotated = crate::toolpath_spans::AnnotatedToolpath {
+            let new_annotated = crate::trace::toolpath_spans::AnnotatedToolpath {
                 toolpath: modulated_toolpath,
                 spans: annotated_arc.spans.clone(),
                 spans_valid: annotated_arc.spans_valid,
@@ -4710,7 +4722,7 @@ impl ProjectSession {
                 self.simulation.as_ref().map(|sim| sim.column_grid_cell_mm),
             )
         });
-        let mut context = crate::narrate::ToolpathNarrationContext {
+        let mut context = crate::trace::narrate::ToolpathNarrationContext {
             measurability: measurability.as_ref(),
             toolpath_id: Some(tc.id),
             toolpath_name: Some(tc.name.as_str()),
@@ -4730,7 +4742,7 @@ impl ProjectSession {
             // expression is now shared with the GUI's narration via
             // `is_drill_cycle_for_narration`, so the two readers can no
             // longer disagree about whether a toolpath is a drill cycle.
-            is_drill_cycle: crate::narrate::is_drill_cycle_for_narration(
+            is_drill_cycle: crate::trace::narrate::is_drill_cycle_for_narration(
                 tc.operation.op_type(),
                 &result.annotated().toolpath.moves,
             ),
@@ -4742,7 +4754,7 @@ impl ProjectSession {
         };
         context.absorb_stats(&result.stats);
 
-        Ok(crate::narrate::narrate_toolpath_with_context(
+        Ok(crate::trace::narrate::narrate_toolpath_with_context(
             result.annotated(),
             result.semantic_trace.as_ref(),
             cut_trace,
@@ -5964,9 +5976,9 @@ mod tests {
     use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, ToolpathStats};
     use crate::compute::operation_configs::{DrillConfig, PocketConfig, RestConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-    use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
     use crate::session::ToolpathConfig;
+    use crate::trace::debug_trace::ToolpathDebugOptions;
     use serde_json::json;
 
     fn make_session() -> ProjectSession {
@@ -6415,7 +6427,9 @@ mod tests {
             0,
             ToolpathComputeResult {
                 op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(
-                    crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
+                    crate::trace::toolpath_spans::AnnotatedToolpath::new(
+                        crate::toolpath::Toolpath::new(),
+                    ),
                 )),
                 stats: ToolpathStats::default(),
                 debug_trace: None,
@@ -6593,7 +6607,9 @@ mod tests {
             0,
             ToolpathComputeResult {
                 op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(
-                    crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
+                    crate::trace::toolpath_spans::AnnotatedToolpath::new(
+                        crate::toolpath::Toolpath::new(),
+                    ),
                 )),
                 stats: ToolpathStats::default(),
                 debug_trace: None,
@@ -6780,7 +6796,9 @@ mod tests {
     fn empty_result() -> ToolpathComputeResult {
         ToolpathComputeResult {
             op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(
-                crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
+                crate::trace::toolpath_spans::AnnotatedToolpath::new(
+                    crate::toolpath::Toolpath::new(),
+                ),
             )),
             stats: ToolpathStats::default(),
             debug_trace: None,
@@ -7684,7 +7702,7 @@ mod tests {
         regions: Option<Vec<crate::polygon::Polygon2>>,
     ) -> ToolpathComputeResult {
         let mut at =
-            crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new());
+            crate::trace::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new());
         at.rest_regions = regions.map(Arc::new);
         ToolpathComputeResult {
             op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(at)),
@@ -7850,7 +7868,7 @@ mod tests {
 
     #[test]
     fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
-        use crate::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+        use crate::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 
         // Two disjoint regions; a 3-move path visiting region A, the gap,
         // then region B. The gap move must become a rapid at safe_z, the two
@@ -7884,7 +7902,7 @@ mod tests {
             // cut feed, which is what this test has always pinned.
             None,
             &semantic_ctx,
-            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
+            &mut crate::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
             &mut crate::compute::execute::GenerationFindings::default(),
         )
         .expect("a boundary that resolves cannot refuse");
@@ -7922,7 +7940,7 @@ mod tests {
 
     #[test]
     fn apply_boundary_clip_multi_all_regions_collapsed_returns_original() {
-        use crate::toolpath_spans::AnnotatedToolpath;
+        use crate::trace::toolpath_spans::AnnotatedToolpath;
 
         // A tiny region with a large negative user offset collapses; with
         // every region gone the toolpath must pass through unchanged (the
@@ -7953,7 +7971,7 @@ mod tests {
             // cut feed, which is what this test has always pinned.
             None,
             &semantic_ctx,
-            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
+            &mut crate::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
             &mut findings,
         )
         .expect(

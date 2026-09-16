@@ -44,7 +44,6 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::ModelUnits;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
@@ -55,7 +54,8 @@ use rs_cam_core::session::{
     ProjectSessionBuilder, SessionError, SetupData, ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// The model the refresh replaces.
 const MODEL_A: usize = 5;

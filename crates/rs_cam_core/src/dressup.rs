@@ -12,8 +12,8 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
-use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
-use crate::transform_provenance::{ReconcileSet, Transformed};
+use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
+use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 
 /// Two Z heights within this many mm are treated as "the same cutting
 /// depth" — used to recognize a run of cutting moves at one Z level
@@ -2932,7 +2932,7 @@ pub fn filter_air_cuts(
 ///
 /// This is the one dressup that DELETES moves, so its provenance is the one
 /// that makes channels unlink — see
-/// [`crate::semantic_trace::ToolpathSemanticItem::move_end`].
+/// [`crate::trace::semantic_trace::ToolpathSemanticItem::move_end`].
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn filter_air_cuts_with_provenance(
     annotated: AnnotatedToolpath,

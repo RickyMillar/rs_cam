@@ -60,7 +60,7 @@ use std::sync::Arc;
 
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::session::{AddToolpathArgs, Command, ReplaceToolsArgs};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 use crate::controller::AppController;
 use crate::state::toolpath::ToolpathId;

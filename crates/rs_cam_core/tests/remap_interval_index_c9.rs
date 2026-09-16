@@ -26,7 +26,7 @@
 
 use std::ops::Range;
 
-use rs_cam_core::toolpath_spans::{MoveRemap, RemapIndex, Span, SpanKind};
+use rs_cam_core::trace::toolpath_spans::{MoveRemap, RemapIndex, Span, SpanKind};
 
 // ── hand-rolled PRNG ────────────────────────────────────────────────────
 

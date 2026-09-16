@@ -80,7 +80,6 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType, PocketConfig};
 use rs_cam_core::compute::stock_config::{FixtureId, ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
@@ -92,6 +91,7 @@ use rs_cam_core::session::{
     SetStockConfigArgs, SetupData, ToolpathConfig,
 };
 use rs_cam_core::toolpath::{Move, MoveType};
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 // ── The block, the stock, and the lateral frame it implies ───────────
 

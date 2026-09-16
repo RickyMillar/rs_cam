@@ -359,7 +359,7 @@ mod tests {
             stock_source: crate::session::StockSource::Fresh,
             coolant: crate::gcode::CoolantMode::Off,
             face_selection: None,
-            debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
+            debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
             planner_origin: None,

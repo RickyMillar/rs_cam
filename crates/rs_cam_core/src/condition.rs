@@ -29,8 +29,8 @@
 
 use crate::geo::P3;
 use crate::toolpath::{MoveType, Toolpath, simplify_path_3d_keep_mask};
-use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap};
-use crate::transform_provenance::{ReconcileSet, Transformed};
+use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap};
+use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 use std::collections::BTreeSet;
 use std::ops::Range;
 
@@ -210,7 +210,7 @@ pub fn merge_linear_runs_with_provenance(
 mod tests {
     use super::*;
     use crate::toolpath::Toolpath;
-    use crate::toolpath_spans::{Span, SpanKind};
+    use crate::trace::toolpath_spans::{Span, SpanKind};
 
     fn cut_move_count(tp: &Toolpath) -> usize {
         tp.moves

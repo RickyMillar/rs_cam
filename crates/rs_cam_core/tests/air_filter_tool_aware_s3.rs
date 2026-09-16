@@ -46,7 +46,7 @@ use rs_cam_core::stock::collision::RapidClearanceCheck;
 use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// 0.2 mm cells: fine enough that the ridge edges land on cell centres, and
 /// the same resolution the S2 sentries use.

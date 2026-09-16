@@ -71,7 +71,7 @@ use rs_cam_core::geometry::boundary::{
 use rs_cam_core::polygon::{OffsetFailure, Polygon2};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// A 60 mm square with one non-finite vertex — `adversarial2d`'s
 /// `invalid-nan` fixture, inlined so this sentry owns its own geometry.
@@ -167,7 +167,7 @@ fn the_pre_fix_shape_emits_an_unclipped_path_on_a_failed_containment() {
 
     let (annotated, move_count) = path_with_an_out_of_bounds_cut();
     let recorder =
-        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("f1-sentry", "Pocket");
+        rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("f1-sentry", "Pocket");
     let clipped = clip_annotated_to_boundary_set(
         annotated,
         boundaries.first().map(std::slice::from_ref).unwrap_or(&[]),
@@ -176,10 +176,9 @@ fn the_pre_fix_shape_emits_an_unclipped_path_on_a_failed_containment() {
         // keeps the crossing move's cut feed (this test's pinned behaviour).
         None,
     )
-    .reconcile(&mut rs_cam_core::transform_provenance::ReconcileSet::new(
-        Some(&recorder),
-        None,
-    ))
+    .reconcile(
+        &mut rs_cam_core::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
+    )
     .into_inner();
 
     assert_eq!(
@@ -254,7 +253,7 @@ fn a_failed_region_refuses_end_to_end_through_apply_boundary_clip_multi() {
     let regions = vec![non_finite_square(60.0)];
     let (annotated, _) = path_with_an_out_of_bounds_cut();
     let recorder =
-        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("f1-sentry", "Pocket");
+        rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("f1-sentry", "Pocket");
     let semantic_ctx = recorder.root_context();
     let mut findings = GenerationFindings::default();
 
@@ -269,7 +268,7 @@ fn a_failed_region_refuses_end_to_end_through_apply_boundary_clip_multi() {
         // keeps the crossing move's cut feed (this test's pinned behaviour).
         None,
         &semantic_ctx,
-        &mut rs_cam_core::transform_provenance::ReconcileSet::new(Some(&recorder), None),
+        &mut rs_cam_core::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
         &mut findings,
     );
 
@@ -320,7 +319,7 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
 
     let (annotated, move_count) = path_with_an_out_of_bounds_cut();
     let recorder =
-        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("f1-sentry", "Pocket");
+        rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("f1-sentry", "Pocket");
     let semantic_ctx = recorder.root_context();
     let mut findings = GenerationFindings::default();
 
@@ -335,7 +334,7 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
         // keeps the crossing move's cut feed (this test's pinned behaviour).
         None,
         &semantic_ctx,
-        &mut rs_cam_core::transform_provenance::ReconcileSet::new(Some(&recorder), None),
+        &mut rs_cam_core::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
         &mut findings,
     )
     .expect(

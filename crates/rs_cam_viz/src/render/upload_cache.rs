@@ -163,7 +163,7 @@ pub struct CollisionUploadKey {
 pub struct RestHeatmapUploadKey {
     pub toolpath: ToolpathId,
     /// Pinned identity of the selected toolpath's `AnnotatedToolpath`.
-    pub annotated: ArcId<rs_cam_core::toolpath_spans::AnnotatedToolpath>,
+    pub annotated: ArcId<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>,
     pub shift: [f64; 3],
 }
 
@@ -233,7 +233,7 @@ pub struct ReachOverlayUploadKey {
 ///   inputs, `None` when the overlay is not drawn.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolpathUploadKey {
-    pub annotated: ArcId<rs_cam_core::toolpath_spans::AnnotatedToolpath>,
+    pub annotated: ArcId<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>,
     pub palette_index: usize,
     pub selected: bool,
     pub color_mode: ToolpathColorMode,
@@ -309,7 +309,7 @@ mod tests {
     use crate::render::toolpath_render::EntryStyle;
     use rs_cam_core::mesh::{TriangleMesh, make_test_flat};
     use rs_cam_core::toolpath::Toolpath;
-    use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+    use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
     fn annotated() -> Arc<AnnotatedToolpath> {
         Arc::new(AnnotatedToolpath::new(Toolpath::new()))

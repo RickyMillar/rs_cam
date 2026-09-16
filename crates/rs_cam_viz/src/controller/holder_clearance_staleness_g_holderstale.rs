@@ -81,7 +81,7 @@ pub(super) struct ScriptedLane {
     pub(super) drained: Vec<ComputeMessage>,
     pub(super) collision_submits: usize,
     /// The motion each collision submit carried, in submit order.
-    pub(super) collision_motion: Vec<Arc<rs_cam_core::toolpath_spans::AnnotatedToolpath>>,
+    pub(super) collision_motion: Vec<Arc<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>>,
 }
 
 impl ComputeBackend for ScriptedLane {
@@ -168,7 +168,7 @@ pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
 /// Finish the operation the way the lane would, so the GUI holds the motion
 /// the collision check reads.
 pub(super) fn land_a_result_for(controller: &mut AppController<ScriptedLane>, tp_id: ToolpathId) {
-    let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+    let annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
         rs_cam_core::toolpath::Toolpath::new(),
     ));
     controller

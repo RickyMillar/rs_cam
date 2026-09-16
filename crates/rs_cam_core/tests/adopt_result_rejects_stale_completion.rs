@@ -39,13 +39,13 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddToolArgs, AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
     SessionError, SetStockConfigArgs, SetToolpathEnabledArgs, SetToolpathParamArgs,
     SetToolpathToolArgs, ToolpathConfig,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// The feed value every mutating arm writes.
 const EDITED_FEED_RATE: f64 = 4321.0;
@@ -102,7 +102,7 @@ fn empty_model(name: &str) -> LoadedModel {
 fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
     rs_cam_core::session::ToolpathComputeResult {
         op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(std::sync::Arc::new(
-            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                 rs_cam_core::toolpath::Toolpath::new(),
             ),
         )),

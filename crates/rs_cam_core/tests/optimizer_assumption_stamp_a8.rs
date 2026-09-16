@@ -60,7 +60,6 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, PocketConfig};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::feeds::vendor_lut::LutOperationFamily;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
@@ -76,6 +75,7 @@ use rs_cam_core::tool_load::ModulationStrategyTag;
 use rs_cam_core::tool_load::optimize::{
     KinematicsSource, LutQueryStamp, OutcomeKind, SimAssumptionStamp, optimize_toolpath,
 };
+use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 // ── Fixture ─────────────────────────────────────────────────────────────
 
