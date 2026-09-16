@@ -221,17 +221,6 @@ impl<'op> AxisView<'op> {
             SearchAxis::AngularStep | SearchAxis::HelixPitch | SearchAxis::RampAngle => None,
         }
     }
-
-    /// Active axes — the subset of declared bindings whose value is
-    /// currently resolvable. Filters runtime-conditional axes (Pencil
-    /// stepover, future angular_step, etc.).
-    pub fn active_axes(&self, ctx: &AxisContext<'_>) -> Vec<AxisBinding> {
-        self.bindings
-            .iter()
-            .copied()
-            .filter(|b| self.axis_value(b.axis, ctx).is_some())
-            .collect()
-    }
 }
 
 #[cfg(test)]

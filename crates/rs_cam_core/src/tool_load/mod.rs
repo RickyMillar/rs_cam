@@ -566,20 +566,6 @@ pub fn evaluate_toolpath(
     }
 }
 
-/// Evaluate every toolpath in a project and roll up to a `ToolLoadReport`.
-pub fn evaluate_project(
-    contexts: &[ToolpathLoadContext<'_>],
-    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
-    machine: Option<&crate::machine::MachineProfile>,
-    tolerance: &ToleranceBands,
-) -> ToolLoadReport {
-    let per_toolpath = contexts
-        .iter()
-        .map(|ctx| evaluate_toolpath(ctx, sim_trace, machine, tolerance))
-        .collect();
-    ToolLoadReport { per_toolpath }
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
