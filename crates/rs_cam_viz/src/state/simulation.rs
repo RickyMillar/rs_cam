@@ -8,7 +8,7 @@ use super::job::SetupId;
 use super::runtime::GuiState;
 use super::toolpath::ToolpathId;
 use rs_cam_core::collision::{CollisionReport, RapidCollision};
-use rs_cam_core::debug_trace::{ToolpathDebugAnnotation, ToolpathDebugBounds2};
+use rs_cam_core::debug_trace::ToolpathDebugAnnotation;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::geo::{BoundingBox3, P3, V3};
 use rs_cam_core::semantic_trace::{
@@ -17,7 +17,7 @@ use rs_cam_core::semantic_trace::{
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::{
     SimulationCutHotspot, SimulationCutIssue, SimulationCutIssueKind, SimulationCutSample,
-    SimulationCutTrace, SimulationMetricOptions, SimulationSemanticCutSummary,
+    SimulationCutTrace, SimulationMetricOptions,
 };
 use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::tool_load::ToolLoadReport;
@@ -1250,18 +1250,6 @@ impl SimulationState {
         self.current_boundary().map(|b| b.id)
     }
 
-    pub fn current_boundary_index(&self) -> Option<usize> {
-        // Same tie-breaking as `current_boundary`: prefer the later boundary
-        // when `current_move` lands on a boundary point.
-        let current = self.playback.current_move;
-        let count = self.boundaries().len();
-        self.boundaries()
-            .iter()
-            .rev()
-            .position(|b| current >= b.start_move && current <= b.end_move)
-            .map(|rev_idx| count - 1 - rev_idx)
-    }
-
     #[allow(clippy::indexing_slicing)] // boundary_index from position() is always in bounds
     pub fn move_to_local_toolpath_move(
         &self,
@@ -1322,31 +1310,6 @@ impl SimulationState {
         Some(boundary.start_move + local_move)
     }
 
-    pub fn trace_availability_for_toolpath(
-        gui: &GuiState,
-        toolpath_id: ToolpathId,
-    ) -> ToolpathTraceAvailability {
-        let Some(rt) = gui.toolpath_rt.get(&toolpath_id) else {
-            return ToolpathTraceAvailability::None;
-        };
-
-        let has_perf = rt.debug_trace.is_some();
-        let has_semantic = rt.semantic_trace.is_some();
-        let has_partial_only = rt.result.is_none() && (has_perf || has_semantic);
-
-        if has_partial_only {
-            ToolpathTraceAvailability::Partial
-        } else if has_perf && has_semantic {
-            ToolpathTraceAvailability::PerformanceAndSemantic
-        } else if has_perf {
-            ToolpathTraceAvailability::Performance
-        } else if has_semantic {
-            ToolpathTraceAvailability::Semantic
-        } else {
-            ToolpathTraceAvailability::None
-        }
-    }
-
     pub fn sync_debug_state(&mut self, gui: &GuiState, max_feed_mm_min: f64) {
         let boundaries = self.boundaries().to_vec();
         self.debug.sync_semantic_indexes(gui, &boundaries);
@@ -1387,65 +1350,6 @@ impl SimulationState {
         profile.metrics_for_range(move_start, move_end + 1)
     }
 
-    pub fn toolpath_cut_summary(
-        &self,
-        toolpath_id: ToolpathId,
-    ) -> Option<&rs_cam_core::simulation_cut::SimulationToolpathCutSummary> {
-        self.results
-            .as_ref()?
-            .cut_trace
-            .as_ref()?
-            .toolpath_summaries
-            .iter()
-            .find(|summary| summary.toolpath_id == toolpath_id)
-    }
-
-    pub fn semantic_cut_summary(
-        &self,
-        toolpath_id: ToolpathId,
-        item_id: u64,
-    ) -> Option<&SimulationSemanticCutSummary> {
-        self.results
-            .as_ref()?
-            .cut_trace
-            .as_ref()?
-            .semantic_summaries
-            .iter()
-            .find(|summary| {
-                summary.toolpath_id == toolpath_id && summary.semantic_item_id == item_id
-            })
-    }
-
-    pub fn cut_worst_items(
-        &self,
-        toolpath_id: ToolpathId,
-        limit: usize,
-    ) -> Vec<SimulationSemanticCutSummary> {
-        let Some(trace) = self
-            .results
-            .as_ref()
-            .and_then(|results| results.cut_trace.as_ref())
-        else {
-            return Vec::new();
-        };
-        let mut items: Vec<_> = trace
-            .semantic_summaries
-            .iter()
-            .filter(|summary| summary.toolpath_id == toolpath_id)
-            .cloned()
-            .collect();
-        items.sort_by(|left, right| {
-            right
-                .wasted_runtime_s
-                .total_cmp(&left.wasted_runtime_s)
-                .then_with(|| left.average_mrr_mm3_s.total_cmp(&right.average_mrr_mm3_s))
-                .then_with(|| right.total_runtime_s.total_cmp(&left.total_runtime_s))
-                .then_with(|| left.move_start.cmp(&right.move_start))
-        });
-        items.truncate(limit);
-        items
-    }
-
     /// Resolve the hotspot referenced by `debug.focused_hotspot`, if any.
     /// Returns `None` if no hotspot is focused or the index is stale (e.g.
     /// after a re-run produced a different `trace.hotspots`).
@@ -1455,23 +1359,6 @@ impl SimulationState {
             .as_ref()
             .and_then(|r| r.cut_trace.as_ref())
             .and_then(|trace| trace.hotspots.get(hotspot_index))
-    }
-
-    pub fn cut_hotspots(&self, toolpath_id: ToolpathId, limit: usize) -> Vec<SimulationCutHotspot> {
-        let Some(trace) = self
-            .results
-            .as_ref()
-            .and_then(|results| results.cut_trace.as_ref())
-        else {
-            return Vec::new();
-        };
-        trace
-            .hotspots
-            .iter()
-            .filter(|hotspot| hotspot.toolpath_id == toolpath_id)
-            .take(limit)
-            .cloned()
-            .collect()
     }
 
     pub fn current_cut_sample(&self) -> Option<ActiveCutSample> {
@@ -1724,41 +1611,6 @@ impl SimulationState {
         )
     }
 
-    /// Resolve a [`SpanId`] from the [`AnnotatedToolpath`] of `toolpath_id`
-    /// into a sim trace target. Mirrors [`Self::trace_target_for_span`] (which
-    /// operates over debug-trace spans) but reads spans persisted on the
-    /// generated toolpath itself.
-    ///
-    /// `prefer_end`: when true, anchor on the span's last move; otherwise
-    /// the first. Boundary spans (zero-width) anchor on `start_move`.
-    pub fn trace_target_for_annotated_span(
-        &mut self,
-        gui: &GuiState,
-        toolpath_id: ToolpathId,
-        span_id: SpanId,
-        prefer_end: bool,
-    ) -> Option<SimulationTraceTarget> {
-        let rt = gui.toolpath_rt.get(&toolpath_id)?;
-        let result = rt.result.as_ref()?;
-        if !result.spans_valid() {
-            return None;
-        }
-        let span = result.spans().get(span_id.0 as usize)?;
-        let local_move = if span.is_boundary() {
-            span.start_move
-        } else if prefer_end {
-            span.end_move.saturating_sub(1)
-        } else {
-            span.start_move
-        };
-        Some(SimulationTraceTarget {
-            toolpath_id,
-            move_index: self.global_move_for_local(toolpath_id, local_move)?,
-            semantic_item_id: None,
-            debug_span_id: None,
-        })
-    }
-
     pub fn trace_target_for_hotspot(
         &mut self,
         gui: &GuiState,
@@ -1833,28 +1685,6 @@ impl SimulationState {
     ) -> Option<(ToolpathId, ToolpathDebugAnnotation)> {
         self.current_debug_annotation_with_index(gui)
             .map(|(toolpath_id, _, annotation)| (toolpath_id, annotation))
-    }
-
-    pub fn current_item_bbox(
-        &mut self,
-        gui: &GuiState,
-        max_feed_mm_min: f64,
-        session: &ProjectSession,
-    ) -> Option<(ToolpathId, ToolpathDebugBounds2, f64, f64)> {
-        let active = self.active_semantic_item(gui, max_feed_mm_min)?;
-        let bbox =
-            self.semantic_item_bbox_in_simulation(session, active.toolpath_id, &active.item)?;
-        Some((
-            active.toolpath_id,
-            ToolpathDebugBounds2 {
-                min_x: bbox.min.x,
-                max_x: bbox.max.x,
-                min_y: bbox.min.y,
-                max_y: bbox.max.y,
-            },
-            bbox.min.z,
-            bbox.max.z,
-        ))
     }
 
     pub fn semantic_item_bbox_in_simulation(
@@ -2742,7 +2572,7 @@ fn issue_kind_rank(kind: SimulationIssueKind) -> u8 {
 mod tests {
     use super::*;
     use crate::state::runtime::ToolpathRuntime;
-    use rs_cam_core::debug_trace::ToolpathDebugRecorder;
+    use rs_cam_core::debug_trace::{ToolpathDebugBounds2, ToolpathDebugRecorder};
     use rs_cam_core::dexel_stock::StockCutDirection;
     use rs_cam_core::semantic_trace::{
         ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces,

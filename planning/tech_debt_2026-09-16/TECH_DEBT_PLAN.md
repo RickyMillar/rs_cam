@@ -113,6 +113,7 @@ carries the change, so this table is filled by the closing docs commit.
 | id | commit | note |
 |---|---|---|
 | S3 | — | `io/presets.rs` (280 lines) went out in `0761b14d`; this commit removes the dangling `pub mod presets;` that left the tree unbuildable |
+| S4 | — | eight dead `SimulationState` read doors, 170 lines; the `SimulationSemanticCutSummary` import goes with them and `ToolpathDebugBounds2` moves into the test module |
 
 ## Progress
 
