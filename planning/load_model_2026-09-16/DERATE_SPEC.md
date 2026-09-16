@@ -31,7 +31,9 @@ and the wrong idea about variables.
 
 ### Measured, and it is counterintuitive
 
-Ø12 4-flute bull nose, ap 8.4, ae 4.2, white oak, anchor coefficients.
+Ø12 4-flute bull nose, ap 8.4, ae 4.2, `GenericHardwood` (Kc 35.1, the
+anchor wood). White oak is Kc 37.26 and moves every figure up about 6 %.
+The conclusions do not change.
 
 **Holding chip thickness at 0.0625 mm/tooth and varying rpm:**
 

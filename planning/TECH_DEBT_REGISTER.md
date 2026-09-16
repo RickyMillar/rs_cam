@@ -301,7 +301,8 @@ thrust, stall or feed-force limit anywhere in the crate.
 
 A stepper gantry does not fail by running out of watts. It fails by losing
 steps when the cutting force is more than the axis thrust. Measured on the
-reference cut (Ø12 4-flute bull nose, ap 8.4, ae 4.2, white oak) the feed
+reference cut (Ø12 4-flute bull nose, ap 8.4, ae 4.2, `GenericHardwood`,
+Kc 35.1) the feed
 force is 22-34 N. As wattage that is 1.4-3.3 W, under 1 % of the spindle
 power — which is why a power model cannot see it. Against a hobby gantry's
 thrust it is significant.

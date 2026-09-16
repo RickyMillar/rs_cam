@@ -1,0 +1,567 @@
+<meta charset="utf-8">
+<title>Derate Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#F2F4F7; --panel:#FFFFFF; --panel-2:#F7F9FB;
+  --ink:#141A21; --ink-2:#4A5563; --ink-3:#7A8797;
+  --rule:#DFE4EA; --rule-2:#EDF0F4;
+  --accent:#1B5FCC; --accent-soft:#E3ECFB;
+  --ok:#17784A; --ok-soft:#E0F1E8;
+  --warn:#9A6410; --warn-soft:#F8EEDC;
+  --over:#B3372C; --over-soft:#FAE5E2;
+  --unknown:#6C5A8C; --unknown-soft:#EFEAF6;
+  --track:#E5E9EF;
+  --display:"Barlow Condensed",Oswald,"Arial Narrow",sans-serif;
+  --body:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0D1116; --panel:#161B22; --panel-2:#1B212A;
+    --ink:#E6EAF0; --ink-2:#A7B2C0; --ink-3:#77838F;
+    --rule:#28303A; --rule-2:#1F262E;
+    --accent:#6FA0F5; --accent-soft:#16233A;
+    --ok:#5FCB94; --ok-soft:#10241B;
+    --warn:#E0AC5B; --warn-soft:#271D0E;
+    --over:#F0796B; --over-soft:#2B1512;
+    --unknown:#B49BDB; --unknown-soft:#1E1729;
+    --track:#242C36;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0D1116; --panel:#161B22; --panel-2:#1B212A;
+  --ink:#E6EAF0; --ink-2:#A7B2C0; --ink-3:#77838F;
+  --rule:#28303A; --rule-2:#1F262E;
+  --accent:#6FA0F5; --accent-soft:#16233A;
+  --ok:#5FCB94; --ok-soft:#10241B;
+  --warn:#E0AC5B; --warn-soft:#271D0E;
+  --over:#F0796B; --over-soft:#2B1512;
+  --unknown:#B49BDB; --unknown-soft:#1E1729;
+  --track:#242C36;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--body); font-size:15px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px; margin:0 auto; padding:28px 20px 64px}
+@media (max-width:640px){ .wrap{padding:20px 16px 48px} }
+
+/* ---- header ---- */
+header{
+  display:flex; flex-wrap:wrap; gap:20px 28px;
+  align-items:flex-end; justify-content:space-between;
+  padding-bottom:18px; border-bottom:2px solid var(--ink);
+  margin-bottom:26px;
+}
+h1{
+  font-family:var(--display); font-weight:600;
+  font-size:clamp(34px,6vw,54px); line-height:0.94;
+  letter-spacing:-0.01em; margin:0; text-wrap:balance;
+}
+.sub{color:var(--ink-2); max-width:56ch; margin:8px 0 0; font-size:14.5px}
+.machine{display:flex; flex-direction:column; gap:6px; min-width:210px}
+.machine>span{
+  font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:600;
+}
+select{
+  font-family:var(--body); font-size:14.5px; color:var(--ink);
+  background:var(--panel); border:1px solid var(--rule);
+  border-radius:3px; padding:9px 10px; width:100%;
+}
+select:focus-visible,input:focus-visible,button:focus-visible{
+  outline:2px solid var(--accent); outline-offset:2px;
+}
+
+/* ---- layout ---- */
+.bench{display:grid; grid-template-columns:300px 1fr; gap:22px; align-items:start}
+@media (max-width:860px){ .bench{grid-template-columns:1fr} }
+
+.panel{background:var(--panel); border:1px solid var(--rule); border-radius:4px}
+.panel-head{
+  font-family:var(--display); font-weight:600; font-size:19px;
+  letter-spacing:.02em; padding:13px 16px 11px;
+  border-bottom:1px solid var(--rule);
+}
+.panel-head small{
+  display:block; font-family:var(--body); font-weight:400;
+  font-size:12px; letter-spacing:0; color:var(--ink-3); margin-top:1px;
+}
+.panel-body{padding:14px 16px 18px}
+
+/* ---- sliders ---- */
+.ctl{margin-bottom:15px}
+.ctl:last-child{margin-bottom:0}
+.ctl-top{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+.ctl-top label{font-size:13px; color:var(--ink-2); font-weight:500}
+.ctl-top output{
+  font-family:var(--mono); font-size:13px; font-weight:600;
+  font-variant-numeric:tabular-nums; color:var(--ink);
+}
+.ctl-top output i{font-style:normal; color:var(--ink-3); font-weight:400}
+input[type=range]{
+  -webkit-appearance:none; appearance:none; width:100%;
+  height:20px; background:transparent; margin:2px 0 0; cursor:grab;
+}
+input[type=range]::-webkit-slider-runnable-track{
+  height:4px; background:var(--track); border-radius:2px;
+}
+input[type=range]::-moz-range-track{height:4px;background:var(--track);border-radius:2px}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; width:15px; height:15px; margin-top:-5.5px;
+  border-radius:50%; background:var(--accent);
+  border:2px solid var(--panel); box-shadow:0 0 0 1px var(--accent);
+}
+input[type=range]::-moz-range-thumb{
+  width:13px;height:13px;border-radius:50%;background:var(--accent);
+  border:2px solid var(--panel); box-shadow:0 0 0 1px var(--accent);
+}
+
+/* ---- gauges ---- */
+.gauge{padding:14px 16px; border-bottom:1px solid var(--rule-2)}
+.gauge:last-child{border-bottom:0}
+.g-top{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:baseline; justify-content:space-between}
+.g-name{font-weight:600; font-size:14.5px}
+.g-name em{
+  font-style:normal; font-weight:400; color:var(--ink-3);
+  font-size:12.5px; margin-left:7px;
+}
+.g-val{font-family:var(--mono); font-size:14px; font-variant-numeric:tabular-nums; color:var(--ink-2)}
+.g-val b{color:var(--ink); font-weight:600}
+.bar{height:7px; background:var(--track); border-radius:4px; margin-top:9px; position:relative; overflow:hidden}
+.bar i{position:absolute; inset:0 auto 0 0; border-radius:4px; transition:width .18s ease, background .18s ease}
+.bar u{position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ink); opacity:.55}
+.chip{
+  display:inline-block; font-size:11.5px; font-weight:600; letter-spacing:.03em;
+  padding:2.5px 8px; border-radius:2px; margin-top:9px;
+}
+.c-ok{background:var(--ok-soft); color:var(--ok)}
+.c-warn{background:var(--warn-soft); color:var(--warn)}
+.c-over{background:var(--over-soft); color:var(--over)}
+.c-unknown{background:var(--unknown-soft); color:var(--unknown)}
+
+/* ---- verdict ---- */
+.verdict{
+  margin:22px 0 0; padding:16px 18px; border-radius:4px;
+  border:1px solid var(--rule); border-left:4px solid var(--accent);
+  background:var(--panel);
+}
+.verdict h2{
+  font-family:var(--display); font-size:20px; font-weight:600;
+  margin:0 0 5px; letter-spacing:.01em;
+}
+.verdict p{margin:0; color:var(--ink-2); font-size:14.5px; max-width:74ch}
+.verdict b{color:var(--ink)}
+
+/* ---- levers ---- */
+.scroller{overflow-x:auto}
+table{border-collapse:collapse; width:100%; min-width:620px; font-size:13.5px}
+th,td{text-align:right; padding:10px 12px; border-bottom:1px solid var(--rule-2)}
+th:first-child,td:first-child{text-align:left}
+thead th{
+  font-family:var(--body); font-weight:600; font-size:11px;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+  border-bottom:1px solid var(--rule); line-height:1.35; vertical-align:bottom;
+}
+tbody td{font-family:var(--mono); font-variant-numeric:tabular-nums}
+tbody td:first-child{font-family:var(--body); font-weight:500; white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tr.base td{color:var(--ink-3)}
+tr.base td:first-child{color:var(--ink-2)}
+.d{font-size:11.5px; display:block; margin-top:1px}
+.d-down{color:var(--ok)} .d-up{color:var(--over)} .d-flat{color:var(--ink-3)}
+.fixes{font-weight:600}
+
+/* ---- chart ---- */
+.chartwrap{padding:16px 16px 10px}
+canvas{width:100%; height:270px; display:block}
+.legend{display:flex; flex-wrap:wrap; gap:8px 20px; padding:4px 16px 16px; font-size:12.5px; color:var(--ink-2)}
+.legend span{display:inline-flex; align-items:center; gap:7px}
+.swatch{width:16px; height:3px; border-radius:2px; flex:none}
+
+footer{
+  margin-top:30px; padding-top:18px; border-top:1px solid var(--rule);
+  font-size:13px; color:var(--ink-3); max-width:80ch;
+}
+footer b{color:var(--ink-2)}
+footer code{font-family:var(--mono); font-size:12px}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-top:22px}
+@media (max-width:860px){ .grid2{grid-template-columns:1fr} }
+</style>
+
+<div class="wrap">
+<header>
+  <div>
+    <h1>Derate Bench</h1>
+    <p class="sub">Four limits bound every cut. When one binds, only certain dials move it.
+       Change the cut and watch which limit bites — then see what each dial actually does.</p>
+  </div>
+  <div class="machine">
+    <span>Machine</span>
+    <select id="machine">
+      <option value="vfd">Shapeoko — 1.5 kW VFD, constant torque</option>
+      <option value="router">Makita router — 0.71 kW, constant power</option>
+    </select>
+  </div>
+</header>
+
+<div class="bench">
+  <div class="panel">
+    <div class="panel-head">The cut<small>Ø12 bull nose, 4 flutes</small></div>
+    <div class="panel-body" id="controls"></div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <div class="panel-head">The four limits<small>A mark on the bar is the ceiling</small></div>
+      <div id="gauges"></div>
+    </div>
+    <div class="verdict" id="verdict">
+      <h2></h2><p></p>
+    </div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="panel">
+    <div class="panel-head">Pull a dial<small>Each row cuts one thing by a third. Percentages are of each limit, so a moving ceiling cannot hide.</small></div>
+    <div class="scroller">
+      <table>
+        <thead><tr>
+          <th>Dial</th><th>Feed<br>of cap</th><th>Spindle<br>of limit</th>
+          <th>Side force<br>no limit</th><th>Gantry push<br>of guess</th>
+        </tr></thead>
+        <tbody id="levers"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">Spindle load against RPM<small>Chipload held fixed, so feed tracks RPM</small></div>
+    <div class="chartwrap"><canvas id="chart"></canvas></div>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--accent)"></i>This machine</span>
+      <span><i class="swatch" style="background:var(--ink-3)"></i>The other one</span>
+      <span><i class="swatch" style="background:var(--over)"></i>Its ceiling</span>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p><b>Where the numbers come from.</b> The force model is
+  <code>F = ap · (Ks·h + F_edge)</code> with <code>Ks = 49.95 N/mm²</code> and
+  <code>F_edge = 5.30 N/mm</code>, fitted to woodresearch.sk 2019/05/12. Power is
+  <code>A · (Ks·MRR + F_edge·ap·Vc·duty)</code>. Both match
+  <code>crates/rs_cam_core</code>, checked by <code>derate_levers.py</code>.</p>
+  <p><b>The gantry push is not a prediction.</b> No thrust model exists in the
+  codebase. The push shown assumes the feed force is half the tangential force,
+  and it is compared against a thrust you set by hand. The <em>shape</em> of the
+  dependency is sound; the absolute number is a placeholder until real figures
+  land. This is register item T-10.</p>
+</footer>
+</div>
+
+<script>
+"use strict";
+
+const KS = 49.95, FEDGE = 5.30, ANCHOR_KC = 35.1, ANISO = 2.0;
+const MACHINES = {
+  vfd:    {label:"Shapeoko VFD", ratedKw:1.5,  ratedRpm:24000, safety:0.80, maxFeed:5000, constantTorque:true},
+  router: {label:"Makita router", ratedKw:0.71, ratedRpm:0,     safety:0.80, maxFeed:5000, constantTorque:false},
+};
+
+const P = {
+  rpm:9000, fz:0.0625, ap:8.4, ae:4.2, kc:35.1, thrust:100, ratio:0.50,
+};
+
+const CONTROLS = [
+  {k:"rpm",   label:"Spindle speed",     min:3000, max:24000, step:100,    unit:"rpm",     fmt:v=>v.toFixed(0)},
+  {k:"fz",    label:"Chipload",          min:0.005,max:0.15,  step:0.0025, unit:"mm/tooth",fmt:v=>v.toFixed(4)},
+  {k:"ap",    label:"Depth of cut",      min:0.5,  max:12,    step:0.1,    unit:"mm",      fmt:v=>v.toFixed(1)},
+  {k:"ae",    label:"Width of cut",      min:0.5,  max:12,    step:0.1,    unit:"mm",      fmt:v=>v.toFixed(1)},
+  {k:"kc",    label:"Wood hardness Kc",  min:16,   max:76,    step:0.5,    unit:"N/mm²",   fmt:v=>v.toFixed(1)},
+  {k:"thrust",label:"Gantry thrust",     min:20,   max:400,   step:5,      unit:"N (guess)",fmt:v=>v.toFixed(0)},
+];
+
+const D = 12, Z = 4;
+
+function model(p){
+  const scale = p.kc / ANCHOR_KC;
+  const ks = KS * scale, fe = FEDGE * scale;
+  const r = D / 2;
+  const psi = Math.acos(Math.min(1, Math.max(-1, 1 - p.ae / r)));
+  const duty = Z * psi / (2 * Math.PI);
+  const h = p.fz * Math.sin(Math.min(psi, Math.PI / 2));
+  const sideForce = p.ap * (ks * h + fe);
+  const feed = p.fz * Z * p.rpm;
+  const vc = Math.PI * D * p.rpm;
+  const shear = ANISO * ks * (p.ap * p.ae) / 60e6;
+  const edgeKw = ANISO * fe * p.ap * vc * duty / 60e6;
+  return {
+    feed, psi, duty, h, sideForce,
+    powerKw: shear * feed + edgeKw,
+    edgeShare: (shear * feed + edgeKw) > 0 ? edgeKw / (shear * feed + edgeKw) : 0,
+    gantry: p.ratio * sideForce * duty,
+  };
+}
+
+function availableKw(m, rpm){
+  const M = MACHINES[m];
+  return M.constantTorque
+    ? M.ratedKw * (Math.min(rpm, M.ratedRpm) / M.ratedRpm) * M.safety
+    : M.ratedKw * M.safety;
+}
+
+function limits(p, m){
+  const r = model(p);
+  const avail = availableKw(m, p.rpm);
+  return [
+    {key:"feed",  name:"Feed rate",   note:"what the gantry can move",
+     value:r.feed, ceiling:MACHINES[m].maxFeed, unit:"mm/min", dp:0, known:true},
+    {key:"power", name:"Spindle power", note:"what the motor can turn",
+     value:r.powerKw, ceiling:avail, unit:"kW", dp:3, known:true},
+    {key:"side",  name:"Tool side force", note:"what bends the cutter",
+     value:r.sideForce, ceiling:null, unit:"N", dp:1, known:true},
+    {key:"gantry",name:"Gantry push", note:"what skips a step",
+     value:r.gantry, ceiling:p.thrust, unit:"N", dp:1, known:false},
+  ];
+}
+
+const el = s => document.querySelector(s);
+const fmtN = (v, dp) => v.toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});
+
+/* ---- controls ---- */
+function buildControls(){
+  el("#controls").innerHTML = CONTROLS.map(c => `
+    <div class="ctl">
+      <div class="ctl-top">
+        <label for="s-${c.k}">${c.label}</label>
+        <output id="o-${c.k}"></output>
+      </div>
+      <input type="range" id="s-${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${P[c.k]}">
+    </div>`).join("");
+  CONTROLS.forEach(c => {
+    el(`#s-${c.k}`).addEventListener("input", e => {
+      P[c.k] = parseFloat(e.target.value);
+      render();
+    });
+  });
+}
+
+/* ---- render ---- */
+function render(){
+  const m = el("#machine").value;
+
+  CONTROLS.forEach(c => {
+    el(`#o-${c.k}`).innerHTML = `${c.fmt(P[c.k])} <i>${c.unit}</i>`;
+  });
+
+  const L = limits(P, m);
+
+  el("#gauges").innerHTML = L.map(l => {
+    const frac = l.ceiling ? l.value / l.ceiling : 0;
+    let cls, chip, label;
+    if (!l.ceiling){
+      cls = "var(--ink-3)"; chip = "c-unknown"; label = "no ceiling modelled";
+    } else if (!l.known){
+      cls = "var(--unknown)"; chip = "c-unknown";
+      label = `${Math.round(frac*100)} % of a guessed thrust`;
+    } else if (frac > 1){
+      cls = "var(--over)"; chip = "c-over"; label = `over by ${Math.round((frac-1)*100)} %`;
+    } else if (frac > 0.85){
+      cls = "var(--warn)"; chip = "c-warn"; label = `${Math.round(frac*100)} % used — close`;
+    } else {
+      cls = "var(--ok)"; chip = "c-ok"; label = `${Math.round(frac*100)} % used`;
+    }
+    const barW = l.ceiling ? Math.min(100, frac*100) : Math.min(100, l.value/200*100);
+    return `<div class="gauge">
+      <div class="g-top">
+        <span class="g-name">${l.name}<em>${l.note}</em></span>
+        <span class="g-val"><b>${fmtN(l.value,l.dp)}</b> ${l.unit}${
+          l.ceiling ? ` / ${fmtN(l.ceiling,l.dp)}` : ""}</span>
+      </div>
+      <div class="bar"><i style="width:${barW}%;background:${cls}"></i>${
+        l.ceiling ? `<u style="left:calc(${Math.min(100, 100/Math.max(frac,1))}% - 1px)"></u>` : ""}</div>
+      <span class="chip ${chip}">${label}</span>
+    </div>`;
+  }).join("");
+
+  renderVerdict(L, m);
+  renderLevers(m);
+  drawChart(m);
+}
+
+function renderVerdict(L, m){
+  const r = model(P);
+  const over = L.filter(l => l.known && l.ceiling && l.value > l.ceiling);
+  const v = el("#verdict");
+  let head, body;
+
+  if (over.length === 0){
+    head = "Nothing binds";
+    body = `This cut fits inside every limit the engine models. The edge term is
+      <b>${Math.round(r.edgeShare*100)} %</b> of the spindle load — that is the part
+      that does not fall when you slow the feed.`;
+    v.style.borderLeftColor = "var(--ok)";
+  } else if (over.some(l => l.key === "power")){
+    const M = MACHINES[m];
+    head = M.constantTorque ? "Over power — and RPM will not save you"
+                            : "Over power — slow the whole cut down";
+    body = M.constantTorque
+      ? `This is a constant-torque VFD. Its available power falls with RPM at
+         <b>exactly</b> the rate the required power falls, so holding the chipload and
+         dropping the spindle speed leaves you at the same percentage. Drag the depth
+         of cut down instead and watch the bar move.`
+      : `This router holds its power across the speed range. Hold the chipload and bring
+         the spindle speed down: the requirement falls and the supply does not. A
+         shallower cut works too.`;
+    v.style.borderLeftColor = "var(--over)";
+  } else if (over.some(l => l.key === "feed")){
+    head = "Past the machine's top speed";
+    body = `The gantry cannot move this fast. Do not thin the chip to get under the cap —
+      that pushes you toward rubbing. Bring the spindle speed down and keep the chipload
+      where it is.`;
+    v.style.borderLeftColor = "var(--warn)";
+  } else {
+    head = "Past the gantry thrust you set";
+    body = `Remember this ceiling is a number you typed, not one the engine knows. The
+      push follows the <b>chip thickness</b>, not the feed rate — thin the chip or
+      narrow the cut.`;
+    v.style.borderLeftColor = "var(--unknown)";
+  }
+  v.querySelector("h2").textContent = head;
+  v.querySelector("p").innerHTML = body;
+}
+
+const LEVERS = [
+  {name:"Lower RPM, hold chipload", apply:p => ({...p, rpm:Math.max(3000, p.rpm*0.667)})},
+  {name:"Thin the chip",            apply:p => ({...p, fz:p.fz*0.667})},
+  {name:"Shallower cut",            apply:p => ({...p, ap:Math.max(0.5, p.ap*0.667)})},
+  {name:"Narrower cut",             apply:p => ({...p, ae:Math.max(0.5, p.ae*0.667)})},
+];
+
+function renderLevers(m){
+  const base = limits(P, m);
+  // Show every ceiling'd limit as a PERCENTAGE OF ITS OWN CEILING, never as a
+  // raw value. On a constant-torque VFD the ceiling moves with the RPM, so a
+  // raw kW column makes "lower the RPM" look like it works when it does not.
+  const cells = (L, ref) => L.map((l,i) => {
+    const pct = l.ceiling ? l.value / l.ceiling * 100 : null;
+    const shown = pct === null ? `${fmtN(l.value, l.dp)} N` : `${pct.toFixed(0)} %`;
+    let d = "";
+    if (ref){
+      const r = ref[i];
+      const was = r.ceiling ? r.value / r.ceiling * 100 : r.value;
+      const now = pct === null ? l.value : pct;
+      const diff = now - was;
+      const flat = Math.abs(diff) < (pct === null ? 0.05 : 0.5);
+      const cls = flat ? "d-flat" : (diff < 0 ? "d-down" : "d-up");
+      const txt = flat ? "no change"
+        : (pct === null
+            ? `${diff > 0 ? "+" : ""}${(was > 0 ? diff/was*100 : 0).toFixed(0)} %`
+            : `${diff > 0 ? "+" : ""}${diff.toFixed(0)} pt`);
+      d = `<span class="d ${cls}">${txt}</span>`;
+    }
+    return `<td>${shown}${d}</td>`;
+  }).join("");
+
+  let html = `<tr class="base"><td>As it stands</td>${cells(base, null)}</tr>`;
+  for (const lev of LEVERS){
+    const after = limits(lev.apply(P), m);
+    const fixesPower = base[1].value > base[1].ceiling && after[1].value <= after[1].ceiling;
+    html += `<tr><td class="${fixesPower ? "fixes" : ""}">${lev.name}${
+      fixesPower ? " ✓" : ""}</td>${cells(after, base)}</tr>`;
+  }
+  el("#levers").innerHTML = html;
+}
+
+/* ---- chart ---- */
+function drawChart(m){
+  const cv = el("#chart");
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext("2d");
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,w,h);
+
+  const css = getComputedStyle(document.documentElement);
+  const C = n => css.getPropertyValue(n).trim();
+  const pad = {l:46, r:14, t:14, b:30};
+  const x0 = pad.l, x1 = w - pad.r, y0 = pad.t, y1 = h - pad.b;
+
+  const RPM0 = 3000, RPM1 = 24000;
+  const series = ["vfd","router"].map(key => {
+    const pts = [];
+    for (let rpm = RPM0; rpm <= RPM1; rpm += 250){
+      const u = model({...P, rpm}).powerKw / availableKw(key, rpm);
+      pts.push([rpm, u*100]);
+    }
+    return {key, pts, self:key === m};
+  });
+
+  const peak = Math.max(...series.flatMap(s => s.pts.map(p => p[1])), 110);
+  const yMax = Math.min(400, Math.ceil(peak/25)*25);
+  const X = rpm => x0 + (rpm-RPM0)/(RPM1-RPM0)*(x1-x0);
+  const Y = pct => y1 - Math.min(pct,yMax)/yMax*(y1-y0);
+
+  // grid + y labels
+  g.font = `11px ${C("--mono")||"monospace"}`;
+  g.textAlign = "right"; g.textBaseline = "middle";
+  const step = yMax <= 150 ? 25 : (yMax <= 300 ? 50 : 100);
+  for (let p = 0; p <= yMax; p += step){
+    g.strokeStyle = C("--rule-2"); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x0, Y(p)+0.5); g.lineTo(x1, Y(p)+0.5); g.stroke();
+    g.fillStyle = C("--ink-3"); g.fillText(p+" %", x0-8, Y(p));
+  }
+  // x labels
+  g.textAlign = "center"; g.textBaseline = "top";
+  for (const rpm of [3000,9000,15000,21000]){
+    g.fillStyle = C("--ink-3");
+    g.fillText((rpm/1000)+"k", X(rpm), y1+7);
+  }
+  g.fillText("spindle speed", (x0+x1)/2, y1+19);
+
+  // the ceiling
+  g.strokeStyle = C("--over"); g.lineWidth = 1.5; g.setLineDash([5,4]);
+  g.beginPath(); g.moveTo(x0, Y(100)+0.5); g.lineTo(x1, Y(100)+0.5); g.stroke();
+  g.setLineDash([]);
+
+  // curves — the other machine first, so this one draws on top
+  for (const s of [...series].sort((a,b) => a.self - b.self)){
+    g.strokeStyle = s.self ? C("--accent") : C("--ink-3");
+    g.lineWidth = s.self ? 2.5 : 1.5;
+    g.globalAlpha = s.self ? 1 : 0.55;
+    g.beginPath();
+    s.pts.forEach(([rpm,pct],i) => {
+      const yy = Y(pct);
+      if (i===0) g.moveTo(X(rpm), yy); else g.lineTo(X(rpm), yy);
+    });
+    g.stroke();
+    g.globalAlpha = 1;
+  }
+
+  // where you are
+  const here = model(P).powerKw / availableKw(m, P.rpm) * 100;
+  if (P.rpm >= RPM0 && P.rpm <= RPM1){
+    g.fillStyle = C("--accent");
+    g.beginPath(); g.arc(X(P.rpm), Y(here), 4.5, 0, 6.2832); g.fill();
+    g.strokeStyle = C("--panel"); g.lineWidth = 1.5; g.stroke();
+  }
+}
+
+el("#machine").addEventListener("change", render);
+window.addEventListener("resize", () => drawChart(el("#machine").value));
+if (window.matchMedia) {
+  window.matchMedia("(prefers-color-scheme: dark)")
+    .addEventListener("change", () => drawChart(el("#machine").value));
+}
+buildControls();
+render();
+</script>
