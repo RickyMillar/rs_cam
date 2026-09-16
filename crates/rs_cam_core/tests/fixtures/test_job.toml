@@ -1,5 +1,4 @@
 format_version = 3
-toolpaths = []
 
 [job]
 name = "Untitled"

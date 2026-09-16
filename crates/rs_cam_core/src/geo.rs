@@ -253,7 +253,7 @@ pub fn polyline_length(points: &[P3]) -> f64 {
     points
         .windows(2)
         .map(|w| {
-            #[allow(clippy::indexing_slicing)] // windows(2) yields len-2 slices
+            #[allow(clippy::indexing_slicing)] // SAFETY: windows(2) yields len-2 slices
             let (a, b) = (w[0], w[1]);
             ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
         })
@@ -272,7 +272,7 @@ pub fn polyline_xy_length(points: &[P3]) -> f64 {
     points
         .windows(2)
         .map(|w| {
-            #[allow(clippy::indexing_slicing)] // windows(2) yields len-2 slices
+            #[allow(clippy::indexing_slicing)] // SAFETY: windows(2) yields len-2 slices
             let (a, b) = (w[0], w[1]);
             ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt()
         })
@@ -289,7 +289,7 @@ pub fn polyline_length_2d(points: &[P2]) -> f64 {
     points
         .windows(2)
         .map(|w| {
-            #[allow(clippy::indexing_slicing)] // windows(2) yields len-2 slices
+            #[allow(clippy::indexing_slicing)] // SAFETY: windows(2) yields len-2 slices
             let (a, b) = (w[0], w[1]);
             ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt()
         })

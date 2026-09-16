@@ -1,9 +1,7 @@
 format_version = 3
-toolpaths = []
 
 [job]
 name = "wanaka_full_tuned"
-machine_ref = "shapeoko_pro_xxl"
 
 [job.stock]
 x = 140.0

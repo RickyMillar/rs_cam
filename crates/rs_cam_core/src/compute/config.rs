@@ -1445,9 +1445,6 @@ pub const TIP_FLOAT_DOMAIN: &str = TIP_FLOAT_PROVENANCE.domain.label();
 /// Pipeline stage [`TipFloatFinding`] is measured at.
 pub const TIP_FLOAT_STAGE: &str = TIP_FLOAT_PROVENANCE.stage.label();
 
-/// Resolution note of [`TipFloatFinding`].
-pub const TIP_FLOAT_RESOLUTION: &str = TIP_FLOAT_PROVENANCE.resolution_note;
-
 impl ToolpathStats {
     /// [`Self::truncated_core_mm2`] with its measurement contract attached,
     /// or `None` when nothing measured it (M1 slice 1).
