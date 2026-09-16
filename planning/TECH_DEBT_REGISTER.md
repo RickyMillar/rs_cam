@@ -21,7 +21,7 @@ need a register.
 | T-5 | `feeds/mod.rs` 4 144 lines, `suggest.rs` 5 667 | open |
 | T-6 | Two implementations of one physical model | closed |
 | T-7 | Two definitions of "teeth in cut", differing by helix wrap | open |
-| T-8 | The power derate thins the chip, and only half the power responds | open — one sentry red |
+| T-8 | The power derate thins the chip, and only half the power responds | **closed** `348facbb` |
 | T-9 | A feed clamped onto a ceiling ships one rounding step above it | open |
 | T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating |
 | T-11 | Feed modulation multiplies mm by a fraction of a different quantity | **closed** `bf8824ad` |
@@ -247,7 +247,28 @@ re-pinned.
 correct against the ceiling it is given, and every assertion about the
 clamp passes. No assertion states which lever a power limit should pull.
 
-**Fix:** specified in `planning/load_model_2026-09-16/DERATE_SPEC.md`. Make
+**CLOSED by `348facbb`** (2026-09-16). The engagement ladder shipped and
+`bull_12mm_pocket_oak` went from `major` to `moderate` without re-pinning.
+Pinned by `tests/the_power_ladder_pulls_the_right_lever_g_ladder.rs`, whose
+VFD arm is the only coverage of the refuse-the-traverse case — no literature
+matrix cell routes to a VFD.
+
+**One correction the implementation forced on the spec.** `DERATE_SPEC.md`
+said the feed is the wrong lever for this constraint and the first
+implementation removed it entirely. That shipped recipes 131 % over the
+ceiling. The feed is not a forbidden lever, it is a LAST lever: it goes after
+the RPM and the geometry, where the cut it has to make is small. The spec's
+reasoning about WHY the feed is a poor first choice stands; its implied
+conclusion that it should never be used did not survive
+`power_ceiling_parity_f2`.
+
+**Still open, carried from T-12:** a proposed depth is not yet snapped to a
+realisable `total / n`. The ladder chooses a continuous `ap`, and every 2.5D
+operation realises `total / ceil(total / dpp)`. The ladder's own arithmetic is
+therefore right about the depth it names and approximate about the depth the
+machine will cut.
+
+**Original fix note:** specified in `planning/load_model_2026-09-16/DERATE_SPEC.md`. Make
 the derate direction per-derate. Deflection-driven derates reduce chipload.
 The feed-cap derate traverses the constant-chipload line by reducing RPM.
 The power derate branches on `PowerModel`.
