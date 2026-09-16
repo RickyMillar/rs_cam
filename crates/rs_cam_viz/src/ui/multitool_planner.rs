@@ -870,7 +870,7 @@ fn draw_actions(
 mod tests {
     use super::*;
 
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::tier_islands::TierCapReport;
 
     fn set_with(cap: TierCapReport, min_region_area_mm2: f64) -> TierIslandSet {

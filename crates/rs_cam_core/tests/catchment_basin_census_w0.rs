@@ -171,10 +171,10 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 use rs_cam_core::classify_probe::ClassificationSampler;
-use rs_cam_core::contour_extract::marching_squares_bool_grid;
 use rs_cam_core::finish_planner::{FinishPlannerParams, decompose};
 use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
 use rs_cam_core::geo::P2;
+use rs_cam_core::geometry::contour_extract::marching_squares_bool_grid;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};

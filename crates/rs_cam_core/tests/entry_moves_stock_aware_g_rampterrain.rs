@@ -428,10 +428,10 @@ fn refit_arcs_reject_z_bumps_but_keep_real_arcs() {
     for m in &spike.toolpath.moves {
         let pts: Vec<P3> = match (prev, m.move_type) {
             (Some(p), MoveType::ArcCW { i, j, .. }) => {
-                rs_cam_core::arc_util::linearize_arc(p, m.target, i, j, true, 0.1)
+                rs_cam_core::geometry::arc_util::linearize_arc(p, m.target, i, j, true, 0.1)
             }
             (Some(p), MoveType::ArcCCW { i, j, .. }) => {
-                rs_cam_core::arc_util::linearize_arc(p, m.target, i, j, false, 0.1)
+                rs_cam_core::geometry::arc_util::linearize_arc(p, m.target, i, j, false, 0.1)
             }
             _ => vec![m.target],
         };

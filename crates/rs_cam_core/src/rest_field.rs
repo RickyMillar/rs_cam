@@ -44,10 +44,10 @@ use tracing::info;
 use crate::dexel_stock::TriDexelStock;
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P3, polyline_length};
-use crate::grid2::Grid2;
+use crate::geometry::grid2::Grid2;
+use crate::geometry::region_mask::MAX_REST_REGIONS;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
-use crate::region_mask::MAX_REST_REGIONS;
 use crate::tool::MillingCutter;
 
 /// What the pencil rest is measured "deeper than". `Copy` so the sample closure
@@ -403,18 +403,18 @@ pub struct RestFieldResult {
     /// Empty when the mask has no surviving components.
     ///
     /// **This list may be SHORT.** It is capped at
-    /// [`crate::region_mask::MAX_REST_REGIONS`]; read [`Self::region_cap`]
+    /// [`crate::geometry::region_mask::MAX_REST_REGIONS`]; read [`Self::region_cap`]
     /// before treating its length as the number of islands the mask had.
     pub region_polygons: Vec<Polygon2>,
     /// F3 (2026-08-23): how many regions the mask produced BEFORE the
-    /// [`crate::region_mask::MAX_REST_REGIONS`] cap truncated
+    /// [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap truncated
     /// [`Self::region_polygons`], and how many survived.
     ///
     /// Always measured — extraction always ran — so this is a plain value,
     /// not an `Option`. `RegionCapReport::truncated()` is `false` on the
     /// overwhelmingly common healthy set. The cap itself is unchanged:
     /// largest-by-area first, exactly as before.
-    pub region_cap: crate::region_mask::RegionCapReport,
+    pub region_cap: crate::geometry::region_mask::RegionCapReport,
 }
 
 /// True set-cells with 8-neighbourhood bounds handling (out of bounds = unset).
@@ -501,8 +501,8 @@ fn ridge_perpendicular(poly: &[usize], k: usize, nx: usize) -> (f64, f64) {
     let (Some(&a), Some(&b)) = (poly.get(lo), poly.get(hi)) else {
         return (1.0, 0.0);
     };
-    let (ra, ca) = crate::grid2::row_major_rc(a, nx);
-    let (rb, cb) = crate::grid2::row_major_rc(b, nx);
+    let (ra, ca) = crate::geometry::grid2::row_major_rc(a, nx);
+    let (rb, cb) = crate::geometry::grid2::row_major_rc(b, nx);
     let (tx, ty) = (cb as f64 - ca as f64, rb as f64 - ra as f64);
     let len = (tx * tx + ty * ty).sqrt();
     if len < 1e-9 {
@@ -570,7 +570,7 @@ fn measure_cross_section(
     threshold: f64,
     past_rim: usize,
 ) -> MeasuredCrossSection {
-    let (r0, c0) = crate::grid2::row_major_rc(ridge, nx);
+    let (r0, c0) = crate::geometry::grid2::row_major_rc(ridge, nx);
     let depth = rest.at_index_or(ridge, 0.0).max(0.0);
     let z0 = surface_z.at_index_or(ridge, f64::NAN);
 
@@ -674,7 +674,7 @@ pub fn detect_rest_valleys(
     // --- 1. Grid build: drop the pencil (and the reference, or query stock) at
     // every cell centre. ---
     let sample = |i: usize| -> (f64, bool, f64) {
-        let (r, c) = crate::grid2::row_major_rc(i, nx);
+        let (r, c) = crate::geometry::grid2::row_major_rc(i, nx);
         let x = origin_x + c as f64 * cell;
         let y = origin_y + r as f64 * cell;
         let pc = point_drop_cutter(x, y, mesh, index, pencil);
@@ -834,7 +834,7 @@ pub fn detect_rest_valleys(
             if rv > peak {
                 peak = rv;
             }
-            let (rr, cc) = crate::grid2::row_major_rc(cur, nx);
+            let (rr, cc) = crate::geometry::grid2::row_major_rc(cur, nx);
             let (r, c) = (rr as isize, cc as isize);
             let x = origin_x + cc as f64 * cell;
             let y = origin_y + rr as f64 * cell;
@@ -887,7 +887,7 @@ pub fn detect_rest_valleys(
     // describes, and on a Ø1-tip / Ø6-shank taper that is a 3.5 mm dilation
     // that welds dendritic islands into one region. Same number on every
     // non-tapered shape — see `RestFieldParams::region_margin_mm`.
-    let region_extraction = crate::region_mask::region_polygons_from_mask_reported(
+    let region_extraction = crate::geometry::region_mask::region_polygons_from_mask_reported(
         &mask,
         origin_x,
         origin_y,
@@ -971,7 +971,7 @@ pub fn detect_rest_valleys(
         let pts: Vec<P3> = poly
             .iter()
             .map(|&i| {
-                let (r, c) = crate::grid2::row_major_rc(i, nx);
+                let (r, c) = crate::geometry::grid2::row_major_rc(i, nx);
                 let z = pencil_z.at_index_or(i, f64::NAN);
                 P3::new(
                     origin_x + c as f64 * cell,
@@ -1115,10 +1115,10 @@ pub fn detect_rest_valleys(
     }
 }
 
-/// Mask → closed-polygon extraction now lives in [`crate::region_mask`]
+/// Mask → closed-polygon extraction now lives in [`crate::geometry::region_mask`]
 /// (shared with the P2 finish planner); re-exported here so existing
 /// `rest_field::region_polygons_from_mask` callers/imports keep compiling.
-pub use crate::region_mask::region_polygons_from_mask;
+pub use crate::geometry::region_mask::region_polygons_from_mask;
 
 /// Diagnosis of a rest-region set that's pathological in one of two opposite
 /// ways: a threshold-below-cusp sliver storm (way too many tiny islands), or
@@ -1550,7 +1550,7 @@ fn hysteresis_ridge(
             if v > peak {
                 peak = v;
             }
-            let (rr, cc) = crate::grid2::row_major_rc(cur, nx);
+            let (rr, cc) = crate::geometry::grid2::row_major_rc(cur, nx);
             let (r, c) = (rr as isize, cc as isize);
             for (dr, dc) in NB8 {
                 let (nr, nc) = (r + dr, c + dc);
@@ -1595,8 +1595,8 @@ fn cell_polyline_length(cells: &[usize], nx: usize) -> f64 {
             let (Some(&a), Some(&b)) = (w.first(), w.get(1)) else {
                 return 0.0;
             };
-            let (r0, c0) = crate::grid2::row_major_rc(a, nx);
-            let (r1, c1) = crate::grid2::row_major_rc(b, nx);
+            let (r0, c0) = crate::geometry::grid2::row_major_rc(a, nx);
+            let (r1, c1) = crate::geometry::grid2::row_major_rc(b, nx);
             let (dr, dc) = (r1 as f64 - r0 as f64, c1 as f64 - c0 as f64);
             (dr * dr + dc * dc).sqrt()
         })
@@ -1749,7 +1749,7 @@ fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
     let mut polys: Vec<Vec<usize>> = Vec::new();
 
     let neighbors = |idx: usize| -> Vec<usize> {
-        let (rr, cc) = crate::grid2::row_major_rc(idx, nx);
+        let (rr, cc) = crate::geometry::grid2::row_major_rc(idx, nx);
         let (r, c) = (rr as isize, cc as isize);
         NB8.iter()
             .filter_map(|&(dr, dc)| {
@@ -1761,7 +1761,7 @@ fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
     // Set neighbours ranked orthogonal-first (NB8 indices 0,2,4,6 = N,E,S,W),
     // then diagonal (1,3,5,7 = NE,SE,SW,NW) — the staircase-corner fix.
     let neighbors_ranked = |idx: usize| -> Vec<usize> {
-        let (rr, cc) = crate::grid2::row_major_rc(idx, nx);
+        let (rr, cc) = crate::geometry::grid2::row_major_rc(idx, nx);
         let (r, c) = (rr as isize, cc as isize);
         let mut ortho = Vec::new();
         let mut diag = Vec::new();
@@ -1781,7 +1781,7 @@ fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
         ortho.into_iter().chain(diag).collect()
     };
     let is_node = |idx: usize| -> bool {
-        let (rr, cc) = crate::grid2::row_major_rc(idx, nx);
+        let (rr, cc) = crate::geometry::grid2::row_major_rc(idx, nx);
         let (_, a) = ring_ab(skel, rr as isize, cc as isize);
         a != 2
     };
@@ -2664,7 +2664,7 @@ mod tests {
         // distinct surviving edges and the left/right pieces should splice
         // into one polyline through it.
         let nx = 20;
-        let idx = |r: usize, c: usize| crate::grid2::row_major_index(r, c, nx);
+        let idx = |r: usize, c: usize| crate::geometry::grid2::row_major_index(r, c, nx);
         let left: Vec<usize> = (0..=5).map(|c| idx(5, c)).collect(); // ends at N
         let right: Vec<usize> = (5..=10).map(|c| idx(5, c)).collect(); // starts at N
         let spur: Vec<usize> = vec![idx(5, 5), idx(6, 5)]; // 1-cell spur off N

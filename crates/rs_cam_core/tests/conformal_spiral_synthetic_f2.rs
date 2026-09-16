@@ -345,7 +345,7 @@ use rs_cam_core::conformal_spiral::{
 };
 use rs_cam_core::direction_field::{self, FieldParams, FieldPathResult, FieldReport};
 use rs_cam_core::geo::{P2, P3, V3};
-use rs_cam_core::grid_field::distance_transform_2d;
+use rs_cam_core::geometry::grid_field::distance_transform_2d;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::metrology::costing::{
     CandidateCost, CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
@@ -598,7 +598,7 @@ fn raster_candidate(
     safe_z: f64,
     effective_min_z: f64,
 ) -> Toolpath {
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::toolpath::raster_toolpath_from_grid;
 
     let mut out = Toolpath::new();
@@ -644,7 +644,7 @@ fn relink_and_cost(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &BallEndmill,
-    boundary: &rs_cam_core::region_set::RegionSet<'_>,
+    boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
     kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
     safe_z: f64,
 ) -> CandidateCost {
@@ -1691,7 +1691,7 @@ fn cost_field_result(
     report: &FieldReport,
     source: FieldSource,
 ) -> FieldCandidate {
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
 
     let Fixture {
         mesh,
@@ -2740,7 +2740,7 @@ struct MedialSample {
 ///
 /// # Which EDT this is, and why
 ///
-/// `rs_cam_core::grid_field::distance_transform_2d` — the shipped
+/// `rs_cam_core::geometry::grid_field::distance_transform_2d` — the shipped
 /// Felzenszwalb–Huttenlocher separable transform, the same one
 /// `region_mask`, `tier_islands`, `finish_planner` and
 /// `thin_organic_island_widths.rs` use. It returns the distance from each cell
@@ -3073,7 +3073,7 @@ fn build_medial_grid(label: &str, polygons: &[Polygon2], stepover_mm: f64) -> Op
         fill,
     };
     eprintln!(
-        "     EDT: rs_cam_core::grid_field::distance_transform_2d (Felzenszwalb-Huttenlocher,\n\
+        "     EDT: rs_cam_core::geometry::grid_field::distance_transform_2d (Felzenszwalb-Huttenlocher,\n\
          \x20    the SHIPPED transform — the same one region_mask / tier_islands / \
          finish_planner call),\n\
          \x20    fed the COMPLEMENT of the region mask, so each inside cell reads its distance \
@@ -3858,7 +3858,7 @@ fn cells_to_triangles(mask: &[bool], cells: usize) -> Vec<u32> {
 /// padded array sits at the **centre** of mask cell `(r−1, c−1)`, which is
 /// what the origin below encodes.
 fn mask_polygons(mask: &[bool], size_mm: f64, cells: usize) -> Vec<Polygon2> {
-    use rs_cam_core::contour_extract::marching_squares_bool_grid;
+    use rs_cam_core::geometry::contour_extract::marching_squares_bool_grid;
     use rs_cam_core::polygon::{detect_containment, shoelace_area};
 
     let cells = cells.max(1);
@@ -7224,7 +7224,7 @@ fn stage_d(
     spacings_sorted: &[f64],
     run: &ArmRun<'_>,
 ) -> Option<StageDOutcome> {
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
 
     let Fixture {
         mesh,
@@ -9263,7 +9263,7 @@ fn band_raster_wall(
     region_area_mm2: f64,
     stepover_mm: f64,
 ) -> CandidateCost {
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
 
     eprintln!("\n   ===== THE RETRACT WALL — 0deg BALL RASTER OVER {label} =====");
     eprintln!("     {FRESH_STOCK_LABEL}");

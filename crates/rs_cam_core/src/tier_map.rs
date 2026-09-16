@@ -463,7 +463,7 @@ impl Default for TierMapParams {
 ///
 /// Row-major `r * nx + c`, cell centre at
 /// `(origin_x + c * cell_mm, origin_y + r * cell_mm)` — the same convention as
-/// [`crate::rest_field::RestGrid`] and [`crate::grid2::Grid2`].
+/// [`crate::rest_field::RestGrid`] and [`crate::geometry::grid2::Grid2`].
 #[derive(Debug, Clone)]
 pub struct TierMap {
     pub nx: usize,

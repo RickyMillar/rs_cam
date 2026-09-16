@@ -37,10 +37,10 @@
     clippy::print_stdout
 )]
 
-use rs_cam_core::boundary::{UserOffsetOutcome, apply_user_boundary_offset};
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::geo::{BoundingBox3, P2, P3};
+use rs_cam_core::geometry::boundary::{UserOffsetOutcome, apply_user_boundary_offset};
 use rs_cam_core::polygon::{Polygon2, offset_polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::Toolpath;

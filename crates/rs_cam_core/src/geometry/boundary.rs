@@ -5,7 +5,7 @@
 //! silhouette extraction for automatic machining boundaries.
 
 use crate::geo::{P2, P3};
-use crate::marching_squares::{cell_case, cell_segments};
+use crate::geometry::marching_squares::{cell_case, cell_segments};
 use crate::mesh::TriangleMesh;
 use crate::polygon::{Polygon2, detect_containment};
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};

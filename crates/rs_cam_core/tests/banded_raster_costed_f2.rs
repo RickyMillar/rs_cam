@@ -49,11 +49,11 @@ use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
 use rs_cam_core::geo::{P2, P3};
-use rs_cam_core::grid_field::distance_transform_2d;
+use rs_cam_core::geometry::grid_field::distance_transform_2d;
+use rs_cam_core::geometry::region_set::RegionSet;
 use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::surface_link::LinkCeiling;
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::tier_map::{

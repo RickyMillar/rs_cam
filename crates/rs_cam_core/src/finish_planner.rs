@@ -81,11 +81,11 @@ use tracing::warn;
 
 use crate::finish_setup::FinishSurface;
 use crate::geo::P2;
-use crate::grid_field::distance_transform_2d;
-use crate::grid2::Grid2;
+use crate::geometry::grid_field::distance_transform_2d;
+use crate::geometry::grid2::Grid2;
+use crate::geometry::region_mask::{region_polygons_from_mask, region_polygons_from_mask_clamped};
 use crate::measurement::{CellSource, MeasurementDomain, MeasurementProvenance, MeasurementStage};
 use crate::polygon::Polygon2;
-use crate::region_mask::{region_polygons_from_mask, region_polygons_from_mask_clamped};
 use crate::rest_field::RestCenterline;
 use crate::slope::SlopeMap;
 

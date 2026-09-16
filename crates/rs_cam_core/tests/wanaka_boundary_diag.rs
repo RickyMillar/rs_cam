@@ -41,7 +41,7 @@ fn wanaka_back_rough_cuts_outside_silhouette() {
         .find(|m| m.id == 1)
         .expect("model id 1 (terrain.stl)");
     let mesh = model.mesh.as_ref().expect("terrain.stl has mesh");
-    let silhouettes = rs_cam_core::boundary::model_silhouette(mesh.as_ref(), None);
+    let silhouettes = rs_cam_core::geometry::boundary::model_silhouette(mesh.as_ref(), None);
     let silhouette = silhouettes
         .into_iter()
         .max_by(|a, b| {

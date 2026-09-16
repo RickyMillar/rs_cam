@@ -13,10 +13,10 @@ use tracing::{info, warn};
 use truck_meshalgo::tessellation::{MeshedShape, RobustMeshableShape};
 use truck_stepio::r#in::Table;
 
-use crate::enriched_mesh::{
+use crate::geo::{BoundingBox3, P2, P3, V3};
+use crate::geometry::enriched_mesh::{
     EnrichedMesh, FaceGroupId, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
 };
-use crate::geo::{BoundingBox3, P2, P3, V3};
 
 #[derive(Error, Debug)]
 pub enum StepImportError {
@@ -63,7 +63,7 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
 
     let mut face_tessellations: Vec<FaceTessellation> = Vec::new();
     let mut adjacency_pairs: Vec<(FaceGroupId, FaceGroupId)> = Vec::new();
-    let mut brep_edges: Vec<crate::enriched_mesh::BrepEdge> = Vec::new();
+    let mut brep_edges: Vec<crate::geometry::enriched_mesh::BrepEdge> = Vec::new();
 
     for (shell_idx, step_shell) in table.shell.values().enumerate() {
         let cshell = table.to_compressed_shell(step_shell).map_err(|e| {
@@ -353,7 +353,7 @@ fn build_brep_edge(
     shared_verts: Vec<P3>,
     tess_a: &FaceTessellation,
     tess_b: &FaceTessellation,
-) -> crate::enriched_mesh::BrepEdge {
+) -> crate::geometry::enriched_mesh::BrepEdge {
     // Compute average face normals for dihedral angle
     let normal_a = face_avg_normal(tess_a);
     let normal_b = face_avg_normal(tess_b);
@@ -396,7 +396,7 @@ fn build_brep_edge(
         None
     };
 
-    crate::enriched_mesh::BrepEdge {
+    crate::geometry::enriched_mesh::BrepEdge {
         id,
         face_a,
         face_b,

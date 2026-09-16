@@ -268,7 +268,7 @@ pub struct FinishingLinkStage<'a> {
     /// The op's machining regions. A surface-riding link is a cutting feed,
     /// so it may not leave them; a LIFTED one may (see
     /// [`RelinkParams::airborne_links_may_leave_territory`]).
-    pub boundary: Option<&'a crate::region_set::RegionSet<'a>>,
+    pub boundary: Option<&'a crate::geometry::region_set::RegionSet<'a>>,
     /// Machine envelope used to cost a candidate against the retract it would
     /// replace (F-034 integrator).
     pub link_kinematics: Option<&'a crate::machine_kinematics::LinkKinematics>,
@@ -479,7 +479,7 @@ pub struct RelinkParams<'a> {
     ///
     /// `None` disables the check — only correct when the caller knows the
     /// fragments span no excluded territory.
-    pub boundary: Option<&'a crate::region_set::RegionSet<'a>>,
+    pub boundary: Option<&'a crate::geometry::region_set::RegionSet<'a>>,
     /// Lift every link sample clear of standing material, and refuse the
     /// link outright when that clearance reaches `safe_z`. See
     /// [`LinkCeiling`]. `None` keeps the legacy surface-riding link — the
@@ -810,8 +810,10 @@ pub fn relink_fragments_with_kinds(
     // the two-pass form did.
     let n_frags = frags.len();
     let mut picker = if params.reorder {
-        let mut picker =
-            crate::nn_order::NearestPicker::new(crate::nn_order::Metric::Euclid, n_frags);
+        let mut picker = crate::geometry::nn_order::NearestPicker::new(
+            crate::geometry::nn_order::Metric::Euclid,
+            n_frags,
+        );
         for (j, f) in frags.iter().enumerate() {
             let e = entry_of(f);
             picker.push(j, e.x, e.y);
@@ -1524,8 +1526,8 @@ mod tests {
     #[test]
     fn relink_refuses_links_that_leave_the_boundary() {
         use crate::geo::P2;
+        use crate::geometry::region_set::RegionSet;
         use crate::polygon::Polygon2;
-        use crate::region_set::RegionSet;
 
         let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
         let index = SpatialIndex::build(&mesh, 5.0);
@@ -1600,8 +1602,8 @@ mod tests {
     #[test]
     fn a_ceiling_link_may_cross_excluded_territory() {
         use crate::geo::P2;
+        use crate::geometry::region_set::RegionSet;
         use crate::polygon::Polygon2;
-        use crate::region_set::RegionSet;
 
         let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
         let index = SpatialIndex::build(&mesh, 5.0);
@@ -1689,8 +1691,8 @@ mod tests {
     #[test]
     fn an_airborne_link_still_answers_a_territory_boundary() {
         use crate::geo::P2;
+        use crate::geometry::region_set::RegionSet;
         use crate::polygon::Polygon2;
-        use crate::region_set::RegionSet;
 
         let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
         let index = SpatialIndex::build(&mesh, 5.0);
@@ -1762,8 +1764,8 @@ mod tests {
     #[test]
     fn a_flush_ceiling_link_rides_the_surface_and_answers_the_veto() {
         use crate::geo::P2;
+        use crate::geometry::region_set::RegionSet;
         use crate::polygon::Polygon2;
-        use crate::region_set::RegionSet;
 
         let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
         let index = SpatialIndex::build(&mesh, 5.0);

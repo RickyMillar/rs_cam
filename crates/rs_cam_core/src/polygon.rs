@@ -23,7 +23,7 @@
 //!
 //! The cost is not hypothetical. At the boundary layer an empty offset does
 //! not shrink a containment to nothing — it removes the containment
-//! **entirely** (`crate::boundary`), which is a correct pass-through when the
+//! **entirely** (`crate::geometry::boundary`), which is a correct pass-through when the
 //! tool is larger than the stock and an unbounded over-cut when a dependency
 //! assertion fired. See `planning/review_2026-08-04/CAVALIER_SHAPE_FAILURE.md`
 //! and `ADVERSARIAL_2D_FINDINGS.md` F-1/F-2/F-12.

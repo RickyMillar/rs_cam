@@ -101,7 +101,7 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::crest_lines::{Curvature, compute_curvature, vertex_adjacency};
 use crate::geo::{P3, V3};
-use crate::marching_squares::CHAIN_EPS;
+use crate::geometry::marching_squares::CHAIN_EPS;
 use crate::mesh::TriangleMesh;
 use crate::pencil_dihedral::{EdgeKey, build_edge_adjacency};
 

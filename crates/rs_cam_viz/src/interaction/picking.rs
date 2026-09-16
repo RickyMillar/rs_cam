@@ -4,8 +4,8 @@ use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId};
 use crate::state::runtime::GuiState;
 use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::{ToolpathDrawFilter, toolpaths_to_draw};
-use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::geo::{BoundingBox3, P3, V3};
+use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::mesh::ray_pick_triangle;
 use rs_cam_core::session::ProjectSession;
 

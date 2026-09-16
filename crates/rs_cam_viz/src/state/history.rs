@@ -1,7 +1,7 @@
 use super::job::{FixtureId, KeepOutId, PostConfig, SetupId, StockConfig, ToolConfig, ToolId};
 use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
-use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::feeds::FeedsProvenance;
+use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::session::{Fixture, KeepOutZone, SetupData};
 

@@ -503,8 +503,8 @@ pub struct ToolpathStats {
     /// generation is byte-identical whether or not it is populated.
     pub stock_snapshot: Option<StockSnapshotStamp>,
     /// F3 (2026-08-23): what the
-    /// [`crate::region_mask::MAX_REST_REGIONS`] cap did to this operation's
-    /// rest-region extraction. See [`crate::region_mask::RegionCapReport`].
+    /// [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap did to this operation's
+    /// rest-region extraction. See [`crate::geometry::region_mask::RegionCapReport`].
     ///
     /// **Three-valued, the A/M9 X-19 contract:**
     ///
@@ -528,7 +528,7 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it, and the cap's behaviour is
     /// unchanged — largest-by-area first, exactly as before.
-    pub region_cap: Option<crate::region_mask::RegionCapReport>,
+    pub region_cap: Option<crate::geometry::region_mask::RegionCapReport>,
     /// Phase O item 3 (2026-08-27): what the INTRA-REGION stay-down relink
     /// did, and — the reason this channel exists — why it declined.
     ///

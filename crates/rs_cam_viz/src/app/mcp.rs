@@ -2101,7 +2101,9 @@ impl super::RsCamApp {
 
                 // Surface-type-specific fields
                 match &fg.surface_params {
-                    rs_cam_core::enriched_mesh::SurfaceParams::Plane { normal, .. } => {
+                    rs_cam_core::geometry::enriched_mesh::SurfaceParams::Plane {
+                        normal, ..
+                    } => {
                         map.insert(
                             "normal".into(),
                             serde_json::json!([normal.x, normal.y, normal.z]),
@@ -2111,7 +2113,7 @@ impl super::RsCamApp {
                             serde_json::json!(normal.z.abs() > 0.95),
                         );
                     }
-                    rs_cam_core::enriched_mesh::SurfaceParams::Cylinder {
+                    rs_cam_core::geometry::enriched_mesh::SurfaceParams::Cylinder {
                         radius,
                         axis_dir,
                         ..
@@ -2122,8 +2124,10 @@ impl super::RsCamApp {
                             serde_json::json!([axis_dir.x, axis_dir.y, axis_dir.z]),
                         );
                     }
-                    rs_cam_core::enriched_mesh::SurfaceParams::Cone {
-                        half_angle, axis, ..
+                    rs_cam_core::geometry::enriched_mesh::SurfaceParams::Cone {
+                        half_angle,
+                        axis,
+                        ..
                     } => {
                         map.insert(
                             "half_angle_deg".into(),
@@ -2131,10 +2135,12 @@ impl super::RsCamApp {
                         );
                         map.insert("axis".into(), serde_json::json!([axis.x, axis.y, axis.z]));
                     }
-                    rs_cam_core::enriched_mesh::SurfaceParams::Sphere { radius, .. } => {
+                    rs_cam_core::geometry::enriched_mesh::SurfaceParams::Sphere {
+                        radius, ..
+                    } => {
                         map.insert("radius".into(), serde_json::json!(radius));
                     }
-                    rs_cam_core::enriched_mesh::SurfaceParams::Torus {
+                    rs_cam_core::geometry::enriched_mesh::SurfaceParams::Torus {
                         major_radius,
                         minor_radius,
                         axis,

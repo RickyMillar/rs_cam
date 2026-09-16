@@ -365,7 +365,8 @@ fn run_tsp(segments: &[Segment]) -> Vec<usize> {
     // own acceptance sentinel and index 0 its fallback when nothing clears it
     // — both reproduced verbatim, including the degenerate re-push of an
     // already-visited index that a NaN coordinate would provoke.
-    let mut picker = crate::nn_order::NearestPicker::new(crate::nn_order::Metric::Euclid, n);
+    let mut picker =
+        crate::geometry::nn_order::NearestPicker::new(crate::geometry::nn_order::Metric::Euclid, n);
     for (i, s) in segments.iter().enumerate() {
         picker.push(i, s.start.x, s.start.y);
     }

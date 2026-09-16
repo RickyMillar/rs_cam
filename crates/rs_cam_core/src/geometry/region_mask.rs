@@ -9,9 +9,9 @@
 
 use tracing::warn;
 
-use crate::contour_extract::marching_squares_bool_grid;
-use crate::grid_field::distance_transform_2d;
-use crate::grid2::Grid2;
+use crate::geometry::contour_extract::marching_squares_bool_grid;
+use crate::geometry::grid_field::distance_transform_2d;
+use crate::geometry::grid2::Grid2;
 use crate::polygon::{Polygon2, detect_containment, shoelace_area};
 
 /// Backstop against threshold-below-cusp sliver storms: when the rest

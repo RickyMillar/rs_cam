@@ -7,9 +7,9 @@
 
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
+use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -133,10 +133,10 @@ pub fn radial_finish_toolpath_with_cancel(
         // uncontacted leading/trailing tails; each contacted run is emitted
         // as its own path segment so the tool retracts between runs instead
         // of feeding through the gap at the fallback Z.
-        let mut runs = crate::point_runs::split_runs(
+        let mut runs = crate::geometry::point_runs::split_runs(
             &spoke_points,
             |_, p: &P3| (p.z - min_z_fallback).abs() > 0.001,
-            crate::point_runs::RunTopology::Open,
+            crate::geometry::point_runs::RunTopology::Open,
             2,
         );
 

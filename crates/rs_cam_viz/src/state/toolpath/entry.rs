@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rs_cam_core::enriched_mesh::FaceGroupId;
 use rs_cam_core::gcode::CoolantMode;
+use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span};
 

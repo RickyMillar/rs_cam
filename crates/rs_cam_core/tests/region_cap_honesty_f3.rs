@@ -34,13 +34,13 @@
 use rs_cam_core::compute::config::ToolpathStats;
 use rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation;
 use rs_cam_core::diagnostics::{DiagnosticId, Scope, ids};
-use rs_cam_core::grid2::Grid2;
-use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::region_mask::{
+use rs_cam_core::geometry::grid2::Grid2;
+use rs_cam_core::geometry::region_mask::{
     MAX_REST_REGIONS, RegionCapReport, region_polygons_from_mask,
     region_polygons_from_mask_reported,
 };
+use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::polygon::Polygon2;
 
 /// `count` well-separated 3×3 blocks plus one clearly-largest 15×15 block.
 ///

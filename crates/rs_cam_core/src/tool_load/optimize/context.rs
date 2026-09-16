@@ -15,10 +15,10 @@
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::DressupConfig;
-use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::{OperationFamily, PassRole};
+use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::ToolpathId;
 use crate::machine::{MachineProfile, PowerModel};
 use crate::session::{ProjectSession, SessionError};

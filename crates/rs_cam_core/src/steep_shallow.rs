@@ -19,9 +19,9 @@ use std::ops::Range;
 use crate::dropcutter::batch_drop_cutter;
 use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
+use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::region_set::RegionSet;
 use crate::slope::{SlopeMap, classify_steep_shallow};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
@@ -269,10 +269,10 @@ fn generate_steep_passes_with_cancel(
             // into contiguous runs and emit each as its own open pass with
             // its own rapid/plunge/retract envelope.
             let whole_contour_kept = kept_count == contour.len();
-            let runs = crate::point_runs::split_runs(
+            let runs = crate::geometry::point_runs::split_runs(
                 contour,
                 |i, _p| keep.get(i).copied().unwrap_or(false),
-                crate::point_runs::RunTopology::Closed,
+                crate::geometry::point_runs::RunTopology::Closed,
                 2,
             );
 

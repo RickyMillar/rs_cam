@@ -18,11 +18,11 @@
 use crate::debug_trace::ToolpathDebugContext;
 use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
+use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 #[cfg(test)]
 use crate::polygon::Polygon2;
-use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};
 use crate::waterline::waterline_contours;
@@ -323,8 +323,10 @@ impl ParamContour {
 fn match_contours(upper: &[ParamContour], lower: &[ParamContour]) -> Vec<(usize, usize)> {
     let mut matches = Vec::new();
 
-    let mut picker =
-        crate::nn_order::NearestPicker::new(crate::nn_order::Metric::EuclidSq, lower.len());
+    let mut picker = crate::geometry::nn_order::NearestPicker::new(
+        crate::geometry::nn_order::Metric::EuclidSq,
+        lower.len(),
+    );
     for (li, lc) in lower.iter().enumerate() {
         picker.push(li, lc.centroid.0, lc.centroid.1);
     }
@@ -754,7 +756,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
             // if either is configured; a plain unfiltered push otherwise
             // (byte-identical to pre-P2.3 behavior when neither is active).
             if use_slope_filter || boundary_regions.is_some() {
-                let segments = crate::point_runs::split_runs(
+                let segments = crate::geometry::point_runs::split_runs(
                     &ramp_path,
                     |_, pt: &P3| {
                         let slope_ok = !use_slope_filter
@@ -765,7 +767,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
                             .is_none_or(|regions| regions.contains(&P2::new(pt.x, pt.y)));
                         slope_ok && region_ok
                     },
-                    crate::point_runs::RunTopology::Open,
+                    crate::geometry::point_runs::RunTopology::Open,
                     2,
                 );
                 for seg in segments {
@@ -1098,14 +1100,14 @@ mod tests {
             .collect();
 
         let confined_segments = |from_rad: f64, to_rad: f64| -> Vec<Vec<P3>> {
-            crate::point_runs::split_runs(
+            crate::geometry::point_runs::split_runs(
                 &path,
                 |_, pt: &P3| {
                     slope_map
                         .angle_at_world(pt.x, pt.y)
                         .is_some_and(|a| a >= from_rad && a <= to_rad)
                 },
-                crate::point_runs::RunTopology::Open,
+                crate::geometry::point_runs::RunTopology::Open,
                 2,
             )
         };

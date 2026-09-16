@@ -174,7 +174,7 @@ impl<B: ComputeBackend> AppController<B> {
         tp_id: crate::state::toolpath::ToolpathId,
         operation: crate::state::toolpath::OperationConfig,
         dressups: crate::state::toolpath::DressupConfig,
-        face_selection: Option<Vec<rs_cam_core::enriched_mesh::FaceGroupId>>,
+        face_selection: Option<Vec<rs_cam_core::geometry::enriched_mesh::FaceGroupId>>,
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
     ) {
         if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {

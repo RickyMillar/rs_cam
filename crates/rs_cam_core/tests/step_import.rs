@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(feature = "step")]
 
-use rs_cam_core::enriched_mesh::SurfaceType;
+use rs_cam_core::geometry::enriched_mesh::SurfaceType;
 use rs_cam_core::step_input::load_step;
 use std::path::Path;
 

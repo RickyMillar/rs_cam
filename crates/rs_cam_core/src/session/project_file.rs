@@ -15,8 +15,8 @@ use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, 
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::debug_trace::ToolpathDebugOptions;
-use crate::enriched_mesh::FaceGroupId;
 use crate::gcode::CoolantMode;
+use crate::geometry::enriched_mesh::FaceGroupId;
 
 // ── Project file types (TOML deserialization) ──────────────────────────
 

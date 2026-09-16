@@ -194,13 +194,13 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 use rs_cam_core::classify_probe::ClassificationSampler;
-use rs_cam_core::contour_extract::marching_squares_bool_grid;
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
 use rs_cam_core::geo::P2;
-use rs_cam_core::grid_field::distance_transform_2d;
+use rs_cam_core::geometry::contour_extract::marching_squares_bool_grid;
+use rs_cam_core::geometry::grid_field::distance_transform_2d;
+use rs_cam_core::geometry::monotone_cells::{lattice_monotone_cells, region_frame};
 use rs_cam_core::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
-use rs_cam_core::monotone_cells::{lattice_monotone_cells, region_frame};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
@@ -1047,7 +1047,7 @@ fn relink_and_cost_under(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
-    boundary: &rs_cam_core::region_set::RegionSet<'_>,
+    boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
     kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
     regime: &LinkRegime<'_>,
 ) -> CandidateCost {
@@ -1098,7 +1098,7 @@ fn raster_candidate(
     safe_z: f64,
     effective_min_z: f64,
 ) -> rs_cam_core::toolpath::Toolpath {
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::toolpath::{Toolpath, raster_toolpath_from_grid};
 
     let mut out = Toolpath::new();
@@ -2722,8 +2722,8 @@ fn wanaka_valley_prize_census_h0() {
          \x20  airborne exemption true), F-034 costing on the project kinematics.\n\
          \x20  This arm does not depend on either mask, so it is costed ONCE.\n"
     );
+    use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::machine_kinematics::MachineKinematics;
-    use rs_cam_core::region_set::RegionSet;
     use rs_cam_core::surface_link::LinkCeiling;
     let kinematics = MachineKinematics {
         acceleration_mm_s2: MACHINE_ACCEL_SCALAR,

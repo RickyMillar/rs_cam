@@ -353,7 +353,7 @@ impl std::fmt::Debug for ReachMapRequest {
 ///
 /// Row-major `r * nx + c`, cell centre at
 /// `(origin_x + c * cell_mm, origin_y + r * cell_mm)` — the same convention
-/// as [`crate::tier_map::TierMap`] and [`crate::grid2::Grid2`].
+/// as [`crate::tier_map::TierMap`] and [`crate::geometry::grid2::Grid2`].
 ///
 /// `None` in [`Self::cells`] means **not measured**, never zero: no surface
 /// under that XY, or no CL position within an envelope radius held the tool

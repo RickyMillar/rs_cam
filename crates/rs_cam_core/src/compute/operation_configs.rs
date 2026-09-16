@@ -1129,7 +1129,7 @@ pub struct UnifiedFinishConfig {
     /// in `FINDINGS.md` §0g–§0k): split every SHALLOW region into monotone
     /// **cells** on the region's own raster lattice, and rotate that lattice
     /// to the region's PCA-minor axis when the region clears
-    /// [`crate::monotone_cells::ELONGATION_GATE`] (3.0). Each cell is
+    /// [`crate::geometry::monotone_cells::ELONGATION_GATE`] (3.0). Each cell is
     /// rastered on that ONE shared lattice, so the relinker sees cell-shaped
     /// fragments instead of one dendritic region's worth of them.
     ///

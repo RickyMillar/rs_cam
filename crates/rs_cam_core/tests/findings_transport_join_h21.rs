@@ -47,10 +47,10 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
 use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::region_mask::RegionCapReport;
 use rs_cam_core::measurement::{MeasurementDomain, MeasurementProvenance, MeasurementStage};
 use rs_cam_core::pencil::PencilLinkReport;
 use rs_cam_core::ramp_finish::RampReachClamp;
-use rs_cam_core::region_mask::RegionCapReport;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::unified_finish::{
     ClaimsReference, ClaimsReferenceResolution, MonotoneCellTotals, RelinkTotals,

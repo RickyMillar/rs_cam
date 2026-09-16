@@ -40,7 +40,7 @@ pub use feeds as feeds_modal;
 use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId, ToolConfig, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::ui_command::UiCommand;
-use rs_cam_core::enriched_mesh::FaceGroupId;
+use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use std::path::PathBuf;
 
 // NOTE (A-4, Checkpoint I-1, 2026-08-12): the `FeedsField` enum and the

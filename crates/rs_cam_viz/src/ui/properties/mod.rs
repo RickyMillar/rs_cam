@@ -1443,7 +1443,7 @@ fn draw_model_properties(
                             ui.end_row();
 
                             // Surface type histogram
-                            use rs_cam_core::enriched_mesh::SurfaceType;
+                            use rs_cam_core::geometry::enriched_mesh::SurfaceType;
                             let mut planes = 0;
                             let mut cylinders = 0;
                             let mut other = 0;

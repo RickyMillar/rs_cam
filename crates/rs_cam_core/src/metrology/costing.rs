@@ -32,9 +32,9 @@
 //! boundary. Feeds were per-instrument constants and ride
 //! [`CostingFeeds`].
 
+use crate::geometry::region_set::RegionSet;
 use crate::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::region_set::RegionSet;
 use crate::surface_link::LinkCeiling;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;

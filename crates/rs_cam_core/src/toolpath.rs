@@ -5,7 +5,7 @@
 
 use crate::dropcutter::DropCutterGrid;
 use crate::geo::{P2, P3};
-use crate::region_set::RegionSet;
+use crate::geometry::region_set::RegionSet;
 
 /// Clearance (mm) above the INPUT STOCK's material ceiling used by the
 /// entry-descent post-pass ([`crate::dressup::optimize_entry_descents`]) to
@@ -827,7 +827,7 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
             *is_clamped = !z_ok || !region_ok;
             *is_in_range = slope_ok && z_ok && region_ok;
         }
-        let segments = crate::point_runs::split_run_ranges(&in_range, |_, &keep| keep, 1);
+        let segments = crate::geometry::point_runs::split_run_ranges(&in_range, |_, &keep| keep, 1);
 
         // Phase 2: Merge segments separated by small *slope-only* gaps.
         // Any gap containing a clamped point prevents the merge (cutting
@@ -1467,7 +1467,7 @@ mod tests {
         let tp_none = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
 
         let covering = crate::polygon::Polygon2::rectangle(-5.0, -5.0, 20.0, 20.0);
-        let region_set = crate::region_set::RegionSet::new(vec![covering]);
+        let region_set = crate::geometry::region_set::RegionSet::new(vec![covering]);
         let tp_covered =
             raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, Some(&region_set));
 
@@ -1545,7 +1545,7 @@ mod tests {
         // the same way a min_z clamp would.
         let grid = make_test_grid(3, 10, |_, _| 0.0);
         let left_half = crate::polygon::Polygon2::rectangle(-1.0, -1.0, 4.5, 3.0);
-        let region_set = crate::region_set::RegionSet::new(vec![left_half]);
+        let region_set = crate::geometry::region_set::RegionSet::new(vec![left_half]);
 
         let tp_full = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
         let tp_confined =
@@ -1584,7 +1584,7 @@ mod tests {
         );
 
         let covering = crate::polygon::Polygon2::rectangle(-5.0, -5.0, 20.0, 20.0);
-        let region_set = crate::region_set::RegionSet::new(vec![covering]);
+        let region_set = crate::geometry::region_set::RegionSet::new(vec![covering]);
         let tp_covered = raster_toolpath_from_grid_with_slope_filter(
             &grid,
             &slopes,

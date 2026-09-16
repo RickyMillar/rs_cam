@@ -364,7 +364,7 @@ fn raster_candidate(
     safe_z: f64,
     effective_min_z: f64,
 ) -> Toolpath {
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::toolpath::raster_toolpath_from_grid;
 
     let mut out = Toolpath::new();
@@ -401,7 +401,7 @@ fn relink_and_cost(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &BallEndmill,
-    boundary: &rs_cam_core::region_set::RegionSet<'_>,
+    boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
     kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
     safe_z: f64,
 ) -> CandidateCost {
@@ -950,7 +950,7 @@ fn stage_d(
     boundary: &Polygon2,
     result: &FieldPathResult,
 ) -> Option<StageDOutcome> {
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
 
     let Fixture {
         mesh,
@@ -1019,7 +1019,8 @@ fn stage_d(
         // laterally against a slope, so a contact point just inside the
         // boundary can land its cutter centre just outside it.
         let before_mm = raw.total_cutting_distance();
-        let clipped = rs_cam_core::boundary::clip_toolpath_to_boundary(&raw, boundary, safe_z);
+        let clipped =
+            rs_cam_core::geometry::boundary::clip_toolpath_to_boundary(&raw, boundary, safe_z);
         let after_mm = clipped.total_cutting_distance();
         let (clipped_cutting, clipped_escapes) = outside(&clipped);
         eprintln!(
@@ -1064,7 +1065,7 @@ fn stage_e(
     stepover_mm: f64,
     candidate: Option<&StageDOutcome>,
 ) {
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
 
     let Fixture {
         mesh,
@@ -2395,7 +2396,7 @@ fn cost_arm(
     boundary: &Polygon2,
     polylines: &[Vec<P3>],
 ) -> Result<(CandidateCost, usize), String> {
-    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::geometry::region_set::RegionSet;
 
     if polylines.len() > SEG_COST_CEILING_POLYLINES {
         return Err(format!(
@@ -2425,7 +2426,7 @@ fn cost_arm(
     let priced = if escapes == 0 {
         raw
     } else {
-        rs_cam_core::boundary::clip_toolpath_to_boundary(&raw, boundary, fixture.safe_z)
+        rs_cam_core::geometry::boundary::clip_toolpath_to_boundary(&raw, boundary, fixture.safe_z)
     };
     let region = RegionSet::new(vec![boundary.clone()]);
     let cost = relink_and_cost(

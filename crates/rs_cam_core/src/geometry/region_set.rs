@@ -15,8 +15,8 @@
 //! rest-region detector) — `RegionSet` does not itself enforce or rely on
 //! non-overlap beyond "membership is inside ANY region".
 
-use crate::boundary::subtract_keepouts;
 use crate::geo::P2;
+use crate::geometry::boundary::subtract_keepouts;
 use crate::polygon::{Polygon2, largest_by_area, offset_polygon};
 use std::borrow::Cow;
 

@@ -6,7 +6,7 @@
 //! | Function | Derivation | Cost on the reference 661 k-triangle terrain |
 //! |---|---|---|
 //! | [`cached_auto_index`] | [`SpatialIndex::build_auto`] | one full grid build |
-//! | [`cached_silhouette`] | [`crate::boundary::model_silhouette`] at the default cell size | one full-mesh rasterisation + marching squares |
+//! | [`cached_silhouette`] | [`crate::geometry::boundary::model_silhouette`] at the default cell size | one full-mesh rasterisation + marching squares |
 //! | [`cached_transform`] | [`SetupTransformInfo::apply_to_mesh`] | a ~111 MB deep copy, ~95 MB of it the re-derived `faces` array |
 //!
 //! Before this module, `ProjectSession::resolve_generation_inputs` and the
@@ -313,7 +313,7 @@ pub fn lazy_auto_index(mesh: &Arc<TriangleMesh>) -> Arc<LazyIndex> {
     })
 }
 
-/// [`crate::boundary::model_silhouette`] at the default resolution, computed
+/// [`crate::geometry::boundary::model_silhouette`] at the default resolution, computed
 /// at most once per mesh.
 #[must_use]
 pub fn cached_silhouette(mesh: &Arc<TriangleMesh>) -> Arc<Vec<Polygon2>> {
@@ -321,7 +321,7 @@ pub fn cached_silhouette(mesh: &Arc<TriangleMesh>) -> Arc<Vec<Polygon2>> {
         SILHOUETTE.record_hit();
         return hit;
     }
-    let built = Arc::new(crate::boundary::model_silhouette(mesh, None));
+    let built = Arc::new(crate::geometry::boundary::model_silhouette(mesh, None));
     SILHOUETTE.record_build();
     tracing::debug!(
         target: "rs_cam_core::geom_cache",

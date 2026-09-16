@@ -19,8 +19,8 @@ use crate::compute::config::{
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticId, DiagnosticState, Scope, Severity, Source, ids,
 };
+use crate::geometry::region_mask::RegionCapReport;
 use crate::ids::ToolpathId;
-use crate::region_mask::RegionCapReport;
 
 /// Area (mm²) below which standing material is not worth a diagnostic.
 ///

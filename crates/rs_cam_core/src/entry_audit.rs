@@ -8,9 +8,9 @@
 //! and compares each sample against the drop-cutter surface for the
 //! operation's cutter.
 
-use crate::arc_util::linearize_arc;
 use crate::dressup::EntrySurfaceProbe;
 use crate::geo::{P2, P3};
+use crate::geometry::arc_util::linearize_arc;
 use crate::polygon::Polygon2;
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 

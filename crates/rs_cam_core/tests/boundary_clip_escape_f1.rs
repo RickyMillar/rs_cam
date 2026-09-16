@@ -61,13 +61,13 @@
     clippy::print_stdout
 )]
 
-use rs_cam_core::boundary::{
-    ToolContainment, clip_annotated_to_boundary_set, effective_boundary,
-    effective_boundary_reported,
-};
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::geometry::boundary::{
+    ToolContainment, clip_annotated_to_boundary_set, effective_boundary,
+    effective_boundary_reported,
+};
 use rs_cam_core::polygon::{OffsetFailure, Polygon2};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::Toolpath;

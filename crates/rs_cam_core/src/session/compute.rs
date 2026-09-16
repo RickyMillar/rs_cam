@@ -3032,7 +3032,7 @@ impl ProjectSession {
                 // keep-out subtraction and the user offset are applied once,
                 // here, and the post-generation clip re-derives the same set
                 // off the same memoised map.
-                let processed_set = crate::region_set::RegionSet::from_slice(&regions)
+                let processed_set = crate::geometry::region_set::RegionSet::from_slice(&regions)
                     .processed(&keep_out_footprints, boundary_config.offset);
                 let single = processed_set.single_union();
                 pre_boundary_regions = Some(processed_set.as_slice().to_vec());
@@ -3043,8 +3043,9 @@ impl ProjectSession {
             {
                 match self.resolve_derived_rest_region_polys(index, *source_toolpath_id) {
                     Ok(regions) => {
-                        let processed_set = crate::region_set::RegionSet::from_slice(&regions)
-                            .processed(&keep_out_footprints, boundary_config.offset);
+                        let processed_set =
+                            crate::geometry::region_set::RegionSet::from_slice(&regions)
+                                .processed(&keep_out_footprints, boundary_config.offset);
                         let single = processed_set.single_union();
                         let region_count = processed_set.len();
                         // P2.3: share this exact `processed` set with the
@@ -3465,7 +3466,7 @@ impl ProjectSession {
     /// resolve to multiple disjoint polygons, which this single-polygon
     /// signature can't represent. See
     /// [`Self::resolve_derived_rest_region_polys`] +
-    /// [`crate::region_set::RegionSet::processed`] for that source's path,
+    /// [`crate::geometry::region_set::RegionSet::processed`] for that source's path,
     /// wired in by the two call sites below (`resolve_generation_inputs`'s
     /// `pre_boundary` and `generate_toolpath`'s post-dressup clip).
     pub(crate) fn resolve_containment_polygon(
@@ -3484,8 +3485,10 @@ impl ProjectSession {
         face_boundary: Option<&crate::polygon::Polygon2>,
         keep_out_footprints: &[crate::polygon::Polygon2],
     ) -> Result<Option<crate::polygon::Polygon2>, crate::compute::execute::OperationError> {
-        use crate::boundary::{UserOffsetOutcome, apply_user_boundary_offset, subtract_keepouts};
         use crate::compute::config::BoundarySource;
+        use crate::geometry::boundary::{
+            UserOffsetOutcome, apply_user_boundary_offset, subtract_keepouts,
+        };
 
         let mut stock_poly = match (&boundary_config.source, mesh, face_boundary) {
             (BoundarySource::FaceSelection, _, Some(face)) => face.clone(),
@@ -3550,7 +3553,7 @@ impl ProjectSession {
     ///
     /// Takes/returns an [`AnnotatedToolpath`]. Spans are precisely remapped
     /// through the clip via the provenance map returned from
-    /// [`crate::boundary::clip_toolpath_to_boundary_with_provenance`]; the
+    /// [`crate::geometry::boundary::clip_toolpath_to_boundary_with_provenance`]; the
     /// clipper never drops input moves, only inserts retract/rapid pairs
     /// between them, so a Region span that originally covered "the moves
     /// doing the cut for region X" still covers them post-clip plus any
@@ -3558,7 +3561,7 @@ impl ProjectSession {
     ///
     /// `plunge_rate_mm_min` is the operation's own plunge rate, used for the
     /// re-entry descent the clipper emits (G-BOUNDARYPLUNGE) — see
-    /// [`crate::boundary::clip_toolpath_to_boundary_set_with_provenance`].
+    /// [`crate::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance`].
     #[allow(clippy::too_many_arguments)]
     pub fn apply_boundary_clip(
         annotated: crate::toolpath_spans::AnnotatedToolpath,
@@ -3582,7 +3585,7 @@ impl ProjectSession {
         findings: &mut crate::compute::execute::GenerationFindings,
     ) -> Result<crate::toolpath_spans::AnnotatedToolpath, crate::compute::execute::OperationError>
     {
-        use crate::boundary::{
+        use crate::geometry::boundary::{
             ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
         };
 
@@ -3745,7 +3748,7 @@ impl ProjectSession {
     /// `regions` are the raw rest regions from
     /// [`Self::resolve_derived_rest_region_polys`]; keep-out subtraction and
     /// the user offset are applied per-region here (via
-    /// [`crate::region_set::RegionSet::processed`]), then each region runs
+    /// [`crate::geometry::region_set::RegionSet::processed`]), then each region runs
     /// through `effective_boundary` independently for the containment /
     /// tool-radius handling — a region that collapses under the inset is
     /// dropped from the set. If EVERY region collapses the boundary is
@@ -3759,7 +3762,7 @@ impl ProjectSession {
     ///
     /// `plunge_rate_mm_min` is the operation's own plunge rate, used for the
     /// re-entry descent the clipper emits (G-BOUNDARYPLUNGE) — see
-    /// [`crate::boundary::clip_toolpath_to_boundary_set_with_provenance`].
+    /// [`crate::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance`].
     #[allow(clippy::too_many_arguments)]
     pub fn apply_boundary_clip_multi(
         annotated: crate::toolpath_spans::AnnotatedToolpath,
@@ -3774,14 +3777,14 @@ impl ProjectSession {
         findings: &mut crate::compute::execute::GenerationFindings,
     ) -> Result<crate::toolpath_spans::AnnotatedToolpath, crate::compute::execute::OperationError>
     {
-        use crate::boundary::{
+        use crate::geometry::boundary::{
             ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
         };
 
         // Per-region keep-out subtraction + user offset (regions that
         // collapse under the offset are dropped), mirroring what
         // `resolve_containment_polygon` does to its single polygon.
-        let processed = crate::region_set::RegionSet::from_slice(regions)
+        let processed = crate::geometry::region_set::RegionSet::from_slice(regions)
             .processed(keep_out_footprints, boundary_config.offset);
 
         // Map BoundaryContainment -> ToolContainment.

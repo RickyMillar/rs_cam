@@ -67,7 +67,6 @@
 
 mod common;
 
-use rs_cam_core::boundary::clip_toolpath_to_boundary_set_with_provenance;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::execute::apply_dressups;
@@ -76,6 +75,7 @@ use rs_cam_core::dressup::{
     EntrySurfaceProbe, OffMeshEntry, RestEntryRamp, optimize_entry_descents,
 };
 use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance;
 use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::pencil::{entry_bite_budget_mm, tip_contact_radius};
 use rs_cam_core::polygon::Polygon2;

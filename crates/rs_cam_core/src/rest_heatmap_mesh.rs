@@ -521,8 +521,8 @@ mod tests {
 
     // ── Multi-tool tier preview ─────────────────────────────────────────
 
+    use crate::geometry::region_set::RegionSet;
     use crate::polygon::Polygon2;
-    use crate::region_set::RegionSet;
     use crate::tier_islands::{TierCapReport, TierIslandSet};
     use crate::tier_map::ResidualTreatment;
 

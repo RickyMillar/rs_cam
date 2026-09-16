@@ -2,11 +2,11 @@
 //! per-level contour-parallel and curvature-adaptive clearing,
 //! stamping, and waterline cleanup.
 
-use crate::contour_extract::marching_squares_bool_grid;
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{P2, P3};
-use crate::grid_field::{edt_curvature_field, smooth_grid};
+use crate::geometry::contour_extract::marching_squares_bool_grid;
+use crate::geometry::grid_field::{edt_curvature_field, smooth_grid};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::radial_profile::RadialProfileLUT;
@@ -692,7 +692,7 @@ pub(super) fn clear_z_level_contour_parallel(
     //    Material cells near the boundary have small distance.
     //    Interior material cells have large distance.
     let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
-    let edt = crate::grid_field::distance_transform_2d(&air_grid, rows, cols);
+    let edt = crate::geometry::grid_field::distance_transform_2d(&air_grid, rows, cols);
 
     // 3. Find max distance (determines number of offset levels)
     let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
@@ -1052,7 +1052,7 @@ pub(super) fn clear_z_level_adaptive(
 
     // ── 2. EDT on inverted grid (distance to nearest air) ──────────────
     let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
-    let edt = crate::grid_field::distance_transform_2d(&air_grid, rows, cols);
+    let edt = crate::geometry::grid_field::distance_transform_2d(&air_grid, rows, cols);
     let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
 
     // ── 3. Curvature field from EDT level sets ─────────────────────────
@@ -1360,7 +1360,7 @@ fn polygon_centroid_xy(poly: &crate::polygon::Polygon2) -> (f64, f64) {
 /// order disjoint machinable regions so the cutter hops to the nearest
 /// one next instead of following marching-squares scan order.
 ///
-/// Shares [`crate::nn_order::NearestPicker`] with the other four G5 sites
+/// Shares [`crate::geometry::nn_order::NearestPicker`] with the other four G5 sites
 /// (PERF_REVIEW G5) — the same lexicographic `(d², index)` answer
 /// the hand-rolled Θ(n²) scan gave, without the quadratic. A Z-level usually
 /// produces a handful of regions, for which the picker scans linearly and
@@ -1368,8 +1368,10 @@ fn polygon_centroid_xy(poly: &crate::polygon::Polygon2) -> (f64, f64) {
 /// level can produce enough regions to hang.
 #[allow(clippy::indexing_slicing)] // anchors indexed by enumerate idx
 fn nearest_neighbor_order(anchors: &[(f64, f64)], start: (f64, f64)) -> Vec<usize> {
-    let mut picker =
-        crate::nn_order::NearestPicker::new(crate::nn_order::Metric::EuclidSq, anchors.len());
+    let mut picker = crate::geometry::nn_order::NearestPicker::new(
+        crate::geometry::nn_order::Metric::EuclidSq,
+        anchors.len(),
+    );
     for (i, a) in anchors.iter().enumerate() {
         picker.push(i, a.0, a.1);
     }
@@ -1515,7 +1517,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
     }
 
     // 2. Marching squares → polygon contours.
-    let contours = crate::contour_extract::marching_squares_bool_grid(
+    let contours = crate::geometry::contour_extract::marching_squares_bool_grid(
         &material_grid,
         rows,
         cols,

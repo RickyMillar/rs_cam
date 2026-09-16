@@ -47,9 +47,9 @@ use rs_cam_core::finish_setup::{
     FinishResolutionPolicy, build_classification_surface_with_sampler_and_cancel,
 };
 use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::region_set::RegionSet;
 use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::scallop::{
     RingSource, ScallopDirection, ScallopParams, ScallopRingBudget, ScallopStepoverPolicy,
     StepoverGeometry, scallop_generation_resolution, scallop_toolpath_research,

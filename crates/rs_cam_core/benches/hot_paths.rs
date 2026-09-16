@@ -45,11 +45,11 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 
 use rs_cam_core::dexel_stock::{PlaybackDispatch, StampDispatch, StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::geometry::region_set::RegionSet;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::radial_profile::RadialProfileLUT;
-use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::Toolpath;

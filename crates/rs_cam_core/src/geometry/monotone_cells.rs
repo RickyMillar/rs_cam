@@ -54,9 +54,9 @@
 //! must fall back to the undivided raster — a decomposition that silently
 //! drops lattice points is uncut material.
 
-use crate::contour_extract::marching_squares_bool_grid;
 use crate::dropcutter::DropCutterGrid;
 use crate::geo::P2;
+use crate::geometry::contour_extract::marching_squares_bool_grid;
 use crate::polygon::{Polygon2, detect_containment, shoelace_area};
 
 /// The §0f elongation gate: a region rotates to its PCA-minor axis only
@@ -424,7 +424,7 @@ pub fn cells_select_same_lattice(
 ) -> usize {
     const CLAMP_EPS: f64 = 0.001;
 
-    let cells = crate::region_set::RegionSet::new(cells.to_vec());
+    let cells = crate::geometry::region_set::RegionSet::new(cells.to_vec());
     let mut mismatches = 0usize;
     for point in &grid.points {
         let emitted = point.z > min_z + CLAMP_EPS;

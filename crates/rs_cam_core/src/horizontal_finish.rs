@@ -7,9 +7,9 @@
 
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{BoundingBox3, P2, P3, V3};
+use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -272,10 +272,10 @@ pub fn horizontal_finish_toolpath_with_cancel(
                 .collect();
 
             // Collect feed-segments: contiguous runs of flat points.
-            let segments = crate::point_runs::split_runs(
+            let segments = crate::geometry::point_runs::split_runs(
                 &row_points,
                 |_, p: &Option<P3>| p.is_some(),
-                crate::point_runs::RunTopology::Open,
+                crate::geometry::point_runs::RunTopology::Open,
                 1,
             );
 

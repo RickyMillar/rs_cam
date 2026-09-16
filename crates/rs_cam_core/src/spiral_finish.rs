@@ -15,11 +15,11 @@
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
+use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 #[cfg(test)]
 use crate::polygon::Polygon2;
-use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -211,10 +211,10 @@ pub fn spiral_finish_toolpath_structured_annotated_with_cancel(
         .max()
         .unwrap_or(0);
 
-    let runs = crate::point_runs::split_runs(
+    let runs = crate::geometry::point_runs::split_runs(
         &samples,
         |_, s: &Option<SpiralHit>| s.is_some(),
-        crate::point_runs::RunTopology::Open,
+        crate::geometry::point_runs::RunTopology::Open,
         1,
     );
     if runs.is_empty() {

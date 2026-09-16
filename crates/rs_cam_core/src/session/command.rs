@@ -111,8 +111,8 @@ use super::{
 use crate::compute::catalog::{OperationConfig, OperationSchema};
 use crate::compute::config::DressupConfig;
 use crate::compute::simulate::SimulationResult;
-use crate::enriched_mesh::FaceGroupId;
 use crate::feeds::FeedsProvenance;
+use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::strategy_advisor::StrategyRecommendation;
 use crate::tool_load::optimize::OptimizeOutcome;

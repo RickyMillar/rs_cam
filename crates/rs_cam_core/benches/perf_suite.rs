@@ -13,14 +13,14 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use std::path::Path;
 
-use rs_cam_core::arc_util::linearize_arc;
 use rs_cam_core::arcfit::fit_arcs;
-use rs_cam_core::contour_extract::weave_contours;
 use rs_cam_core::dexel_mesh::{dexel_stock_to_mesh, dexel_stock_to_top_surface_mesh};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dropcutter::{DropCutterGrid, batch_drop_cutter, point_drop_cutter};
-use rs_cam_core::fiber::{Fiber, Interval};
 use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::arc_util::linearize_arc;
+use rs_cam_core::geometry::contour_extract::weave_contours;
+use rs_cam_core::geometry::fiber::{Fiber, Interval};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::{FlattenPolicy, OffsetRingSet, Polygon2, offset_polygon};
 use rs_cam_core::pushcutter::batch_push_cutter;

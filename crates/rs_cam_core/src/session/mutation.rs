@@ -16,7 +16,7 @@ use crate::compute::config::{BoundaryConfig, BoundarySource, DressupConfig, Heig
 use crate::compute::stock_config::{FixtureId, KeepOutId, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::compute::transform::FaceUp;
-use crate::enriched_mesh::FaceGroupId;
+use crate::geometry::enriched_mesh::FaceGroupId;
 
 use super::{
     Effects, Fixture, KeepOutZone, ProjectPostConfig, ProjectSession, SessionError, SetupData,
@@ -2641,8 +2641,8 @@ mod tests {
         s.results.insert(0, fake_result());
 
         let faces = vec![
-            crate::enriched_mesh::FaceGroupId(1),
-            crate::enriched_mesh::FaceGroupId(3),
+            crate::geometry::enriched_mesh::FaceGroupId(1),
+            crate::geometry::enriched_mesh::FaceGroupId(3),
         ];
         let _ = s.set_face_selection(0, Some(faces)).unwrap();
 
@@ -2963,7 +2963,7 @@ mod tests {
         // Snapshot of "prior" state we want to restore.
         let snapshot_op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
         let snapshot_dress = DressupConfig::default();
-        let snapshot_faces = Some(vec![crate::enriched_mesh::FaceGroupId(7)]);
+        let snapshot_faces = Some(vec![crate::geometry::enriched_mesh::FaceGroupId(7)]);
 
         let _ = s
             .apply_toolpath_param_snapshot_narrow(

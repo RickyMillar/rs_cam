@@ -1,5 +1,5 @@
 use egui_wgpu::wgpu;
-use rs_cam_core::enriched_mesh::{EnrichedMesh, FaceGroupId};
+use rs_cam_core::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId};
 use rs_cam_core::mesh::TriangleMesh;
 
 use super::gpu_safety::{self, GpuLimits};

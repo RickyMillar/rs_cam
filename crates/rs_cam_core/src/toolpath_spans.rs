@@ -128,7 +128,7 @@ impl Span {
 
     /// Remap this span's move indices through a per-input-move provenance map
     /// produced by a span-preserving toolpath transform (e.g.
-    /// [`crate::boundary::clip_toolpath_to_boundary_with_provenance`]).
+    /// [`crate::geometry::boundary::clip_toolpath_to_boundary_with_provenance`]).
     ///
     /// `mapping` must have length `original_move_count + 1` with
     /// `mapping[i]` = first output index produced from input move `i` and

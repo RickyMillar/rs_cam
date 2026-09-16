@@ -19,9 +19,9 @@
 //! see that module's doc for the corner/edge convention and the saddle
 //! tie-break used by both marching-squares variants in this file.
 
-use crate::fiber::Fiber;
 use crate::geo::{P2, P3};
-use crate::marching_squares::{self, cell_case, cell_segments};
+use crate::geometry::fiber::Fiber;
+use crate::geometry::marching_squares::{self, cell_case, cell_segments};
 
 /// Build a boolean grid from fiber intervals and extract contour loops
 /// using marching squares.
@@ -347,7 +347,7 @@ fn ms_bool_segments(
 )]
 mod tests {
     use super::*;
-    use crate::fiber::{Fiber, Interval};
+    use crate::geometry::fiber::{Fiber, Interval};
 
     #[test]
     fn test_weave_no_intervals() {

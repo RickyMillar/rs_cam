@@ -57,13 +57,13 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::geometry::region_set::RegionSet;
 use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::metrology::costing::{
     CandidateCost, CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
 };
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::spiral_finish_compact::{CompactSpiralParams, bridge_nested_levels};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};

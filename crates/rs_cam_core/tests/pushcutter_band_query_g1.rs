@@ -41,9 +41,9 @@ mod common;
 
 use common::fingerprint::fnv1a_debug;
 
-use rs_cam_core::contour_extract::weave_contours;
-use rs_cam_core::fiber::Fiber;
 use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::contour_extract::weave_contours;
+use rs_cam_core::geometry::fiber::Fiber;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::pushcutter::{
     batch_push_cutter, fiber_lateral_reach_mm, push_cutter_fiber, push_cutter_triangle,

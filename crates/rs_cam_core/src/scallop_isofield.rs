@@ -69,7 +69,7 @@
 //! sweeps on fields without deep spiral topology.
 
 use crate::geo::P2;
-use crate::marching_squares::{
+use crate::geometry::marching_squares::{
     CHAIN_EPS, EDGE_BOTTOM, EDGE_LEFT, EDGE_RIGHT, EDGE_TOP, cell_case, cell_segments,
     chain_segments,
 };

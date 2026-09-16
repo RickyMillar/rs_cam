@@ -133,8 +133,8 @@ pub fn build_band_map(s: &ProjectSession, tool_radius: f64) -> BandMap {
     use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
     use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
     use rs_cam_core::geo::P2;
+    use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::mesh::SpatialIndex;
-    use rs_cam_core::region_set::RegionSet;
     use rs_cam_core::tool::BallEndmill;
 
     let mesh = s

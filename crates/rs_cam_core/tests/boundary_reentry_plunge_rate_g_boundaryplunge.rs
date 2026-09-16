@@ -35,10 +35,10 @@
 
 #![allow(clippy::indexing_slicing, clippy::expect_used)]
 
-use rs_cam_core::boundary::{
+use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::boundary::{
     clip_toolpath_to_boundary, clip_toolpath_to_boundary_set_with_provenance,
 };
-use rs_cam_core::geo::P3;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
 

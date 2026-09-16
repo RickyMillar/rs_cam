@@ -103,12 +103,12 @@ use crate::finish_setup::{
     build_classification_surface_with_sampler_and_cancel,
 };
 use crate::geo::{P2, P3};
+use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::machine_kinematics::{LinkKinematics, retract_link_time, surface_link_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pencil::PencilParams;
 use crate::polygon::Polygon2;
-use crate::region_set::RegionSet;
 #[cfg(test)]
 use crate::rest_field::RestGrid;
 use crate::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
@@ -186,7 +186,7 @@ pub struct UnifiedFinishParams {
     /// C2 (`planning/thin_organic_2026-08-27/PROGRAMME.md` Track C): split
     /// each SHALLOW region into monotone cells on the region's own raster
     /// lattice, and rotate that lattice to the region's PCA-minor axis when
-    /// the region clears [`crate::monotone_cells::ELONGATION_GATE`].
+    /// the region clears [`crate::geometry::monotone_cells::ELONGATION_GATE`].
     ///
     /// `true` (**the default since 2026-09-01**, the C4 operator surface
     /// review — `planning/thin_organic_2026-08-27/FINDINGS.md` §7, "C4
@@ -194,7 +194,7 @@ pub struct UnifiedFinishParams {
     /// `raster_toolpath_from_grid` call per region on the shared 0° grid.
     ///
     /// The decomposition and the lattice always share ONE frame — see
-    /// [`crate::monotone_cells`] for why decomposing at 0° and re-sweeping
+    /// [`crate::geometry::monotone_cells`] for why decomposing at 0° and re-sweeping
     /// the cells at an angle is a different, and measured-worse, candidate.
     ///
     /// Measured, ceiling arm (`FINDINGS.md` §0i): **1.155×** on the wanaka
@@ -1232,7 +1232,7 @@ pub struct MonotoneCellTotals {
     /// Shallow regions the decomposition was attempted on.
     pub regions: usize,
     /// Of those, how many cleared
-    /// [`crate::monotone_cells::ELONGATION_GATE`] and were decomposed AND
+    /// [`crate::geometry::monotone_cells::ELONGATION_GATE`] and were decomposed AND
     /// rastered in their own PCA-minor frame.
     pub regions_rotated: usize,
     /// Cells whose raster was emitted, summed across regions.
@@ -1823,7 +1823,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
             // decompose's own `overlap_mm` dilation at extraction.
             let dilate_mm = grid.cell_mm + cfg.rest_field_params.region_margin_mm;
             let radius_cells = dilate_mm / grid.cell_mm.max(1e-9);
-            let dist = crate::grid_field::distance_transform_2d(&keep, grid.ny, grid.nx);
+            let dist = crate::geometry::grid_field::distance_transform_2d(&keep, grid.ny, grid.nx);
             let keep_dilated: Vec<bool> = dist.iter().map(|&d| d <= radius_cells).collect();
             // Nearest-resample onto the classification grid and AND.
             for (i, cov) in covered.iter_mut().enumerate() {
@@ -2152,7 +2152,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 // `None` is the dial-off arm and reproduces the pre-C2 band
                 // exactly: shared grid, one raster call, whole region.
                 let frame = if params.monotone_cell_decomposition {
-                    Some(crate::monotone_cells::region_frame(
+                    Some(crate::geometry::monotone_cells::region_frame(
                         &region.polygon,
                         step_over_mm,
                     ))
@@ -2236,7 +2236,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 let tp = match frame {
                     None => undivided(grid),
                     Some(f) => {
-                        let decomposed = crate::monotone_cells::lattice_monotone_cells(
+                        let decomposed = crate::geometry::monotone_cells::lattice_monotone_cells(
                             grid,
                             &region.polygon,
                             effective_min_z,
@@ -2264,12 +2264,13 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                             // cell set that lost a lattice point would be
                             // uncut material, so the disagreement arm falls
                             // back rather than emitting.
-                            let mismatches = crate::monotone_cells::cells_select_same_lattice(
-                                grid,
-                                &region.polygon,
-                                &decomposed.cells,
-                                effective_min_z,
-                            );
+                            let mismatches =
+                                crate::geometry::monotone_cells::cells_select_same_lattice(
+                                    grid,
+                                    &region.polygon,
+                                    &decomposed.cells,
+                                    effective_min_z,
+                                );
                             if mismatches > 0 {
                                 totals.membership_fallbacks =
                                     totals.membership_fallbacks.saturating_add(1);
@@ -2696,7 +2697,7 @@ struct RegionPath {
 /// regions C2 rotates.
 ///
 /// `direction_deg` must already have been through
-/// [`crate::monotone_cells::honest_raster_direction_deg`] when it comes
+/// [`crate::geometry::monotone_cells::honest_raster_direction_deg`] when it comes
 /// from a measured axis — `batch_drop_cutter_windowed_with_cancel` returns
 /// an axis-aligned grid still labelled 90°/180° for those inputs.
 ///
@@ -3337,8 +3338,9 @@ mod tests {
             Some(min_z),
             Some(&region_set),
         );
-        let decomposed = crate::monotone_cells::lattice_monotone_cells(grid, region, min_z);
-        let mismatches = crate::monotone_cells::cells_select_same_lattice(
+        let decomposed =
+            crate::geometry::monotone_cells::lattice_monotone_cells(grid, region, min_z);
+        let mismatches = crate::geometry::monotone_cells::cells_select_same_lattice(
             grid,
             region,
             &decomposed.cells,

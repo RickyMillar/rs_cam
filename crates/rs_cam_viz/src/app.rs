@@ -72,7 +72,7 @@ pub struct RsCamApp {
     /// normal session.
     minimize_after_frames: Option<u32>,
     /// Currently hovered BREP face (updated on mouse move in Toolpaths workspace).
-    last_hover_face: Option<rs_cam_core::enriched_mesh::FaceGroupId>,
+    last_hover_face: Option<rs_cam_core::geometry::enriched_mesh::FaceGroupId>,
     /// The unsaved-changes confirmation dialog, and what it is guarding.
     /// `None` means it is not shown. See [`UnsavedGuard`].
     unsaved_guard: Option<UnsavedGuard>,

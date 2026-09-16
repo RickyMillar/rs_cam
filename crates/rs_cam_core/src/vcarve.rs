@@ -11,8 +11,8 @@
 //!
 //! Reference: research/02_algorithms.md §11
 
-use crate::edge_distance::EdgeDistanceField;
 use crate::geo::{P2, P3};
+use crate::geometry::edge_distance::EdgeDistanceField;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;

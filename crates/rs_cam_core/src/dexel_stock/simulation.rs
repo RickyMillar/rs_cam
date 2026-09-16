@@ -18,9 +18,9 @@ use super::{StockCutDirection, TriDexelStock};
 use crate::dexel::DexelGrid;
 use crate::ids::ToolpathId;
 
-use crate::arc_util::linearize_arc_into;
 use crate::collision::RapidClearanceCheck;
 use crate::geo::P3;
+use crate::geometry::arc_util::linearize_arc_into;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;

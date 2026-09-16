@@ -28,7 +28,7 @@ impl RsCamApp {
     /// Get selected BREP face IDs for rendering highlights.
     /// Reads from the active toolpath's face_selection when a toolpath is selected,
     /// or from the visual Selection::Face/Faces state otherwise.
-    fn selected_face_ids(&self) -> Vec<rs_cam_core::enriched_mesh::FaceGroupId> {
+    fn selected_face_ids(&self) -> Vec<rs_cam_core::geometry::enriched_mesh::FaceGroupId> {
         let state = self.controller.state();
         match &state.selection {
             Selection::Toolpath(tp_id) => state
@@ -43,7 +43,7 @@ impl RsCamApp {
     }
 
     /// Get the currently hovered face ID (for hover highlighting).
-    fn hovered_face_id(&self) -> Option<rs_cam_core::enriched_mesh::FaceGroupId> {
+    fn hovered_face_id(&self) -> Option<rs_cam_core::geometry::enriched_mesh::FaceGroupId> {
         self.last_hover_face
     }
 

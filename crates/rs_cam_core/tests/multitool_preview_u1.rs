@@ -308,7 +308,7 @@ fn the_skip_dial_resolves_tier_zero_to_the_complement() {
         .expect("tier 0 carries a planned boundary under the skip dial");
     assert!(!polys.is_empty(), "the complement is most of the board");
 
-    let region = rs_cam_core::region_set::RegionSet::from_slice(&polys);
+    let region = rs_cam_core::geometry::region_set::RegionSet::from_slice(&polys);
     use rs_cam_core::geo::P2;
     assert!(
         !region.contains(&P2::new(0.0, 0.0)),
@@ -326,6 +326,6 @@ fn the_skip_dial_resolves_tier_zero_to_the_complement() {
         .planned_tier_boundary_polys(tier1_id, &cancel)
         .expect("tier 1 boundary resolves")
         .expect("tier 1 carries a planned boundary");
-    let fine_region = rs_cam_core::region_set::RegionSet::from_slice(&fine_polys);
+    let fine_region = rs_cam_core::geometry::region_set::RegionSet::from_slice(&fine_polys);
     assert!(fine_region.contains(&P2::new(0.0, 0.0)));
 }

@@ -6,8 +6,8 @@
 //!
 //! Used by the waterline algorithm to find contours at constant Z heights.
 
-use crate::fiber::{Fiber, Interval};
 use crate::geo::{P3, Triangle};
+use crate::geometry::fiber::{Fiber, Interval};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;

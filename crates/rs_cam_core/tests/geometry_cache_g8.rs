@@ -456,7 +456,9 @@ fn g8_unit_costs() {
 
     let t = Instant::now();
     for _ in 0..reps {
-        std::hint::black_box(rs_cam_core::boundary::model_silhouette(&mesh, None));
+        std::hint::black_box(rs_cam_core::geometry::boundary::model_silhouette(
+            &mesh, None,
+        ));
     }
     println!(
         "  model_silhouette(None)    {:.3} ms",

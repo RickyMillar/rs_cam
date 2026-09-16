@@ -41,7 +41,7 @@
 
 use std::sync::{Arc, Weak};
 
-use rs_cam_core::enriched_mesh::FaceGroupId;
+use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 
 use crate::state::job::{FaceUp, SetupId, StockConfig, ToolConfig, ZRotation};
 use crate::state::toolpath::ToolpathId;
@@ -135,7 +135,7 @@ pub struct MeshUploadKey {
 pub struct EnrichedUploadKey {
     pub frame: FrameKey,
     /// Pinned identity of each contributing `EnrichedMesh`, in model order.
-    pub meshes: Vec<ArcId<rs_cam_core::enriched_mesh::EnrichedMesh>>,
+    pub meshes: Vec<ArcId<rs_cam_core::geometry::enriched_mesh::EnrichedMesh>>,
     pub selected_faces: Vec<FaceGroupId>,
     pub hovered_face: Option<FaceGroupId>,
 }
@@ -487,7 +487,7 @@ mod tests {
             stock: StockConfig::default(),
         };
         let plain = mesh();
-        let enriched_mesh = Arc::new(rs_cam_core::enriched_mesh::EnrichedMesh {
+        let enriched_mesh = Arc::new(rs_cam_core::geometry::enriched_mesh::EnrichedMesh {
             mesh: mesh(),
             face_groups: Vec::new(),
             triangle_to_face: Vec::new(),

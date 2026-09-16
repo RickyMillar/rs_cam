@@ -70,11 +70,11 @@ use rs_cam_core::adaptive3d::{
     Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering,
     adaptive_3d_toolpath_with_cancel, debug_adaptive_3d_segments_for_f029_probe,
 };
-use rs_cam_core::boundary::{
-    ToolContainment, clip_toolpath_to_boundary, effective_boundary_reported,
-};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::P2;
+use rs_cam_core::geometry::boundary::{
+    ToolContainment, clip_toolpath_to_boundary, effective_boundary_reported,
+};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::Polygon2;

@@ -55,13 +55,13 @@
 
 mod common;
 
-use rs_cam_core::boundary::clip_toolpath_to_boundary_set_with_provenance;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::dressup::apply_lead_in_out_with_provenance;
 use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};

@@ -1137,12 +1137,13 @@ impl ProjectSession {
                     }
                 }
             }
-            let grid = crate::grid2::Grid2::from_vec(map.nx, map.ny, complement).map_err(|e| {
-                SessionError::OperationFailed(format!(
-                    "'{op_name}': complement mask shape mismatch — {e}"
-                ))
-            })?;
-            return Ok(crate::region_mask::region_polygons_from_mask(
+            let grid = crate::geometry::grid2::Grid2::from_vec(map.nx, map.ny, complement)
+                .map_err(|e| {
+                    SessionError::OperationFailed(format!(
+                        "'{op_name}': complement mask shape mismatch — {e}"
+                    ))
+                })?;
+            return Ok(crate::geometry::region_mask::region_polygons_from_mask(
                 &grid,
                 map.origin_x,
                 map.origin_y,

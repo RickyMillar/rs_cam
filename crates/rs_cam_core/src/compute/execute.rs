@@ -12,9 +12,9 @@ use crate::compute::tool_config::{ToolConfig, ToolType};
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dxf_input::DrillTarget;
 use crate::geo::BoundingBox3;
+use crate::geometry::region_set::RegionSet;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
-use crate::region_set::RegionSet;
 use crate::semantic_trace::{
     SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope,
 };
@@ -160,12 +160,12 @@ pub struct GenerationFindings {
     /// never applies. `None` = nothing inert is set.
     /// See [`crate::compute::config::InertClaimsDialFinding`].
     pub inert_claims_dial: Option<crate::compute::config::InertClaimsDialFinding>,
-    /// F3: what the [`crate::region_mask::MAX_REST_REGIONS`] cap did to this
+    /// F3: what the [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap did to this
     /// operation's rest-region extraction. `None` = no extraction ran, so
     /// nothing was measured — never "nothing was truncated". Written by the
     /// rest-analysis attach; see
     /// [`crate::compute::config::ToolpathStats::region_cap`].
-    pub region_cap: Option<crate::region_mask::RegionCapReport>,
+    pub region_cap: Option<crate::geometry::region_mask::RegionCapReport>,
     /// Phase O item 3 / G-LINKVISIBLE: what this operation's finishing link
     /// stage did, and why it declined. `None` = the stage never ran (a
     /// family that has none, or one whose hookup dial is `0.0`). Written by
@@ -352,7 +352,7 @@ fn record_inert_claims_dial(
     });
 }
 
-/// F3: record what the [`crate::region_mask::MAX_REST_REGIONS`] cap did to a
+/// F3: record what the [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap did to a
 /// rest-region extraction.
 ///
 /// **Call this even when nothing was truncated.** Like
@@ -363,7 +363,7 @@ fn record_inert_claims_dial(
 /// a path that actually ran an extraction.
 fn record_region_cap(
     cell: &std::cell::RefCell<GenerationFindings>,
-    report: crate::region_mask::RegionCapReport,
+    report: crate::geometry::region_mask::RegionCapReport,
 ) {
     cell.borrow_mut().region_cap = Some(report);
 }

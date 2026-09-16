@@ -296,7 +296,8 @@ impl MaterialGrid {
     /// (algorithm review 2026-06-12, F4).
     pub fn compute_boundary_distances(&self) -> Vec<f64> {
         let air: Vec<bool> = self.cells.iter().map(|&c| c == CELL_AIR).collect();
-        let mut dist = crate::grid_field::distance_transform_2d(&air, self.rows, self.cols);
+        let mut dist =
+            crate::geometry::grid_field::distance_transform_2d(&air, self.rows, self.cols);
         for d in &mut dist {
             *d *= self.cell_size;
         }

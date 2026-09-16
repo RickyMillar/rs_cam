@@ -13,8 +13,8 @@
 //! 0.05, R2.0 → R1.0 ladder, [`crate::tier_map::ResidualTreatment::SlopeCompensated`]):
 //! the fine tier's territory is **22.0% of the board / 8,815 mm²**, and it
 //! arrives as roughly **566 raw islands**. Handed to
-//! [`crate::region_mask::region_polygons_from_mask`] as-is, 502 of those are
-//! silently dropped by [`crate::region_mask::MAX_REST_REGIONS`] and the caller
+//! [`crate::geometry::region_mask::region_polygons_from_mask`] as-is, 502 of those are
+//! silently dropped by [`crate::geometry::region_mask::MAX_REST_REGIONS`] and the caller
 //! reads a 64-long list as the whole answer. A per-island generation pass on
 //! even the surviving 64 is the fragmentation half of the T4 loss (19 k
 //! retracts, 16,140 s of rapids — plan §0).
@@ -46,16 +46,16 @@
 //! rather than re-implemented: [`crate::finish_planner`]'s
 //! `morphological_close` and `label_components` are the actual functions
 //! called here, and the polygon extraction is
-//! [`crate::region_mask::region_polygons_from_mask_reported`].
+//! [`crate::geometry::region_mask::region_polygons_from_mask_reported`].
 //!
 //! # The 64-region cap does not apply here, and that is deliberate
 //!
-//! [`crate::region_mask::MAX_REST_REGIONS`] is a hard 64 with no caller-facing
+//! [`crate::geometry::region_mask::MAX_REST_REGIONS`] is a hard 64 with no caller-facing
 //! dial, and it truncates *inside* the extractor. Rather than raise it (which
 //! would change every existing caller's behaviour) or accept it (which would
 //! reinstate the silent truncation this layer exists to remove), this module
 //! **extracts one island at a time**: each call to
-//! [`crate::region_mask::region_polygons_from_mask_reported`] is handed a mask
+//! [`crate::geometry::region_mask::region_polygons_from_mask_reported`] is handed a mask
 //! containing exactly one connected component, so the cap can never fire and
 //! its report is uniformly neutral. Counting and capping happen here instead,
 //! on the mask, where [`TierIslandParams::max_regions_per_tier`] is an operator
@@ -99,11 +99,11 @@ use tracing::warn;
 
 use crate::finish_planner::{and_masks_in_place, label_components, morphological_close};
 use crate::geo::P2;
-use crate::grid_field::distance_transform_2d;
-use crate::grid2::Grid2;
+use crate::geometry::grid_field::distance_transform_2d;
+use crate::geometry::grid2::Grid2;
+use crate::geometry::region_mask::region_polygons_from_mask_reported;
+use crate::geometry::region_set::RegionSet;
 use crate::polygon::Polygon2;
-use crate::region_mask::region_polygons_from_mask_reported;
-use crate::region_set::RegionSet;
 use crate::tier_map::{NO_TIER, TierMap};
 
 // ── Constants ───────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ pub const DEFAULT_OVERLAP_MM: f64 = 2.0;
 
 /// Default per-tier island cap. Above this an operator cannot meaningfully
 /// veto a preview, and every extra island is one more tool-down/tool-up cycle.
-/// Deliberately far below [`crate::region_mask::MAX_REST_REGIONS`] (64): that
+/// Deliberately far below [`crate::geometry::region_mask::MAX_REST_REGIONS`] (64): that
 /// constant is a *sliver-storm backstop* inside the extractor, this one is a
 /// *planning* decision the operator can move.
 pub const DEFAULT_MAX_REGIONS_PER_TIER: usize = 24;
@@ -370,7 +370,7 @@ fn clamp_coarseness(coarseness: f64) -> f64 {
 /// **Not a three-valued channel.** Every tier measures all of this, so there
 /// is no "not measured" state to preserve here; the `Option` belongs one level
 /// up, wherever a consumer records whether island extraction ran at all. Same
-/// argument [`crate::region_mask::RegionCapReport`] makes for itself.
+/// argument [`crate::geometry::region_mask::RegionCapReport`] makes for itself.
 ///
 /// Read [`Self::acted`] first: on a healthy tier every field is neutral and
 /// the record exists only to say so.

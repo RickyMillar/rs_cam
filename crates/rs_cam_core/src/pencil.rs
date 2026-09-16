@@ -611,8 +611,10 @@ fn order_paths_nearest(paths: &mut [PencilPath]) {
     // `f64::INFINITY` — is this site's acceptance sentinel, and index 0 its
     // fallback; both reproduced exactly, including the fallback's ability to
     // re-emit an already-used index when no chain clears the sentinel.
-    let mut picker =
-        crate::nn_order::NearestPicker::new(crate::nn_order::Metric::EuclidSq, paths.len());
+    let mut picker = crate::geometry::nn_order::NearestPicker::new(
+        crate::geometry::nn_order::Metric::EuclidSq,
+        paths.len(),
+    );
     for (i, path) in paths.iter().enumerate() {
         let (Some(first), Some(last)) = (path.points.first(), path.points.last()) else {
             continue;
@@ -994,7 +996,7 @@ fn polyline_passes_depth(
 /// neighbors together with a cutting move. Runs of length < 2 are still
 /// returned; callers skip those (mirrors the pre-split `len() < 2` guard).
 fn contact_runs(points: &[P3]) -> Vec<&[P3]> {
-    crate::point_runs::split_run_ranges(points, |_, p: &P3| !p.z.is_nan(), 1)
+    crate::geometry::point_runs::split_run_ranges(points, |_, p: &P3| !p.z.is_nan(), 1)
         .into_iter()
         .filter_map(|(s, e)| points.get(s..=e))
         .collect()

@@ -19,10 +19,10 @@ use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
 use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
+use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
-use crate::region_set::RegionSet;
 use crate::scallop_math::variable_stepover;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
@@ -791,7 +791,7 @@ fn point_is_covered(ctx: &RingLiftCtx<'_>, x: f64, y: f64) -> bool {
 ///
 /// Excluded (`false`) points still carry a Z (`min_z + stock_to_leave`) so
 /// the tuple is always well-formed, but callers must run rings through the
-/// shared run-splitter (`crate::point_runs`) and treat `false` stretches as
+/// shared run-splitter (`crate::geometry::point_runs`) and treat `false` stretches as
 /// gaps — feeding straight through them used to dive the cutter to `min_z`
 /// at every off-footprint corner instead of retracting around the gap
 /// (P2.3 bonus fix; tracker `planning/finishing_stack_review_2026-07.md`).
@@ -2507,7 +2507,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
 
             // Contiguous kept runs across the whole rotated ring (index 0
             // is kept by construction, so the first run starts at 0).
-            let idx_runs = crate::point_runs::split_run_ranges(
+            let idx_runs = crate::geometry::point_runs::split_run_ranges(
                 &rotated,
                 |_, pt: &(P3, bool)| keep_point(pt),
                 1,
@@ -2580,10 +2580,10 @@ pub(crate) fn scallop_toolpath_research_with_stage(
             }
             let region_index = ring_region.get(ring_idx).copied().unwrap_or(0);
 
-            let runs = crate::point_runs::split_runs(
+            let runs = crate::geometry::point_runs::split_runs(
                 ring,
                 |_, pt: &(P3, bool)| keep_point(pt),
-                crate::point_runs::RunTopology::Closed,
+                crate::geometry::point_runs::RunTopology::Closed,
                 3,
             );
             for run in runs {

@@ -1,6 +1,6 @@
 //! Triangle mesh data exported from stock simulation, suitable for 3D rendering.
 
-use crate::arc_util::linearize_arc;
+use crate::geometry::arc_util::linearize_arc;
 use crate::toolpath::{MoveType, Toolpath};
 
 /// Triangle mesh data exported from stock simulation, suitable for 3D rendering.

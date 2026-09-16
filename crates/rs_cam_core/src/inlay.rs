@@ -9,8 +9,8 @@
 //! The V-bit angle must match for both operations. A `glue_gap` parameter accounts
 //! for the adhesive layer between mating surfaces.
 
-use crate::edge_distance::EdgeDistanceField;
 use crate::geo::{P2, P3};
+use crate::geometry::edge_distance::EdgeDistanceField;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::pocket::{PocketParams, pocket_toolpath_with_cancel};
 use crate::polygon::{Polygon2, offset_polygon};

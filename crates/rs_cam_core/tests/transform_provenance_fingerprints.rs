@@ -68,12 +68,12 @@
 )]
 
 use rs_cam_core::{
-    boundary::clip_annotated_to_boundary_set,
     compute::catalog::OperationType,
     compute::config::{DressupConfig, DressupEntryStyle},
     compute::execute::apply_dressups,
     dressup::optimize_entry_descents_annotated,
     geo::P3,
+    geometry::boundary::clip_annotated_to_boundary_set,
     polygon::Polygon2,
     semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, ToolpathSemanticTrace},
     toolpath::Toolpath,

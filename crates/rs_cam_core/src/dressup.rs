@@ -284,7 +284,7 @@ pub fn apply_entry_with_provenance(
 ///
 /// A boundary clip re-enters its region by rapiding to the target's own XY at
 /// `safe_z` and feeding straight down
-/// (`crate::boundary::clip_toolpath_to_boundary_set_with_provenance`), and the
+/// (`crate::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance`), and the
 /// scallop family opens every non-helical run the same way. On a fresh-stock
 /// pass that descent is air until it reaches the model. On a rest-driven pass
 /// the material an upstream tool could not reach stands over exactly those
@@ -387,7 +387,7 @@ pub struct RestEntryRamp {
 /// [`optimize_entry_descents_with_provenance`] that discards the
 /// provenance mapping — use that function directly when the caller needs
 /// to remap spans (e.g. after span construction, mirroring
-/// [`crate::boundary::clip_toolpath_to_boundary_with_provenance`]'s
+/// [`crate::geometry::boundary::clip_toolpath_to_boundary_with_provenance`]'s
 /// contract).
 ///
 /// Returns the number of entries split (for logging/tests).
@@ -466,7 +466,7 @@ pub fn optimize_entry_descents_annotated(
 
 /// Same as [`optimize_entry_descents`] but also returns the per-input-move
 /// provenance mapping — same shape as
-/// [`crate::boundary::clip_toolpath_to_boundary_with_provenance`]'s second
+/// [`crate::geometry::boundary::clip_toolpath_to_boundary_with_provenance`]'s second
 /// return value (`mapping[i]` is the first output move index produced from
 /// input move `i`; `mapping[tp.moves.len()]` is the output move count).
 ///
@@ -785,7 +785,7 @@ fn collect_following_cut(moves: &[Move], from_idx: usize, want: f64) -> Vec<P3> 
                 points.push(n.target);
             }
             MoveType::ArcCW { i, j, .. } => {
-                points.extend(crate::arc_util::linearize_arc(
+                points.extend(crate::geometry::arc_util::linearize_arc(
                     prev,
                     n.target,
                     i,
@@ -795,7 +795,7 @@ fn collect_following_cut(moves: &[Move], from_idx: usize, want: f64) -> Vec<P3> 
                 ));
             }
             MoveType::ArcCCW { i, j, .. } => {
-                points.extend(crate::arc_util::linearize_arc(
+                points.extend(crate::geometry::arc_util::linearize_arc(
                     prev,
                     n.target,
                     i,
@@ -2748,7 +2748,7 @@ pub fn reference_engagement_of_cutting_moves(
         match m.move_type {
             MoveType::ArcCW { i: ci, j: cj, .. } | MoveType::ArcCCW { i: ci, j: cj, .. } => {
                 let clockwise = matches!(m.move_type, MoveType::ArcCW { .. });
-                crate::arc_util::linearize_arc_into(
+                crate::geometry::arc_util::linearize_arc_into(
                     &mut arc_buf,
                     prev,
                     m.target,
@@ -2802,7 +2802,7 @@ pub fn reference_engagement_of_cutting_moves(
 /// The old doc comment claimed "moves that partially contact material are
 /// preserved", which is the invariant this restores.
 ///
-/// Arcs are walked with [`crate::arc_util::linearize_arc_into`] at the same
+/// Arcs are walked with [`crate::geometry::arc_util::linearize_arc_into`] at the same
 /// resolution the dexel simulator itself uses, so classification and
 /// stamping agree about where the tool went. The previous code sampled the
 /// arc's CENTRE — a point the tool never visits.
@@ -2827,7 +2827,9 @@ fn swept_path_is_all_air(
     match m.move_type {
         MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => {
             let clockwise = matches!(m.move_type, MoveType::ArcCW { .. });
-            crate::arc_util::linearize_arc_into(arc_buf, prev, m.target, i, j, clockwise, step);
+            crate::geometry::arc_util::linearize_arc_into(
+                arc_buf, prev, m.target, i, j, clockwise, step,
+            );
             // `linearize_arc_into` yields the endpoints too, so this covers
             // the whole move.
             arc_buf.iter().all(air_at)

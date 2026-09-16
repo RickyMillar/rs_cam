@@ -26,12 +26,14 @@
 use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 
-use rs_cam_core::boundary::{ToolContainment, clip_toolpath_to_boundary, effective_boundary};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::dxf_input::load_dxf;
 use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::geometry::boundary::{
+    ToolContainment, clip_toolpath_to_boundary, effective_boundary,
+};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::project_curve::{ProjectCurveParams, ProjectDirection, project_curve_toolpath};

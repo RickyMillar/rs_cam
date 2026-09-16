@@ -81,10 +81,10 @@
 use std::path::Path;
 use std::time::Instant;
 
-use rs_cam_core::arc_util::linearize_arc_into;
 use rs_cam_core::dexel::{DexelGrid, ray_material_length};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{BoundingBox3, P3};
+use rs_cam_core::geometry::arc_util::linearize_arc_into;
 use rs_cam_core::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill};
 

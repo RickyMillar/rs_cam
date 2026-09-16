@@ -37,16 +37,16 @@
 use rs_cam_core::dropcutter::{DropCutterGrid, batch_drop_cutter};
 use rs_cam_core::finish_planner::FinishPlannerParams;
 use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::geometry::monotone_cells::{
+    ELONGATION_GATE, cells_select_same_lattice, honest_raster_direction_deg,
+    lattice_monotone_cells, region_frame,
+};
+use rs_cam_core::geometry::region_set::RegionSet;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::metrology::costing::{
     CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
 };
-use rs_cam_core::monotone_cells::{
-    ELONGATION_GATE, cells_select_same_lattice, honest_raster_direction_deg,
-    lattice_monotone_cells, region_frame,
-};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{Toolpath, raster_toolpath_from_grid};
 use rs_cam_core::unified_finish::{UnifiedFinishParams, unified_finish_toolpath_with_cancel};
