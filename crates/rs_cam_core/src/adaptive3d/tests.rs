@@ -1,0 +1,2473 @@
+//! Unit tests for 3D adaptive clearing.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::print_stderr
+)]
+
+use super::clearing::{MaterialRegion, detect_material_regions};
+use super::path::Adaptive3dSegment;
+use super::search::material_remaining_in_region;
+use super::*;
+use crate::dexel_stock::StockCutDirection;
+use crate::geo::P3;
+use crate::ids::ToolpathId;
+use crate::mesh::SpatialIndex;
+use crate::stock::dexel::{DexelSegment, ray_subtract_above};
+use crate::stock::radial_profile::RadialProfileLUT;
+use crate::surface::slope::SurfaceHeightmap;
+use crate::tool::FlatEndmill;
+use crate::toolpath::simplify_path_3d;
+
+/// Helper: create a TriDexelStock from explicit dimensions (matching old Heightmap::from_stock).
+/// Uses `z_min = -10.0` as default bottom Z unless specified.
+fn make_stock(
+    x_min: f64,
+    y_min: f64,
+    x_max: f64,
+    y_max: f64,
+    z_top: f64,
+    cell_size: f64,
+) -> TriDexelStock {
+    TriDexelStock::from_stock(x_min, y_min, x_max, y_max, -10.0, z_top, cell_size)
+}
+
+/// Helper: create a TriDexelStock with custom per-cell Z-top values.
+/// `cell_top_z` is row-major; each cell gets a single segment [z_min, cell_z].
+fn make_stock_with_cells(
+    rows: usize,
+    cols: usize,
+    origin_x: f64,
+    origin_y: f64,
+    cell_size: f64,
+    z_min: f64,
+    cell_top_z: &[f64],
+) -> TriDexelStock {
+    use smallvec::SmallVec;
+    let z_max = cell_top_z.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let bbox = crate::geo::BoundingBox3 {
+        min: P3::new(origin_x, origin_y, z_min),
+        max: P3::new(
+            origin_x + (cols - 1) as f64 * cell_size,
+            origin_y + (rows - 1) as f64 * cell_size,
+            z_max,
+        ),
+    };
+    let mut rays = Vec::with_capacity(rows * cols);
+    for &z in cell_top_z {
+        if z <= z_min + 1e-9 {
+            // No material
+            rays.push(SmallVec::new());
+        } else {
+            let seg = DexelSegment::new(z_min as f32, z as f32);
+            rays.push(SmallVec::from_buf([seg]));
+        }
+    }
+    // A/M10: this grid is built from an explicit per-cell top array, so
+    // each cell's top IS the stated height — there is no sub-cell blend
+    // to be conservative about. Seed the sliver-safe bound to the same
+    // values rather than to the bbox top, which would make every descent
+    // over this fixture clear the full stock height.
+    let conservative_top: Vec<f32> = cell_top_z.iter().map(|&z| z as f32).collect();
+    let grid = crate::stock::dexel::DexelGrid {
+        rays,
+        rows,
+        cols,
+        origin_u: origin_x,
+        origin_v: origin_y,
+        cell_size,
+        axis: crate::stock::dexel::DexelAxis::Z,
+        conservative_top,
+    };
+    TriDexelStock {
+        z_grid: grid,
+        x_grid: None,
+        y_grid: None,
+        stock_bbox: bbox,
+        stamp_dispatch: Default::default(),
+        last_stamp_dispatch: Default::default(),
+        playback_dispatch: Default::default(),
+        last_playback_dispatch: Default::default(),
+    }
+}
+
+fn make_flat_mesh() -> (TriangleMesh, SpatialIndex) {
+    let mesh = crate::mesh::make_test_flat(50.0);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    (mesh, si)
+}
+
+fn make_hemisphere_mesh() -> (TriangleMesh, SpatialIndex) {
+    let mesh = crate::mesh::make_test_hemisphere(20.0, 16);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    (mesh, si)
+}
+
+fn flat_cutter() -> FlatEndmill {
+    FlatEndmill::new(6.35, 25.0)
+}
+
+fn default_params() -> Adaptive3dParams {
+    Adaptive3dParams {
+        trochoid_cap_mult: 1.6,
+        tool_radius: 3.175,
+        envelope_radius: 3.175,
+        z_floor: None,
+        stepover: 2.0,
+        depth_per_pass: 3.0,
+        stock_to_leave: 0.5,
+        feed_rate: 1000.0,
+        plunge_rate: 500.0,
+        safe_z: 30.0,
+        tolerance: 0.1,
+        min_cutting_radius: 0.0,
+        stock_top_z: 25.0,
+        entry_style: EntryStyle3d::Plunge,
+        fine_stepdown: None,
+        detect_flat_areas: false,
+        max_stay_down_dist: None,
+        region_ordering: RegionOrdering::Global,
+        engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
+        initial_stock: None,
+        // Matches the GUI/MCP default (ContourParallel) so the bulk of
+        // adaptive3d unit tests exercise the code path most users reach
+        // in production. Tests that specifically validate AgentSearch
+        // or Adaptive override this field explicitly.
+        clearing_strategy: ClearingStrategy3d::ContourParallel,
+        z_blend: false,
+        boundary: None,
+        mill_shallow_areas: false,
+        shallow_angle_rad: None,
+        shallow_stepdown: None,
+        world_stock_xy_bbox: None,
+        // Disabled by default in tests — tests that need to exercise
+        // the F-038 fragmentation filter set this explicitly.
+        min_region_cut_length_mm: 0.0,
+        // F-038b: tests opt out by default (None ⇒ 8×diam in production,
+        // but the unit-test fixtures here exercise the legacy code path
+        // unless they specifically target the keep-tool-down logic).
+        max_stay_down_distance_mm: Some(0.0),
+        stay_down_clearance_mm: 0.5,
+    }
+}
+
+// ── Surface heightmap tests ──────────────────────────────────────
+
+#[test]
+fn test_surface_heightmap_flat() {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    // Grid within mesh footprint (mesh is 50x50, centered at origin)
+    let shm = SurfaceHeightmap::from_mesh(&mesh, &si, &cutter, -20.0, -20.0, 8, 8, 5.0, -10.0);
+    // Interior cells should have surface Z near 0 (flat mesh at z=0)
+    // Edge cells might get min_z if outside mesh footprint
+    let mut interior_count = 0;
+    for row in 1..shm.rows - 1 {
+        for col in 1..shm.cols - 1 {
+            let z = shm.z_or_bbox_floor_at(row, col);
+            assert!(
+                (-1.0..=1.0).contains(&z),
+                "Interior flat mesh Z should be near 0, got {:.2} at ({}, {})",
+                z,
+                row,
+                col
+            );
+            interior_count += 1;
+        }
+    }
+    assert!(interior_count > 10, "Should have checked interior cells");
+}
+
+#[test]
+fn test_surface_heightmap_hemisphere() {
+    let (mesh, si) = make_hemisphere_mesh();
+    let cutter = flat_cutter();
+    let bbox = &mesh.bbox;
+    let shm = SurfaceHeightmap::from_mesh(
+        &mesh,
+        &si,
+        &cutter,
+        bbox.min.x - 5.0,
+        bbox.min.y - 5.0,
+        20,
+        20,
+        3.0,
+        bbox.min.z,
+    );
+
+    // Center should be higher than edges
+    let center_row = shm.rows / 2;
+    let center_col = shm.cols / 2;
+    let center_z = shm.z_or_bbox_floor_at(center_row, center_col);
+    let edge_z = shm.z_or_bbox_floor_at(0, 0);
+    assert!(
+        center_z > edge_z,
+        "Hemisphere center ({:.1}) should be higher than edge ({:.1})",
+        center_z,
+        edge_z
+    );
+}
+
+// ── Z level computation ─────────────────────────────────────────────
+
+#[test]
+fn test_z_level_computation() {
+    let stock_top = 20.0;
+    let depth_per_pass = 5.0;
+    let surface_bottom = 0.0;
+    let stock_to_leave = 0.5;
+    let z_bottom = surface_bottom + stock_to_leave;
+
+    let mut z_levels: Vec<f64> = Vec::new();
+    let mut z = stock_top - depth_per_pass;
+    while z > z_bottom {
+        z_levels.push(z);
+        z -= depth_per_pass;
+    }
+    z_levels.push(z_bottom);
+
+    assert_eq!(z_levels.len(), 4, "Should have 4 levels: [15, 10, 5, 0.5]");
+    assert!((z_levels[0] - 15.0_f64).abs() < 0.01);
+    assert!((z_levels[1] - 10.0_f64).abs() < 0.01);
+    assert!((z_levels[2] - 5.0_f64).abs() < 0.01);
+    assert!((z_levels[3] - 0.5_f64).abs() < 0.01);
+}
+
+// ── Path simplification ─────────────────────────────────────────────
+
+#[test]
+fn test_simplify_path_3d() {
+    // Collinear 3D points should simplify
+    let path = vec![
+        P3::new(0.0, 0.0, 0.0),
+        P3::new(1.0, 0.0, 1.0),
+        P3::new(2.0, 0.0, 2.0),
+        P3::new(3.0, 0.0, 3.0),
+    ];
+    let simplified = simplify_path_3d(&path, 0.01);
+    assert_eq!(
+        simplified.len(),
+        2,
+        "Collinear 3D points should reduce to 2"
+    );
+
+    // Non-collinear should be preserved
+    let path2 = vec![
+        P3::new(0.0, 0.0, 0.0),
+        P3::new(1.0, 5.0, 1.0),
+        P3::new(2.0, 0.0, 2.0),
+    ];
+    let simplified2 = simplify_path_3d(&path2, 0.01);
+    assert_eq!(simplified2.len(), 3, "Non-collinear should be preserved");
+}
+
+// ── Integration tests ───────────────────────────────────────────────
+
+#[test]
+fn test_adaptive_3d_flat_produces_toolpath() {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let params = Adaptive3dParams {
+        stock_top_z: 5.0,    // 5mm above flat mesh at z=0
+        depth_per_pass: 5.0, // Single level
+        stock_to_leave: 0.0,
+        tolerance: 0.5, // Coarse for speed
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(
+        tp.moves.len() > 10,
+        "Should produce a non-trivial toolpath, got {} moves",
+        tp.moves.len()
+    );
+    assert!(
+        tp.total_cutting_distance() > 10.0,
+        "Should have meaningful cutting distance, got {:.1}mm",
+        tp.total_cutting_distance()
+    );
+}
+
+#[test]
+fn test_adaptive_3d_hemisphere_multi_level() {
+    let (mesh, si) = make_hemisphere_mesh();
+    let cutter = flat_cutter();
+    let params = Adaptive3dParams {
+        stock_top_z: 25.0, // Above hemisphere peak (~20)
+        depth_per_pass: 5.0,
+        stock_to_leave: 0.5,
+        tolerance: 0.5, // Coarse for speed
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(
+        tp.moves.len() > 20,
+        "Hemisphere should produce multi-level passes, got {} moves",
+        tp.moves.len()
+    );
+
+    // Z values should span from near stock_top down to near surface
+    let min_z = tp
+        .moves
+        .iter()
+        .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }))
+        .map(|m| m.target.z)
+        .fold(f64::INFINITY, f64::min);
+    assert!(
+        min_z < 15.0,
+        "Should cut down to lower Z levels, min feed Z = {:.1}",
+        min_z
+    );
+}
+
+/// DIAGNOSTIC: dump per-Cut-segment Z statistics for AgentSearch on a
+/// hemisphere. Used to verify that the Z-drop split fix in
+/// `clear_z_level_agent_2d_slice` is working — and to detect cases
+/// the threshold misses (e.g., cumulative descent across many small
+/// dz steps).
+///
+/// Prints to stdout via `println!` (test-mode only; not subject to
+/// the production-code `print_stdout` lint). Run with:
+///   cargo test -p rs_cam_core --lib agent_search_z_drop_diag -- --nocapture
+#[test]
+fn agent_search_z_drop_diag() {
+    let (mesh, si) = make_hemisphere_mesh();
+    let cutter = flat_cutter();
+    let params = Adaptive3dParams {
+        stock_top_z: 25.0,
+        depth_per_pass: 3.0,
+        stock_to_leave: 0.5,
+        tolerance: 0.5,
+        stepover: 1.0,
+        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        ..default_params()
+    };
+
+    let never_cancel = || false;
+    let segments = adaptive_3d_segments(&mesh, &si, &cutter, &params, None, &never_cancel)
+        .expect("segments")
+        .segments;
+
+    let mut max_per_step_dz = 0.0f64;
+    let mut max_path_total_descent = 0.0f64;
+    let mut paths_with_descent_gt_dpp = 0usize;
+    let mut total_cut_paths = 0usize;
+    let mut largest_path_len = 0usize;
+    let mut largest_path_descent_summary = String::new();
+
+    for seg in &segments {
+        if let Adaptive3dSegment::Cut(path) = seg {
+            if path.len() < 2 {
+                continue;
+            }
+            total_cut_paths += 1;
+            let mut path_max_dz = 0.0f64;
+            let mut path_total_descent = 0.0f64;
+            let mut path_max_contig_descent = 0.0f64;
+            let mut current_descent = 0.0f64;
+            for w in path.windows(2) {
+                let dz = w[1].z - w[0].z;
+                path_max_dz = path_max_dz.max(dz.abs());
+                if dz < 0.0 {
+                    path_total_descent += -dz;
+                    current_descent += -dz;
+                    path_max_contig_descent = path_max_contig_descent.max(current_descent);
+                } else {
+                    current_descent = 0.0;
+                }
+            }
+            max_per_step_dz = max_per_step_dz.max(path_max_dz);
+            if path_total_descent > max_path_total_descent {
+                max_path_total_descent = path_total_descent;
+                largest_path_len = path.len();
+                largest_path_descent_summary = format!(
+                    "len={} max_step_dz={:.3} total_descent={:.3} max_contig={:.3}",
+                    path.len(),
+                    path_max_dz,
+                    path_total_descent,
+                    path_max_contig_descent
+                );
+            }
+            if path_total_descent > params.depth_per_pass {
+                paths_with_descent_gt_dpp += 1;
+            }
+        }
+    }
+
+    println!("\n=== AgentSearch Z-drop diagnostics (hemisphere) ===");
+    println!("total Cut paths: {}", total_cut_paths);
+    println!("max per-step |dz|: {:.3} mm", max_per_step_dz);
+    println!(
+        "max path total descent: {:.3} mm (over {} pts)",
+        max_path_total_descent, largest_path_len
+    );
+    println!(
+        "paths with total descent > depth_per_pass ({:.1}): {}",
+        params.depth_per_pass, paths_with_descent_gt_dpp
+    );
+    println!("worst path: {}", largest_path_descent_summary);
+
+    // The split fix should keep per-step |dz| under depth_per_pass × 1.1.
+    let threshold = params.depth_per_pass * 1.1;
+    assert!(
+        max_per_step_dz <= threshold + 0.01,
+        "split fix failed: max per-step |dz| = {:.3} mm exceeds threshold {:.3} mm",
+        max_per_step_dz,
+        threshold
+    );
+}
+
+#[test]
+fn test_adaptive_3d_z_follows_surface() {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let params = Adaptive3dParams {
+        stock_top_z: 5.0,
+        depth_per_pass: 5.0,
+        stock_to_leave: 0.5,
+        tolerance: 0.5,
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+
+    // All cutting moves should be at or above stock_to_leave
+    for m in &tp.moves {
+        if let crate::toolpath::MoveType::Linear { .. } = m.move_type
+            && m.target.z < params.safe_z - 1.0
+        {
+            assert!(
+                m.target.z >= params.stock_to_leave - 1.0,
+                "Cut Z ({:.2}) should be >= stock_to_leave ({:.1}) - tolerance",
+                m.target.z,
+                params.stock_to_leave
+            );
+        }
+    }
+}
+
+// ── Fix 1: Z-rate clamping test ────────────────────────────────────
+
+#[test]
+fn test_z_rate_clamp_limits_descent() {
+    // Verify that Z-rate clamping works in the internal stepping loop.
+    // We test by calling adaptive_3d_segments directly and inspecting Cut paths
+    // before simplification/blending.
+    let (mesh, si) = make_hemisphere_mesh();
+    let cutter = flat_cutter();
+    let depth_per_pass = 3.0;
+    let params = Adaptive3dParams {
+        stock_top_z: 25.0,
+        depth_per_pass,
+        stock_to_leave: 0.5,
+        tolerance: 0.5,
+        ..default_params()
+    };
+
+    let never_cancel = || false;
+    let segments = adaptive_3d_segments(&mesh, &si, &cutter, &params, None, &never_cancel)
+        .expect("test helper should not cancel")
+        .segments;
+
+    // Check raw Cut segments: consecutive points should not drop > depth_per_pass
+    let mut checked = 0;
+    for seg in &segments {
+        if let Adaptive3dSegment::Cut(path) = seg {
+            for window in path.windows(2) {
+                let z_drop = window[0].z - window[1].z;
+                if z_drop > 0.0 {
+                    assert!(
+                        z_drop <= depth_per_pass + 0.1,
+                        "Raw path Z drop {:.2} exceeds depth_per_pass {:.1}",
+                        z_drop,
+                        depth_per_pass,
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(checked > 0, "Should have checked some downward Z moves");
+}
+
+// ── Fix 2: Helix entry test ────────────────────────────────────────
+
+#[test]
+fn test_helix_entry_no_vertical_plunge() {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let params = Adaptive3dParams {
+        stock_top_z: 5.0,
+        depth_per_pass: 5.0,
+        stock_to_leave: 0.0,
+        tolerance: 0.5,
+        entry_style: EntryStyle3d::Helix {
+            radius: cutter.radius() * 0.8,
+            pitch: 1.0,
+        },
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(tp.moves.len() > 5, "Should produce a toolpath");
+
+    // With helix entry, there should be feed moves that descend while
+    // moving in XY (helix spiral). Individual helix steps are small,
+    // so check for any downward-feed with XY motion.
+    let mut has_helix_moves = false;
+    for window in tp.moves.windows(2) {
+        if let crate::toolpath::MoveType::Linear { .. } = window[1].move_type {
+            let dx = (window[1].target.x - window[0].target.x).abs();
+            let dy = (window[1].target.y - window[0].target.y).abs();
+            let dz = window[0].target.z - window[1].target.z;
+            // A helix step descends while moving in XY
+            if dz > 0.005 && (dx > 0.01 || dy > 0.01) {
+                has_helix_moves = true;
+                break;
+            }
+        }
+    }
+    assert!(
+        has_helix_moves,
+        "Helix entry should produce moves with simultaneous XY+Z motion"
+    );
+}
+
+// ── Fix 4: Fine stepdown test ──────────────────────────────────────
+
+#[test]
+fn test_fine_stepdown_inserts_levels() {
+    // Verify that fine_stepdown produces more Z levels
+    let stock_top: f64 = 20.0;
+    let depth_per_pass: f64 = 5.0;
+    let fine_step: f64 = 1.0;
+    let surface_bottom: f64 = 0.0;
+    let stock_to_leave: f64 = 0.5;
+    let z_bottom = surface_bottom + stock_to_leave;
+
+    // Major levels only
+    let mut major_levels = Vec::new();
+    let mut z = stock_top - depth_per_pass;
+    while z > z_bottom {
+        major_levels.push(z);
+        z -= depth_per_pass;
+    }
+    major_levels.push(z_bottom);
+    let n_major = major_levels.len(); // Should be 4: [15, 10, 5, 0.5]
+
+    // Fine stepdown levels
+    let mut all_levels = Vec::new();
+    let first_start = stock_top;
+    for window in std::iter::once(&first_start)
+        .chain(major_levels.iter())
+        .collect::<Vec<_>>()
+        .windows(2)
+    {
+        let z_top = *window[0];
+        let z_bot = *window[1];
+        let mut iz = z_top - fine_step;
+        while iz > z_bot + fine_step * 0.5 {
+            all_levels.push(iz);
+            iz -= fine_step;
+        }
+        all_levels.push(z_bot);
+    }
+    all_levels.sort_by(|a, b| b.total_cmp(a));
+    all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+
+    assert!(
+        all_levels.len() > n_major * 3,
+        "Fine stepdown should produce significantly more levels: {} vs {}",
+        all_levels.len(),
+        n_major
+    );
+    // With fine_step=1 and depth_per_pass=5, each major interval gets ~4 intermediates
+    // Total should be around 19-20 levels
+    assert!(
+        all_levels.len() >= 15,
+        "Expected at least 15 fine levels, got {}",
+        all_levels.len()
+    );
+}
+
+// ── Fix 5: Flat area detection test ────────────────────────────────
+
+#[test]
+fn test_flat_area_detection_finds_shelf() {
+    // Build a surface heightmap where many cells sit at z=10 (a shelf)
+    // and the rest sit at z=0 (floor)
+    let cell_size = 1.0;
+    let rows = 20;
+    let cols = 20;
+    let mut z_values = vec![0.0; rows * cols];
+    // Create a shelf: rows 5..15, cols 5..15 at z=10
+    for row in 5..15 {
+        for col in 5..15 {
+            z_values[row * cols + col] = 10.0;
+        }
+    }
+
+    let covered = vec![true; z_values.len()];
+    let shm = SurfaceHeightmap::from_parts(z_values, covered, rows, cols, 0.0, 0.0, cell_size);
+
+    // The PRODUCTION detector, not a copy of it. This test held a
+    // verbatim re-implementation of the histogram until 2026-09-17, so a
+    // change to the real detector left it green (Q6).
+    let tolerance: f64 = 0.1;
+    let stock_to_leave: f64 = 0.5;
+    let stock_top: f64 = 25.0;
+    let z_bottom = 0.0 + stock_to_leave;
+    let flat_levels = super::path::flat_shelf_levels(
+        &shm,
+        0.0,
+        stock_top,
+        tolerance,
+        stock_to_leave,
+        z_bottom,
+        &[],
+    );
+
+    // Should detect the shelf at z≈10 (+stock_to_leave=0.5 → 10.5)
+    let found_shelf = flat_levels.iter().any(|&z| (z - 10.5).abs() < 1.0);
+    assert!(
+        found_shelf,
+        "Should detect shelf near z=10.5, found levels: {:?}",
+        flat_levels
+    );
+}
+
+// ── Region detection tests ───────────────────────────────────────────
+
+#[test]
+fn test_detect_regions_single_block() {
+    // Full material → 1 region covering entire grid
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let cell_size = 2.0;
+
+    let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+    let surface_hm = SurfaceHeightmap::from_mesh(
+        &mesh,
+        &si,
+        &cutter,
+        material_stock.z_grid.origin_u,
+        material_stock.z_grid.origin_v,
+        material_stock.z_grid.rows,
+        material_stock.z_grid.cols,
+        cell_size,
+        -10.0,
+    );
+
+    let regions = detect_material_regions(&material_stock, &surface_hm, 0.5, 3.175);
+    assert!(
+        !regions.is_empty(),
+        "Full material should produce at least 1 region"
+    );
+    // Largest region should cover most of the grid
+    let total_cells = material_stock.z_grid.rows * material_stock.z_grid.cols;
+    assert!(
+        regions[0].cell_count > total_cells / 2,
+        "Largest region should cover most cells: {} / {}",
+        regions[0].cell_count,
+        total_cells
+    );
+}
+
+#[test]
+fn test_detect_regions_two_islands() {
+    // Two separated blocks → 2 regions, sorted by area
+    let cell_size = 1.0;
+    let material_stock = make_stock(0.0, 0.0, 30.0, 10.0, 20.0, cell_size);
+    let rows = material_stock.z_grid.rows;
+    let cols = material_stock.z_grid.cols;
+
+    // Surface at z=0 everywhere
+    let surface_hm = SurfaceHeightmap::from_parts(
+        vec![0.0; rows * cols],
+        vec![true; rows * cols],
+        rows,
+        cols,
+        material_stock.z_grid.origin_u,
+        material_stock.z_grid.origin_v,
+        cell_size,
+    );
+
+    // Create two islands by clearing a gap in the middle
+    let mut hm = material_stock;
+    for row in 0..rows {
+        for col in 0..cols {
+            let (x, _y) = hm.z_grid.cell_to_world(row, col);
+            if (13.0..=17.0).contains(&x) {
+                // Clear the gap — remove all material
+                ray_subtract_above(hm.z_grid.ray_mut(row, col), hm.stock_bbox.min.z as f32);
+            }
+        }
+    }
+
+    let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+    assert!(
+        regions.len() >= 2,
+        "Should detect at least 2 separate regions, got {}",
+        regions.len()
+    );
+    // Sorted by area descending
+    assert!(
+        regions[0].cell_count >= regions[1].cell_count,
+        "Regions should be sorted by area descending"
+    );
+}
+
+#[test]
+fn test_detect_regions_diagonal_connected() {
+    // Diagonal-touching blocks → 1 region (8-connected)
+    let cell_size = 1.0;
+    let rows = 10;
+    let cols = 10;
+
+    // Surface at z=0, material at z=20 only on diagonal cells
+    let mut mat_cells = vec![0.0f64; rows * cols];
+    for i in 0..rows.min(cols) {
+        mat_cells[i * cols + i] = 20.0;
+    }
+
+    let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
+    let surface_hm = SurfaceHeightmap::from_parts(
+        vec![0.0; rows * cols],
+        vec![true; rows * cols],
+        rows,
+        cols,
+        0.0,
+        0.0,
+        cell_size,
+    );
+
+    let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+    assert_eq!(
+        regions.len(),
+        1,
+        "Diagonal cells should form 1 region with 8-connectivity, got {}",
+        regions.len()
+    );
+}
+
+#[test]
+fn test_detect_regions_small_filtered() {
+    // Isolated cells (< 4) should be filtered out
+    let cell_size = 1.0;
+    let rows = 10;
+    let cols = 10;
+
+    // Only 2 adjacent cells have material
+    let mut mat_cells = vec![0.0f64; rows * cols];
+    mat_cells[0] = 20.0;
+    mat_cells[1] = 20.0;
+
+    let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
+    let surface_hm = SurfaceHeightmap::from_parts(
+        vec![0.0; rows * cols],
+        vec![true; rows * cols],
+        rows,
+        cols,
+        0.0,
+        0.0,
+        cell_size,
+    );
+
+    let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+    assert!(
+        regions.is_empty(),
+        "Tiny regions (< 4 cells) should be filtered out, got {} regions",
+        regions.len()
+    );
+}
+
+#[test]
+fn test_material_remaining_in_region() {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let cell_size = 1.0;
+
+    let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+    let surface_hm = SurfaceHeightmap::from_mesh(
+        &mesh,
+        &si,
+        &cutter,
+        material_stock.z_grid.origin_u,
+        material_stock.z_grid.origin_v,
+        material_stock.z_grid.rows,
+        material_stock.z_grid.cols,
+        cell_size,
+        -10.0,
+    );
+
+    // A region covering a quarter of the grid
+    let region = MaterialRegion {
+        row_min: 0,
+        row_max: material_stock.z_grid.rows / 2,
+        col_min: 0,
+        col_max: material_stock.z_grid.cols / 2,
+        world_x_min: -30.0,
+        world_x_max: 0.0,
+        world_y_min: -30.0,
+        world_y_max: 0.0,
+        cell_count: (material_stock.z_grid.rows / 2) * (material_stock.z_grid.cols / 2),
+        surface_z_min: 0.0,
+        surface_z_max: 0.0,
+    };
+
+    let rem = material_remaining_in_region(&material_stock, &surface_hm, 10.0, 0.5, &region);
+    let frac = rem.fraction();
+    assert!(
+        frac > 0.5,
+        "Full material in region should show high remaining, got {:.2} ({} / {})",
+        frac,
+        rem.cells_with_material,
+        rem.cells_at_z,
+    );
+}
+
+// ── Integration: ByArea ordering ─────────────────────────────────────
+
+#[test]
+fn test_adaptive_3d_by_area_flat() {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let params = Adaptive3dParams {
+        stock_top_z: 5.0,
+        depth_per_pass: 5.0,
+        stock_to_leave: 0.0,
+        tolerance: 0.5,
+        region_ordering: RegionOrdering::ByArea,
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(
+        tp.moves.len() > 10,
+        "ByArea on flat mesh should produce toolpath, got {} moves",
+        tp.moves.len()
+    );
+    assert!(
+        tp.total_cutting_distance() > 10.0,
+        "ByArea should have meaningful cutting distance, got {:.1}mm",
+        tp.total_cutting_distance()
+    );
+}
+
+#[test]
+fn test_adaptive_3d_by_area_hemisphere() {
+    let (mesh, si) = make_hemisphere_mesh();
+    let cutter = flat_cutter();
+    let params = Adaptive3dParams {
+        stock_top_z: 25.0,
+        depth_per_pass: 5.0,
+        stock_to_leave: 0.5,
+        tolerance: 0.5,
+        region_ordering: RegionOrdering::ByArea,
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(
+        tp.moves.len() > 20,
+        "ByArea on hemisphere should produce multi-level passes, got {} moves",
+        tp.moves.len()
+    );
+
+    // Z values should span a useful range
+    let min_z = tp
+        .moves
+        .iter()
+        .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }))
+        .map(|m| m.target.z)
+        .fold(f64::INFINITY, f64::min);
+    assert!(
+        min_z < 15.0,
+        "ByArea should cut down to lower Z levels, min feed Z = {:.1}",
+        min_z
+    );
+}
+
+// ── Widening coverage test ──────────────────────────────────────────
+
+#[test]
+fn test_widening_covers_stepover() {
+    // Verify that path widening stamps cells at stepover distance.
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let cell_size = 0.5;
+    let stepover = 2.0;
+
+    let mut material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+    let surface_hm = SurfaceHeightmap::from_mesh(
+        &mesh,
+        &si,
+        &cutter,
+        material_stock.z_grid.origin_u,
+        material_stock.z_grid.origin_v,
+        material_stock.z_grid.rows,
+        material_stock.z_grid.cols,
+        cell_size,
+        -10.0,
+    );
+
+    // Simulate a straight horizontal path at y=0, from x=-10 to x=10
+    let z_level = 10.0;
+    let path: Vec<P3> = (0..=40)
+        .map(|i| P3::new(-10.0 + i as f64 * 0.5, 0.0, z_level))
+        .collect();
+
+    // Stamp along the path itself
+    let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    for p in &path {
+        material_stock.stamp_tool_at(
+            &lut,
+            cutter.radius(),
+            p.x,
+            p.y,
+            p.z,
+            StockCutDirection::FromTop,
+        );
+    }
+
+    // Now apply widening with double ring at stepover distance
+    for i in 1..path.len() {
+        let prev = &path[i - 1];
+        let curr = &path[i];
+        let dx = curr.x - prev.x;
+        let dy = curr.y - prev.y;
+        let seg_len = (dx * dx + dy * dy).sqrt();
+        if seg_len < 1e-10 {
+            continue;
+        }
+        let nx = -dy / seg_len;
+        let ny = dx / seg_len;
+        for &mult in &[1.0f64, 2.0] {
+            for &sign in &[1.0f64, -1.0] {
+                let px = curr.x + sign * mult * stepover * nx;
+                let py = curr.y + sign * mult * stepover * ny;
+                let sz = surface_hm.z_or_bbox_floor_at_world(px, py);
+                if sz != f64::NEG_INFINITY {
+                    let pz = (sz + 0.5).max(z_level);
+                    material_stock.stamp_tool_at(
+                        &lut,
+                        cutter.radius(),
+                        px,
+                        py,
+                        pz,
+                        StockCutDirection::FromTop,
+                    );
+                }
+            }
+        }
+    }
+
+    // Check that cells at y = +/- stepover are cleared (material lowered from 20)
+    for &y_off in &[stepover, -stepover, 2.0 * stepover, -2.0 * stepover] {
+        if let Some((row, col)) = material_stock.z_grid.world_to_cell(0.0, y_off) {
+            let z = stock_top_z_at(&material_stock, row, col);
+            assert!(
+                z < 20.0 - 0.1,
+                "Cell at y={:.1} should be widened (z lowered from 20), got z={:.2}",
+                y_off,
+                z
+            );
+        }
+    }
+}
+
+// ── Low-yield bail test ─────────────────────────────────────────────
+
+#[test]
+fn test_low_yield_bail() {
+    // Thin-film material (just above floor) — adaptive should bail quickly.
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+
+    // Stock barely above surface: 0.2mm of material (below thin_threshold)
+    // Pre-stamp should eliminate this, so adaptive should do minimal work.
+    let params = Adaptive3dParams {
+        stock_top_z: 0.2, // Only 0.2mm above flat mesh at z=0
+        depth_per_pass: 3.0,
+        stock_to_leave: 0.0,
+        tolerance: 0.5,
+        ..default_params()
+    };
+
+    let never_cancel = || false;
+    let segments = adaptive_3d_segments(&mesh, &si, &cutter, &params, None, &never_cancel)
+        .expect("test helper should not cancel")
+        .segments;
+
+    // Count actual cutting passes
+    let cut_count = segments
+        .iter()
+        .filter(|s| matches!(s, Adaptive3dSegment::Cut(_)))
+        .count();
+
+    // With thin-film material, should bail quickly (few or no passes)
+    assert!(
+        cut_count < 20,
+        "Thin film should produce few cutting passes, got {}",
+        cut_count
+    );
+}
+
+#[test]
+fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
+    let (mesh, si) = make_hemisphere_mesh();
+    let cutter = flat_cutter();
+    // This test validates AgentSearch's observability — z_level /
+    // adaptive_pass spans and adaptive3d_pass hotspots are only
+    // emitted by clear_z_level() (the AgentSearch path), not by
+    // clear_z_level_contour_parallel or clear_z_level_adaptive.
+    let params = Adaptive3dParams {
+        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        ..default_params()
+    };
+    let recorder = crate::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
+    let ctx = recorder.root_context();
+    let never_cancel = || false;
+
+    let tp = adaptive_3d_toolpath_traced_with_cancel(
+        &mesh,
+        &si,
+        &cutter,
+        &params,
+        &never_cancel,
+        Some(&ctx),
+    )
+    .expect("debug run should complete");
+    let trace = recorder.finish();
+
+    assert!(!tp.moves.is_empty(), "expected a non-empty toolpath");
+    assert!(
+        trace
+            .spans
+            .iter()
+            .any(|span| span.kind == "surface_heightmap"),
+        "trace should include surface heightmap timing"
+    );
+    assert!(
+        trace.spans.iter().any(|span| span.kind == "z_level"),
+        "trace should include Z-level spans"
+    );
+    assert!(
+        trace.spans.iter().any(|span| span.kind == "adaptive_pass"),
+        "trace should include adaptive pass spans"
+    );
+    // Hotspot kind is "adaptive_pass" (emitted by the 2D adaptive
+    // which now drives AgentSearch slices) — the old 3D agent code
+    // emitted "adaptive3d_pass"; both are valid.
+    assert!(
+        trace
+            .hotspots
+            .iter()
+            .any(|hotspot| hotspot.kind == "adaptive_pass" || hotspot.kind == "adaptive3d_pass"),
+        "trace should record at least one adaptive hotspot"
+    );
+    assert!(
+        !trace.annotations.is_empty(),
+        "adaptive 3D trace should carry generated annotations"
+    );
+}
+
+// ── Contour-parallel EDT tests ───────────────────────────────────
+
+#[test]
+fn test_contour_parallel_edt_flat_mesh() {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let params = Adaptive3dParams {
+        stock_top_z: 5.0,
+        depth_per_pass: 5.0,
+        stock_to_leave: 0.0,
+        tolerance: 0.5,
+        clearing_strategy: ClearingStrategy3d::ContourParallel,
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(
+        tp.moves.len() > 5,
+        "Contour-parallel EDT on flat mesh should produce moves, got {}",
+        tp.moves.len()
+    );
+
+    // Check that there are actual cutting moves (Linear with non-rapid feed)
+    let cut_moves = tp
+        .moves
+        .iter()
+        .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }))
+        .count();
+    assert!(
+        cut_moves > 0,
+        "Contour-parallel EDT should produce cutting moves, got 0"
+    );
+}
+
+#[test]
+fn test_contour_parallel_edt_hemisphere() {
+    let (mesh, si) = make_hemisphere_mesh();
+    let cutter = flat_cutter();
+    let params = Adaptive3dParams {
+        stock_top_z: 25.0,
+        depth_per_pass: 5.0,
+        stock_to_leave: 0.5,
+        tolerance: 0.5,
+        clearing_strategy: ClearingStrategy3d::ContourParallel,
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(
+        tp.moves.len() > 10,
+        "Contour-parallel EDT on hemisphere should produce multi-level passes, got {} moves",
+        tp.moves.len()
+    );
+
+    // Z values should span multiple levels
+    let min_z = tp
+        .moves
+        .iter()
+        .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }))
+        .map(|m| m.target.z)
+        .fold(f64::INFINITY, f64::min);
+    let max_z = tp
+        .moves
+        .iter()
+        .filter(|m| matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }))
+        .map(|m| m.target.z)
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        max_z - min_z > 3.0,
+        "Hemisphere contour-parallel should span multiple Z levels, range = {:.1}",
+        max_z - min_z
+    );
+}
+
+/// Validate that contour-parallel clearing produces complete material removal
+/// on a flat mesh (single Z level, no terrain variation).
+#[test]
+fn test_contour_parallel_complete_clearing() {
+    use crate::dexel_stock::StockCutDirection;
+    use crate::stock::radial_profile::RadialProfileLUT;
+
+    let (mesh, si) = make_flat_mesh(); // 50x50mm flat at z=0
+    let cutter = flat_cutter(); // 6.35mm diameter
+    let tool_radius = cutter.radius();
+    let stock_top_z = 5.0;
+    let stock_to_leave = 0.0;
+
+    let params = Adaptive3dParams {
+        tool_radius,
+        stepover: 2.5,
+        depth_per_pass: 5.0,
+        stock_to_leave,
+        tolerance: 0.3,
+        stock_top_z,
+        clearing_strategy: ClearingStrategy3d::ContourParallel,
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(tp.moves.len() > 10, "Should produce moves");
+
+    // Simulate the toolpath on a fresh stock
+    let cell_size = 0.3;
+    let mut sim_stock =
+        TriDexelStock::from_stock(-25.5, -25.5, 25.5, 25.5, -1.0, stock_top_z, cell_size);
+    let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    sim_stock
+        .simulate_toolpath_with_lut_cancel(
+            &tp,
+            &lut,
+            tool_radius,
+            StockCutDirection::FromTop,
+            &|| false,
+        )
+        .unwrap();
+
+    assert_clearing_complete(&sim_stock, tool_radius, cell_size, stock_to_leave, "flat");
+}
+
+/// Validate clearing completeness on a hemisphere (multi-Z-level, terrain).
+///
+/// Only checks cells WITHIN the mesh bounding box (the adaptive3d internal stock
+/// only covers mesh_bbox ± tool_radius). Cells outside that range are expected uncleared.
+#[test]
+fn test_contour_parallel_complete_clearing_hemisphere() {
+    use crate::dexel_stock::StockCutDirection;
+    use crate::stock::radial_profile::RadialProfileLUT;
+
+    let (mesh, si) = make_hemisphere_mesh(); // radius=20, centered at origin
+    let cutter = flat_cutter(); // 6.35mm diameter
+    let tool_radius = cutter.radius();
+    let stock_top_z = 25.0;
+    let stock_to_leave = 0.5;
+
+    let params = Adaptive3dParams {
+        tool_radius,
+        stepover: 2.5,
+        depth_per_pass: 3.0,
+        stock_to_leave,
+        tolerance: 0.3,
+        stock_top_z,
+        clearing_strategy: ClearingStrategy3d::ContourParallel,
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(tp.moves.len() > 10, "Should produce moves");
+
+    // Use the mesh bbox for the simulation stock (matching internal adaptive3d stock).
+    let bbox = &mesh.bbox;
+    let r = cutter.radius();
+    let sim_x_min = bbox.min.x - r - 0.5;
+    let sim_x_max = bbox.max.x + r + 0.5;
+    let sim_y_min = bbox.min.y - r - 0.5;
+    let sim_y_max = bbox.max.y + r + 0.5;
+
+    let cell_size = 0.3;
+    let mut sim_stock = TriDexelStock::from_stock(
+        sim_x_min,
+        sim_y_min,
+        sim_x_max,
+        sim_y_max,
+        -1.0,
+        stock_top_z,
+        cell_size,
+    );
+    let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    sim_stock
+        .simulate_toolpath_with_lut_cancel(
+            &tp,
+            &lut,
+            tool_radius,
+            StockCutDirection::FromTop,
+            &|| false,
+        )
+        .unwrap();
+
+    let grid = &sim_stock.z_grid;
+    let margin_cells = (tool_radius / cell_size).ceil() as usize + 2;
+    let mut uncleared_count = 0usize;
+    let mut total_checked = 0usize;
+    let max_excess = 3.5; // allow up to depth_per_pass + tolerance
+    let mut worst_excess = 0.0f64;
+
+    for row in margin_cells..grid.rows.saturating_sub(margin_cells) {
+        for col in margin_cells..grid.cols.saturating_sub(margin_cells) {
+            let x = grid.origin_u + col as f64 * cell_size;
+            let y = grid.origin_v + row as f64 * cell_size;
+            total_checked += 1;
+            if let Some(tz) = grid.top_z_at(row, col) {
+                let r_sq = 20.0 * 20.0 - x * x - y * y;
+                let surface_z = if r_sq > 0.0 { r_sq.sqrt() } else { 0.0 };
+                let expected_max = (surface_z + stock_to_leave + max_excess) as f32;
+                if tz > expected_max {
+                    uncleared_count += 1;
+                    let excess = (tz as f64) - (surface_z + stock_to_leave);
+                    if excess > worst_excess {
+                        worst_excess = excess;
+                    }
+                }
+            }
+        }
+    }
+
+    let uncleared_pct = if total_checked > 0 {
+        uncleared_count as f64 / total_checked as f64 * 100.0
+    } else {
+        0.0
+    };
+
+    // Allow up to 5% uncleared — remaining cells are near steep/vertical
+    // walls at the hemisphere edge where the coarse mesh (16 subdivisions)
+    // and tool geometry limit clearing accuracy.
+    assert!(
+        uncleared_pct < 5.0,
+        "Hemisphere contour-parallel should clear >95% of cells, but {:.1}% ({}/{}) have excess material",
+        uncleared_pct,
+        uncleared_count,
+        total_checked,
+    );
+}
+
+/// Small-DPP island regression: a small hemisphere cap at DPP=0.5
+/// should clear cleanly (no unmilled core).
+///
+/// Pre-fix (May 2026), three filters in `clear_z_level_agent_2d_slice`
+/// used DPP-blind area/fraction thresholds. At small DPP the per-level
+/// slab contributes few cells, the perimeter sweep erodes islands
+/// across many levels, and real islands fall under the threshold and
+/// never get milled — leaving visible unmilled cores. The fixes:
+///  - `clearing.rs` sub-tool region area threshold scales with
+///    `depth_per_pass / tool_radius` instead of being a fixed
+///    `(2D)²` (with an area floor so very-small DPP doesn't drop the
+///    "ignore sub-tool noise" intent entirely).
+///  - per-level early-exit changed from `fraction < 0.005` to
+///    absolute `cells_with_material < MIN_CELLS_TO_CLEAR`.
+///  - Z-drop path-split threshold gets a 1mm floor so small DPP
+///    doesn't over-split.
+///
+/// Test dimensions deliberately small (radius 5mm, stock_top_z 6mm,
+/// cell_size 0.4) so DPP=0.5 → 12 Z levels rather than 50, keeping
+/// runtime comparable to the existing DPP=3.0 hemisphere test even
+/// when cargo runs the full suite in parallel.
+#[test]
+fn test_small_dpp_hemisphere_clears_without_islands() {
+    use crate::dexel_stock::StockCutDirection;
+    use crate::stock::radial_profile::RadialProfileLUT;
+
+    let radius = 5.0_f64;
+    let mesh = crate::mesh::make_test_hemisphere(radius, 12);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let tool_radius = cutter.radius();
+    let stock_top_z = 6.0;
+    let stock_to_leave = 0.3;
+    let depth_per_pass = 0.5;
+
+    let params = Adaptive3dParams {
+        tool_radius,
+        stepover: 2.0,
+        depth_per_pass,
+        stock_to_leave,
+        tolerance: 0.3,
+        stock_top_z,
+        clearing_strategy: ClearingStrategy3d::ContourParallel,
+        ..default_params()
+    };
+
+    let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
+    assert!(tp.moves.len() > 10, "Should produce moves");
+
+    let bbox = &mesh.bbox;
+    let r = cutter.radius();
+    let sim_x_min = bbox.min.x - r - 0.5;
+    let sim_x_max = bbox.max.x + r + 0.5;
+    let sim_y_min = bbox.min.y - r - 0.5;
+    let sim_y_max = bbox.max.y + r + 0.5;
+
+    let cell_size = 0.4;
+    let mut sim_stock = TriDexelStock::from_stock(
+        sim_x_min,
+        sim_y_min,
+        sim_x_max,
+        sim_y_max,
+        -1.0,
+        stock_top_z,
+        cell_size,
+    );
+    let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    sim_stock
+        .simulate_toolpath_with_lut_cancel(
+            &tp,
+            &lut,
+            tool_radius,
+            StockCutDirection::FromTop,
+            &|| false,
+        )
+        .unwrap();
+
+    let grid = &sim_stock.z_grid;
+    let margin_cells = (tool_radius / cell_size).ceil() as usize + 2;
+    let max_excess = depth_per_pass + 0.5;
+    let mut uncleared_count = 0usize;
+    let mut total_checked = 0usize;
+    let mut worst_excess = 0.0f64;
+
+    for row in margin_cells..grid.rows.saturating_sub(margin_cells) {
+        for col in margin_cells..grid.cols.saturating_sub(margin_cells) {
+            let x = grid.origin_u + col as f64 * cell_size;
+            let y = grid.origin_v + row as f64 * cell_size;
+            total_checked += 1;
+            if let Some(tz) = grid.top_z_at(row, col) {
+                let r_sq = radius * radius - x * x - y * y;
+                let surface_z = if r_sq > 0.0 { r_sq.sqrt() } else { 0.0 };
+                let expected_max = (surface_z + stock_to_leave + max_excess) as f32;
+                if tz > expected_max {
+                    uncleared_count += 1;
+                    let excess = (tz as f64) - (surface_z + stock_to_leave);
+                    if excess > worst_excess {
+                        worst_excess = excess;
+                    }
+                }
+            }
+        }
+    }
+
+    let uncleared_pct = if total_checked > 0 {
+        uncleared_count as f64 / total_checked as f64 * 100.0
+    } else {
+        0.0
+    };
+
+    // Same 5% allowance as the DPP=3.0 hemisphere test. Pre-fix the
+    // small-DPP case left a visible un-milled apex core (>15%).
+    assert!(
+        uncleared_pct < 5.0,
+        "Small-DPP hemisphere should clear >95% of cells, but {:.1}% ({}/{}) have excess material (worst {:.2}mm)",
+        uncleared_pct,
+        uncleared_count,
+        total_checked,
+        worst_excess,
+    );
+}
+
+/// Mill-shallow-areas regression: when `mill_shallow_areas` is false
+/// (the default), output must be byte-identical to leaving the field
+/// off entirely. Guards against accidental sub-pass insertion in the
+/// disabled branch.
+#[test]
+fn test_shallow_disabled_matches_baseline() {
+    let radius = 5.0_f64;
+    let mesh = crate::mesh::make_test_hemisphere(radius, 12);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let tool_radius = cutter.radius();
+
+    let common = |mill_shallow_areas: bool,
+                  shallow_angle_rad: Option<f64>,
+                  shallow_stepdown: Option<f64>|
+     -> Adaptive3dParams {
+        Adaptive3dParams {
+            tool_radius,
+            stepover: 2.0,
+            depth_per_pass: 1.0,
+            stock_to_leave: 0.3,
+            tolerance: 0.3,
+            stock_top_z: 6.0,
+            clearing_strategy: ClearingStrategy3d::AgentSearch,
+            mill_shallow_areas,
+            shallow_angle_rad,
+            shallow_stepdown,
+            ..default_params()
+        }
+    };
+
+    let tp_base = adaptive_3d_toolpath(&mesh, &si, &cutter, &common(false, None, None));
+    let tp_off = adaptive_3d_toolpath(&mesh, &si, &cutter, &common(false, Some(0.5), Some(0.25)));
+
+    assert_eq!(
+        tp_base.moves.len(),
+        tp_off.moves.len(),
+        "shallow=false with stale angle/step must match baseline; got {} vs {}",
+        tp_base.moves.len(),
+        tp_off.moves.len()
+    );
+    let cut_base = tp_base.total_cutting_distance();
+    let cut_off = tp_off.total_cutting_distance();
+    assert!(
+        (cut_base - cut_off).abs() < 0.001,
+        "shallow=false cutting distance must match baseline; got {cut_base:.3} vs {cut_off:.3}"
+    );
+}
+
+/// Helper: assert that a simulated stock has been fully cleared (for flat surfaces).
+fn assert_clearing_complete(
+    stock: &TriDexelStock,
+    tool_radius: f64,
+    cell_size: f64,
+    stock_to_leave: f64,
+    label: &str,
+) {
+    let grid = &stock.z_grid;
+    let margin_cells = (tool_radius / cell_size).ceil() as usize + 2;
+    let z_threshold = (stock_to_leave + 0.5) as f32;
+    let mut uncleared_count = 0usize;
+    let mut total_checked = 0usize;
+
+    for row in margin_cells..grid.rows.saturating_sub(margin_cells) {
+        for col in margin_cells..grid.cols.saturating_sub(margin_cells) {
+            total_checked += 1;
+            if let Some(tz) = grid.top_z_at(row, col)
+                && tz > z_threshold
+            {
+                uncleared_count += 1;
+            }
+        }
+    }
+
+    let uncleared_pct = if total_checked > 0 {
+        uncleared_count as f64 / total_checked as f64 * 100.0
+    } else {
+        0.0
+    };
+
+    assert!(
+        uncleared_pct < 1.0,
+        "[{label}] Contour-parallel should clear >99% of interior, but {:.1}% ({}/{}) remain above z={:.1}",
+        uncleared_pct,
+        uncleared_count,
+        total_checked,
+        z_threshold,
+    );
+}
+
+// ── Planner ↔ simulator dexel parity ───────────────────────────────
+//
+// Probe for the wanaka Back Rough Z=10/Z=7 anomaly: the planner
+// believes it cleared each Z level (`material_remaining_post → 0`)
+// and emits 4585mm of Cut path per level, but a fresh simulator
+// replay of the same toolpath against the same initial stock
+// reads zero engagement on those passes — meaning the planner's
+// INTERNAL stock state diverges from the state the emitted moves
+// would actually produce.
+//
+// These tests run the planner and an independent simulator
+// against the same initial dexel and assert cell-by-cell parity
+// of the resulting stock tops. They're ignored by default
+// (slow + currently-failing) — use:
+//   cargo test -p rs_cam_core --lib planner_sim_dexel -- --ignored --nocapture
+// for full divergence reports; attach gdb/lldb via
+//   cargo test -p rs_cam_core --lib planner_sim_dexel --no-run
+// to localize the bug.
+
+/// Outcome of one planner-vs-simulator dexel parity run.
+///
+/// Was a 5-tuple whose doc comment listed its own fields in the wrong
+/// order (`total` and `interior` swapped); named fields now.
+struct ParityResult {
+    /// Cells whose planner and simulator stock tops differ by more
+    /// than the run's tolerance.
+    divergent: u64,
+    /// …restricted to the interior population.
+    interior_divergent: u64,
+    /// Size of the interior population — the denominator the interior
+    /// bar is stated against. Registered 2026-08-04: before that both
+    /// parity tests gated `interior_divergent` against a tenth of the
+    /// WHOLE-GRID cell count, which includes the boundary ring the
+    /// interior count deliberately excludes. The bar was therefore
+    /// looser than it read (W0 §3.4).
+    interior_total: u64,
+    total_cells: u64,
+    /// Planner's stock top is HIGHER: the simulator removed more than
+    /// the planner's bookkeeping claims.
+    planner_higher: u64,
+    /// Simulator's stock top is HIGHER: the planner's bookkeeping
+    /// claims material its own emitted toolpath leaves standing. This
+    /// is the direction an emitter-side transform missing from the
+    /// planner's mirror must produce, and it is the sensitive
+    /// instrument for that defect class — see `assert_parity_bars`.
+    sim_higher: u64,
+    /// …restricted to the interior population. Added SIM w5b: the
+    /// whole-grid split above is dominated by the boundary ring, and
+    /// the skew bar was reading that ring rather than the defect
+    /// class it was written for.
+    interior_planner_higher: u64,
+    /// …likewise.
+    interior_sim_higher: u64,
+    /// `sim_higher` cells that fall inside the **F-027 border-clear
+    /// zone** — the cells `path.rs` pre-clears in the planner's
+    /// internal stock because they sit outside `mesh.bbox ±
+    /// cutter.radius() * 0.5` *and* outside the declared world stock
+    /// footprint.
+    ///
+    /// Added W5B-F1: this is the mechanism-identifying counter. When
+    /// it equals `sim_higher`, every cell where the planner claims
+    /// removal its emitted path does not deliver is a cell the
+    /// planner was explicitly told carried no stock — which is not a
+    /// stamping-mirror defect at all. See `assert_parity_bars`.
+    sim_higher_in_border_clear_zone: u64,
+    /// Size of the border-clear zone, the denominator for the above.
+    border_clear_zone_total: u64,
+    max_dz: f64,
+}
+
+impl ParityResult {
+    /// How lopsided the divergence is. 1.0 = balanced (consistent
+    /// with symmetric discretisation noise); large = one side is
+    /// systematically removing material the other does not.
+    fn directional_skew(&self) -> f64 {
+        let hi = self.planner_higher.max(self.sim_higher) as f64;
+        let lo = self.planner_higher.min(self.sim_higher).max(1) as f64;
+        hi / lo
+    }
+
+    /// The same ratio over the INTERIOR population only — the one the
+    /// skew bar is actually stated against since SIM w5b.
+    fn interior_directional_skew(&self) -> f64 {
+        let hi = self.interior_planner_higher.max(self.interior_sim_higher) as f64;
+        let lo = self
+            .interior_planner_higher
+            .min(self.interior_sim_higher)
+            .max(1) as f64;
+        hi / lo
+    }
+
+    /// Divergent cells outside the interior window, and how they split.
+    fn boundary_split(&self) -> (u64, u64) {
+        (
+            self.planner_higher - self.interior_planner_higher,
+            self.sim_higher - self.interior_sim_higher,
+        )
+    }
+}
+
+/// Interior divergence bar, as a percentage of the INTERIOR
+/// population (not of the whole grid — see `ParityResult`).
+///
+/// Re-measured 2026-08-04 against fixed code, per plan rule 7: a
+/// changed instrument requires re-measured thresholds, not a copied
+/// pin. Old bar: `interior <= total_cells / 10` = 792 on this
+/// fixture, against a population of 5300-ish interior cells — i.e. a
+/// nominal "10%" that was really ~15% of what it counted, and 79%
+/// spent on the day it was granted.
+const INTERIOR_DIVERGENCE_BAR_PCT: f64 = 20.0;
+
+/// Directional skew bar. This is the bar that catches the defect
+/// class the count misses.
+///
+/// Pre-registered from measurement either side of the fix (see the
+/// re-registration commit body): the skew was 4.80x sim-side on
+/// AgentSearch and 4.27x sim-side on ContourParallel before the
+/// planner's stamp learned about the emitter's drape, and 1.55x /
+/// 1.30x after. ContourParallel's gated interior count went UP across
+/// that fix (429 -> 647) while its defect was repaired, which is
+/// exactly why the count alone was a weak detector and why this bar
+/// exists.
+///
+/// **SIM w5b: the bar is unchanged at 2.5x; what changed is the
+/// population it is stated against.** It used to read the WHOLE grid,
+/// which is dominated by the boundary ring, and the swept default made
+/// that visible by deleting the other side of the interior
+/// disagreement — see [`assert_parity_bars`].
+const DIRECTIONAL_SKEW_BAR: f64 = 2.5;
+
+/// Fewest interior divergent cells before the skew ratio means
+/// anything.
+///
+/// A ratio over a handful of cells is not a direction. Under the swept
+/// default the interior disagreement is 21/5184 and 8/5184, and
+/// `directional_skew`'s `.max(1)` on the low side would turn "21 cells,
+/// all one way" into "21x lopsided" and fail a bar written to detect a
+/// systematic transform mismatch across hundreds of cells. This is the
+/// mirror of the empty-population trap in `CLAUDE.md` ("a gate handed an
+/// empty population passes and looks healthy") — here a near-empty
+/// population would FAIL and look meaningful. Below this floor the bar
+/// abstains and the count bar underneath it is asserted instead, tighter.
+const SKEW_MIN_INTERIOR_POPULATION: u64 = 50;
+
+/// What fraction of the interior population may diverge while the skew
+/// bar is abstaining. Guards the abstention: "too few to have a
+/// direction" must also mean "few".
+const ABSTAIN_MAX_INTERIOR_PCT: f64 = 1.0;
+
+/// Boundary-ring one-sided divergence cap, as a fraction of the
+/// boundary population.
+///
+/// Outside the interior window the planner's stock reads lower than
+/// the simulator's on 1360/2737 cells (49.7%) for AgentSearch and
+/// 568/2737 (20.8%) for ContourParallel, bit-for-bit identical under
+/// `whole_path` and under `swept`. That is W5B-F1, and it was pinned
+/// at 55% as an unexplained open finding.
+///
+/// **Root-caused 2026-08-21 (`DELTA_w5b_f1_planner_boundary.md`): it
+/// is the F-027 border clear, and it is a fixture artifact.** Every
+/// one of those cells — 1360 of 1360 on AgentSearch, 568 of 568 on
+/// ContourParallel, zero elsewhere on either strategy — sits in the
+/// zone `path.rs` deliberately pre-clears because the cell is outside
+/// `mesh.bbox ± cutter.radius() * 0.5` and no world stock footprint
+/// was declared to rescue it. The planner is not mis-mirroring its
+/// emitter there; it was told there is no stock there and believed
+/// it. Re-run with `world_stock_xy_bbox` supplied — the configuration
+/// `compute::execute` has always used — and the count is **exactly
+/// zero** on both strategies. See
+/// `planner_sim_dexel_parity_agent_search_world_stock_declared`.
+///
+/// The cap survives as a growth pin, tightened from 55% to 51% now
+/// that the value is understood and deterministic, and it is now the
+/// *secondary* bar: `assert_parity_bars` first requires that every
+/// such cell be inside the border-clear zone, which is the assertion
+/// that would actually catch a mirror defect appearing here.
+const BOUNDARY_ONE_SIDED_CAP_PCT: f64 = 51.0;
+
+/// Both bars, applied identically to every strategy so a green
+/// sibling can never again be mistaken for a clean one (W0 §4.5).
+///
+/// # The whole-grid skew bar was masking two divergences, not none
+///
+/// Measured SIM w5b, both dispatches, same session:
+///
+/// | | interior planner_higher | interior sim_higher | boundary sim_higher | whole-grid skew |
+/// |---|---:|---:|---:|---:|
+/// | AgentSearch, `whole_path` | 704 | **0** | 1360 | 1.55x — *passed* |
+/// | AgentSearch, `swept` | 21 | **0** | 1360 | 34.87x — failed |
+/// | ContourParallel, `whole_path` | 647 | **0** | 568 | 1.30x — *passed* |
+/// | ContourParallel, `swept` | 8 | **0** | 568 | 71.00x — failed |
+///
+/// Interior `sim_higher` is **exactly zero in all four cells of that
+/// table**. So there were never two mixed directions inside the
+/// window — there were two *separate*, each perfectly one-sided
+/// populations: an interior one (simulator over-removing, the old
+/// kernel's per-subsegment `f`-blend artifact) and a boundary one
+/// (planner over-claiming, invariant under the dispatch). Summed over
+/// the whole grid they nearly cancelled, and 1.55x/1.30x is what a
+/// cancellation looks like from the outside.
+///
+/// Restating the bar over the interior population is therefore a
+/// **tightening**: under `whole_path` the interior skew reads 704x and
+/// 647x against the same 2.5x bar. `RS_CAM_STAMP_DISPATCH=whole_path`
+/// no longer runs this pair green, and that is the correct outcome —
+/// the old kernel really does disagree with the planner on 704
+/// interior cells, all in one direction.
+fn assert_parity_bars(r: &ParityResult, label: &str) {
+    let interior_bar =
+        (r.interior_total as f64 * INTERIOR_DIVERGENCE_BAR_PCT / 100.0).round() as u64;
+    assert!(
+        r.interior_divergent <= interior_bar,
+        "[{label}] planner and simulator dexels diverged on {} of {} INTERIOR cells \
+         ({:.1}%, bar {:.1}% = {interior_bar}; whole grid {}, max Δ {:.3}mm). The \
+         planner's internal stamping is producing a stock state inconsistent with \
+         replaying its own emitted moves — this is the wanaka Back Rough Z=10/Z=7 \
+         anomaly. See `stamp_emitted_segment`: it must apply EVERY transformation \
+         `segments_to_toolpath` applies.",
+        r.interior_divergent,
+        r.interior_total,
+        r.interior_divergent as f64 / r.interior_total.max(1) as f64 * 100.0,
+        INTERIOR_DIVERGENCE_BAR_PCT,
+        r.total_cells,
+        r.max_dz,
+    );
+    // SIM w5b: the skew bar reads the INTERIOR population now.
+    //
+    // It used to read the whole grid and it failed under the swept
+    // default — not because anything got worse, but because swept
+    // deleted one whole side of the disagreement. `planner_higher`
+    // (the simulator removing more than the planner claims) is exactly
+    // the boundary-cell over-removal the old kernel's per-subsegment
+    // f-blend produced, and it collapsed 880 -> 39 and 741 -> 8.
+    // `sim_higher` did not move by a single cell: 1360 and 568 under
+    // both dispatches. Interior disagreement fell 33x and 81x.
+    //
+    // So the bar's own reasoning is sound and its conclusion was
+    // inverted here: removing the symmetric noise is what made the
+    // asymmetry visible. Widening it would have buried that. Instead
+    // it is restated over the population it was written for, and the
+    // surviving one-sided divergence gets its own bar below.
+    if r.interior_divergent >= SKEW_MIN_INTERIOR_POPULATION {
+        assert!(
+            r.interior_directional_skew() <= DIRECTIONAL_SKEW_BAR,
+            "[{label}] INTERIOR divergence is {:.2}x lopsided (bar \
+             {DIRECTIONAL_SKEW_BAR:.2}x): interior planner_higher {} (simulator \
+             removed more), interior sim_higher {} (planner's bookkeeping claims \
+             more than its emitted path removes), over {} interior divergent cells. \
+             Symmetric discretisation noise is balanced; a systematic skew means one \
+             side is applying a transformation the other is not.",
+            r.interior_directional_skew(),
+            r.interior_planner_higher,
+            r.interior_sim_higher,
+            r.interior_divergent,
+        );
+    } else {
+        // The skew bar ABSTAINS — and says so, rather than passing
+        // quietly. Guard the abstention so "too few to have a
+        // direction" cannot cover a large divergence.
+        let pct = r.interior_divergent as f64 / r.interior_total.max(1) as f64 * 100.0;
+        assert!(
+            pct <= ABSTAIN_MAX_INTERIOR_PCT,
+            "[{label}] the interior skew bar abstained on a population of {} \
+             (< {SKEW_MIN_INTERIOR_POPULATION}) but that population is {pct:.2}% of \
+             {} interior cells — over the {ABSTAIN_MAX_INTERIOR_PCT:.1}% an abstention \
+             is allowed to cover. Either the interior population shrank or the bar's \
+             floor is wrong.",
+            r.interior_divergent,
+            r.interior_total,
+        );
+        eprintln!(
+            "[{label}] interior skew bar ABSTAINS: {} interior divergent cells \
+             (planner_higher {}, sim_higher {}) is below the {SKEW_MIN_INTERIOR_POPULATION}-cell \
+             floor a direction needs. Interior divergence is {pct:.2}% of {}.",
+            r.interior_divergent,
+            r.interior_planner_higher,
+            r.interior_sim_higher,
+            r.interior_total,
+        );
+    }
+
+    // W5B-F1, root-caused. See `BOUNDARY_ONE_SIDED_CAP_PCT`.
+    //
+    // PRIMARY bar — mechanism, not magnitude. Every cell where the
+    // planner's stock reads lower than the simulator's must be a cell
+    // the F-027 border clear was told to empty. A single cell outside
+    // that zone is a genuine mirror defect: `stamp_emitted_segment`
+    // failing to apply a transformation `segments_to_toolpath`
+    // applies. That is the defect class `sim_higher`'s docstring
+    // names, and this bar — unlike the percentage cap under it — is
+    // sensitive to one cell of it.
+    assert_eq!(
+        r.sim_higher,
+        r.sim_higher_in_border_clear_zone,
+        "[{label}] {} of {} sim_higher cells lie OUTSIDE the F-027 border-clear zone \
+         ({} cells). Inside that zone the planner reads lower because `path.rs` cleared \
+         the ray on purpose (no declared world stock there) — that is W5B-F1 and it is \
+         understood. Outside it, the planner is claiming removal its own emitted path \
+         does not deliver, which means `stamp_emitted_segment` is missing a \
+         transformation `segments_to_toolpath` applies. Do not relax this into a \
+         percentage.",
+        r.sim_higher - r.sim_higher_in_border_clear_zone,
+        r.sim_higher,
+        r.border_clear_zone_total,
+    );
+
+    // SECONDARY bar — a growth pin on the understood population.
+    let boundary_total = r.total_cells.saturating_sub(r.interior_total);
+    let (boundary_planner_higher, boundary_sim_higher) = r.boundary_split();
+    let boundary_pct = boundary_sim_higher as f64 / boundary_total.max(1) as f64 * 100.0;
+    assert!(
+        boundary_pct <= BOUNDARY_ONE_SIDED_CAP_PCT,
+        "[{label}] W5B-F1 grew: {boundary_sim_higher} of {boundary_total} \
+         boundary-ring cells ({boundary_pct:.1}%, cap {BOUNDARY_ONE_SIDED_CAP_PCT:.1}%) \
+         have the planner reading lower than the simulator (boundary planner_higher \
+         {boundary_planner_higher}, for contrast). The mechanism is the F-027 border \
+         clear over a fixture that declares no world stock footprint; if this grew, \
+         either the border-clear predicate moved or the fixture's grid did. Do not \
+         raise this cap; see DELTA_w5b_f1_planner_boundary.md. Whole-grid skew for \
+         reference: {:.2}x — the figure this bar used to be stated against, and the one \
+         that read a comfortable 1.55x/1.30x while both populations were maximally \
+         one-sided.",
+        r.directional_skew(),
+    );
+}
+
+fn run_planner_sim_parity(strategy: ClearingStrategy3d, label: &str) -> ParityResult {
+    run_planner_sim_parity_with_mesh(strategy, label, make_hemisphere_mesh(), None)
+}
+
+fn run_planner_sim_parity_flat(strategy: ClearingStrategy3d, label: &str) -> ParityResult {
+    run_planner_sim_parity_with_mesh(strategy, label, make_flat_mesh(), None)
+}
+
+/// `world_xy` is forwarded to [`Adaptive3dParams::world_stock_xy_bbox`].
+/// The historical call sites pass `None`, which is what makes the
+/// F-027 border clear in `path.rs` fire over this fixture's whole
+/// off-mesh rim; production (`compute/execute.rs`) always passes
+/// `Some`. Set `RS_CAM_PARITY_MAP=1` to dump an ASCII cell map.
+fn run_planner_sim_parity_with_mesh(
+    strategy: ClearingStrategy3d,
+    label: &str,
+    mesh_pair: (TriangleMesh, SpatialIndex),
+    world_xy: Option<(f64, f64, f64, f64)>,
+) -> ParityResult {
+    let (mesh, si) = mesh_pair;
+    let mesh_bbox_for_interior = mesh.bbox;
+    let cutter = flat_cutter();
+    let r = cutter.radius();
+    let bbox = mesh.bbox;
+    let origin_x = bbox.min.x - r;
+    let origin_y = bbox.min.y - r;
+    let extent_x = bbox.max.x + r;
+    let extent_y = bbox.max.y + r;
+    let tool_radius = 3.175_f64;
+    let stock_top_z = 25.0_f64;
+    let cell_size = (tool_radius / 6.0).max(0.1);
+
+    let initial_stock = TriDexelStock::from_stock(
+        origin_x,
+        origin_y,
+        extent_x,
+        extent_y,
+        bbox.min.z,
+        stock_top_z,
+        cell_size,
+    );
+
+    let params = Adaptive3dParams {
+        initial_stock: Some(initial_stock.clone()),
+        clearing_strategy: strategy,
+        tool_radius,
+        envelope_radius: tool_radius,
+        stock_top_z,
+        depth_per_pass: 3.0,
+        stock_to_leave: 0.5,
+        stepover: 1.0,
+        tolerance: 0.5,
+        world_stock_xy_bbox: world_xy,
+        ..default_params()
+    };
+
+    let never_cancel = || false;
+    let result = adaptive_3d_segments(&mesh, &si, &cutter, &params, None, &never_cancel)
+        .expect("planner should succeed");
+    let planner_stock = result.final_material_stock;
+    let surface_hm = result.surface_heightmap;
+    let segments = result.segments;
+    let (toolpath, _) = segments_to_toolpath(&segments, &params, &mesh, &si, &cutter);
+
+    let mut sim_stock = initial_stock;
+    sim_stock
+        .simulate_toolpath_with_metrics_with_cancel(
+            &toolpath,
+            &cutter,
+            StockCutDirection::FromTop,
+            ToolpathId(0),
+            12_000,
+            2,
+            3000.0,
+            0.5,
+            None,
+            &[],
+            &[],
+            true,
+            &never_cancel,
+        )
+        .expect("simulator should succeed");
+
+    // Cell-by-cell ray-top comparison. Tolerance = cell_size
+    // (sub-cell stamping noise is OK; bigger gaps are real bugs).
+    let tol_mm = cell_size;
+    let grid = &planner_stock.z_grid;
+    let total_cells = (grid.rows * grid.cols) as u64;
+    let mut divergent = 0u64;
+    let mut interior_divergent = 0u64;
+    let mut interior_total = 0u64;
+    let mut planner_higher = 0u64; // sim removed more
+    let mut sim_higher = 0u64; // planner removed more
+    let mut interior_planner_higher = 0u64;
+    let mut interior_sim_higher = 0u64;
+    let mut sim_higher_in_border_clear_zone = 0u64;
+    let mut border_clear_zone_total = 0u64;
+    let mut max_dz = 0.0_f64;
+    let mut violations: Vec<(usize, usize, f64, f64, f64, f64)> = Vec::new();
+    let interior_x_lo = mesh_bbox_for_interior.min.x + 1.0;
+    let interior_x_hi = mesh_bbox_for_interior.max.x - 1.0;
+    let interior_y_lo = mesh_bbox_for_interior.min.y + 1.0;
+    let interior_y_hi = mesh_bbox_for_interior.max.y - 1.0;
+    // W5B-F1: mirror of the F-027 border clear in `path.rs`. A cell is
+    // in the zone when it is outside `mesh.bbox ± cutter.radius() * 0.5`
+    // AND not rescued by a declared world stock footprint — exactly the
+    // two conditions `path.rs` tests before it calls
+    // `ray_subtract_above` on the planner's ray.
+    let border_margin = r * 0.5;
+    let dump_map = std::env::var("RS_CAM_PARITY_MAP").is_ok();
+    let mut map: Vec<String> = Vec::new();
+    for row in 0..grid.rows {
+        let mut map_line = String::new();
+        for col in 0..grid.cols {
+            let (x, y) = grid.cell_to_world(row, col);
+            let outside_mesh = x < bbox.min.x - border_margin
+                || x > bbox.max.x + border_margin
+                || y < bbox.min.y - border_margin
+                || y > bbox.max.y + border_margin;
+            let rescued_by_world_stock = world_xy
+                .is_some_and(|(wx0, wy0, wx1, wy1)| x >= wx0 && x <= wx1 && y >= wy0 && y <= wy1);
+            let in_border_clear_zone = outside_mesh && !rescued_by_world_stock;
+            if in_border_clear_zone {
+                border_clear_zone_total += 1;
+            }
+            let is_interior =
+                x > interior_x_lo && x < interior_x_hi && y > interior_y_lo && y < interior_y_hi;
+            if is_interior {
+                // Counted for EVERY interior cell, divergent or not:
+                // this is the denominator the interior bar is stated
+                // against.
+                interior_total += 1;
+            }
+            let p = stock_top_z_at(&planner_stock, row, col);
+            let s = stock_top_z_at(&sim_stock, row, col);
+            let dz = (p - s).abs();
+            if dump_map {
+                map_line.push(match (dz > tol_mm, p > s, in_border_clear_zone) {
+                    (false, _, _) => '.',
+                    (true, true, _) => 'p',
+                    (true, false, true) => 'S',
+                    (true, false, false) => 's',
+                });
+            }
+            if dz > tol_mm {
+                divergent += 1;
+                max_dz = max_dz.max(dz);
+                if p > s + tol_mm {
+                    planner_higher += 1;
+                    if is_interior {
+                        interior_planner_higher += 1;
+                    }
+                } else if s > p + tol_mm {
+                    sim_higher += 1;
+                    if is_interior {
+                        interior_sim_higher += 1;
+                    }
+                    if in_border_clear_zone {
+                        sim_higher_in_border_clear_zone += 1;
+                    }
+                }
+                if is_interior {
+                    interior_divergent += 1;
+                    // Only collect INTERIOR violations — boundary
+                    // pre-clear noise drowns out the real bug
+                    // otherwise.
+                    if violations.len() < 20 {
+                        let i = row * grid.cols + col;
+                        let surf = surface_hm.z_or_bbox_floor_values()[i];
+                        violations.push((row, col, p, s, surf, dz));
+                    }
+                }
+            }
+        }
+        if dump_map {
+            map.push(map_line);
+        }
+    }
+
+    eprintln!(
+        "[{label}] PARITY: {divergent}/{total_cells} cells differ > {tol_mm:.2}mm; \
+         interior {interior_divergent}/{interior_total}; planner_higher {planner_higher} \
+         (sim removed more, interior {interior_planner_higher}); sim_higher \
+         {sim_higher} (planner removed more, interior {interior_sim_higher}); \
+         max dz {max_dz:.3}mm",
+    );
+    eprintln!(
+        "[{label}] W5B-F1: {sim_higher_in_border_clear_zone}/{sim_higher} sim_higher cells \
+         lie in the F-027 border-clear zone ({border_clear_zone_total} cells, \
+         world_stock_xy_bbox {})",
+        if world_xy.is_some() {
+            "supplied"
+        } else {
+            "ABSENT"
+        },
+    );
+    if dump_map {
+        eprintln!(
+            "[{label}] map ('.' agree, 'p' planner_higher, 'S' sim_higher in border-clear \
+             zone, 's' sim_higher elsewhere):"
+        );
+        for line in &map {
+            eprintln!("{line}");
+        }
+    }
+    for (row, col, p, s, surf, dz) in &violations {
+        let (x, y) = grid.cell_to_world(*row, *col);
+        eprintln!(
+            "  ({row:>3}, {col:>3}) world ({x:>6.2}, {y:>6.2}) surface {surf:>6.2}: planner top {p:>6.2}  sim top {s:>6.2}  Δ {dz:>5.2}mm",
+        );
+    }
+
+    ParityResult {
+        divergent,
+        interior_divergent,
+        interior_total,
+        total_cells,
+        planner_higher,
+        sim_higher,
+        interior_planner_higher,
+        interior_sim_higher,
+        sim_higher_in_border_clear_zone,
+        border_clear_zone_total,
+        max_dz,
+    }
+}
+
+#[test]
+#[ignore = "Probe: emitted Cut path point spacing on AgentSearch flat — distinguishes \
+            spacing-too-coarse vs stamp-at-wrong-location"]
+fn agent_search_cut_path_point_spacing_probe() {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let tool_radius = 3.175_f64;
+    let stock_top_z = 25.0_f64;
+    let cell_size = (tool_radius / 6.0).max(0.1);
+    let r = cutter.radius();
+    let bbox = mesh.bbox;
+    let initial_stock = TriDexelStock::from_stock(
+        bbox.min.x - r,
+        bbox.min.y - r,
+        bbox.max.x + r,
+        bbox.max.y + r,
+        bbox.min.z,
+        stock_top_z,
+        cell_size,
+    );
+    let params = Adaptive3dParams {
+        initial_stock: Some(initial_stock),
+        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        tool_radius,
+        envelope_radius: tool_radius,
+        stock_top_z,
+        depth_per_pass: 3.0,
+        stock_to_leave: 0.5,
+        stepover: 1.0,
+        tolerance: 0.5,
+        ..default_params()
+    };
+
+    let never_cancel = || false;
+    let result = adaptive_3d_segments(&mesh, &si, &cutter, &params, None, &never_cancel)
+        .expect("planner should succeed");
+    let segments = result.segments;
+
+    // Histogram bins for consecutive-point planar spacing in units of
+    // tool_radius. The planner's stamp uses a point stamp at each
+    // sub-sampled location with `step_len = cell_size * 1.5` ≈
+    // tool_radius * 0.25. If consecutive Cut path points are
+    // > 2 * tool_radius apart there's a real gap between point
+    // stamps that the simulator's swept stamp would fill.
+    let mut bins = [0u64; 8]; // 0..0.25R, ..0.5R, ..1R, ..2R, ..4R, ..8R, ..16R, >16R
+    let bin_thresholds = [0.25_f64, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, f64::INFINITY];
+    let mut total_gaps = 0u64;
+    let mut max_gap_mm = 0.0_f64;
+    let mut max_gap_loc: Option<(P3, P3)> = None;
+    let mut total_path_points = 0u64;
+    let mut cut_segments_seen = 0u64;
+    for seg in &segments {
+        if let Adaptive3dSegment::Cut(path) = seg {
+            cut_segments_seen += 1;
+            total_path_points += path.len() as u64;
+            for pair in path.windows(2) {
+                if let [a, b] = pair {
+                    let dx = b.x - a.x;
+                    let dy = b.y - a.y;
+                    let gap_mm = (dx * dx + dy * dy).sqrt();
+                    if gap_mm > max_gap_mm {
+                        max_gap_mm = gap_mm;
+                        max_gap_loc = Some((*a, *b));
+                    }
+                    total_gaps += 1;
+                    let gap_in_radii = gap_mm / tool_radius;
+                    for (i, &thr) in bin_thresholds.iter().enumerate() {
+                        if gap_in_radii < thr {
+                            bins[i] += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    eprintln!("AgentSearch flat-plane Cut-path spacing probe (tool_radius = {tool_radius:.3} mm):");
+    eprintln!(
+        "  Cut segments: {cut_segments_seen}, total path points: {total_path_points}, total gaps: {total_gaps}"
+    );
+    eprintln!(
+        "  Max consecutive-point gap: {max_gap_mm:.3} mm = {:.2}× tool_radius",
+        max_gap_mm / tool_radius
+    );
+    if let Some((a, b)) = max_gap_loc {
+        eprintln!(
+            "    from ({:.2}, {:.2}, {:.2}) → ({:.2}, {:.2}, {:.2})",
+            a.x, a.y, a.z, b.x, b.y, b.z
+        );
+    }
+    eprintln!("  Gap distribution (in units of tool_radius):");
+    let bin_labels = [
+        "  < 0.25R",
+        " < 0.5R ",
+        " < 1.0R ",
+        " < 2.0R ",
+        " < 4.0R ",
+        " < 8.0R ",
+        " < 16.0R",
+        " >= 16R ",
+    ];
+    for (label, count) in bin_labels.iter().zip(bins.iter()) {
+        let pct = if total_gaps > 0 {
+            *count as f64 / total_gaps as f64 * 100.0
+        } else {
+            0.0
+        };
+        eprintln!("    {label}: {count:>6}  ({pct:>5.1}%)");
+    }
+    let large_gaps = bins[3] + bins[4] + bins[5] + bins[6] + bins[7];
+    let large_pct = if total_gaps > 0 {
+        large_gaps as f64 / total_gaps as f64 * 100.0
+    } else {
+        0.0
+    };
+    eprintln!(
+        "  Gaps > 1.0× tool_radius (point-stamp leaves bigger holes than radius): {large_gaps} ({large_pct:.1}%)"
+    );
+}
+
+#[test]
+#[ignore = "Hypothesis 1: pure-flat mesh — should reveal whether the divergence is surface-coupled"]
+fn planner_sim_dexel_parity_flat_agent_search() {
+    let r = run_planner_sim_parity_flat(ClearingStrategy3d::AgentSearch, "AgentSearch flat");
+    eprintln!(
+        "FLAT AgentSearch: {}/{} cells diverge (max Δ {:.3}mm)",
+        r.divergent, r.total_cells, r.max_dz
+    );
+    // No assertion — diagnostic output. The hemisphere variants
+    // assert; this test just prints so we can compare flat vs
+    // hemisphere divergence rates side-by-side.
+}
+
+#[test]
+#[ignore = "Hypothesis 1: pure-flat mesh — should reveal whether the divergence is surface-coupled"]
+fn planner_sim_dexel_parity_flat_contour_parallel() {
+    let r =
+        run_planner_sim_parity_flat(ClearingStrategy3d::ContourParallel, "ContourParallel flat");
+    eprintln!(
+        "FLAT ContourParallel: {}/{} cells diverge (max Δ {:.3}mm)",
+        r.divergent, r.total_cells, r.max_dz
+    );
+}
+
+/// Probe A — Bug 2 isolation. Build a toolpath that contains ONLY
+/// the Cut segments (skipping Rapid/Link/Marker), so the simulator
+/// only stamps cells the planner also stamped. If the divergence
+/// drops to near-zero on this filtered toolpath, the original
+/// divergence is dominated by Rapid/Link-derived feed moves
+/// (peck-plunges, stay-down links) which the simulator stamps but
+/// the planner does not.
+fn segments_to_cut_only_toolpath(segments: &[Adaptive3dSegment]) -> Toolpath {
+    let mut tp = Toolpath::new();
+    for seg in segments {
+        if let Adaptive3dSegment::Cut(path) = seg
+            && let Some(first) = path.first()
+        {
+            tp.rapid_to(*first);
+            for p in path.iter().skip(1) {
+                tp.feed_to(*p, 1000.0);
+            }
+        }
+    }
+    tp
+}
+
+fn run_planner_sim_parity_cut_only(
+    strategy: ClearingStrategy3d,
+    label: &str,
+    mesh_pair: (TriangleMesh, SpatialIndex),
+) -> (u64, u64, u64) {
+    let (mesh, si) = mesh_pair;
+    let mesh_bbox = mesh.bbox;
+    let cutter = flat_cutter();
+    let r = cutter.radius();
+    let tool_radius = 3.175_f64;
+    let stock_top_z = 25.0_f64;
+    let cell_size = (tool_radius / 6.0).max(0.1);
+    let initial_stock = TriDexelStock::from_stock(
+        mesh_bbox.min.x - r,
+        mesh_bbox.min.y - r,
+        mesh_bbox.max.x + r,
+        mesh_bbox.max.y + r,
+        mesh_bbox.min.z,
+        stock_top_z,
+        cell_size,
+    );
+
+    let params = Adaptive3dParams {
+        initial_stock: Some(initial_stock.clone()),
+        clearing_strategy: strategy,
+        tool_radius,
+        envelope_radius: tool_radius,
+        stock_top_z,
+        depth_per_pass: 3.0,
+        stock_to_leave: 0.5,
+        stepover: 1.0,
+        tolerance: 0.5,
+        ..default_params()
+    };
+
+    let never_cancel = || false;
+    let result = adaptive_3d_segments(&mesh, &si, &cutter, &params, None, &never_cancel)
+        .expect("planner should succeed");
+    let planner_stock = result.final_material_stock;
+    let segments = result.segments;
+
+    // CUT-ONLY toolpath: skip Rapid/Link/Marker entirely.
+    let cut_only_toolpath = segments_to_cut_only_toolpath(&segments);
+
+    let mut sim_stock = initial_stock;
+    sim_stock
+        .simulate_toolpath_with_metrics_with_cancel(
+            &cut_only_toolpath,
+            &cutter,
+            StockCutDirection::FromTop,
+            ToolpathId(0),
+            12_000,
+            2,
+            3000.0,
+            0.5,
+            None,
+            &[],
+            &[],
+            true,
+            &never_cancel,
+        )
+        .expect("simulator should succeed");
+
+    let tol_mm = cell_size;
+    let grid = &planner_stock.z_grid;
+    let total = (grid.rows * grid.cols) as u64;
+    let mut divergent = 0u64;
+    let mut interior = 0u64;
+    let interior_x_lo = mesh_bbox.min.x + 1.0;
+    let interior_x_hi = mesh_bbox.max.x - 1.0;
+    let interior_y_lo = mesh_bbox.min.y + 1.0;
+    let interior_y_hi = mesh_bbox.max.y - 1.0;
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            let p = stock_top_z_at(&planner_stock, row, col);
+            let s = stock_top_z_at(&sim_stock, row, col);
+            if (p - s).abs() > tol_mm {
+                divergent += 1;
+                let (x, y) = grid.cell_to_world(row, col);
+                if x > interior_x_lo && x < interior_x_hi && y > interior_y_lo && y < interior_y_hi
+                {
+                    interior += 1;
+                }
+            }
+        }
+    }
+    eprintln!("[{label} CUT-ONLY] {divergent}/{total} cells diverge; interior {interior}",);
+    (divergent, total, interior)
+}
+
+#[test]
+#[ignore = "Probe A: Cut-only toolpath isolates Bug 2 (Rapid/Link/peck-plunge stamping)"]
+fn planner_sim_parity_cut_only_agent_search_flat() {
+    let _ = run_planner_sim_parity_cut_only(
+        ClearingStrategy3d::AgentSearch,
+        "AgentSearch flat",
+        make_flat_mesh(),
+    );
+}
+
+#[test]
+#[ignore = "Probe A: Cut-only toolpath isolates Bug 2 (Rapid/Link/peck-plunge stamping)"]
+fn planner_sim_parity_cut_only_agent_search_hemisphere() {
+    let _ = run_planner_sim_parity_cut_only(
+        ClearingStrategy3d::AgentSearch,
+        "AgentSearch hemisphere",
+        make_hemisphere_mesh(),
+    );
+}
+
+#[test]
+#[ignore = "Probe A: Cut-only toolpath isolates Bug 2 (Rapid/Link/peck-plunge stamping)"]
+fn planner_sim_parity_cut_only_contour_parallel_flat() {
+    let _ = run_planner_sim_parity_cut_only(
+        ClearingStrategy3d::ContourParallel,
+        "ContourParallel flat",
+        make_flat_mesh(),
+    );
+}
+
+#[test]
+#[ignore = "Probe A: Cut-only toolpath isolates Bug 2 (Rapid/Link/peck-plunge stamping)"]
+fn planner_sim_parity_cut_only_contour_parallel_hemisphere() {
+    let _ = run_planner_sim_parity_cut_only(
+        ClearingStrategy3d::ContourParallel,
+        "ContourParallel hemisphere",
+        make_hemisphere_mesh(),
+    );
+}
+
+/// Boundary divergence (cells outside the mesh footprint) is the
+/// F-027 border clear, not a stamping defect — see
+/// `BOUNDARY_ONE_SIDED_CAP_PCT` and the mechanism assertion in
+/// `assert_parity_bars`. What these tests guard is INSIDE-the-mesh
+/// stamping consistency.
+///
+/// Residual interior divergence that both bars deliberately tolerate:
+/// (a) F.a sub-cell blend drift — the simulator subdivides each
+/// emitted segment at `sample_step_mm` and stamps each subsegment
+/// separately while the planner stamps whole segments, so cells
+/// straddling a subsegment boundary see compound `(1-f₁)(1-f₂)`
+/// blends that under-saturate versus the single whole-segment `f`
+/// (DEXEL_Z_ONLY_INVESTIGATION.md §6.F / §8 Step 4 predicts exactly
+/// this); (b) `Cut` segments whose first emitted feed sweeps from the
+/// emitter's true tool position rather than from the planner's raw
+/// `last_pos` (documented as NOT FIXED in the drape-mirror commit).
+/// Neither is directional, which is why the skew bar can be tight
+/// while the count bar cannot.
+///
+/// W5B-F1, 2026-08-21: (b) was the standing candidate for the
+/// boundary-ring over-claim and it is **not** the cause — the
+/// boundary population is 100% F-027 border clear, and (b) would
+/// produce cells at cut-segment starts, which is not where any of
+/// them are. (b) remains a live candidate for part of the 21/8
+/// interior `planner_higher` cells; it has never been measured
+/// separately from (a).
+#[test]
+fn planner_sim_dexel_parity_agent_search() {
+    let r = run_planner_sim_parity(ClearingStrategy3d::AgentSearch, "AgentSearch hemisphere");
+    assert_parity_bars(&r, "AgentSearch hemisphere");
+}
+
+/// The same two bars as `planner_sim_dexel_parity_agent_search`, and
+/// deliberately not a weaker set. This test was green throughout the
+/// seven weeks its sibling was red while carrying the identical
+/// defect at the identical 25 mm `max dz` — its old bar gated an
+/// interior count against a tenth of the whole-grid count and was
+/// only 54% spent, so it never reported. If one of the pair fails and
+/// the other does not, the divergence is in that strategy's stamping
+/// path — still a useful first bisection.
+#[test]
+fn planner_sim_dexel_parity_contour_parallel() {
+    let r = run_planner_sim_parity(
+        ClearingStrategy3d::ContourParallel,
+        "ContourParallel hemisphere",
+    );
+    assert_parity_bars(&r, "ContourParallel hemisphere");
+}
+
+/// W5B-F1's decisive control, and the only parity pair that runs the
+/// configuration the product actually ships.
+///
+/// `compute::execute::execute_operation` has supplied
+/// `world_stock_xy_bbox` on every adaptive3d call since F-027; the two
+/// tests above, and every other unit-test call site, leave it `None`.
+/// That single difference is the whole of W5B-F1: with the stock
+/// footprint declared, `path.rs` stops border-clearing the rim, the
+/// planner plans passes over it instead, and `sim_higher` — the
+/// planner claiming removal its emitted path does not deliver — is
+/// **exactly zero over the whole grid**, on both strategies, where it
+/// was 1360 and 568.
+///
+/// The bar is zero, not a percentage, deliberately: in the shipped
+/// configuration there is no known mechanism that produces even one
+/// such cell, so any is news. `world_xy` is set far wider than the
+/// grid so every cell is declared stock — the fixture hands the
+/// planner an `initial_stock` covering `mesh.bbox ± r`, and this is
+/// what telling it so looks like.
+fn assert_no_over_claim_with_world_stock(strategy: ClearingStrategy3d, label: &str) {
+    let r = run_planner_sim_parity_with_mesh(
+        strategy,
+        label,
+        make_hemisphere_mesh(),
+        Some((-1.0e4, -1.0e4, 1.0e4, 1.0e4)),
+    );
+    assert_eq!(
+        r.border_clear_zone_total, 0,
+        "[{label}] the world stock footprint should rescue every cell from the F-027 \
+         border clear; {} cells were still in the zone, so this control is not testing \
+         what it claims to.",
+        r.border_clear_zone_total,
+    );
+    assert_eq!(
+        r.sim_higher, 0,
+        "[{label}] with the world stock footprint declared — the configuration \
+         `compute::execute` ships — the planner claimed removal its emitted path does \
+         not deliver on {} of {} cells. This was zero when W5B-F1 was root-caused \
+         (2026-08-21); it is the bar that would catch a real \
+         `stamp_emitted_segment`/`segments_to_toolpath` mirror divergence, with none of \
+         the border-clear population masking it.",
+        r.sim_higher, r.total_cells,
+    );
+    assert_parity_bars(&r, label);
+}
+
+#[test]
+fn planner_sim_dexel_parity_agent_search_world_stock_declared() {
+    assert_no_over_claim_with_world_stock(
+        ClearingStrategy3d::AgentSearch,
+        "AgentSearch hemisphere / world stock declared",
+    );
+}
+
+#[test]
+fn planner_sim_dexel_parity_contour_parallel_world_stock_declared() {
+    assert_no_over_claim_with_world_stock(
+        ClearingStrategy3d::ContourParallel,
+        "ContourParallel hemisphere / world stock declared",
+    );
+}
