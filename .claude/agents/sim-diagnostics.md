@@ -25,7 +25,10 @@ Check `SimulationToolpathCutSummary`:
 - `low_engagement_time_s / cutting_runtime_s` > 25% = suboptimal stepover
 - `average_engagement` < 0.3 for roughing = too conservative
 - `average_engagement` > 0.6 for finishing = too aggressive
-Then check `cut_hotspots()` for worst regions and `semantic_cut_summary()` for per-region breakdown.
+Then read the `hotspots` section of the MCP tool `get_cut_trace` for the worst
+regions, and its `semantic_summaries` section for the per-region breakdown.
+S4 (`3374e3c7`) deleted the `cut_hotspots` and `semantic_cut_summary` doors on
+`SimulationState`.
 
 ### "Why is this operation slow?"
 1. Check `ToolpathDebugTrace` for computation hotspots — `elapsed_us` by span

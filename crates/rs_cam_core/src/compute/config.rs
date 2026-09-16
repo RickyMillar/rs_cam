@@ -150,17 +150,17 @@ pub struct ToolpathStats {
     /// a different number entirely. `truncated_core_mm2` names the geometry
     /// it actually sums and claims nothing about why.
     ///
-    /// The old spelling survives ONLY as a legacy JSON key emitted beside
-    /// the new one on the two wires that carry it
+    /// The old spelling is gone. L5 (`5e4165ce`, 2026-09-17) retired the
+    /// duplicate JSON key from both wires that carried it
     /// ([`crate::session::ToolpathDiagnostic`]'s `Serialize` and the CLI's
-    /// per-toolpath report). No Rust identifier in this repo carries it.
+    /// per-toolpath report), because a reader who trusted the old NAME read
+    /// the wrong quantity. No Rust identifier and no wire carries it now.
     ///
-    /// A consumer reading the CURRENT wire takes `truncated_core_mm2`
-    /// plainly; `#[serde(alias = "standing_material_mm2")]` is for documents
-    /// written BEFORE the rename, and must not be combined with reading the
-    /// dual-key wire — serde rejects the same field arriving twice. Both
-    /// halves of that are pinned in
-    /// `tests/standing_material_channel_am9.rs`.
+    /// `ToolpathStats` is not serde, so this repo holds no read-side alias.
+    /// A consumer that still keeps pre-rename documents puts
+    /// `#[serde(alias = "standing_material_mm2")]` on its OWN reader. One
+    /// such reader serves both shapes, because the wire emits one key. That
+    /// is pinned in `tests/standing_material_channel_am9.rs`.
     ///
     /// **Three-valued on purpose** (A/M9, `MEASUREMENT_DOMAINS.md` X-19):
     ///

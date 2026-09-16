@@ -95,10 +95,15 @@ takes `model_id` as a required parameter. Both now read
 `ProjectSession::model_bbox(model_id)`, which this wave added beside the
 existing `collect_model_bboxes`.
 
-Six call sites still pass `SuggestContext::default()`:
-`viz/ui/properties/mod.rs:2386` (the rationale card), `viz/ui/properties/pills.rs:137`,
+Eight production call sites still pass `SuggestContext::default()`:
+`viz/ui/properties/mod.rs:2367` (the rationale card), `viz/ui/properties/pills.rs:137`,
 `viz/controller/events/mod.rs:1023` and `:1208`,
-`viz/controller/events/model.rs:760`, and `core/session/compute.rs:1875`.
+`viz/controller/events/model.rs:760`, `core/session/compute.rs:1875`,
+`core/session/multitool.rs:779` (the multitool re-Suggest) and
+`cli/src/smoke.rs:530`. The last one matters for measurement: the smoke
+baseline builds with the stepover back-off inert, so the next smoke
+re-baseline must decide whether to thread a bbox in first.
+
 The first two sit behind `draw_toolpath_panel`, which takes 24 parameters and
 belongs to the other account's UI review plan, so threading a bbox through it
 is a separate package. `ProjectSession::cutter_op_profile` already assembles
@@ -240,7 +245,9 @@ and doc lines only, so none of them landed here.
 
 ## Progress
 
-- [x] W1  - [ ] W2  - [x] W3  - [x] W4  - [x] ruled items  - [ ] review + re-scan
+- [x] W1  - [x] W2  - [x] W3  - [x] W4  - [x] ruled items  - [ ] review + re-scan
+
+W2 closed: S25 viz rows and S27 held (ui-premium plan / power-calcs owner).
 
 W4 closed 2026-09-17, seven commits on master, in queue order: S30
 `b80d4ab3`, L12 `bbee10e7`, L13 `a76a6752`, S29 `rs_cam_mcp` `7f709f30`,

@@ -1378,9 +1378,10 @@ impl<'a> ProjectEvidence<'a> {
 }
 
 /// Structured project-level verdict. Replaces the legacy single-line
-/// `ProjectDiagnostics::verdict` string — that field is still populated
-/// (with the highest-severity verdict's headline) for backward compatibility
-/// but new consumers should read [`ProjectDiagnostics::verdicts`].
+/// `ProjectDiagnostics::verdict` string, which L11 (`5e4165ce`,
+/// 2026-09-17) deleted from the struct and from the wire. Read
+/// [`ProjectDiagnostics::verdicts`]. The old single line is
+/// `verdicts[0].headline`, or `"OK"` when the list is empty.
 #[derive(Debug, Clone)]
 pub struct Verdict {
     pub severity: VerdictSeverity,

@@ -128,16 +128,30 @@ The cut trace captures per-sample metrics at ~mm intervals along every toolpath 
 
 FEATURE_CATALOG.md's Drill row already documents this correctly; nothing here should contradict it.
 
-### State Queries (GUI)
+### Cut-Data Queries
+
+An agent reads the cut trace through the MCP tool `get_cut_trace`
+(`crates/rs_cam_viz/src/mcp_server.rs`). It returns `toolpath_summaries`,
+`semantic_summaries`, `span_summaries`, `hotspots`, `issues` and, for drill
+toolpaths, `drill_summaries`. Run the simulation first. Narrow the reply with
+`toolpath_id`, `span_kind`, `span_id` or `pass_index`. Every array carries a cap
+and reports its own truncation, so a shortened array always says so.
+
+S4 (`3374e3c7`, 2026-09-16) deleted four `SimulationState` doors that nothing
+called: `toolpath_cut_summary`, `semantic_cut_summary`, `cut_worst_items` and
+`cut_hotspots`. Do not cite them.
+
+The GUI reads the same trace through the doors that remain
+(`crates/rs_cam_viz/src/state/simulation.rs`):
+
 ```
-SimulationState methods:
-  toolpath_cut_summary(id)      — aggregate stats per toolpath
-  semantic_cut_summary(id)      — per-semantic-item metrics
-  cut_worst_items(id, limit)    — worst items by wasted time
-  cut_hotspots(id, limit)       — hotspot regions sorted by duration
-  current_cut_sample()          — current sample at scrubber position
-  issues(&mut self, gui: &GuiState, max_feed_mm_min: f64) — all issues aggregated
-    (crates/rs_cam_viz/src/state/simulation.rs:1485; NOT `issues(job)`)
+issues(&mut self, gui: &GuiState, max_feed_mm_min: f64)  — all issues aggregated
+issue_hotspot_count(&mut self, gui, max_feed_mm_min)     — hotspot count only
+runtime_hotspots(&mut self, gui, max_feed_mm_min, toolpath_id, limit)
+current_cut_sample()                                     — sample at the scrubber
+focused_hotspot_data()                                   — the focused hotspot
+current_issue(...) / focus_issue_delta(...)              — issue navigation
+trace_target_for_hotspot(...) / trace_target_for_cut_issue(...)
 ```
 
 ---

@@ -353,7 +353,9 @@ AND derate pins, a small real defect; (ii) the audit consequence,
 shipped — `metrology::ownership` audits band-CELL ownership
 (`PlannedRegions::labels`), and only 45.83 % of in-polygon cells
 are owned by Shallow, so polygon-scoped audits misread every
-dendritic Shallow op.
+dendritic Shallow op. (`metrology::ownership` was deleted 2026-09-16 by the tech-debt
+programme, S17: no production caller; the measurement stands as dated
+evidence, the instrument is gone.)
 
 ### S. Scallop-only strategy choice — OPEN, measured WIN 2026-09-02 (Track M M7)
 

@@ -266,7 +266,9 @@ construction.
 The M1 production finding ("production is NOT union-clean, 3,062 mm² in
 3,422 patches, attribution is follow-up work") now has its attribution
 instrument: rerun the M1 arms with per-op `BandOwnership` layers and read
-the `unowned` class. Not yet run.
+the `unowned` class. Not yet run. (`metrology::ownership` was deleted 2026-09-16 by the tech-debt
+programme, S17: no production caller; the measurement stands as dated
+evidence, the instrument is gone.)
 
 ### M2.2 — G2: the two-hypothesis attribution (pre-registered)
 

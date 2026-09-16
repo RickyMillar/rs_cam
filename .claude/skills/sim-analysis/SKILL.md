@@ -53,13 +53,30 @@ quantities ship under that name.
 | `AirCut` | Engagement < 2% at feed rate | Retract too low, poor linking | Reduce retract height, enable keep-tool-down |
 | `LowEngagement` | Engagement < 10% | Stepover too small, thin slivers | Increase stepover, use rest machining |
 
-## Summary Methods on `SimulationState`
+## Where an Agent Reads Cut Data
 
-- `toolpath_cut_summary(id)` — aggregate stats per toolpath
-- `semantic_cut_summary(id)` — per-semantic-item metrics
-- `cut_worst_items(id, limit)` — worst items by wasted time
-- `cut_hotspots(id, limit)` — hotspot regions sorted by duration
-- `issues(job)` — all issues: hotspots, air cuts, low engagement, collisions
+S4 (`3374e3c7`, 2026-09-16) deleted four `SimulationState` doors that
+nothing called: `toolpath_cut_summary`, `semantic_cut_summary`,
+`cut_worst_items` and `cut_hotspots`. Do not cite them. An agent reads
+the same data through the MCP tools.
+
+- `get_cut_trace` — `toolpath_summaries`, `semantic_summaries`,
+  `span_summaries`, `hotspots`, `issues` and, for drill toolpaths,
+  `drill_summaries`. Run the simulation first. Narrow the reply with
+  `toolpath_id`, `span_kind`, `span_id` or `pass_index`. Every array
+  carries a cap and reports its own truncation.
+- `get_toolpath_diagnostics` / `get_project_diagnostics` — the findings
+  and the verdicts.
+- `inspect_collisions` — the collision report.
+- `inspect_spans` — the structural spans that `span_id` names.
+- `get_tool_load_report` — the load gates.
+
+The GUI keeps its own live doors on `SimulationState`
+(`crates/rs_cam_viz/src/state/simulation.rs`): `issues(&mut self, gui:
+&GuiState, max_feed_mm_min: f64)`, `issue_hotspot_count`,
+`runtime_hotspots`, `current_cut_sample`, `focused_hotspot_data`,
+`current_issue`, `focus_issue_delta`, `trace_target_for_hotspot` and
+`trace_target_for_cut_issue`. They serve the panel, not an agent.
 
 ## Wood Routing Thresholds
 
