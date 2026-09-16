@@ -135,94 +135,6 @@ impl TriangleMesh {
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-    /// Load from STL bytes in memory (for WASM or embedded use).
-    /// `data` should contain a complete STL file (binary or ASCII).
-    pub fn from_stl_bytes(data: &[u8], scale: f64) -> Result<Self, MeshError> {
-        let mut cursor = std::io::Cursor::new(data);
-        let stl = stl_io::read_stl(&mut cursor)?;
-
-        if stl.faces.is_empty() {
-            return Err(MeshError::EmptyMesh);
-        }
-
-        let vertices: Vec<P3> = stl
-            .vertices
-            .iter()
-            .map(|v| {
-                P3::new(
-                    v.0[0] as f64 * scale,
-                    v.0[1] as f64 * scale,
-                    v.0[2] as f64 * scale,
-                )
-            })
-            .collect();
-
-        let triangles: Vec<[u32; 3]> = stl
-            .faces
-            .iter()
-            .map(|f| {
-                [
-                    f.vertices[0] as u32,
-                    f.vertices[1] as u32,
-                    f.vertices[2] as u32,
-                ]
-            })
-            .collect();
-
-        // Validate triangle indices are within bounds
-        let vert_count = vertices.len();
-        for tri in &triangles {
-            for &idx in tri {
-                if (idx as usize) >= vert_count {
-                    return Err(MeshError::IndexOutOfBounds {
-                        index: idx,
-                        vertex_count: vert_count,
-                    });
-                }
-            }
-        }
-
-        let faces: Vec<Triangle> = triangles
-            .iter()
-            .map(|tri| {
-                Triangle::new(
-                    vertices[tri[0] as usize],
-                    vertices[tri[1] as usize],
-                    vertices[tri[2] as usize],
-                )
-            })
-            .collect();
-
-        let bbox = BoundingBox3::from_points(vertices.iter().copied());
-
-        let mut mesh = Self {
-            vertices,
-            triangles,
-            faces,
-            bbox,
-        };
-
-        // Check and fix winding consistency
-        let report = mesh.check_winding();
-        if report.inconsistency_fraction > 0.01 {
-            warn!(
-                inconsistent = report.inconsistent_edges,
-                total = report.consistent_edges + report.inconsistent_edges,
-                fraction = format!("{:.1}%", report.inconsistency_fraction * 100.0),
-                "STL bytes has inconsistent normals"
-            );
-        }
-        if report.inconsistency_fraction > 0.05 {
-            let flipped = mesh.fix_winding();
-            warn!(flipped = flipped, "Auto-fixed winding on STL bytes load");
-            // Recompute bounding box after winding fix
-            mesh.bbox = BoundingBox3::from_points(mesh.vertices.iter().copied());
-        }
-
-        Ok(mesh)
-    }
-
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Check winding consistency of the mesh.
     ///
     /// For each undirected edge shared by two faces, checks whether the
@@ -1149,7 +1061,7 @@ mod tests {
     #[test]
     fn test_from_raw_invalid_indices_panics() {
         // from_raw does not validate indices (it's for testing).
-        // But from_stl_scaled and from_stl_bytes do validate.
+        // But from_stl_scaled does validate.
         // This test verifies that from_raw with valid indices works.
         let vertices = vec![
             P3::new(0.0, 0.0, 0.0),
