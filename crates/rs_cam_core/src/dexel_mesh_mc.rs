@@ -30,15 +30,11 @@
 //!   emitted in addition to the top/bottom envelope.
 
 use crate::dexel::{DexelGrid, ray_bottom, ray_top};
+// Wood colors live in `dexel_mesh`, which is their home for the preview,
+// side-grid and drill paths; this module reads them rather than keeping a
+// second copy in step by hand.
+use crate::dexel_mesh::{CUT_B, CUT_G, CUT_R, UNCUT_B, UNCUT_G, UNCUT_R};
 use crate::stock_mesh::StockMesh;
-
-// Wood colors (kept in sync with `dexel_mesh.rs`).
-const UNCUT_R: f32 = 0.76;
-const UNCUT_G: f32 = 0.60;
-const UNCUT_B: f32 = 0.42;
-const CUT_R: f32 = 0.45;
-const CUT_G: f32 = 0.25;
-const CUT_B: f32 = 0.10;
 
 /// Below this material thickness, a ray is treated as a through-hole.
 const MIN_MATERIAL_THICKNESS: f32 = 0.05;

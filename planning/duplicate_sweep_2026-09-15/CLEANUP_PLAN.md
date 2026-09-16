@@ -187,7 +187,7 @@ maintain.
 - [x] **C26 — vendor-normalize delegation** (I09 P2). `context.rs:152-168`
   delegates to `vendor_normalize::op_family_to_lut` (byte-identical 8-arm
   match; a drift-tripwire test already exists — keep it). Risk: low.
-- [ ] **C27 — dexel dead-path deletion** (I03). Delete
+- [x] **C27 — dexel dead-path deletion** (I03). Delete
   `z_grid_to_solid_mesh_heightmap` + `find_matching_gap` +
   `UNCUT_*/CUT_*` legacy copies (~430 lines; `dexel_mesh_mc.rs` is the
   marching-cubes implementation, `z_grid_to_solid_mesh` already delegates).

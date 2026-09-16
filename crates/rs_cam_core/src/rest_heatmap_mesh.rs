@@ -15,8 +15,7 @@
 //!
 //! Quads with any NaN corner (an untrusted cell, per `RestGrid`'s own
 //! contract) are skipped — the same NaN-skip pattern used by
-//! `crate::dexel_mesh::z_grid_to_solid_mesh_heightmap` for hole/cavity
-//! quads.
+//! `crate::dexel_mesh_mc::z_grid_marching_cubes` for hole/cavity quads.
 //!
 //! # Color ramp and the one-source-of-truth requirement
 //!

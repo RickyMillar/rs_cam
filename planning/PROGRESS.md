@@ -900,7 +900,9 @@ Only the closed-solid `dexel_stock_to_mesh` path moves to MC.
 Side-grid path (`side_grid_to_mesh`) dropped from scope (4-axis
 future-proofing; not in active 3-axis-from-top flows). Legacy
 heightmap extractor retained as private
-`z_grid_to_solid_mesh_heightmap` for reference.
+`z_grid_to_solid_mesh_heightmap` for reference. (Deleted 2026-09-16,
+duplicate sweep C27: it had no caller and no test; MC is the only
+extractor.)
 
 7 legacy `dexel_mesh::tests` were tightly coupled to the heightmap
 vertex layout (`mesh.vertices[2]` = first vertex z; "first cells
