@@ -23,7 +23,7 @@ The invariant we want — and the one task #41 enforces via tests — is:
 
 ## Data model
 
-Add `crates/rs_cam_core/src/toolpath_spans.rs` and re-export it from `lib.rs`.
+Add `crates/rs_cam_core/src/trace/toolpath_spans.rs` and re-export it from `lib.rs`.
 
 Do **not** convert `toolpath.rs` into a module in the first commit; keeping spans in a sibling module avoids broad import churn while the model settles.
 
@@ -129,7 +129,7 @@ Design choices:
 
 ### Phase 1: Type definitions only (#42-1)
 
-- Add `crates/rs_cam_core/src/toolpath_spans.rs` with `Span`, `SpanKind`, `SpanPayload`, `AnnotatedToolpath`, `MoveRemap`, `check_invariants`.
+- Add `crates/rs_cam_core/src/trace/toolpath_spans.rs` with `Span`, `SpanKind`, `SpanPayload`, `AnnotatedToolpath`, `MoveRemap`, `check_invariants`.
 - No other code changes.
 - Test: round-trip construction, `spans_at`, `spans_of_kind`, `rapid_order_barriers` derivation, `check_invariants` catches out-of-bounds and inverted ranges.
 

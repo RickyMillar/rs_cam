@@ -92,7 +92,7 @@ lives in core unconditionally (pure data, no external deps).
 
 **SR-4.1.1: `EnrichedMesh` data structure**
 
-New file: `crates/rs_cam_core/src/enriched_mesh.rs`
+New file: `crates/rs_cam_core/src/geometry/enriched_mesh.rs`
 
 ```rust
 /// A triangle mesh with BREP face group metadata.
@@ -188,7 +188,7 @@ Only `step_input.rs` imports truck, behind `#[cfg(feature = "step")]`.
 
 **SR-4.2.1: STEP import module**
 
-New file: `crates/rs_cam_core/src/step_input.rs`, gated `#[cfg(feature = "step")]`
+New file: `crates/rs_cam_core/src/io/step_input.rs`, gated `#[cfg(feature = "step")]`
 
 ```rust
 pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImportError>
@@ -592,8 +592,8 @@ enables this path.
 
 | Purpose | File |
 |---------|------|
-| New: enriched mesh types | `crates/rs_cam_core/src/enriched_mesh.rs` |
-| New: STEP import | `crates/rs_cam_core/src/step_input.rs` |
+| New: enriched mesh types | `crates/rs_cam_core/src/geometry/enriched_mesh.rs` |
+| New: STEP import | `crates/rs_cam_core/src/io/step_input.rs` |
 | Ray-triangle intersection | `crates/rs_cam_core/src/geo.rs` (Triangle) |
 | Model kind + LoadedModel | `crates/rs_cam_viz/src/state/job.rs` |
 | Selection enum | `crates/rs_cam_viz/src/state/selection.rs` |
