@@ -587,7 +587,9 @@ optimum of its family on this terrain class.** Avenues F and G are
 closed in the status doc with reopening conditions. Also shipped:
 `metrology::ownership` (band-cell ownership audits;
 `PlannedRegions::labels`) — a Shallow polygon owns only ~46 % of its
-cells, so polygon-scoped audits misread every dendritic op. Track H
+cells, so polygon-scoped audits misread every dendritic op. (`metrology::ownership` was deleted 2026-09-16 by the tech-debt
+programme, S17: no production caller; the measurement stands as dated
+evidence, the instrument is gone.) Track H
 (valleys/catchments, the other session) closed the same day.
 
 ### Finishing-strategy campaigns — consolidated 2026-09-01
