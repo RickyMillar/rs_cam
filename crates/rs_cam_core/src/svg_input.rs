@@ -13,7 +13,6 @@
 //! **Implication for CAM**: callers should treat SVG coordinates as px and
 //! apply a DPI-based scale factor when physical dimensions matter.
 //! At 96 DPI: 1 px = 0.2646 mm (25.4 / 96).
-//! The `load_svg_data_mm` function does this conversion automatically.
 
 use crate::geo::P2;
 use crate::polygon::Polygon2;
@@ -42,7 +41,6 @@ pub fn load_svg(path: &Path, tolerance: f64) -> Result<Vec<Polygon2>, SvgError> 
 /// Load closed polygon paths from SVG data bytes.
 ///
 /// Coordinates are in usvg user-space units (CSS pixels at 96 DPI).
-/// Use [`load_svg_data_mm`] if you need coordinates in millimeters.
 pub fn load_svg_data(data: &[u8], tolerance: f64) -> Result<Vec<Polygon2>, SvgError> {
     let opt = usvg::Options::default();
     let tree = usvg::Tree::from_data(data, &opt)?;
@@ -50,41 +48,6 @@ pub fn load_svg_data(data: &[u8], tolerance: f64) -> Result<Vec<Polygon2>, SvgEr
     visit_group(tree.root(), tolerance, &mut polygons);
     // Detect containment: inner shapes become holes of outer shapes
     let polygons = crate::polygon::detect_containment(polygons);
-    Ok(polygons)
-}
-
-/// Default CSS DPI used by SVG/usvg (1 px = 1/96 inch).
-const SVG_DEFAULT_DPI: f64 = 96.0;
-
-/// Scale factor from CSS px to mm at the default 96 DPI.
-const PX_TO_MM: f64 = 25.4 / SVG_DEFAULT_DPI;
-
-/// Load closed polygon paths from SVG data bytes, converting coordinates to mm.
-///
-/// usvg normalizes all SVG units to CSS pixels (96 DPI). This function applies
-/// the px-to-mm scale factor (25.4 / 96 ~= 0.2646 mm/px) so that the returned
-/// polygons have coordinates in millimeters.
-///
-/// If the SVG was authored with explicit mm dimensions (e.g. `width="100mm"`)
-/// and a matching viewBox, this conversion preserves the intended physical size.
-/// If the SVG uses raw px coordinates with no unit intent, the caller may need
-/// to apply a custom scale.
-pub fn load_svg_data_mm(data: &[u8], tolerance: f64) -> Result<Vec<Polygon2>, SvgError> {
-    let mut polygons = load_svg_data(data, tolerance)?;
-    for poly in &mut polygons {
-        for pt in &mut poly.exterior {
-            pt.x *= PX_TO_MM;
-            pt.y *= PX_TO_MM;
-        }
-        for hole in &mut poly.holes {
-            for pt in hole {
-                pt.x *= PX_TO_MM;
-                pt.y *= PX_TO_MM;
-            }
-        }
-        // `exterior` moved — see the mutation contract on `Polygon2`.
-        poly.invalidate_bbox();
-    }
     Ok(polygons)
 }
 
