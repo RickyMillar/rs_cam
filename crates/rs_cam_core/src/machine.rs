@@ -319,10 +319,14 @@ impl MachineProfile {
         }
     }
 
-    /// Parse a persisted preset key. Consumers: the viz LEGACY project
-    /// loader (old format stored `machine = "<key>"`) and the
-    /// literature-matrix shim's `machine_class` cell input. Unknown
-    /// keys fall back to the generic profile.
+    /// Parse a preset key. Unknown keys fall back to the generic profile.
+    ///
+    /// **Test door.** The literature-matrix shim
+    /// (`crates/rs_cam_core/tests/literature_matrix/shim.rs`) is the only
+    /// caller; it maps a cell's `machine_class` string to a profile. No
+    /// production path reads it. The viz legacy project loader that also
+    /// read a persisted `machine = "<key>"` line is gone, so the key is
+    /// a test input now, not a file format.
     pub fn from_key(key: &str) -> Self {
         match key {
             "shapeoko_vfd" => Self::shapeoko_vfd(),
@@ -340,7 +344,7 @@ impl MachineProfile {
     /// and an edited preset still claimed to BE the preset. Current
     /// project files serialize the full profile inline
     /// (`ProjectFile.job.machine`), so no key is written anywhere
-    /// (`from_key` above only reads legacy files); structural equality
+    /// (`from_key` above is a test door); structural equality
     /// (same serde-JSON form) is the honest preset test.
     pub fn matching_preset_index(&self) -> Option<usize> {
         let self_json = serde_json::to_string(self).ok()?;
