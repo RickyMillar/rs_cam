@@ -366,6 +366,40 @@ Two of the three unknowns are now answered.
 3. **The lever — answered.** Reduce the depth, then the width. Never the
    feed rate, and thinning the chip moves the push by 6 %.
 
+**Acceleration is NOT a usable proxy for thrust (tested 2026-09-16).** The
+suggestion is a good one — `MachineKinematics` already carries per-axis
+acceleration from GRBL `$120/$121/$122`, so the number is published and
+plumbed. The physics is `F = m·a`. The numbers refuse it:
+
+| | implies | of the measured 85 N |
+|---|---|---|
+| X carriage (~4 kg) @ 250 mm/s², stock | 1.0 N | **1.2 %** |
+| X carriage @ 800, community tuned | 3.2 N | 3.8 % |
+| Y gantry (~12 kg) @ 250 | 3.0 N | 3.5 % |
+
+Inverted, the measured 85 N would allow about 21 000 mm/s² on the X axis
+against a stock setting of 250. The acceleration limit on these machines is
+not set by the motor. It is set by ringing, belt stretch and surface finish.
+`m·a` would understate the thrust by 30 to 85 times.
+
+**The method works where the value was tuned to the skip point.** The usual
+GRBL procedure — raise `$120` until the axis loses position, then back off —
+produces an acceleration that IS `F_thrust / m` by construction. A factory
+default is not that value. So an accel-derived thrust is only valid for a
+machine whose owner tuned it that way, and the engine cannot tell which is
+which from the number alone.
+
+**A cheap measurement this does unlock.** Raising `$120` unloaded until the
+axis skips gives `F = m·a_skip` with no force gauge, using the controller as
+the instrument. It needs the moving mass, which can be weighed. That is more
+repeatable than the fish-scale pull that produced the only measured figure in
+`THRUST_RESEARCH.md`.
+
+**Related finding.** The cutting force on the reference cut is about 15 times
+the inertial force at stock acceleration. The gantry drive spends nearly all
+its effort on the cut, not on moving the mass — so a lost step happens in the
+cut, not in a corner, and the acceleration budget is nowhere near binding.
+
 **What is still missing:** a measured skip threshold for any machine that is
 not belt driven, and a check on whether the frame rather than the motor sets
 the real limit. The one piece of evidence on that point, a Shapeoko belt
