@@ -7,7 +7,7 @@
 //! a list of `(axis, value, source)` triples — directly inspectable in
 //! debug logs and MCP outcomes.
 
-use crate::compute::catalog::{OperationConfig, OperationParams, OperationType};
+use crate::compute::catalog::{OperationConfig, OperationType};
 
 use super::axes::SearchAxis;
 
