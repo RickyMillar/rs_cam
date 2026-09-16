@@ -2069,12 +2069,8 @@ pub struct ToolpathValidationContext {
 
 struct ValidationTool {
     id: crate::state::job::ToolId,
-    #[allow(dead_code)] // surfaced via `tool_configs` lookup post-PR-3 cutover
     tool_type: ToolType,
-    #[allow(dead_code)] // surfaced via `tool_configs` lookup post-PR-3 cutover
     diameter: f64,
-    #[allow(dead_code)] // surfaced via `tool_configs` lookup post-PR-3 cutover
-    cutting_length: f64,
 }
 
 struct ValidationModel {
@@ -2105,7 +2101,6 @@ impl ToolpathValidationContext {
                     id: tool.id,
                     tool_type: tool.tool_type,
                     diameter: tool.diameter,
-                    cutting_length: tool.cutting_length,
                 })
                 .collect(),
             models: session

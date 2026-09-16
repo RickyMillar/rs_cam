@@ -123,6 +123,7 @@ carries the change, so this table is filled by the closing docs commit.
 | S18 | — | five dead view-state items, 62 lines; the `ToolpathConfig` and `SimulationState` imports and the "Combined view for UI code" header go with them. `transform_heightmap_mesh` is NOT held: `CLEANUP_PLAN.md` C12 planned to rework it, C12 is `[x]` done (`51394156`), and it landed with no caller |
 | S19 (viz rows) | — | `json_f64` deleted, 7 lines. `row_hover_tint` is HELD: it implements `ui_premium_2026-09-13/DESIGN_SPEC.md:580` §4.7 "Hover tints the whole row one ramp step", and its own doc cites §4.7. Same class as the S1 hold; the ui-premium account owns the call |
 | S20 | — | five dead colours deleted, 15 lines with their doc lines and the emptied "Mesh face palette" header. `COLLISION_POINT` stays: it is the held S1 row (`ui_premium_2026-09-13/PLAN.md:601`, `AUDIT.md:561`) |
+| S24 | — | **FINDING CONTRADICTED.** The finding says the `tool.tool_type` reads at 2203-2296 are on `ToolConfig`. They are not: `tool` binds from `ctx.tools.iter().find(...)`, which is `&ValidationTool`. `tool_type` has six reads and `diameter` four, so both fields are LIVE and both allows were inert. Only `cutting_length` is dead. Fix: delete `cutting_length` and its write site, and delete the three inert `#[allow(dead_code)]` lines |
 
 ## Progress
 
