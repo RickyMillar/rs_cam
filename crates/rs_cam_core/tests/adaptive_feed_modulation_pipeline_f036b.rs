@@ -267,6 +267,144 @@ fn collect_f_words(gcode: &str) -> Vec<f64> {
     feeds
 }
 
+/// The emitted F words that belong to the CUTTING population, with the
+/// histograms that explain the split.
+struct CuttingFeedWords {
+    /// Every F word the program carries, `rendered feed -> count`.
+    all: std::collections::BTreeMap<String, usize>,
+    /// The F words a cutting move's feed produces.
+    kept: Vec<f64>,
+    /// Feed words that a cutting move and a non-cutting move both carry.
+    /// The filter keeps such a word, so it records the overlap.
+    shared: Vec<String>,
+}
+
+impl CuttingFeedWords {
+    /// The median of the cutting population.
+    fn median(&self) -> f64 {
+        let mut kept = self.kept.clone();
+        assert!(
+            !kept.is_empty(),
+            "F-036b AB3: no cutting F word in the emitted program. A median over an \
+             empty population proves nothing."
+        );
+        kept.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        kept[kept.len() / 2]
+    }
+
+    /// One line for a failure message: the two histograms and the overlap.
+    fn report(&self) -> String {
+        let mut kept_hist: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        for feed in &self.kept {
+            *kept_hist.entry(format!("{feed:.1}")).or_default() += 1;
+        }
+        format!(
+            "all F words n={} {:?}; cutting F words n={} {:?}; feeds both populations \
+             carry {:?}",
+            self.all.values().sum::<usize>(),
+            self.all,
+            self.kept.len(),
+            kept_hist,
+            self.shared
+        )
+    }
+}
+
+/// Split the emitted F words of `session` into the cutting population and
+/// the rest.
+///
+/// **Why the filter exists (RT-5, 2026-09-17).** AB3 claims a CUTTING
+/// chipload. [`collect_f_words`] takes every F word in the program, the
+/// entry plunge and the entry ramp feeds included, so a median over it
+/// measures a different population. `d0aeee02` (G-RAMPCONTAIN) folded the
+/// ramp along the following cut and multiplied the entry words; the median
+/// then crossed out of the cutting moves and the arm went red on an
+/// instrument defect, not on a modulation regression. The diagnosis is on
+/// record in `planning/ui_fix_2026-09-09/reports/J2.md` §4c — the structure
+/// purge deleted that path, so read it with
+/// `git show 0a6c476b^:planning/ui_fix_2026-09-09/reports/J2.md` — and this
+/// is the remedy §4c prescribes. The band, the fixture and the three
+/// assertions are unchanged.
+///
+/// **The classifier is the gate's own partition, read on the IR.** The gate
+/// drops a sample whose span ancestry is an entry or a transit span
+/// (`rs_cam_core::tool_load::locality::is_steady_state_for_gate`, the
+/// canonical gate-side predicate). The toolpath IR carries the same fact per
+/// move as [`MoveIntent`], so `ClearingCut | FinishingCut` is the cutting
+/// population and every other intent is an entry, a link or a lead. AB5
+/// (`modulated_path_never_emits_below_min_chipload`) partitions the same way.
+/// A feed threshold would silently drop a cutting move the modulator
+/// legitimately LOWERED, so the filter reads the intent, never a feed value.
+///
+/// **The export stays the measured artefact.** The function renders each
+/// cutting move's feed the way the post renders an F word — the emitter
+/// clamps to `max_feed`, then rounds to `decimals.feed` — and keeps the F
+/// words that match. Residual, measured and reported, not hidden: a folded
+/// ramp move can carry a cutting feed, and such an F word stays in the
+/// population. `shared` names every feed both populations carry.
+fn cutting_feed_words(session: &ProjectSession) -> CuttingFeedWords {
+    use rs_cam_core::toolpath::MoveIntent;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let post = rs_cam_core::gcode::get_post_definition(&session.post_config().format)
+        .expect("the export's post definition resolves");
+    let dp = post.decimals.feed;
+    let max_feed = post.limits.max_feed.map(|f| f.get());
+    // Render a feed the way the emitter writes it: clamp first
+    // (`gcode/emitter.rs` `clamp_feed`), then round to the post's feed
+    // decimals. Re-rendering an already emitted word is the identity.
+    let word = |feed: f64| -> String {
+        let clamped = max_feed.map_or(feed, |max| feed.min(max));
+        format!("{clamped:.dp$}")
+    };
+
+    let result = session
+        .get_result(0)
+        .expect("session result for toolpath 0");
+    let mut cutting: BTreeSet<String> = BTreeSet::new();
+    let mut linking: BTreeSet<String> = BTreeSet::new();
+    for mv in &result.annotated().toolpath.moves {
+        let Some(feed) = mv.move_type.feed_rate() else {
+            continue;
+        };
+        if matches!(
+            mv.intent,
+            MoveIntent::ClearingCut | MoveIntent::FinishingCut
+        ) {
+            cutting.insert(word(feed));
+        } else {
+            linking.insert(word(feed));
+        }
+    }
+
+    let feeds = collect_f_words(&export_session_gcode(session));
+    assert!(!feeds.is_empty(), "expected F-words in emitted G-code");
+    let mut all: BTreeMap<String, usize> = BTreeMap::new();
+    let mut kept = Vec::new();
+    let mut unattributed: BTreeMap<String, usize> = BTreeMap::new();
+    for feed in &feeds {
+        let key = word(*feed);
+        *all.entry(key.clone()).or_default() += 1;
+        if cutting.contains(&key) {
+            kept.push(*feed);
+        } else if !linking.contains(&key) {
+            *unattributed.entry(key).or_default() += 1;
+        }
+    }
+    // Instrument integrity: every F word must come from a move the IR
+    // carries. An unattributed word means the emitter wrote a feed the
+    // split cannot place, and the median then has no defined population.
+    assert!(
+        unattributed.is_empty(),
+        "F-036b AB3: the F words {unattributed:?} match no move in the toolpath IR. \
+         The cutting / non-cutting split cannot attribute them."
+    );
+
+    let shared = cutting.intersection(&linking).cloned().collect();
+    CuttingFeedWords { all, kept, shared }
+}
+
 // ============== AB1: load-bearing flag-OFF byte-identical ===========
 
 /// AB1 (load-bearing).
@@ -413,6 +551,19 @@ fn modulation_runs_and_stays_fresh_without_kinematics() {
 ///   1. the flag-OFF median feed sits below the band (the under-fed default),
 ///   2. modulation raises the median feed, and
 ///   3. the flag-ON median feed lands inside the band.
+///
+/// **RT-5 (2026-09-17) — the population.** All three medians read the CUTTING
+/// F words only, through [`cutting_feed_words`]. The median used to read every
+/// F word in the program, entry feeds included, which measures a different
+/// population from the one the arm claims. The doc comment on
+/// [`cutting_feed_words`] carries the diagnosis and the classifier.
+///
+/// The measurement on that population, flag ON: 228 F words, of which 180 are
+/// cutting words `{770: 56, 773: 10, 781: 6, 795: 9, 1152: 15, 1472: 3,
+/// 1980: 81}`. The median is 1152, the modulator's own floor clamp
+/// (`band.min × rpm × flutes`), so the chipload lands on the band floor,
+/// 0.0320. The margin is 10 words: the arm reads red again if the 1152 and
+/// higher buckets lose about 10 F words between them.
 #[test]
 fn modulation_raises_cutting_chipload_toward_band() {
     use rs_cam_core::tool_load::ChiploadVerdict;
@@ -420,12 +571,6 @@ fn modulation_raises_cutting_chipload_toward_band() {
     // RPM × flutes for AS001's 6 mm 2-flute end mill (`build_as001_pocket_session`).
     const RPM_X_FLUTES: f64 = 18_000.0 * 2.0;
     let chip = |feed: f64| feed / RPM_X_FLUTES;
-    let median = |gcode: &str| -> f64 {
-        let mut feeds = collect_f_words(gcode);
-        assert!(!feeds.is_empty(), "expected F-words in emitted G-code");
-        feeds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        feeds[feeds.len() / 2]
-    };
 
     // Flag OFF: the under-fed default. The gate (now fresh) grades it
     // chipload-low and carries the LUT band bounds — derive the band from it
@@ -449,27 +594,35 @@ fn modulation_raises_cutting_chipload_toward_band() {
         .expect("LUT band carries a chipload min");
     let band_max = triggering.bounds.max_mm_per_tooth;
 
-    let median_off = median(&export_session_gcode(&session_off));
-    let median_on = median(&export_session_gcode(&run_session(true, true)));
+    let words_off = cutting_feed_words(&session_off);
+    let words_on = cutting_feed_words(&run_session(true, true));
+    let median_off = words_off.median();
+    let median_on = words_on.median();
 
     // 1. flag-OFF median sits below the band (documents the under-fed default).
     assert!(
         chip(median_off) < band_min,
-        "flag-OFF median chipload {:.4} should be below band min {:.4} (under-fed default)",
+        "flag-OFF median chipload {:.4} should be below band min {:.4} (under-fed default). \
+         Flag-OFF population: {}",
         chip(median_off),
-        band_min
+        band_min,
+        words_off.report()
     );
     // 2. modulation raised the median feed.
     assert!(
         median_on > median_off,
-        "modulation must raise the median cutting feed: off={median_off:.0}, on={median_on:.0}"
+        "modulation must raise the median cutting feed: off={median_off:.0}, on={median_on:.0}. \
+         Flag-ON population: {}",
+        words_on.report()
     );
     // 3. the flag-ON median lands inside the band — the bulk of cutting moves
     //    are now correctly fed.
     let chip_on = chip(median_on);
     assert!(
         (band_min..=band_max).contains(&chip_on),
-        "flag-ON median chipload {chip_on:.4} should land in band [{band_min:.4}, {band_max:.4}]"
+        "flag-ON median chipload {chip_on:.4} should land in band [{band_min:.4}, {band_max:.4}]. \
+         Flag-ON population: {}",
+        words_on.report()
     );
 }
 
