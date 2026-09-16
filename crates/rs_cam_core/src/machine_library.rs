@@ -42,6 +42,23 @@ pub enum MachineLibraryError {
     Serialize(String, toml::ser::Error),
 }
 
+impl crate::named_toml_library::LibraryError for MachineLibraryError {
+    fn invalid_name(name: &str) -> Self {
+        Self::InvalidName(name.to_owned())
+    }
+
+    fn already_exists(name: &str) -> Self {
+        Self::AlreadyExists(name.to_owned())
+    }
+
+    fn io(name: &str, source: std::io::Error) -> Self {
+        Self::Io {
+            name: name.to_owned(),
+            source,
+        }
+    }
+}
+
 /// Resolve the per-user machine-library directory. Does not create it.
 pub fn library_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("RS_CAM_MACHINE_DIR")
@@ -68,40 +85,15 @@ pub fn library_dir() -> Option<PathBuf> {
 }
 
 /// True when `name` is a safe bare file stem (no separators, no `..`).
-fn name_is_valid(name: &str) -> bool {
-    !name.is_empty()
-        && !name.contains('/')
-        && !name.contains('\\')
-        && name != ".."
-        && !name.contains("..")
-}
-
 /// Path to the `.toml` for `name` inside `dir`.
 fn path_in(dir: &Path, name: &str) -> Result<PathBuf, MachineLibraryError> {
-    if !name_is_valid(name) {
-        return Err(MachineLibraryError::InvalidName(name.to_owned()));
-    }
-    Ok(dir.join(format!("{name}.toml")))
+    crate::named_toml_library::path_in(dir, name)
 }
 
 /// List the machine names (file stems) available in `dir`. Missing dir
 /// returns an empty list (not an error).
 pub fn list_in(dir: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut names: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let path = e.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("toml") {
-                return None;
-            }
-            path.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
-        })
-        .collect();
-    names.sort();
-    names
+    crate::named_toml_library::list_in(dir)
 }
 
 /// List the machine names available in the resolved library dir.
@@ -172,16 +164,7 @@ pub fn delete(name: &str) -> Result<(), MachineLibraryError> {
 
 /// Rename machine `old` to `new` in `dir`. Errors if `new` already exists.
 pub fn rename_in(dir: &Path, old: &str, new: &str) -> Result<(), MachineLibraryError> {
-    let old_path = path_in(dir, old)?;
-    let new_path = path_in(dir, new)?;
-    if new_path.exists() {
-        return Err(MachineLibraryError::AlreadyExists(new.to_owned()));
-    }
-    std::fs::rename(&old_path, &new_path).map_err(|source| MachineLibraryError::Io {
-        name: old.to_owned(),
-        source,
-    })?;
-    Ok(())
+    crate::named_toml_library::rename_in(dir, old, new)
 }
 
 /// Rename a machine in the resolved library dir.

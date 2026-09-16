@@ -45,6 +45,23 @@ pub enum ToolLibraryError {
     Serialize(String, toml::ser::Error),
 }
 
+impl crate::named_toml_library::LibraryError for ToolLibraryError {
+    fn invalid_name(name: &str) -> Self {
+        Self::InvalidName(name.to_owned())
+    }
+
+    fn already_exists(name: &str) -> Self {
+        Self::AlreadyExists(name.to_owned())
+    }
+
+    fn io(name: &str, source: std::io::Error) -> Self {
+        Self::Io {
+            name: name.to_owned(),
+            source,
+        }
+    }
+}
+
 /// A catalog file: a named collection of tools.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ToolCatalog {
@@ -77,38 +94,13 @@ pub fn library_dir() -> Option<PathBuf> {
     None
 }
 
-fn name_is_valid(name: &str) -> bool {
-    !name.is_empty()
-        && !name.contains('/')
-        && !name.contains('\\')
-        && name != ".."
-        && !name.contains("..")
-}
-
 fn path_in(dir: &Path, name: &str) -> Result<PathBuf, ToolLibraryError> {
-    if !name_is_valid(name) {
-        return Err(ToolLibraryError::InvalidName(name.to_owned()));
-    }
-    Ok(dir.join(format!("{name}.toml")))
+    crate::named_toml_library::path_in(dir, name)
 }
 
 /// List catalog names (file stems) in `dir`. Missing dir → empty.
 pub fn list_in(dir: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut names: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let path = e.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("toml") {
-                return None;
-            }
-            path.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
-        })
-        .collect();
-    names.sort();
-    names
+    crate::named_toml_library::list_in(dir)
 }
 
 /// List catalog names in the resolved library dir.
@@ -291,16 +283,7 @@ pub fn delete_library(name: &str) -> Result<(), ToolLibraryError> {
 
 /// Rename catalog `old` to `new` in `dir`. Errors if `new` already exists.
 pub fn rename_in(dir: &Path, old: &str, new: &str) -> Result<(), ToolLibraryError> {
-    let old_path = path_in(dir, old)?;
-    let new_path = path_in(dir, new)?;
-    if new_path.exists() {
-        return Err(ToolLibraryError::AlreadyExists(new.to_owned()));
-    }
-    std::fs::rename(&old_path, &new_path).map_err(|source| ToolLibraryError::Io {
-        name: old.to_owned(),
-        source,
-    })?;
-    Ok(())
+    crate::named_toml_library::rename_in(dir, old, new)
 }
 
 /// Rename a catalog in the resolved dir.

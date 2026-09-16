@@ -84,6 +84,7 @@ pub mod machine_library;
 pub mod marching_squares;
 pub mod material;
 pub mod measurement;
+mod named_toml_library;
 // The bounded mesh-identity memo the map caches share; private to the crate.
 mod memo;
 pub mod mesh;
