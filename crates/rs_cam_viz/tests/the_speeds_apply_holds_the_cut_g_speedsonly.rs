@@ -97,7 +97,7 @@ fn sample_toolpath() -> Toolpath {
 
 fn core_result() -> ToolpathComputeResult {
     ToolpathComputeResult {
-        op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(AnnotatedToolpath::new(
+        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(AnnotatedToolpath::new(
             sample_toolpath(),
         ))),
         stats: Default::default(),

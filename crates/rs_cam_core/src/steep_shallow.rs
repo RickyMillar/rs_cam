@@ -21,11 +21,11 @@ use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::ops::waterline::waterline_contours;
 use crate::surface::dropcutter::batch_drop_cutter;
 use crate::surface::slope::{SlopeMap, classify_steep_shallow};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
-use crate::waterline::waterline_contours;
 
 use tracing::{debug, info};
 

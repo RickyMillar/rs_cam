@@ -73,7 +73,9 @@ fn sample_toolpath(feed: f64) -> Toolpath {
 
 fn core_result(path: Toolpath) -> ToolpathComputeResult {
     ToolpathComputeResult {
-        op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(AnnotatedToolpath::new(path))),
+        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(AnnotatedToolpath::new(
+            path,
+        ))),
         stats: Default::default(),
         debug_trace: None,
         semantic_trace: None,

@@ -25,8 +25,8 @@
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
-    drill::{DrillCycle, DrillParams, drill_toolpath},
     geo::{BoundingBox3, P3},
+    ops::drill::{DrillCycle, DrillParams, drill_toolpath},
     tool::FlatEndmill,
     toolpath::{MoveIntent, MoveType, Toolpath},
 };

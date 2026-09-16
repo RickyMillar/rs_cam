@@ -60,7 +60,7 @@ use common::{meshes, tools};
 use rs_cam_core::finish_setup::FinishResolutionPolicy;
 use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::pocket::pocket_contours_with_cancel;
+use rs_cam_core::ops::pocket::pocket_contours_with_cancel;
 use rs_cam_core::polygon::{Polygon2, cleanup_collinear, simplify_bounded};
 use rs_cam_core::scallop::{
     RingCleanup, ScallopDirection, ScallopParams, ScallopRingBudget, ScallopStepoverPolicy,

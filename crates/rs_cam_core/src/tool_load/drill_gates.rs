@@ -9,12 +9,12 @@
 //!
 //! See `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.E / Step 3 PR2.
 
-pub use crate::drill::DrillCycleKind;
-use crate::drill_metrics::{
+use crate::material::Material;
+pub use crate::ops::drill::DrillCycleKind;
+use crate::ops::drill_metrics::{
     ChipWeldingRisk, DrillToolpathSummary, chip_welding_threshold, per_peck_max_depth_to_diameter,
 };
-use crate::drill_op::DrillOp;
-use crate::material::Material;
+use crate::ops::drill_op::DrillOp;
 use serde::{Deserialize, Serialize};
 
 /// Outcome of a single drill gate. Mirrors the structure of the milling
@@ -391,10 +391,10 @@ impl DrillGatesVerdict {
 )]
 mod tests {
     use super::*;
-    use crate::drill::DrillCycle;
-    use crate::drill_metrics::{build_drill_toolpath_summary, emit_drill_samples};
-    use crate::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
     use crate::ids::ToolpathId;
+    use crate::ops::drill::DrillCycle;
+    use crate::ops::drill_metrics::{build_drill_toolpath_summary, emit_drill_samples};
+    use crate::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
     fn op(cycle: DrillCycle, diameter: f64, depth: f64, feed: f64) -> DrillOp {
         DrillOp {

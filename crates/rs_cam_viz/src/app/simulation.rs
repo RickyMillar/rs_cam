@@ -355,7 +355,7 @@ impl RsCamApp {
             // approximation only. See `compute/simulate.rs:504-508`.
             if let Some(results) = self.controller.state().simulation.results.as_ref() {
                 let mut offset: usize = 0;
-                let completed: Vec<&rs_cam_core::drill_op::DrillOp> = results
+                let completed: Vec<&rs_cam_core::ops::drill_op::DrillOp> = results
                     .playback_data
                     .iter()
                     .filter_map(|pb_tp| {

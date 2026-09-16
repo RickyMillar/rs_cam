@@ -27,7 +27,7 @@ pub enum DrillCycle {
 
 /// Which drill cycle produced a verdict — enough to word a remedy
 /// correctly, without dragging the non-serializable
-/// [`crate::drill::DrillCycle`] (which carries f64 payloads) onto the
+/// [`crate::ops::drill::DrillCycle`] (which carries f64 payloads) onto the
 /// wire.
 ///
 /// R-4 (2026-08-04): remedies were keyed on `CriterionKind` alone, so

@@ -22,36 +22,36 @@
 use rs_cam_core::{
     adaptive::AdaptiveParams,
     adaptive3d::{Adaptive3dParams, ClearingStrategy3d, RegionOrdering},
-    chamfer::ChamferParams,
     dexel_stock::{StockCutDirection, TriDexelStock},
-    drill::{DrillCycle, DrillParams},
     export::fingerprint::{
         FingerprintDiff, ParameterSweepResult, StockFingerprint, SweepArtifacts, SweepVariant,
         ToolpathFingerprint, diff_fingerprints,
     },
-    face::{FaceDirection, FaceParams},
     geo::{BoundingBox3, P2},
     horizontal_finish::HorizontalFinishParams,
-    inlay::InlayParams,
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
+    ops::chamfer::ChamferParams,
+    ops::drill::{DrillCycle, DrillParams},
+    ops::face::{FaceDirection, FaceParams},
+    ops::inlay::InlayParams,
+    ops::pocket::PocketParams,
+    ops::profile::{ProfileParams, ProfileSide},
+    ops::project_curve::ProjectCurveParams,
+    ops::rest::RestParams,
+    ops::trace_path::{TraceCompensation, TraceParams},
+    ops::vcarve::VCarveParams,
+    ops::waterline::{WaterlineParams, waterline_toolpath},
+    ops::zigzag::ZigzagParams,
     pencil::PencilParams,
-    pocket::PocketParams,
     polygon::Polygon2,
-    profile::{ProfileParams, ProfileSide},
-    project_curve::ProjectCurveParams,
     radial_finish::RadialFinishParams,
     ramp_finish::{CutDirection, RampFinishParams},
-    rest::RestParams,
     scallop::{ScallopDirection, ScallopParams},
     spiral_finish::{SpiralDirection, SpiralFinishParams},
     steep_shallow::SteepShallowParams,
     surface::dropcutter::batch_drop_cutter,
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{Toolpath, raster_toolpath_from_grid},
-    trace::{TraceCompensation, TraceParams},
-    vcarve::VCarveParams,
-    waterline::{WaterlineParams, waterline_toolpath},
-    zigzag::ZigzagParams,
 };
 use std::path::PathBuf;
 
@@ -397,7 +397,7 @@ fn sweep_pocket_stepover() {
             if let Some(v) = override_val {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::pocket::pocket_toolpath(&poly, &p)
+            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
         },
     );
 
@@ -432,7 +432,7 @@ fn sweep_pocket_feed_rate() {
             if let Some(v) = override_val {
                 p.feed_rate = v.as_f64().unwrap();
             }
-            rs_cam_core::pocket::pocket_toolpath(&poly, &p)
+            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
         },
     );
 
@@ -465,7 +465,7 @@ fn sweep_pocket_cut_depth() {
             if let Some(v) = override_val {
                 p.cut_depth = v.as_f64().unwrap();
             }
-            rs_cam_core::pocket::pocket_toolpath(&poly, &p)
+            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
         },
     );
 
@@ -492,7 +492,7 @@ fn sweep_pocket_climb() {
             if let Some(v) = override_val {
                 p.climb = v.as_bool().unwrap();
             }
-            rs_cam_core::pocket::pocket_toolpath(&poly, &p)
+            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
         },
     );
 
@@ -524,7 +524,7 @@ fn sweep_pocket_safe_z() {
             if let Some(v) = override_val {
                 p.safe_z = v.as_f64().unwrap();
             }
-            rs_cam_core::pocket::pocket_toolpath(&poly, &p)
+            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
         },
     );
 
@@ -562,7 +562,7 @@ fn sweep_profile_side() {
                     _ => ProfileSide::Outside,
                 };
             }
-            rs_cam_core::profile::profile_toolpath(&poly, &p)
+            rs_cam_core::ops::profile::profile_toolpath(&poly, &p)
         },
     );
 
@@ -595,7 +595,7 @@ fn sweep_profile_feed_rate() {
             if let Some(v) = override_val {
                 p.feed_rate = v.as_f64().unwrap();
             }
-            rs_cam_core::profile::profile_toolpath(&poly, &p)
+            rs_cam_core::ops::profile::profile_toolpath(&poly, &p)
         },
     );
 
@@ -622,7 +622,7 @@ fn sweep_profile_climb() {
             if let Some(v) = override_val {
                 p.climb = v.as_bool().unwrap();
             }
-            rs_cam_core::profile::profile_toolpath(&poly, &p)
+            rs_cam_core::ops::profile::profile_toolpath(&poly, &p)
         },
     );
 
@@ -1028,7 +1028,7 @@ fn sweep_face_stepover() {
             if let Some(v) = ov {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::face::face_toolpath(&bounds, &p)
+            rs_cam_core::ops::face::face_toolpath(&bounds, &p)
         },
     );
     for v in &result.variants {
@@ -1054,7 +1054,7 @@ fn sweep_face_direction() {
             if ov.is_some() {
                 p.direction = FaceDirection::OneWay;
             }
-            rs_cam_core::face::face_toolpath(&bounds, &p)
+            rs_cam_core::ops::face::face_toolpath(&bounds, &p)
         },
     );
     for v in &result.variants {
@@ -1080,7 +1080,7 @@ fn sweep_face_depth() {
             if let Some(v) = ov {
                 p.depth = v.as_f64().unwrap();
             }
-            rs_cam_core::face::face_toolpath(&bounds, &p)
+            rs_cam_core::ops::face::face_toolpath(&bounds, &p)
         },
     );
     for v in &result.variants {
@@ -1104,7 +1104,7 @@ fn sweep_face_stock_offset() {
             if let Some(v) = ov {
                 p.stock_offset = v.as_f64().unwrap();
             }
-            rs_cam_core::face::face_toolpath(&bounds, &p)
+            rs_cam_core::ops::face::face_toolpath(&bounds, &p)
         },
     );
     for v in &result.variants {
@@ -1143,7 +1143,7 @@ fn sweep_zigzag_angle() {
             if let Some(v) = ov {
                 p.angle = v.as_f64().unwrap();
             }
-            rs_cam_core::zigzag::zigzag_toolpath(&poly, &p)
+            rs_cam_core::ops::zigzag::zigzag_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1166,7 +1166,7 @@ fn sweep_zigzag_stepover() {
             if let Some(v) = ov {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::zigzag::zigzag_toolpath(&poly, &p)
+            rs_cam_core::ops::zigzag::zigzag_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1211,7 +1211,7 @@ fn sweep_trace_compensation() {
                     _ => TraceCompensation::None,
                 };
             }
-            rs_cam_core::trace::trace_toolpath(&poly, &p)
+            rs_cam_core::ops::trace_path::trace_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1242,7 +1242,7 @@ fn sweep_trace_depth() {
             if let Some(v) = ov {
                 p.depth = v.as_f64().unwrap();
             }
-            rs_cam_core::trace::trace_toolpath(&poly, &p)
+            rs_cam_core::ops::trace_path::trace_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1289,7 +1289,7 @@ fn sweep_drill_cycle() {
                     _ => DrillCycle::Peck(3.0),
                 };
             }
-            rs_cam_core::drill::drill_toolpath(&holes, &p)
+            rs_cam_core::ops::drill::drill_toolpath(&holes, &p)
         },
     );
     for v in &result.variants {
@@ -1314,7 +1314,7 @@ fn sweep_drill_depth() {
             if let Some(v) = ov {
                 p.depth = v.as_f64().unwrap();
             }
-            rs_cam_core::drill::drill_toolpath(&holes, &p)
+            rs_cam_core::ops::drill::drill_toolpath(&holes, &p)
         },
     );
     for v in &result.variants {
@@ -1354,7 +1354,7 @@ fn sweep_chamfer_width() {
             if let Some(v) = ov {
                 p.chamfer_width = v.as_f64().unwrap();
             }
-            rs_cam_core::chamfer::chamfer_toolpath(&poly, &p)
+            rs_cam_core::ops::chamfer::chamfer_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1396,7 +1396,7 @@ fn sweep_vcarve_max_depth() {
             if let Some(v) = ov {
                 p.max_depth = v.as_f64().unwrap();
             }
-            rs_cam_core::vcarve::vcarve_toolpath(&poly, &p)
+            rs_cam_core::ops::vcarve::vcarve_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1419,7 +1419,7 @@ fn sweep_vcarve_stepover() {
             if let Some(v) = ov {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::vcarve::vcarve_toolpath(&poly, &p)
+            rs_cam_core::ops::vcarve::vcarve_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1460,7 +1460,7 @@ fn sweep_rest_angle() {
             if let Some(v) = ov {
                 p.angle = v.as_f64().unwrap();
             }
-            rs_cam_core::rest::rest_machining_toolpath(&poly, &p)
+            rs_cam_core::ops::rest::rest_machining_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1483,7 +1483,7 @@ fn sweep_rest_prev_tool_radius() {
             if let Some(v) = ov {
                 p.prev_tool_radius = v.as_f64().unwrap();
             }
-            rs_cam_core::rest::rest_machining_toolpath(&poly, &p)
+            rs_cam_core::ops::rest::rest_machining_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -2136,7 +2136,7 @@ fn sweep_inlay_pocket_depth() {
                 p.pocket_depth = v.as_f64().unwrap();
             }
             // Use the female toolpath for fingerprinting
-            rs_cam_core::inlay::inlay_toolpaths(&poly, &p).female
+            rs_cam_core::ops::inlay::inlay_toolpaths(&poly, &p).female
         },
     );
     for v in &result.variants {
@@ -2160,7 +2160,7 @@ fn sweep_inlay_glue_gap() {
             if let Some(v) = ov {
                 p.glue_gap = v.as_f64().unwrap();
             }
-            rs_cam_core::inlay::inlay_toolpaths(&poly, &p).female
+            rs_cam_core::ops::inlay::inlay_toolpaths(&poly, &p).female
         },
     );
     // Glue gap primarily affects the male plug, not the female pocket.
@@ -2181,9 +2181,9 @@ fn default_project_curve_params() -> ProjectCurveParams {
         plunge_rate: 400.0,
         safe_z: 30.0,
         point_spacing: 0.5,
-        direction: rs_cam_core::project_curve::ProjectDirection::FromAbove,
+        direction: rs_cam_core::ops::project_curve::ProjectDirection::FromAbove,
         tool_radius: 0.0,
-        side: rs_cam_core::project_curve::ProjectSide::Center,
+        side: rs_cam_core::ops::project_curve::ProjectSide::Center,
         setup_z_flipped: false,
     }
 }
@@ -2205,7 +2205,9 @@ fn sweep_project_curve_depth() {
             if let Some(v) = ov {
                 p.depth = v.as_f64().unwrap();
             }
-            rs_cam_core::project_curve::project_curve_toolpath(&poly, &mesh, &index, &cutter, &p)
+            rs_cam_core::ops::project_curve::project_curve_toolpath(
+                &poly, &mesh, &index, &cutter, &p,
+            )
         },
     );
     for v in &result.variants {
@@ -2231,7 +2233,9 @@ fn sweep_project_curve_point_spacing() {
             if let Some(v) = ov {
                 p.point_spacing = v.as_f64().unwrap();
             }
-            rs_cam_core::project_curve::project_curve_toolpath(&poly, &mesh, &index, &cutter, &p)
+            rs_cam_core::ops::project_curve::project_curve_toolpath(
+                &poly, &mesh, &index, &cutter, &p,
+            )
         },
     );
     for v in &result.variants {

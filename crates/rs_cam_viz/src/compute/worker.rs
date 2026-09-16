@@ -122,7 +122,7 @@ pub struct SetupSimToolpath {
     /// so the simulator uses analytical removal instead of per-segment
     /// stamping. Populated by [`crate::controller::events::simulation`]
     /// from the session's cached `ToolpathComputeResult`.
-    pub drill_op: Option<Arc<rs_cam_core::drill_op::DrillOp>>,
+    pub drill_op: Option<Arc<rs_cam_core::ops::drill_op::DrillOp>>,
     /// Hash of the toolpath's `OperationConfig` at sim-build time.
     /// Forwarded to `SimToolpathEntry.operation_config_hash` so the
     /// provenance builder can stamp it without holding the config.
@@ -213,7 +213,7 @@ pub struct PlaybackToolpath {
     /// setup-local entry, because setup-local Z is always the tool axis.
     pub direction: StockCutDirection,
     /// Analytic drill removal, expressed in [`Self::frame`].
-    pub drill_op: Option<Arc<rs_cam_core::drill_op::DrillOp>>,
+    pub drill_op: Option<Arc<rs_cam_core::ops::drill_op::DrillOp>>,
     /// Ordinal of the setup group this entry belongs to. Playback resets
     /// whenever the playhead crosses into a different group, because the two
     /// groups need not share a frame.

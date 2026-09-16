@@ -3,9 +3,9 @@
 //! Follows polygon paths exactly at a specified depth, optionally offset
 //! by the tool radius for left/right cutter compensation.
 
-use crate::depth::{DepthStepping, depth_stepped_toolpath_with_cancel};
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled};
+use crate::ops::depth::{DepthStepping, depth_stepped_toolpath_with_cancel};
 use crate::polygon::Polygon2;
 use crate::toolpath::{MoveIntent, Toolpath};
 
@@ -228,7 +228,7 @@ mod tests {
             .all_levels();
             assert_eq!(levels.len(), 4, "the fixture must actually be multi-level");
 
-            let naive = crate::depth::toolpath_at_levels(&levels, params.safe_z, |z| {
+            let naive = crate::ops::depth::toolpath_at_levels(&levels, params.safe_z, |z| {
                 trace_polygon_at_z(&poly, z, &params)
             });
             let hoisted = trace_toolpath(&poly, &params);

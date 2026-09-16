@@ -1,9 +1,9 @@
 //! 3D direction search, engagement computation, entry-point finding, and
 //! path-validation helpers for adaptive3d clearing.
 
-use crate::adaptive_shared::blend_corners;
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::{P2, P3};
+use crate::ops::adaptive_shared::blend_corners;
 use crate::surface::slope::SurfaceHeightmap;
 
 use super::clearing::MaterialRegion;

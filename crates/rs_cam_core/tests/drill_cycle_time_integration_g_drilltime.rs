@@ -79,12 +79,12 @@ use rs_cam_core::compute::simulate::{
 };
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::dexel_stock::StockCutDirection;
-use rs_cam_core::drill::DrillCycle;
-use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::material::Material;
+use rs_cam_core::ops::drill::DrillCycle;
+use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::stock::simulation_cut::{SimulationCutTrace, SimulationMetricOptions};
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;

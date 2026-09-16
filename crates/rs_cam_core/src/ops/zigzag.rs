@@ -10,7 +10,7 @@ use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Parameters for zigzag/raster clearing.
 ///
-/// `Copy` since the G2 hoist (2026-08-20) — see [`crate::pocket::PocketParams`]
+/// `Copy` since the G2 hoist (2026-08-20) — see [`crate::ops::pocket::PocketParams`]
 /// for why a depth-stepping caller wants struct-update rather than a re-listed
 /// literal per Z level.
 #[derive(Debug, Clone, Copy)]
@@ -289,7 +289,7 @@ mod tests {
         };
         let levels: Vec<f64> = (1..=5).map(|i| -1.5 * i as f64).collect();
 
-        let naive = crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
+        let naive = crate::ops::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
             zigzag_toolpath(
                 &poly,
                 &ZigzagParams {
@@ -301,7 +301,7 @@ mod tests {
 
         let (lines, _failures) =
             zigzag_lines_reported(&poly, base.tool_radius, base.stepover, base.angle);
-        let hoisted = crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
+        let hoisted = crate::ops::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
             lines_to_toolpath(
                 &lines,
                 &ZigzagParams {

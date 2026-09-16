@@ -817,7 +817,7 @@ pub fn controller_compensation_for(
     tc: &crate::session::ToolpathConfig,
 ) -> Option<ControllerCompensation> {
     use crate::compute::{CompensationType, OperationConfig};
-    use crate::profile::ProfileSide;
+    use crate::ops::profile::ProfileSide;
 
     if let OperationConfig::Profile(ref cfg) = tc.operation
         && cfg.compensation == CompensationType::InControl
@@ -1109,7 +1109,7 @@ mod tests {
     #[test]
     fn controller_compensation_follows_the_side_and_the_direction() {
         use crate::compute::{CompensationType, OperationConfig, PocketConfig, ProfileConfig};
-        use crate::profile::ProfileSide;
+        use crate::ops::profile::ProfileSide;
 
         let profile = |side: ProfileSide, climb: bool, compensation: CompensationType| {
             toolpath_running(OperationConfig::Profile(ProfileConfig {

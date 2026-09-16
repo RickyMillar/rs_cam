@@ -1,5 +1,5 @@
 use super::super::pills::PillSuggestions;
-use rs_cam_core::adaptive_shared::{
+use rs_cam_core::ops::adaptive_shared::{
     radial_woc_fraction_from_leading_arc, target_engagement_fraction,
 };
 

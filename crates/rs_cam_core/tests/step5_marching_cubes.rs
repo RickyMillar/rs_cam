@@ -22,9 +22,9 @@
 )]
 
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::drill::DrillCycle;
-use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::material::Material;
+use rs_cam_core::ops::drill::DrillCycle;
+use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::stock::dexel::ray_subtract_above;
 use rs_cam_core::stock::dexel_mesh::{
     append_drill_cylinders, dexel_stock_to_mesh, dexel_stock_to_top_surface_mesh,

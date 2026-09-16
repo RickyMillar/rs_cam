@@ -145,7 +145,7 @@ pub(super) fn spiral_passes(
     // instants) while inflating cutting distance another ~60% — the
     // residual transient is cycloid-advance / feed-modulation territory,
     // not pitch territory.
-    let target = crate::adaptive_shared::target_engagement_fraction(stepover, tool_radius);
+    let target = crate::ops::adaptive_shared::target_engagement_fraction(stepover, tool_radius);
     let eng_cap = (target * cap_mult.max(0.0)).min(0.45);
     let troch = TrochoidParams {
         radius: stepover.max(tool_radius * 0.4),

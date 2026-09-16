@@ -52,8 +52,8 @@ mod common;
 
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::SpatialIndex;
+use rs_cam_core::ops::waterline::{WaterlineParams, waterline_toolpath, waterline_z_levels};
 use rs_cam_core::toolpath::{MIN_EMITTED_SEGMENT_MM, Toolpath};
-use rs_cam_core::waterline::{WaterlineParams, waterline_toolpath, waterline_z_levels};
 
 use common::meshes::height_field;
 use common::tools::wanaka_taper;
@@ -232,7 +232,7 @@ fn the_waterline_ladder_is_the_shared_ladder() {
             top,
             bottom,
             step,
-            rs_cam_core::waterline::WATERLINE_LADDER_EPSILON,
+            rs_cam_core::ops::waterline::WATERLINE_LADDER_EPSILON,
             false,
         );
         let waterline = waterline_z_levels(top, bottom, step);

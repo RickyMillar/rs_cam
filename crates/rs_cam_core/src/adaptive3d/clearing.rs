@@ -9,10 +9,10 @@ use crate::geometry::contour_extract::marching_squares_bool_grid;
 use crate::geometry::grid_field::{edt_curvature_field, smooth_grid};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::ops::waterline::waterline_contours_with_cancel;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::surface::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
-use crate::waterline::waterline_contours_with_cancel;
 use std::collections::VecDeque;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;

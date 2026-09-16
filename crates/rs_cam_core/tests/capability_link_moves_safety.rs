@@ -73,19 +73,21 @@
 )]
 
 use rs_cam_core::{
-    chamfer::{ChamferParams, chamfer_toolpath},
     compute::catalog::{OperationConfig, OperationTransformCapabilities, OperationType},
     compute::config::DressupConfig,
     compute::execute::apply_dressups,
     compute::operation_configs::ScallopConfig,
     dexel_stock::{StockCutDirection, TriDexelStock},
-    drill::{DrillCycle, DrillParams, drill_toolpath},
     geo::{BoundingBox3, P2, P3},
     horizontal_finish::{HorizontalFinishParams, horizontal_finish_toolpath},
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
+    ops::chamfer::{ChamferParams, chamfer_toolpath},
+    ops::drill::{DrillCycle, DrillParams, drill_toolpath},
+    ops::project_curve::{
+        ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath,
+    },
     pencil::{PencilParams, pencil_toolpath},
     polygon::Polygon2,
-    project_curve::{ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath},
     radial_finish::{RadialFinishParams, radial_finish_toolpath},
     scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
     tool::{BallEndmill, FlatEndmill, MillingCutter},

@@ -12,10 +12,10 @@
 //! tool-load consumers can read drill metrics from the same trace surface
 //! used for milling ops.
 
-use crate::drill::DrillCycle;
-use crate::drill_op::{DrillOp, ToolProfile};
 use crate::ids::ToolpathId;
 use crate::material::Material;
+use crate::ops::drill::DrillCycle;
+use crate::ops::drill_op::{DrillOp, ToolProfile};
 use serde::{Deserialize, Serialize};
 
 /// Per-peck sample emitted by drill cycles.
@@ -152,7 +152,7 @@ pub struct DrillToolpathSummary {
     /// Which cycle produced this summary. Carried so a consumer can
     /// word advice correctly without re-reading the `DrillOp` — a
     /// `Simple` hole has no peck depth to reduce (R-4).
-    pub cycle: crate::drill::DrillCycleKind,
+    pub cycle: crate::ops::drill::DrillCycleKind,
 }
 
 /// Thin convenience wrapper around
@@ -276,7 +276,7 @@ pub fn emit_drill_samples(toolpath_id: ToolpathId, drill_op: &DrillOp) -> Vec<Dr
         // it) degrades to starting at the surface rather than
         // inventing negative air.
         let entry_z = drill_op.retract_z_mm.max(hole.top_z);
-        let descents = crate::drill::fed_descents(drill_op.cycle, hole.bottom_z, entry_z);
+        let descents = crate::ops::drill::fed_descents(drill_op.cycle, hole.bottom_z, entry_z);
         let n = descents.len();
         for (i, descent) in descents.iter().enumerate() {
             let cutting = descent.cutting_length(hole.top_z);
@@ -375,7 +375,7 @@ pub fn build_drill_toolpath_summary(
         per_peck_max_dtd,
         peck_pattern_adequate,
         avg_chip_evacuation_score,
-        cycle: crate::drill::DrillCycleKind::of(drill_op.cycle),
+        cycle: crate::ops::drill::DrillCycleKind::of(drill_op.cycle),
     }
 }
 
@@ -435,7 +435,7 @@ pub fn classify_chip_welding(max_dtd: f64, material: &Material) -> ChipWeldingRi
 )]
 mod tests {
     use super::*;
-    use crate::drill_op::{DrillHole, HoleSource};
+    use crate::ops::drill_op::{DrillHole, HoleSource};
 
     fn op_with(cycle: DrillCycle, diameter: f64, depth: f64, material: Material) -> DrillOp {
         DrillOp {

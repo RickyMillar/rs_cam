@@ -1,6 +1,6 @@
 use crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION;
-use crate::drill_metrics::{DrillSample, DrillToolpathSummary};
 use crate::ids::ToolpathId;
+use crate::ops::drill_metrics::{DrillSample, DrillToolpathSummary};
 use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
 use crate::toolpath_spans::SpanId;
 use serde::{Deserialize, Serialize};
@@ -451,7 +451,7 @@ pub struct SimulationToolpathCutSummary {
     /// MRR / runtime accounting.
     ///
     /// Drill ops still produce drill-native metrics — look up the
-    /// matching [`crate::drill_metrics::DrillToolpathSummary`] in
+    /// matching [`crate::ops::drill_metrics::DrillToolpathSummary`] in
     /// [`SimulationCutTrace::drill_summaries`] by `toolpath_id` (or via
     /// [`SimulationCutTrace::drill_summary_for`]) for peck adequacy,
     /// chip-welding risk, and cycle time. The flag means "no engagement
@@ -917,7 +917,7 @@ pub struct SimulationCutTrace {
     pub provenance: Option<SimulationProvenance>,
     /// Per-peck drill samples (§6.E / Step 3 PR2). Empty for traces that
     /// only carried milling toolpaths; populated by
-    /// [`crate::drill_metrics::emit_drill_samples`] from each drill
+    /// [`crate::ops::drill_metrics::emit_drill_samples`] from each drill
     /// toolpath's `DrillOp`. Joinable to [`Self::drill_summaries`] by
     /// `toolpath_id`.
     #[serde(default)]

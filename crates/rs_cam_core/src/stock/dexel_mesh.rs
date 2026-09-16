@@ -302,8 +302,8 @@ fn append_mesh(base: &mut StockMesh, other: &StockMesh) {
 /// Append analytic drill-hole geometry to a stock mesh — DEXEL roadmap §6.E
 /// Step 3.
 ///
-/// Each [`crate::drill_op::DrillOp`] adds a 16-sided cylinder side wall
-/// (and a flat-bottom cap for [`crate::drill_op::ToolProfile::Flat`])
+/// Each [`crate::ops::drill_op::DrillOp`] adds a 16-sided cylinder side wall
+/// (and a flat-bottom cap for [`crate::ops::drill_op::ToolProfile::Flat`])
 /// inside the existing heightmap mesh. This gives clean circular walls
 /// at low dexel resolutions instead of cell-stepped approximations.
 ///
@@ -312,7 +312,7 @@ fn append_mesh(base: &mut StockMesh, other: &StockMesh) {
 /// "seam" between heightmap walls and analytic cylinders is visible
 /// at low dexel resolution — Step 5 (marching cubes) replaces the
 /// heightmap walls so they align cleanly.
-pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::drill_op::DrillOp]) {
+pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::ops::drill_op::DrillOp]) {
     const AZIMUTH_SEGMENTS: usize = 16;
     for drill_op in drill_ops {
         let radius = drill_op.tool_diameter_mm as f32 * 0.5;
@@ -338,7 +338,10 @@ pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::drill_o
             // Cylinder section bottom is at the shoulder where the cone
             // meets the cylindrical body (or `bottom_z` for Flat).
             let cylinder_bottom = bottom_z + tip_protrusion;
-            let is_flat = matches!(drill_op.tool_profile, crate::drill_op::ToolProfile::Flat);
+            let is_flat = matches!(
+                drill_op.tool_profile,
+                crate::ops::drill_op::ToolProfile::Flat
+            );
 
             let azimuth: Vec<(f32, f32)> = (0..AZIMUTH_SEGMENTS)
                 .map(|i| {

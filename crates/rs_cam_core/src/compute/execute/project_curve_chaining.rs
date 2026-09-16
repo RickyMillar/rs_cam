@@ -318,21 +318,22 @@ fn chaining_off_emits_exactly_what_the_generator_emits() {
     let tool_def = build_cutter(&tool_cfg);
     let cfg = project_curve_config(0.0);
 
-    let params = crate::project_curve::ProjectCurveParams {
+    let params = crate::ops::project_curve::ProjectCurveParams {
         depth: cfg.depth,
         point_spacing: cfg.point_spacing,
         feed_rate: cfg.feed_rate,
         plunge_rate: cfg.plunge_rate,
         safe_z: SAFE_Z_MM,
-        direction: crate::project_curve::ProjectDirection::FromAbove,
+        direction: crate::ops::project_curve::ProjectDirection::FromAbove,
         tool_radius: tool_def.radius(),
-        side: crate::project_curve::ProjectSide::Center,
+        side: crate::ops::project_curve::ProjectSide::Center,
         setup_z_flipped: false,
     };
     let mut raw = Toolpath::new();
     for poly in curves() {
-        let tp =
-            crate::project_curve::project_curve_toolpath(&poly, &mesh, &index, &tool_def, &params);
+        let tp = crate::ops::project_curve::project_curve_toolpath(
+            &poly, &mesh, &index, &tool_def, &params,
+        );
         raw.moves.extend(tp.moves);
     }
 

@@ -29,7 +29,7 @@ use rayon::prelude::*;
 
 /// Parameters for rest machining.
 ///
-/// `Copy` since the G2 hoist (2026-08-20) — see [`crate::pocket::PocketParams`]
+/// `Copy` since the G2 hoist (2026-08-20) — see [`crate::ops::pocket::PocketParams`]
 /// for why a depth-stepping caller wants struct-update rather than a re-listed
 /// literal per Z level.
 #[derive(Debug, Clone, Copy)]
@@ -89,7 +89,7 @@ pub fn rest_machining_toolpath(polygon: &Polygon2, params: &RestParams) -> Toolp
 /// tool could NOT reach. The "large tool cannot fit at all" fallback returns
 /// the raw scan lines as two-point polylines, which emit through the same
 /// `emit_path_segment_with_intent(ClearingCut)` envelope
-/// [`crate::zigzag::lines_to_toolpath`] uses — byte-identical to the previous
+/// [`crate::ops::zigzag::lines_to_toolpath`] uses — byte-identical to the previous
 /// `zigzag_toolpath` delegation, and it no longer recomputes the scan lines
 /// this function has already built.
 #[must_use]
@@ -102,8 +102,12 @@ pub fn rest_segments(polygon: &Polygon2, params: &RestParams) -> Vec<Vec<P2>> {
     let large_reachable = offset_polygon(polygon, params.prev_tool_radius);
 
     // Generate zigzag scan lines for the small tool
-    let lines =
-        crate::zigzag::zigzag_lines(polygon, params.tool_radius, params.stepover, params.angle);
+    let lines = crate::ops::zigzag::zigzag_lines(
+        polygon,
+        params.tool_radius,
+        params.stepover,
+        params.angle,
+    );
 
     if lines.is_empty() {
         return Vec::new();
@@ -272,9 +276,9 @@ mod tests {
         );
 
         let got = rest_machining_toolpath(&sq, &params);
-        let want = crate::zigzag::zigzag_toolpath(
+        let want = crate::ops::zigzag::zigzag_toolpath(
             &sq,
-            &crate::zigzag::ZigzagParams {
+            &crate::ops::zigzag::ZigzagParams {
                 tool_radius: params.tool_radius,
                 stepover: params.stepover,
                 cut_depth: params.cut_depth,
@@ -342,7 +346,7 @@ mod tests {
                 return Vec::new();
             }
             let large_reachable = offset_polygon(polygon, params.prev_tool_radius);
-            let lines = crate::zigzag::zigzag_lines(
+            let lines = crate::ops::zigzag::zigzag_lines(
                 polygon,
                 params.tool_radius,
                 params.stepover,
@@ -509,9 +513,9 @@ mod tests {
         let tp = rest_machining_toolpath(&sq, &params);
 
         // For comparison, generate a full zigzag
-        let full_tp = crate::zigzag::zigzag_toolpath(
+        let full_tp = crate::ops::zigzag::zigzag_toolpath(
             &sq,
-            &crate::zigzag::ZigzagParams {
+            &crate::ops::zigzag::ZigzagParams {
                 tool_radius: params.tool_radius,
                 stepover: params.stepover,
                 cut_depth: params.cut_depth,

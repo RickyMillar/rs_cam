@@ -311,8 +311,8 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
 
 #[test]
 fn face_op_dressup_pipeline_preserves_invariants() {
-    use rs_cam_core::face::{FaceParams, face_toolpath};
     use rs_cam_core::geo::BoundingBox3;
+    use rs_cam_core::ops::face::{FaceParams, face_toolpath};
 
     let bbox = BoundingBox3 {
         min: P3::new(0.0, 0.0, 0.0),
@@ -327,7 +327,7 @@ fn face_op_dressup_pipeline_preserves_invariants() {
         plunge_rate: 500.0,
         safe_z: 30.0,
         stock_offset: 0.0,
-        direction: rs_cam_core::face::FaceDirection::OneWay,
+        direction: rs_cam_core::ops::face::FaceDirection::OneWay,
         stock_top_z: 0.0,
     };
     let raw = face_toolpath(&bbox, &params);

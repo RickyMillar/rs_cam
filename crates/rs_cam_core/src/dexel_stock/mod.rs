@@ -602,7 +602,7 @@ impl TriDexelStock {
     ///
     /// # `direction` is not decoration — G-DRILLFLIP (2026-08-21)
     ///
-    /// A [`crate::drill_op::DrillHole`] carries **no axis**: it is an XY
+    /// A [`crate::ops::drill_op::DrillHole`] carries **no axis**: it is an XY
     /// centre plus a `top_z`/`bottom_z` pair, which describes a hole only
     /// relative to whatever frame the caller is holding. In setup-local
     /// coordinates the tool always advances along −Z, so this kernel used to
@@ -671,7 +671,7 @@ impl TriDexelStock {
     /// 3-D endpoints, not to patch this function.
     pub fn apply_drill_op(
         &mut self,
-        drill_op: &crate::drill_op::DrillOp,
+        drill_op: &crate::ops::drill_op::DrillOp,
         direction: StockCutDirection,
     ) -> DrillRemovalReport {
         let mut report = DrillRemovalReport::default();
@@ -685,8 +685,10 @@ impl TriDexelStock {
             return report;
         }
         let half_angle = drill_op.tool_profile.cone_half_angle_rad();
-        let inv_tan = if matches!(drill_op.tool_profile, crate::drill_op::ToolProfile::Flat)
-            || half_angle <= 0.0
+        let inv_tan = if matches!(
+            drill_op.tool_profile,
+            crate::ops::drill_op::ToolProfile::Flat
+        ) || half_angle <= 0.0
         {
             None
         } else {

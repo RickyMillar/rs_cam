@@ -494,13 +494,15 @@ impl<B: ComputeBackend> AppController<B> {
                                 // tool-load report never populate (the
                                 // gate evaluator reads `result.drill_op()`).
                                 let op_data = match &computed.drill_op {
-                                    Some(drill_op_arc) => rs_cam_core::drill_op::OpData::DrillOp(
-                                        Arc::clone(drill_op_arc),
+                                    Some(drill_op_arc) => {
+                                        rs_cam_core::ops::drill_op::OpData::DrillOp(
+                                            Arc::clone(drill_op_arc),
+                                            Arc::clone(&computed.annotated),
+                                        )
+                                    }
+                                    None => rs_cam_core::ops::drill_op::OpData::Toolpath(
                                         Arc::clone(&computed.annotated),
                                     ),
-                                    None => rs_cam_core::drill_op::OpData::Toolpath(Arc::clone(
-                                        &computed.annotated,
-                                    )),
                                 };
                                 let core_result = rs_cam_core::session::ToolpathComputeResult {
                                     op_data,

@@ -4,12 +4,12 @@
 //! (plus optional offset). Supports single-pass facing at Z=0 or multi-pass
 //! depth stepping for removing material from the stock top.
 
-use crate::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath_with_cancel};
 use crate::geo::BoundingBox3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::ops::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath_with_cancel};
+use crate::ops::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
-use crate::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines};
 
 /// Direction of facing passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -285,7 +285,7 @@ mod tests {
         let raster = |zp: &ZigzagParams| -> Toolpath {
             match params.direction {
                 FaceDirection::OneWay => old_oneway_toolpath(&rect, zp),
-                FaceDirection::Zigzag => crate::zigzag::zigzag_toolpath(&rect, zp),
+                FaceDirection::Zigzag => crate::ops::zigzag::zigzag_toolpath(&rect, zp),
             }
         };
         let zp_for = |z: f64| ZigzagParams {

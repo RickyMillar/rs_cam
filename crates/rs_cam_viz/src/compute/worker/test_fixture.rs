@@ -183,7 +183,7 @@ fn rest_source_result(regions: Vec<Polygon2>) -> ToolpathComputeResult {
     let mut annotated = AnnotatedToolpath::new(rs_cam_core::toolpath::Toolpath::new());
     annotated.rest_regions = Some(Arc::new(regions));
     ToolpathComputeResult {
-        op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(annotated)),
+        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(annotated)),
         stats: rs_cam_core::compute::config::ToolpathStats::default(),
         debug_trace: None,
         semantic_trace: None,

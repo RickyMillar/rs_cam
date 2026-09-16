@@ -1428,7 +1428,7 @@ fn flatten_for_containment(pline: &Polyline<f64>) -> Polygon2 {
 ///
 /// This is the cascade type Checkpoint D adopted. Use it wherever an
 /// operation feeds `offset_polygon`'s own output back into it — today
-/// [`crate::scallop`] and [`crate::pocket`]. A consumer that offsets **once**
+/// [`crate::scallop`] and [`crate::ops::pocket`]. A consumer that offsets **once**
 /// should keep calling [`offset_polygon`]: it inherits a single arc-join
 /// chord, which is a different and much smaller defect, and its topology
 /// stays exactly where it is.

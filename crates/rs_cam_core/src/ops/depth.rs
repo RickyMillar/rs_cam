@@ -380,11 +380,11 @@ where
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::pocket::{PocketParams, pocket_toolpath};
+    use crate::ops::pocket::{PocketParams, pocket_toolpath};
+    use crate::ops::profile::{ProfileParams, ProfileSide, profile_toolpath};
+    use crate::ops::zigzag::{ZigzagParams, zigzag_toolpath};
     use crate::polygon::Polygon2;
-    use crate::profile::{ProfileParams, ProfileSide, profile_toolpath};
     use crate::toolpath::MoveType;
-    use crate::zigzag::{ZigzagParams, zigzag_toolpath};
 
     // --- Z-level calculation tests ---
 

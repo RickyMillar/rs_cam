@@ -27,11 +27,11 @@
 
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;
 use rs_cam_core::diagnostics::{DiagnosticEvidence, Severity, ids};
-use rs_cam_core::drill::{DrillCycle, DrillParams, drill_toolpath};
-use rs_cam_core::drill_metrics::{build_drill_toolpath_summary, emit_drill_samples};
-use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::material::Material;
+use rs_cam_core::ops::drill::{DrillCycle, DrillParams, drill_toolpath};
+use rs_cam_core::ops::drill_metrics::{build_drill_toolpath_summary, emit_drill_samples};
+use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::tool_load::drill_gates::{DrillGateOutcome, DrillGatesVerdict};
 use rs_cam_core::tool_load::verdict::{
     ChiploadVerdict, CriterionKind, DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict,

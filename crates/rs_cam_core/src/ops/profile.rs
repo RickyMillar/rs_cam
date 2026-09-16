@@ -19,7 +19,7 @@ pub enum ProfileSide {
 
 /// Parameters for profile cutting.
 ///
-/// `Copy` since the G2 hoist (2026-08-20) — see [`crate::pocket::PocketParams`]
+/// `Copy` since the G2 hoist (2026-08-20) — see [`crate::ops::pocket::PocketParams`]
 /// for why a depth-stepping caller wants struct-update rather than a re-listed
 /// literal per Z level.
 #[derive(Debug, Clone, Copy)]
@@ -247,7 +247,7 @@ mod tests {
                     ..default_params(side)
                 };
 
-                let naive = crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
+                let naive = crate::ops::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
                     profile_toolpath(
                         &poly,
                         &ProfileParams {
@@ -259,16 +259,20 @@ mod tests {
 
                 let (contour, _failures) = profile_path_reported(&poly, &base);
                 let hoisted =
-                    crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| match &contour {
-                        Some(pts) => profile_path_to_toolpath(
-                            pts,
-                            &ProfileParams {
-                                cut_depth: z,
-                                ..base
-                            },
-                        ),
-                        None => Toolpath::new(),
-                    });
+                    crate::ops::depth::toolpath_at_levels(
+                        &levels,
+                        base.safe_z,
+                        |z| match &contour {
+                            Some(pts) => profile_path_to_toolpath(
+                                pts,
+                                &ProfileParams {
+                                    cut_depth: z,
+                                    ..base
+                                },
+                            ),
+                            None => Toolpath::new(),
+                        },
+                    );
 
                 let label = format!("in_control={in_control} side={side:?}");
                 assert!(

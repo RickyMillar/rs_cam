@@ -14,10 +14,10 @@ use super::{
     AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy, MaterialGrid,
     average_angles, blend_corners_to_moves, target_engagement_fraction,
 };
-use crate::adaptive_shared::BlendedMove;
 use crate::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
 use crate::geo::P2;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::ops::adaptive_shared::BlendedMove;
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
 
@@ -206,7 +206,7 @@ pub(crate) fn adaptive_segments_with_debug(
         let narrow_span = if w >= h { h } else { w };
         let slot_spacing = (narrow_span / 3.0).max(tool_radius * 4.0);
         let slot_lines =
-            crate::zigzag::zigzag_lines(polygon, tool_radius, slot_spacing, slot_angle);
+            crate::ops::zigzag::zigzag_lines(polygon, tool_radius, slot_spacing, slot_angle);
 
         for (line_idx, line) in slot_lines.iter().enumerate() {
             check_cancel(cancel)?;

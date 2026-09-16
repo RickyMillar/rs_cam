@@ -21,11 +21,11 @@ use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::ops::waterline::waterline_contours;
 #[cfg(test)]
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};
-use crate::waterline::waterline_contours;
 
 use tracing::info;
 

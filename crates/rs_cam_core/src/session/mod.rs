@@ -948,7 +948,7 @@ impl ToolpathConfig {
 /// Result of generating a single toolpath.
 ///
 /// `op_data` carries either a plain [`crate::toolpath_spans::AnnotatedToolpath`]
-/// or a [`crate::drill_op::DrillOp`] + `AnnotatedToolpath` pair (the
+/// or a [`crate::ops::drill_op::DrillOp`] + `AnnotatedToolpath` pair (the
 /// dual-representation invariant from §6.E of the dexel-fidelity roadmap).
 /// Spans on the annotated toolpath are emitted by operation generators;
 /// transforms (dressups, boundary clip, TSP, arc-fit, feed optimisation)
@@ -962,7 +962,7 @@ impl ToolpathConfig {
 /// the geometry behind it.
 #[derive(Debug, Clone)]
 pub struct ToolpathComputeResult {
-    pub op_data: crate::drill_op::OpData,
+    pub op_data: crate::ops::drill_op::OpData,
     pub stats: ToolpathStats,
     pub debug_trace: Option<ToolpathDebugTrace>,
     pub semantic_trace: Option<ToolpathSemanticTrace>,
@@ -982,7 +982,7 @@ impl ToolpathComputeResult {
     }
 
     /// First-class drill-op view, if this is a drilling operation.
-    pub fn drill_op(&self) -> Option<&Arc<crate::drill_op::DrillOp>> {
+    pub fn drill_op(&self) -> Option<&Arc<crate::ops::drill_op::DrillOp>> {
         self.op_data.drill_op()
     }
 
@@ -2682,7 +2682,7 @@ mod tests {
         session.results.insert(
             0,
             ToolpathComputeResult {
-                op_data: crate::drill_op::OpData::Toolpath(std::sync::Arc::new(
+                op_data: crate::ops::drill_op::OpData::Toolpath(std::sync::Arc::new(
                     crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
                 )),
                 stats: crate::compute::config::ToolpathStats::default(),

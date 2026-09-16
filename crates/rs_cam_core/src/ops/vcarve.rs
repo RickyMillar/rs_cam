@@ -163,7 +163,7 @@ pub fn vcarve_toolpath_with_cancel(
 
     // Generate scan lines with a tiny inset so clipping works
     let inset = params.tolerance.min(0.05);
-    let scan_lines = crate::zigzag::zigzag_lines(polygon, inset, params.stepover, 0.0);
+    let scan_lines = crate::ops::zigzag::zigzag_lines(polygon, inset, params.stepover, 0.0);
 
     let sample_step = params.tolerance.max(0.05);
 
@@ -214,7 +214,7 @@ mod tests {
             return Toolpath::new();
         }
         let inset = params.tolerance.min(0.05);
-        let scan_lines = crate::zigzag::zigzag_lines(polygon, inset, params.stepover, 0.0);
+        let scan_lines = crate::ops::zigzag::zigzag_lines(polygon, inset, params.stepover, 0.0);
         let sample_step = params.tolerance.max(0.05);
         let field = EdgeDistanceField::from_polygon(polygon);
 

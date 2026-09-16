@@ -6,11 +6,11 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use rs_cam_core::geo::P2;
-use rs_cam_core::pocket::{PocketParams, pocket_toolpath};
+use rs_cam_core::ops::pocket::{PocketParams, pocket_toolpath};
+use rs_cam_core::ops::profile::{ProfileParams, ProfileSide, profile_toolpath};
+use rs_cam_core::ops::zigzag::{ZigzagParams, zigzag_toolpath};
 use rs_cam_core::polygon::{Polygon2, offset_polygon};
-use rs_cam_core::profile::{ProfileParams, ProfileSide, profile_toolpath};
 use rs_cam_core::toolpath::MoveType;
-use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};
 
 /// Helper: create a regular polygon (approximating a circle) with given center,
 /// radius, and number of vertices. Winding is CCW.

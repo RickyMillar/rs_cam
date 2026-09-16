@@ -107,7 +107,7 @@ fn sample_toolpath() -> Toolpath {
 fn hand_built_result() -> ToolpathComputeResult {
     let annotated = Arc::new(AnnotatedToolpath::new(sample_toolpath()));
     ToolpathComputeResult {
-        op_data: rs_cam_core::drill_op::OpData::Toolpath(annotated),
+        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(annotated),
         stats: Default::default(),
         debug_trace: None,
         semantic_trace: None,

@@ -689,7 +689,7 @@ pub trait OperationParams {
     /// Distinct from [`Self::depth_per_pass`], which is the per-pass step.
     /// The pair is what makes the realised depth a staircase: generation
     /// cuts `total / ceil(total / per_pass)` — see
-    /// [`crate::depth::realised_step_down`].
+    /// [`crate::ops::depth::realised_step_down`].
     ///
     /// `None` for operations whose depth comes from the model surface rather
     /// than from a parameter (Adaptive3d, Waterline, RampFinish) and for
@@ -1271,7 +1271,7 @@ pub struct OperationSchema {
 /// domain, rather than silently becoming a different number. Project
 /// TOML is deliberately **not** validated against it — a file is loaded
 /// by serde with no registry in scope, and the generator-side guard
-/// ([`crate::drill::fed_descents`]) is what catches that path.
+/// ([`crate::ops::drill::fed_descents`]) is what catches that path.
 #[derive(Debug, Clone, Copy)]
 pub struct ParamRange {
     /// Lower bound. Inclusive unless [`Self::min_exclusive`].
@@ -2724,7 +2724,7 @@ impl OperationConfig {
     /// Returns an empty `Vec` for operations that don't use standard depth
     /// stepping (3D ops, VCarve, Chamfer, Inlay, Drill).
     pub fn cutting_levels(&self, top_z: f64) -> Vec<f64> {
-        use crate::depth::{DepthDistribution, DepthStepping};
+        use crate::ops::depth::{DepthDistribution, DepthStepping};
         match self {
             Self::Pocket(cfg) => DepthStepping {
                 start_z: top_z,

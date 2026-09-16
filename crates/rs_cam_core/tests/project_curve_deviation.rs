@@ -35,8 +35,10 @@ use rs_cam_core::geometry::boundary::{
 };
 use rs_cam_core::io::dxf_input::load_dxf;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::ops::project_curve::{
+    ProjectCurveParams, ProjectDirection, project_curve_toolpath,
+};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::project_curve::{ProjectCurveParams, ProjectDirection, project_curve_toolpath};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -337,7 +339,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         point_spacing: 0.5,
         direction: ProjectDirection::FromAbove,
         tool_radius: 0.0,
-        side: rs_cam_core::project_curve::ProjectSide::Center,
+        side: rs_cam_core::ops::project_curve::ProjectSide::Center,
         setup_z_flipped: false,
     };
 

@@ -422,7 +422,7 @@ pub struct ToolpathLoadContext<'a> {
     /// `None` and `drill_gates` stays `None` on their verdict — the
     /// existing chipload / power / deflection criteria do all the
     /// load-checking for non-drill ops.
-    pub drill_op: Option<&'a crate::drill_op::DrillOp>,
+    pub drill_op: Option<&'a crate::ops::drill_op::DrillOp>,
 }
 
 /// Evaluation environment shared by the per-criterion gates — the
@@ -521,9 +521,12 @@ pub fn evaluate_toolpath(
     // the optimizer and the gcode-export paths agree on drill-side
     // verdicts.
     let drill_gates = ctx.drill_op.map(|drill_op| {
-        let samples = crate::drill_metrics::emit_drill_samples(ctx.toolpath_id, drill_op);
-        let summary =
-            crate::drill_metrics::build_drill_toolpath_summary(ctx.toolpath_id, drill_op, &samples);
+        let samples = crate::ops::drill_metrics::emit_drill_samples(ctx.toolpath_id, drill_op);
+        let summary = crate::ops::drill_metrics::build_drill_toolpath_summary(
+            ctx.toolpath_id,
+            drill_op,
+            &samples,
+        );
         drill_gates::evaluate(drill_op, &summary)
     });
     // T1.1 — the chipload gate hands back its stage-labelled record

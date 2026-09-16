@@ -1,5 +1,5 @@
 //! R-2, asserted against **emitted motion** — the drill cycle that ships
-//! must be the drill cycle [`rs_cam_core::drill::fed_descents`] describes.
+//! must be the drill cycle [`rs_cam_core::ops::drill::fed_descents`] describes.
 //!
 //! Oracle: `planning/perf_review_2026-08-19/RESEARCH_drill_intent_erasure.md`
 //! §1, §4, §7A.
@@ -78,10 +78,10 @@ use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
-use rs_cam_core::drill::FedDescent;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::ops::drill::FedDescent;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::toolpath::{MoveIntent, MoveType};
@@ -242,7 +242,8 @@ fn assert_motion_matches_schedule(case: &str, cfg: DrillConfig) {
     let stock_top = 0.0;
     let r_plane = effective_safe_z(cfg.retract_z, stock_top);
     let bottom_z = stock_top - cfg.depth;
-    let expected = rs_cam_core::drill::fed_descents(cfg.cycle.to_core(&cfg), bottom_z, r_plane);
+    let expected =
+        rs_cam_core::ops::drill::fed_descents(cfg.cycle.to_core(&cfg), bottom_z, r_plane);
 
     println!("── {case}");
     println!(

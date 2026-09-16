@@ -20,6 +20,7 @@ use rs_cam_core::geometry::arc_util::linearize_arc;
 use rs_cam_core::geometry::contour_extract::weave_contours;
 use rs_cam_core::geometry::fiber::{Fiber, Interval};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
+use rs_cam_core::ops::waterline::waterline_contours;
 use rs_cam_core::polygon::{FlattenPolicy, OffsetRingSet, Polygon2, offset_polygon};
 use rs_cam_core::steep_shallow::dilate_grid;
 use rs_cam_core::stock::dexel_mesh::{dexel_stock_to_mesh, dexel_stock_to_top_surface_mesh};
@@ -30,7 +31,6 @@ use rs_cam_core::surface::pushcutter::batch_push_cutter;
 use rs_cam_core::surface::slope::SlopeMap;
 use rs_cam_core::tool::{BallEndmill, CLPoint, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{Toolpath, raster_toolpath_from_grid, simplify_path_3d};
-use rs_cam_core::waterline::waterline_contours;
 
 // ── Fixture helpers ──────────────────────────────────────────────────────
 

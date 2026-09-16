@@ -23,13 +23,13 @@ pub(crate) use material_grid::MaterialGrid;
 pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug};
 use path::{apply_residue_mop_cleanup, segments_to_toolpath};
 
-pub(crate) use crate::adaptive_shared::{
-    angle_diff, average_angles, blend_corners_to_moves, refine_angle_bracket,
-    target_engagement_fraction,
-};
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel_stock::TriDexelStock;
 use crate::interrupt::{CancelCheck, Cancelled};
+pub(crate) use crate::ops::adaptive_shared::{
+    angle_diff, average_angles, blend_corners_to_moves, refine_angle_bracket,
+    target_engagement_fraction,
+};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
 
@@ -290,8 +290,8 @@ mod tests {
     use super::path::{AdaptiveSegment, adaptive_segments, is_clear_path, simplify_path};
     use super::search::{compute_engagement, find_entry_point, search_direction};
     use super::*;
-    use crate::adaptive_shared::blend_corners;
     use crate::geo::P2;
+    use crate::ops::adaptive_shared::blend_corners;
     use crate::polygon::offset_polygon;
 
     fn square_polygon(size: f64) -> Polygon2 {
@@ -356,7 +356,7 @@ mod tests {
         let mut vals: Vec<f64> = sink.iter().map(|(_, f)| *f).collect();
         vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median = vals[vals.len() / 2];
-        let target = crate::adaptive_shared::target_engagement_fraction(1.2, 3.0);
+        let target = crate::ops::adaptive_shared::target_engagement_fraction(1.2, 3.0);
         assert!(
             median > 0.3 * target && median < 2.5 * target,
             "median engagement {median} far from target {target}"
@@ -895,7 +895,7 @@ mod tests {
 
     #[test]
     fn test_blend_corners_to_moves_emits_arc() {
-        use crate::adaptive_shared::BlendedMove;
+        use crate::ops::adaptive_shared::BlendedMove;
         // L-shape: 90° turn
         let path = vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0), P2::new(10.0, 10.0)];
         let moves = blend_corners_to_moves(&path, 2.0);
@@ -919,7 +919,7 @@ mod tests {
 
     #[test]
     fn test_blend_corners_to_moves_arc_center_on_radius() {
-        use crate::adaptive_shared::BlendedMove;
+        use crate::ops::adaptive_shared::BlendedMove;
         let path = vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0), P2::new(10.0, 10.0)];
         let min_r = 2.0;
         let moves = blend_corners_to_moves(&path, min_r);
@@ -940,7 +940,7 @@ mod tests {
 
     #[test]
     fn test_blend_corners_to_moves_straight_no_arc() {
-        use crate::adaptive_shared::BlendedMove;
+        use crate::ops::adaptive_shared::BlendedMove;
         let path = vec![P2::new(0.0, 0.0), P2::new(5.0, 0.0), P2::new(10.0, 0.0)];
         let moves = blend_corners_to_moves(&path, 2.0);
         let arc_count = moves

@@ -193,7 +193,7 @@ pub struct ToolpathResult {
     /// `AlignmentPinDrill` configs; routed onto
     /// [`SetupSimToolpath.drill_op`](crate::compute::worker::SetupSimToolpath)
     /// and through to [`SimToolpathEntry.drill_op`](rs_cam_core::compute::simulate::SimToolpathEntry).
-    pub drill_op: Option<Arc<rs_cam_core::drill_op::DrillOp>>,
+    pub drill_op: Option<Arc<rs_cam_core::ops::drill_op::DrillOp>>,
 }
 
 impl ToolpathResult {

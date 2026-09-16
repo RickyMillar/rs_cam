@@ -86,9 +86,9 @@ fn seed_generated_result(
             index,
             revision,
             result: Box::new(ToolpathComputeResult {
-                op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(AnnotatedToolpath::new(
-                    path.clone(),
-                ))),
+                op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
+                    AnnotatedToolpath::new(path.clone()),
+                )),
                 stats: Default::default(),
                 debug_trace: None,
                 semantic_trace: None,

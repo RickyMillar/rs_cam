@@ -5,12 +5,12 @@ use super::tool_config::ToolId;
 use crate::finish_planner::FinishPlannerParams;
 
 // Re-export operation parameter enums from core (single source of truth).
-pub use crate::face::FaceDirection;
-pub use crate::profile::ProfileSide;
+pub use crate::ops::face::FaceDirection;
+pub use crate::ops::profile::ProfileSide;
+pub use crate::ops::trace_path::TraceCompensation;
 pub use crate::ramp_finish::CutDirection;
 pub use crate::scallop::ScallopDirection;
 pub use crate::spiral_finish::SpiralDirection;
-pub use crate::trace::TraceCompensation;
 pub use crate::unified_finish::{ClaimsReference, CreaseReference};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,7 +83,7 @@ pub enum DrillCycleType {
 ///
 /// The cap is `depth`, not something strictly below it, and that is
 /// enough because the cycle is **rooted at the R-plane**, not at the hole
-/// top (Fanuc G83 — see [`crate::drill::fed_descents`]). The R-plane sits
+/// top (Fanuc G83 — see [`crate::ops::drill::fed_descents`]). The R-plane sits
 /// at `effective_safe_z(retract_z, top_z) >= top_z + SAFE_Z_CLEARANCE_MM`,
 /// strictly above the stock, so the first descent of a `peck == depth`
 /// cycle stops at `R - depth > top_z - depth = bottom_z` and a second
@@ -106,8 +106,8 @@ impl DrillCycleType {
     /// The peck depth passes through [`clamp_peck_depth`] so the emitted
     /// cycle and the `DrillOp` summary built beside it (§6.E dual-rep)
     /// describe the same cycle — both consumers go through here.
-    pub fn to_core(self, cfg: &DrillConfig) -> crate::drill::DrillCycle {
-        use crate::drill::DrillCycle;
+    pub fn to_core(self, cfg: &DrillConfig) -> crate::ops::drill::DrillCycle {
+        use crate::ops::drill::DrillCycle;
         let peck_depth = clamp_peck_depth(cfg.peck_depth, cfg.depth);
         match self {
             Self::Simple => DrillCycle::Simple,
@@ -248,7 +248,7 @@ pub struct AlignmentPinDrillConfig {
 }
 
 impl AlignmentPinDrillConfig {
-    /// Convert to the core [`crate::drill::DrillCycle`]. Pin drilling
+    /// Convert to the core [`crate::ops::drill::DrillCycle`]. Pin drilling
     /// fixes dwell to 0.5 s and chip-break retract to 0.5 mm — the
     /// config carries no knobs for them (alignment pins are a fixture
     /// cycle, not a tunable drill op). T11 dedup: this conversion was
@@ -261,8 +261,8 @@ impl AlignmentPinDrillConfig {
     /// `execute.rs` consumers hand it in. It exists only to cap
     /// `peck_depth`; see [`clamp_peck_depth`] for why the cap is a clamp
     /// and not a refusal (G-WANAKA-PECK).
-    pub fn drill_cycle(&self, depth: f64) -> crate::drill::DrillCycle {
-        use crate::drill::DrillCycle;
+    pub fn drill_cycle(&self, depth: f64) -> crate::ops::drill::DrillCycle {
+        use crate::ops::drill::DrillCycle;
         let peck_depth = clamp_peck_depth(self.peck_depth, depth);
         match self.cycle {
             DrillCycleType::Simple => DrillCycle::Simple,

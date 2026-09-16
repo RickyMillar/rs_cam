@@ -57,10 +57,10 @@
 use rs_cam_core::compute::simulate::group_drill_op_to_global;
 use rs_cam_core::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
-use rs_cam_core::drill::DrillCycle;
-use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::material::Material;
+use rs_cam_core::ops::drill::DrillCycle;
+use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::stock::dexel::{ray_bottom, ray_material_length, ray_top};
 
 const STOCK_X: f64 = 40.0;

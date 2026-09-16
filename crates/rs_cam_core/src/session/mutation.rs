@@ -2161,7 +2161,7 @@ mod tests {
 
     fn fake_result() -> ToolpathComputeResult {
         ToolpathComputeResult {
-            op_data: crate::drill_op::OpData::Toolpath(Arc::new(
+            op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(
                 crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
             )),
             stats: ToolpathStats::default(),

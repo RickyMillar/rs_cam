@@ -40,7 +40,7 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::depth::{DepthStepping, realised_step_down};
+use rs_cam_core::ops::depth::{DepthStepping, realised_step_down};
 
 /// Totals and requests spanning the sizes this engine actually ships.
 const TOTALS: [f64; 6] = [3.0, 6.0, 12.0, 18.0, 25.4, 40.0];

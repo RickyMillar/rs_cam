@@ -106,6 +106,7 @@ use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::machine::kinematics::{LinkKinematics, retract_link_time, surface_link_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::ops::waterline::{WaterlineParams, waterline_toolpath_with_cancel, waterline_z_levels};
 use crate::pencil::PencilParams;
 use crate::polygon::Polygon2;
 use crate::scallop::{
@@ -121,7 +122,6 @@ use crate::surface::rest_field::{RestFieldParams, RestReference, detect_rest_val
 use crate::surface_link::build_surface_link;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath, raster_toolpath_from_grid};
-use crate::waterline::{WaterlineParams, waterline_toolpath_with_cancel, waterline_z_levels};
 
 // ── Types ────────────────────────────────────────────────────────────────
 

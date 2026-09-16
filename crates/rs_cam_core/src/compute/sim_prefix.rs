@@ -187,9 +187,9 @@ use crate::compute::simulate::{
     SimulationRequest,
 };
 use crate::dexel_stock::TriDexelStock;
-use crate::drill_op::DrillOp;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
+use crate::ops::drill_op::DrillOp;
 use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::stock::collision::RapidCollision;
 use crate::stock::simulation_cut::SimulationCutSample;
@@ -499,8 +499,8 @@ pub(crate) struct PrefixState {
     pub(crate) boundaries: Vec<SimBoundary>,
     pub(crate) checkpoints: Vec<Arc<SimCheckpointMesh>>,
     pub(crate) cut_samples: Vec<SimulationCutSample>,
-    pub(crate) drill_samples_all: Vec<crate::drill_metrics::DrillSample>,
-    pub(crate) drill_summaries_all: Vec<crate::drill_metrics::DrillToolpathSummary>,
+    pub(crate) drill_samples_all: Vec<crate::ops::drill_metrics::DrillSample>,
+    pub(crate) drill_summaries_all: Vec<crate::ops::drill_metrics::DrillToolpathSummary>,
     pub(crate) composite_mesh: StockMesh,
     pub(crate) global_stock: TriDexelStock,
     pub(crate) column_deviations: Option<Vec<ColumnDeviation>>,
@@ -527,7 +527,7 @@ impl PrefixState {
         self.cut_samples.len() * std::mem::size_of::<SimulationCutSample>()
             + self.cut_samples.len() * 16
             + self.drill_samples_all.len()
-                * std::mem::size_of::<crate::drill_metrics::DrillSample>()
+                * std::mem::size_of::<crate::ops::drill_metrics::DrillSample>()
             + self.composite_mesh.vertices.len() * 4
             + self.composite_mesh.indices.len() * 4
             + grid(&self.global_stock)

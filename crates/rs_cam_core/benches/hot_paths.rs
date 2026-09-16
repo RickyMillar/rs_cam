@@ -479,14 +479,16 @@ fn bench_sim_kernel_plunge(c: &mut Criterion) {
 /// uses: geometry once, then stamp per level. The G2 deliverable is
 /// `pocket/L20_hoisted` against `pocket/L1`, in one run, on one machine.
 fn bench_gen_depth(c: &mut Criterion) {
-    use rs_cam_core::depth::{toolpath_at_levels, toolpath_at_levels_with_cancel};
-    use rs_cam_core::pocket::pocket_toolpath;
-    use rs_cam_core::pocket::{PocketParams, pocket_contours, pocket_contours_to_toolpath};
-    use rs_cam_core::profile::{
+    use rs_cam_core::ops::depth::{toolpath_at_levels, toolpath_at_levels_with_cancel};
+    use rs_cam_core::ops::pocket::pocket_toolpath;
+    use rs_cam_core::ops::pocket::{PocketParams, pocket_contours, pocket_contours_to_toolpath};
+    use rs_cam_core::ops::profile::{
         ProfileParams, ProfileSide, profile_path_reported, profile_path_to_toolpath,
         profile_toolpath,
     };
-    use rs_cam_core::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines, zigzag_toolpath};
+    use rs_cam_core::ops::zigzag::{
+        ZigzagParams, lines_to_toolpath, zigzag_lines, zigzag_toolpath,
+    };
 
     let mut group = c.benchmark_group("gen_depth");
     group.sample_size(10);
@@ -683,7 +685,7 @@ fn bench_gen_depth(c: &mut Criterion) {
 /// `levels × fibers × all_triangles`. Both arms are here so the ratio is
 /// readable.
 fn bench_gen_waterline(c: &mut Criterion) {
-    use rs_cam_core::waterline::{WaterlineParams, waterline_toolpath_with_cancel};
+    use rs_cam_core::ops::waterline::{WaterlineParams, waterline_toolpath_with_cancel};
 
     let mut group = c.benchmark_group("gen_waterline");
     group.sample_size(10);
@@ -861,7 +863,7 @@ fn lettering_polygon(size: f64, hole_verts: usize) -> Polygon2 {
 }
 
 fn bench_gen_vcarve_field(c: &mut Criterion) {
-    use rs_cam_core::vcarve::{VCarveParams, vcarve_toolpath};
+    use rs_cam_core::ops::vcarve::{VCarveParams, vcarve_toolpath};
 
     let mut group = c.benchmark_group("gen_vcarve_field");
     group.sample_size(10);
@@ -892,8 +894,8 @@ fn bench_gen_vcarve_field(c: &mut Criterion) {
 /// this arm measures exactly what the hoist removed: `levels - 1` redundant
 /// rebuilds.
 fn bench_gen_face_levels(c: &mut Criterion) {
-    use rs_cam_core::face::{FaceDirection, FaceParams, face_toolpath};
     use rs_cam_core::geo::BoundingBox3;
+    use rs_cam_core::ops::face::{FaceDirection, FaceParams, face_toolpath};
 
     let mut group = c.benchmark_group("gen_face_levels");
     group.sample_size(20);
@@ -951,7 +953,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
     use rs_cam_core::compute::stock_config::StockConfig;
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::gcode::CoolantMode;
-    use rs_cam_core::profile::ProfileSide;
+    use rs_cam_core::ops::profile::ProfileSide;
     use rs_cam_core::session::{
         AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
         SetStockConfigArgs, ToolpathConfig,

@@ -28,10 +28,10 @@
 
 use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::{SpatialIndex, make_test_flat};
-use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::project_curve::{
+use rs_cam_core::ops::project_curve::{
     ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath,
 };
+use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::FlatEndmill;
 use rs_cam_core::toolpath::MoveType;
 

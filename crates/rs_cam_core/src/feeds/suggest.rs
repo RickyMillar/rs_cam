@@ -934,7 +934,7 @@ fn apply_feeds_subset(
     // has nothing to divide, and inventing a total would be worse than leaving
     // the proposal alone.
     let depth_mm = match scratch.total_depth() {
-        Some(total) => crate::depth::realised_step_down(total, depth_mm).unwrap_or(depth_mm),
+        Some(total) => crate::ops::depth::realised_step_down(total, depth_mm).unwrap_or(depth_mm),
         None => depth_mm,
     };
     let depth_held = scratch.set_depth_per_pass(depth_mm);
@@ -1562,7 +1562,7 @@ pub fn feeds_preview_for_operation(
 /// the pin clamp cannot be applied**, not that it was applied and found
 /// nothing to do — the value is left at the unclamped Suggest default,
 /// exactly as before, and generation's own emitter guard
-/// ([`crate::drill::fed_descents`]) remains the last line.
+/// ([`crate::ops::drill::fed_descents`]) remains the last line.
 pub fn apply_drill_defaults(
     operation: &mut OperationConfig,
     tool: &ToolConfig,

@@ -123,7 +123,7 @@ pub struct DrillOp {
     /// removal kernel and gate calculations don't need to re-resolve the
     /// assigned tool from session state.
     pub tool_diameter_mm: f64,
-    pub cycle: crate::drill::DrillCycle,
+    pub cycle: crate::ops::drill::DrillCycle,
     pub feed_rate_mm_min: f64,
     pub spindle_rpm: u32,
     pub flute_count: u32,

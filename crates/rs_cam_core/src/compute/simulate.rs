@@ -64,7 +64,7 @@ pub struct SimToolpathEntry {
     /// for analytical cone/cylinder removal. The `annotated` toolpath is
     /// still used for G-code export, rapid-collision checks, and move
     /// indexing.
-    pub drill_op: Option<Arc<crate::drill_op::DrillOp>>,
+    pub drill_op: Option<Arc<crate::ops::drill_op::DrillOp>>,
     /// Hash of the toolpath's `OperationConfig` at sim-build time.
     /// Carried so the provenance builder can stamp it without having
     /// access to the raw config. Used by [`sim_trace_is_fresh`] to
@@ -713,10 +713,10 @@ pub fn group_toolpath_to_global(
 /// Frame-map an analytic drill op into the sim's stock-relative global
 /// frame. See [`group_point_to_global`] for the contract.
 pub fn group_drill_op_to_global(
-    drill_op: &crate::drill_op::DrillOp,
+    drill_op: &crate::ops::drill_op::DrillOp,
     transform: &Option<SetupTransformInfo>,
     stock_min: P3,
-) -> crate::drill_op::DrillOp {
+) -> crate::ops::drill_op::DrillOp {
     let mut out = drill_op.clone();
     for hole in &mut out.holes {
         let g_top = group_point_to_global(
@@ -1094,8 +1094,8 @@ where
                 // (the analytical kernel doesn't produce
                 // `SimulationCutSample`s, so the drill-native stream lands
                 // here instead).
-                let pecks = crate::drill_metrics::emit_drill_samples(entry.id, drill_op_arc);
-                let summary = crate::drill_metrics::build_drill_toolpath_summary(
+                let pecks = crate::ops::drill_metrics::emit_drill_samples(entry.id, drill_op_arc);
+                let summary = crate::ops::drill_metrics::build_drill_toolpath_summary(
                     entry.id,
                     drill_op_arc,
                     &pecks,
@@ -1244,7 +1244,7 @@ where
             // Cylinders are emitted in local-frame coords; the
             // transform_stock_mesh_to_global call below handles re-framing.
             if !group_drill_ops.is_empty() {
-                let refs: Vec<&crate::drill_op::DrillOp> =
+                let refs: Vec<&crate::ops::drill_op::DrillOp> =
                     group_drill_ops.iter().map(|d| d.as_ref()).collect();
                 crate::stock::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
             }
@@ -1333,7 +1333,7 @@ where
         // After all toolpaths in this group, extract mesh and composite.
         let mut group_mesh = dexel_stock_to_mesh(&group_stock);
         if !group_drill_ops.is_empty() {
-            let refs: Vec<&crate::drill_op::DrillOp> =
+            let refs: Vec<&crate::ops::drill_op::DrillOp> =
                 group_drill_ops.iter().map(|d| d.as_ref()).collect();
             crate::stock::dexel_mesh::append_drill_cylinders(&mut group_mesh, &refs);
         }
@@ -1972,7 +1972,7 @@ mod tests {
     #[test]
     fn two_d_pocket_simulation_reports_engagement() {
         use crate::compute::stock_config::StockConfig;
-        use crate::pocket::{PocketParams, pocket_toolpath};
+        use crate::ops::pocket::{PocketParams, pocket_toolpath};
         use crate::polygon::Polygon2;
 
         // 30×30 mm square polygon at z=0 — the 2D pocket geometry.

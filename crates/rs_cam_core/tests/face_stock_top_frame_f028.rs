@@ -68,8 +68,8 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{FaceConfig, PocketConfig, PocketPattern};
 use rs_cam_core::debug_trace::ToolpathDebugOptions;
-use rs_cam_core::face::FaceDirection;
 use rs_cam_core::gcode::CoolantMode;
+use rs_cam_core::ops::face::FaceDirection;
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SimulationOptions, ToolpathConfig,
 };

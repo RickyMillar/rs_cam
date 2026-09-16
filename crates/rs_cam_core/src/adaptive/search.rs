@@ -129,8 +129,8 @@ mod engagement_measure_tests {
 
     use super::super::material_grid::{CELL_CLEARED, MaterialGrid};
     use super::{compute_engagement, compute_engagement_arc};
-    use crate::adaptive_shared::target_engagement_fraction;
     use crate::geo::P2;
+    use crate::ops::adaptive_shared::target_engagement_fraction;
     use crate::polygon::Polygon2;
 
     const R: f64 = 3.0;

@@ -312,7 +312,7 @@ pub fn polyline_length_2d(points: &[P2]) -> f64 {
 /// asks for an unbounded number of points.
 ///
 /// Generic over the point dimension, so the 2D ring walk in
-/// [`crate::project_curve`] and the 3D valley walk in [`crate::pencil`] and
+/// [`crate::ops::project_curve`] and the 3D valley walk in [`crate::pencil`] and
 /// [`crate::crease_paths`] share one function.
 pub fn resample_polyline<const D: usize>(
     points: &[Point<f64, D>],

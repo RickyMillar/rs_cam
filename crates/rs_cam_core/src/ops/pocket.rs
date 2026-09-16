@@ -93,7 +93,7 @@ pub(crate) fn pocket_toolpath_reported_with_cancel(
 /// `L` times to produce `L` copies of the same XY geometry — the only
 /// Z-dependent thing in the output is the stamp in
 /// [`pocket_contours_to_toolpath`]. Composition still runs through
-/// [`crate::depth::toolpath_at_levels_with_cancel`], so the inter-level
+/// [`crate::ops::depth::toolpath_at_levels_with_cancel`], so the inter-level
 /// retract and the cancellation cadence are unchanged.
 ///
 /// Cancellation is preserved on **both** granularities: the cascade polls per
@@ -109,7 +109,7 @@ pub fn pocket_toolpath_at_levels_reported_with_cancel(
 ) -> Result<(Toolpath, PocketCascadeReport), Cancelled> {
     let (contours, report) =
         pocket_contours_reported_with_cancel(polygon, params.tool_radius, params.stepover, cancel)?;
-    let tp = crate::depth::toolpath_at_levels_with_cancel(
+    let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
         levels,
         params.safe_z,
         |z| {
@@ -536,7 +536,7 @@ mod tests {
         for n in [1_usize, 5] {
             let levels: Vec<f64> = (1..=n).map(|i| -1.5 * i as f64).collect();
 
-            let naive = crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
+            let naive = crate::ops::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
                 pocket_toolpath(
                     &poly,
                     &PocketParams {

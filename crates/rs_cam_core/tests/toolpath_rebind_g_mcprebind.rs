@@ -459,7 +459,7 @@ fn rebind_is_not_reachable_through_the_param_route() {
 
 fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
     rs_cam_core::session::ToolpathComputeResult {
-        op_data: rs_cam_core::drill_op::OpData::Toolpath(std::sync::Arc::new(
+        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(std::sync::Arc::new(
             rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
                 rs_cam_core::toolpath::Toolpath::new(),
             ),

@@ -1903,9 +1903,9 @@ fn append_air_cut_anomaly(
             .and_then(|id| trace.drill_summary_for(id));
         if let Some(d) = drill_summary {
             let risk = match d.chip_welding_risk {
-                crate::drill_metrics::ChipWeldingRisk::Low => "low",
-                crate::drill_metrics::ChipWeldingRisk::Elevated => "elevated",
-                crate::drill_metrics::ChipWeldingRisk::High => "high",
+                crate::ops::drill_metrics::ChipWeldingRisk::Low => "low",
+                crate::ops::drill_metrics::ChipWeldingRisk::Elevated => "elevated",
+                crate::ops::drill_metrics::ChipWeldingRisk::High => "high",
             };
             let cycle_time_s = d.feed_time_s + d.dwell_time_s;
             // R-6 / audit §7 "wording gaps": narrate used to print the

@@ -4,8 +4,8 @@
 //! where the V-bit's cutting diameter at that depth produces the desired chamfer
 //! width on the workpiece face.
 
+use crate::ops::profile::{ProfileParams, ProfileSide, profile_toolpath};
 use crate::polygon::Polygon2;
-use crate::profile::{ProfileParams, ProfileSide, profile_toolpath};
 use crate::toolpath::Toolpath;
 
 /// Parameters for chamfer cutting with a V-bit.

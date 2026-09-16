@@ -509,11 +509,11 @@ mod tests {
         // coincides with a roughing level. Instead, verify that there are
         // no tab-height moves between roughing passes (moves with z > final_z
         // that aren't at a legitimate roughing level or safe_z).
-        let depth_stepping = rs_cam_core::depth::DepthStepping {
+        let depth_stepping = rs_cam_core::ops::depth::DepthStepping {
             start_z: 0.0,
             final_z: -cfg.depth.abs(),
             max_step_down: cfg.depth_per_pass,
-            distribution: rs_cam_core::depth::DepthDistribution::Even,
+            distribution: rs_cam_core::ops::depth::DepthDistribution::Even,
             finish_allowance: 0.0,
             finishing_passes: cfg.finishing_passes,
         };

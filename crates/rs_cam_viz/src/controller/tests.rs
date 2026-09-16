@@ -621,7 +621,7 @@ fn controller_save_open_and_export_smoke() {
             index: 0,
             revision,
             result: Box::new(rs_cam_core::session::ToolpathComputeResult {
-                op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(
+                op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
                     rs_cam_core::toolpath_spans::AnnotatedToolpath::new(generated.clone()),
                 )),
                 stats: Default::default(),
@@ -4583,7 +4583,7 @@ use rs_cam_core::session::ToolpathComputeResult;
 /// A cached core result, standing for "this toolpath has been generated".
 fn core_result() -> ToolpathComputeResult {
     ToolpathComputeResult {
-        op_data: rs_cam_core::drill_op::OpData::Toolpath(Arc::new(
+        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
             rs_cam_core::toolpath_spans::AnnotatedToolpath::new(Toolpath::new()),
         )),
         stats: Default::default(),

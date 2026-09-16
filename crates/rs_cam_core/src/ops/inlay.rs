@@ -12,11 +12,11 @@
 use crate::geo::{P2, P3};
 use crate::geometry::edge_distance::EdgeDistanceField;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::pocket::{PocketParams, pocket_toolpath_with_cancel};
+use crate::ops::pocket::{PocketParams, pocket_toolpath_with_cancel};
+use crate::ops::vcarve::{SCAN_CHUNK, VCarveParams, vcarve_toolpath_with_cancel};
+use crate::ops::zigzag::zigzag_lines;
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
-use crate::vcarve::{SCAN_CHUNK, VCarveParams, vcarve_toolpath_with_cancel};
-use crate::zigzag::zigzag_lines;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;

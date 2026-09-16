@@ -15,7 +15,7 @@
 // and duplicating the minimal parsing logic that the CLI uses.
 
 use rs_cam_core::gcode::{emit_gcode, get_post_definition};
-use rs_cam_core::pocket::{PocketParams, pocket_toolpath};
+use rs_cam_core::ops::pocket::{PocketParams, pocket_toolpath};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{
     BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,

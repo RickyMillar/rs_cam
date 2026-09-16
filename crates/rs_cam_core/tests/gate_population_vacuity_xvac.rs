@@ -46,11 +46,11 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
-use rs_cam_core::drill_metrics::{build_drill_toolpath_summary, emit_drill_samples};
-use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::Material;
+use rs_cam_core::ops::drill_metrics::{build_drill_toolpath_summary, emit_drill_samples};
+use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
 };
@@ -445,7 +445,7 @@ fn drill_op(holes: Vec<DrillHole>) -> DrillOp {
         hole_source: HoleSource::ModelDerived,
         tool_profile: ToolProfile::StandardTwist,
         tool_diameter_mm: 6.0,
-        cycle: rs_cam_core::drill::DrillCycle::Peck(2.0),
+        cycle: rs_cam_core::ops::drill::DrillCycle::Peck(2.0),
         feed_rate_mm_min: 300.0,
         spindle_rpm: 18_000,
         flute_count: 2,

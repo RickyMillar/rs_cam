@@ -948,8 +948,8 @@ pub fn execute_job(
             );
             let annotated_arc = Arc::new(annotated);
             let op_data = match drill_op {
-                Some(d) => crate::drill_op::OpData::DrillOp(Arc::new(d), annotated_arc),
-                None => crate::drill_op::OpData::Toolpath(annotated_arc),
+                Some(d) => crate::ops::drill_op::OpData::DrillOp(Arc::new(d), annotated_arc),
+                None => crate::ops::drill_op::OpData::Toolpath(annotated_arc),
             };
             observer.clear_phase();
             Ok(ToolpathComputeResult {
@@ -2251,8 +2251,8 @@ fn modulate_annotated_against_trace(
         stepover.and_then(|s| {
             let r = tool_cfg.diameter * 0.5;
             (r > 0.0 && s > 0.0).then(|| {
-                let f = crate::adaptive_shared::target_engagement_fraction(s, r);
-                crate::adaptive_shared::radial_woc_fraction_from_leading_arc(f)
+                let f = crate::ops::adaptive_shared::target_engagement_fraction(s, r);
+                crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(f)
             })
         })
     } else {
@@ -2353,7 +2353,7 @@ fn modulate_annotated_against_trace(
             ) {
                 let planner_woc = m
                     .and_then(|m| planner_map.get(&pos_key(&m.target)).copied())
-                    .map(crate::adaptive_shared::radial_woc_fraction_from_leading_arc)
+                    .map(crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc)
                     .or(planner_uniform_woc);
                 match planner_woc {
                     Some(pw) => sim_radial.max(pw),
@@ -4410,9 +4410,11 @@ impl ProjectSession {
             let new_arc = Arc::new(new_annotated);
             // Rebuild the op_data variant with the swapped Arc.
             let new_op_data = match &result.op_data {
-                crate::drill_op::OpData::Toolpath(_) => crate::drill_op::OpData::Toolpath(new_arc),
-                crate::drill_op::OpData::DrillOp(drill, _) => {
-                    crate::drill_op::OpData::DrillOp(Arc::clone(drill), new_arc)
+                crate::ops::drill_op::OpData::Toolpath(_) => {
+                    crate::ops::drill_op::OpData::Toolpath(new_arc)
+                }
+                crate::ops::drill_op::OpData::DrillOp(drill, _) => {
+                    crate::ops::drill_op::OpData::DrillOp(Arc::clone(drill), new_arc)
                 }
             };
             if let Some(slot) = self.results.get_mut(&idx) {
@@ -6141,7 +6143,7 @@ mod tests {
     /// TD3 intake in this wave's log entry.
     #[test]
     fn a_positive_peck_still_has_no_descent_cap() {
-        use crate::drill::{DrillCycle, fed_descents};
+        use crate::ops::drill::{DrillCycle, fed_descents};
 
         let counts: Vec<usize> = [1.0_f64, 0.1, 0.01, 0.001]
             .iter()
@@ -6412,7 +6414,7 @@ mod tests {
         s.results.insert(
             0,
             ToolpathComputeResult {
-                op_data: crate::drill_op::OpData::Toolpath(Arc::new(
+                op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(
                     crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
                 )),
                 stats: ToolpathStats::default(),
@@ -6590,7 +6592,7 @@ mod tests {
         s.results.insert(
             0,
             ToolpathComputeResult {
-                op_data: crate::drill_op::OpData::Toolpath(Arc::new(
+                op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(
                     crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
                 )),
                 stats: ToolpathStats::default(),
@@ -6777,7 +6779,7 @@ mod tests {
 
     fn empty_result() -> ToolpathComputeResult {
         ToolpathComputeResult {
-            op_data: crate::drill_op::OpData::Toolpath(Arc::new(
+            op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(
                 crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new()),
             )),
             stats: ToolpathStats::default(),
@@ -7685,7 +7687,7 @@ mod tests {
             crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new());
         at.rest_regions = regions.map(Arc::new);
         ToolpathComputeResult {
-            op_data: crate::drill_op::OpData::Toolpath(Arc::new(at)),
+            op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(at)),
             stats: ToolpathStats {
                 move_count: 0,
                 cutting_distance: 0.0,

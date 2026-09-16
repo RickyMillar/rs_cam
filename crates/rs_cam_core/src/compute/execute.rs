@@ -588,13 +588,13 @@ fn generated_with_drill_spans(toolpath: Toolpath) -> GeneratedToolpath {
     generated_with_spans(toolpath, spans)
 }
 
-/// Build the [`crate::drill_op::DrillOp`] for a drilling-cycle operation,
+/// Build the [`crate::ops::drill_op::DrillOp`] for a drilling-cycle operation,
 /// re-resolving hole positions from the same inputs the toolpath
 /// generator just consumed.
 ///
 /// Returns `None` for non-drill ops. The caller pairs this with the
 /// `AnnotatedToolpath` produced by [`execute_operation_annotated`] to
-/// form a [`crate::drill_op::OpData::DrillOp`] — the dual-representation
+/// form a [`crate::ops::drill_op::OpData::DrillOp`] — the dual-representation
 /// invariant.
 ///
 /// Hole-source asymmetry (§6.E):
@@ -618,8 +618,8 @@ pub fn build_drill_op_for_config(
     stock_bbox: &BoundingBox3,
     material: crate::material::Material,
     setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
-) -> Option<crate::drill_op::DrillOp> {
-    use crate::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
+) -> Option<crate::ops::drill_op::DrillOp> {
+    use crate::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
     let tool_diameter_mm = tool_def.radius() * 2.0;
     let flute_count = tool_cfg.flute_count;
@@ -1159,7 +1159,7 @@ pub(crate) fn generate_drill(
     }
     let holes = drill_holes_for_config(cfg, ctx.drill_targets, ctx.setup_transform)?;
     let cycle = cfg.cycle.to_core(cfg);
-    let params = crate::drill::DrillParams {
+    let params = crate::ops::drill::DrillParams {
         depth: cfg.depth,
         top_z: ctx.stock_bbox.max.z,
         cycle,
@@ -1167,7 +1167,7 @@ pub(crate) fn generate_drill(
         safe_z: ctx.heights.retract_z,
         retract_z: crate::compute::config::effective_safe_z(cfg.retract_z, ctx.stock_bbox.max.z),
     };
-    let generated = generated_with_drill_spans(crate::drill::drill_toolpath(&holes, &params));
+    let generated = generated_with_drill_spans(crate::ops::drill::drill_toolpath(&holes, &params));
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_drill_spans(&generated.spans, &generated.toolpath, sem);
     }
@@ -1207,7 +1207,7 @@ pub(crate) fn generate_alignment_pin_drill(
     let stock_z = ctx.stock_bbox.max.z - ctx.stock_bbox.min.z;
     let depth = stock_z + cfg.spoilboard_penetration;
     let cycle = cfg.drill_cycle(depth);
-    let params = crate::drill::DrillParams {
+    let params = crate::ops::drill::DrillParams {
         depth,
         top_z: ctx.stock_bbox.max.z,
         cycle,
@@ -1215,7 +1215,7 @@ pub(crate) fn generate_alignment_pin_drill(
         safe_z: ctx.heights.retract_z,
         retract_z: crate::compute::config::effective_safe_z(cfg.retract_z, ctx.stock_bbox.max.z),
     };
-    let generated = generated_with_drill_spans(crate::drill::drill_toolpath(&holes, &params));
+    let generated = generated_with_drill_spans(crate::ops::drill::drill_toolpath(&holes, &params));
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_drill_spans(&generated.spans, &generated.toolpath, sem);
     }
@@ -1260,7 +1260,7 @@ pub(crate) fn generate_rest(
         if ctx.cancel.load(Ordering::SeqCst) {
             return Err(OperationError::Cancelled);
         }
-        let base = crate::rest::RestParams {
+        let base = crate::ops::rest::RestParams {
             prev_tool_radius: ptr,
             tool_radius,
             cut_depth: 0.0,
@@ -1270,14 +1270,14 @@ pub(crate) fn generate_rest(
             safe_z,
             angle: cfg.angle,
         };
-        let segments = crate::rest::rest_segments(poly, &base);
-        let tp = crate::depth::toolpath_at_levels_with_cancel(
+        let segments = crate::ops::rest::rest_segments(poly, &base);
+        let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| {
-                Ok(crate::rest::rest_segments_to_toolpath(
+                Ok(crate::ops::rest::rest_segments_to_toolpath(
                     &segments,
-                    &crate::rest::RestParams {
+                    &crate::ops::rest::RestParams {
                         cut_depth: z,
                         ..base
                     },
@@ -1310,9 +1310,9 @@ pub(crate) fn generate_inlay(
     let mut female_out = Toolpath::new();
     let mut male_out = Toolpath::new();
     for poly in polys {
-        let r = crate::inlay::inlay_toolpaths_with_cancel(
+        let r = crate::ops::inlay::inlay_toolpaths_with_cancel(
             poly,
-            &crate::inlay::InlayParams {
+            &crate::ops::inlay::InlayParams {
                 half_angle: ha,
                 pocket_depth: cfg.pocket_depth,
                 glue_gap: cfg.glue_gap,
@@ -1358,9 +1358,9 @@ pub(crate) fn generate_vcarve(
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::vcarve::vcarve_toolpath_with_cancel(
+        let tp = crate::ops::vcarve::vcarve_toolpath_with_cancel(
             poly,
-            &crate::vcarve::VCarveParams {
+            &crate::ops::vcarve::VCarveParams {
                 half_angle: ha,
                 max_depth: cfg.max_depth,
                 stepover: cfg.stepover,
@@ -1405,7 +1405,7 @@ pub(crate) fn generate_chamfer(
         if ctx.cancel.load(Ordering::SeqCst) {
             return Err(OperationError::Cancelled);
         }
-        let params = crate::chamfer::ChamferParams {
+        let params = crate::ops::chamfer::ChamferParams {
             chamfer_width: cfg.chamfer_width,
             tip_offset: cfg.tip_offset,
             tool_half_angle: ha,
@@ -1414,7 +1414,7 @@ pub(crate) fn generate_chamfer(
             safe_z,
             top_z: ctx.heights.top_z,
         };
-        let tp = crate::chamfer::chamfer_toolpath(poly, &params);
+        let tp = crate::ops::chamfer::chamfer_toolpath(poly, &params);
         combined.moves.extend(tp.moves);
     }
     Ok(with_depth_run_annotation(
@@ -1454,7 +1454,7 @@ pub(crate) fn generate_zigzag(
         if ctx.cancel.load(Ordering::SeqCst) {
             return Err(OperationError::Cancelled);
         }
-        let base = crate::zigzag::ZigzagParams {
+        let base = crate::ops::zigzag::ZigzagParams {
             tool_radius,
             stepover: cfg.stepover,
             cut_depth: 0.0,
@@ -1464,15 +1464,15 @@ pub(crate) fn generate_zigzag(
             angle: cfg.angle,
         };
         let (lines, failures) =
-            crate::zigzag::zigzag_lines_reported(poly, tool_radius, cfg.stepover, cfg.angle);
+            crate::ops::zigzag::zigzag_lines_reported(poly, tool_radius, cfg.stepover, cfg.angle);
         offset_failures.set(offset_failures.get() + failures);
-        let tp = crate::depth::toolpath_at_levels_with_cancel(
+        let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| {
-                Ok(crate::zigzag::lines_to_toolpath(
+                Ok(crate::ops::zigzag::lines_to_toolpath(
                     &lines,
-                    &crate::zigzag::ZigzagParams {
+                    &crate::ops::zigzag::ZigzagParams {
                         cut_depth: z,
                         ..base
                     },
@@ -1508,7 +1508,7 @@ pub(crate) fn generate_trace(
     // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
     let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
-        let params = crate::trace::TraceParams {
+        let params = crate::ops::trace_path::TraceParams {
             tool_radius: ctx.tool_def.radius(),
             depth: cfg.depth,
             depth_per_pass: cfg.depth_per_pass,
@@ -1525,12 +1525,17 @@ pub(crate) fn generate_trace(
         if ctx.cancel.load(Ordering::SeqCst) {
             return Err(OperationError::Cancelled);
         }
-        let (rings, failures) = crate::trace::trace_compensated_polygons_reported(poly, &params);
+        let (rings, failures) =
+            crate::ops::trace_path::trace_compensated_polygons_reported(poly, &params);
         offset_failures.set(offset_failures.get() + failures);
-        let tp = crate::depth::toolpath_at_levels_with_cancel(
+        let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
-            |z| Ok(crate::trace::trace_polygons_at_z(&rings, z, &params)),
+            |z| {
+                Ok(crate::ops::trace_path::trace_polygons_at_z(
+                    &rings, z, &params,
+                ))
+            },
             &cancel_fn,
         )
         .map_err(|_e| OperationError::Cancelled)?;
@@ -1582,7 +1587,7 @@ pub(crate) fn generate_profile(
         if ctx.cancel.load(Ordering::SeqCst) {
             return Err(OperationError::Cancelled);
         }
-        let base = crate::profile::ProfileParams {
+        let base = crate::ops::profile::ProfileParams {
             tool_radius,
             side: cfg.side,
             cut_depth: 0.0,
@@ -1593,16 +1598,16 @@ pub(crate) fn generate_profile(
             compensate_in_controller: cfg.compensation
                 == crate::compute::CompensationType::InControl,
         };
-        let (contour, failures) = crate::profile::profile_path_reported(poly, &base);
+        let (contour, failures) = crate::ops::profile::profile_path_reported(poly, &base);
         offset_failures.set(offset_failures.get() + failures);
-        let tp = crate::depth::toolpath_at_levels_with_cancel(
+        let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| {
                 let pass_tp = match &contour {
-                    Some(pts) => crate::profile::profile_path_to_toolpath(
+                    Some(pts) => crate::ops::profile::profile_path_to_toolpath(
                         pts,
-                        &crate::profile::ProfileParams {
+                        &crate::ops::profile::ProfileParams {
                             cut_depth: z,
                             ..base
                         },
@@ -1674,7 +1679,7 @@ pub(crate) fn generate_pocket(
         }
         let tp = match cfg.pattern {
             crate::compute::operation_configs::PocketPattern::Contour => {
-                let base = crate::pocket::PocketParams {
+                let base = crate::ops::pocket::PocketParams {
                     tool_radius,
                     stepover: cfg.stepover,
                     cut_depth: 0.0,
@@ -1683,10 +1688,11 @@ pub(crate) fn generate_pocket(
                     safe_z,
                     climb: cfg.climb,
                 };
-                let (tp, report) = crate::pocket::pocket_toolpath_at_levels_reported_with_cancel(
-                    poly, &levels, &base, &cancel_fn,
-                )
-                .map_err(|_e| OperationError::Cancelled)?;
+                let (tp, report) =
+                    crate::ops::pocket::pocket_toolpath_at_levels_reported_with_cancel(
+                        poly, &levels, &base, &cancel_fn,
+                    )
+                    .map_err(|_e| OperationError::Cancelled)?;
                 offset_failures.set(offset_failures.get() + report.offset_failures);
                 // Checkpoint C, Q3 (F-10): a cascade stopped by a bound
                 // leaves material, and that is exactly what
@@ -1707,7 +1713,7 @@ pub(crate) fn generate_pocket(
                 tp
             }
             crate::compute::operation_configs::PocketPattern::Zigzag => {
-                let base = crate::zigzag::ZigzagParams {
+                let base = crate::ops::zigzag::ZigzagParams {
                     tool_radius,
                     stepover: cfg.stepover,
                     cut_depth: 0.0,
@@ -1716,20 +1722,20 @@ pub(crate) fn generate_pocket(
                     safe_z,
                     angle: cfg.angle,
                 };
-                let (lines, failures) = crate::zigzag::zigzag_lines_reported(
+                let (lines, failures) = crate::ops::zigzag::zigzag_lines_reported(
                     poly,
                     tool_radius,
                     cfg.stepover,
                     cfg.angle,
                 );
                 offset_failures.set(offset_failures.get() + failures);
-                crate::depth::toolpath_at_levels_with_cancel(
+                crate::ops::depth::toolpath_at_levels_with_cancel(
                     &levels,
                     safe_z,
                     |z| {
-                        Ok(crate::zigzag::lines_to_toolpath(
+                        Ok(crate::ops::zigzag::lines_to_toolpath(
                             &lines,
-                            &crate::zigzag::ZigzagParams {
+                            &crate::ops::zigzag::ZigzagParams {
                                 cut_depth: z,
                                 ..base
                             },
@@ -1765,7 +1771,7 @@ pub(crate) fn generate_face(
     // identity setups land at world stock top and non-identity
     // setups at local stock top, both consistent with the frame
     // the toolpath gets stamped into).
-    let params = crate::face::FaceParams {
+    let params = crate::ops::face::FaceParams {
         tool_radius: ctx.tool_def.radius(),
         stepover: cfg.stepover,
         depth: cfg.depth,
@@ -1778,7 +1784,7 @@ pub(crate) fn generate_face(
         stock_top_z: ctx.heights.top_z,
     };
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
-    let tp = crate::face::face_toolpath_with_cancel(ctx.stock_bbox, &params, &cancel_fn)
+    let tp = crate::ops::face::face_toolpath_with_cancel(ctx.stock_bbox, &params, &cancel_fn)
         .map_err(|_e| OperationError::Cancelled)?;
     Ok(with_depth_run_annotation(
         generated_with_depth_run_spans(tp, &[]),
@@ -2061,24 +2067,24 @@ pub(crate) fn generate_project_curve(
     let cutter = build_cutter(ctx.tool_cfg);
     let direction = match cfg.direction {
         crate::compute::operation_configs::ProjectCurveDirection::FromAbove => {
-            crate::project_curve::ProjectDirection::FromAbove
+            crate::ops::project_curve::ProjectDirection::FromAbove
         }
         crate::compute::operation_configs::ProjectCurveDirection::FromBelow => {
-            crate::project_curve::ProjectDirection::FromBelow
+            crate::ops::project_curve::ProjectDirection::FromBelow
         }
     };
     let side = match cfg.side {
         crate::compute::operation_configs::ProjectCurveSide::Center => {
-            crate::project_curve::ProjectSide::Center
+            crate::ops::project_curve::ProjectSide::Center
         }
         crate::compute::operation_configs::ProjectCurveSide::Inside => {
-            crate::project_curve::ProjectSide::Inside
+            crate::ops::project_curve::ProjectSide::Inside
         }
         crate::compute::operation_configs::ProjectCurveSide::Outside => {
-            crate::project_curve::ProjectSide::Outside
+            crate::ops::project_curve::ProjectSide::Outside
         }
     };
-    let params = crate::project_curve::ProjectCurveParams {
+    let params = crate::ops::project_curve::ProjectCurveParams {
         depth: cfg.depth,
         point_spacing: cfg.point_spacing,
         feed_rate: op.feed_rate(),
@@ -2092,7 +2098,7 @@ pub(crate) fn generate_project_curve(
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::project_curve::project_curve_toolpath_with_cancel(
+        let tp = crate::ops::project_curve::project_curve_toolpath_with_cancel(
             poly, m, idx, &cutter, &params, &cancel_fn,
         )
         .map_err(|_e| OperationError::Cancelled)?;
@@ -2243,7 +2249,7 @@ fn relink_in_adapter(
 fn chain_project_curve(
     ctx: &ExecutionContext<'_>,
     cfg: &crate::compute::operation_configs::ProjectCurveConfig,
-    params: &crate::project_curve::ProjectCurveParams,
+    params: &crate::ops::project_curve::ProjectCurveParams,
     cutter: &ToolDefinition,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -3262,7 +3268,7 @@ pub(crate) fn generate_waterline(
     let cfg = config_guard!(op, Waterline, "generate_waterline");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "Waterline")?;
-    let params = crate::waterline::WaterlineParams {
+    let params = crate::ops::waterline::WaterlineParams {
         sampling: cfg.sampling,
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -3274,7 +3280,7 @@ pub(crate) fn generate_waterline(
         // (`FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.C).
         stock_to_leave: 0.0,
     };
-    let tp = crate::waterline::waterline_toolpath_with_cancel(
+    let tp = crate::ops::waterline::waterline_toolpath_with_cancel(
         m,
         idx,
         ctx.tool_def,
@@ -3324,8 +3330,11 @@ pub(crate) fn generate_waterline(
     // `spans_from_depth_runs`'s `nearest_level` snapping has real levels
     // to snap to, matching the exact ladder `waterline_toolpath_with_cancel`
     // cut at (same helper, one source of truth).
-    let levels =
-        crate::waterline::waterline_z_levels(ctx.heights.top_z, ctx.heights.bottom_z, cfg.z_step);
+    let levels = crate::ops::waterline::waterline_z_levels(
+        ctx.heights.top_z,
+        ctx.heights.bottom_z,
+        cfg.z_step,
+    );
     Ok(with_depth_run_annotation(
         generated_with_depth_run_spans(tp, &levels),
         ctx.semantic_ctx,
@@ -4491,7 +4500,7 @@ fn effective_levels(
     if !cutting_levels.is_empty() {
         cutting_levels.to_vec()
     } else {
-        let stepping = crate::depth::DepthStepping::new(
+        let stepping = crate::ops::depth::DepthStepping::new(
             heights.top_z,
             heights.top_z - heights.depth(),
             depth_per_pass,

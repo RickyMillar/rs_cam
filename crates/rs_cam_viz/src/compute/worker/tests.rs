@@ -1760,9 +1760,9 @@ fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
 // compute-side analogue at `compute/simulate.rs:387-406`.
 #[test]
 fn playback_data_carries_drill_op_for_drill_toolpaths() {
-    use rs_cam_core::drill::DrillCycle;
-    use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
     use rs_cam_core::material::Material;
+    use rs_cam_core::ops::drill::DrillCycle;
+    use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     // The toolpath here is a placeholder — drill TPs in the analytical path
@@ -1856,9 +1856,9 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
 // the wrong Z (and possibly outside the stock bbox).
 #[test]
 fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
-    use rs_cam_core::drill::DrillCycle;
-    use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
     use rs_cam_core::material::Material;
+    use rs_cam_core::ops::drill::DrillCycle;
+    use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut tp = Toolpath::new();

@@ -49,13 +49,13 @@ mod fingerprint;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use rs_cam_core::depth::toolpath_at_levels;
 use rs_cam_core::geo::P2;
-use rs_cam_core::pocket::{PocketParams, pocket_toolpath};
+use rs_cam_core::ops::depth::toolpath_at_levels;
+use rs_cam_core::ops::pocket::{PocketParams, pocket_toolpath};
+use rs_cam_core::ops::profile::{ProfileParams, ProfileSide, profile_toolpath};
+use rs_cam_core::ops::zigzag::{ZigzagParams, zigzag_toolpath};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::profile::{ProfileParams, ProfileSide, profile_toolpath};
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};
 use serde::{Deserialize, Serialize};
 
 use fingerprint::move_fingerprint;
