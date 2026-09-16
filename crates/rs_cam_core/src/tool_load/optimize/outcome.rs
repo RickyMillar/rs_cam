@@ -495,7 +495,7 @@ impl OptimizeOutcome {
     }
 
     /// Construct a `MarginalSafe` outcome.
-    pub fn marginal_safe(
+    pub(crate) fn marginal_safe(
         candidates: Vec<OptimizeCandidate>,
         recommended_index: Option<usize>,
         narrative: OutcomeNarrative,
@@ -514,7 +514,7 @@ impl OptimizeOutcome {
     /// Construct a `TradeOff` outcome. `recommended_index` is always
     /// `None` — trade-offs require explicit user acceptance via the
     /// modal.
-    pub fn trade_off(candidates: Vec<OptimizeCandidate>, narrative: OutcomeNarrative) -> Self {
+    pub(crate) fn trade_off(candidates: Vec<OptimizeCandidate>, narrative: OutcomeNarrative) -> Self {
         Self {
             kind: OutcomeKind::TradeOff,
             candidates,
@@ -646,7 +646,7 @@ impl ProjectOptimizeReport {
     /// than baseline by more than the policy recommendation cycle delta.
     /// Caller is responsible for matching the right outcome variant
     /// before reading; this works on a raw candidate slice.
-    pub fn first_marginal_safe_index(candidates: &[OptimizeCandidate]) -> Option<usize> {
+    pub(crate) fn first_marginal_safe_index(candidates: &[OptimizeCandidate]) -> Option<usize> {
         let baseline = candidates.first()?;
         let min_cycle_delta_s = search_policy().ranking.recommendation_cycle_delta_s.value;
         candidates

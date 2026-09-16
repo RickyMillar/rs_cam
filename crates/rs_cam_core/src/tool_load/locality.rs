@@ -51,7 +51,7 @@ impl<'a> SpanLookup<'a> {
 
     /// First span of the given kind in `path`, walked outermost-first
     /// (matching `AnnotatedToolpath::span_path_at`'s emission order).
-    pub fn first_span_of_kind(&self, path: &[SpanId], kind: SpanKind) -> Option<&Span> {
+    pub(crate) fn first_span_of_kind(&self, path: &[SpanId], kind: SpanKind) -> Option<&Span> {
         path.iter()
             .filter_map(|id| self.spans.get(id.0 as usize))
             .find(|s| s.kind == kind)
