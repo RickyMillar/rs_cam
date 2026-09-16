@@ -22,18 +22,18 @@ and are NOT touched by this programme's fix waves.
 | 1 | Q1 | A | M | `SuggestContext.model_bbox` is never populated by any surface, so the runtime-sanity stepover back-off never fires; `first_model_bbox` exists in the same file as the Suggest call | W1 |
 | 2 | L1 | A | S | the load-time dressup migration rewrites a v3 operator value and reports only to `tracing::info!`; must push a `ProjectLoadWarning` like its sibling `parse_tool_type` | W1 |
 | 3 | L2 (report arm) | A | S | `stock_to_leave_radial` is inert in the planner but still `ParamDef::required` and emits no `DeprecatedDialFinding` — the exact hole that machinery exists to close | W1 |
-| 4 | L3 + L4 (+D1) | B | S | `_legacy_feeds_auto` and the top-level `toolpaths` pre-setup reader read pre-v3 shapes that `check_format_version` already refuses; delete both | W1 (L4 → RULING 1) |
+| 4 | L3 + L4 (+D1) | B | S | `_legacy_feeds_auto` and the top-level `toolpaths` pre-setup reader read pre-v3 shapes that `check_format_version` already refuses; delete both | W1 (ruled: delete L4 too) |
 | 5 | L6 | B | M | the whole `machine_ref` chain is dead end to end (nothing writes it, save persists it, load drops it, `SetMachineRef` has no constructor, `machine_library_link_cleared` is always `null` on the wire) | W1 |
 | 6 | Q2 | B | S | the only production file-wide `#![allow(clippy::indexing_slicing)]` (`cli/sweep.rs`, ~18 sites) | W1 |
-| 7 | L5 | B | S | `standing_material_mm2` is still emitted beside `truncated_core_mm2` although core documents the old name as measuring the wrong quantity | RULING 3 |
+| 7 | L5 | B | S | `standing_material_mm2` is still emitted beside `truncated_core_mm2` although core documents the old name as measuring the wrong quantity | W1 (ruled) |
 | 8 | S2 | C | L | `viz.rs` `toolpath_to_3d_html` + `simulation_3d_html`: 765 dead lines | W2 |
 | 9 | S3 | C | M | `rs_cam_viz/src/io/presets.rs`: a whole dead module (280 lines, 9 tests) | W2 |
 | 10 | D2 | C | S | `compute/semantic_helpers.rs` is dead and `pub`-re-exported; `spans.rs` carries its own drifted `CutRun`/`cutting_runs` | W2 |
 | 11 | S4, S5, S6, S8, S9, S11–S24 | C | M | 64 confirmed-dead pub items and private helpers, ~900 lines across core and viz (per-file groups in `S_*.md`) | W2 |
 | 12 | S26, S27, S28 | C | S | 26 `allow(dead_code)` attributes that cannot fire (items are `pub` in a `pub mod` of a lib crate) and claim a live MCP surface is dead | W2 |
 | 13 | S25 | C | M | 29 `pub` items used only from tests and not declared fixtures → `pub(crate)` + `#[cfg(test)]` scope or move into the test | W2 |
-| 14 | L8 | C | S | three `Command` variants with no production constructor (`ReplaceSetupsAndToolpaths`, `SetProjectName`, `SetMachineRef`) | RULING 6 |
-| 15 | L7 | C | S | a trace with no `provenance` block is treated as fresh; the one producer is the CLI | RULING 5 |
+| 14 | L8 | C | S | three `Command` variants with no production constructor (`ReplaceSetupsAndToolpaths`, `SetProjectName`, `SetMachineRef`) | W1 (ruled) |
+| 15 | L7 | C | S | a trace with no `provenance` block is treated as fresh; the one producer is the CLI | W1 (ruled) |
 | 16 | D11 | D | M | viz mirrors core's two simulation structs by hand (the class that dropped 11 fields in C04); inherits G-MCPSIMMIRROR / WP28 | W3 |
 | 17 | D13 | D | M | each finding's operator sentence is written twice (`from_generation.rs` vs `narrate.rs`) and the copies already differ | W3 |
 | 18 | D12 | D | M | two "mesh surface Z at (x, y)" readers with different containment tests (`monge.rs` vs `reach_map.rs`) | W3 |
@@ -42,7 +42,7 @@ and are NOT touched by this programme's fix waves.
 | 21 | Q6 | D | S | a test re-implements the flat-shelf histogram verbatim, so it cannot catch drift | W3 |
 | 22 | S29 | E | L | 199 `pub` items with own-file-only callers → compiler-checked demotion, one crate per cycle (30-row sample: 0 false positives) | W4 |
 | 23 | S30, L12, L13 | E | S | `setups_mut` visibility; `MachineProfile::from_key` pub for a deleted loader; `simulation.rs` calls itself legacy yet is the live `StockMesh` path | W4 |
-| 24 | L9, L10, L11 | E | S | `parse_lenient` aliases of a deleted loader (also the MCP mutation parser); two duplicated wire keys | RULING 3/4 |
+| 24 | L9, L10, L11 | E | S | `parse_lenient` aliases of a deleted loader (also the MCP mutation parser); two duplicated wire keys | W1 (ruled) |
 
 Cut line. Below it, recorded and not scheduled: D14 (two ~160-line band-dispatch
 drivers, L), L14, L15, D10, S31, S32, Q7–Q12, L16, and every F-tier row. Long
@@ -53,25 +53,27 @@ rows and none is unsafe (Q8, Q9).
 Held: S1 (`COLLISION_POINT`, `SPACE_0`) — dead today but named by the active
 ui-premium plan owned by the other account.
 
-## NEEDS A RULING (operator)
+## Rulings (operator, 2026-09-16)
 
-1. **L4** — deleting the top-level `toolpaths` reader removes a `toolpaths = []`
-   line from every file this build writes. Old v3 files still load (unknown
-   keys are ignored). Recommended: delete.
-2. **L2 deletion arm** — deleting `stock_to_leave_radial` changes the persisted
-   file and the MCP param schema. Recommended: report arm now (W1), deletion
-   deferred.
-3. **L5 / L10 / L11** — retiring `standing_material_mm2`, `air_cut_percentage`,
-   `ProjectDiagnostics::verdict` changes what external MCP agents and the
-   operator's CLI scripts read. Recommended: retire L5 (documented as the wrong
-   quantity); keep L10/L11 one more cycle.
-4. **L9** — retiring the five `parse_lenient` tool-type aliases (`ball`, `flat`,
-   `tapered_ball`, …) changes what MCP accepts. Recommended: keep the parser,
-   delete the "viz loader" justification, add a deprecation finding.
-5. **L7** — inverting the absent-provenance default changes a gate verdict.
-   Recommended: leave; record.
-6. **L8** — deleting the three no-constructor `Command` variants (and their
-   registry rows, `CommandId` arms, two tests). Recommended: delete.
+"We don't need to support anything legacy if a breaking change is needed.
+We are still in early development." All six resolve to the clean answer;
+each lands in W1 (the agent that owns the files), one commit each, with the
+breaking change stated in the commit body:
+
+1. **L4** — delete the top-level `toolpaths` reader; saved files lose the
+   empty `toolpaths = []` line.
+2. **L2 deletion arm** — delete `stock_to_leave_radial` from the config,
+   catalog, persisted file, MCP param schema and CLI job schema; update
+   `toolpath_fields_round_trip_c11.rs` and the wire snapshot.
+3. **L5 / L10 / L11** — retire `standing_material_mm2`, `air_cut_percentage`
+   and `ProjectDiagnostics::verdict`; update the sentries that pin them
+   (`standing_material_channel_am9.rs`, `air_cut_denominators_lh1.rs`,
+   `results_parity_tests.rs`) and the CLI report readers.
+4. **L9** — delete the five `parse_lenient` aliases; MCP accepts canonical
+   tool-type names only; add nothing in their place.
+5. **L7** — a trace with no `provenance` block is stale, not fresh.
+6. **L8** — delete the three no-constructor `Command` variants with their
+   registry rows, `CommandId` arms, `fmt` arms and the two tests.
 
 ## For the power-calcs owner (not touched here)
 
