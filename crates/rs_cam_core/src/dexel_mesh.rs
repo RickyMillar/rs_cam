@@ -105,8 +105,9 @@ pub fn dexel_stock_to_entry_surface_mesh(
 /// Backwards-compatible helper for callers that specifically want the top
 /// surface. Prefer [`dexel_stock_to_entry_surface_mesh`] for playback.
 ///
-/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
-/// only callers. No production path reads it.
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` and the
+/// bench `benches/perf_suite.rs` are the only callers. No production path
+/// reads it.
 pub fn dexel_stock_to_top_surface_mesh(stock: &TriDexelStock) -> StockMesh {
     dexel_stock_to_entry_surface_mesh(stock, StockCutDirection::FromTop)
 }
