@@ -21,8 +21,8 @@ use rs_cam_core::session::{
     AddModelArgs, AddSetupArgs, AddToolpathArgs, AdoptResultArgs, Command,
     InvalidateToolpathInputsArgs, LoadedModel, ProjectSessionBuilder, ReplaceToolpathConfigArgs,
     ReplaceToolsArgs, SetBoundaryConfigArgs, SetFeedsProvenanceArgs, SetSetupFaceArgs,
-    SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs,
-    SetToolpathEnabledArgs, ToolpathConfig,
+    SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs, SetToolpathEnabledArgs,
+    ToolpathConfig,
 };
 
 struct ScriptedBackend {

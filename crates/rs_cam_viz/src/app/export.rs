@@ -487,20 +487,21 @@ impl RsCamApp {
 )]
 mod tests {
     use super::*;
-    use rs_cam_core::session::{Command, SetProjectNameArgs};
+    use rs_cam_core::session::ProjectSessionBuilder;
 
     /// The wizard shows a filename preview; this module writes the file.
     /// Both read the one `slugify` in `ui::components::format`. A job
     /// name with a space must not preview one name and write another.
     #[test]
     fn the_preview_matches_the_saved_filename_for_a_spaced_job_name() {
-        let mut state = crate::state::AppState::default();
-        let _ = state
-            .session
-            .apply(Command::SetProjectName(SetProjectNameArgs {
-                name: "Job 1".to_owned(),
-            }))
-            .expect("a project name moves no generation input");
+        // L8 deleted the `SetProjectName` row. The builder names a
+        // session the way every other fixture does.
+        let state = crate::state::AppState {
+            session: ProjectSessionBuilder::new()
+                .name("Job 1".to_owned())
+                .build(),
+            ..crate::state::AppState::default()
+        };
 
         let preview = crate::ui::export_wizard::render_filename_preview(
             "{job}.nc",

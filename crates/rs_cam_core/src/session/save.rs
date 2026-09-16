@@ -394,7 +394,10 @@ mod tests {
     #[test]
     fn empty_session_round_trip() {
         let mut s = ProjectSession::new_empty();
-        s.set_name("Test Project".to_owned());
+        // L8 deleted `set_name` with the `SetProjectName` row. A name
+        // reaches a session through `[job].name` on load, and this
+        // module writes the field it is testing.
+        s.name = "Test Project".to_owned();
 
         let path = temp_path("empty");
         s.save(&path).unwrap();

@@ -33,16 +33,16 @@ pub use command::{
     MoveToolpathToSetupArgs, OptimizeToolpathArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
     RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveFixtureArgs, RemoveKeepOutArgs,
     RemoveModelArgs, RemoveToolArgs, RemoveToolpathArgs, ReorderToolpathArgs, ReplaceFixtureArgs,
-    ReplaceKeepOutArgs, ReplaceSetupsAndToolpathsArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs,
-    ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs, SetAlignmentPinDrillHolesArgs,
+    ReplaceKeepOutArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs, ReplaceToolsArgs,
+    RestoreToolpathSnapshotArgs, SaveProjectArgs, SetAlignmentPinDrillHolesArgs,
     SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs, SetDrillSelectedHolesArgs,
     SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineKinematicsArgs,
-    SetPostConfigArgs, SetProjectNameArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs,
-    SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
-    SetSetupRotationArgs, SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs,
-    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
-    SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathToolArgs,
-    Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
+    SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs,
+    SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs,
+    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
+    SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
+    SetToolpathParamArgs, SetToolpathToolArgs, Surfaces, ToolpathCycleTimeAnswer,
+    ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, OptimizeToolpathHandle,
@@ -1794,11 +1794,6 @@ impl ProjectSession {
     // `post_mut` and `find_setup_by_id_mut`. A core-internal caller that
     // needs one writes the field directly, or adds a named mutation
     // method that invalidates.
-
-    /// Replace the project name.
-    pub(crate) fn set_name(&mut self, name: String) {
-        self.name = name;
-    }
 
     // ── ID lookup helpers ─────────────────────────────────────────
 

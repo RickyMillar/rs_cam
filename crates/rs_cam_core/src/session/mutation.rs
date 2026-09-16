@@ -2101,38 +2101,6 @@ impl ProjectSession {
             Ok(())
         })
     }
-
-    /// Wholesale replace all setups and toolpath configs from an external
-    /// source. `Command::ReplaceSetupsAndToolpaths` is the only door, and
-    /// it serves a surface that rebuilds the whole plan in one step. C01
-    /// deleted the GUI caller this was written for.
-    ///
-    /// The caller is responsible for building valid `SetupData` and
-    /// `ToolpathConfig` vecs whose `toolpath_indices` are consistent.
-    #[instrument(skip(self, setups, toolpath_configs))]
-    pub(crate) fn replace_setups_and_toolpaths(
-        &mut self,
-        setups: Vec<SetupData>,
-        toolpath_configs: Vec<ToolpathConfig>,
-    ) -> Effects {
-        self.with_effects(None, move |session| {
-            session.setups = setups;
-            session.toolpath_configs = toolpath_configs;
-            // Update the next-ID counters.
-            session.next_toolpath_id = session
-                .toolpath_configs
-                .iter()
-                .map(|tc| tc.id.0 + 1)
-                .max()
-                .unwrap_or(0);
-            session.next_setup_id = session.setups.iter().map(|s| s.id + 1).max().unwrap_or(0);
-            // Invalidate all cached results — the indices may have
-            // shifted.
-            session.results.clear();
-            session.bump_all_revisions();
-            session.simulation = None;
-        })
-    }
 }
 
 #[cfg(test)]

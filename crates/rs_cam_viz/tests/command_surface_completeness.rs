@@ -180,10 +180,12 @@ fn item_line_after_attributes(lines: &[&str], attribute: usize) -> Option<usize>
 /// **A construction inside a test module is not a caller.** This rule
 /// comes from `production_writes_go_through_apply_wp15a`, whose scan is
 /// the sibling of this one. The two disagreed until C01: `app/export.rs`
-/// builds `Command::SetProjectName` in its own test module, and that was
+/// built `Command::SetProjectName` in its own test module, and that was
 /// read here as a GUI caller while wp15a read it as none. A row cannot be
-/// both reached and skipped, so both scans now apply the same rule. The
-/// helper is duplicated because the two are separate test binaries.
+/// both reached and skipped, so both scans now apply the same rule. L8
+/// then deleted that row, so the example is history; the rule stands for
+/// every row. The helper is duplicated because the two are separate test
+/// binaries.
 fn without_inline_test_modules(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let mut kept: Vec<&str> = Vec::with_capacity(lines.len());

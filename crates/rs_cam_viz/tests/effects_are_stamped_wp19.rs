@@ -108,9 +108,10 @@ const JUSTIFIED: &[Justified] = &[
     // C01 (`41f0b243`) deleted the legacy project loader in
     // `src/controller/io.rs`. Its two rows — `Command::SetProjectName(`
     // and `Command::ReplaceSetupsAndToolpaths(` — named the builder over
-    // a session no surface had adopted. Both sites are gone, so the rows
-    // go with them: `every_justified_discard_still_names_a_real_site`
-    // requires each row to match exactly one site.
+    // a session no surface had adopted. Both sites went with it, so the
+    // rows went too: `every_justified_discard_still_names_a_real_site`
+    // requires each row to match exactly one site. L8 then deleted both
+    // commands themselves, because no surface reached either one.
 ];
 
 /// The batch CLI holds no runtime row to stamp.

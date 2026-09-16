@@ -1788,8 +1788,6 @@ impl RsCamApp {
             | CommandId::RemoveKeepOut
             | CommandId::AutoEnableRestAnalysis
             | CommandId::ForgetResult
-            | CommandId::ReplaceSetupsAndToolpaths
-            | CommandId::SetProjectName
             | CommandId::SetToolpathOperation
             | CommandId::InvalidateStock
             | CommandId::InvalidateMachine
@@ -2615,8 +2613,6 @@ impl RsCamApp {
             | CommandId::RemoveKeepOut
             | CommandId::AutoEnableRestAnalysis
             | CommandId::ForgetResult
-            | CommandId::ReplaceSetupsAndToolpaths
-            | CommandId::SetProjectName
             | CommandId::SetToolpathOperation
             | CommandId::InvalidateStock
             | CommandId::InvalidateMachine

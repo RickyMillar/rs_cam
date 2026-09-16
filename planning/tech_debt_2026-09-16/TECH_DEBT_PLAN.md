@@ -23,7 +23,7 @@ and are NOT touched by this programme's fix waves.
 | 2 | L1 | A | S | the load-time dressup migration rewrites a v3 operator value and reports only to `tracing::info!`; must push a `ProjectLoadWarning` like its sibling `parse_tool_type` | W1 ✅ 625a4b6d |
 | 3 | L2 (report arm) | A | S | `stock_to_leave_radial` is inert in the planner but still `ParamDef::required` and emits no `DeprecatedDialFinding` — the exact hole that machinery exists to close | W1 ✅ dbc00a15 (deleted, not reported) |
 | 4 | L3 + L4 (+D1) | B | S | `_legacy_feeds_auto` and the top-level `toolpaths` pre-setup reader read pre-v3 shapes that `check_format_version` already refuses; delete both | W1 (ruled: delete L4 too) ✅ 9c720ea3 |
-| 5 | L6 | B | M | the whole `machine_ref` chain is dead end to end (nothing writes it, save persists it, load drops it, `SetMachineRef` has no constructor, `machine_library_link_cleared` is always `null` on the wire) | W1 |
+| 5 | L6 | B | M | the whole `machine_ref` chain is dead end to end (nothing writes it, save persists it, load drops it, `SetMachineRef` has no constructor, `machine_library_link_cleared` is always `null` on the wire) | W1 ✅ d496e5df |
 | 6 | Q2 | B | S | the only production file-wide `#![allow(clippy::indexing_slicing)]` (`cli/sweep.rs`, ~18 sites) | W1 |
 | 7 | L5 | B | S | `standing_material_mm2` is still emitted beside `truncated_core_mm2` although core documents the old name as measuring the wrong quantity | W1 (ruled) |
 | 8 | S2 | C | L | `viz.rs` `toolpath_to_3d_html` + `simulation_3d_html`: 765 dead lines | W2 ✅ d76fa7bc |

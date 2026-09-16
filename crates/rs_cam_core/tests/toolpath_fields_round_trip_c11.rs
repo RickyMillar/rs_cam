@@ -51,10 +51,10 @@ use rs_cam_core::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{
-    AddToolArgs, AddToolpathArgs, Command, ProjectSession, ReplaceToolpathConfigArgs,
-    SetBoundaryConfigArgs, SetDressupConfigArgs, SetProjectNameArgs, SetRestAnalysisConfigArgs,
-    SetStockSourceArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs,
-    SetToolpathHeightsArgs, ToolpathConfig,
+    AddToolArgs, AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder,
+    ReplaceToolpathConfigArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
+    SetRestAnalysisConfigArgs, SetStockSourceArgs, SetToolpathDebugOptionsArgs,
+    SetToolpathEnabledArgs, SetToolpathHeightsArgs, ToolpathConfig,
 };
 
 /// One directory for this test file, removed at the end.
@@ -149,13 +149,12 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     let dir = temp_dir("editable");
     let path = dir.join("editable.toml");
 
-    let mut session = ProjectSession::new_empty();
-    run(
-        &mut session,
-        Command::SetProjectName(SetProjectNameArgs {
-            name: "C11 Field Round Trip".to_owned(),
-        }),
-    );
+    // L8 deleted the `SetProjectName` row, which no surface reached.
+    // A name reaches a session through the file it loads, or through the
+    // builder every fixture already uses.
+    let mut session = ProjectSessionBuilder::new()
+        .name("C11 Field Round Trip".to_owned())
+        .build();
 
     // Tool 0 cuts; tool 1 is the rest reference the finish operation names.
     run(

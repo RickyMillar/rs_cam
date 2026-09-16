@@ -639,31 +639,6 @@ macro_rules! for_each_command {
                      "the CLI generates synchronously and forgets no completion",
                  ),
              }),
-            (Command, ReplaceSetupsAndToolpaths, "replace_setups_and_toolpaths",
-             ReplaceSetupsAndToolpathsArgs, Effects,
-             Surfaces {
-                 gui: Reach::Skip(
-                     "C01 deleted the legacy project reader, the only GUI caller",
-                 ),
-                 mcp: Reach::Skip(
-                     "no MCP tool replaces the whole plan; the wire edits one row at a time",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI builds its session once and replaces nothing",
-                 ),
-             }),
-            (Command, SetProjectName, "set_project_name", SetProjectNameArgs, Effects,
-             Surfaces {
-                 gui: Reach::Skip(
-                     "C01 deleted the legacy project reader; a load takes the name from the file",
-                 ),
-                 mcp: Reach::Skip(
-                     "no MCP tool renames the project; the wire has no such mutation",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
-             }),
             (Command, SetToolpathOperation, "set_toolpath_operation",
              SetToolpathOperationArgs, Effects,
              Surfaces {
@@ -1781,33 +1756,6 @@ pub struct ForgetResultArgs {
     pub index: usize,
 }
 
-/// The arguments of the `replace_setups_and_toolpaths` command.
-///
-/// The command replaces the WHOLE plan: every setup, every toolpath
-/// configuration, and the two next-id counters derived from them. It
-/// clears every cached result and bumps every revision, because the
-/// indices the results were keyed by may have moved.
-///
-/// The caller supplies setups whose `toolpath_indices` are consistent
-/// with the configuration list it supplies beside them.
-#[derive(Debug, Clone)]
-pub struct ReplaceSetupsAndToolpathsArgs {
-    /// The setups to install.
-    pub setups: Vec<super::SetupData>,
-    /// The toolpath configurations to install.
-    pub toolpath_configs: Vec<ToolpathConfig>,
-}
-
-/// The arguments of the `set_project_name` command.
-///
-/// A project name is metadata. It moves no generation input, so the
-/// command drops nothing.
-#[derive(Debug, Clone)]
-pub struct SetProjectNameArgs {
-    /// The name to install.
-    pub name: String,
-}
-
 /// The arguments of the `set_toolpath_operation` command.
 ///
 /// The command replaces the operation KIND while the toolpath keeps its
@@ -2405,22 +2353,6 @@ impl ProjectSession {
                 })
             }
             Command::ForgetResult(args) => Ok(self.remove_result(args.index)),
-            Command::ReplaceSetupsAndToolpaths(args) => {
-                let ReplaceSetupsAndToolpathsArgs {
-                    setups,
-                    toolpath_configs,
-                } = args;
-                Ok(self.replace_setups_and_toolpaths(setups, toolpath_configs))
-            }
-            Command::SetProjectName(args) => {
-                let SetProjectNameArgs { name } = args;
-                // The setter reports nothing, so the arm runs it inside
-                // the one `Effects` construction site. A name moves no
-                // generation input, so `stale` reads empty.
-                Ok(self.with_effects(None, move |session| {
-                    session.set_name(name);
-                }))
-            }
             Command::SetToolpathOperation(args) => {
                 self.set_toolpath_operation(args.index, *args.operation)
             }
