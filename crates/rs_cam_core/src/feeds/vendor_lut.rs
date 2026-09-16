@@ -518,7 +518,12 @@ pub fn validate_observation(obs: &VendorObservation) -> Result<(), String> {
 /// Rule 6 — conflict detector across a row set: two same-vendor rows
 /// for the identical query tuple whose full chipload ranges do not
 /// overlap describe contradictory physics; one of them is wrong.
-pub fn detect_conflicting_rows(observations: &[VendorObservation]) -> Vec<String> {
+///
+/// Rule 6 needs the whole set, so `validate_observation` cannot run it
+/// per row. The LUT-conflict test below is the one caller, which is why
+/// this detector is private and `#[cfg(test)]`.
+#[cfg(test)]
+fn detect_conflicting_rows(observations: &[VendorObservation]) -> Vec<String> {
     use std::collections::HashMap;
     let mut by_key: HashMap<String, Vec<&VendorObservation>> = HashMap::new();
     for obs in observations {
