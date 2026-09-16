@@ -890,8 +890,9 @@ pub enum ApplyScope {
 /// are copied into the real operation. This keeps a speed-only or geometry-only
 /// apply byte-identical to the combined apply for the fields it does write,
 /// while leaving the others (and their provenance) untouched.
-// The canonical suggest funnel legitimately needs op + provenance + result +
-// tool/machine/material + pass_role + context + subset together.
+// SAFETY: the canonical suggest funnel needs the operation, the provenance
+// out-param, the result, tool/machine/material, pass_role, context, the apply
+// subset and the speeds-explored flag together.
 #[allow(clippy::too_many_arguments)]
 fn apply_feeds_subset(
     operation: &mut OperationConfig,
@@ -1041,9 +1042,9 @@ fn apply_feeds_subset(
 /// Callers that don't have the context cheaply available should pass
 /// [`SuggestContext::default()`]; the back-off short-circuits to a no-op
 /// when `model_bbox` is `None`.
-// W2.1 added the `provenance` out-param (per-field stamping); the funnel
-// legitimately needs op + provenance + result + tool/machine/material +
-// pass_role + context together.
+// SAFETY: W2.1 added the `provenance` out-param for per-field stamping, so the
+// funnel needs the operation, the provenance, the result, tool/machine/material,
+// pass_role and context together.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_feeds_result_to_op(
     operation: &mut OperationConfig,
@@ -1072,6 +1073,9 @@ pub fn apply_feeds_result_to_op(
 /// Apply only the recommended *speeds* (feed / plunge / RPM), leaving the cut
 /// geometry (stepover / DOC) and its provenance untouched. The "Apply
 /// recommended speeds" action — speed-only by construction (W3.1).
+// SAFETY: this door forwards the whole funnel argument list — operation,
+// provenance, result, tool/machine/material, pass_role and context — to
+// `apply_feeds_subset`, so it cannot carry fewer arguments.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_speeds_to_op(
     operation: &mut OperationConfig,
@@ -1100,6 +1104,9 @@ pub fn apply_speeds_to_op(
 /// Apply only the recommended *cut geometry* (stepover / DOC), leaving the
 /// speeds and their provenance untouched. The attributed "Apply cut" action
 /// (W3.1) — kept distinct because changing DOC/WOC changes the cut.
+// SAFETY: this door forwards the whole funnel argument list — operation,
+// provenance, result, tool/machine/material, pass_role and context — to
+// `apply_feeds_subset`, so it cannot carry fewer arguments.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_cut_geometry_to_op(
     operation: &mut OperationConfig,
@@ -1216,6 +1223,8 @@ impl FieldApplyPreviews {
 /// stamp off the scratch. There is still no `ApplyScope::Field` arm (Checkpoint
 /// I-1): the whole operating point is resolved, and a single field is copied
 /// out of it — which is exactly what a per-field pill must offer.
+// SAFETY: the dry run resolves the same operating point as the funnel, so it
+// needs the operation, the result, tool/machine/material, pass_role and context.
 #[allow(clippy::too_many_arguments)]
 pub fn preview_field_applies(
     operation: &OperationConfig,
@@ -1260,6 +1269,8 @@ pub fn preview_field_applies(
 }
 
 /// One field of [`preview_field_applies`].
+// SAFETY: one field of the dry run, so it carries the whole
+// `preview_field_applies` argument list plus the field selector.
 #[allow(clippy::too_many_arguments)]
 pub fn preview_field_apply(
     operation: &OperationConfig,
