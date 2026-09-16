@@ -620,6 +620,9 @@ impl ProjectSession {
     /// One pipeline: this goes through the same [`Self::resolve_tier_plan`]
     /// the core generation path and the preview use, so the GUI worker, the
     /// CLI and the operator's veto all describe the same islands.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     pub fn planned_tier_boundary_polys(
         &self,
         toolpath_id: ToolpathId,

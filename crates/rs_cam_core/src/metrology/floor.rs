@@ -189,6 +189,9 @@ pub fn region_floor(
 /// flat-law reference floor `area / s_flat` the whole-board ledger states.
 /// The flat law carries no per-triangle curvature; state it as a
 /// reference, never as an exact floor.
+///
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+/// only callers. No production path reads it.
 #[must_use]
 pub fn mesh_area_mm2(mesh: &TriangleMesh) -> f64 {
     mesh.faces

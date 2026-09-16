@@ -599,6 +599,9 @@ impl SimPrefixCache {
     }
 
     /// True while a snapshot is held.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     #[must_use]
     pub fn is_populated(&self) -> bool {
         self.snapshot.is_some()

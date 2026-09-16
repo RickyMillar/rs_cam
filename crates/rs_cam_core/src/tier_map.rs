@@ -489,6 +489,9 @@ pub struct TierMap {
 
 impl TierMap {
     /// Label at `(row, col)`, or `None` off the grid.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     #[must_use]
     pub fn label_at(&self, row: usize, col: usize) -> Option<u8> {
         if row >= self.ny || col >= self.nx {

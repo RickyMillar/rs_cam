@@ -160,6 +160,9 @@ impl Polygon2 {
     ///
     /// The general-purpose constructor for the handful of call sites that
     /// used to build `Polygon2` by struct literal.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     pub fn with_holes_closed(exterior: Vec<P2>, holes: Vec<Vec<P2>>, closed: bool) -> Self {
         Self {
             exterior,

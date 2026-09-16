@@ -281,6 +281,9 @@ pub fn classification_probe() -> BallEndmill {
 ///
 /// `d = CLASSIFICATION_PROBE_DIAMETER_MM` reproduces
 /// [`ClassificationSampler::DropCutterProbe`] exactly.
+///
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+/// only callers. No production path reads it.
 pub fn sample_with_probe_diameter(
     mesh: &TriangleMesh,
     index: &SpatialIndex,

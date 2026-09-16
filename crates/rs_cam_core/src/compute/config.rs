@@ -803,6 +803,9 @@ pub struct RetractTripCount {
 impl RetractTripCount {
     /// `true` when the in-node / between-node split is present and can be
     /// trusted (spans were supplied and valid at compute time).
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     #[must_use]
     pub const fn has_split(&self) -> bool {
         self.in_node.is_some() && self.between_nodes.is_some()
@@ -1313,6 +1316,9 @@ impl ToolpathStats {
     /// [`Self::tip_float`] with its measurement contract attached, or `None`
     /// when nothing measured it. Same rule as [`Self::truncated_core`]:
     /// the value and its provenance travel together or not at all.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     #[must_use]
     pub fn tip_float_measured(
         &self,
@@ -1324,6 +1330,9 @@ impl ToolpathStats {
     /// `None` when nothing measured it. Same rule as
     /// [`Self::truncated_core`]: the value and its provenance travel
     /// together or not at all.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     #[must_use]
     pub fn retract_trip_measurement(
         &self,

@@ -249,6 +249,9 @@ impl PlannedRegion {
     /// bare `f64`; this is the call new code should reach for, because
     /// [`crate::measurement::ProjectedXyAreaMm2`] cannot be divided by a
     /// [`crate::measurement::SurfaceAreaMm2`].
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     #[must_use]
     pub fn projected_xy_area_mm2(&self) -> crate::measurement::ProjectedXyAreaMm2 {
         crate::measurement::ProjectedXyAreaMm2::new(self.polygon.area())

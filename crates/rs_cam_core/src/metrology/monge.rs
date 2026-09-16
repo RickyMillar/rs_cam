@@ -555,6 +555,9 @@ pub fn median(mut values: Vec<f64>) -> f64 {
 /// Tessellate `z = f(x, y)` over `[x0, x1] x [y0, y1]` at `step`, two
 /// triangles per cell. Deterministic. Vertices lie EXACTLY on the analytic
 /// surface, so a vertex fit measures the surface, not the tessellation.
+///
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+/// only callers. No production path reads it.
 pub fn tessellate_heightfield(
     x: (f64, f64),
     y: (f64, f64),

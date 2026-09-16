@@ -697,6 +697,8 @@ impl ScallopStepoverPolicy {
         )
     }
 
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     #[must_use]
     pub const fn is_shipped(self) -> bool {
         matches!(self.reducer, RingReducer::Min)
@@ -1802,6 +1804,9 @@ impl ScallopReport {
 
     /// [`Self::uncut_core_mm2`] tagged with its domain — XY-projected, never
     /// a 3D surface area and never a share of one.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     #[must_use]
     pub const fn uncut_core(&self) -> crate::measurement::ProjectedXyAreaMm2 {
         crate::measurement::ProjectedXyAreaMm2::new(self.uncut_core_mm2)

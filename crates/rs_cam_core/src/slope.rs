@@ -70,6 +70,9 @@ impl GridZ {
     }
 
     /// Whether this reading is backed by mesh under the cell.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
     #[must_use]
     #[inline]
     pub fn is_covered(self) -> bool {

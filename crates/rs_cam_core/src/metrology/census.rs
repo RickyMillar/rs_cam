@@ -95,6 +95,9 @@ pub const PRIZE_CLOSE_BELOW: f64 = 1.05;
 /// The anisotropy prize bar, upper edge: above this the measured prize is
 /// LARGER than the literature's own 1.9–7.2 % band (Kumazawa) and needs
 /// explaining before it is believed.
+///
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+/// only callers. No production path reads it.
 pub const PRIZE_ABOVE_LITERATURE: f64 = 1.25;
 
 /// Wanaka region 1's measured prize ceiling at `R = 1.0`, percent —

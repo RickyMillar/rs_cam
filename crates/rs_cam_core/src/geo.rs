@@ -8,6 +8,9 @@ pub type P2 = Point2<f64>;
 /// 3D point alias
 pub type P3 = Point3<f64>;
 /// 2D vector alias
+///
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+/// only callers. No production path reads it.
 pub type V2 = Vector2<f64>;
 /// 3D vector alias
 pub type V3 = Vector3<f64>;

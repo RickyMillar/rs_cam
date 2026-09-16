@@ -127,6 +127,9 @@ impl PartialOrd for HeapItem {
 /// SAFETY: indices come from `0..n` (`n == field.len()`) or from [`neighbour`],
 /// which returns only in-range cells; every `out`/`closed`/`field.*` access is
 /// bounded.
+///
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+/// only callers. No production path reads it.
 #[allow(clippy::indexing_slicing)]
 #[must_use]
 pub fn priority_flood_epsilon(field: &FlowField) -> Vec<f64> {
@@ -192,6 +195,9 @@ pub fn priority_flood_epsilon(field: &FlowField) -> Vec<f64> {
 /// SAFETY: `cells`, `d_low`, `d_high` are indexed by positions produced from
 /// the flat's own membership BFS; `out`/`filled`/`member` are indexed by cell
 /// ids in `0..n`; `neighbour` returns only in-range cells.
+///
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+/// only callers. No production path reads it.
 #[allow(clippy::indexing_slicing)]
 #[must_use]
 pub fn resolve_flats(field: &FlowField, filled: &[f64]) -> (Vec<f64>, usize, usize, usize) {
@@ -371,6 +377,9 @@ pub fn d8_receivers(field: &FlowField, filled: &[f64]) -> Vec<Option<u32>> {
 ///
 /// SAFETY: `order` holds only data-cell ids in `0..n`; `acc`/`receivers` are
 /// `len == n`; each receiver id came from [`d8_receivers`] and is in range.
+///
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+/// only callers. No production path reads it.
 #[allow(clippy::indexing_slicing)]
 #[must_use]
 pub fn d8_accumulation(field: &FlowField, filled: &[f64], receivers: &[Option<u32>]) -> Vec<f64> {
