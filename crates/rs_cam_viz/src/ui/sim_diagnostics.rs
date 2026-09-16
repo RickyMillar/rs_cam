@@ -1369,28 +1369,11 @@ fn region_chip_label(span: &Span, sid: usize) -> String {
     }
 }
 
-fn span_kind_label(kind: SpanKind) -> &'static str {
-    match kind {
-        SpanKind::Operation => "Operation",
-        SpanKind::DepthPass => "DepthPass",
-        SpanKind::Region => "Region",
-        SpanKind::Entry => "Entry",
-        SpanKind::LeadOut => "LeadOut",
-        SpanKind::LinkBridge => "LinkBridge",
-        SpanKind::DressupArtifact => "DressupArtifact",
-        SpanKind::GeometryRefit => "GeometryRefit",
-        SpanKind::WaterlineCleanup => "WaterlineCleanup",
-        SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
-        // Transport-only carrier (task #14) — never present on a stored
-        // toolpath; labelled rather than hidden so a leak is visible.
-    }
-}
-
 fn span_display_label(span: &Span, sid: usize) -> String {
     match span.kind {
         SpanKind::DepthPass => depth_pass_chip_label(span, sid),
         SpanKind::Region => region_chip_label(span, sid),
-        kind => format!("{} [{sid}]", span_kind_label(kind)),
+        kind => format!("{} [{sid}]", kind.label()),
     }
 }
 
@@ -1552,7 +1535,7 @@ fn draw_span_body(
     ui.label(
         egui::RichText::new(format!(
             "{} · moves {}–{}",
-            span_kind_label(span.kind),
+            span.kind.label(),
             span.start_move,
             span.end_move
         ))

@@ -4847,7 +4847,7 @@ fn build_span_cut_summaries(
             let row = serde_json::json!({
                 "toolpath_id": tc.id,
                 "span_id": span_id,
-                "kind": span_kind_label(span.kind),
+                "kind": span.kind.label(),
                 "label": &*span.label,
                 "payload": span.payload.as_ref().map(|p| format!("{p:?}")),
                 "start_move": span.start_move,
@@ -5148,28 +5148,10 @@ fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::toolpath_spans::SpanKi
     })
 }
 
-fn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {
-    use rs_cam_core::toolpath_spans::SpanKind;
-    match k {
-        SpanKind::Operation => "Operation",
-        SpanKind::DepthPass => "DepthPass",
-        SpanKind::Region => "Region",
-        SpanKind::Entry => "Entry",
-        SpanKind::LeadOut => "LeadOut",
-        SpanKind::LinkBridge => "LinkBridge",
-        SpanKind::DressupArtifact => "DressupArtifact",
-        SpanKind::GeometryRefit => "GeometryRefit",
-        SpanKind::WaterlineCleanup => "WaterlineCleanup",
-        SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
-        // Transport-only carrier (task #14) — stripped before a toolpath
-        // is stored, so this name only ever surfaces if one leaked.
-    }
-}
-
 fn span_to_json(id: usize, s: &rs_cam_core::toolpath_spans::Span) -> serde_json::Value {
     serde_json::json!({
         "id": id,
-        "kind": span_kind_label(s.kind),
+        "kind": s.kind.label(),
         "start_move": s.start_move,
         "end_move": s.end_move,
         "is_boundary": s.is_boundary(),
@@ -5226,7 +5208,7 @@ fn build_inspect_spans_response(
     let mut kind_counts: std::collections::BTreeMap<&'static str, usize> =
         std::collections::BTreeMap::new();
     for s in spans {
-        *kind_counts.entry(span_kind_label(s.kind)).or_insert(0) += 1;
+        *kind_counts.entry(s.kind.label()).or_insert(0) += 1;
     }
 
     let filter_active =

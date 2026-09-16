@@ -220,10 +220,10 @@ pub enum SpanKind {
 impl SpanKind {
     /// Every variant, in declaration order.
     ///
-    /// A new variant MUST be added here as well as to [`Self::as_key`] —
-    /// `as_key`'s match is exhaustive, so the compiler will stop you there
-    /// first, and [`Self::from_key`] is derived from this list so that the
-    /// agent-facing vocabulary cannot drift from the enum.
+    /// A new variant MUST be added here as well as to [`Self::as_key`] and
+    /// [`Self::label`] — both matches are exhaustive, so the compiler will
+    /// stop you there first, and [`Self::from_key`] is derived from this list
+    /// so that the agent-facing vocabulary cannot drift from the enum.
     pub const ALL: [Self; 10] = [
         Self::Operation,
         Self::DepthPass,
@@ -258,6 +258,34 @@ impl SpanKind {
             Self::GeometryRefit => "geometry_refit",
             Self::RapidOrderBarrier => "rapid_order_barrier",
             Self::WaterlineCleanup => "waterline_cleanup",
+        }
+    }
+
+    /// The display name for this kind — what a person reads on a span chip,
+    /// in the Selected section and in an MCP span reply.
+    ///
+    /// This is the CamelCase variant name, not [`Self::as_key`]'s snake_case
+    /// vocabulary. The two tables are separate on purpose: `as_key` is the
+    /// key an agent FILTERS with and must stay stable, and this one is the
+    /// name a reader SEES.
+    ///
+    /// C30: `rs_cam_viz` transcribed this table twice, in
+    /// `ui::sim_diagnostics` and in `app::mcp`. Both matches were exhaustive,
+    /// so a new variant could not go missing, but the same name had two
+    /// homes. The match here is the one home.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Operation => "Operation",
+            Self::DepthPass => "DepthPass",
+            Self::Region => "Region",
+            Self::Entry => "Entry",
+            Self::LeadOut => "LeadOut",
+            Self::LinkBridge => "LinkBridge",
+            Self::DressupArtifact => "DressupArtifact",
+            Self::GeometryRefit => "GeometryRefit",
+            Self::RapidOrderBarrier => "RapidOrderBarrier",
+            Self::WaterlineCleanup => "WaterlineCleanup",
         }
     }
 

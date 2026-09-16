@@ -249,6 +249,19 @@ maintain.
   `cargo test -p rs_cam_viz -q --lib -- ui::properties ui::feeds` (18 passed)
   and viz clippy.
 
+- [x] **C30 — the two viz `span_kind_label` copies delegate to core**
+  (TRUE_DUP). `ui/sim_diagnostics.rs:1372` and `app/mcp.rs:5151` held the
+  same ten-arm CamelCase table. The item named
+  `toolpath_spans.rs:396` as an existing core `SpanKind::label()`; that line
+  is `RegionSpanRole::label`, a different enum, and `SpanKind` carried only
+  `as_key()`, which is the snake_case MCP filter vocabulary. So core gained
+  `SpanKind::label()` with the viz table unchanged, and both viz copies are
+  deleted. No string changed. Observation on record, not acted on: the MCP
+  span reply EMITS the CamelCase label but FILTERS on the snake_case key.
+  Risk: low. Gate: `cargo test -p rs_cam_viz -q --lib -- sim_diagnostics`
+  plus `--test mcp_wire_surface_pin --test command_surface_completeness
+  --test overlays_registry` (46 passed), core lib clippy and viz clippy.
+
 ## Phase 4 — documentation / no-action items
 
 - [ ] **C40 — SIBLING/NO-ACTION records**: I08 pairs B/C/D, I09 P1/P3,
