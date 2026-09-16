@@ -91,7 +91,7 @@ pub mod metrology;
 pub mod monotone_cells;
 pub mod narrate;
 pub(crate) mod nn_order;
-pub(crate) mod panic_message;
+pub mod panic_message;
 pub mod pencil;
 pub mod pencil_dihedral;
 pub mod pocket;

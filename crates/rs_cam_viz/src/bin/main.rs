@@ -137,13 +137,7 @@ fn install_panic_hook() {
             .map(|l| format!("{}:{}", l.file(), l.line()))
             .unwrap_or_else(|| "unknown".into());
 
-        let message = if let Some(s) = info.payload().downcast_ref::<&str>() {
-            (*s).to_owned()
-        } else if let Some(s) = info.payload().downcast_ref::<String>() {
-            s.clone()
-        } else {
-            "unknown panic".to_owned()
-        };
+        let message = rs_cam_core::panic_message::panic_payload_message(info.payload());
 
         tracing::error!("rs_cam crashed due to internal error: {message} (at {location})");
 

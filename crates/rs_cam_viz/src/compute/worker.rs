@@ -1013,7 +1013,7 @@ fn spawn_toolpath_lane(
             }));
 
             if let Err(panic_payload) = caught {
-                let msg = panic_message(&panic_payload);
+                let msg = rs_cam_core::panic_message::panic_payload_message(&*panic_payload);
                 tracing::error!("rs_cam crashed due to internal error (toolpath worker): {msg}");
 
                 // Reset lane state so subsequent jobs can still run.
@@ -1152,7 +1152,7 @@ fn spawn_analysis_lane(
             }));
 
             if let Err(panic_payload) = caught {
-                let msg = panic_message(&panic_payload);
+                let msg = rs_cam_core::panic_message::panic_payload_message(&*panic_payload);
                 tracing::error!("rs_cam crashed due to internal error (analysis worker): {msg}");
 
                 // Reset lane state so subsequent jobs can still run.
@@ -1315,7 +1315,7 @@ fn spawn_job_lane(
             {
                 Ok(answer) => answer,
                 Err(panic_payload) => {
-                    let msg = panic_message(&panic_payload);
+                    let msg = rs_cam_core::panic_message::panic_payload_message(&*panic_payload);
                     tracing::error!("rs_cam crashed due to internal error (job worker): {msg}");
                     Err(ComputeError::Message(format!("the job panicked: {msg}")))
                 }
@@ -1498,7 +1498,7 @@ fn spawn_reach_lane(
             }));
 
             if let Err(panic_payload) = caught {
-                let msg = panic_message(&panic_payload);
+                let msg = rs_cam_core::panic_message::panic_payload_message(&*panic_payload);
                 tracing::error!("rs_cam crashed due to internal error (reach worker): {msg}");
 
                 let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -1514,15 +1514,4 @@ fn spawn_reach_lane(
             }
         }
     })
-}
-
-/// Extract a human-readable message from a panic payload.
-fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_owned()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "unknown panic".to_owned()
-    }
 }

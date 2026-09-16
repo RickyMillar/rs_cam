@@ -1,10 +1,15 @@
 //! Best-effort message extraction from a `std::panic::catch_unwind` payload.
 //!
-//! Three places in this crate contain a panic rather than let it kill a
-//! worker thread — the tool-load candidate evaluator and the two
-//! `cavalier_contours` offset chokepoints — and all three want to say WHICH
-//! panic they contained. `catch_unwind` hands back a `Box<dyn Any + Send>`,
-//! so the message has to be downcast out of it.
+//! Several places contain a panic rather than let it kill a worker thread —
+//! in this crate the tool-load candidate evaluator and the two
+//! `cavalier_contours` offset chokepoints, in `rs_cam_viz` the four compute
+//! lanes and the process panic hook — and all of them want to say WHICH panic
+//! they contained. `catch_unwind` hands back a `Box<dyn Any + Send>`, so the
+//! message has to be downcast out of it.
+//!
+//! This is the ONE reader. `rs_cam_viz` carried a second copy with the
+//! fallback text `"unknown panic"` until 2026-09-17; both surfaces now report
+//! the text below.
 //!
 //! # What this cannot recover, and why the caller must not pretend otherwise
 //!
@@ -20,7 +25,7 @@
 ///
 /// `panic!("...")` yields `&str`; `panic!("{x}")`-style formatting yields
 /// `String`; anything else gets a placeholder rather than a lie.
-pub(crate) fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+pub fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         (*s).to_owned()
     } else if let Some(s) = payload.downcast_ref::<String>() {

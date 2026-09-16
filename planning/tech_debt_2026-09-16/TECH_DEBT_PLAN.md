@@ -37,7 +37,7 @@ and are NOT touched by this programme's fix waves.
 | 16 | D11 | D | M | viz mirrors core's two simulation structs by hand (the class that dropped 11 fields in C04); inherits G-MCPSIMMIRROR / WP28 | W3 |
 | 17 | D13 | D | M | each finding's operator sentence is written twice (`from_generation.rs` vs `narrate.rs`) and the copies already differ | W3 |
 | 18 | D12 | D | M | two "mesh surface Z at (x, y)" readers with different containment tests (`monge.rs` vs `reach_map.rs`) | W3 |
-| 19 | D4, D5, D6, D7, D8, D9 | D | S each | CLI string coercers; panic-payload readers; library `list_in`/`rename_in`; four `polyline_length`s; four cache counter scaffolds; two dashed-line emitters | W3 |
+| 19 | D4, D5, D6, D7, D8, D9 | D | S each | CLI string coercers; panic-payload readers; library `list_in`/`rename_in`; four `polyline_length`s; four cache counter scaffolds; two dashed-line emitters | W3 D5 ✅ |
 | 20 | Q5 | D | M | the `never_cancel` + `expect("… never cancelled")` idiom copied 26 times, each with its own allow | W3 |
 | 21 | Q6 | D | S | a test re-implements the flat-shelf histogram verbatim, so it cannot catch drift | W3 |
 | 22 | S29 | E | L | 199 `pub` items with own-file-only callers → compiler-checked demotion, one crate per cycle (30-row sample: 0 false positives) | W4 |
@@ -126,6 +126,15 @@ carries the change, so this table is filled by the closing docs commit.
 | S24 | `8d2e6bd5` | **FINDING CONTRADICTED.** The finding says the `tool.tool_type` reads at 2203-2296 are on `ToolConfig`. They are not: `tool` binds from `ctx.tools.iter().find(...)`, which is `&ValidationTool`. `tool_type` has six reads and `diameter` four, so both fields are LIVE and both allows were inert. Only `cutting_length` is dead. Fix: delete `cutting_length` and its write site, and delete the three inert `#[allow(dead_code)]` lines |
 | S26 + S28 | `293165f1` | 17 inert `#[allow(dead_code)]` attributes deleted: 16 in `rs_cam_mcp/src/server.rs` and one on `SetupSimToolpath.metrics_not_applicable`. No wire type changed and `tests/snapshots/mcp_wire_surface.json` is untouched |
 | S25 (viz rows) | HELD | No change. The three rows are not test-only leaks: `INK_00` (`ui_premium_2026-09-13/DESIGN_SPEC.md:138`), `LANE_SCALE` (`DESIGN_SPEC.md:310`, `STATUS.md:169`) and `draw_trace_badge` (`PLAN.md:417`) are each named by the active ui-premium plan, so a "test door" doc line would state the wrong reason. Same class as the S1 hold. `generate_all_without_peer` is already a declared fixture |
+
+## Wave 3 — landed (tier D, drift-prone duplication)
+
+One commit per id. A commit cannot carry its own hash, so this table is filled
+by the closing docs commit, exactly as the Wave 2b table was.
+
+| id | commit | note |
+|---|---|---|
+| D5 | — | `rs_cam_core::panic_message` becomes `pub`; the viz worker copy and the viz panic hook both delegate. The finding names two readers; a third stood in `rs_cam_viz/src/bin/main.rs:140`. Core's fallback text `"non-string panic payload"` wins over viz's `"unknown panic"`, per the finding; no test pins either string |
 
 ## Progress
 
