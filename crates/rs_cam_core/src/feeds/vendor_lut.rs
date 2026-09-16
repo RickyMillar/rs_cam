@@ -635,7 +635,8 @@ mod tests {
     /// structured axial-DOC bound — either `ap_min_factor` / `ap_max_factor`
     /// (proportional rule) or `ap_min_mm` / `ap_max_mm` (absolute cap) —
     /// EXCEPT for the documented label-only rules that the source doesn't
-    /// quantify. The migration binary (`migrate_ap_rule` example) keeps
+    /// quantify. The migration example
+    /// `crates/rs_cam_cli/examples/migrate_ap_rule.rs` keeps
     /// these in sync; this test fires when a new ingest adds an `ap_rule`
     /// the binary's mapping doesn't recognise.
     const LABEL_ONLY_AP_RULES: &[&str] = &[
@@ -667,7 +668,8 @@ mod tests {
                 LABEL_ONLY_AP_RULES.contains(&rule.as_str()),
                 "{}: ap_rule {rule:?} has no structured ap bound (factor or \
                  absolute mm) and is not in the documented label-only set — \
-                 add an entry to `examples/migrate_ap_rule.rs` and re-run \
+                 add an entry to \
+                 `crates/rs_cam_cli/examples/migrate_ap_rule.rs` and re-run \
                  the migration, or extend `LABEL_ONLY_AP_RULES` if the rule \
                  is truly label-only",
                 obs.observation_id
