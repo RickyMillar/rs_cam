@@ -274,6 +274,9 @@ struct CuttingFeedWords {
     all: std::collections::BTreeMap<String, usize>,
     /// The F words a cutting move's feed produces.
     kept: Vec<f64>,
+    /// The same population as `kept`, rendered the way `all` is rendered
+    /// so one failure line does not carry two spellings of one feed.
+    kept_histogram: std::collections::BTreeMap<String, usize>,
     /// Feed words that a cutting move and a non-cutting move both carry.
     /// The filter keeps such a word, so it records the overlap.
     shared: Vec<String>,
@@ -294,18 +297,13 @@ impl CuttingFeedWords {
 
     /// One line for a failure message: the two histograms and the overlap.
     fn report(&self) -> String {
-        let mut kept_hist: std::collections::BTreeMap<String, usize> =
-            std::collections::BTreeMap::new();
-        for feed in &self.kept {
-            *kept_hist.entry(format!("{feed:.1}")).or_default() += 1;
-        }
         format!(
             "all F words n={} {:?}; cutting F words n={} {:?}; feeds both populations \
              carry {:?}",
             self.all.values().sum::<usize>(),
             self.all,
             self.kept.len(),
-            kept_hist,
+            self.kept_histogram,
             self.shared
         )
     }
@@ -382,12 +380,14 @@ fn cutting_feed_words(session: &ProjectSession) -> CuttingFeedWords {
     assert!(!feeds.is_empty(), "expected F-words in emitted G-code");
     let mut all: BTreeMap<String, usize> = BTreeMap::new();
     let mut kept = Vec::new();
+    let mut kept_histogram: BTreeMap<String, usize> = BTreeMap::new();
     let mut unattributed: BTreeMap<String, usize> = BTreeMap::new();
     for feed in &feeds {
         let key = word(*feed);
         *all.entry(key.clone()).or_default() += 1;
         if cutting.contains(&key) {
             kept.push(*feed);
+            *kept_histogram.entry(key).or_default() += 1;
         } else if !linking.contains(&key) {
             *unattributed.entry(key).or_default() += 1;
         }
@@ -402,7 +402,12 @@ fn cutting_feed_words(session: &ProjectSession) -> CuttingFeedWords {
     );
 
     let shared = cutting.intersection(&linking).cloned().collect();
-    CuttingFeedWords { all, kept, shared }
+    CuttingFeedWords {
+        all,
+        kept,
+        kept_histogram,
+        shared,
+    }
 }
 
 // ============== AB1: load-bearing flag-OFF byte-identical ===========
@@ -561,9 +566,15 @@ fn modulation_runs_and_stays_fresh_without_kinematics() {
 /// The measurement on that population, flag ON: 228 F words, of which 180 are
 /// cutting words `{770: 56, 773: 10, 781: 6, 795: 9, 1152: 15, 1472: 3,
 /// 1980: 81}`. The median is 1152, the modulator's own floor clamp
-/// (`band.min × rpm × flutes`), so the chipload lands on the band floor,
-/// 0.0320. The margin is 10 words: the arm reads red again if the 1152 and
-/// higher buckets lose about 10 F words between them.
+/// (`band.min × rpm × flutes`), so the chipload lands ON the band floor,
+/// 0.0320. That equality is exact in `f64`: `band_min × 36000 == 1152.0` and
+/// `1152.0 / 36000.0 == band_min`.
+///
+/// The margin is about 19 F words. The below-band buckets (770 to 795) hold
+/// the sorted indices 0 to 80 and the median index is 90, so the median falls
+/// back into them only after about 19 words move from the 1152-and-higher
+/// buckets to the lower ones. The median index moves at half the rate of a
+/// population change, which is where the 19 comes from.
 #[test]
 fn modulation_raises_cutting_chipload_toward_band() {
     use rs_cam_core::tool_load::ChiploadVerdict;
