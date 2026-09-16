@@ -343,7 +343,7 @@ impl ToolpathLoadVerdict {
     /// Used by `all_not_applicable` to decide the "drill cycle, milling
     /// gates don't apply" partition without the drill criteria muddying
     /// the test.
-    pub fn milling_criteria(&self) -> Vec<CriterionStatus<'_>> {
+    pub(crate) fn milling_criteria(&self) -> Vec<CriterionStatus<'_>> {
         vec![
             self.chipload.as_criterion_status(),
             self.power.as_criterion_status(),
@@ -692,6 +692,8 @@ impl GatePopulation {
     }
 
     /// How many offered units the gate's own predicates removed.
+    ///
+    /// Test door: `crates/rs_cam_core/tests/gate_population_vacuity_xvac.rs`.
     pub fn filtered_out(self) -> usize {
         self.offered.saturating_sub(self.contributing)
     }
