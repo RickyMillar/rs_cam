@@ -133,6 +133,18 @@ maintain.
   import to core's type (review gap). Move the legacy round-trip tests
   (`io/project.rs:1824-1911`) to the new converter before deleting.
   Risk: med. Gate: `cargo test -p rs_cam_viz -q`.
+  **Resolution 2026-09-16 (54cf7a14).** The legacy round-trip tests were
+  not moved. There is no converter to move them to: C01 and C12 deleted
+  the legacy format, so the tests had no subject. Arm (c) of
+  `boundary_controls_always_visible_g_boundaryinherit` lost half its
+  claim. The viz section marked `boundary_inherit` `skip_serializing`
+  and the arm asserted the dead key was never written back; core writes
+  the key, because the `o1b` multitool sentry asserts
+  `!boundary_inherit` survives a save and a load and the serde default
+  is `true`. The arm still pins that the key LOADS with every boundary
+  field unchanged, and arm (a) still pins that no UI file reads it.
+  The deletion of `io/project.rs` landed inside peer commit `6ae2d368`,
+  which committed a staged `git rm`.
 - [x] **C12 — delete the legacy format support outright** (I01 step 5;
   **DECIDED 2026-09-16: no `project_legacy` converter needed**). Delete
   viz `LegacyProjectFile`, `load_legacy_project`, `load_legacy_model`,
@@ -150,6 +162,31 @@ maintain.
   keeping `winding_report` and the four documented divergences as one
   behavior. Risk: med-high (G-UNITSRELOAD/G-STEPUNITS territory). Gate:
   `cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q`.
+  **Judgement call resolved, not stopped, 2026-09-16 (e125c08b).** The
+  item said to stop on a divergence that needs a judgement call. One did:
+  the STEP `units` field. `io::load_model_file` recorded
+  `Some(ModelUnits::Millimeters)` after it had scaled the geometry;
+  `load_model_geometry` kept the declared units. The two cannot both
+  stand. The declared units win, for three reasons:
+
+  - A project stores the model's PATH and its declared units, not its
+    geometry. Every load re-imports the source and re-applies the scale.
+    Recording `Millimeters` after an inch import made the next load
+    scale by 1.0, so the model came back 25.4 times too small. That is
+    the G-STEPUNITS defect, at the other door.
+  - R0.7's ruling says the declared units describe the operator's
+    source, not the bytes on disk.
+  - No test pinned `Millimeters`. `step_project_load` asserted geometry
+    agreement only. It now also asserts the import door keeps the
+    declared units.
+
+  Two further divergences were resolved the same way: `winding_report`
+  is set for every mesh at both doors, and `load_model_file` returns
+  `SessionError::ModelLoad` instead of `Io`, so the message names the
+  model. **The orchestrator should ratify the STEP-units resolution.**
+  The gate was the named sentries, not the heavy gate (operator ruling
+  2026-09-11). `step_project_load` is `#![cfg(feature = "step")]` and
+  needs `--features step`, or it runs zero tests.
 
 ## Phase 3 — mechanical merges (low risk, parallelizable after Phase 1-2)
 
