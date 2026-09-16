@@ -122,6 +122,7 @@ carries the change, so this table is filled by the closing docs commit.
 | S4 | — | eight dead `SimulationState` read doors, 170 lines; the `SimulationSemanticCutSummary` import goes with them and `ToolpathDebugBounds2` moves into the test module |
 | S18 | — | five dead view-state items, 62 lines; the `ToolpathConfig` and `SimulationState` imports and the "Combined view for UI code" header go with them. `transform_heightmap_mesh` is NOT held: `CLEANUP_PLAN.md` C12 planned to rework it, C12 is `[x]` done (`51394156`), and it landed with no caller |
 | S19 (viz rows) | — | `json_f64` deleted, 7 lines. `row_hover_tint` is HELD: it implements `ui_premium_2026-09-13/DESIGN_SPEC.md:580` §4.7 "Hover tints the whole row one ramp step", and its own doc cites §4.7. Same class as the S1 hold; the ui-premium account owns the call |
+| S20 | — | five dead colours deleted, 15 lines with their doc lines and the emptied "Mesh face palette" header. `COLLISION_POINT` stays: it is the held S1 row (`ui_premium_2026-09-13/PLAN.md:601`, `AUDIT.md:561`) |
 
 ## Progress
 

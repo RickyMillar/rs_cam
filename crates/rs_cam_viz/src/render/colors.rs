@@ -23,9 +23,6 @@ pub fn palette_color(index: usize) -> [f32; 3] {
     TOOLPATH_PALETTE[index % TOOLPATH_PALETTE.len()]
 }
 
-/// Entry/exit preview color (bright cyan).
-pub const ENTRY_PREVIEW: [f32; 3] = [0.2, 0.9, 0.9];
-
 // ── Tool assembly ───────────────────────────────────────────────────────
 
 pub const TOOL_CUTTER: [f32; 3] = [0.8, 0.8, 0.3];
@@ -33,12 +30,6 @@ pub const TOOL_SHANK: [f32; 3] = [0.6, 0.6, 0.5];
 pub const TOOL_HOLDER: [f32; 3] = [0.4, 0.4, 0.35];
 
 // ── Stock & simulation ──────────────────────────────────────────────────
-
-/// Default wood/stock color.
-pub const STOCK_DEFAULT: [f32; 3] = [0.65, 0.45, 0.25];
-
-/// Deviation colormap: on-target (green).
-pub const DEVIATION_ON_TARGET: [f32; 3] = [0.1, 0.75, 0.1];
 
 /// Stock wireframe outline.
 pub const STOCK_OUTLINE: [f32; 3] = [0.4, 0.6, 0.8];
@@ -73,8 +64,3 @@ pub const HEIGHT_RETRACT: [f32; 3] = [0.3, 0.8, 0.8];
 pub const HEIGHT_FEED: [f32; 3] = [0.3, 0.8, 0.3];
 pub const HEIGHT_TOP: [f32; 3] = [0.9, 0.8, 0.2];
 pub const HEIGHT_BOTTOM: [f32; 3] = [0.9, 0.3, 0.2];
-
-// ── Mesh face palette (STEP model face colors) ─────────────────────────
-
-pub const MESH_HIGHLIGHT: [f32; 3] = [0.3, 0.5, 1.0];
-pub const MESH_HOVER: [f32; 3] = [0.4, 0.7, 0.85];
