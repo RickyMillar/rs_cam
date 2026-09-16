@@ -12,7 +12,6 @@ pub mod cutter;
 pub mod execute;
 pub mod generated_empty;
 pub mod operation_configs;
-pub mod semantic_helpers;
 pub mod sim_prefix;
 pub mod simulate;
 pub mod spans;
@@ -63,9 +62,6 @@ pub use cutter::build_cutter;
 pub use execute::{GeneratedToolpath, OperationError};
 pub use generated_empty::{
     EmptyGenerationInputs, EmptyGenerationVerdict, GeneratedEmptyRefusal, LegitimateEmptyReason,
-};
-pub use semantic_helpers::{
-    CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
 };
 pub use spans::{operation_spans, spans_from_adaptive3d_annotations};
 pub use stats::{

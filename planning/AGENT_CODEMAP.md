@@ -47,7 +47,6 @@ Graph caveat: Rust `mod`/crate dependency extraction is sparse in the current gr
 | `crates/rs_cam_core/src/compute/execute.rs` | Central operation dispatch. SocratiCode symbols: `execute_operation`, `execute_operation_annotated`, `apply_dressups`, validation helpers. |
 | `crates/rs_cam_core/src/compute/spans.rs` | Generic span derivation helpers for depth runs, cut runs, drill holes, labeled runtime events. |
 | `crates/rs_cam_core/src/compute/annotate.rs` | Semantic annotation helpers for trace/drill/depth regions. |
-| `crates/rs_cam_core/src/compute/semantic_helpers.rs` | Helpers for semantic trace construction. |
 | `crates/rs_cam_core/src/dressup.rs` | Entry/link/lead/dogbone/arcfit/feed optimization dressups. |
 | `crates/rs_cam_core/src/depth.rs` | Depth stepping helpers. |
 | `crates/rs_cam_core/src/boundary.rs` / `polygon.rs` | Boundary and polygon utilities. |
