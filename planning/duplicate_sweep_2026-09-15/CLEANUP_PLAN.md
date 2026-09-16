@@ -84,7 +84,7 @@ two disagree.
   user-facing decision — confirm which value is intended before landing.
   Risk: med (changes restored geometry for existing projects). Gate:
   legacy round-trip tests.
-- [ ] **C03 — setup-pin migration into core** (I01 step 2, silent data loss).
+- [x] **C03 — setup-pin migration into core** (I01 step 2, silent data loss).
   Add `alignment_pins: Vec<ProjectPinSection>` (serde default +
   skip_serializing_if) to core `ProjectSetupSection` (`project_file.rs:288`),
   porting the ≤v2 pins→stock migration from viz `io/project.rs:745-764`.

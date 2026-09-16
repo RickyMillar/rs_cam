@@ -15,6 +15,10 @@
 //!
 //! A file that is not an rs_cam project returns `Err`, and the project the
 //! controller already held is not replaced by an empty one.
+//!
+//! A project whose `format_version` is not 3 also returns `Err` (C03). rs_cam
+//! writes `format_version = 3` and reads that one shape; a pre-v3 file fails
+//! to open, which is the decided behaviour, not a regression.
 
 #![allow(
     clippy::unwrap_used,
@@ -77,6 +81,30 @@ version = "0.1.0"
 serde = "1"
 "#;
 
+/// A pre-v3 project, complete enough that every section parses. The pins sit
+/// on the setup, which is where format 2 kept them.
+const PRE_V3_PROJECT: &str = r#"
+format_version = 2
+
+[job]
+name = "A Format 2 Project"
+
+[[tools]]
+id = 1
+name = "End Mill"
+tool_type = "end_mill"
+diameter = 6.0
+
+[[setups]]
+id = 0
+name = "Setup 1"
+
+[[setups.alignment_pins]]
+x = 10.0
+y = 10.0
+diameter = 6.0
+"#;
+
 #[test]
 fn a_file_that_is_not_a_project_is_refused() {
     let path = write_temp("not_a_project", NOT_A_PROJECT);
@@ -93,6 +121,25 @@ fn a_file_that_is_not_a_project_is_refused() {
         controller.state().session.name(),
         before,
         "a refused open must leave the project that was already there"
+    );
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn a_pre_v3_project_is_refused() {
+    let path = write_temp("format_2", PRE_V3_PROJECT);
+    let mut controller = AppController::with_backend(IdleBackend);
+
+    let result = controller.open_job_from_path(&path);
+
+    assert!(
+        result.is_err(),
+        "a project whose format_version is not 3 must refuse to open, got {result:?}"
+    );
+    assert_ne!(
+        controller.state().session.name(),
+        "A Format 2 Project",
+        "a refused open must not adopt the refused file's contents"
     );
     std::fs::remove_file(&path).ok();
 }

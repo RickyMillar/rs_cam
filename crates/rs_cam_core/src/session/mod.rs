@@ -60,7 +60,7 @@ pub use multitool::{
 pub use project_file::{
     ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
     ProjectModelSection, ProjectPostConfig, ProjectSetupSection, ProjectStockConfig,
-    ProjectToolSection, ProjectToolpathSection,
+    ProjectToolSection, ProjectToolpathSection, SUPPORTED_FORMAT_VERSION,
 };
 
 use crate::ids::ToolpathId;
@@ -129,6 +129,16 @@ pub enum SessionError {
     InvalidParam(String),
     /// Parsed TOML doesn't look like an rs_cam project.
     NotACamProject(String),
+    /// The project file declares a format this build does not read.
+    ///
+    /// rs_cam writes `format_version = 3`. It reads that one shape. No
+    /// converter exists for an older shape, and none is planned. A second
+    /// reader is how the two loaders in I01 drifted apart. An older file
+    /// therefore fails to open, and the message names its version.
+    ///
+    /// A file with no `format_version` key reads as version 1. The loader
+    /// refuses that file too.
+    UnsupportedFormatVersion { found: u32 },
     /// The setup asks for something this build does not support, and the
     /// honest answer is a refusal rather than a plausible-looking result.
     ///
@@ -212,6 +222,10 @@ impl std::fmt::Display for SessionError {
             Self::Export(msg) => write!(f, "Export error: {msg}"),
             Self::InvalidParam(msg) => write!(f, "Invalid parameter: {msg}"),
             Self::NotACamProject(detail) => write!(f, "Not an rs_cam project: {detail}"),
+            Self::UnsupportedFormatVersion { found } => write!(
+                f,
+                "Project format version {found} is not supported. rs_cam reads format_version 3."
+            ),
             Self::UnsupportedSetup(msg) => write!(f, "Unsupported setup: {msg}"),
             // No prefix: the message is already a full operator-facing
             // sentence naming the toolpath and the operation, and a
@@ -2383,6 +2397,49 @@ mod tests {
             }
             Err(other) => panic!("expected NotACamProject, got {other:?}"),
             Ok(_) => panic!("loader should reject empty TOML"),
+        }
+    }
+
+    /// The loader reads one project format (C03).
+    ///
+    /// rs_cam writes `format_version = 3`. An older file is refused
+    /// rather than read through a second, drifting reader — the ruling
+    /// the I01 sweep produced. A file with no `format_version` key reads
+    /// as version 1 and is refused the same way.
+    #[test]
+    fn rejects_a_project_whose_format_version_is_not_three() {
+        // Format 2 kept the alignment pins on the setup. Core stores them
+        // on the stock, ignores the setup key, and used to load such a
+        // file with the pins silently dropped.
+        let toml_str = concat!(
+            "format_version = 2\n",
+            "[job]\n",
+            "name = \"A Format 2 Project\"\n",
+            "[[setups]]\n",
+            "id = 0\n",
+            "name = \"Setup 1\"\n",
+            "[[setups.alignment_pins]]\n",
+            "x = 10.0\n",
+            "y = 10.0\n",
+            "diameter = 6.0\n",
+        );
+        let project: ProjectFile = toml::from_str(toml_str).unwrap();
+        match ProjectSession::from_project_file(project, Path::new(".")) {
+            Err(SessionError::UnsupportedFormatVersion { found }) => assert_eq!(found, 2),
+            Err(other) => panic!("expected UnsupportedFormatVersion, got {other:?}"),
+            Ok(_) => panic!("the loader must refuse a format 2 project"),
+        }
+    }
+
+    /// A missing key is a pre-key file, so it is refused as version 1.
+    #[test]
+    fn rejects_a_project_with_no_format_version_key() {
+        let toml_str = concat!("[job]\n", "name = \"No Version Key\"\n");
+        let project: ProjectFile = toml::from_str(toml_str).unwrap();
+        match ProjectSession::from_project_file(project, Path::new(".")) {
+            Err(SessionError::UnsupportedFormatVersion { found }) => assert_eq!(found, 1),
+            Err(other) => panic!("expected UnsupportedFormatVersion, got {other:?}"),
+            Ok(_) => panic!("the loader must refuse a project with no format_version"),
         }
     }
 

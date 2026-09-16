@@ -39,8 +39,28 @@ pub struct ProjectFile {
     pub toolpaths: Vec<ProjectToolpathSection>,
 }
 
+/// The one project format this build reads and writes.
+pub const SUPPORTED_FORMAT_VERSION: u32 = 3;
+
+/// A file with no `format_version` key predates the key itself, so it
+/// reads as version 1 and [`check_format_version`] refuses it.
 fn default_format_version() -> u32 {
     1
+}
+
+/// Refuse a project file whose declared format this build does not read.
+///
+/// rs_cam writes `format_version = 3`. It stores the alignment pins on the
+/// stock. Nothing converts an older shape. A converter is a second reader,
+/// and a second reader is what I01 found drifting away from this one. An
+/// older file therefore fails to open. The message names the version.
+fn check_format_version(project: &ProjectFile) -> Result<(), SessionError> {
+    if project.format_version == SUPPORTED_FORMAT_VERSION {
+        return Ok(());
+    }
+    Err(SessionError::UnsupportedFormatVersion {
+        found: project.format_version,
+    })
 }
 
 /// Job-level settings (name, stock, post).
@@ -846,6 +866,7 @@ pub(super) fn build_session_from_project(
     base_dir: &Path,
 ) -> Result<super::ProjectSession, SessionError> {
     validate_looks_like_cam_project(&project, None)?;
+    check_format_version(&project)?;
 
     let mut stock = stock_from_project(&project.job.stock);
 

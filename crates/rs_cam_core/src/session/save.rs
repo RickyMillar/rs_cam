@@ -317,7 +317,7 @@ impl ProjectSession {
             .collect();
 
         ProjectFile {
-            format_version: 3,
+            format_version: super::project_file::SUPPORTED_FORMAT_VERSION,
             job,
             tools,
             models,
