@@ -17,7 +17,8 @@
 //!   the source check stands in for driving the checkbox.
 //! - The summary line the tab prints names the stored `boundary.source`.
 //! - A project file that still carries `boundary_inherit = true` loads, and
-//!   every generation-relevant boundary field survives unchanged.
+//!   every generation-relevant boundary field survives unchanged. The
+//!   section type is core's, since C11 deleted the viz copy.
 
 #![allow(
     clippy::unwrap_used,
@@ -31,7 +32,7 @@ use std::path::{Path, PathBuf};
 
 use rs_cam_core::ToolpathId;
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
-use rs_cam_viz::io::project::ProjectToolpathSection;
+use rs_cam_core::session::ProjectToolpathSection;
 use rs_cam_viz::ui::properties::boundary_summary_line;
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -141,16 +142,23 @@ fn expected_boundary() -> BoundaryConfig {
     }
 }
 
-/// (c) A section carrying `boundary_inherit = true` loads; the boundary
-/// fields generation reads are unchanged; the key is never written back.
+/// (c) A section carrying `boundary_inherit = true` loads, and the boundary
+/// fields generation reads survive unchanged.
+///
+/// **C11 changed what this arm can claim.** The section type used to be
+/// viz's own. That copy marked `boundary_inherit` `skip_serializing`, so
+/// the arm also asserted the dead key was never written back.
+///
+/// C11 deleted the viz copy. Core is the one project schema, and core
+/// writes the key. It must: the `o1b` multitool round-trip sentry asserts
+/// that `!boundary_inherit` survives a save and a load, and the field's
+/// serde default is `true`.
+///
+/// The dial is still dead. No file under `crates/rs_cam_viz/src/ui` reads
+/// it, which arm (a) pins. `session/compute.rs` clones `tc.boundary`
+/// unconditionally. The written key is a constant, and nothing acts on it.
 #[test]
-fn legacy_boundary_inherit_key_loads_and_is_not_written() {
+fn legacy_boundary_inherit_key_loads_and_is_not_read() {
     let section: ProjectToolpathSection = toml::from_str(LEGACY_SECTION).expect("legacy loads");
     assert_eq!(section.boundary, expected_boundary());
-
-    let out = toml::to_string(&section).expect("serialize");
-    assert!(
-        !out.contains("boundary_inherit"),
-        "the dead key must not be written back:\n{out}"
-    );
 }

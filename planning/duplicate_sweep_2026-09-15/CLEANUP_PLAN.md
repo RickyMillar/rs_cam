@@ -127,7 +127,7 @@ maintain.
   `Vec<ProjectLoadWarning>` channel to `from_project_file` so viz keeps its
   toasts. Optional: `visible`/`locked`/`auto_regen` on core's toolpath
   section if the GUI wants them persisted (decide). Risk: low (additive).
-- [ ] **C11 — delete the viz ProjectFile family** (I01 step 4). Delete viz
+- [x] **C11 — delete the viz ProjectFile family** (I01 step 4). Delete viz
   `save_project` (test-only, DRIFTED_DUP-dead) and `load_typed_project` +
   struct family. Port the `boundary_controls_always_visible_g_boundaryinherit.rs:34`
   import to core's type (review gap). Move the legacy round-trip tests
