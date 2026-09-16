@@ -133,7 +133,7 @@ pub struct RampReachClamp {
     /// "5 mm deep" could mean one stray point or half the part and nothing
     /// said which.
     ///
-    /// **Read [`Self::AREA_PROVENANCE`] before comparing this to anything.**
+    /// **Read `Self::AREA_PROVENANCE` before comparing this to anything.**
     /// It is a PATH-SWATH area, not a ring-cascade residual and not a
     /// dexel-top area: it must never be summed with, or divided by,
     /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`].

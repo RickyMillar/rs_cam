@@ -1078,7 +1078,7 @@ pub fn tip_contact_radius(cutter: &dyn MillingCutter) -> f64 {
 }
 
 /// Per-lap depth budget (mm) for a stepped entry ramp on a cutter with this
-/// tip radius. See [`ENTRY_RAMP_BITE_TIP_FRACTION`].
+/// tip radius. See `ENTRY_RAMP_BITE_TIP_FRACTION`.
 pub fn entry_bite_budget_mm(tip_radius_mm: f64) -> f64 {
     (tip_radius_mm * ENTRY_RAMP_BITE_TIP_FRACTION)
         .clamp(ENTRY_RAMP_MIN_BITE_MM, ENTRY_RAMP_MAX_BITE_MM)

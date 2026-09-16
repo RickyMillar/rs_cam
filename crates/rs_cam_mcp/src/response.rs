@@ -240,7 +240,8 @@ impl ResponseBudget {
     /// it via [`Self::record_not_computed`].
     ///
     /// **Test door.** The only caller is
-    /// [`BoundedResponse::insert_section`], which is itself a test door.
+    /// `BoundedResponse::insert_section`, which is itself a test door. The
+    /// link is plain text: a `#[cfg(test)]` item has no rustdoc page.
     #[cfg(test)]
     pub(crate) fn try_charge(&mut self, value: &Value) -> bool {
         let cost = Self::cost_of(value);

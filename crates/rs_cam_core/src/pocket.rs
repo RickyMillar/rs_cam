@@ -254,7 +254,7 @@ pub fn pocket_contours_with_cancel(
 }
 
 /// [`pocket_contours_with_cancel`] with Checkpoint C's offset failure
-/// channel attached — see [`pocket_toolpath_reported_with_cancel`] for why
+/// channel attached — see `pocket_toolpath_reported_with_cancel` for why
 /// this cascade is the one that most needs it.
 pub fn pocket_contours_reported_with_cancel(
     polygon: &Polygon2,

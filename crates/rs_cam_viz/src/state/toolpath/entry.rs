@@ -99,7 +99,7 @@ impl ToolpathEntryInit {
         Self::new(id, name, tool_id, model_id, operation)
     }
 
-    /// **Test door.** The only caller is [`ToolpathEntry::duplicate_as`],
+    /// **Test door.** The only caller is `ToolpathEntry::duplicate_as`,
     /// which is itself a test door (S29, tech debt 2026-09-16).
     #[cfg(test)]
     pub(crate) fn duplicate_from(

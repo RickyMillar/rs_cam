@@ -468,9 +468,9 @@ pub struct SpiralParams {
     pub blend_p: f64,
     /// Bridge shift away from the centre — [`PAPER_INITIAL_BRIDGE_SHIFT`].
     pub initial_bridge_shift: f64,
-    /// Near-centre switch radius — [`PAPER_NEAR_CENTRE_RADIUS`].
+    /// Near-centre switch radius — `PAPER_NEAR_CENTRE_RADIUS`.
     pub near_centre_radius: f64,
-    /// Near-centre bridge shift — [`PAPER_NEAR_CENTRE_BRIDGE_SHIFT`].
+    /// Near-centre bridge shift — `PAPER_NEAR_CENTRE_BRIDGE_SHIFT`.
     pub near_centre_bridge_shift: f64,
     /// Initial along-line shift after an outer bridge.
     ///
@@ -479,7 +479,7 @@ pub struct SpiralParams {
     /// **G-BRIDGE-BOOKKEEPING**. Set it to the paper's constant to reproduce
     /// the literal reading and watch [`SpiralReport::bridge_overhead_pct`].
     pub secondary_line_shift: f64,
-    /// Bridge-repair shift increment — [`PAPER_SHIFT_STEP`].
+    /// Bridge-repair shift increment — `PAPER_SHIFT_STEP`.
     pub shift_step: f64,
     /// **[REPO]** Cap on bridge-repair iterations.
     pub max_bridge_repair_steps: usize,

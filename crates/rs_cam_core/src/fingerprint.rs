@@ -782,7 +782,7 @@ pub(crate) fn render_toolpath_composite_in_frame(
     )
 }
 
-/// [`render_toolpath_composite_in_frame`] with the choice of which layer is
+/// `render_toolpath_composite_in_frame` with the choice of which layer is
 /// the subject — see [`CompositeSubject`].
 pub fn render_toolpath_composite_subject(
     annotated: &crate::toolpath_spans::AnnotatedToolpath,

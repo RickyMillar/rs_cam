@@ -159,7 +159,7 @@
 //!   are the heavy items — a marching-cubes mesh plus a full grid clone, per
 //!   toolpath — and the snapshot adds a refcount, not a copy.
 //! * **A hard size ceiling.** [`SimPrefixCache::max_bytes`] (default
-//!   [`DEFAULT_MAX_BYTES`]) is checked against an estimate of what the snapshot
+//!   `DEFAULT_MAX_BYTES`) is checked against an estimate of what the snapshot
 //!   actually owns; over it, the snapshot is dropped and `size_refusals` ticks.
 //! * **Explicit `clear()`** for the owner to drop it at a known point (the GUI
 //!   calls it when the fixpoint ladder settles).

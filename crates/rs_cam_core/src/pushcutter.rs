@@ -106,7 +106,7 @@ pub fn push_cutter_fiber(
 /// never leaves the fiber segment — so a triangle whose XY bbox misses the
 /// inflated segment bbox cannot contribute. Every push test in this module
 /// rejects on exactly that distance (`perp_dist > w`, `contains_point_xy` of a
-/// point offset by at most the envelope radius); [`PUSH_QUERY_SLACK_MM`]
+/// point offset by at most the envelope radius); `PUSH_QUERY_SLACK_MM`
 /// documents the comparison epsilons that headroom absorbs. The X extent is
 /// unchanged from the old query — `[x_min - reach, x_max + reach]` was already
 /// exactly what the square gave along the fiber.

@@ -1106,7 +1106,7 @@ fn rdp(chain: &[P2], tol: f64) -> Vec<P2> {
 /// `CHORD_REFINE_ACCEPT_FRACTION = 0.70` of that same tolerance and leaves
 /// the remaining 30% as headroom for the probe-vs-true-worst gap M4 measured
 /// at ~35% of the tolerance. Arc flattening is an error in XY, independent of
-/// that Z error, so it is budgeted at [`Self::CHORD_TOLERANCE_SHARE`] = 10%:
+/// that Z error, so it is budgeted at `Self::CHORD_TOLERANCE_SHARE` = 10%:
 /// small enough that the composed worst case stays inside the operator's
 /// number, large enough that the emitted chords stay longer than
 /// `scallop::CHORD_REFINE_MIN_SPLIT_MM` on any arc a stepover-sized offset

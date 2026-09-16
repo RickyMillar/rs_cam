@@ -1363,7 +1363,7 @@ impl<'a> ProjectEvidence<'a> {
         }
     }
 
-    /// Same as [`Self::from_simulation`] plus holder-collision counts
+    /// Same as `Self::from_simulation` plus holder-collision counts
     /// (see the `holder_collisions` field docs for why these are an
     /// input rather than computed internally).
     pub fn from_simulation_with_holder_collisions(

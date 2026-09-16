@@ -485,7 +485,7 @@ pub struct PrizeCell {
     /// Area-weighted `W_max / W_min` distribution — the per-point spread
     /// the entire direction-field prize lives in.
     pub ratio: Quantiles,
-    /// Area fraction above each of [`PRIZE_RATIO_BANDS`].
+    /// Area fraction above each of `PRIZE_RATIO_BANDS`.
     pub frac_above: [f64; 4],
     /// `∫dA/W(fixed) ÷ ∫dA/W_max` for the three fixed sweep directions
     /// (X, Y, and the population's dominant axis). The BEST of these,

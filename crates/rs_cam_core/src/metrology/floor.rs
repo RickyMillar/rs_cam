@@ -11,7 +11,7 @@
 //! spaced exactly at the local iso-scallop limit, nothing cut twice. It is
 //! a HARD FLOOR, not a target — a path shorter than it has not met the
 //! spec. A candidate's score is `cut_mm / l_min_mm`
-//! ([`FloorReport::times_floor`]).
+//! (`FloorReport::times_floor`, a test door since S29).
 //!
 //! # Which curvature goes into `s_max`, and why it is `κ_min`
 //!

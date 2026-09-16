@@ -66,7 +66,7 @@ pub(crate) fn trace_polygon_at_z_reported(
     (trace_polygons_at_z(&working_polygons, z, params), failures)
 }
 
-/// The **Z-independent half** of [`trace_polygon_at_z_reported`]: the
+/// The **Z-independent half** of `trace_polygon_at_z_reported`: the
 /// cutter-compensated rings this trace will follow, plus Checkpoint C's offset
 /// failure count.
 ///
