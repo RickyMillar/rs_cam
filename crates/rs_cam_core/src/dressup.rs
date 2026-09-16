@@ -856,20 +856,6 @@ pub(crate) struct RampFold<'a> {
     pub min_run_mm: f64,
 }
 
-/// XY length of a polyline, in mm.
-// SAFETY: `windows(2)` yields slices of exactly two elements.
-#[allow(clippy::indexing_slicing)]
-fn polyline_xy_len(points: &[P3]) -> f64 {
-    points
-        .windows(2)
-        .map(|w| {
-            let dx = w[1].x - w[0].x;
-            let dy = w[1].y - w[0].y;
-            (dx * dx + dy * dy).sqrt()
-        })
-        .sum()
-}
-
 /// Guard on the lap / bounce loop in [`extend_fold_path`]. A run of any
 /// usable length reaches 19 mm in a handful of laps; the cap only stops a
 /// degenerate run of near-zero-length segments from spinning.
@@ -887,12 +873,12 @@ fn extend_fold_path(base: &[P3], closed: bool, want: f64) -> Vec<P3> {
     if base.len() < 2 {
         return ext;
     }
-    let per_round = polyline_xy_len(base);
+    let per_round = crate::geo::polyline_xy_length(base);
     if per_round <= 1e-9 {
         return ext;
     }
     let mut rounds = 0;
-    while polyline_xy_len(&ext) < want && rounds < FOLD_EXTEND_MAX_ROUNDS {
+    while crate::geo::polyline_xy_length(&ext) < want && rounds < FOLD_EXTEND_MAX_ROUNDS {
         rounds += 1;
         if closed {
             // The ring returns to its own start, so replaying it from the
@@ -975,7 +961,7 @@ fn fold_ramp_points(
     // guard is 64 rounds and the caller refuses a run under 1 mm, so the
     // extension reaches at least 64 mm against a half length of 19.08 mm at
     // the shipped 3 degrees. This is the belt to that braces.
-    if polyline_xy_len(&out) < half_len - 1e-6 {
+    if crate::geo::polyline_xy_length(&out) < half_len - 1e-6 {
         return Vec::new();
     }
     // Out, then the same vertices in reverse: the classic zigzag ramp bent
@@ -983,7 +969,7 @@ fn fold_ramp_points(
     let mut path: Vec<P3> = out.clone();
     path.extend(out.iter().rev().skip(1).copied());
 
-    let total = polyline_xy_len(&path);
+    let total = crate::geo::polyline_xy_length(&path);
     if total <= 1e-9 {
         return Vec::new();
     }
@@ -1178,7 +1164,7 @@ pub(crate) fn emit_ramp(
         // along the operation's own following cut instead — see
         // [`RampFold`]. The degrade is a plunge, never a refusal: the entry
         // column is a cut point of the operation by construction.
-        let run = polyline_xy_len(fold.follow);
+        let run = crate::geo::polyline_xy_length(fold.follow);
         let folded = if fold.follow.len() >= 2 && run >= fold.min_run_mm {
             fold_ramp_points(fold.follow, fold.closed, half_len, ramp_start_z, end.z)
         } else {

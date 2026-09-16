@@ -260,6 +260,42 @@ pub fn polyline_length(points: &[P3]) -> f64 {
         .sum()
 }
 
+/// Total XY length of a polyline of 3D points (mm): the same walk as
+/// [`polyline_length`] with the Z term dropped.
+///
+/// Z is dropped on purpose, not by omission. The callers ask "how far does
+/// the cutter travel across the work" — a ramp fold's run length, an entry
+/// forecast's footprint — and the answer must not grow because the terrain
+/// under the move rises. `dressup` carried its own copy of this until
+/// 2026-09-17.
+pub fn polyline_xy_length(points: &[P3]) -> f64 {
+    points
+        .windows(2)
+        .map(|w| {
+            #[allow(clippy::indexing_slicing)] // windows(2) yields len-2 slices
+            let (a, b) = (w[0], w[1]);
+            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt()
+        })
+        .sum()
+}
+
+/// Total length of a polyline of 2D points (mm).
+///
+/// The 2D sibling of [`polyline_xy_length`]. The two cannot be one
+/// function: `P2` and `P3` are distinct types and the callers hold one or
+/// the other, so the split is in the point type, not in the measure.
+/// `adaptive3d::clearing` carried its own copy of this until 2026-09-17.
+pub fn polyline_length_2d(points: &[P2]) -> f64 {
+    points
+        .windows(2)
+        .map(|w| {
+            #[allow(clippy::indexing_slicing)] // windows(2) yields len-2 slices
+            let (a, b) = (w[0], w[1]);
+            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt()
+        })
+        .sum()
+}
+
 /// Resample a polyline to ~`spacing` mm between points (linear
 /// interpolation), preserving the first and last vertices. Curvature crest
 /// lines arrive at mesh-edge resolution; this decouples cut-point spacing

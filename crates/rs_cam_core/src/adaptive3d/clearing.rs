@@ -1735,7 +1735,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     {
                         path_2d.pop();
                     }
-                    forecast_mm += polyline_xy_length(&path_2d);
+                    forecast_mm += crate::geo::polyline_length_2d(&path_2d);
                 }
                 for hole in &inset.holes {
                     if hole.len() < 3 {
@@ -1748,7 +1748,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     {
                         path_2d.pop();
                     }
-                    forecast_mm += polyline_xy_length(&path_2d);
+                    forecast_mm += crate::geo::polyline_length_2d(&path_2d);
                 }
             }
             // Quick exit: if even the perimeter alone clears the bar, skip
@@ -1763,7 +1763,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                 )?;
                 for seg in &segs_forecast {
                     if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
-                        forecast_mm += polyline_xy_length(path_2d);
+                        forecast_mm += crate::geo::polyline_length_2d(path_2d);
                         if forecast_mm >= ctx.min_region_cut_length_mm {
                             break;
                         }
@@ -1862,7 +1862,8 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     );
                 }
                 if path_3d.len() >= 2 {
-                    level_metrics.perimeter_sweep_length_mm += polyline_length_3d(&path_3d);
+                    level_metrics.perimeter_sweep_length_mm +=
+                        crate::geo::polyline_length(&path_3d);
                     push_segment_with_stamp(
                         segments,
                         material_stock,
@@ -1917,7 +1918,8 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     );
                 }
                 if path_3d.len() >= 2 {
-                    level_metrics.perimeter_sweep_length_mm += polyline_length_3d(&path_3d);
+                    level_metrics.perimeter_sweep_length_mm +=
+                        crate::geo::polyline_length(&path_3d);
                     push_segment_with_stamp(
                         segments,
                         material_stock,
@@ -2071,7 +2073,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                 let mut cut_len = 0.0_f64;
                 for seg in &group {
                     if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
-                        cut_len += polyline_xy_length(path_2d);
+                        cut_len += crate::geo::polyline_length_2d(path_2d);
                     }
                 }
                 // Always keep the first group — it sets up the region's
@@ -2127,7 +2129,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                             }
                         }
                     }
-                    level_metrics.agent_walk_cut_length_mm += polyline_length_3d(&path_3d);
+                    level_metrics.agent_walk_cut_length_mm += crate::geo::polyline_length(&path_3d);
                     // Per-point classification (BEFORE any stamping):
                     // cutter is "engaged" if the current dexel ray top at
                     // this XY is above the cutter Z. "Air" points get
@@ -2560,42 +2562,6 @@ fn update_level_marker_metrics(
     if let Some(Adaptive3dSegment::Marker(event)) = segments.get_mut(index) {
         event.set_z_level_metrics(metrics);
     }
-}
-
-/// F-038: 2D XY polyline length used by the AgentSearch forecaster to decide
-/// whether a marching-squares region's expected cut footprint is large enough
-/// to justify an entry plunge. XY-only on purpose — the 3D-lift later folds
-/// terrain Z in, but for the "is this worth the entry" question only the
-/// horizontal footprint matters (the cutter still descends + retracts even
-/// on flat terrain).
-fn polyline_xy_length(path: &[P2]) -> f64 {
-    path.windows(2)
-        .map(|pair| {
-            let Some(a) = pair.first() else {
-                return 0.0;
-            };
-            let Some(b) = pair.get(1) else {
-                return 0.0;
-            };
-            let dx = b.x - a.x;
-            let dy = b.y - a.y;
-            (dx * dx + dy * dy).sqrt()
-        })
-        .sum()
-}
-
-fn polyline_length_3d(path: &[P3]) -> f64 {
-    path.windows(2)
-        .map(|pair| {
-            let Some(a) = pair.first() else {
-                return 0.0;
-            };
-            let Some(b) = pair.get(1) else {
-                return 0.0;
-            };
-            (*b - *a).norm()
-        })
-        .sum()
 }
 
 #[cfg(test)]
