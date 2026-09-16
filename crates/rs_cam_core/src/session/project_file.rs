@@ -33,9 +33,6 @@ pub struct ProjectFile {
     pub models: Vec<ProjectModelSection>,
     #[serde(default)]
     pub setups: Vec<ProjectSetupSection>,
-    /// Legacy: top-level toolpaths (pre-setup format).
-    #[serde(default)]
-    pub toolpaths: Vec<ProjectToolpathSection>,
 }
 
 /// The one project format this build reads and writes.
@@ -525,11 +522,6 @@ pub struct ProjectToolpathSection {
     /// Optional BREP face selection (raw u16 IDs).
     #[serde(default)]
     pub face_selection: Option<Vec<u16>>,
-    /// Legacy field — older projects emit a `feeds_auto = {...}` block.
-    /// Read and discarded; never written. Roadmap F.5 deleted the
-    /// background auto-fill behaviour these flags described.
-    #[serde(default, rename = "feeds_auto", skip_serializing)]
-    pub _legacy_feeds_auto: Option<toml::Value>,
     /// Debug trace options.
     #[serde(default)]
     pub debug_options: ToolpathDebugOptions,
@@ -870,18 +862,18 @@ pub(super) fn validate_looks_like_cam_project(
     // yields the field-level default (`default_job_name()`). Treat both as
     // "user did not supply a job name".
     let job_is_default = project.job.name.is_empty() || project.job.name == default_job_name();
-    let nothing_loaded = project.setups.is_empty()
-        && project.toolpaths.is_empty()
-        && project.models.is_empty()
-        && project.tools.is_empty();
+    let nothing_loaded =
+        project.setups.is_empty() && project.models.is_empty() && project.tools.is_empty();
     if job_is_default && nothing_loaded {
         let detail = match path {
             Some(p) => format!(
-                "file '{}' does not look like an rs_cam project (no [job], setups, toolpaths, models, or tools)",
+                "file '{}' does not look like an rs_cam project (no [job], setups, models, or tools)",
                 p.display()
             ),
-            None => "file does not look like an rs_cam project (no [job], setups, toolpaths, models, or tools)"
-                .to_owned(),
+            None => {
+                "file does not look like an rs_cam project (no [job], setups, models, or tools)"
+                    .to_owned()
+            }
         };
         return Err(SessionError::NotACamProject(detail));
     }
@@ -1047,58 +1039,13 @@ pub(super) fn build_session_from_project(
     let mut setups = Vec::new();
     let mut toolpath_configs = Vec::new();
 
-    if !project.setups.is_empty() {
-        for (setup_idx, setup_section) in project.setups.iter().enumerate() {
-            let setup_id = setup_section.id.unwrap_or(setup_idx);
-            let face_up = FaceUp::from_key(&setup_section.face_up);
-            let z_rotation = ZRotation::from_key(&setup_section.z_rotation);
-            let mut tp_indices = Vec::new();
-
-            for tp_section in &setup_section.toolpaths {
-                let tp_idx = toolpath_configs.len();
-                let tp_id = tp_section.id.unwrap_or(crate::ids::ToolpathId(tp_idx));
-                let operation = match &tp_section.operation {
-                    Some(op) => op.clone(),
-                    None => {
-                        let op_type = tp_section.op_type.unwrap_or(OperationType::Pocket);
-                        tracing::warn!(
-                            toolpath_id = tp_id.0,
-                            ?op_type,
-                            "loaded toolpath with default operation; TOML was missing [setups.toolpaths.operation]"
-                        );
-                        OperationConfig::new_default(op_type)
-                    }
-                };
-                toolpath_configs.push(toolpath_config_from_section(
-                    tp_section, tp_id, &operation, warnings,
-                ));
-                tp_indices.push(tp_idx);
-            }
-
-            let fixtures = build_fixtures(&setup_section.fixtures);
-            let keep_out_zones = build_keep_out_zones(&setup_section.keep_out_zones);
-
-            setups.push(SetupData {
-                id: setup_id,
-                name: setup_section.name.clone(),
-                face_up,
-                z_rotation,
-                datum: datum_from_section(setup_section),
-                model_ids: setup_section
-                    .model_ids
-                    .iter()
-                    .map(|&id| crate::compute::stock_config::ModelId(id))
-                    .collect(),
-                fixtures,
-                keep_out_zones,
-                toolpath_indices: tp_indices,
-                pause_message: setup_section.pause_message.clone(),
-            });
-        }
-    } else {
-        // Legacy: top-level toolpaths -> single default setup
+    for (setup_idx, setup_section) in project.setups.iter().enumerate() {
+        let setup_id = setup_section.id.unwrap_or(setup_idx);
+        let face_up = FaceUp::from_key(&setup_section.face_up);
+        let z_rotation = ZRotation::from_key(&setup_section.z_rotation);
         let mut tp_indices = Vec::new();
-        for tp_section in &project.toolpaths {
+
+        for tp_section in &setup_section.toolpaths {
             let tp_idx = toolpath_configs.len();
             let tp_id = tp_section.id.unwrap_or(crate::ids::ToolpathId(tp_idx));
             let operation = match &tp_section.operation {
@@ -1118,20 +1065,26 @@ pub(super) fn build_session_from_project(
             ));
             tp_indices.push(tp_idx);
         }
-        if !tp_indices.is_empty() {
-            setups.push(SetupData {
-                id: 0,
-                name: "Default".to_owned(),
-                face_up: FaceUp::Top,
-                z_rotation: ZRotation::default(),
-                datum: DatumConfig::default(),
-                model_ids: Vec::new(),
-                fixtures: Vec::new(),
-                keep_out_zones: Vec::new(),
-                toolpath_indices: tp_indices,
-                pause_message: None,
-            });
-        }
+
+        let fixtures = build_fixtures(&setup_section.fixtures);
+        let keep_out_zones = build_keep_out_zones(&setup_section.keep_out_zones);
+
+        setups.push(SetupData {
+            id: setup_id,
+            name: setup_section.name.clone(),
+            face_up,
+            z_rotation,
+            datum: datum_from_section(setup_section),
+            model_ids: setup_section
+                .model_ids
+                .iter()
+                .map(|&id| crate::compute::stock_config::ModelId(id))
+                .collect(),
+            fixtures,
+            keep_out_zones,
+            toolpath_indices: tp_indices,
+            pause_message: setup_section.pause_message.clone(),
+        });
     }
 
     // A toolpath that names a tool or a model the file does not define

@@ -245,7 +245,6 @@ impl ProjectSession {
                             .face_selection
                             .as_ref()
                             .map(|ids| ids.iter().map(|fg| fg.0).collect()),
-                        _legacy_feeds_auto: None,
                         debug_options: tc.debug_options,
                         feeds_provenance: tc.feeds_provenance.clone(),
                         rest_analysis: tc.rest_analysis.clone(),
@@ -322,7 +321,6 @@ impl ProjectSession {
             tools,
             models,
             setups,
-            toolpaths: Vec::new(), // format_version=3 uses setups, not top-level toolpaths
         }
     }
 }

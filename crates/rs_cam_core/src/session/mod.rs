@@ -2250,7 +2250,6 @@ mod tests {
             tools: Vec::new(),
             models: Vec::new(),
             setups: Vec::new(),
-            toolpaths: Vec::new(),
         };
         let session = ProjectSession::from_project_file(project, Path::new(".")).unwrap();
         assert_eq!(session.name(), "Test Job");
@@ -2268,7 +2267,6 @@ mod tests {
             tools: Vec::new(),
             models: Vec::new(),
             setups: Vec::new(),
-            toolpaths: Vec::new(),
         };
         let session = ProjectSession::from_project_file(project, Path::new(".")).unwrap();
         let bbox = session.stock_bbox();
@@ -2285,7 +2283,6 @@ mod tests {
             tools: Vec::new(),
             models: Vec::new(),
             setups: Vec::new(),
-            toolpaths: Vec::new(),
         };
         let session = ProjectSession::from_project_file(project, Path::new(".")).unwrap();
         let diag = session.diagnostics();
@@ -2331,14 +2328,12 @@ mod tests {
                     stock_source: crate::compute::config::StockSource::default(),
                     coolant: crate::gcode::CoolantMode::default(),
                     face_selection: None,
-                    _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                     planner_origin: None,
                 }],
             }],
-            toolpaths: Vec::new(),
         };
 
         let session = ProjectSession::from_project_file(project, Path::new(".")).unwrap();
@@ -2363,7 +2358,6 @@ mod tests {
             tools: Vec::new(),
             models: Vec::new(),
             setups: Vec::new(),
-            toolpaths: Vec::new(),
         };
         // An old file with machine_ref must still deserialize (we read the
         // field, then drop it on load).
@@ -2405,7 +2399,6 @@ mod tests {
             tools: Vec::new(),
             models: Vec::new(),
             setups: Vec::new(),
-            toolpaths: Vec::new(),
         };
         let toml_str = toml::to_string_pretty(&project).unwrap();
         let dir = std::env::temp_dir().join(format!("rscam_snap_{}", std::process::id()));
@@ -2665,14 +2658,12 @@ mod tests {
                     stock_source: crate::compute::config::StockSource::default(),
                     coolant: crate::gcode::CoolantMode::default(),
                     face_selection: None,
-                    _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                     planner_origin: None,
                 }],
             }],
-            toolpaths: Vec::new(),
         };
         ProjectSession::from_project_file(project, Path::new(".")).unwrap()
     }
