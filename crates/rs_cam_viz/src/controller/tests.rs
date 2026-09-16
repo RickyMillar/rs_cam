@@ -1240,8 +1240,8 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
         "fixture 4 precondition failed: the stock source did not reach the session"
     );
     // F2.2 keeps the GUI result across an edit so the viewport can go on
-    // drawing it, so the fixture drops it by hand. The panel does the same
-    // at three sites in `ui/properties/mod.rs`.
+    // drawing it, so the fixture drops it by hand. The panel never clears
+    // it; three other tests in this file clear it the same way.
     for rt in controller.state.gui.toolpath_rt.values_mut() {
         rt.result = None;
     }
