@@ -27,7 +27,7 @@ and are NOT touched by this programme's fix waves.
 | 6 | Q2 | B | S | the only production file-wide `#![allow(clippy::indexing_slicing)]` (`cli/sweep.rs`, ~18 sites) | W1 |
 | 7 | L5 | B | S | `standing_material_mm2` is still emitted beside `truncated_core_mm2` although core documents the old name as measuring the wrong quantity | W1 (ruled) |
 | 8 | S2 | C | L | `viz.rs` `toolpath_to_3d_html` + `simulation_3d_html`: 765 dead lines | W2 |
-| 9 | S3 | C | M | `rs_cam_viz/src/io/presets.rs`: a whole dead module (280 lines, 9 tests) | W2 |
+| 9 | S3 | C | M | `rs_cam_viz/src/io/presets.rs`: a whole dead module (280 lines, 9 tests) | W2 ✅ |
 | 10 | D2 | C | S | `compute/semantic_helpers.rs` is dead and `pub`-re-exported; `spans.rs` carries its own drifted `CutRun`/`cutting_runs` | W2 |
 | 11 | S4, S5, S6, S8, S9, S11–S24 | C | M | 64 confirmed-dead pub items and private helpers, ~900 lines across core and viz (per-file groups in `S_*.md`) | W2 |
 | 12 | S26, S27, S28 | C | S | 26 `allow(dead_code)` attributes that cannot fire (items are `pub` in a `pub mod` of a lib crate) and claim a live MCP surface is dead | W2 |
@@ -104,6 +104,15 @@ uncommitted work — do not delete), D15, L16, five S25 rows, eight S29 rows.
   missed programme 1's only defect.
 - Workspace clippy gate at the end of each wave. No heavy gate.
 - Cargo through the lane script; never `git add -A`; stage own files only.
+
+## Wave 2b — landed (viz + mcp, tier C)
+
+One commit per id. The commit hash cannot be written by the commit that
+carries the change, so this table is filled by the closing docs commit.
+
+| id | commit | note |
+|---|---|---|
+| S3 | — | `io/presets.rs` (280 lines) went out in `0761b14d`; this commit removes the dangling `pub mod presets;` that left the tree unbuildable |
 
 ## Progress
 
