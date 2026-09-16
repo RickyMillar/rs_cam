@@ -32,3 +32,6 @@
 # did not compile from a clean clone. Keep the leading slash.
 /diagnostics/
 crates/*/target/
+
+# Operator screenshots dropped at the root by the GUI tooling.
+/screenshot_*.png

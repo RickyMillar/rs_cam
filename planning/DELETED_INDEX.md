@@ -94,14 +94,16 @@ and no clone is live.
 | `review/` | 106 | The independent BREP/STEP review (listed under Reviews above) | Findings landed; it duplicated the `planning/review_*` convention at the root |
 | `G13_PROMPT.md` | 1 | An agent prompt for the G13 work package | No reference outside itself |
 | `AGENT_PROMPT.md` | 1 | The wanaka regression agent prompt | Its only two references, `G13_PROMPT.md:77` and `planning/cutting-calcs-data-gaps.md:391`, are both in this purge |
+| `tests/step_validation/` | 4 | A standalone STEP-validation crate (truck-only), excluded from the workspace by a root `Cargo.toml` line | No crate, script or test document referenced it; the exclude line went with it (P3, 2026-09-17) |
 | `fixtures/debug_adaptive/` generated outputs | 5 | `wanaka_adaptive.nc`, `wanaka_diag.json`, `wanaka_toolpath.svg`, `adaptive_terrain.svg`, `contour_parallel_terrain.svg` — 5 341 561 bytes | `job.toml` **writes** them and nothing reads them; `cases_agent_smoke.csv` holds no `debug_adaptive` row. `job.toml` and `traces/` stay |
 
 **Kept at the root**, and why: `research/` and `architecture/` (`CREDITS.md`
 cites nine and two of their files as algorithm-lineage attribution),
 `toolpath_stress_test/` (`AI_MACHINIST_ANALYSIS_REFERENCE.md:350` names its
 analyse script), and `AI_MACHINIST_ANALYSIS_REFERENCE.md` itself.
-`tests/step_validation/` and its `Cargo.toml` exclude line are left for P3,
-which can run cargo.
+The untracked, git-ignored `demos/` (103 MB) and `reference/` (4.9 GB;
+`reference/validators/linuxcnc` is a run-time lookup of one test) stay for the
+operator to decide.
 
 ## Moves, not deletions
 
