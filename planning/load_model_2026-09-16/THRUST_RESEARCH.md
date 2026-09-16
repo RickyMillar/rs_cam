@@ -283,12 +283,64 @@ Source: peer-reviewed paper, *Materials* 19(2) 439, doi 10.3390/ma19020439.
 wood milling.** The feed axis carries the dominant lateral load. That supports
 the conclusion in section 2.3.
 
-This dataset agrees with my model in order of magnitude only. My model predicts
-a peak F_x of 63 N where they measured 32 N, at 0.5 mm radial depth and 0.1 mm
-feed per tooth. The factor of about two runs through the other conditions as
-well. I do not treat this as a validation of `Ks`. Their tools use a 15° to 25°
-rake and a 10° to 30° helix, and the helix smears the engagement over an 8 mm
-axial depth, which the simple model does not capture.
+This dataset first appeared to disagree with the model by a factor of about
+two: a predicted peak F_x of 63 N against a measured 32 N, at 0.5 mm radial
+depth and 0.1 mm feed per tooth.
+
+**That factor of two was an error in the check, not in `Ks`. Resolved below.**
+
+### 2.5.1 The factor of two, resolved
+
+The comparison above used `Ks = 49.95` and `F_edge = 5.30` directly. Those are
+the ANCHOR coefficients, and the anchor is `GenericHardwood` at `Kc = 35.1`.
+Mongolian Scots pine is a softwood. The shipped model never uses the anchor
+coefficients for a softwood: `feeds/force.rs` scales both by `Kc / 35.1`.
+
+The scale for a softwood is about one half.
+
+| Species assumed for Scots pine | Kc | Scale | Predicted peak F_x | Against the measured 32 N |
+|---|---|---|---|---|
+| `RadiataPine` | 16.20 | 0.46 | 29.1 N | 0.91x |
+| `GenericSoftwood` | 17.55 | 0.50 | 31.5 N | **0.98x** |
+| Ponderosa pine (FPL 7.8) | 21.06 | 0.60 | 37.8 N | 1.18x |
+
+**With the scaling the model actually applies, the prediction lands on the
+measurement.** The factor of two was the difference between a hardwood and a
+softwood, and it was introduced by the check.
+
+The spruce comparison in section 2.4 needs the same correction, and it points
+the same way. White spruce is `Kc = 18.09`, so the scale is 0.52 and the model
+gives 28.5 N/mm at 1.0 mm depth, not 55.2 N/mm.
+
+| Rake angle | Measured F_P | Model / measured |
+|---|---|---|
+| 10° | 38 N/mm | 0.75x |
+| **20°** | **32 N/mm** | **0.89x** |
+| 30° | 22 N/mm | 1.29x |
+| 40° | 12 N/mm | 2.37x |
+
+A router bit runs a 10 to 25 degree rake, so the 20 degree row is the fair
+comparison. The model reads 11 percent low there.
+
+**Two independent wood datasets, two different species, two different cutting
+geometries, both within about 10 percent of the shipped model.** `force.rs`
+describes its calibration as "literature-anchored, sentry-pinned, not
+bench-validated". It now has two literature corroborations that were not used
+to build it.
+
+### 2.5.2 The ratio table does not depend on the species
+
+The feed-force ratio is a ratio of two forces that both scale by `Kc / 35.1`.
+The scale cancels. Checked across a 4.7x span of material:
+
+| Material | Scale | Peak ratio at ae/D 0.10 |
+|---|---|---|
+| Radiata pine | 0.46 | 0.8900 |
+| `GenericHardwood` anchor | 1.00 | 0.8900 |
+| Ipe | 2.15 | 0.8900 |
+
+**The ratio table in section 2.2 is therefore valid for every wood.** Only the
+absolute forces need the species.
 
 ### 2.6 The metal-cutting fallback
 
@@ -373,6 +425,10 @@ institutional access should read them:
   rake angles, twenty replicates each.
 - **The Avid rack and pinion derivation.** My derivation and the maker's own
   claim agree to 13 percent.
+- **The shipped `Ks` calibration.** Two wood datasets, two species, two
+  cutting geometries, both within about 10 percent once the material scaling
+  is applied. See section 2.5.1. This was added after the first draft reported
+  a factor-of-two gap that turned out to be an error in the check.
 
 ### Medium confidence
 
@@ -407,7 +463,9 @@ institutional access should read them:
    only evidence in this file is the Shapeoko belt-stretch thread, and it says
    the drive compliance dominated. Our thrust budget assumes the motor sets the
    limit. That assumption is untested above the belt machine class.
-6. **A resolution of the factor-of-two gap** between our `Ks` value and the
-   pine measurements. This is a question for the force model, not for the
-   thrust budget, but the two interact. If `Ks` runs high by two, then the
-   thrust budget also runs conservative by two.
+6. ~~A resolution of the factor-of-two gap between our `Ks` value and the pine
+   measurements.~~ **Resolved, see section 2.5.1.** The gap was a hardwood
+   coefficient applied to a softwood measurement. With the scaling the code
+   actually uses, the model lands within about 10 percent of both wood
+   datasets. `Ks` does not run high, and the thrust budget is not conservative
+   by two.
