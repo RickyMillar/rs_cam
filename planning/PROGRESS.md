@@ -8,6 +8,12 @@
 > not have come out any other way. Before citing one, check
 > `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
 
+> **Deleted planning material.** The structure purge of 2026-09-17 removed
+> 1010 files from `planning/` and the root. A path below that is marked
+> `(deleted 2026-09-17)` no longer exists in the tree. Retrieve any of them
+> with `git show planning-pre-purge-2026-09-17:<path>`, and read
+> `planning/DELETED_INDEX.md` for what each package decided and why it went.
+
 ## Current snapshot
 
 `rs_cam` is now a desktop CAM application plus shared engine, not just an algorithm sandbox.
@@ -345,9 +351,9 @@ seen on screen** — the live GUI check waits on the next MCP restart.
 
 ### Viewport overlays — design + audit (`4a7a84f3`, this entry)
 
-`planning/ui_overlays_ux_2026-09-08.md`: 42 overlays across four groups,
+`planning/ui_overlays_ux_2026-09-08.md` (deleted 2026-09-17): 42 overlays across four groups,
 an Overlays panel that lists every overlay and disables with a reason.
-`planning/ui_overlays_dead_duplicate_2026-09-08.md`: 24 WORK, 3 dead
+`planning/ui_overlays_dead_duplicate_2026-09-08.md` (deleted 2026-09-17): 24 WORK, 3 dead
 controls (Wireframe draws nothing and hides the STL; tool-profile ghost has
 no upload writer; span filter inert in two colour modes), 2 dead render
 consumers (rest regions, machining boundary), 7 silent couplings under one
@@ -405,13 +411,13 @@ lateral rapid on the iso arm, emitter not found), G-LEADGATE.
 
 ### Roughing and finishing strategy on terrain (evidence, rs-cam-38)
 
-- Roughing A/B (`planning/roughing_strategy_ab_results_2026-09-07.md`):
+- Roughing A/B (`planning/roughing_strategy_ab_2026-09-07/RESULTS.md`):
   every arm ≥ 97 % feed-bound — the belt router's acceleration is not the
   limit, the chipload floor is; residual air is in-cut drape, not island
   rapids; on absolute air seconds C2E (`by_area` + DPP 5.46) wins.
 - **The finish is ~90 % of every rough + finish pair**, so the win is
   deleting the finish. Plywood single-pass matrix
-  (`planning/deep_doc_modulation_2026-09-08.md`): a drop_cutter raster
+  (`planning/deep_doc_modulation_2026-09-08/STUDY.md`): a drop_cutter raster
   with the R1.5 tapered ball at 1.5 mm stepover, modulation on, does the
   whole terrain in 3274 s with every gate modeled Within, 0 collisions,
   zero triage actions (cusp 0.20 mm) — **4.36× the 14 264 s same-material
@@ -532,8 +538,10 @@ catchment, trace a valley tree, offset-trace around it. Research ran
 on both sides (literature + repo priors) before any plan. Campaign:
 **`planning/valley_tracing_2026-09-02/`** — `TRACK.md` carries the
 question, the two readings of the proposal, and the standing priors;
-`FINDINGS.md` carries pre-registered bars. Status: **OPEN, phase V0
-(prize census) not run, nothing built.** The concentric-tree reading
+`FINDINGS.md` carries pre-registered bars. Status: **CLOSED 2026-09-02, both
+arms — `TRACK.md` is the authority. The "OPEN, phase V0 not run" this line
+carried was written when the track opened and the same block closes it eleven
+lines below; corrected 2026-09-17.** The concentric-tree reading
 is NOT under test — synthesis §9 already falsified that family on
 branched geometry. The open reading is per-branch offset tracing on
 pencil's machinery. Gates: V0 prize bars (≥ 10 % of finish time in
@@ -714,11 +722,11 @@ Nine plan items (H0–H3, M1–M4, L1) and thirteen inherited ledger rows,
 across 133 commits on `experiment/adaptive-spiral`. Eight human
 checkpoints ruled and executed (A, B, C, D, E, F1, F2, F3); Checkpoint G,
 the final read-only live validation, is **planned and not yet run** — its
-checklist is `planning/review_2026-08-04/TECH_DEBT_2_CLOSEOUT.md` §6.
+checklist is `planning/review_2026-08-04/TECH_DEBT_2_CLOSEOUT.md` (deleted 2026-09-17) §6.
 
 Full per-item verdicts, the deferral ledger with owners, and the
 measurement provenance index are in that close-out; the factual record
-per wave is `planning/review_2026-08-04/ORCHESTRATION_LOG.md`. Headlines:
+per wave is `planning/review_2026-08-04/ORCHESTRATION_LOG.md` (deleted 2026-09-17). Headlines:
 
 - **The `cargo test -p rs_cam_core --lib` accepted-red allowlist is
   empty** — three permanent adaptive3d reds since `fa27b08`, all one
@@ -756,7 +764,7 @@ the shallow raster band, mechanism unproven).
 ### Radius-audit programme — Checkpoints A/B approved, behavioral waves landed
 
 User approved Checkpoints A and B (rulings in
-`review_2026-07-29/ORCHESTRATION_LOG.md` §"CHECKPOINT DECISIONS"). Twelve more
+`review_2026-07-29/ORCHESTRATION_LOG.md` (deleted 2026-09-17) §"CHECKPOINT DECISIONS"). Twelve more
 commits (`cbe8503`..`81e0012`), every wave gated green:
 
 - **Wave D** (instruments before behavior): dropped-band + tip-float findings;
@@ -789,9 +797,9 @@ commits (`cbe8503`..`81e0012`), every wave gated green:
 
 ### Radius-audit tech-debt programme — pre-checkpoint waves landed
 
-Executed the front half of `planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md`
+Executed the front half of `planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md` (deleted 2026-09-17)
 (9 commits `93b43e8`..`4bc8f92`, all no-behavior-change, gates green throughout;
-full trail in `review_2026-07-29/ORCHESTRATION_LOG.md`):
+full trail in `review_2026-07-29/ORCHESTRATION_LOG.md` (deleted 2026-09-17)):
 
 - **Diagnostics**: UnifiedFinish now emits semantic band/strategy regions
   (narration `Region mix:` line); standing material is user-visible on
@@ -802,16 +810,16 @@ full trail in `review_2026-07-29/ORCHESTRATION_LOG.md`):
   `ProjectedXyAreaMm2`/`SurfaceAreaMm2` newtypes make the invalid 313/482-style
   cross-domain ratio a compile error.
 - **Tool-scale semantics (H1)**: 76-site radius() census
-  (`TOOL_SCALE_SEMANTICS.md`), named accessors, ToolDefinition delegation trap
+  (`TOOL_SCALE_SEMANTICS.md` (deleted 2026-09-17)), named accessors, ToolDefinition delegation trap
   fixed, arcfit/narration large-arc parity pinned.
 - **Resolution policy (H3 steps 1-2)**: explicit `FinishResolutionPolicy` per
   consumer, cell sizes fingerprint-proven unchanged.
 - **Sentries**: end-to-end tapered UnifiedFinish sentry with reconstructed
   historical red; 40+ new tests total.
 - **Checkpoint evidence packs ready for human review**:
-  `CHECKPOINT_A_EVIDENCE.md` (reach model: profile-clearance + local wall angle
+  `CHECKPOINT_A_EVIDENCE.md` (deleted 2026-09-17) (reach model: profile-clearance + local wall angle
   wins 0-gouge/0-miss/100%; routing criterion coupled to the radius choice) and
-  `CHECKPOINT_B_EVIDENCE.md` (per-consumer resolution; RampFinish → intermediate
+  `CHECKPOINT_B_EVIDENCE.md` (deleted 2026-09-17) (per-consumer resolution; RampFinish → intermediate
   cell; scallop gated behind Checkpoint C). No behavioral change made past the
   checkpoints.
 - Notable defect finds: `.gitignore` was eating `src/diagnostics/` (HEAD didn't
@@ -830,11 +838,10 @@ that disagree, 105+ inline section headers) — the fix is a shared `ui::compone
 layer. Committed: full send to **egui 0.34.3** (spiked at ~3–5 mechanical days,
 `egui_plot` must be 0.35), rewrite the worst surfaces on the component layer,
 scope = clean up existing (no new features), MCP/assistant deferred but backend
-left MCP-ready. All docs in `planning/ui_audit/`: **`TRACKER.md`** (live status +
-parallelization + wave plan), `BACKLOG.md` (ranked workstreams), `ARCHITECTURE.md`
-(component layer), `FINAL_DESIGN.md` (mockups), `DIAGNOSIS.md` + `pass2/`,
-`SPIKE_egui034.md`. Status: nothing implemented yet; Wave 0 (egui upgrade ‖
-Tier-0 engine fixes ‖ provenance data model) is next.
+left MCP-ready. **The audit shipped as the egui 0.34.3 upgrade and the three
+2026-09 UI programmes (`ui_declutter_2026-09-14`, the review passes, and
+`ui_premium_2026-09-13`); its 97 documents are deleted 2026-09-17 and stay
+retrievable at the tag.**
 
 ## Recent work (2026-05-20)
 
@@ -866,7 +873,7 @@ gate blocker, two multi-setup tri-dexel known failures, etc).
 
 ### Dexel-fidelity roadmap — Step 5 J (marching cubes mesh extraction)
 
-Step 5 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` lands. The roadmap
+Step 5 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` (deleted 2026-09-17) lands. The roadmap
 is closed: all 5 steps ☑.
 
 `z_grid_to_solid_mesh` now delegates to a new
@@ -962,7 +969,7 @@ Out-of-scope (deferred follow-ups per §11):
 
 ### Dexel-fidelity roadmap — Step 4 F.a (sub-cell stamping)
 
-Step 4 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` lands. Binary
+Step 4 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` (deleted 2026-09-17) lands. Binary
 cell-center stamping in `stamp_point_on_grid`, `stamp_segment_on_grid`,
 and `stamp_segment_with_metrics` is replaced by area-weighted
 fractional coverage. Boundary cells (where the cutter footprint
@@ -1130,7 +1137,7 @@ optimisation + bench A/B + doc updates).
 
 ### Dexel-fidelity roadmap — Step 3 PR2 (Drill-native metrics + drill-specific gates)
 
-Step 3 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` part 2 of 2 — closes
+Step 3 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` (deleted 2026-09-17) part 2 of 2 — closes
 out the §6.E plan by emitting drill-native metrics and gating on them.
 Drill ops still set `metrics_not_applicable: true` on the per-toolpath
 summary (engagement-axis metrics genuinely don't apply to Z-only
@@ -1235,7 +1242,7 @@ clippy clean.
 
 ### Dexel-fidelity roadmap — Step 3 PR1 (DrillOp first-class — data model + analytical removal + mesh)
 
-Step 3 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` part 1 of 2. Lands
+Step 3 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` (deleted 2026-09-17) part 1 of 2. Lands
 the §6.E dual-representation foundation: a first-class `DrillOp`
 carried atomically alongside the linearized `AnnotatedToolpath`, with
 analytical cone/cylinder stock removal that bypasses per-segment
@@ -1350,7 +1357,7 @@ revalidation).
 
 ### Dexel-fidelity roadmap — Step 2 (Engagement vector + per-kinematics summary)
 
-Step 2 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` landed. Closes
+Step 2 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` (deleted 2026-09-17) landed. Closes
 §3.1 substrate (a single scalar can't represent the cutting interaction
 at a sample) and unblocks downstream consumers from querying per-axis
 engagement.
@@ -1431,7 +1438,7 @@ defaults to Mixed pending the cut-side info threading from stamping.
 
 ### Dexel-fidelity roadmap — Step 1 (MoveIntent + retract reclassification)
 
-Step 1 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` landed. Closes §3.2
+Step 1 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` (deleted 2026-09-17) landed. Closes §3.2
 ("retract-feed inflation") entirely and the reporting half of §3.1
 ("category error" for drills).
 
@@ -1491,7 +1498,7 @@ reporting fixes that block clear diagnosis of the deeper issues.
 
 ### Dexel-fidelity roadmap — Step 0 (mcp.rs accumulator dedup)
 
-Step 0 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` landed. Two parallel
+Step 0 of `planning/DEXEL_Z_ONLY_INVESTIGATION.md` (deleted 2026-09-17) landed. Two parallel
 re-implementations of `SummaryAccumulator::observe` in
 `crates/rs_cam_viz/src/app/mcp.rs` (`SpanCutAcc` and `DepthPassAcc`)
 were removed and replaced with the canonical `SummaryAccumulator` from
@@ -1559,7 +1566,7 @@ optimizer IS producing real wins where geometry allows:
   exist
 
 Findings written up as **Roadmap F** in
-`planning/UX_PAIN_POINTS_2026-05-11.md`:
+`planning/UX_PAIN_POINTS_2026-05-11.md` (deleted 2026-09-17):
 - 🔴 F.1 Optimizer predicted verdict diverges from live re-sim (70%
   on TP10 deflection; root cause needs RCA — likely span-boundary
   drift between cached project results and applied regen)
@@ -1708,14 +1715,14 @@ and viz simulation in `state.simulation.results.cut_trace`.
 Fix: route MCP export through a new
 `export_gcode_from_session_with_policy` variant in `io/export.rs`, then
 write the file at the MCP layer. Closes both 🔴s in
-`planning/UX_PAIN_POINTS_2026-05-11.md` Roadmap A.
+`planning/UX_PAIN_POINTS_2026-05-11.md` (deleted 2026-09-17) Roadmap A.
 
 ## Recent work (2026-05-08)
 
 ### Optimizer gap-doc burst — six closures + one new gap opened
 
 Closed six of the seven optimizer gaps tracked in
-`planning/cutting-calcs-data-gaps.md`, end-to-end live-validated
+`planning/cutting-calcs-data-gaps.md` (deleted 2026-09-17), end-to-end live-validated
 against the wanaka project via the MCP `get_tool_load_report` and
 `optimize_toolpath` tools.
 
@@ -1761,13 +1768,13 @@ fix shape lands.
 
 ### Simulation span coverage
 
-Audited structural span and semantic trace coverage for simulation diagnostics. Added `planning/SIMULATION_SPAN_COVERAGE.md` as the coverage tracker. Generation now derives structural spans for operations that previously emitted only a top-level `Operation` span: depth-stepped 2.5D ops get `DepthPass` + cutting-run `Region` spans; drill-like ops get hole/plunge `Region` spans without adding depth-order barriers; other operations get generic cutting-run regions. Adaptive3D keeps its richer annotation-derived spans with labeled z-level/region spans, and Pencil/Scallop/Ramp/Spiral runtime annotations now convert into labeled structural spans. Trace emits semantic `Chain` children under depth levels; drill emits semantic `Hole`/`Cycle` children. `get_cut_trace` now includes `span_summaries` so selected structural spans have aggregate metrics. Simulation outline fallback now shows semantic traces when structural spans are operation-only. Added broad span coverage tests across all 23 operation families, including system-only alignment-pin drilling.
+Audited structural span and semantic trace coverage for simulation diagnostics. Added `planning/SIMULATION_SPAN_COVERAGE.md` (deleted 2026-09-17) as the coverage tracker. Generation now derives structural spans for operations that previously emitted only a top-level `Operation` span: depth-stepped 2.5D ops get `DepthPass` + cutting-run `Region` spans; drill-like ops get hole/plunge `Region` spans without adding depth-order barriers; other operations get generic cutting-run regions. Adaptive3D keeps its richer annotation-derived spans with labeled z-level/region spans, and Pencil/Scallop/Ramp/Spiral runtime annotations now convert into labeled structural spans. Trace emits semantic `Chain` children under depth levels; drill emits semantic `Hole`/`Cycle` children. `get_cut_trace` now includes `span_summaries` so selected structural spans have aggregate metrics. Simulation outline fallback now shows semantic traces when structural spans are operation-only. Added broad span coverage tests across all 23 operation families, including system-only alignment-pin drilling.
 
 ## Recent work (2026-04-11)
 
 ### Tech debt audit — post service layer + MCP refactor
 
-Six-domain deep audit using specialist agents across all 110K lines. Full report: [`TECH_DEBT_AUDIT.md`](TECH_DEBT_AUDIT.md).
+Six-domain deep audit using specialist agents across all 110K lines. Full report: `planning/TECH_DEBT_AUDIT.md` (deleted 2026-09-17).
 
 **Key findings:**
 - **Session bypasses (CRITICAL)**: GUI controller still mutates state directly via `_mut()` accessors in 11+ places, skipping cache/simulation invalidation. Fix: add missing session methods, migrate handlers, restrict accessors.
@@ -1876,7 +1883,7 @@ Follow-up codebase-wide audit focused on ownership clarity, coupling, and extens
 
 ### Logic consolidation audit
 
-Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/viz boundary, serialization) to reduce scattered logic and improve extensibility. Findings and implementation documented in `planning/CONSOLIDATION_AUDIT.md`.
+Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/viz boundary, serialization) to reduce scattered logic and improve extensibility. Findings and implementation documented in `planning/CONSOLIDATION_AUDIT.md` (deleted 2026-09-17).
 
 **Operation extensibility:**
 - `OperationParams` trait eliminates ~200 match arms from `catalog.rs` — common accessors (feed_rate, plunge_rate, stepover, depth_per_pass, depth_semantics) now dispatch through `as_params()`/`as_params_mut()` instead of 10 separate 23-arm match blocks
@@ -1900,13 +1907,20 @@ Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/
 **Project file simplification:**
 - `ProjectToolSection::into_runtime()` now constructs `ToolConfig` directly instead of creating a default and overwriting all fields — compiler enforces completeness
 
-## Current priorities
+## Current priorities (2026-03/04 — HISTORY, not current)
 
-- **G16 layered scoring (in flight)** — multi-commit follow-on to the G16 reorg, softens binary gates and adds composite scoring. Design doc §11: `planning/OPTIMIZER_REFACTOR_G16.md`. **Tracker (read first): `planning/G16_LAYERED_SCORING_PROGRESS.md`**.
-- **MCP server polish** — the GUI-embedded MCP server registers roughly 68 tools against the live `ProjectSession` (the "16 tools, integration ongoing" reading this line used to carry is long superseded). Design doc: `planning/SERVICE_LAYER_EXTRACTION.md`
+**This block dates from 2026-03/04 and is history.** It called five items "in
+flight" that have since shipped or been retired, and it kept five design
+documents alive that nothing else cited. The design documents are deleted
+2026-09-17 and retrievable at the tag; see `planning/DELETED_INDEX.md`. For the
+current priorities read "Current snapshot" at the top of this file and
+`planning/TECH_DEBT_REGISTER.md`.
+
+- **G16 layered scoring** — shipped. Its design doc and tracker are deleted
+- **MCP server polish** — shipped; the embedded server registers roughly 68 tools against the live `ProjectSession`. Its design doc is deleted
 - **Fix 2 remaining simulation test failures** — `multi_setup_top_bottom_simulation` and `multi_setup_backward_scrub_uses_checkpoints` fail because bottom-up tri-dexel cuts produce empty stock
-- **Stock-level alignment pins** — moving pins from per-setup to the stock definition so they persist across flips. Design doc: `planning/ALIGNMENT_PINS_DESIGN.md`
-- **Tri-dexel simulation** — Phases 1–6 complete (core types, stamping, mesh extraction, viz wiring, multi-setup carry-forward, side-face grids). Design doc: `architecture/TRI_DEXEL_SIMULATION.md`, implementation plan: `planning/VOXEL_SIM_DESIGN.md`
+- **Stock-level alignment pins** — moving pins from per-setup to the stock definition so they persist across flips. Its design doc is deleted
+- **Tri-dexel simulation** — Phases 1–6 complete (core types, stamping, mesh extraction, viz wiring, multi-setup carry-forward, side-face grids). Design doc: `architecture/TRI_DEXEL_SIMULATION.md`; its implementation plan is deleted
 - keep public docs aligned with the actual code surface
 - preserve explicit attribution for algorithms, datasets, and runtime assets
 - maintain the lint/test gate as the default merge bar
@@ -1915,7 +1929,7 @@ Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/
 
 ### BREP/STEP post-merge improvements
 
-Addressed findings from the independent BREP/STEP review (`review/BREP_STEP_REVIEW.md`):
+Addressed findings from the independent BREP/STEP review (`review/BREP_STEP_REVIEW.md` (deleted 2026-09-17)):
 - **State safety**: face selection cleared on model removal; face_selection IDs validated against enriched mesh on project load with `FaceSelectionStale` warning; u16 face count overflow guard
 - **Controller routing**: face pick toggle moved from inline `app.rs` mutation to `AppEvent::ToggleFaceSelection` through the controller event system
 - **Undo support**: toolpath param snapshot extended to include `face_selection`, enabling undo/redo of face selection changes
@@ -2013,7 +2027,7 @@ emission-frame stock bbox, ending GUI-vs-CLI divergence for identity
 setups with `origin != 0` (F4); `SurfaceHeightmap.covered` hole mask (F3,
 revised — hole-diving during roughing is intended clear-everything
 semantics; the lever is a pinned `bottom_z`). Full audit + repro:
-`planning/HEIGHTS_SETUP_FRAME_AUDIT_2026-06-12.md`.
+`planning/HEIGHTS_SETUP_FRAME_AUDIT_2026-06-12.md` (deleted 2026-09-17).
 
 ### Adaptive clearing algorithm review + Stage 0 (2026-06-12)
 
@@ -2024,7 +2038,7 @@ angle fraction (`acos(1−s/R)/2π`) but the search *measured* a disk-area
 fraction — different quantities; A/B sweeps showed DiskArea converging on
 ~1.5× the commanded stepover. Recommendation: constructive offset-spiral +
 trochoid clearing on the existing EDT machinery (Stage 1+), per
-`planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`. Stage 0 landed on
+`planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` (deleted 2026-09-17). Stage 0 landed on
 `experiment/adaptive-spiral`: `EngagementMeasure::LeadingArc` behind a flag
 with closed-form oracle tests + A/B sweeps; `is_clear_path_3d` three-tier
 floor predicate (was ignoring its surface/stock_to_leave params);

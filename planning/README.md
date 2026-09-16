@@ -1,55 +1,61 @@
-# Planning
+# Planning index
 
-This directory contains active planning notes, status snapshots, and archived historical plans.
+This directory holds the current status, the open plans and the evidence that
+live sentries cite. It is not a single specification. Read `CLAUDE.md` in this
+directory for the rules, then `PROGRESS.md` for the snapshot.
 
-## Active docs
+## Deleted material and how to get it back
+
+The structure purge of 2026-09-17 removed 1010 files. Nothing was archived —
+the operator ruling of 2026-09-16 retires archiving. Every removed file stays
+retrievable at an annotated tag:
+
+```
+git show planning-pre-purge-2026-09-17:planning/<path>
+```
+
+`DELETED_INDEX.md` lists each deleted package, what it decided and why it went.
+A `planning/…` path in a doc comment or in `PROGRESS.md` that no longer exists
+is retrievable the same way.
+
+## Start here
 
 | File | Purpose |
-|------|---------|
-| [`PROGRESS.md`](PROGRESS.md) | Current project snapshot and verification status |
-| [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) | Prioritized near-term engineering backlog |
-| [`Performance_review.md`](Performance_review.md) | Active performance backlog and benchmark gaps |
-| [`FUTURE_PLANS.md`](FUTURE_PLANS.md) | Deferred product and engineering follow-ons, including benchmark mode |
-| [`WORKSPACE_UX_REDESIGN_PLAN.md`](WORKSPACE_UX_REDESIGN_PLAN.md) | Detailed handoff plan for the setup/toolpaths/simulation workspace redesign |
-| [`SIMULATION_WORKSPACE_VISION.md`](SIMULATION_WORKSPACE_VISION.md) | UX vision for dedicated verification environment |
-| [`WORKFLOW_TEST_PLAN.md`](WORKFLOW_TEST_PLAN.md) | End-to-end workflow test strategy and coverage map |
-| [`VOXEL_SIM_DESIGN.md`](VOXEL_SIM_DESIGN.md) | Tri-dexel simulation algorithm design (implemented) |
-| [`MULTI_SETUP_FEASIBILITY.md`](MULTI_SETUP_FEASIBILITY.md) | Multi-setup design research and feasibility |
-| [`MULTI_SETUP_UX_PLAN.md`](MULTI_SETUP_UX_PLAN.md) | Multi-setup UX execution plan (Phases A-D) |
-| [`ALIGNMENT_PINS_DESIGN.md`](ALIGNMENT_PINS_DESIGN.md) | Stock-level alignment pin design for two-sided machining |
-| [`TOOL_LIBRARY_DESIGN.md`](TOOL_LIBRARY_DESIGN.md) | Persistent tool library architecture (deferred) |
+|---|---|
+| [`PROGRESS.md`](PROGRESS.md) | Current snapshot, newest first |
+| [`CLAUDE.md`](CLAUDE.md) | How to use this directory |
+| [`TECH_DEBT_REGISTER.md`](TECH_DEBT_REGISTER.md) | Open debt no gate can fail on |
+| [`AGENT_CODEMAP.md`](AGENT_CODEMAP.md) | Where each subsystem lives |
+| [`DELETED_INDEX.md`](DELETED_INDEX.md) | What the purge removed, and why |
 
-## UX Fixes
+## Open packages
 
-Phased UX improvement plans in [`ux-fixes/`](ux-fixes/):
+| Package | State |
+|---|---|
+| [`linking_2026-09-09/`](linking_2026-09-09/) | G-LINKSTAGE spec, paused |
+| [`island_clip_2026-09-09/`](island_clip_2026-09-09/) | Spec; the experiments wait on the GUI |
+| [`ui_review_2026-09-14/`](ui_review_2026-09-14/) | UR4/UR5 open; `crates/rs_cam_viz/CLAUDE.md` points here |
+| [`roughing_strategy_ab_2026-09-07/`](roughing_strategy_ab_2026-09-07/) | Measured; an operator ruling on the bar is open |
+| [`arch_consolidation_2026-09-09/`](arch_consolidation_2026-09-09/) | Live tracker; five G- items open |
+| [`structure_2026-09-17/`](structure_2026-09-17/) | This programme |
 
-| File | Scope |
-|------|-------|
-| `phase1-critical-and-quick-wins.md` | Focus loss, quit protection, toast notifications, units |
-| `phase2-theme-and-multi-model.md` | Theme system, multi-model support |
-| `phase3-simulation-ux.md` | Timeline, staleness, export safety, deviation |
-| `phase4-navigation-and-discoverability.md` | Help, shortcuts, tooltips, undo gaps |
-| `phase5-polish-pass.md` | 40+ detail fixes across all panels |
+## Other packages held under this directory
 
-## Archive
+Two 2026-09-16 programme records: `duplicate_sweep_2026-09-15/` and
+`tech_debt_2026-09-16/`. Four packages another account owns:
+`load_model_2026-09-16/`, `feeds_rework_2026-09-15/`,
+`feed_modulation_calibration/` and `ui_premium_2026-09-13/`.
 
-Historical planning snapshots kept for context in [`archive/`](archive/):
+The rest are closed campaigns kept because a live sentry names them as its
+pre-registration, because `CREDITS.md` names them as attribution for shipped
+data, or because a test reads a file in them at run time. Two directories a
+test reads directly: `toolpath_acceptance/` (the CLI smoke CSV) and
+`gcode_current_outputs/` (the post-processor captures).
 
-- `FEATURE_GAP_REPORT.md` — Feature comparison vs Fusion 360
-- `GUI_WIRING_CATALOG.md` — Historical feature wiring catalog
-- `TECH_DEBT_PLAN.md` — Completed tech debt remediation (6 phases)
-- `REMEDIATION_TRACKER.md` — Completed 86-task remediation sprint
-- `ORCHESTRATION_PLAN.md` — Agent orchestration methodology (completed sprint)
-- `CONSOLIDATION_AUDIT.md` — Code consolidation session report
-- `VENDOR_LUT_GUI_PLAN.md` — Feeds/speeds UI checklist (mostly complete)
-- `OPEN_FIXES_TASKLIST.md` — Carryover tasks from remediation
-- `brep_step_implementation.md` — BREP/STEP import plan (shipped)
-- `brep_step_followup.md` — BREP/STEP post-implementation audit
-- `brep_step_followup_implementation.md` — Face/edge workflow wiring plan
+## Conventions
 
-## Guidance
-
-- Product-facing capability docs belong in the repo root (`README.md`, `FEATURE_CATALOG.md`, `CREDITS.md`), not here.
+- Product-facing capability docs belong in the repo root (`README.md`,
+  `FEATURE_CATALOG.md`, `CREDITS.md`), not here.
 - AI analysis reference: `AI_MACHINIST_ANALYSIS_REFERENCE.md` (root).
-- Durable design docs belong in `architecture/`.
-- Research notes and source captures belong in `research/`.
+- A dated report is evidence of what was measured then. It is not an
+  evergreen instruction.

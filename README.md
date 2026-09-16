@@ -21,7 +21,7 @@
 - `crates/rs_cam_viz`: `egui`/`wgpu` desktop application (`rs_cam_gui`)
 - `architecture/`: durable design docs
 - `research/`: algorithm notes, provenance, and exploratory research
-- `planning/`: active backlog, status, and archived planning snapshots
+- `planning/`: current status, open plans, and the evidence live sentries cite
 
 ## Quick start
 

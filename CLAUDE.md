@@ -47,6 +47,10 @@ package instruction speculatively.
 - Update visible-product docs with visible surface changes.
 - Update `CREDITS.md` when adding external datasets, formulas or algorithm
   references.
+- A `planning/…` path in a doc comment or a document that no longer exists was
+  deleted by the structure purge of 2026-09-17. Retrieve it with
+  `git show planning-pre-purge-2026-09-17:<path>`; `planning/DELETED_INDEX.md`
+  says what each deleted package decided.
 
 ## Codebase discovery
 

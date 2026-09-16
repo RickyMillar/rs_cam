@@ -399,7 +399,23 @@ are also the files it could promote to KEEP instead:
 
 ---
 
-## 6. What the rules could not decide — the orchestrator rules on these
+## 6. Decisions — asked, and ruled on 2026-09-17
+
+**Outcome of every question below is recorded here. The purge executed against
+these rulings.**
+
+| # | Ruling |
+|---|---|
+| 6.1 | The 293 doc-comment citations are **not rewritten**. The tag-retrieval sentence went into root `CLAUDE.md`, `crates/rs_cam_core/CLAUDE.md` and `planning/CLAUDE.md`. The gate is re-scoped to (a) class A and B files present, (b) no kept index document cites a deleted path without the marker, (c) the root `CLAUDE.md` table points at existing files |
+| 6.2 | KEEP the 13.6 MB `wanaka200_2_Setup_2___front.nc` |
+| 6.3 | `planning/README.md` rewritten as a short current index; the fourteen rule-2-literal documents judged on content and DELETED; `PROGRESS.md`'s 2026-03/04 priorities block relabelled history |
+| 6.4 | `planning/ui_audit/` DELETED (97 files); `PROGRESS.md:833` cut to one sentence |
+| 6.5 | Root: DELETE `review/`, `G13_PROMPT.md`, `AGENT_PROMPT.md` and the five generated `fixtures/debug_adaptive` files. KEEP `research/`, `architecture/`, `toolpath_stress_test/`, `AI_MACHINIST_ANALYSIS_REFERENCE.md`. `tests/step_validation/` deferred to P3 |
+| 6.6 | `README.md:24` rewritten; `PROGRESS.md`'s valley-tracing status corrected to CLOSED |
+
+The questions as they were put, for the record:
+
+
 
 **6.1 The P1 gate is not achievable as written.** `PROMPT.md` requires that
 `rg -n "planning/" crates/*/tests crates/*/src` show no path that no longer

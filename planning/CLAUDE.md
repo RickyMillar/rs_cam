@@ -19,8 +19,23 @@ It is not a single current specification.
   `review_2026-07-29/SUPERSEDED_CONCLUSIONS.md` before citing older
   finishing-strategy comparisons.
 - Prefer current code plus a named sentry over prose when they disagree.
-- Preserve useful measurements and decision records under `planning/` or
-  `planning/archive/`; do not keep them in root or crate instruction files.
+- Keep useful measurements and decision records under `planning/`; do not keep
+  them in root or crate instruction files. **Do not archive.** The operator
+  ruling of 2026-09-16 deletes obsolete material instead.
+
+## Deleted material
+
+The structure purge of 2026-09-17 removed 1010 files, `planning/archive/`
+included. Retrieve any of them:
+
+```
+git show planning-pre-purge-2026-09-17:<path>
+```
+
+`DELETED_INDEX.md` carries one line per deleted package: what it decided and
+why it is obsolete. A `planning/…` path in a doc comment, an assertion string
+or `PROGRESS.md` that no longer exists is retrievable the same way. Those
+citations were **not** rewritten; the tag is the retrieval path.
 
 ## Maintaining plans
 

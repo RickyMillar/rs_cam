@@ -21,7 +21,7 @@ Repo references:
 - `crates/rs_cam_core/src/tool/vbit.rs`
 - `crates/rs_cam_core/src/tool/bullnose.rs`
 - `research/04_open_source_reference.md`
-- `research/raw_opencamlib_math.md`
+- `research/archive/raw_opencamlib_math.md`
 
 Primary upstream:
 
@@ -757,10 +757,10 @@ The repo also preserves longer-form research and terminology mapping here:
 - `research/04_open_source_reference.md`
 - `research/05_rust_ecosystem.md`
 - `research/08_ux_terminology.md`
-- `research/raw_algorithms.md`
-- `research/raw_open_source.md`
-- `research/raw_opencamlib_math.md`
-- `research/raw_rust_ecosystem.md`
+- `research/archive/raw_algorithms.md`
+- `research/archive/raw_open_source.md`
+- `research/archive/raw_opencamlib_math.md`
+- `research/archive/raw_rust_ecosystem.md`
 
 Autodesk Fusion documentation and terminology are used as comparative references in the research material and vendor-LUT manifest; they are not presented as original `rs_cam` documentation.
 

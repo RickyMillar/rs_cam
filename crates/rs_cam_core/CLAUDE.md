@@ -76,3 +76,8 @@ Read the root `CLAUDE.md` first for workspace-wide architecture and gates.
 - Current code and sentries outrank historical descriptions. For incident
   evidence, search `planning/`; do not copy retired measurements into new
   product claims.
+- Many sentries name a `planning/…` document as their pre-registration. The
+  structure purge of 2026-09-17 deleted 103 of those documents and did **not**
+  rewrite the 293 citations. Retrieve one with
+  `git show planning-pre-purge-2026-09-17:<path>`. A dead path in a doc comment
+  is expected; it is not a defect to fix.
