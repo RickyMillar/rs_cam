@@ -73,8 +73,10 @@ pub enum RationaleParam {
     EntryStyle,
     /// `operation.clearing_strategy` (Adaptive3d). v3.3 placeholder.
     ClearingStrategy,
-    /// `operation.stock_to_leave_radial` / `stock_to_leave_axial`
-    /// (Adaptive3d). v3.3 placeholder.
+    /// The rough pass's `stock_to_leave` allowance. The
+    /// finish-envelope advisory is the one producer: it asks the
+    /// operator to coordinate the rough allowance with the finish
+    /// per-pass DOC.
     StockToLeave,
 }
 
@@ -357,9 +359,6 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             let rationale_param = match *param {
                 "entry_style" => RationaleParam::EntryStyle,
                 "clearing_strategy" => RationaleParam::ClearingStrategy,
-                "stock_to_leave_radial" | "stock_to_leave_axial" | "stock_to_leave" => {
-                    RationaleParam::StockToLeave
-                }
                 // Future strategy fields: fall back to EntryStyle as a
                 // safe sentinel rather than crash. The headline still
                 // names the field literally.
@@ -478,9 +477,6 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             let rationale_param = match *param {
                 "entry_style" => RationaleParam::EntryStyle,
                 "clearing_strategy" => RationaleParam::ClearingStrategy,
-                "stock_to_leave_radial" | "stock_to_leave_axial" | "stock_to_leave" => {
-                    RationaleParam::StockToLeave
-                }
                 // Future strategy fields: same safe sentinel as the
                 // StrategyRewrote arm — headline names the field.
                 _ => RationaleParam::EntryStyle,

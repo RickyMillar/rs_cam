@@ -409,8 +409,8 @@ pub enum SuggestWarning {
     /// will additionally promote to Helix when the geometry classifier
     /// reports interior pocket headroom.
     ///
-    /// `param` is the snake-case field name ("entry_style",
-    /// "clearing_strategy", "stock_to_leave_radial", etc.). `from` and
+    /// `param` is the snake-case field name — "entry_style" and
+    /// "clearing_strategy" are the two values shipped today. `from` and
     /// `to` are the value labels (e.g. "plunge", "ramp"). `reason` is
     /// the short heuristic key that fired (e.g. "deflection_predict_at_dpp").
     StrategyRewrote {
