@@ -148,12 +148,6 @@ pub fn save_to(dir: &Path, name: &str, catalog: &ToolCatalog) -> Result<PathBuf,
     Ok(path)
 }
 
-/// Save a catalog under `name` into the resolved library dir.
-pub fn save_library(name: &str, catalog: &ToolCatalog) -> Result<PathBuf, ToolLibraryError> {
-    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
-    save_to(&dir, name, catalog)
-}
-
 /// Append a tool to catalog `name` in `dir` (creating the catalog if
 /// absent), then save. The tool keeps its fields verbatim; its
 /// project-local `id` is irrelevant on later import.
@@ -165,12 +159,6 @@ pub fn append_to(dir: &Path, name: &str, tool: ToolConfig) -> Result<PathBuf, To
     };
     catalog.tools.push(tool);
     save_to(dir, name, &catalog)
-}
-
-/// Append a tool to catalog `name` in the resolved library dir.
-pub fn append_tool(name: &str, tool: ToolConfig) -> Result<PathBuf, ToolLibraryError> {
-    let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
-    append_to(&dir, name, tool)
 }
 
 /// Add `tool` to catalog `name` in `dir`, **replacing** an existing tool
@@ -207,23 +195,6 @@ pub fn add_or_replace_tool(
 ) -> Result<(PathBuf, bool), ToolLibraryError> {
     let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
     add_or_replace_to(&dir, name, tool)
-}
-
-/// Every tool across every catalog in the resolved library dir, paired
-/// with its catalog name. Order: catalogs sorted, tools in file order.
-pub fn all_tools() -> Vec<(String, ToolConfig)> {
-    let Some(dir) = library_dir() else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for cat_name in list_in(&dir) {
-        if let Ok(catalog) = load_from(&dir, &cat_name) {
-            for tool in catalog.tools {
-                out.push((cat_name.clone(), tool));
-            }
-        }
-    }
-    out
 }
 
 /// Remove the tool at `index` from catalog `name` in `dir`, then save.
