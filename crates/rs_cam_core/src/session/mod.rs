@@ -1875,9 +1875,12 @@ impl ProjectSession {
     ///
     /// Crate-private since WP7; every surface mutates through
     /// `ProjectSession::apply`.
-    // WP7: the only caller is the `#[cfg(test)]` module of
-    // `session/save.rs`, so a normal build sees the door as dead.
-    #[cfg_attr(not(test), allow(dead_code))]
+    ///
+    /// **Test door.** The only caller is the `#[cfg(test)]` module of
+    /// `session/save.rs`, so the door compiles under `cfg(test)` only.
+    /// S30 (tech debt 2026-09-16) replaced the `allow(dead_code)` with
+    /// this gate: a production build no longer carries the door at all.
+    #[cfg(test)]
     pub(crate) fn setups_mut(&mut self) -> &mut Vec<SetupData> {
         &mut self.setups
     }
