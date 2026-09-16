@@ -352,6 +352,11 @@ impl ProjectSession {
             .as_ref()
             .and_then(|mesh| Self::peek_band_advisories(mesh, &refs, &cusp_radii, spec));
 
+        // Q1: the bbox the Suggest funnel reads for the runtime-sanity
+        // stepover back-off. One read for the whole ladder — every tier
+        // machines `spec.model_id`.
+        let model_bbox = self.model_bbox(spec.model_id);
+
         let plan_id = self.next_plan_id();
         let replaced = self.remove_planned_toolpaths(spec.setup_index);
 
@@ -370,7 +375,8 @@ impl ProjectSession {
                 .copied()
                 .unwrap_or_default();
             let mut operation = plan_tier_operation(tier, cusp, spec, strategy);
-            let feeds_provenance = self.suggest_feeds_for(&mut operation, tool);
+            let feeds_provenance =
+                self.suggest_feeds_for(&mut operation, tool, model_bbox.as_ref());
             let strategy_tag = match strategy {
                 TierStrategy::UnifiedFinish => "",
                 TierStrategy::Scallop => " scallop",
@@ -767,6 +773,7 @@ impl ProjectSession {
         &self,
         operation: &mut OperationConfig,
         tool: &ToolConfig,
+        model_bbox: Option<&crate::geo::BoundingBox3>,
     ) -> crate::feeds::FeedsProvenance {
         let planned = operation.clone();
         let suggested = crate::feeds::suggest::suggest_for_operation(
@@ -778,7 +785,17 @@ impl ProjectSession {
                 workholding: self.stock.workholding_rigidity,
                 lut: crate::feeds::embedded_vendor_lut(),
                 spindle_strategy: crate::feeds::SpindleStrategy::default(),
-                context: crate::feeds::suggest::SuggestContext::default(),
+                // Q1: the bbox the runtime-sanity back-off reads.
+                // `restore_planned_geometry` below re-applies the
+                // planner's equal-cusp stepover, so the back-off cannot
+                // move the tier's stepover; it stays populated so the
+                // funnel sees the same context every other surface does.
+                // `upstream_leftover_stock_mm` stays `None`: no lookup
+                // here gives it, and v1 does not read it.
+                context: crate::feeds::suggest::SuggestContext {
+                    model_bbox,
+                    ..crate::feeds::suggest::SuggestContext::default()
+                },
             },
         );
         match suggested {

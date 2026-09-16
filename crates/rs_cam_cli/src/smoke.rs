@@ -518,6 +518,12 @@ fn materialize_case_toolpath(
     let machine = session.machine().clone();
     let material = session.stock_config().material.clone();
     let workholding = session.stock_config().workholding_rigidity;
+    // Q1: the model this case machines is the one the `ToolpathConfig`
+    // below binds. Reading it BEFORE the Suggest call is the whole fix —
+    // `SuggestContext::model_bbox` gates the runtime-sanity stepover
+    // back-off, and this harness used to pass `None`.
+    let model_id = session.models().first().map(|m| m.id).unwrap_or(0);
+    let model_bbox = session.model_bbox(model_id);
     let operation = match suggest_params(SuggestParamsInput {
         op_type,
         tool: &tool,
@@ -527,7 +533,15 @@ fn materialize_case_toolpath(
         lut: embedded_vendor_lut(),
         stock_ctx: &stock_ctx,
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-        context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+        // Q1: the bbox the runtime-sanity back-off reads. The stock
+        // reaches Suggest through `stock_ctx` above, so
+        // `SuggestContext::stock` stays empty rather than carrying the
+        // same value twice. `upstream_leftover_stock_mm` stays `None`:
+        // no lookup here gives it, and v1 does not read it.
+        context: rs_cam_core::feeds::suggest::SuggestContext {
+            model_bbox: model_bbox.as_ref(),
+            ..rs_cam_core::feeds::suggest::SuggestContext::default()
+        },
     }) {
         Ok(s) => s.operation,
         Err(e) => {
@@ -539,8 +553,6 @@ fn materialize_case_toolpath(
             ));
         }
     };
-
-    let model_id = session.models().first().map(|m| m.id).unwrap_or(0);
 
     let tc = ToolpathConfig {
         id: rs_cam_core::ToolpathId(0),
