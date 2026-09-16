@@ -2487,6 +2487,89 @@ mod tests {
         }
     }
 
+    /// L1. The load-time dressup migration rewrites a value the
+    /// operator stored, so it reports through the warning channel and
+    /// not only through `tracing::info!`. ProjectCurve is a strip-all
+    /// operation: entry, lead-in/out and link moves all go.
+    #[test]
+    fn normalised_dressups_are_reported_to_the_operator() {
+        let toml_str = concat!(
+            "format_version = 3\n",
+            "[job]\n",
+            "name = \"Dressup Migration\"\n",
+            "[[setups]]\n",
+            "id = 0\n",
+            "name = \"Setup 1\"\n",
+            "[[setups.toolpaths]]\n",
+            "id = 0\n",
+            "name = \"River\"\n",
+            "enabled = true\n",
+            "type = \"project_curve\"\n",
+            "tool_id = 0\n",
+            "model_id = 0\n",
+            "[setups.toolpaths.dressups]\n",
+            "entry_style = \"ramp\"\n",
+            "ramp_angle = 3.0\n",
+            "helix_radius = 2.0\n",
+            "helix_pitch = 1.0\n",
+            "dogbone = false\n",
+            "dogbone_angle = 90.0\n",
+            "lead_in_out = true\n",
+            "lead_radius = 2.0\n",
+            "link_moves = true\n",
+            "link_max_distance = 10.0\n",
+            "link_feed_rate = 500.0\n",
+            "arc_fitting = true\n",
+            "arc_tolerance = 0.05\n",
+            "feed_optimization = false\n",
+            "feed_max_rate = 3000.0\n",
+            "feed_ramp_rate = 200.0\n",
+            "optimize_rapid_order = true\n",
+            "retract_strategy = \"full\"\n",
+        );
+        let project: ProjectFile = toml::from_str(toml_str).unwrap();
+        let (session, warnings) =
+            ProjectSession::from_project_file_with_warnings(project, Path::new(".")).unwrap();
+
+        // The migration still writes what it always wrote.
+        let dressups = &session.toolpath_configs[0].dressups;
+        assert_eq!(
+            dressups.entry_style,
+            crate::compute::config::DressupEntryStyle::None
+        );
+        assert!(!dressups.lead_in_out);
+        assert!(!dressups.link_moves);
+
+        let reported = warnings
+            .iter()
+            .find(|w| matches!(w, ProjectLoadWarning::DressupsNormalized { .. }))
+            .expect("the loader must report the dressups it rewrote");
+        let ProjectLoadWarning::DressupsNormalized {
+            toolpath,
+            op,
+            changes,
+        } = reported
+        else {
+            panic!("matched variant, then read another: {reported:?}");
+        };
+        assert_eq!(toolpath, "River");
+        assert_eq!(op, "ProjectCurve");
+        assert_eq!(
+            changes,
+            &vec![
+                "entry_style Ramp to None".to_owned(),
+                "lead_in_out true to false".to_owned(),
+                "link_moves true to false".to_owned(),
+            ],
+            "the warning must name every value the loader rewrote"
+        );
+        let message = reported.message();
+        assert!(
+            message.contains("River") && message.contains("entry_style Ramp to None"),
+            "the operator sentence must name the toolpath and the change: {message}"
+        );
+    }
+
     /// Q4 tripwire, deliberately re-baselined in T8: the loader still
     /// defaults unknown tokens to EndMill (now with a tracing warning
     /// instead of silently), and the unified vocabulary additionally

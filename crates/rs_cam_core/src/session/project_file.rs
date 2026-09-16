@@ -86,6 +86,15 @@ pub enum ProjectLoadWarning {
     MissingToolReference { toolpath: String, tool_id: usize },
     /// A toolpath names a model id no `[[models]]` section defines.
     MissingModelReference { toolpath: String, model_id: usize },
+    /// A toolpath carried a dressup value its operation does not allow.
+    /// The loader rewrote the value. The file still holds the old one
+    /// until the operator saves the project again.
+    DressupsNormalized {
+        toolpath: String,
+        op: String,
+        /// One `dial: before to after` phrase per rewritten value.
+        changes: Vec<String>,
+    },
 }
 
 impl ProjectLoadWarning {
@@ -104,6 +113,15 @@ impl ProjectLoadWarning {
             ),
             Self::MissingModelReference { toolpath, model_id } => format!(
                 "Toolpath '{toolpath}' references missing model id {model_id} and needs reassignment."
+            ),
+            Self::DressupsNormalized {
+                toolpath,
+                op,
+                changes,
+            } => format!(
+                "Toolpath '{toolpath}' carried dressups the {op} operation does not allow. \
+                 The loader changed {}. Save the project to keep the change.",
+                changes.join(", ")
             ),
         }
     }
@@ -690,17 +708,54 @@ pub(crate) fn load_model_geometry(
     })
 }
 
+/// Name every dressup value [`DressupConfig::normalize_for_op`] rewrote.
+///
+/// The policy rewrites three dials, so the reader names all three. A
+/// policy that grows a fourth leaves the list empty; the last arm says
+/// that plainly rather than reporting a silent nothing.
+fn dressup_changes(before: &DressupConfig, after: &DressupConfig) -> Vec<String> {
+    let mut changes = Vec::new();
+    if before.entry_style != after.entry_style {
+        changes.push(format!(
+            "entry_style {:?} to {:?}",
+            before.entry_style, after.entry_style
+        ));
+    }
+    if before.lead_in_out != after.lead_in_out {
+        changes.push(format!(
+            "lead_in_out {} to {}",
+            before.lead_in_out, after.lead_in_out
+        ));
+    }
+    if before.link_moves != after.link_moves {
+        changes.push(format!(
+            "link_moves {} to {}",
+            before.link_moves, after.link_moves
+        ));
+    }
+    if changes.is_empty() {
+        changes.push("a dressup value this reader does not name".to_owned());
+    }
+    changes
+}
+
 /// Convert a TOML toolpath section into a session `ToolpathConfig`.
 fn toolpath_config_from_section(
     tp: &ProjectToolpathSection,
     tp_id: crate::ids::ToolpathId,
     operation: &OperationConfig,
+    warnings: &mut Vec<ProjectLoadWarning>,
 ) -> ToolpathConfig {
     // One-shot migration: projects saved before operation-specific dressup
     // restrictions shipped can have geometrically-invalid dressups (e.g.
     // entry_style=Ramp on a ProjectCurve with hundreds of small rings,
     // producing phantom diagonal cuts across the stock). Normalize on load
     // so the UI state and compute behaviour stay in lockstep.
+    //
+    // L1: the registry policy still grows inside format 3, so this fires
+    // on a file the operator saved before the rule shipped. It overwrites
+    // a stored value, so it reports through the same warning channel as
+    // `parse_tool_type` — the log alone reaches nobody.
     let mut dressups = tp.dressups.clone();
     let op_type = operation.op_type();
     if dressups.normalize_for_op(op_type) {
@@ -709,6 +764,11 @@ fn toolpath_config_from_section(
             op = ?op_type,
             "Normalized incompatible dressups on load"
         );
+        warnings.push(ProjectLoadWarning::DressupsNormalized {
+            toolpath: tp.name.clone(),
+            op: format!("{op_type:?}"),
+            changes: dressup_changes(&tp.dressups, &dressups),
+        });
     }
     ToolpathConfig {
         id: tp_id,
@@ -1009,7 +1069,9 @@ pub(super) fn build_session_from_project(
                         OperationConfig::new_default(op_type)
                     }
                 };
-                toolpath_configs.push(toolpath_config_from_section(tp_section, tp_id, &operation));
+                toolpath_configs.push(toolpath_config_from_section(
+                    tp_section, tp_id, &operation, warnings,
+                ));
                 tp_indices.push(tp_idx);
             }
 
@@ -1051,7 +1113,9 @@ pub(super) fn build_session_from_project(
                     OperationConfig::new_default(op_type)
                 }
             };
-            toolpath_configs.push(toolpath_config_from_section(tp_section, tp_id, &operation));
+            toolpath_configs.push(toolpath_config_from_section(
+                tp_section, tp_id, &operation, warnings,
+            ));
             tp_indices.push(tp_idx);
         }
         if !tp_indices.is_empty() {
