@@ -861,6 +861,11 @@ fn reset_simulation_clears_results_and_checks() {
 #[test]
 fn simulation_staleness_tracks_edits() {
     let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    // UR3 (7b4e18f6): an UNSTAMPED result reads stale, never current. A
+    // fresh-looking run must come through the submit that stamps the
+    // capture revision, as a real Run Simulation does.
+    controller.handle_internal_event(AppEvent::RunSimulation);
     inject_sim_results(&mut controller, 1);
 
     // Should not be stale immediately
