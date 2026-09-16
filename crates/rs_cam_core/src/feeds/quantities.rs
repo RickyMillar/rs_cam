@@ -191,9 +191,7 @@ pub enum ChiploadBandClass {
 /// A matched vendor LUT row's chipload window, in advance per tooth.
 ///
 /// This is the one place the word *chipload* is kept on purpose: it is
-/// the vendors' own column heading, and [`Self::render_label`] spells the
-/// unit out so the reader is never left to guess which of the three
-/// quantities the band applies to.
+/// the vendors' own column heading.
 ///
 /// Mirrors the `Range<f64>` that
 /// [`crate::tool_load::chipload_envelopes_for_session`] returns — that
@@ -268,17 +266,6 @@ impl VendorChiploadBand {
         let hi = self.max.mm();
         (hi > 0.0).then(|| observed.mm() / hi)
     }
-
-    /// The band as an operator-facing string, with the unit spelled out.
-    /// e.g. `"0.0320–0.0550 mm/tooth"`.
-    #[must_use]
-    pub fn render_label(self) -> String {
-        format!(
-            "{:.4}\u{2013}{:.4} {ADVANCE_PER_TOOTH_UNIT}",
-            self.min.mm(),
-            self.max.mm()
-        )
-    }
 }
 
 #[cfg(test)]
@@ -331,10 +318,5 @@ mod tests {
             .fraction_of_ceiling(AdvancePerToothMm::new(0.055))
             .expect("positive ceiling");
         assert!((f - 1.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn render_label_spells_the_unit() {
-        assert_eq!(band().render_label(), "0.0320\u{2013}0.0550 mm/tooth");
     }
 }
