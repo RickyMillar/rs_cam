@@ -248,3 +248,94 @@ plainly rather than quietly correcting.
 **Every line number in this package should be treated as approximate. Every
 symbol name should be treated as exact.** Anyone acting on these documents
 should search for the symbol, not open the line.
+
+---
+
+# 9. The proposed approach (2026-09-17)
+
+Written after the surveys, and it replaces the confidence-tag idea entirely.
+
+## The concept
+
+**A limit has two independent properties: how bad the consequence is, and how
+much the bound is trusted. They are not the same axis, and the codebase
+already knows it.**
+
+`ChipBoundsSource::low_side_is_advisory` is the proof. When the chipload
+floor's provenance is weak, a cut below it becomes a structured **advisory
+inside `Within`** rather than flipping to `Exceeds`. It is reported, it is
+visible, and it does not refuse a g-code export. The comment on the HIGH side
+states the other half:
+
+> The HIGH (breakage) side stays hard for every source — over-thick chips
+> break teeth regardless of how the bound was derived.
+
+So: breakage is hard whatever the source, because the consequence is physical.
+Burn is advisory when the source is weak, because the consequence is gradual
+AND the bound is uncertain. Two axes, already separated, already shipped.
+
+**This is why the confidence badge was the wrong idea, and why the operator
+was right to reject it.** A badge asks the reader to hold the confidence in
+their head and discount the number themselves. The mechanism above does it for
+them: a bound the engine does not trust **cannot stop the job**. The behaviour
+carries the meaning, so the label does not have to.
+
+## What follows
+
+### Depth of cut joins as a criterion with an ADVISORY bound
+
+The rigidity cap decides the depth on 100 % of recipes and the operator cannot
+see it as a limit. Promote it.
+
+But `enforce_load_policy` refuses export on ANY exceeded criterion, with no
+per-criterion scoping. `0.20 × diameter` on a Ø6 tool is 1.2 mm, and plenty of
+people deliberately cut deeper. **Gating on it would block working jobs on a
+number with no source.**
+
+So it joins the way the chipload floor already does: visible, comparable, and
+advisory. It will read as the binding row on nearly every cut, which is the
+point — the operator sees that the thing deciding their depth sits at 350 %
+while the measured power limit sits at 40 %.
+
+**And the day somebody measures the machine, the same row becomes hard with no
+UI change.** The advisory flag is a property of the bound's provenance, not of
+the display.
+
+### Gantry push joins as `Unmodeled(NotImplemented)`
+
+The force is already computed by `feeds::force::lateral_cutting_force`. Only
+the machine-side capacity is missing. The arm already exists and already paints
+`—`. An absent limit should be visibly absent.
+
+### Ruling A dissolves
+
+The question was whether to delete the `≈` confidence mark. The answer is that
+confidence should change what the system DOES, not how a row is decorated.
+Once a weak bound cannot gate, the row only has to say what happened. The `≈`
+can go, and nothing is lost, because the information moved into behaviour.
+
+The `Approximate(String)` payload still belongs in the hover — it says WHICH
+input is approximate, and the badge throws it away today.
+
+### Distributions move to "probably not yet"
+
+Put the depth row next to the power row on one scale and the comparison does
+the work a histogram was being asked to do. Revisit only if that surface
+leaves a real question unanswered.
+
+## Order
+
+```
+1. Ruling B — the power-bar ban            operator
+2. Gantry push as Unmodeled                small
+3. Depth of cut as an advisory criterion   small
+4. Stop reporting power at a depth that will not be cut   correctness
+5. LOOK. Then decide whether anything else is needed.
+```
+
+Step 4 is the one correctness defect found in the whole survey: `power_kw` is
+computed before `clamp_dpp_to_rigidity`, so a Ø12 cut reports a figure for a
+depth 3.5x deeper than it will cut. It is the same shape as the stale-geometry
+defect that got the FEED pinned in 2026-08; power was never pinned with it.
+
+Nothing here needs new physics, a new chart, or a new panel.
