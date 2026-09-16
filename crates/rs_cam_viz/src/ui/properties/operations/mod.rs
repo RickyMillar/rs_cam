@@ -2095,7 +2095,7 @@ struct ValidationSetup {
 }
 
 impl ToolpathValidationContext {
-    /// Build from a `ProjectSession` (no `JobState` needed).
+    /// Build from a `ProjectSession`.
     pub fn from_session(session: &rs_cam_core::session::ProjectSession) -> Self {
         Self {
             tools: session

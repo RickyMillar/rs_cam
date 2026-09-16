@@ -11,9 +11,11 @@
 //! default again and the file contained no `z_datum` key.
 //!
 //! The keys existed only in the viz *fallback* schema
-//! (`crates/rs_cam_viz/src/io/project.rs`), which is load-only and whose
+//! (`crates/rs_cam_viz/src/io/project.rs`), which was load-only and whose
 //! `build_session_from_legacy_job` dropped them again anyway. So there
-//! was no path — primary or fallback — on which a datum survived.
+//! was no path — primary or fallback — on which a datum survived. C11 has
+//! since deleted that schema; core's `session::project_file` is the one
+//! that carries the keys today.
 //!
 //! # Red-first evidence (parent `777a78b`)
 //!
@@ -39,8 +41,8 @@
 //! scope is what the operator *allowed*, not what got *used*. It is
 //! therefore persisted rather than derived. Note that the list is not
 //! validated against the model table (a scope may name a model id that
-//! no longer exists); that is the pre-existing behaviour of the
-//! fallback schema and is unchanged here.
+//! no longer exists); that was the behaviour of the deleted fallback
+//! schema and is unchanged here.
 
 #![allow(
     clippy::unwrap_used,

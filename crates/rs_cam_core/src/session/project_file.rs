@@ -363,11 +363,12 @@ pub struct ProjectSetupSection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pause_message: Option<String>,
     /// Setup datum — how the operator zeroes the machine (W9 / P-2).
-    /// Key names and spellings match what the viz fallback schema
-    /// already wrote (`crates/rs_cam_viz/src/io/project.rs`), so the two
-    /// loaders agree instead of drifting. All three are written only
-    /// when non-default, so files saved before this landed and projects
-    /// that never touched the datum stay byte-identical.
+    /// Key names and spellings came from the viz fallback schema, which
+    /// wrote them first; C11 deleted that schema, so this is now the only
+    /// place the project file defines them. A file written by the old
+    /// schema still loads here. All three are written only when
+    /// non-default, so files saved before this landed and projects that
+    /// never touched the datum stay byte-identical.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub xy_datum: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]

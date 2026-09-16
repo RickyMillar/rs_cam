@@ -165,18 +165,41 @@ pub(crate) fn model_from_geometry(
     model
 }
 
+/// THE table of model file extensions, in lower case, with the kind each
+/// one names.
+///
+/// [`infer_kind_from_path`] and [`MODEL_FILE_EXTENSIONS`] both read this
+/// table, so a new format reaches the classifier and the file dialog in one
+/// edit. The GUI used to keep a hand-written second list beside this one.
+const MODEL_EXTENSION_KINDS: &[(&str, ModelKind)] = &[
+    ("stl", ModelKind::Stl),
+    ("svg", ModelKind::Svg),
+    ("dxf", ModelKind::Dxf),
+    ("step", ModelKind::Step),
+    ("stp", ModelKind::Step),
+];
+
+/// File-dialog extensions accepted for model import.
+///
+/// Both cases of every entry in [`MODEL_EXTENSION_KINDS`] appear here.
+/// Keep the upper-case spellings: a native dialog filter can otherwise
+/// hide a valid file, even though [`infer_kind_from_path`] classifies an
+/// extension case-insensitively.
+/// `model_file_extensions_cover_the_table` pins the two against drift.
+pub const MODEL_FILE_EXTENSIONS: &[&str] = &[
+    "stl", "STL", "svg", "SVG", "dxf", "DXF", "step", "STEP", "stp", "STP",
+];
+
 /// Infer a model kind from a file extension.
 pub fn infer_kind_from_path(path: &Path) -> Option<ModelKind> {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .and_then(|ext| match ext.as_str() {
-            "stl" => Some(ModelKind::Stl),
-            "svg" => Some(ModelKind::Svg),
-            "dxf" => Some(ModelKind::Dxf),
-            "step" | "stp" => Some(ModelKind::Step),
-            _ => None,
-        })
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())?
+        .to_ascii_lowercase();
+    MODEL_EXTENSION_KINDS
+        .iter()
+        .find(|(key, _)| *key == ext)
+        .map(|(_, kind)| *kind)
 }
 
 pub(crate) fn apply_uniform_scale_2d(polygons: &mut [crate::polygon::Polygon2], scale: f64) {
@@ -212,5 +235,55 @@ pub(crate) fn apply_uniform_scale_targets(
         if let crate::dxf_input::DrillTargetKind::CircleCenter { diameter } = &mut t.kind {
             *diameter *= scale;
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    /// The dialog list and the classifier read one table.
+    ///
+    /// The GUI kept a second, hand-written extension list beside this
+    /// module until the C-series cleanup. A format added to one list and
+    /// not to the other let the operator pick a file the classifier then
+    /// refused, or hid a file the classifier accepts.
+    #[test]
+    fn model_file_extensions_cover_the_table() {
+        for (key, kind) in MODEL_EXTENSION_KINDS {
+            let lower = format!("model.{key}");
+            let upper = format!("model.{}", key.to_ascii_uppercase());
+            assert_eq!(
+                infer_kind_from_path(Path::new(&lower)),
+                Some(*kind),
+                "the classifier must answer for `{key}`"
+            );
+            assert!(
+                MODEL_FILE_EXTENSIONS.contains(key),
+                "the dialog list must hold the lower-case `{key}`"
+            );
+            assert!(
+                MODEL_FILE_EXTENSIONS.contains(&key.to_ascii_uppercase().as_str()),
+                "the dialog list must hold the upper-case `{key}`"
+            );
+            assert_eq!(
+                infer_kind_from_path(Path::new(&upper)),
+                Some(*kind),
+                "the classifier reads an extension case-insensitively"
+            );
+        }
+        assert_eq!(
+            MODEL_FILE_EXTENSIONS.len(),
+            MODEL_EXTENSION_KINDS.len() * 2,
+            "the dialog list must hold both cases of every table entry, and nothing else"
+        );
+        assert_eq!(infer_kind_from_path(Path::new("model.gcode")), None);
+        assert_eq!(infer_kind_from_path(Path::new("model")), None);
     }
 }

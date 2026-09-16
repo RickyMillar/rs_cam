@@ -250,7 +250,7 @@ use std::collections::HashMap;
 use std::f64::consts::{PI, TAU};
 
 use crate::direction_field::{RegionMesh, build_region_mesh};
-use crate::geo::{P3, V3};
+use crate::geo::{P3, V3, polyline_length};
 use crate::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 
 // ---------------------------------------------------------------------------
@@ -2581,14 +2581,6 @@ struct Ring {
     contact: Vec<P3>,
     /// `S^h` points first covered by this ring — the paper's band `BP_i`.
     band: Vec<usize>,
-}
-
-/// 3D polyline length.
-fn polyline_length(p: &[P3]) -> f64 {
-    p.windows(2)
-        .filter_map(|w| Some((*w.first()?, *w.get(1)?)))
-        .map(|(a, b)| (b - a).norm())
-        .sum()
 }
 
 /// Brute-force 3D distance from a point to a polyline.

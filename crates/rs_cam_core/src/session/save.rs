@@ -62,8 +62,8 @@ fn cut_direction_to_key(cd: BitCutDirection) -> String {
 ///
 /// Ported verbatim in behaviour from `rs_cam_viz`'s fallback loader
 /// (`io/project.rs::persist_model_path`), which had the rule right and no
-/// production caller. That copy stays where it is; it belongs to that
-/// loader.
+/// production caller. C11 deleted that loader, so this is the only site
+/// that answers the question.
 fn persist_model_path(project_dir: Option<&Path>, model_path: &Path) -> String {
     let Some(project_dir) = project_dir else {
         return model_path.to_string_lossy().into_owned();

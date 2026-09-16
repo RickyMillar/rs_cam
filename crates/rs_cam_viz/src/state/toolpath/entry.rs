@@ -157,8 +157,9 @@ pub struct ToolpathEntry {
     /// moved). Never persisted; the entry is rebuilt empty every frame.
     pub pill_stamped_fields: Vec<rs_cam_core::feeds::FeedsField>,
     /// Multi-tool planner provenance (Phase O). Mirrors
-    /// `ToolpathConfig::planner_origin` so the legacy fallback loader can
-    /// carry it into the session; `ui::properties::project_entry_onto`
+    /// `ToolpathConfig::planner_origin`, which
+    /// `ui::properties::build_entry_from_session_and_gui` copies in when it
+    /// builds the panel's entry; `ui::properties::project_entry_onto`
     /// deliberately never writes it back — it projects onto a CLONE of
     /// the stored config, so the session copy survives. The session copy
     /// is authoritative, and a duplicate (`duplicate_from` →

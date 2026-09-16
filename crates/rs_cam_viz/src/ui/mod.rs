@@ -60,12 +60,11 @@ use std::path::PathBuf;
 
 /// File-dialog extensions accepted for model import.
 ///
-/// Keep the upper-case spellings: native dialog filters can otherwise hide
-/// valid files even though [`model_import_event`] classifies extensions
-/// case-insensitively.
-pub(crate) const MODEL_FILE_EXTENSIONS: &[&str] = &[
-    "stl", "STL", "svg", "SVG", "dxf", "DXF", "step", "stp", "STEP", "STP",
-];
+/// The list lives in `rs_cam_core::io`, beside the table
+/// [`model_import_event`] classifies against. This module used to keep a
+/// hand-written copy, and a format added to one and not to the other let
+/// the operator pick a file the classifier then refused.
+pub(crate) use rs_cam_core::io::MODEL_FILE_EXTENSIONS;
 
 /// Classify a selected model path into the import event used by every UI
 /// import route.

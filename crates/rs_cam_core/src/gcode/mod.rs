@@ -954,9 +954,10 @@ pub enum PostFormat {
     /// `rename_all = "snake_case"` serialises this as `"grbl_hal"`,
     /// while the project-file writer spells it `"grblhal"`
     /// ([`PostFormat::to_token`]). The alias makes the typed serde wire
-    /// (the viz fallback schema) accept the project-file spelling too,
-    /// so a grblHAL project cannot be rejected by whichever loader
-    /// happens to read it. Serialisation output is unchanged.
+    /// accept the project-file spelling too, so a grblHAL project cannot
+    /// be rejected by a surface that deserialises the value directly.
+    /// The two spellings first met in the viz fallback schema, which C11
+    /// deleted. Serialisation output is unchanged.
     #[serde(alias = "grblhal")]
     GrblHal,
     #[serde(alias = "linuxcnc")]
@@ -1340,10 +1341,11 @@ mod tests {
         assert_eq!(PostFormat::from_token("cobalt"), None);
     }
 
-    /// The typed serde wire (the viz fallback project schema) must
-    /// accept the project-file spelling as well as its own
-    /// `snake_case` output, or a grblHAL project written by the primary
-    /// writer is unreadable by the fallback loader.
+    /// The typed serde wire must accept the project-file spelling as
+    /// well as its own `snake_case` output, or a surface that
+    /// deserialises a `PostFormat` directly rejects a grblHAL value the
+    /// project-file writer produced. The viz fallback project schema was
+    /// the first such surface; C11 deleted it, and the union stays.
     #[test]
     fn the_typed_post_wire_accepts_both_spellings() {
         assert_eq!(

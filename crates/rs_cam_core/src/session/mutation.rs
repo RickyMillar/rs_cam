@@ -80,10 +80,10 @@ fn post_change_reaches_motion(before: &ProjectPostConfig, after: &ProjectPostCon
 /// Z extent is zero; `update_from_bbox` preserves stock Z for 2D models.
 /// Returns `None` if all polygons are empty.
 ///
-/// C22(a): `pub` because the GUI asks the same question. It used to carry
-/// its own copy in `state/job.rs`, written the other way round
-/// (`min_x.min(pt.x)` against `if pt.x < min_x`) but with the same answer,
-/// only because this one was `pub(crate)`.
+/// C22(a): `pub` because the GUI asks the same question. C22(a) deleted
+/// the GUI's own copy in `state/job.rs`, which was written the other way
+/// round (`min_x.min(pt.x)` against `if pt.x < min_x`) but gave the same
+/// answer. The copy existed only because this one was `pub(crate)`.
 pub fn polygons_bbox(polygons: &[Polygon2]) -> Option<BoundingBox3> {
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
@@ -2114,8 +2114,9 @@ impl ProjectSession {
     }
 
     /// Wholesale replace all setups and toolpath configs from an external
-    /// source (e.g. GUI's `JobState`).  This is the bulk-sync path used by
-    /// `sync_session_from_job`.
+    /// source. `Command::ReplaceSetupsAndToolpaths` is the only door, and
+    /// it serves a surface that rebuilds the whole plan in one step. C01
+    /// deleted the GUI caller this was written for.
     ///
     /// The caller is responsible for building valid `SetupData` and
     /// `ToolpathConfig` vecs whose `toolpath_indices` are consistent.

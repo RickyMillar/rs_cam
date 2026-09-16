@@ -279,6 +279,26 @@ maintain.
   `app/mcp.rs` and `compute/execute.rs` unmarked. The full sweep was not
   run. Risk: low (tooling only).
 
+- [x] **R1-R3 — review fix-ups** (the completeness review after the sweep).
+  - R1 (`f4e88be2`): `tests/effects_are_stamped_wp19.rs` dropped its two
+    `Justified` rows for `src/controller/io.rs`, whose sites C01 deleted;
+    `every_justified_discard_still_names_a_real_site` had gone red.
+  - R2 (`8e485ad2`): new core test
+    `tests/toolpath_fields_round_trip_c11.rs` pins the rest analysis,
+    the `DerivedRestRegions` boundary, `boundary_inherit`, the coolant,
+    the pre and post G-code, the dressups, the heights, the stock source
+    and the debug options through a save and a load — the assertions that
+    died with the viz writer C11 deleted.
+  - R3 (this commit): the docs stop naming the deleted loader as live
+    (`state/toolpath/entry.rs`, `session/mutation.rs` ×2,
+    `ui/properties/operations/mod.rs`, `session/project_file.rs`,
+    `session/save.rs`, `gcode/mod.rs` ×2,
+    `tests/setup_datum_round_trip_p2.rs`); `MODEL_FILE_EXTENSIONS` moves
+    to `rs_cam_core::io` beside a shared extension table that
+    `infer_kind_from_path` reads, with a sentry test; and
+    `conformal_spiral.rs` drops its private `polyline_length` for
+    `geo::polyline_length`.
+
 ## Phase 4 — documentation / no-action items
 
 - [ ] **C40 — SIBLING/NO-ACTION records**: I08 pairs B/C/D, I09 P1/P3,
