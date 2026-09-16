@@ -49,8 +49,8 @@ use rs_cam_core::geometry::region_set::RegionSet;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::radial_profile::RadialProfileLUT;
-use rs_cam_core::simulation_cut::SimulationCutSample;
+use rs_cam_core::stock::radial_profile::RadialProfileLUT;
+use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -193,7 +193,8 @@ fn bench_sim_dispatch_ab(c: &mut Criterion) {
 
     for (name, diameter, cell_size, tp) in fixtures {
         let flat = FlatEndmill::new(diameter, 25.0);
-        let lut = RadialProfileLUT::from_cutter(&flat, rs_cam_core::radial_profile::LUT_SAMPLES);
+        let lut =
+            RadialProfileLUT::from_cutter(&flat, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
         let fresh = TriDexelStock::from_stock(0.0, 0.0, 50.0, 32.0, 0.0, 10.0, cell_size);
         // 24 is the box's core count and is in the sweep deliberately: wave 2
         // measured per-stamp dispatch getting *worse* there (108.6 ms against
@@ -307,7 +308,8 @@ fn bench_sim_playback_ab(c: &mut Criterion) {
 
     for (name, diameter, cell_size, tp) in fixtures {
         let flat = FlatEndmill::new(diameter, 25.0);
-        let lut = RadialProfileLUT::from_cutter(&flat, rs_cam_core::radial_profile::LUT_SAMPLES);
+        let lut =
+            RadialProfileLUT::from_cutter(&flat, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
         let fresh = TriDexelStock::from_stock(0.0, 0.0, 50.0, 32.0, 0.0, 10.0, cell_size);
         for threads in [1usize, 4, 24] {
             let pool = rayon::ThreadPoolBuilder::new()
@@ -389,7 +391,8 @@ fn bench_sim_kernel_lateral(c: &mut Criterion) {
 
     for diameter in [6.0_f64, 12.0] {
         let flat = FlatEndmill::new(diameter, 25.0);
-        let lut = RadialProfileLUT::from_cutter(&flat, rs_cam_core::radial_profile::LUT_SAMPLES);
+        let lut =
+            RadialProfileLUT::from_cutter(&flat, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
         for cell_size in [0.25_f64, 0.1] {
             let fresh = TriDexelStock::from_stock(0.0, 0.0, 50.0, 32.0, 0.0, 10.0, cell_size);
             group.bench_function(
@@ -439,7 +442,7 @@ fn bench_sim_kernel_plunge(c: &mut Criterion) {
     group.sample_size(10);
 
     let flat = FlatEndmill::new(6.0, 25.0);
-    let lut = RadialProfileLUT::from_cutter(&flat, rs_cam_core::radial_profile::LUT_SAMPLES);
+    let lut = RadialProfileLUT::from_cutter(&flat, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
 
     for holes in [24_usize, 60] {
         let tp = plunge_pass(holes, -5.0);
@@ -1211,7 +1214,7 @@ fn ladder_request(
         },
         stock_top_z: 0.0,
         resolution: 0.4,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions {
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
             enabled: true,
             capture_arc_engagement: true,
         },
@@ -1281,7 +1284,7 @@ fn bench_sim_fixpoint_ladder(c: &mut Criterion) {
 /// are non-empty; that is what makes the advisory dedup and cap do work
 /// rather than short-circuit on an empty vector.
 fn synthetic_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationCutSample> {
-    use rs_cam_core::simulation_cut::{CutKinematics, Engagement, SimulationCutSample};
+    use rs_cam_core::stock::simulation_cut::{CutKinematics, Engagement, SimulationCutSample};
 
     (0..n_samples)
         .map(|i| {
@@ -1328,9 +1331,9 @@ fn synthetic_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationC
 fn bench_viz_triage_build(c: &mut Criterion) {
     use std::collections::BTreeMap;
 
-    use rs_cam_core::sim_measurability::MeasurabilityReport;
-    use rs_cam_core::sim_triage::{SimulationTriage, TriageInputs};
-    use rs_cam_core::simulation_cut::SimulationCutTrace;
+    use rs_cam_core::stock::sim_measurability::MeasurabilityReport;
+    use rs_cam_core::stock::sim_triage::{SimulationTriage, TriageInputs};
+    use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 
     let mut group = c.benchmark_group("viz_triage_build");
     group.sample_size(10);

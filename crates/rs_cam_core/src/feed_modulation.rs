@@ -687,7 +687,7 @@ fn band_mid_feed_for_move(
 ///
 /// Returns a [`ModulationOutcome`] with the per-move binding-
 /// constraint map. The map is suitable for stamping onto
-/// [`crate::simulation_cut::SimulationCutTrace::modulated_feeds`]
+/// [`crate::stock::simulation_cut::SimulationCutTrace::modulated_feeds`]
 /// after prefixing with the toolpath id.
 pub fn adaptive_feed_modulate(
     toolpath: &mut Toolpath,

@@ -593,7 +593,7 @@ mod tests {
     use crate::ids::ToolpathId;
     use crate::machine::MachineProfile;
     use crate::material::WoodSpecies;
-    use crate::simulation_cut::{
+    use crate::stock::simulation_cut::{
         CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
     };
     use crate::tool::ToolDefinition;
@@ -606,7 +606,7 @@ mod tests {
         tool: &crate::tool::ToolDefinition,
         material: &crate::material::Material,
         machine: &crate::machine::MachineProfile,
-        sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
         spans: Option<&[crate::toolpath_spans::Span]>,
         operation_kind: crate::compute::catalog::OperationType,
         tolerance: &crate::tool_load::ToleranceBands,
@@ -677,7 +677,7 @@ mod tests {
             arc_engagement_radians: Some(arc_rad),
             chipload_mm_per_tooth: feed_mmpm / (18_000.0 * 2.0),
             effective_chip_thickness_mm: Some(feed_mmpm / (18_000.0 * 2.0)),
-            engagement: crate::simulation_cut::Engagement::with_radial_woc(0.5),
+            engagement: crate::stock::simulation_cut::Engagement::with_radial_woc(0.5),
             removed_volume_est_mm3: 0.1,
             mrr_mm3_s: 1.0,
             ..SimulationCutSample::test_fixture()

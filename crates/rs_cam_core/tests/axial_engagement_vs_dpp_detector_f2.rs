@@ -40,7 +40,7 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SimulationOptions, ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::CutKinematics;
+use rs_cam_core::stock::simulation_cut::CutKinematics;
 
 /// Detector tolerance: a steady-state sample may read up to 1.5× the
 /// commanded depth-per-pass (grid discretisation + Z-blend rounding),

@@ -25,7 +25,7 @@ use crate::mesh::TriangleMesh;
 use crate::semantic_trace::{
     SemanticKey, ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces,
 };
-use crate::simulation_cut::{SimulationCutTrace, SimulationMetricOptions};
+use crate::stock::simulation_cut::{SimulationCutTrace, SimulationMetricOptions};
 use crate::tool::MillingCutter;
 
 use super::{
@@ -2174,7 +2174,7 @@ fn modulate_annotated_against_trace(
     operation: &crate::compute::OperationConfig,
     tool_cfg: &ToolConfig,
     toolpath_id: ToolpathId,
-    cut_trace: &crate::simulation_cut::SimulationCutTrace,
+    cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
     band: crate::feed_modulation::ChiploadBand,
     kinematics: crate::machine_kinematics::MachineKinematics,
     max_feed: f64,
@@ -2532,7 +2532,7 @@ fn simulate_candidate_isolated(
     tool_cfg: &ToolConfig,
     operation: &crate::compute::OperationConfig,
     cancel: &AtomicBool,
-) -> Option<Arc<crate::simulation_cut::SimulationCutTrace>> {
+) -> Option<Arc<crate::stock::simulation_cut::SimulationCutTrace>> {
     if annotated.toolpath.moves.len() < 2 {
         return None;
     }
@@ -4173,7 +4173,7 @@ impl ProjectSession {
         operation: &crate::compute::OperationConfig,
         tool_cfg: &ToolConfig,
         toolpath_id: ToolpathId,
-        cut_trace: &crate::simulation_cut::SimulationCutTrace,
+        cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
         band: crate::feed_modulation::ChiploadBand,
         kinematics: crate::machine_kinematics::MachineKinematics,
         max_feed: f64,
@@ -4215,7 +4215,7 @@ impl ProjectSession {
     /// otherwise a no-op (the byte-identical baseline).
     pub fn modulate_simulation_trace(
         &mut self,
-        cut_trace: &mut Option<Arc<crate::simulation_cut::SimulationCutTrace>>,
+        cut_trace: &mut Option<Arc<crate::stock::simulation_cut::SimulationCutTrace>>,
         opts: &super::SimulationOptions,
     ) {
         if !opts.adaptive_feed_modulation {
@@ -4286,7 +4286,7 @@ impl ProjectSession {
     /// surface.
     fn apply_adaptive_feed_modulation(
         &mut self,
-        cut_trace: &mut Option<Arc<crate::simulation_cut::SimulationCutTrace>>,
+        cut_trace: &mut Option<Arc<crate::stock::simulation_cut::SimulationCutTrace>>,
         opts: &super::SimulationOptions,
     ) {
         // Engagement aggregation + `ModulationContext` build now live in the
@@ -4526,7 +4526,7 @@ impl ProjectSession {
                 // clock just written above. `None` means the toolpath carried
                 // no cutting samples (drill-only, all-rapid); leave it alone
                 // rather than writing a zero over a measured value.
-                if let Some(rebased) = crate::simulation_cut::rebase_cutting_times(
+                if let Some(rebased) = crate::stock::simulation_cut::rebase_cutting_times(
                     samples,
                     tp_summary.toolpath_id,
                     &modulated_feeds,
@@ -4554,7 +4554,7 @@ impl ProjectSession {
             // N2 — publish `toolpath_runtimes`, the matching summaries and the
             // project total through the one tail the integrator also uses, so both
             // paths write the same three slots the same way.
-            crate::simulation_cut::publish_cycle_times(trace, &per_toolpath_runtime);
+            crate::stock::simulation_cut::publish_cycle_times(trace, &per_toolpath_runtime);
             trace.summary.cutting_runtime_s += cutting_delta;
             trace.summary.air_cut_time_s += air_delta;
             trace.summary.low_engagement_time_s += low_engagement_delta;
@@ -4651,7 +4651,7 @@ impl ProjectSession {
     pub fn collision_obstacles_for_toolpath(
         &self,
         index: usize,
-    ) -> Vec<crate::collision::CollisionObstacle> {
+    ) -> Vec<crate::stock::collision::CollisionObstacle> {
         let Some(setup) = self.find_setup_for_toolpath_index(index) else {
             return Vec::new();
         };
@@ -4661,7 +4661,7 @@ impl ProjectSession {
             .filter(|f| f.enabled)
             .map(|f| {
                 let c = f.clearance;
-                crate::collision::CollisionObstacle {
+                crate::stock::collision::CollisionObstacle {
                     id: f.id.0,
                     aabb: crate::geo::BoundingBox3 {
                         min: crate::geo::P3::new(f.origin_x - c, f.origin_y - c, f.origin_z - c),
@@ -4699,7 +4699,7 @@ impl ProjectSession {
         // gates and the triage do, so it cannot publish a percentage the
         // gates have already declined to act on.
         let measurability = cut_trace.map(|trace| {
-            crate::sim_measurability::MeasurabilityReport::from_trace(
+            crate::stock::sim_measurability::MeasurabilityReport::from_trace(
                 trace,
                 self.simulation.as_ref().map(|sim| sim.column_grid_cell_mm),
             )
@@ -4758,11 +4758,11 @@ impl ProjectSession {
     /// [`Self::simulation_triage`] against this session's own simulation —
     /// the convenience path for batch callers that do not assemble their own
     /// [`ProjectEvidence`].
-    pub fn triage(&self) -> crate::sim_triage::SimulationTriage {
+    pub fn triage(&self) -> crate::stock::sim_triage::SimulationTriage {
         let no_cancel = AtomicBool::new(false);
         let holder_collisions = self.holder_collision_counts(&no_cancel);
         let Some(sim) = self.simulation.as_ref() else {
-            return crate::sim_triage::SimulationTriage::default();
+            return crate::stock::sim_triage::SimulationTriage::default();
         };
         let evidence =
             ProjectEvidence::from_simulation_with_holder_collisions(sim, holder_collisions);
@@ -4843,7 +4843,7 @@ impl ProjectSession {
         &self,
         index: usize,
         toolpath: &crate::toolpath::Toolpath,
-        trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     ) -> Option<crate::kinematic_utilization::ToolpathKinematicUtilization> {
         let tc = self.toolpath_configs.get(index)?;
         if !tc.enabled {
@@ -4884,7 +4884,7 @@ impl ProjectSession {
     fn feeds_provenance_of(
         id: ToolpathId,
         toolpath: &crate::toolpath::Toolpath,
-        trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     ) -> crate::kinematic_utilization::FeedsProvenance {
         use crate::kinematic_utilization::FeedsProvenance;
         let Some(trace) = trace else {
@@ -4916,7 +4916,7 @@ impl ProjectSession {
     pub fn kinematic_utilization_for(
         &self,
         index: usize,
-        trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     ) -> Option<crate::kinematic_utilization::ToolpathKinematicUtilization> {
         let result = self.results.get(&index)?;
         self.kinematic_utilization_of(index, &result.annotated().toolpath, trace)
@@ -4931,7 +4931,7 @@ impl ProjectSession {
     /// `toolpath_summaries` says nothing about their Z rates.
     pub fn kinematic_utilizations(
         &self,
-        trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     ) -> std::collections::BTreeMap<
         ToolpathId,
         crate::kinematic_utilization::ToolpathKinematicUtilization,
@@ -4953,7 +4953,7 @@ impl ProjectSession {
     /// supplied, rapid collision counts are 0 — we don't fall back to the
     /// inaccurate original-bbox check.
     #[instrument(skip_all)]
-    /// The page-one answer: one [`crate::sim_triage::SimulationTriage`] for
+    /// The page-one answer: one [`crate::stock::sim_triage::SimulationTriage`] for
     /// every consumer — GUI panel, MCP JSON, CLI report, narration.
     ///
     /// This is the single construction site on purpose. The census found
@@ -4964,7 +4964,7 @@ impl ProjectSession {
     pub fn simulation_triage(
         &self,
         evidence: &ProjectEvidence<'_>,
-    ) -> crate::sim_triage::SimulationTriage {
+    ) -> crate::stock::sim_triage::SimulationTriage {
         self.simulation_triage_with_diagnostics(evidence, &self.diagnostics_with_evidence(evidence))
     }
 
@@ -4987,8 +4987,8 @@ impl ProjectSession {
         &self,
         evidence: &ProjectEvidence<'_>,
         project_diagnostics: &ProjectDiagnostics,
-    ) -> crate::sim_triage::SimulationTriage {
-        use crate::sim_triage::{SimulationTriage, TriageInputs};
+    ) -> crate::stock::sim_triage::SimulationTriage {
+        use crate::stock::sim_triage::{SimulationTriage, TriageInputs};
 
         let Some(trace) = evidence.cut_trace else {
             return SimulationTriage::default();
@@ -4997,7 +4997,7 @@ impl ProjectSession {
             crate::diagnostics::adapters::from_project_diagnostics::diagnostics_from_project(
                 project_diagnostics,
             );
-        let measurability = crate::sim_measurability::MeasurabilityReport::from_trace(
+        let measurability = crate::stock::sim_measurability::MeasurabilityReport::from_trace(
             trace,
             evidence.resolution_mm,
         );
@@ -5220,7 +5220,7 @@ impl ProjectSession {
             air_cut_pct_of_cutting_time,
             average_engagement,
         ) = if let Some(trace) = evidence.cut_trace {
-            use crate::simulation_cut::AirCutRatios;
+            use crate::stock::simulation_cut::AirCutRatios;
             let summary = &trace.summary;
             (
                 summary.total_runtime_s,
@@ -5248,7 +5248,7 @@ impl ProjectSession {
         let measurability = evidence
             .cut_trace
             .map(|trace| {
-                crate::sim_measurability::MeasurabilityReport::from_trace(
+                crate::stock::sim_measurability::MeasurabilityReport::from_trace(
                     trace,
                     evidence.resolution_mm,
                 )
@@ -5537,7 +5537,7 @@ impl ProjectSession {
     pub fn diagnose_toolpath_with_trace(
         &self,
         index: usize,
-        sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
         let tc = self
             .toolpath_configs
@@ -5814,7 +5814,7 @@ struct AirCutOffender {
 struct AirCutAbstention {
     id: ToolpathId,
     name: String,
-    reason: crate::sim_measurability::MeasurabilityReason,
+    reason: crate::stock::sim_measurability::MeasurabilityReason,
 }
 
 /// Identify toolpaths whose air-cut percentage exceeds their op-kind's
@@ -5823,16 +5823,16 @@ struct AirCutAbstention {
 /// Pure helper; takes only the data it needs so it can be unit-tested
 /// without constructing a full `SimulationResult`. See
 /// `planning/P1_AIR_CUT_THRESHOLDS_RCA.md` for the threshold rationale and
-/// [`crate::sim_measurability`] for the abstention rule (Checkpoint D Q2,
+/// [`crate::stock::sim_measurability`] for the abstention rule (Checkpoint D Q2,
 /// 2026-08-04). No threshold moved; a `NotMeasurable` metric simply stops
 /// feeding this gate.
 fn air_cut_offenders_for_toolpaths(
-    toolpath_summaries: &[crate::simulation_cut::SimulationToolpathCutSummary],
+    toolpath_summaries: &[crate::stock::simulation_cut::SimulationToolpathCutSummary],
     toolpath_configs: &[super::ToolpathConfig],
-    measurability: &crate::sim_measurability::MeasurabilityReport,
+    measurability: &crate::stock::sim_measurability::MeasurabilityReport,
 ) -> AirCutScan {
-    use crate::sim_measurability::SimMetric;
-    use crate::simulation_cut::AirCutRatios;
+    use crate::stock::sim_measurability::SimMetric;
+    use crate::stock::simulation_cut::AirCutRatios;
 
     let mut scan = AirCutScan::default();
     for tp_summary in toolpath_summaries {
@@ -6896,7 +6896,7 @@ mod tests {
     fn diagnostics_ranks_verdicts_by_severity() {
         use crate::compute::simulate::{SimBoundary, SimulationResult};
         use crate::dexel_stock::StockCutDirection;
-        use crate::stock_mesh::StockMesh;
+        use crate::stock::stock_mesh::StockMesh;
 
         let mut s = make_session_with_two_tps();
         // TP0 (pocket): zero cut → C7 GeneratedEmpty (Important).
@@ -6927,7 +6927,7 @@ mod tests {
                 direction: StockCutDirection::FromTop,
             }],
             checkpoints: Vec::new(),
-            rapid_collisions: vec![crate::collision::RapidCollision {
+            rapid_collisions: vec![crate::stock::collision::RapidCollision {
                 move_index: 2,
                 start: P3::new(0.0, 0.0, 5.0),
                 end: P3::new(0.0, 0.0, -2.5),
@@ -6968,7 +6968,7 @@ mod tests {
     fn diagnostics_rapid_collision_verdict_carries_evidence() {
         use crate::compute::simulate::{SimBoundary, SimulationResult};
         use crate::dexel_stock::StockCutDirection;
-        use crate::stock_mesh::StockMesh;
+        use crate::stock::stock_mesh::StockMesh;
 
         let mut s = make_session();
         let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
@@ -6996,13 +6996,13 @@ mod tests {
             }],
             checkpoints: Vec::new(),
             rapid_collisions: vec![
-                crate::collision::RapidCollision {
+                crate::stock::collision::RapidCollision {
                     move_index: 1,
                     start: P3::new(0.0, 0.0, 5.0),
                     end: P3::new(0.0, 0.0, 1.0),
                 },
                 // Deepest rapid — this should be cited as the worst move.
-                crate::collision::RapidCollision {
+                crate::stock::collision::RapidCollision {
                     move_index: 7,
                     start: P3::new(1.0, 1.0, 5.0),
                     end: P3::new(1.0, 1.0, -3.25),
@@ -7060,7 +7060,7 @@ mod tests {
     use crate::compute::operation_configs::{
         Adaptive3dConfig, AlignmentPinDrillConfig, DropCutterConfig, ProjectCurveConfig,
     };
-    use crate::simulation_cut::SimulationToolpathCutSummary;
+    use crate::stock::simulation_cut::SimulationToolpathCutSummary;
 
     fn make_tp(id: usize, name: &str, op: OperationConfig) -> ToolpathConfig {
         ToolpathConfig {
@@ -7222,7 +7222,7 @@ mod tests {
         // fresh-material floor reads ~96% air cut while removing material
         // perfectly well. RED-FIRST: with an empty (all-measurable) report
         // the gate fires, which is the shipped behaviour and the defect.
-        use crate::sim_measurability::{
+        use crate::stock::sim_measurability::{
             Measurability, MeasurabilityReason, MeasurabilityReport, MetricMeasurability, SimMetric,
         };
 
@@ -7276,7 +7276,7 @@ mod tests {
         // `Degraded` is not an abstention: the reading still describes the
         // measurable majority of the pass, and declining there would hide
         // more than it protects.
-        use crate::sim_measurability::{
+        use crate::stock::sim_measurability::{
             Measurability, MeasurabilityReason, MeasurabilityReport, MetricMeasurability, SimMetric,
         };
 

@@ -85,7 +85,7 @@ use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_chip_enve
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::ids::ToolpathId;
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
@@ -169,7 +169,7 @@ pub(crate) fn matched_chip_envelope(
 /// "the colour agrees with the verdict" is a property of the call graph
 /// rather than of two transcriptions staying in step.
 fn achieved_feed_per_tooth_mm(
-    sample: &crate::simulation_cut::SimulationCutSample,
+    sample: &crate::stock::simulation_cut::SimulationCutSample,
     predicted_feeds: &crate::machine_kinematics::PredictedFeedMap,
 ) -> Option<f64> {
     super::display::achieved_advance_per_tooth(sample, predicted_feeds)
@@ -212,7 +212,7 @@ pub(crate) struct SteadyStateSamples<'a> {
     /// feed is within `STEADY_STATE_FEED_FRACTION` of the commanded
     /// operation feed. Empty for an all-transient toolpath (e.g. an
     /// all-plunge drill cycle).
-    pub samples: Vec<(usize, &'a crate::simulation_cut::SimulationCutSample)>,
+    pub samples: Vec<(usize, &'a crate::stock::simulation_cut::SimulationCutSample)>,
     /// `true` if at least one sample for this toolpath was in-cut and
     /// out of air, regardless of feed. Distinguishes "no usable cut
     /// samples at all" (SimulationRequired) from "samples exist but
@@ -263,7 +263,7 @@ pub(crate) const BIPOLAR_SIDE_FRACTION: f64 = 0.05;
 /// `BIPOLAR_SIDE_FRACTION` (5% of valid samples) on each side is the
 /// threshold; both sides must clear it for the predicate to fire.
 pub(crate) fn is_bipolar_engagement(
-    steady_samples: &[(usize, &crate::simulation_cut::SimulationCutSample)],
+    steady_samples: &[(usize, &crate::stock::simulation_cut::SimulationCutSample)],
     cl_min: f64,
     cl_max: f64,
 ) -> bool {
@@ -1112,7 +1112,9 @@ mod tests {
     use crate::feeds::vendor_normalize::lut_query_for;
     use crate::material::Material;
     use crate::material::WoodSpecies;
-    use crate::simulation_cut::{SimulationCutSample, SimulationCutSummary, SimulationCutTrace};
+    use crate::stock::simulation_cut::{
+        SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
+    };
     use crate::tool::ToolDefinition;
     use crate::tool::{FlatEndmill, VBitEndmill};
 
@@ -1123,7 +1125,7 @@ mod tests {
         toolpath_id: usize,
         tool: &crate::tool::ToolDefinition,
         material: &crate::material::Material,
-        sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
         spans: Option<&[crate::toolpath_spans::Span]>,
         operation_family: LutOperationFamily,
         pass_role: LutPassRole,
@@ -1199,7 +1201,7 @@ mod tests {
             sample_index: idx,
             segment_time_s: 0.1,
             is_cutting: true,
-            cut_kinematics: crate::simulation_cut::CutKinematics::Linear,
+            cut_kinematics: crate::stock::simulation_cut::CutKinematics::Linear,
             feed_rate_mm_min: 1000.0,
             spindle_rpm: 18000,
             flute_count: 2,
@@ -1208,7 +1210,7 @@ mod tests {
             arc_engagement_radians: Some(TEST_LUT_NOMINAL_ARC_RAD),
             chipload_mm_per_tooth: chipload,
             effective_chip_thickness_mm: Some(chipload),
-            engagement: crate::simulation_cut::Engagement::with_radial_woc(engagement),
+            engagement: crate::stock::simulation_cut::Engagement::with_radial_woc(engagement),
             removed_volume_est_mm3: 0.1,
             mrr_mm3_s: 1.0,
             ..SimulationCutSample::test_fixture()
@@ -1741,13 +1743,13 @@ mod tests {
         // (would trigger BurnRisk). Filter must drop the ramp sample.
         let mut linear = sample(0, 0, 0.04, 0.5);
         linear.feed_rate_mm_min = 1500.0;
-        linear.cut_kinematics = crate::simulation_cut::CutKinematics::Linear;
+        linear.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Linear;
         let mut helix = sample(0, 1, 0.04, 0.5);
         helix.feed_rate_mm_min = 1500.0;
-        helix.cut_kinematics = crate::simulation_cut::CutKinematics::Helix;
+        helix.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Helix;
         let mut ramp = sample(0, 2, 0.001, 0.5);
         ramp.feed_rate_mm_min = 500.0;
-        ramp.cut_kinematics = crate::simulation_cut::CutKinematics::Linear;
+        ramp.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Linear;
         let t = trace(vec![linear, helix, ramp]);
         let v = evaluate_args(
             0,
@@ -1784,10 +1786,10 @@ mod tests {
     fn helix_high_sample_trips_exceeds() {
         let mut s0 = sample(0, 0, 0.5, 0.5);
         s0.feed_rate_mm_min = 1500.0;
-        s0.cut_kinematics = crate::simulation_cut::CutKinematics::Helix;
+        s0.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Helix;
         let mut s1 = sample(0, 1, 0.5, 0.5);
         s1.feed_rate_mm_min = 1500.0;
-        s1.cut_kinematics = crate::simulation_cut::CutKinematics::Helix;
+        s1.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Helix;
         let t = trace(vec![s0, s1]);
         let v = evaluate_args(
             0,
@@ -2286,7 +2288,7 @@ mod tests {
         // Uses pocket-rough LUT max (0.058208…). 0.5 mm/tooth >> max.
         let mut s = sample(0, 0, 0.5, 0.5);
         s.feed_rate_mm_min = 1500.0;
-        s.cut_kinematics = crate::simulation_cut::CutKinematics::Linear;
+        s.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Linear;
         let t = trace(vec![s]);
         let v = evaluate_args(
             0,
@@ -2335,12 +2337,12 @@ mod tests {
         // where the simulator can't compute an engagement arc.
         let mut s0 = sample(0, 0, 0.5, 0.5);
         s0.feed_rate_mm_min = 1500.0;
-        s0.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
+        s0.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Plunge;
         s0.arc_engagement_radians = None;
         s0.effective_chip_thickness_mm = None;
         let mut s1 = sample(0, 1, 0.5, 0.5);
         s1.feed_rate_mm_min = 1500.0;
-        s1.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
+        s1.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Plunge;
         s1.arc_engagement_radians = None;
         s1.effective_chip_thickness_mm = None;
         let t = trace(vec![s0, s1]);
@@ -2382,7 +2384,7 @@ mod tests {
     fn plunge_high_sample_trips_exceeds() {
         let mut s = sample(0, 0, 0.5, 0.5);
         s.feed_rate_mm_min = 1500.0;
-        s.cut_kinematics = crate::simulation_cut::CutKinematics::Plunge;
+        s.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Plunge;
         let t = trace(vec![s]);
         let v = evaluate_args(
             0,

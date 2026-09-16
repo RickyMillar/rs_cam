@@ -6,22 +6,24 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::collision::{RapidClearanceCheck, RapidCollision, check_rapid_collisions_against_stock};
 use crate::compute::sim_prefix::{PrefixState, SimMemo};
 use crate::compute::transform::SetupTransformInfo;
-use crate::dexel_mesh::dexel_stock_to_mesh;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::interrupt::Cancelled;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
-use crate::simulation_cut::{
+use crate::stock::collision::{
+    RapidClearanceCheck, RapidCollision, check_rapid_collisions_against_stock,
+};
+use crate::stock::dexel_mesh::dexel_stock_to_mesh;
+use crate::stock::radial_profile::RadialProfileLUT;
+use crate::stock::simulation_cut::{
     SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutTrace, SimulationMetricOptions,
     SimulationProvenance,
 };
-use crate::stock_mesh::StockMesh;
+use crate::stock::stock_mesh::StockMesh;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 use crate::toolpath_spans::AnnotatedToolpath;
@@ -858,8 +860,8 @@ where
         let sx = request.stock_bbox.max.x - request.stock_bbox.min.x;
         let sy = request.stock_bbox.max.y - request.stock_bbox.min.y;
         (
-            crate::dexel::DexelGrid::would_exceed_grid(request.resolution, sx, sy).is_some(),
-            crate::dexel::DexelGrid::effective_cell_size(request.resolution, sx, sy),
+            crate::stock::dexel::DexelGrid::would_exceed_grid(request.resolution, sx, sy).is_some(),
+            crate::stock::dexel::DexelGrid::effective_cell_size(request.resolution, sx, sy),
         )
     };
     let sample_step_mm = request.resolution.max(0.25);
@@ -1069,8 +1071,10 @@ where
             }
 
             set_phase(&format!("Simulate {}", entry.name));
-            let lut =
-                RadialProfileLUT::from_cutter(&entry.tool, crate::radial_profile::LUT_SAMPLES);
+            let lut = RadialProfileLUT::from_cutter(
+                &entry.tool,
+                crate::stock::radial_profile::LUT_SAMPLES,
+            );
             let radius = entry.tool.radius();
             let start_move = total_moves;
 
@@ -1242,7 +1246,7 @@ where
             if !group_drill_ops.is_empty() {
                 let refs: Vec<&crate::drill_op::DrillOp> =
                     group_drill_ops.iter().map(|d| d.as_ref()).collect();
-                crate::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
+                crate::stock::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
             }
             let checkpoint_mesh = transform_stock_mesh_to_global(
                 &local_mesh,
@@ -1331,7 +1335,7 @@ where
         if !group_drill_ops.is_empty() {
             let refs: Vec<&crate::drill_op::DrillOp> =
                 group_drill_ops.iter().map(|d| d.as_ref()).collect();
-            crate::dexel_mesh::append_drill_cylinders(&mut group_mesh, &refs);
+            crate::stock::dexel_mesh::append_drill_cylinders(&mut group_mesh, &refs);
         }
         // Same frame contract as the checkpoint meshes: every group lands
         // in the zero-rooted stock-relative frame, identity groups via the
@@ -1517,7 +1521,7 @@ fn apply_kinematics_cycle_time(
     // `simulation_cut::publish_cycle_times`, because the modulation re-time
     // publishes the same three slots and its own copy of the tail had the
     // defect above. Read that function for the two-arm project total.
-    crate::simulation_cut::publish_cycle_times(trace, &per_toolpath_runtime);
+    crate::stock::simulation_cut::publish_cycle_times(trace, &per_toolpath_runtime);
 
     if ctx.use_predicted_feed_in_gates && !predicted_feeds.is_empty() {
         trace.predicted_feeds = predicted_feeds;

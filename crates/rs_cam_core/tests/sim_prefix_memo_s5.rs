@@ -38,7 +38,7 @@ use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::dexel_stock::{StampDispatch, StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::simulation_cut::SimulationMetricOptions;
+use rs_cam_core::stock::simulation_cut::SimulationMetricOptions;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, ToolDefinition, VBitEndmill};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
@@ -235,7 +235,7 @@ fn fingerprint(result: &SimulationResult) -> u64 {
 
 fn hash_mesh(
     h: &mut std::collections::hash_map::DefaultHasher,
-    mesh: &rs_cam_core::stock_mesh::StockMesh,
+    mesh: &rs_cam_core::stock::stock_mesh::StockMesh,
 ) {
     mesh.vertices.len().hash(h);
     for v in &mesh.vertices {

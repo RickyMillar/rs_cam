@@ -127,7 +127,7 @@ use rs_cam_core::session::{
     LoadedModel, ProjectEvidence, ProjectSession, ProjectSessionBuilder, SimulationOptions,
     ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::{AirCutRatios, CutKinematics, KinematicsSummary};
+use rs_cam_core::stock::simulation_cut::{AirCutRatios, CutKinematics, KinematicsSummary};
 use serde::{Deserialize, Serialize};
 
 /// Single-expression quantities: identical unless the arithmetic changed.

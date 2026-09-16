@@ -24,7 +24,7 @@
 //! # Scope
 //!
 //! Diagnostic-only. Nothing in this module is serialized into a project file
-//! or a simulation trace: [`crate::simulation_cut::SimulationProvenance`]
+//! or a simulation trace: [`crate::stock::simulation_cut::SimulationProvenance`]
 //! answers "is this trace fresh for these inputs" and is serialized;
 //! [`MeasurementProvenance`] answers "what does this number mean" and is not.
 //! Do not merge them.

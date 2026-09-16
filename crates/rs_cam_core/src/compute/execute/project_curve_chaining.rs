@@ -57,7 +57,7 @@ use crate::geo::{BoundingBox3, P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
-use crate::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
+use crate::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use crate::tool::{FlatEndmill, MillingCutter};
 use crate::toolpath::{Move, MoveIntent, MoveType, PLUNGE_CLEARANCE_MM, Toolpath};
 use crate::toolpath_spans::AnnotatedToolpath;

@@ -29,7 +29,7 @@
 //! rapids. Every shipped threshold is tuned against it.
 //! `air_cut_pct_of_cutting_time` excludes rapids and always reads higher.
 //! A table must name the denominator it uses. See
-//! `crate::session` and `crate::simulation_cut`.
+//! `crate::session` and `crate::stock::simulation_cut`.
 //!
 //! ## 3. Two time scales exist, and cross-scale tables must label each row
 //!

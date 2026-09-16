@@ -49,7 +49,7 @@
 //!   this gate predicts therefore ignores torsion.
 
 use crate::material::Material;
-use crate::simulation_cut::SimulationCutSample;
+use crate::stock::simulation_cut::SimulationCutSample;
 use crate::tool::ToolDefinition;
 
 use super::locality::SpanLookup;
@@ -375,7 +375,7 @@ mod tests {
     use crate::compute::tool_config::ToolMaterial;
     use crate::ids::ToolpathId;
     use crate::material::WoodSpecies;
-    use crate::simulation_cut::{
+    use crate::stock::simulation_cut::{
         CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
     };
 
@@ -386,7 +386,7 @@ mod tests {
         toolpath_id: usize,
         tool: &crate::tool::ToolDefinition,
         material: &crate::material::Material,
-        sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+        sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
         spans: Option<&[crate::toolpath_spans::Span]>,
         operation_kind: crate::compute::catalog::OperationType,
         tolerance: &crate::tool_load::ToleranceBands,
@@ -474,7 +474,7 @@ mod tests {
             arc_engagement_radians: Some(arc_rad),
             chipload_mm_per_tooth: feed_mmpm / (18_000.0 * 2.0),
             effective_chip_thickness_mm: Some(feed_mmpm / (18_000.0 * 2.0)),
-            engagement: crate::simulation_cut::Engagement::with_radial_woc(radial_eng),
+            engagement: crate::stock::simulation_cut::Engagement::with_radial_woc(radial_eng),
             removed_volume_est_mm3: 0.1,
             mrr_mm3_s: 1.0,
             ..SimulationCutSample::test_fixture()

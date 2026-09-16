@@ -70,7 +70,7 @@ use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetMachineArgs, SimulationOptions,
     ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::CutKinematics;
+use rs_cam_core::stock::simulation_cut::CutKinematics;
 
 // ----- AS001 pocket fixture (matches F-024 / F-035) -----------------
 

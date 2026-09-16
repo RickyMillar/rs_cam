@@ -346,7 +346,7 @@ fn gcode_phase_for_session_toolpath<'a>(
 /// active simulation run.
 fn viz_sim_trace(
     sim: &SimulationState,
-) -> Option<&rs_cam_core::simulation_cut::SimulationCutTrace> {
+) -> Option<&rs_cam_core::stock::simulation_cut::SimulationCutTrace> {
     sim.results.as_ref().and_then(|r| r.cut_trace.as_deref())
 }
 

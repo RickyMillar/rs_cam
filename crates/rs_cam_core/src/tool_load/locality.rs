@@ -20,7 +20,7 @@
 
 use std::f64::consts::{FRAC_PI_2, PI};
 
-use crate::simulation_cut::SimulationCutSample;
+use crate::stock::simulation_cut::SimulationCutSample;
 use crate::toolpath_spans::{Span, SpanId, SpanKind};
 
 /// Resolves [`SpanId`]s recorded on a sample's `span_path` back to their
@@ -254,7 +254,7 @@ pub fn is_configured_entry(
 )]
 mod tests {
     use super::*;
-    use crate::simulation_cut::CutKinematics;
+    use crate::stock::simulation_cut::CutKinematics;
     use std::borrow::Cow;
 
     fn sample(arc: Option<f64>, span_path: Vec<SpanId>) -> SimulationCutSample {
@@ -268,7 +268,7 @@ mod tests {
             axial_engagement_mm: 1.0,
             arc_engagement_radians: arc,
             chipload_mm_per_tooth: 0.03,
-            engagement: crate::simulation_cut::Engagement::with_radial_woc(0.5),
+            engagement: crate::stock::simulation_cut::Engagement::with_radial_woc(0.5),
             span_path,
             ..SimulationCutSample::test_fixture()
         }

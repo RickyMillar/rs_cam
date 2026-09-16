@@ -19,7 +19,7 @@ use rs_cam_core::{
         get_post_definition,
     },
     geo::BoundingBox3,
-    simulation_cut::{
+    stock::simulation_cut::{
         AirCutRatios as _, SimulationCutArtifact, SimulationCutIssueKind, SimulationCutTrace,
     },
     tool::MillingCutter as _,

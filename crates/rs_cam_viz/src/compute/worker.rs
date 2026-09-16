@@ -34,10 +34,10 @@ use std::sync::mpsc;
 use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
-use rs_cam_core::collision::CollisionReport;
 use rs_cam_core::dexel_stock::StockCutDirection;
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
+use rs_cam_core::stock::collision::CollisionReport;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
@@ -164,7 +164,7 @@ pub struct SimulationRequest {
     pub stock_bbox: BoundingBox3,
     pub stock_top_z: f64,
     pub resolution: f64,
-    pub metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions,
+    pub metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions,
     pub spindle_rpm: u32,
     pub rapid_feed_mm_min: f64,
     /// Optional model mesh for deviation computation (sim_z vs model_z).
@@ -261,7 +261,7 @@ pub struct CollisionRequest {
     /// Workholding fixtures (clearance-expanded boxes) the assembly must
     /// clear, built from the toolpath's setup via
     /// `ProjectSession::collision_obstacles_for_toolpath`. W0.1 / P6-003.
-    pub obstacles: Vec<rs_cam_core::collision::CollisionObstacle>,
+    pub obstacles: Vec<rs_cam_core::stock::collision::CollisionObstacle>,
 }
 
 pub struct CollisionResult {
@@ -287,7 +287,7 @@ pub enum OptimizeRequest {
         /// freely and it is dropped with the request; nothing comes
         /// back but the report.
         session: rs_cam_core::session::ProjectSession,
-        baseline_trace: Arc<rs_cam_core::simulation_cut::SimulationCutTrace>,
+        baseline_trace: Arc<rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
     },
 }
 

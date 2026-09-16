@@ -11,14 +11,14 @@
 
 use super::band::GridBand;
 use super::tile_mip::TileMaxTop;
-use crate::dexel::{
-    DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
-};
 use crate::geo::P3;
 use crate::ids::ToolpathId;
-use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
-use crate::simulation_cut::{CutKinematics, SimulationCutSample};
+use crate::stock::dexel::{
+    DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
+};
+use crate::stock::radial_profile::RadialProfileLUT;
+use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::tool::MillingCutter;
 use crate::toolpath_spans::SpanId;
 
@@ -316,7 +316,7 @@ pub(super) const PERP_COVERAGE_GATE: f32 = 0.95;
 /// cutter surface. Real bites are mm-scale.
 ///
 /// The honest fix is therefore not a smaller constant but an **abstention**:
-/// [`crate::sim_measurability`] detects passes sitting under this floor and
+/// [`crate::stock::sim_measurability`] detects passes sitting under this floor and
 /// marks the engagement-derived metrics `NotMeasurable`, so the gates that
 /// consume them decline to produce a verdict instead of publishing a
 /// precise-looking percentage that clears every bar. Collision detection and
@@ -1672,7 +1672,7 @@ pub(super) fn sample_segment_runtime(
             arc_engagement_radians: None,
             chipload_mm_per_tooth: 0.0,
             effective_chip_thickness_mm: None,
-            engagement: crate::simulation_cut::Engagement::with_radial_woc(0.0),
+            engagement: crate::stock::simulation_cut::Engagement::with_radial_woc(0.0),
             removed_volume_est_mm3: 0.0,
             mrr_mm3_s: 0.0,
             semantic_item_id: params.semantic_item_id,
@@ -1789,7 +1789,7 @@ mod tests {
             max: P3::new(30.0, 20.0, 8.0),
         };
         let mut grid = DexelGrid::z_grid_from_bounds(&bbox, cell_size);
-        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
         let radius = cutter.radius();
         let mut mip = if air_skip {
             Some(TileMaxTop::build(&grid))
@@ -2046,7 +2046,7 @@ mod tests {
             max: P3::new(24.0, 16.0, 8.0),
         };
         let cutter = FlatEndmill::new(6.0, 25.0);
-        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
         let radius = cutter.radius();
         let pristine = DexelGrid::z_grid_from_bounds(&bbox, 0.25);
 
@@ -2102,7 +2102,7 @@ mod tests {
             max: P3::new(24.0, 16.0, 8.0),
         };
         let cutter = FlatEndmill::new(6.0, 25.0);
-        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
         let radius = cutter.radius();
 
         for &(name, du, dv) in &OUT_OF_GRID_OFFSETS {
@@ -2166,7 +2166,7 @@ mod tests {
 
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 44.0, 24.0, 0.0, 10.0, 0.25);
         let cutter = FlatEndmill::new(6.0, 25.0);
-        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(4.0, 31.0, 10.0));
         for i in 0..3 {

@@ -62,8 +62,8 @@
 )]
 
 use rs_cam_core::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
-use rs_cam_core::dexel::DexelAxis;
 use rs_cam_core::geo::P3;
+use rs_cam_core::stock::dexel::DexelAxis;
 
 const W: f64 = 40.0;
 const D: f64 = 30.0;

@@ -48,11 +48,11 @@
     clippy::print_stdout
 )]
 
-use rs_cam_core::collision::check_rapid_collisions_against_stock;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::optimize_entry_descents;
 use rs_cam_core::geo::P3;
-use rs_cam_core::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
+use rs_cam_core::stock::collision::check_rapid_collisions_against_stock;
+use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use rs_cam_core::tool::FlatEndmill;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 

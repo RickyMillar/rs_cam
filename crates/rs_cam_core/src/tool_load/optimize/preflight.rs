@@ -24,7 +24,7 @@
 use crate::compute::catalog::OperationConfig;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::machine::MachineProfile;
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 use crate::tool_load::RefuseReason;
 use crate::tool_load::verdict::{DeflectionVerdict, ToolpathLoadVerdict};

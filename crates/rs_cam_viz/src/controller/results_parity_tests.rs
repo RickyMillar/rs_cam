@@ -375,7 +375,7 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
     // Holder evidence exactly as the GUI holds it: a stored collision report
     // plus the simulation boundary that attributes each event to a toolpath.
     controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
-        mesh: rs_cam_core::simulation::StockMesh {
+        mesh: rs_cam_core::stock::stock_mesh::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
@@ -400,13 +400,13 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
         prior_stocks: std::collections::HashMap::new(),
     });
     controller.state.simulation.checks.collision_report =
-        Some(rs_cam_core::collision::CollisionReport {
-            collisions: vec![rs_cam_core::collision::CollisionEvent {
+        Some(rs_cam_core::stock::collision::CollisionReport {
+            collisions: vec![rs_cam_core::stock::collision::CollisionEvent {
                 move_idx: 1,
                 position: rs_cam_core::geo::P3::new(10.0, 0.0, -1.0),
                 penetration_depth: 0.4,
                 segment: "holder".to_owned(),
-                kind: rs_cam_core::collision::CollisionKind::Workpiece,
+                kind: rs_cam_core::stock::collision::CollisionKind::Workpiece,
             }],
             min_safe_stickout: 30.0,
         });

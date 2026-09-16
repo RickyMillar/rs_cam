@@ -113,7 +113,7 @@ use crate::compute::config::DressupConfig;
 use crate::compute::simulate::SimulationResult;
 use crate::feeds::FeedsProvenance;
 use crate::geometry::enriched_mesh::FaceGroupId;
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::strategy_advisor::StrategyRecommendation;
 use crate::tool_load::optimize::OptimizeOutcome;
 

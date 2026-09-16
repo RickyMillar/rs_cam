@@ -53,7 +53,7 @@
 )]
 
 use rs_cam_core::geo::P3;
-use rs_cam_core::stock_mesh::{StockMesh, toolpath_to_tube_mesh_with_spans};
+use rs_cam_core::stock::stock_mesh::{StockMesh, toolpath_to_tube_mesh_with_spans};
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanClass, SpanKind, SpanPayload};
 

@@ -1439,7 +1439,10 @@ mod tests {
             for col in 0..grid.cols {
                 let world_x = grid.origin_u + col as f64 * grid.cell_size;
                 if world_x < 0.0 {
-                    crate::dexel::ray_subtract_above(&mut grid.rays[row * grid.cols + col], -10.0);
+                    crate::stock::dexel::ray_subtract_above(
+                        &mut grid.rays[row * grid.cols + col],
+                        -10.0,
+                    );
                 }
             }
         }

@@ -51,7 +51,9 @@
 use std::collections::HashSet;
 
 use rs_cam_core::ToolpathId;
-use rs_cam_core::simulation_cut::{SimulationCutSample, SummaryAccumulator, accumulate_by_span};
+use rs_cam_core::stock::simulation_cut::{
+    SimulationCutSample, SummaryAccumulator, accumulate_by_span,
+};
 use rs_cam_core::toolpath_spans::SpanId;
 
 const SPAN_COUNT: usize = 64;

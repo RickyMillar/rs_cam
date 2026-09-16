@@ -39,13 +39,13 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::dexel::DexelGrid;
 use rs_cam_core::dexel_stock::{
     PlaybackDispatch, PlaybackDispatchStats, StockCutDirection, TriDexelStock,
 };
 use rs_cam_core::geo::P3;
-use rs_cam_core::radial_profile::LUT_SAMPLES;
-use rs_cam_core::radial_profile::RadialProfileLUT;
+use rs_cam_core::stock::dexel::DexelGrid;
+use rs_cam_core::stock::radial_profile::LUT_SAMPLES;
+use rs_cam_core::stock::radial_profile::RadialProfileLUT;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::Toolpath;
 

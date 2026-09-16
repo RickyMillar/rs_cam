@@ -38,8 +38,8 @@ use rs_cam_core::dexel_stock::{
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
-use rs_cam_core::simulation_cut::SimulationCutSample;
+use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
+use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::Toolpath;
 

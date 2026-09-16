@@ -78,7 +78,7 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SimulationOptions, ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::CutKinematics;
+use rs_cam_core::stock::simulation_cut::CutKinematics;
 use rs_cam_core::tool_load::DeflectionVerdict;
 
 /// Load `ux_3d_terrain.toml` (auto_from_model = true, F-026 grows stock

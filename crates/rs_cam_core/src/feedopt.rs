@@ -19,10 +19,10 @@
 //! number is wanted here, it needs both sides of the ratio stated — see
 //! `planning/review_2026-07-29/MEASUREMENT_DOMAINS.md`.
 
-use crate::dexel::ray_top;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::P3;
-use crate::radial_profile::RadialProfileLUT;
+use crate::stock::dexel::ray_top;
+use crate::stock::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::AnnotatedToolpath;
@@ -170,7 +170,7 @@ fn optimize_feed_rates_inner(
 ) -> Toolpath {
     let tool_radius = cutter.radius();
     let n_samples = 24; // circumference samples for engagement
-    let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
+    let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
 
     // WP21: one read of the feed range serves both arms below, so the
     // air-cut arm and the engaged arm cannot disagree about the ceiling.

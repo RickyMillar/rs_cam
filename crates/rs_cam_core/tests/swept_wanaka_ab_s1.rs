@@ -104,8 +104,8 @@ use std::time::Instant;
 use rs_cam_core::dexel_stock::StampDispatch;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
-use rs_cam_core::sim_measurability::{Measurability, MeasurabilityReport};
-use rs_cam_core::simulation_cut::AirCutRatios;
+use rs_cam_core::stock::sim_measurability::{Measurability, MeasurabilityReport};
+use rs_cam_core::stock::simulation_cut::AirCutRatios;
 
 /// Default simulation cell size for EVERY simulation this harness runs — the
 /// ladder rounds as well as the final one. Ladder rounds feed the rest ops

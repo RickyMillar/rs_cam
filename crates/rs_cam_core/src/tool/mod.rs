@@ -614,8 +614,8 @@ impl ToolDefinition {
     /// Uses `self.cutter.radius()` for the cutter envelope, which for
     /// `TaperedBallEndmill` correctly returns `shaft_diameter / 2` (the maximum
     /// cutting radius), not the ball tip radius.
-    pub fn to_assembly(&self) -> crate::collision::ToolAssembly {
-        crate::collision::ToolAssembly {
+    pub fn to_assembly(&self) -> crate::stock::collision::ToolAssembly {
+        crate::stock::collision::ToolAssembly {
             cutter_radius: self.cutter.radius(),
             cutter_length: self.cutter.length(),
             shank_diameter: self.shank_diameter,

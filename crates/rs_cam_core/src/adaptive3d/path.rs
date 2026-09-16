@@ -3,12 +3,12 @@
 
 use crate::adaptive_shared::target_engagement_fraction;
 use crate::debug_trace::ToolpathDebugContext;
-use crate::dexel::ray_subtract_above;
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::radial_profile::RadialProfileLUT;
+use crate::stock::dexel::ray_subtract_above;
+use crate::stock::radial_profile::RadialProfileLUT;
 use crate::surface::slope::SurfaceHeightmap;
 
 /// The Z levels a flat shelf in the surface asks for, top-down order not
@@ -655,7 +655,7 @@ pub(super) fn adaptive_3d_segments(
     let bbox_y_min = origin_y + envelope_radius;
     let bbox_y_max = extent_y - envelope_radius;
 
-    let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
+    let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
     let mut ctx = ClearZLevelContext {
         mesh,
         index,

@@ -255,7 +255,7 @@ pub struct ToolpathUploadKey {
 pub struct AdvanceSource {
     /// Identity of the cut trace the per-move advance map is derived from;
     /// `None` when there is no cut trace.
-    pub trace: Option<ArcId<rs_cam_core::simulation_cut::SimulationCutTrace>>,
+    pub trace: Option<ArcId<rs_cam_core::stock::simulation_cut::SimulationCutTrace>>,
     /// Session edit counter — stands in for the tool/material config the
     /// vendor band is matched from.
     pub edit_counter: u64,
@@ -442,7 +442,7 @@ mod tests {
     fn advance_per_tooth_sources_are_keyed() {
         let tp = annotated();
         let trace = Arc::new(
-            rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new()),
+            rs_cam_core::stock::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new()),
         );
         let mut a = key_for(&tp);
         a.color_mode = ToolpathColorMode::AdvancePerTooth;
@@ -452,7 +452,7 @@ mod tests {
         });
 
         let resimulated = Arc::new(
-            rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new()),
+            rs_cam_core::stock::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new()),
         );
         let mut new_trace = a.clone();
         new_trace.advance_source = Some(AdvanceSource {

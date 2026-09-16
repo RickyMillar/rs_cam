@@ -7,7 +7,7 @@
 //! # The side grids are kernel capability with no shipped caller
 //!
 //! They are **not** "future work" — they exist, they stamp, and the kernel
-//! unit tests in this module and in [`crate::dexel_mesh`] exercise them
+//! unit tests in this module and in [`crate::stock::dexel_mesh`] exercise them
 //! (`multi_grid_simulation_preserves_z_grid` is the one that pins the
 //! Z-grid-preserving contract). What no longer reaches them is production, as
 //! of 2026-08-22 (G-LATERALSCRUB).
@@ -22,7 +22,7 @@
 //! frame), and every other stamp site passes `FromTop` literally.
 //!
 //! The rendering consequence, stated so nobody reads the code as live:
-//! [`crate::dexel_mesh::dexel_stock_to_mesh`]'s two side-grid append branches
+//! [`crate::stock::dexel_mesh::dexel_stock_to_mesh`]'s two side-grid append branches
 //! are **dead in production**. They append OPEN per-segment heightmap surfaces
 //! to the Z grid's closed marching-cubes solid with no boolean, so a cut drawn
 //! there sits inside an intact block and is occluded by it — which is what
@@ -46,16 +46,16 @@ pub use simulation::{
     ChipThicknessStats, chip_thickness_stats, effective_chip_thickness_mm, peak_chip_thickness_mm,
 };
 /// The dexel engagement channel's two measurement floors. Re-exported from
-/// the (private) stamping kernel because [`crate::sim_measurability`] and its
+/// the (private) stamping kernel because [`crate::stock::sim_measurability`] and its
 /// consumers need to cite the numbers they abstain on.
 pub use stamping::FRESH_MATERIAL_THRESHOLD_MM;
 pub use whole_path::{StampDispatch, StampDispatchStats};
 
 use stamping::{stamp_point_on_grid, stamp_segment_on_grid};
 
-use crate::dexel::{DexelAxis, DexelGrid};
 use crate::geo::{BoundingBox3, P3};
-use crate::radial_profile::RadialProfileLUT;
+use crate::stock::dexel::{DexelAxis, DexelGrid};
+use crate::stock::radial_profile::RadialProfileLUT;
 
 /// What one [`TriDexelStock::apply_drill_op`] call actually removed.
 ///
@@ -368,7 +368,7 @@ impl TriDexelStock {
 
     /// **The reading a clearance ceiling must use.** Highest Z at which
     /// material may stand anywhere under a disc of `radius` around
-    /// `(cx, cy)` — see [`crate::dexel::DexelGrid::conservative_top`].
+    /// `(cx, cy)` — see [`crate::stock::dexel::DexelGrid::conservative_top`].
     ///
     /// Differs from [`Self::max_top_z_in_disc`] in both of the ways that
     /// made descent planning resolution-dependent (A/M10):
@@ -552,7 +552,7 @@ impl TriDexelStock {
     pub fn clear_above_at(&mut self, row: usize, col: usize, z: f32) {
         let idx = row * self.z_grid.cols + col;
         let ray = &mut self.z_grid.rays[idx];
-        crate::dexel::ray_subtract_above(ray, z);
+        crate::stock::dexel::ray_subtract_above(ray, z);
         // A/M10: a whole-cell clear is exactly the case the sliver-safe
         // bound trusts — no partial coverage, no sub-cell remainder.
         self.z_grid.lower_conservative_top(idx, z);
@@ -582,7 +582,7 @@ impl TriDexelStock {
     pub(crate) fn clear_below_at(&mut self, row: usize, col: usize, z: f32) {
         let idx = row * self.z_grid.cols + col;
         let ray = &mut self.z_grid.rays[idx];
-        crate::dexel::ray_subtract_below(ray, z);
+        crate::stock::dexel::ray_subtract_below(ray, z);
     }
 
     /// Analytical drill removal — DEXEL roadmap §6.E Step 3.
@@ -758,9 +758,9 @@ impl TriDexelStock {
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::dexel::{ray_bottom, ray_top};
     use crate::ids::ToolpathId;
-    use crate::radial_profile::RadialProfileLUT;
+    use crate::stock::dexel::{ray_bottom, ray_top};
+    use crate::stock::radial_profile::RadialProfileLUT;
     use crate::tool::{BallEndmill, FlatEndmill, MillingCutter};
     use crate::toolpath::Toolpath;
 
@@ -798,7 +798,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0); // radius 5
         let mut stock = make_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 5.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),
@@ -824,7 +824,7 @@ mod tests {
         let tool = BallEndmill::new(6.0, 25.0); // radius 3
         let mut stock = make_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 5.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),
@@ -861,7 +861,7 @@ mod tests {
         let start = P3::new(0.0, 0.0, 2.0);
         let end = P3::new(10.0, 0.0, 2.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         stock.stamp_linear_segment(&lut, tool.radius(), start, end, StockCutDirection::FromTop);
 
         // Along the path center (y=0): z should be at tip_z = 2.0.
@@ -885,7 +885,7 @@ mod tests {
         let start = P3::new(5.0, 5.0, -1.0);
         let end = P3::new(25.0, 25.0, -1.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         stock.stamp_linear_segment(&lut, tool.radius(), start, end, StockCutDirection::FromTop);
 
         // Midpoint of the diagonal (15,15): ball tip at z=-1, so center z = -1.0.
@@ -933,7 +933,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 10.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         // Tip at z=3 from below: flat endmill surface at z=3, remove below.
         stock.stamp_tool_at(
             &lut,
@@ -958,7 +958,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 10.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         // Top cut: remove above z=7
         stock.stamp_tool_at(
             &lut,
@@ -1039,7 +1039,7 @@ mod tests {
         let saved = stock.checkpoint();
 
         // Cut the original.
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),
@@ -1063,7 +1063,7 @@ mod tests {
 
         assert!(stock.y_grid.is_none(), "Y-grid should not exist yet");
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         // Stamp from back (+Y side): tool center at global (10, ?, 10)
         // decompose for Y-grid: u=x=10, v=z=10, depth=y
         // FromBack = subtract_above (high-Y side), tip_y = 15
@@ -1100,7 +1100,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, 0.0, 20.0, 1.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         // FromFront: tool enters from -Y (low Y). subtract_below.
         // Tool tip at global y=5, center at (10, 5, 10).
         stock.stamp_tool_at(
@@ -1127,7 +1127,7 @@ mod tests {
 
         assert!(stock.x_grid.is_none());
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         // FromLeft: tool enters from -X. subtract_below on X-grid.
         // decompose: u=Y, v=Z, depth=X. Tool at global (5, 10, 10).
         stock.stamp_tool_at(
@@ -1155,7 +1155,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, 0.0, 20.0, 1.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         // FromRight: tool enters from +X. subtract_above on X-grid.
         stock.stamp_tool_at(
             &lut,
@@ -1179,7 +1179,7 @@ mod tests {
         let tool = FlatEndmill::new(4.0, 20.0); // radius 2
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, 0.0, 20.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         // Sweep along X at global (x, y=15, z=10) from x=2 to x=18.
         // FromBack stamps on Y-grid. decompose: u=x, v=z, depth=y
         let start = P3::new(2.0, 15.0, 10.0);
@@ -1203,7 +1203,7 @@ mod tests {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 30.0, 30.0, 0.0, 20.0, 1.0);
 
         // Setup 1: Top cut — stamp at center.
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),
@@ -1245,7 +1245,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, 0.0, 20.0, 1.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         // Create Y-grid via stamp.
         stock.stamp_tool_at(
             &lut,
@@ -1320,7 +1320,7 @@ mod tests {
         let sum_before = stock.local_material_sum(5.0, 5.0, 3.0);
 
         // Stamp tool at center, cutting to z=2.
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),

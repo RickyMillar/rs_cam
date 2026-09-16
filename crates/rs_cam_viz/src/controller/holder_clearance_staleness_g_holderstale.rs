@@ -51,11 +51,11 @@
 
 use std::sync::Arc;
 
-use rs_cam_core::collision::{CollisionEvent, CollisionKind, CollisionReport};
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::stock::collision::{CollisionEvent, CollisionKind, CollisionReport};
 
 use crate::compute::{
     CollisionRequest, CollisionResult, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,

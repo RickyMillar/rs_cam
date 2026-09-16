@@ -85,7 +85,7 @@ use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::material::Material;
-use rs_cam_core::simulation_cut::{SimulationCutTrace, SimulationMetricOptions};
+use rs_cam_core::stock::simulation_cut::{SimulationCutTrace, SimulationMetricOptions};
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;

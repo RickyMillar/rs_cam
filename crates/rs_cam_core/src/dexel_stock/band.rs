@@ -37,7 +37,7 @@
 
 use rayon::prelude::*;
 
-use crate::dexel::{DexelGrid, DexelRay};
+use crate::stock::dexel::{DexelGrid, DexelRay};
 
 /// A contiguous run of rows of a [`DexelGrid`].
 pub(super) struct GridBand<'a> {

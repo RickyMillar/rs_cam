@@ -51,7 +51,7 @@ use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::Material;
-use rs_cam_core::simulation_cut::{
+use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
 };
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};

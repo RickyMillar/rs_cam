@@ -102,7 +102,7 @@ struct VerdictLine {
 /// reads as a clean pass, so a clear triage with an abstaining metric takes
 /// the UNKNOWN voice and says so.
 fn verdict_line(
-    triage: &rs_cam_core::sim_triage::SimulationTriage,
+    triage: &rs_cam_core::stock::sim_triage::SimulationTriage,
     not_measured: usize,
     trace_present: bool,
 ) -> VerdictLine {
@@ -205,7 +205,7 @@ fn draw_status_header(
     let trace_present = sim.results.as_ref().is_some_and(|r| r.cut_trace.is_some());
     // Scoped so the triage borrow ends before the freshness read below.
     let verdict = {
-        use rs_cam_core::sim_measurability::Measurability;
+        use rs_cam_core::stock::sim_measurability::Measurability;
         let triage = sim.cached_simulation_triage(session, gui.edit_counter);
         let not_measured = triage
             .measurability
@@ -260,7 +260,7 @@ fn draw_status_header(
 const HIGH_AIR_CUT_PCT: f64 = 40.0;
 
 fn draw_air_cut_caution(ui: &mut egui::Ui, sim: &SimulationState) {
-    use rs_cam_core::simulation_cut::AirCutRatios;
+    use rs_cam_core::stock::simulation_cut::AirCutRatios;
     let Some(trace) = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref()) else {
         return;
     };
@@ -611,7 +611,7 @@ fn draw_project_section(
             // says "everything was measured" on every project is a strip
             // nobody reads by the time it matters.
             {
-                use rs_cam_core::sim_measurability::Measurability;
+                use rs_cam_core::stock::sim_measurability::Measurability;
                 // Cached by (trace pointer, edit counter) — the same
                 // staleness rule as the load report and chipload envelopes
                 // beside it. Rebuilding the triage per frame is a full
@@ -727,7 +727,7 @@ fn draw_project_section(
                 .as_ref()
                 .and_then(|r| r.cut_trace.as_ref())
                 .map(|trace| {
-                    use rs_cam_core::simulation_cut::AirCutRatios;
+                    use rs_cam_core::stock::simulation_cut::AirCutRatios;
                     let s = &trace.summary;
                     // LH-1: the air-cut share comes from the trait, not from
                     // a division written here. `air_cut_pct_of_total_runtime`
@@ -1417,7 +1417,7 @@ fn draw_span_section(
     sim: &mut SimulationState,
     gui: &GuiState,
     max_feed: f64,
-    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    trace: &rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     issues: &[crate::state::simulation::SimulationIssue],
     events: &mut Vec<AppEvent>,
 ) {
@@ -1494,7 +1494,7 @@ fn draw_span_body(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     gui: &GuiState,
-    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    trace: &rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     issues: &[crate::state::simulation::SimulationIssue],
     toolpath_id: Option<ToolpathId>,
     effective: Option<u32>,
@@ -1624,13 +1624,15 @@ fn draw_span_body(
     // In-scope hotspots and issues.
     // Roadmap C.4 — sort by wasted_runtime_s desc so the most expensive
     // hotspots show first (rather than insertion order).
-    let mut in_scope_hotspots: Vec<(usize, &rs_cam_core::simulation_cut::SimulationCutHotspot)> =
-        trace
-            .hotspots
-            .iter()
-            .enumerate()
-            .filter(|(_, h)| h.toolpath_id == tp_id && h.span_path.iter().any(|s| s.0 == sid))
-            .collect();
+    let mut in_scope_hotspots: Vec<(
+        usize,
+        &rs_cam_core::stock::simulation_cut::SimulationCutHotspot,
+    )> = trace
+        .hotspots
+        .iter()
+        .enumerate()
+        .filter(|(_, h)| h.toolpath_id == tp_id && h.span_path.iter().any(|s| s.0 == sid))
+        .collect();
     in_scope_hotspots.sort_by(|a, b| {
         b.1.wasted_runtime_s
             .partial_cmp(&a.1.wasted_runtime_s)

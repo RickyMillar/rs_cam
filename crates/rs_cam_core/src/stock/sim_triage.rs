@@ -45,15 +45,15 @@
 //! that says which population it counts. Nothing is hidden; it is demoted to
 //! a footer and labelled.
 
-use crate::collision::RapidCollision;
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
     Severity, Source, ids,
 };
 use crate::ids::ToolpathId;
 use crate::kinematic_utilization::ToolpathKinematicUtilization;
-use crate::sim_measurability::MeasurabilityReport;
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::collision::RapidCollision;
+use crate::stock::sim_measurability::MeasurabilityReport;
+use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::toolpath_spans::{RegionSpanRole, SpanId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -709,7 +709,7 @@ impl EntryLoadObservation {
 /// kind (`dexel_stock::simulation::apply_subsegment_metrics`), so reading one
 /// of them is reading half the entries. Reading the axial axis alone is the
 /// specific mistake G-ENTRYLOAD is named after.
-fn entry_bite_mm(s: &crate::simulation_cut::SimulationCutSample) -> f64 {
+fn entry_bite_mm(s: &crate::stock::simulation_cut::SimulationCutSample) -> f64 {
     s.axial_engagement_mm.max(s.plunge_descent_mm).max(0.0)
 }
 
@@ -719,7 +719,7 @@ fn entry_bite_mm(s: &crate::simulation_cut::SimulationCutSample) -> f64 {
 /// reordering — programme rule 5. `Drilling` is deliberately NOT an entry
 /// here: drill cycles have their own three gates on
 /// `ToolpathLoadVerdict::drill_gates` and their own removal model.
-fn is_entry_intent(s: &crate::simulation_cut::SimulationCutSample) -> bool {
+fn is_entry_intent(s: &crate::stock::simulation_cut::SimulationCutSample) -> bool {
     matches!(
         s.source_intent,
         Some(
@@ -744,7 +744,7 @@ pub fn entry_load_observation(
     let mut body: Vec<f64> = Vec::new();
     let mut entry_samples = 0usize;
     let mut peak: Option<f64> = None;
-    let mut worst: Option<&crate::simulation_cut::SimulationCutSample> = None;
+    let mut worst: Option<&crate::stock::simulation_cut::SimulationCutSample> = None;
 
     for s in trace
         .samples
@@ -1129,7 +1129,7 @@ fn category_rank(c: Category) -> u8 {
 )]
 mod tests {
     use super::*;
-    use crate::simulation_cut::{Engagement, SimulationCutSample};
+    use crate::stock::simulation_cut::{Engagement, SimulationCutSample};
 
     fn air_sample(i: usize, tp: usize) -> SimulationCutSample {
         SimulationCutSample {

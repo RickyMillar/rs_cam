@@ -14,7 +14,6 @@ use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, c
 use std::path::Path;
 
 use rs_cam_core::arcfit::fit_arcs;
-use rs_cam_core::dexel_mesh::{dexel_stock_to_mesh, dexel_stock_to_top_surface_mesh};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::arc_util::linearize_arc;
@@ -22,9 +21,10 @@ use rs_cam_core::geometry::contour_extract::weave_contours;
 use rs_cam_core::geometry::fiber::{Fiber, Interval};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::{FlattenPolicy, OffsetRingSet, Polygon2, offset_polygon};
-use rs_cam_core::radial_profile::RadialProfileLUT;
-use rs_cam_core::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::steep_shallow::dilate_grid;
+use rs_cam_core::stock::dexel_mesh::{dexel_stock_to_mesh, dexel_stock_to_top_surface_mesh};
+use rs_cam_core::stock::radial_profile::RadialProfileLUT;
+use rs_cam_core::stock::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::surface::dropcutter::{DropCutterGrid, batch_drop_cutter, point_drop_cutter};
 use rs_cam_core::surface::pushcutter::batch_push_cutter;
 use rs_cam_core::surface::slope::SlopeMap;
@@ -93,7 +93,7 @@ fn make_cut_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationCu
                 arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                 chipload_mm_per_tooth: 1200.0 / 18_000.0 / 2.0,
                 effective_chip_thickness_mm: Some(0.025),
-                engagement: rs_cam_core::simulation_cut::Engagement::default(),
+                engagement: rs_cam_core::stock::simulation_cut::Engagement::default(),
                 removed_volume_est_mm3: if radial_engagement < 0.02 { 0.0 } else { 0.8 },
                 mrr_mm3_s: if radial_engagement < 0.02 { 0.0 } else { 80.0 },
                 semantic_item_id: None,
@@ -183,8 +183,10 @@ fn bench_stamp_tool(c: &mut Criterion) {
 
     let ball = BallEndmill::new(6.35, 25.0);
     let flat = FlatEndmill::new(6.35, 25.0);
-    let ball_lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::radial_profile::LUT_SAMPLES);
-    let flat_lut = RadialProfileLUT::from_cutter(&flat, rs_cam_core::radial_profile::LUT_SAMPLES);
+    let ball_lut =
+        RadialProfileLUT::from_cutter(&ball, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
+    let flat_lut =
+        RadialProfileLUT::from_cutter(&flat, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
 
     for cell_size in [0.5, 1.0] {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, cell_size);
@@ -377,7 +379,7 @@ fn bench_stamp_linear_segment(c: &mut Criterion) {
     group.sample_size(20);
 
     let ball = BallEndmill::new(6.0, 25.0);
-    let lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::radial_profile::LUT_SAMPLES);
+    let lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
     let mut stock = TriDexelStock::from_stock(0.0, 0.0, 60.0, 10.0, 0.0, 10.0, 0.25);
     let start = P3::new(5.0, 5.0, -2.0);
     let end = P3::new(55.0, 5.0, -2.0);
@@ -553,7 +555,7 @@ fn bench_dexel_mesh_extraction(c: &mut Criterion) {
 
     // Small grid: 100x100 at cs=1.0
     let ball = BallEndmill::new(6.0, 25.0);
-    let lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::radial_profile::LUT_SAMPLES);
+    let lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
     let mut small = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, 1.0);
     // Stamp some geometry so the mesh isn't trivially uniform.
     for i in 0..5 {
@@ -616,7 +618,7 @@ fn bench_dexel_checkpoint_clone(c: &mut Criterion) {
     group.sample_size(20);
 
     let ball = BallEndmill::new(6.0, 25.0);
-    let lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::radial_profile::LUT_SAMPLES);
+    let lut = RadialProfileLUT::from_cutter(&ball, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
     let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, 0.0, 10.0, 0.25);
     for i in 0..20 {
         stock.stamp_tool_at(

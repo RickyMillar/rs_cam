@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use crate::debug_trace::ToolpathDebugTrace;
 use crate::geo::P3;
 use crate::semantic_trace::{SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace};
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
@@ -79,7 +79,7 @@ pub struct ToolpathNarrationContext<'a> {
     /// `planning/OPTIMIZER_UX_DIALIN_FIXES.md`.
     pub is_drill_cycle: bool,
     /// Measurability of this toolpath's metrics — the SAME
-    /// [`crate::sim_measurability::MeasurabilityReport`] the gates and the
+    /// [`crate::stock::sim_measurability::MeasurabilityReport`] the gates and the
     /// triage read (Checkpoint D Q2). `None` when the caller has not built
     /// one; narration then says nothing about measurability rather than
     /// implying everything was measured.
@@ -87,7 +87,7 @@ pub struct ToolpathNarrationContext<'a> {
     /// When a metric here is `NotMeasurable`, narration must not print its
     /// percentage as a number — the ruling's rule, applied at the surface
     /// most likely to be quoted back as evidence.
-    pub measurability: Option<&'a crate::sim_measurability::MeasurabilityReport>,
+    pub measurability: Option<&'a crate::stock::sim_measurability::MeasurabilityReport>,
     /// Stock material — used by the drill-cycle narration block to
     /// evaluate the plunge-feed envelope (material-aware mm/min per mm
     /// of cutter diameter). `None` falls back to envelope-free reporting.
@@ -2030,7 +2030,8 @@ fn append_air_cut_anomaly(
     // have already declined to act on.
     if let (Some(report), Some(tp_id)) = (context.measurability, context.toolpath_id)
         && let Some(reason) = {
-            let verdict = report.for_metric(tp_id, crate::sim_measurability::SimMetric::AirCut);
+            let verdict =
+                report.for_metric(tp_id, crate::stock::sim_measurability::SimMetric::AirCut);
             verdict.abstains().then(|| verdict.reason()).flatten()
         }
     {
@@ -2110,7 +2111,7 @@ fn cut_summary_metrics(
     trace: &SimulationCutTrace,
     context: &ToolpathNarrationContext<'_>,
 ) -> Option<(f64, f64, f64, f64)> {
-    use crate::simulation_cut::AirCutRatios;
+    use crate::stock::simulation_cut::AirCutRatios;
     if let Some(id) = context.toolpath_id {
         return trace
             .toolpath_summaries
@@ -2157,7 +2158,7 @@ mod tests {
     use crate::semantic_trace::{
         ToolpathSemanticItem, ToolpathSemanticParams, ToolpathSemanticSummary,
     };
-    use crate::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
+    use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
     use crate::toolpath_spans::{AnnotatedToolpath, Span, SpanKind, SpanPayload};
 
     /// Tooth of S2.3: when a DepthPass span legitimately covers moves whose
@@ -2481,7 +2482,9 @@ mod tests {
             arc_engagement_radians: Some(0.1),
             chipload_mm_per_tooth: 0.03,
             effective_chip_thickness_mm: Some(0.0),
-            engagement: crate::simulation_cut::Engagement::with_radial_woc(radial_engagement),
+            engagement: crate::stock::simulation_cut::Engagement::with_radial_woc(
+                radial_engagement,
+            ),
             ..SimulationCutSample::test_fixture()
         }
     }

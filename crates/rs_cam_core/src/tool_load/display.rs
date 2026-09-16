@@ -27,7 +27,7 @@ use std::collections::HashMap;
 
 use crate::feeds::{AchievedFeedMmMin, AdvancePerToothMm, ArcMeanChipThicknessMm};
 use crate::ids::ToolpathId;
-use crate::simulation_cut::{SimulationCutSample, SimulationCutTrace};
+use crate::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 
 /// The display measure: **achieved advance per tooth** for one sample,
 /// `effective_feed / (rpm · flutes)`.

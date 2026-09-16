@@ -2108,7 +2108,7 @@ impl<B: ComputeBackend> AppController<B> {
             if let Some(ref sim_results) = self.state.simulation.results
                 && let Some(ref ct) = sim_results.cut_trace
             {
-                use rs_cam_core::simulation_cut::AirCutRatios;
+                use rs_cam_core::stock::simulation_cut::AirCutRatios;
                 let s = &ct.summary;
                 (
                     s.total_runtime_s,

@@ -41,7 +41,7 @@ pub enum DiagnosticEvidence {
     SampleRange {
         toolpath_id: ToolpathId,
         /// Project-global sample indices (matching
-        /// [`crate::simulation_cut::SimulationCutSample`]'s ordering).
+        /// [`crate::stock::simulation_cut::SimulationCutSample`]'s ordering).
         sample_start: usize,
         sample_end: usize,
         observed: f64,

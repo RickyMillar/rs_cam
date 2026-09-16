@@ -29,7 +29,7 @@ use std::sync::atomic::AtomicBool;
 
 const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
 
-fn assert_mesh_well_formed(label: &str, mesh: &rs_cam_core::stock_mesh::StockMesh) {
+fn assert_mesh_well_formed(label: &str, mesh: &rs_cam_core::stock::stock_mesh::StockMesh) {
     assert!(!mesh.vertices.is_empty(), "{label}: mesh has no vertices");
     assert_eq!(
         mesh.vertices.len() % 3,

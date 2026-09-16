@@ -62,9 +62,9 @@ use rayon::prelude::*;
 use super::band::{self, BAND_ROWS};
 use super::stamping::{StampPartial, stamp_segment_with_metrics};
 use super::tile_mip::TileMaxTop;
-use crate::dexel::DexelGrid;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::radial_profile::RadialProfileLUT;
+use crate::stock::dexel::DexelGrid;
+use crate::stock::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 
 /// Which dispatch shape the metric simulator uses for its stamp kernel.

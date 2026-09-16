@@ -171,7 +171,7 @@ use rs_cam_core::feeds::vendor_lut::{
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine_kinematics::PredictedFeedMap;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::simulation_cut::{
+use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutTrace,
 };
 use rs_cam_core::tool::{EngagementMode, MillingCutter, TaperedBallEndmill, ToolDefinition};

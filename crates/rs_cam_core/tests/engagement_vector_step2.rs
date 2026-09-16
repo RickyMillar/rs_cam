@@ -28,7 +28,7 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
     geo::{BoundingBox3, P3},
-    simulation_cut::{
+    stock::simulation_cut::{
         CutKinematics, Engagement, EngagementDirection, SimulationCutSample, SimulationCutTrace,
         SummaryAccumulator,
     },

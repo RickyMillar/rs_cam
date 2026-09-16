@@ -503,7 +503,7 @@ fn flag_on_overrides_total_runtime_s() {
     // checked too.
     let run = |kinematics: Option<MachineKinematics>| -> (
         f64,
-        std::sync::Arc<rs_cam_core::simulation_cut::SimulationCutTrace>,
+        std::sync::Arc<rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
     ) {
         let mut session = build_pocket_session();
         let mut machine = session.machine().clone();

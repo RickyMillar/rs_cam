@@ -545,7 +545,7 @@ impl OperationType {
     /// `planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md`.
     ///
     /// Returning `Some(threshold)` means: a TP whose
-    /// [`crate::simulation_cut::AirCutRatios::air_cut_pct_of_total_runtime`]
+    /// [`crate::stock::simulation_cut::AirCutRatios::air_cut_pct_of_total_runtime`]
     /// exceeds `threshold` is a real signal.
     ///
     /// **The denominator is TOTAL runtime (cutting + rapids)** — these bands

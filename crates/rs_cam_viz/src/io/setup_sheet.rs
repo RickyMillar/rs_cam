@@ -56,7 +56,7 @@ use std::sync::Arc;
 use crate::state::runtime::GuiState;
 use crate::ui::readiness::{self, CycleTimeBasis, CycleTimeBasisExt};
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::simulation_cut::SimulationCutTrace;
+use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 
 /// Generate an HTML setup sheet from session + GUI state.
 ///

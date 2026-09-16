@@ -87,7 +87,7 @@ use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetMachineArgs, SimulationOptions,
     ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::SimulationCutTrace;
+use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 
 /// The AS001 pocket, which produces an engagement summary.
 const POCKET: ToolpathId = ToolpathId(0);

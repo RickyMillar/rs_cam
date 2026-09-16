@@ -907,7 +907,7 @@ fn build_ok_row(
     case_id: &str,
     op_type: OperationType,
     verdict: Option<&ToolpathLoadVerdict>,
-    summary: Option<&rs_cam_core::simulation_cut::SimulationToolpathCutSummary>,
+    summary: Option<&rs_cam_core::stock::simulation_cut::SimulationToolpathCutSummary>,
     rapid_collision_count: u32,
     param_warnings: &[String],
 ) -> BaselineRow {

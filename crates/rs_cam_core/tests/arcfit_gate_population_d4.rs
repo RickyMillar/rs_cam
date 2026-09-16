@@ -78,7 +78,7 @@ use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::apply_dogbones;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::simulation_cut::SimulationCutSample;
+use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::FlatEndmill;
 use rs_cam_core::tool_load::locality::{SpanLookup, is_steady_state_for_gate};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
@@ -454,7 +454,7 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
     use rs_cam_core::compute::tool_config::ToolMaterial;
     use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
     use rs_cam_core::material::Material;
-    use rs_cam_core::simulation_cut::SimulationCutTrace;
+    use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
     use rs_cam_core::tool::ToolDefinition;
     use rs_cam_core::tool_load::{ToleranceBands, ToolpathLoadContext, evaluate_toolpath};
 

@@ -182,7 +182,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Weak};
 
-use crate::collision::RapidCollision;
 use crate::compute::simulate::{
     ColumnDeviation, SimBoundary, SimCheckpointMesh, SimGroupEntry, SimToolpathEntry,
     SimulationRequest,
@@ -192,8 +191,9 @@ use crate::drill_op::DrillOp;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
 use crate::semantic_trace::ToolpathSemanticTrace;
-use crate::simulation_cut::SimulationCutSample;
-use crate::stock_mesh::StockMesh;
+use crate::stock::collision::RapidCollision;
+use crate::stock::simulation_cut::SimulationCutSample;
+use crate::stock::stock_mesh::StockMesh;
 use crate::tool::{EngagementMode, MillingCutter, ToolDefinition};
 use crate::toolpath_spans::AnnotatedToolpath;
 

@@ -71,7 +71,7 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::SimulationCutTrace;
+use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use rs_cam_core::tool_load::ModulationStrategyTag;
 use rs_cam_core::tool_load::optimize::{
     KinematicsSource, LutQueryStamp, OutcomeKind, SimAssumptionStamp, optimize_toolpath,

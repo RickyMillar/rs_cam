@@ -378,8 +378,8 @@ fn tridexel_simulation_modifies_stock() {
         .zip(stock.z_grid.rays.iter())
         .enumerate()
     {
-        let before_top = rs_cam_core::dexel::ray_top(before_ray);
-        let after_top = rs_cam_core::dexel::ray_top(after_ray);
+        let before_top = rs_cam_core::stock::dexel::ray_top(before_ray);
+        let after_top = rs_cam_core::stock::dexel::ray_top(after_ray);
         if before_top != after_top {
             modified_count += 1;
             // After cut, the top should be lower than the original
@@ -428,10 +428,9 @@ fn tridexel_simulation_two_toolpaths_carry_forward() {
 
     // Verify: the first cut should still be present (carry-forward)
     // Check a ray along the first slot
-    let first_slot_modified =
-        stock_after_first.z_grid.rays.iter().any(|ray| {
-            rs_cam_core::dexel::ray_top(ray).is_some_and(|t| (t - 20.0_f32).abs() > 0.01)
-        });
+    let first_slot_modified = stock_after_first.z_grid.rays.iter().any(|ray| {
+        rs_cam_core::stock::dexel::ray_top(ray).is_some_and(|t| (t - 20.0_f32).abs() > 0.01)
+    });
     assert!(first_slot_modified, "First slot should have modified stock");
 
     // After second toolpath, both slots should be cut
@@ -441,8 +440,8 @@ fn tridexel_simulation_two_toolpaths_carry_forward() {
     for row in 0..stock.z_grid.rows {
         for col in 0..stock.z_grid.cols {
             let idx = row * stock.z_grid.cols + col;
-            let top = rs_cam_core::dexel::ray_top(&stock.z_grid.rays[idx]);
-            let first_top = rs_cam_core::dexel::ray_top(&stock_after_first.z_grid.rays[idx]);
+            let top = rs_cam_core::stock::dexel::ray_top(&stock.z_grid.rays[idx]);
+            let first_top = rs_cam_core::stock::dexel::ray_top(&stock_after_first.z_grid.rays[idx]);
             if let Some(t) = top
                 && (t - 20.0_f32).abs() > 0.01
                 && t < 20.0

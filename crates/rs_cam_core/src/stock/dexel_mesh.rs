@@ -8,9 +8,9 @@
 //! Side-face grids (X, Y) produce per-segment surface meshes appended with
 //! index offsets.
 
-use crate::dexel::{DexelAxis, DexelGrid, DexelSegment, ray_bottom, ray_top};
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
-use crate::stock_mesh::StockMesh;
+use crate::stock::dexel::{DexelAxis, DexelGrid, DexelSegment, ray_bottom, ray_top};
+use crate::stock::stock_mesh::StockMesh;
 
 // Wood colors: uncut = light tan, cut = dark walnut. This is their one
 // home; `dexel_mesh_mc` reads them from here.
@@ -165,7 +165,7 @@ pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> StockMesh {
 /// Build a closed solid mesh from a Z-grid via marching cubes
 /// (DEXEL roadmap Step 5 — J, see `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.J).
 ///
-/// Delegates to [`crate::dexel_mesh_mc::z_grid_marching_cubes`]. The MC path
+/// Delegates to [`crate::stock::dexel_mesh_mc::z_grid_marching_cubes`]. The MC path
 /// is watertight, topology-aware, and composes single-segment, multi-segment,
 /// cavity, through-hole, and dual-direction (top + bottom) cuts uniformly via
 /// a per-cell SDF derived from the ray data. Replaces the prior heightmap-
@@ -176,7 +176,7 @@ pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> StockMesh {
 /// matching the renderer's CPU-side normal computation in
 /// `crates/rs_cam_viz/src/render/sim_render.rs::from_heightmap_mesh`.
 pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: f64) -> StockMesh {
-    crate::dexel_mesh_mc::z_grid_marching_cubes(grid, stock_top_z, stock_bottom_z)
+    crate::stock::dexel_mesh_mc::z_grid_marching_cubes(grid, stock_top_z, stock_bottom_z)
 }
 
 /// Extract a **per-segment** surface mesh from a side-face grid (X or Y).
@@ -416,8 +416,8 @@ pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::drill_o
 )]
 mod tests {
     use super::*;
-    use crate::dexel::ray_subtract_above;
     use crate::dexel_stock::{StockCutDirection, TriDexelStock};
+    use crate::stock::dexel::ray_subtract_above;
     use crate::tool::{FlatEndmill, MillingCutter};
 
     #[test]
@@ -567,14 +567,14 @@ mod tests {
     /// than the legacy fixed-index layout.
     #[test]
     fn top_bottom_job_mesh_shows_both_cuts() {
-        use crate::dexel::{ray_bottom, ray_top};
-        use crate::radial_profile::RadialProfileLUT;
+        use crate::stock::dexel::{ray_bottom, ray_top};
+        use crate::stock::radial_profile::RadialProfileLUT;
 
         let stock_h = 10.6;
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 110.0, 110.0, 0.0, stock_h, 1.0);
 
         let tool = FlatEndmill::new(6.35, 25.0);
-        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::stock::radial_profile::LUT_SAMPLES);
 
         // Top cut: ray_top → 7.
         stock.stamp_tool_at(
@@ -634,9 +634,9 @@ mod tests {
         let z_only_mesh = dexel_stock_to_mesh(&stock);
 
         let tool = FlatEndmill::new(4.0, 20.0);
-        let lut = crate::radial_profile::RadialProfileLUT::from_cutter(
+        let lut = crate::stock::radial_profile::RadialProfileLUT::from_cutter(
             &tool,
-            crate::radial_profile::LUT_SAMPLES,
+            crate::stock::radial_profile::LUT_SAMPLES,
         );
         stock.stamp_tool_at(
             &lut,
@@ -676,7 +676,11 @@ mod tests {
         let mut stock_with_gap = stock;
         for r in 2..=3 {
             for c in 2..=3 {
-                crate::dexel::ray_subtract_interval(stock_with_gap.z_grid.ray_mut(r, c), 2.0, 3.0);
+                crate::stock::dexel::ray_subtract_interval(
+                    stock_with_gap.z_grid.ray_mut(r, c),
+                    2.0,
+                    3.0,
+                );
             }
         }
         let gap_mesh = dexel_stock_to_mesh(&stock_with_gap);
@@ -691,7 +695,7 @@ mod tests {
 
     #[test]
     fn multi_segment_through_cut_produces_internal_surfaces() {
-        use crate::dexel::ray_subtract_interval;
+        use crate::stock::dexel::ray_subtract_interval;
 
         // Create a 4x4 grid (5x5 cells), cut a through-slot in the middle.
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 4.0, 4.0, 0.0, 10.0, 1.0);
@@ -761,7 +765,7 @@ mod tests {
 
     #[test]
     fn empty_ray_next_to_multi_segment_produces_walls() {
-        use crate::dexel::ray_subtract_interval;
+        use crate::stock::dexel::ray_subtract_interval;
 
         // Create a 3x3 grid (4x4 cells).
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 3.0, 3.0, 0.0, 10.0, 1.0);
@@ -790,7 +794,7 @@ mod tests {
 
     #[test]
     fn vertex_count_increases_with_segment_count() {
-        use crate::dexel::ray_subtract_interval;
+        use crate::stock::dexel::ray_subtract_interval;
 
         // Create a 3x3 grid (4x4 cells).
         let stock_1seg = TriDexelStock::from_stock(0.0, 0.0, 3.0, 3.0, 0.0, 10.0, 1.0);

@@ -34,9 +34,9 @@ use rs_cam_core::kinematic_utilization::{
     BindingFractions, PlungeClassObservation, RampObservation, ToolpathKinematicUtilization,
 };
 use rs_cam_core::machine_kinematics::MachineKinematics;
-use rs_cam_core::sim_measurability::MeasurabilityReport;
-use rs_cam_core::sim_triage::{SimulationTriage, TriageInputs, plunge_class_finding};
-use rs_cam_core::simulation_cut::SimulationCutTrace;
+use rs_cam_core::stock::sim_measurability::MeasurabilityReport;
+use rs_cam_core::stock::sim_triage::{SimulationTriage, TriageInputs, plunge_class_finding};
+use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use std::collections::BTreeMap;
 
 /// One hand-built reading. `peak_ratio` and `population` are the two dials

@@ -1084,7 +1084,7 @@ impl super::RsCamApp {
         // identical evidence. `state.simulation.resolution` is what the next
         // simulation WILL use; it is not a property of this trace.
         let measurability = cut_trace.map(|trace| {
-            rs_cam_core::sim_measurability::MeasurabilityReport::from_trace(
+            rs_cam_core::stock::sim_measurability::MeasurabilityReport::from_trace(
                 trace,
                 state
                     .simulation
@@ -3629,7 +3629,7 @@ impl super::RsCamApp {
     fn reach_overlay_background(
         &self,
         index: usize,
-    ) -> Result<rs_cam_core::stock_mesh::StockMesh, String> {
+    ) -> Result<rs_cam_core::stock::stock_mesh::StockMesh, String> {
         let session = &self.controller.state().session;
         let Some(spec) = session.reach_map_spec(index, None) else {
             return Err(format!(
@@ -4401,7 +4401,7 @@ impl super::RsCamApp {
 /// cost `Σ_toolpaths (spans × total_samples)` — on the egui frame-loop
 /// thread, with every other queued MCP request waiting behind it. The
 /// accumulation now happens in one pass in
-/// [`rs_cam_core::simulation_cut::accumulate_by_span`], which owns the
+/// [`rs_cam_core::stock::simulation_cut::accumulate_by_span`], which owns the
 /// nesting rule (a sample belongs to EVERY span in its `span_path`) and is
 /// pinned against a verbatim transcription of the old walk by
 /// `crates/rs_cam_core/tests/span_summary_single_pass_c1.rs`. This function
@@ -4444,7 +4444,7 @@ pub(crate) struct CutTraceRequest<'a> {
 /// `span_summaries` was 94 % of the payload that motivated this work.
 pub(crate) fn build_cut_trace_response(
     state: &crate::state::AppState,
-    ct: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    ct: &rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     req: &CutTraceRequest<'_>,
 ) -> Result<serde_json::Value, String> {
     use rs_cam_core::toolpath_spans::{SpanId, SpanPayload};
@@ -4655,7 +4655,7 @@ pub(crate) fn build_cut_trace_response(
     // P0 unified-finishing probe — compact per-toolpath runtime block.
     // `runtime_by_intent` is the F-034 integrator time bucketed by
     // MoveIntent class (None when the sim ran without kinematics).
-    use rs_cam_core::simulation_cut::AirCutRatios;
+    use rs_cam_core::stock::simulation_cut::AirCutRatios;
     let toolpath_summaries: Vec<&_> = ct
         .toolpath_summaries
         .iter()
@@ -4745,15 +4745,15 @@ pub(crate) fn build_cut_trace_response(
 /// everything into the zero-rooted display frame instead, via
 /// `Setup::emission_to_display_shift`.)
 fn sim_mesh_in_world_frame(
-    mesh: &rs_cam_core::stock_mesh::StockMesh,
+    mesh: &rs_cam_core::stock::stock_mesh::StockMesh,
     session: &rs_cam_core::session::ProjectSession,
-) -> rs_cam_core::stock_mesh::StockMesh {
+) -> rs_cam_core::stock::stock_mesh::StockMesh {
     let min = session.stock_bbox().min;
     let (ox, oy, oz) = (min.x as f32, min.y as f32, min.z as f32);
     if ox == 0.0 && oy == 0.0 && oz == 0.0 {
         return mesh.clone();
     }
-    let mut out = rs_cam_core::stock_mesh::StockMesh::empty();
+    let mut out = rs_cam_core::stock::stock_mesh::StockMesh::empty();
     out.append_transformed(mesh, |x, y, z| (x + ox, y + oy, z + oz));
     out
 }
@@ -4772,7 +4772,7 @@ fn sim_mesh_in_world_frame(
 #[allow(clippy::too_many_arguments)]
 fn build_span_cut_summaries(
     state: &crate::state::AppState,
-    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    trace: &rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     toolpath_id: Option<rs_cam_core::ToolpathId>,
     span_filter_active: bool,
     accepted_by_toolpath: &std::collections::HashMap<
@@ -4820,7 +4820,7 @@ fn build_span_cut_summaries(
         } else {
             None
         };
-        let accs = rs_cam_core::simulation_cut::accumulate_by_span(
+        let accs = rs_cam_core::stock::simulation_cut::accumulate_by_span(
             &trace.samples,
             tc.id,
             spans.len(),
@@ -4829,7 +4829,7 @@ fn build_span_cut_summaries(
         for (span_index, span) in spans.iter().enumerate() {
             let span_id = span_index as u32;
 
-            use rs_cam_core::simulation_cut::AirCutRatios;
+            use rs_cam_core::stock::simulation_cut::AirCutRatios;
             let Some(acc) = accs.get(span_index) else {
                 continue;
             };
@@ -4911,7 +4911,7 @@ pub(crate) fn viz_project_evidence(
 /// trace are omitted.
 fn build_per_depth_pass_summary(
     state: &crate::state::AppState,
-    sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
+    sim_trace: Option<&rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
 ) -> serde_json::Value {
     use rs_cam_core::toolpath_spans::{SpanId, SpanKind, SpanPayload};
 
@@ -4956,9 +4956,9 @@ fn build_per_depth_pass_summary(
         let depth_pass_ids: std::collections::HashSet<u32> =
             depth_pass_meta.iter().map(|(i, _, _)| *i as u32).collect();
         // Accumulate per-pass stats in lock-step with depth_pass_meta.
-        let mut accs: Vec<rs_cam_core::simulation_cut::SummaryAccumulator> = (0..depth_pass_meta
-            .len())
-            .map(|_| rs_cam_core::simulation_cut::SummaryAccumulator::default())
+        let mut accs: Vec<rs_cam_core::stock::simulation_cut::SummaryAccumulator> = (0
+            ..depth_pass_meta.len())
+            .map(|_| rs_cam_core::stock::simulation_cut::SummaryAccumulator::default())
             .collect();
         let pass_index_of: std::collections::HashMap<u32, usize> = depth_pass_meta
             .iter()
@@ -5023,9 +5023,9 @@ fn build_per_depth_pass_summary(
 /// reshuffling the surrounding payload. Empty when no cutting samples were
 /// observed in this scope.
 fn render_per_kinematics_json(
-    acc: &rs_cam_core::simulation_cut::SummaryAccumulator,
+    acc: &rs_cam_core::stock::simulation_cut::SummaryAccumulator,
 ) -> serde_json::Value {
-    use rs_cam_core::simulation_cut::CutKinematics;
+    use rs_cam_core::stock::simulation_cut::CutKinematics;
     let mut map = serde_json::Map::new();
     for kind in CutKinematics::ALL {
         #[allow(clippy::indexing_slicing)] // SAFETY: `kind.index()` is bounded by COUNT.
@@ -5459,9 +5459,9 @@ mod tests {
     ) -> (
         crate::state::AppState,
         Vec<rs_cam_core::ToolpathId>,
-        rs_cam_core::simulation_cut::SimulationCutTrace,
+        rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     ) {
-        use rs_cam_core::simulation_cut::{SimulationCutSample, SimulationCutTrace};
+        use rs_cam_core::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
         use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanId, SpanKind};
 
         let mut state = crate::state::AppState::default();

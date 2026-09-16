@@ -1093,7 +1093,7 @@ mod tests {
         assert!((grid.material_length_at(0, 0) - 10.0).abs() < 1e-6);
 
         // Cut a gap: subtract interval [3, 7] leaves [0,3] + [7,10] = 6.
-        crate::dexel::ray_subtract_interval(grid.ray_mut(1, 1), 3.0, 7.0);
+        crate::stock::dexel::ray_subtract_interval(grid.ray_mut(1, 1), 3.0, 7.0);
         assert!((grid.material_length_at(1, 1) - 6.0).abs() < 1e-6);
 
         // Empty ray: length = 0.

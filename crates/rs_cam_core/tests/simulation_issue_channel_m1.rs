@@ -76,7 +76,7 @@ use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SetToolpathEnabledArgs, SimulationOptions,
     ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::{AirCutRatios, SimulationCutIssueKind};
+use rs_cam_core::stock::simulation_cut::{AirCutRatios, SimulationCutIssueKind};
 
 /// `dexel_stock::stamping::FRESH_MATERIAL_THRESHOLD_MM`, restated here so
 /// the probe fails if the production constant moves without this file

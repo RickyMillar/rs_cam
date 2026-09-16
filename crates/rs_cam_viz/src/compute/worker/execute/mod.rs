@@ -232,7 +232,7 @@ where
     // Write cut-trace artifact to disk (viz-only filesystem concern).
     let cut_trace_path = if let Some(trace) = core_result.cut_trace.as_ref() {
         let artifact = build_simulation_cut_artifact(req, (**trace).clone());
-        match rs_cam_core::simulation_cut::write_simulation_cut_artifact(
+        match rs_cam_core::stock::simulation_cut::write_simulation_cut_artifact(
             &simulation_metric_artifact_dir(),
             "simulation_metrics",
             &artifact,
@@ -240,7 +240,7 @@ where
             Ok(p) => {
                 // G-SIMDUMP: unbounded dumps filled the disk (96 GB observed);
                 // keep only the newest few — each can be multiple GB.
-                let pruned = rs_cam_core::simulation_cut::prune_simulation_cut_artifacts(
+                let pruned = rs_cam_core::stock::simulation_cut::prune_simulation_cut_artifacts(
                     &simulation_metric_artifact_dir(),
                     SIM_CUT_ARTIFACT_RETAIN,
                 );

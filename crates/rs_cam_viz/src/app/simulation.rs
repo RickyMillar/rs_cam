@@ -88,8 +88,10 @@ impl RsCamApp {
     // SAFETY: cp_idx is from enumerate over boundaries; vertex loop uses step_by(3) within len
     #[allow(clippy::indexing_slicing)]
     pub(super) fn update_live_sim(&mut self, frame: &mut eframe::Frame) {
-        use rs_cam_core::dexel_mesh::{dexel_stock_to_entry_surface_mesh, dexel_stock_to_mesh};
         use rs_cam_core::dexel_stock::TriDexelStock;
+        use rs_cam_core::stock::dexel_mesh::{
+            dexel_stock_to_entry_surface_mesh, dexel_stock_to_mesh,
+        };
 
         let target_move = self.controller.state().simulation.playback.current_move;
         let live_move = self.controller.state().simulation.playback.live_sim_move;
@@ -375,7 +377,7 @@ impl RsCamApp {
                     })
                     .collect();
                 if !completed.is_empty() {
-                    rs_cam_core::dexel_mesh::append_drill_cylinders(&mut mesh, &completed);
+                    rs_cam_core::stock::dexel_mesh::append_drill_cylinders(&mut mesh, &completed);
                 }
             }
 
@@ -679,7 +681,7 @@ fn clear_playback_tool(playback: &mut crate::state::simulation::SimulationPlayba
 }
 
 fn peak_deflection_for_move(
-    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    trace: &rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     toolpath_id: rs_cam_core::ToolpathId,
     local_move: usize,
     tool: &rs_cam_core::tool::ToolDefinition,

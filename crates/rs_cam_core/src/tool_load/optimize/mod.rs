@@ -32,7 +32,7 @@ use crate::compute::catalog::OperationType;
 use crate::feeds::vendor_lookup::MatchedRow;
 use crate::machine::MachineProfile;
 use crate::session::ProjectSession;
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::SimulationCutTrace;
 
 use super::RefuseReason;
 use super::verdict::{ChiploadVerdict, ToolpathLoadVerdict};
@@ -1021,7 +1021,7 @@ mod orchestration_skip_tests {
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::feeds::OperationFamily;
     use crate::session::ToolpathConfig;
-    use crate::simulation_cut::SimulationCutTrace;
+    use crate::stock::simulation_cut::SimulationCutTrace;
 
     fn make_tool() -> ToolConfig {
         ToolConfig::new_default(ToolId(0), ToolType::EndMill)
@@ -1169,7 +1169,7 @@ mod orchestration_skip_tests {
         // Trace has a baseline samples for this toolpath_id, so the
         // early skip paths don't trigger; cancel flag is set before
         // any candidates are evaluated.
-        use crate::simulation_cut::SimulationToolpathCutSummary;
+        use crate::stock::simulation_cut::SimulationToolpathCutSummary;
         let mut trace = empty_trace();
         trace.toolpath_summaries.push(SimulationToolpathCutSummary {
             toolpath_id: ToolpathId(0),
@@ -1208,7 +1208,7 @@ mod orchestration_skip_tests {
     /// Adds cutting samples for `toolpath_id = 0` so the force-aware
     /// deflection gate has data to evaluate.
     fn trace_with_summary_and_high_force_samples() -> SimulationCutTrace {
-        use crate::simulation_cut::{
+        use crate::stock::simulation_cut::{
             CutKinematics, SimulationCutSample, SimulationToolpathCutSummary,
         };
         let mut trace = empty_trace();
@@ -1251,7 +1251,7 @@ mod orchestration_skip_tests {
                 arc_engagement_radians: Some(std::f64::consts::PI),
                 chipload_mm_per_tooth: 0.04,
                 effective_chip_thickness_mm: Some(0.04),
-                engagement: crate::simulation_cut::Engagement::with_radial_woc(1.0),
+                engagement: crate::stock::simulation_cut::Engagement::with_radial_woc(1.0),
                 removed_volume_est_mm3: 1.0,
                 mrr_mm3_s: 10.0,
                 ..SimulationCutSample::test_fixture()
@@ -1565,7 +1565,7 @@ mod project_rollup_tests {
     use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
     use crate::session::ToolpathConfig;
-    use crate::simulation_cut::{SimulationCutTrace, SimulationToolpathCutSummary};
+    use crate::stock::simulation_cut::{SimulationCutTrace, SimulationToolpathCutSummary};
     use std::sync::Mutex;
 
     fn make_tool() -> ToolConfig {

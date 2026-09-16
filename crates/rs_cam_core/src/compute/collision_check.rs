@@ -3,12 +3,12 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::collision::{
+use crate::interrupt::Cancelled;
+use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::stock::collision::{
     CollisionObstacle, CollisionReport, check_collisions_interpolated_with_cancel,
     check_obstacle_collisions_with_cancel,
 };
-use crate::interrupt::Cancelled;
-use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::ToolDefinition;
 use crate::toolpath::Toolpath;
 

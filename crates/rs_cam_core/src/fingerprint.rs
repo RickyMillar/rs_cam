@@ -680,7 +680,7 @@ pub fn render_stock_composite_in_frame(
     width: u32,
     height: u32,
 ) -> Vec<u8> {
-    use crate::dexel_mesh::dexel_stock_to_mesh;
+    use crate::stock::dexel_mesh::dexel_stock_to_mesh;
 
     let mut mesh = dexel_stock_to_mesh(stock);
     mesh.apply_height_gradient();
@@ -702,7 +702,7 @@ pub fn render_stock_composite_in_frame(
 /// back to the plain green/orange cut/rapid scheme.
 pub fn render_toolpath_composite(
     annotated: &crate::toolpath_spans::AnnotatedToolpath,
-    background_mesh: Option<&crate::stock_mesh::StockMesh>,
+    background_mesh: Option<&crate::stock::stock_mesh::StockMesh>,
     width: u32,
     height: u32,
     include_rapids: bool,
@@ -765,7 +765,7 @@ impl CompositeSubject {
 /// frame expands to cover the mesh, it never clips it away.
 pub(crate) fn render_toolpath_composite_in_frame(
     annotated: &crate::toolpath_spans::AnnotatedToolpath,
-    background_mesh: Option<&crate::stock_mesh::StockMesh>,
+    background_mesh: Option<&crate::stock::stock_mesh::StockMesh>,
     frame: Option<&crate::geo::BoundingBox3>,
     width: u32,
     height: u32,
@@ -786,14 +786,14 @@ pub(crate) fn render_toolpath_composite_in_frame(
 /// the subject — see [`CompositeSubject`].
 pub fn render_toolpath_composite_subject(
     annotated: &crate::toolpath_spans::AnnotatedToolpath,
-    background_mesh: Option<&crate::stock_mesh::StockMesh>,
+    background_mesh: Option<&crate::stock::stock_mesh::StockMesh>,
     frame: Option<&crate::geo::BoundingBox3>,
     width: u32,
     height: u32,
     include_rapids: bool,
     subject: CompositeSubject,
 ) -> Vec<u8> {
-    use crate::stock_mesh::{auto_ribbon_radius, toolpath_to_tube_mesh_with_spans};
+    use crate::stock::stock_mesh::{auto_ribbon_radius, toolpath_to_tube_mesh_with_spans};
 
     let (ribbon, moves_dim, bg_dim) = subject.factors();
     let radius = auto_ribbon_radius(&annotated.toolpath) * ribbon;
@@ -829,7 +829,7 @@ pub fn render_toolpath_composite_subject(
 /// are mutually comparable even though two renders of different meshes are
 /// not. Prefer [`render_mesh_composite_in_frame`] when a stock bbox is known.
 pub fn render_mesh_composite(
-    mesh: &crate::stock_mesh::StockMesh,
+    mesh: &crate::stock::stock_mesh::StockMesh,
     width: u32,
     height: u32,
 ) -> Vec<u8> {
@@ -852,7 +852,7 @@ pub fn render_mesh_composite(
 /// **average** over the pixel footprint, which is what box-downsampling a
 /// supersampled render gives. Do not chase the stripes as geometry.
 pub fn render_mesh_composite_in_frame(
-    mesh: &crate::stock_mesh::StockMesh,
+    mesh: &crate::stock::stock_mesh::StockMesh,
     frame: Option<&crate::geo::BoundingBox3>,
     width: u32,
     height: u32,
@@ -1008,7 +1008,7 @@ fn fill_background(buf: &mut [u8]) {
 ///
 /// Expand-only is deliberate — see [`render_stock_composite_in_frame`].
 fn composite_camera_frame(
-    mesh: &crate::stock_mesh::StockMesh,
+    mesh: &crate::stock::stock_mesh::StockMesh,
     frame: Option<&crate::geo::BoundingBox3>,
 ) -> Option<crate::geo::BoundingBox3> {
     use crate::geo::{BoundingBox3, P3};
@@ -1141,7 +1141,7 @@ fn downsample_into(
 fn render_view_to_pixels(
     pixels: &mut [u8],
     buf_w: usize,
-    mesh: &crate::stock_mesh::StockMesh,
+    mesh: &crate::stock::stock_mesh::StockMesh,
     vert_count: usize,
     cam: &CompositeCamera,
     basis: &ViewBasis,

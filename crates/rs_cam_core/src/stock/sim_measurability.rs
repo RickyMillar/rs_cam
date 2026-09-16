@@ -63,7 +63,7 @@
 
 use crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM;
 use crate::ids::ToolpathId;
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::SimulationCutTrace;
 use serde::{Deserialize, Serialize};
 
 /// A simulation metric that a gate, a verdict, or a UI panel might read.
@@ -457,7 +457,7 @@ fn classify_engagement(
 )]
 mod tests {
     use super::*;
-    use crate::simulation_cut::{Engagement, SimulationCutSample};
+    use crate::stock::simulation_cut::{Engagement, SimulationCutSample};
 
     fn sample(id: usize, removed_mm3: f64, radial: f64, axial_mm: f64) -> SimulationCutSample {
         SimulationCutSample {

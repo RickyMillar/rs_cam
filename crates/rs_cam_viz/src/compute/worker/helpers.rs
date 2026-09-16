@@ -84,8 +84,8 @@ pub(super) fn build_trace_artifact(
 
 pub(super) fn build_simulation_cut_artifact(
     req: &SimulationRequest,
-    trace: rs_cam_core::simulation_cut::SimulationCutTrace,
-) -> rs_cam_core::simulation_cut::SimulationCutArtifact {
+    trace: rs_cam_core::stock::simulation_cut::SimulationCutTrace,
+) -> rs_cam_core::stock::simulation_cut::SimulationCutArtifact {
     let included_toolpath_ids: Vec<_> = req
         .groups
         .iter()
@@ -126,7 +126,7 @@ pub(super) fn build_simulation_cut_artifact(
         }).collect::<Vec<_>>(),
     });
 
-    rs_cam_core::simulation_cut::SimulationCutArtifact::new(
+    rs_cam_core::stock::simulation_cut::SimulationCutArtifact::new(
         req.resolution,
         trace.sample_step_mm,
         [

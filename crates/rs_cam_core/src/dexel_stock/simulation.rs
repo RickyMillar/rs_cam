@@ -15,16 +15,16 @@ use super::swept::{SweptDispatch, SweptJob, classify_subsegment};
 use super::tile_mip::TileMaxTop;
 use super::whole_path::{BandDispatch, StampDispatch, StampJob};
 use super::{StockCutDirection, TriDexelStock};
-use crate::dexel::DexelGrid;
 use crate::ids::ToolpathId;
+use crate::stock::dexel::DexelGrid;
 
-use crate::collision::RapidClearanceCheck;
 use crate::geo::P3;
 use crate::geometry::arc_util::linearize_arc_into;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
-use crate::simulation_cut::{CutKinematics, SimulationCutSample};
+use crate::stock::collision::RapidClearanceCheck;
+use crate::stock::radial_profile::RadialProfileLUT;
+use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::tool::{EngagementMode, MillingCutter};
 use crate::toolpath::{MoveType, Toolpath};
 use crate::toolpath_spans::SpanId;
@@ -56,7 +56,7 @@ impl TriDexelStock {
         direction: StockCutDirection,
         cancel: &dyn CancelCheck,
     ) -> Result<(), Cancelled> {
-        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_with_lut_cancel(toolpath, &lut, cutter.radius(), direction, cancel)
     }
 
@@ -334,7 +334,7 @@ impl TriDexelStock {
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
-        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_with_lut_metrics_cancel(
             toolpath,
             &lut,
@@ -823,7 +823,7 @@ impl TriDexelStock {
         start_move: usize,
         end_move: usize,
     ) {
-        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_range_with_lut(
             toolpath,
             &lut,
@@ -1052,7 +1052,7 @@ fn push_cutting_sample(
         arc_engagement_radians: None,
         chipload_mm_per_tooth,
         effective_chip_thickness_mm: None,
-        engagement: crate::simulation_cut::Engagement::with_radial_woc(0.0),
+        engagement: crate::stock::simulation_cut::Engagement::with_radial_woc(0.0),
         removed_volume_est_mm3: 0.0,
         mrr_mm3_s: 0.0,
         semantic_item_id: params.semantic_item_id,
@@ -1101,7 +1101,7 @@ fn apply_subsegment_metrics(
     sample.plunge_descent_mm = plunge_descent_mm;
     sample.arc_engagement_radians = arc_engagement_radians;
     sample.effective_chip_thickness_mm = chip_stats.map(|stats| stats.mean_mm);
-    sample.engagement = crate::simulation_cut::Engagement {
+    sample.engagement = crate::stock::simulation_cut::Engagement {
         radial_woc_fraction: radial_engagement,
         // Always measured on this path: the cutter has a flute length, so the
         // fraction is defined (C2 — `None` is reserved for emitters that have
@@ -1121,7 +1121,7 @@ fn apply_subsegment_metrics(
         // discrimination needs perp-axis side info from stamping (which side of
         // the engaged arc has fresh material) — to be threaded in a follow-up.
         // `Mixed` is the safe fallback.
-        direction: crate::simulation_cut::EngagementDirection::Mixed,
+        direction: crate::stock::simulation_cut::EngagementDirection::Mixed,
     };
     sample.removed_volume_est_mm3 = removed_volume_est_mm3;
     sample.mrr_mm3_s = if sample.segment_time_s <= 1e-9 {

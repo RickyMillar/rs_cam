@@ -458,7 +458,7 @@ pub struct RapidCollision {
 /// positive) and the milling lift-and-dive variant.
 pub fn check_rapid_collisions_against_stock(
     toolpath: &Toolpath,
-    z_grid: &crate::dexel::DexelGrid,
+    z_grid: &crate::stock::dexel::DexelGrid,
 ) -> Vec<RapidCollision> {
     let mut collisions = Vec::new();
 
@@ -886,16 +886,19 @@ mod tests {
     }
 
     /// Build a fresh (uncarved) dexel grid from a bounding box.
-    fn grid_from_bbox(bbox: &crate::geo::BoundingBox3) -> crate::dexel::DexelGrid {
-        crate::dexel::DexelGrid::z_grid_from_bounds(bbox, 1.0)
+    fn grid_from_bbox(bbox: &crate::geo::BoundingBox3) -> crate::stock::dexel::DexelGrid {
+        crate::stock::dexel::DexelGrid::z_grid_from_bounds(bbox, 1.0)
     }
 
     /// Build a dexel grid and carve away material above `clear_z` everywhere.
     /// Simulates a rough pass that cleared down to `clear_z`.
-    fn grid_roughed_to(bbox: &crate::geo::BoundingBox3, clear_z: f32) -> crate::dexel::DexelGrid {
+    fn grid_roughed_to(
+        bbox: &crate::geo::BoundingBox3,
+        clear_z: f32,
+    ) -> crate::stock::dexel::DexelGrid {
         let mut grid = grid_from_bbox(bbox);
         for ray in &mut grid.rays {
-            crate::dexel::ray_subtract_above(ray, clear_z);
+            crate::stock::dexel::ray_subtract_above(ray, clear_z);
         }
         grid
     }

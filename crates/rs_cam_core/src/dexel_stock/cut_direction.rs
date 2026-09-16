@@ -2,7 +2,7 @@
 //! and how a 3-D point decomposes into the corresponding grid's
 //! `(u, v, depth)` triple.
 
-use crate::dexel::DexelAxis;
+use crate::stock::dexel::DexelAxis;
 
 // ── Cut direction ───────────────────────────────────────────────────────
 

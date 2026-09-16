@@ -19,7 +19,7 @@
 //! viz — it renders a `CycleTime`, it does not measure one.
 
 use crate::ids::ToolpathId;
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::SimulationCutTrace;
 
 /// What a cycle-time number measures.
 ///

@@ -66,12 +66,12 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::collision::RapidClearanceCheck;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::optimize_entry_descents;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
+use rs_cam_core::stock::collision::RapidClearanceCheck;
+use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, PLUNGE_CLEARANCE_MM, Toolpath};
 

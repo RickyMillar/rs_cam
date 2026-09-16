@@ -60,7 +60,7 @@ pub const DEFAULT_MAX_SPAN_SUMMARIES: usize = 200;
 /// Default cap on `get_cut_trace`'s `semantic_summaries` (Checkpoint L-3).
 ///
 /// The array arrives sorted by `wasted_runtime_s` descending
-/// (`rs_cam_core::simulation_cut`), so the first 200 are the interesting
+/// (`rs_cam_core::stock::simulation_cut`), so the first 200 are the interesting
 /// ones. That ordering is a documented part of the cap contract — see
 /// [`ORDERING_SEMANTIC_SUMMARIES`].
 pub(crate) const DEFAULT_MAX_SEMANTIC_SUMMARIES: usize = 200;
@@ -89,7 +89,7 @@ pub const ORDERING_SPAN_SUMMARIES: &str =
 /// Documented ordering contract for `semantic_summaries` under a cap.
 ///
 /// Produced sorted by `wasted_runtime_s` descending by
-/// `rs_cam_core::simulation_cut`; filtering preserves that order, so the
+/// `rs_cam_core::stock::simulation_cut`; filtering preserves that order, so the
 /// first N under a cap are the N worst offenders.
 pub const ORDERING_SEMANTIC_SUMMARIES: &str = "wasted_runtime_s descending";
 

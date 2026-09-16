@@ -60,7 +60,7 @@ use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetMachineArgs, SimulationOptions,
     ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::{
+use rs_cam_core::stock::simulation_cut::{
     AirCutRatios, Engagement, SimulationCutSample, SimulationCutTrace, rebase_cutting_times,
 };
 use rs_cam_core::tool_load::BindingConstraint;

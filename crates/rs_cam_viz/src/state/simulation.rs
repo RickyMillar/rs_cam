@@ -7,7 +7,6 @@ use std::sync::{Arc, Weak};
 use super::job::SetupId;
 use super::runtime::GuiState;
 use super::toolpath::ToolpathId;
-use rs_cam_core::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::debug_trace::ToolpathDebugAnnotation;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::geo::{BoundingBox3, P3, V3};
@@ -15,11 +14,12 @@ use rs_cam_core::semantic_trace::{
     ToolpathSemanticItem, ToolpathSemanticKind, ToolpathSemanticTrace,
 };
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::simulation_cut::{
+use rs_cam_core::stock::collision::{CollisionReport, RapidCollision};
+use rs_cam_core::stock::simulation_cut::{
     SimulationCutHotspot, SimulationCutIssue, SimulationCutIssueKind, SimulationCutSample,
     SimulationCutTrace, SimulationMetricOptions,
 };
-use rs_cam_core::stock_mesh::StockMesh;
+use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::tool_load::ToolLoadReport;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::SpanId;
@@ -219,7 +219,7 @@ pub(crate) struct ChiploadEnvelopeCache {
     envelopes: Option<HashMap<rs_cam_core::ToolpathId, Range<f64>>>,
 }
 
-/// Cached [`rs_cam_core::sim_triage::SimulationTriage`] for the inspector.
+/// Cached [`rs_cam_core::stock::sim_triage::SimulationTriage`] for the inspector.
 ///
 /// `built` distinguishes "never built" from "built for a project with no cut
 /// trace", because `trace == None` is itself a legitimate cached state.
@@ -242,7 +242,7 @@ pub(crate) struct SimulationTriageCache {
     /// Fingerprint over the non-trace [`rs_cam_core::session::ProjectEvidence`]
     /// inputs — see [`SimulationState::evidence_fingerprint`].
     evidence_fp: u64,
-    triage: rs_cam_core::sim_triage::SimulationTriage,
+    triage: rs_cam_core::stock::sim_triage::SimulationTriage,
 }
 
 impl SimulationTriageCache {
@@ -1057,7 +1057,7 @@ impl SimulationState {
         &mut self,
         session: &ProjectSession,
         edit_counter: u64,
-    ) -> &rs_cam_core::sim_triage::SimulationTriage {
+    ) -> &rs_cam_core::stock::sim_triage::SimulationTriage {
         let evidence_fp = self.evidence_fingerprint();
         let fresh = {
             let live = self
@@ -2756,20 +2756,20 @@ mod tests {
     /// Attach a fresh cut trace, returning the `Arc` that was stored so cache
     /// sentries can compare identities.
     fn attach_cut_trace(sim: &mut SimulationState) -> Arc<SimulationCutTrace> {
-        let trace = rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(
+        let trace = rs_cam_core::stock::simulation_cut::SimulationCutTrace::from_samples(
             0.5,
             vec![
                 // The core constructor owns the neutral values, so a new
                 // field on `SimulationCutSample` reaches these fixtures.
                 // Only what this test measures is spelled out.
-                rs_cam_core::simulation_cut::SimulationCutSample {
+                rs_cam_core::stock::simulation_cut::SimulationCutSample {
                     toolpath_id: rs_cam_core::ToolpathId(1),
                     move_index: 1,
                     position: [0.0, 0.0, -1.0],
                     cumulative_time_s: 0.2,
                     segment_time_s: 0.2,
                     is_cutting: true,
-                    cut_kinematics: rs_cam_core::simulation_cut::CutKinematics::Linear,
+                    cut_kinematics: rs_cam_core::stock::simulation_cut::CutKinematics::Linear,
                     feed_rate_mm_min: 300.0,
                     spindle_rpm: 18_000,
                     flute_count: 2,
@@ -2778,13 +2778,15 @@ mod tests {
                     arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
-                    engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(0.01),
+                    engagement: rs_cam_core::stock::simulation_cut::Engagement::with_radial_woc(
+                        0.01,
+                    ),
                     removed_volume_est_mm3: 0.1,
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(2),
-                    ..rs_cam_core::simulation_cut::SimulationCutSample::test_fixture()
+                    ..rs_cam_core::stock::simulation_cut::SimulationCutSample::test_fixture()
                 },
-                rs_cam_core::simulation_cut::SimulationCutSample {
+                rs_cam_core::stock::simulation_cut::SimulationCutSample {
                     toolpath_id: rs_cam_core::ToolpathId(1),
                     move_index: 7,
                     sample_index: 1,
@@ -2792,7 +2794,7 @@ mod tests {
                     cumulative_time_s: 0.6,
                     segment_time_s: 0.4,
                     is_cutting: true,
-                    cut_kinematics: rs_cam_core::simulation_cut::CutKinematics::Linear,
+                    cut_kinematics: rs_cam_core::stock::simulation_cut::CutKinematics::Linear,
                     feed_rate_mm_min: 1000.0,
                     spindle_rpm: 18_000,
                     flute_count: 2,
@@ -2801,11 +2803,13 @@ mod tests {
                     arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0277,
                     effective_chip_thickness_mm: Some(0.0277),
-                    engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(0.08),
+                    engagement: rs_cam_core::stock::simulation_cut::Engagement::with_radial_woc(
+                        0.08,
+                    ),
                     removed_volume_est_mm3: 2.0,
                     mrr_mm3_s: 5.0,
                     semantic_item_id: Some(3),
-                    ..rs_cam_core::simulation_cut::SimulationCutSample::test_fixture()
+                    ..rs_cam_core::stock::simulation_cut::SimulationCutSample::test_fixture()
                 },
             ],
         );
@@ -3154,12 +3158,12 @@ mod tests {
 
         // (a) the async holder-collision report lands.
         sim.checks.collision_report = Some(CollisionReport {
-            collisions: vec![rs_cam_core::collision::CollisionEvent {
+            collisions: vec![rs_cam_core::stock::collision::CollisionEvent {
                 move_idx: 4,
                 position: P3::new(1.0, 1.0, -1.0),
                 penetration_depth: 0.8,
                 segment: "holder".to_owned(),
-                kind: rs_cam_core::collision::CollisionKind::Workpiece,
+                kind: rs_cam_core::stock::collision::CollisionKind::Workpiece,
             }],
             min_safe_stickout: 42.0,
         });
@@ -3224,7 +3228,7 @@ mod tests {
         let mut refreshed = simulation_for_toolpath();
         let full = attach_cut_trace(&mut refreshed);
         let short = Arc::new(
-            rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(
+            rs_cam_core::stock::simulation_cut::SimulationCutTrace::from_samples(
                 0.5,
                 full.samples.iter().take(1).cloned().collect(),
             ),

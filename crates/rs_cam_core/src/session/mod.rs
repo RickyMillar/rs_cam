@@ -1275,7 +1275,7 @@ pub enum VerdictKind {
     GeneratedEmpty,
     /// A gate declined to produce a verdict because the metric it reads is
     /// not measurable on this trace. Checkpoint D Q2, 2026-08-04 — see
-    /// [`crate::sim_measurability`]. This is **not** a warning about the
+    /// [`crate::stock::sim_measurability`]. This is **not** a warning about the
     /// toolpath; it is a statement about the simulation, and it carries the
     /// reason plus what remains valid (collision detection always does).
     MeasurabilityAbstained,
@@ -1321,9 +1321,9 @@ pub struct ProjectEvidence<'a> {
     /// the right toolpath. The viz side flattens its
     /// `Vec<ToolpathBoundary>` into this shape.
     pub boundaries: Vec<(ToolpathId, usize, usize)>,
-    pub rapid_collisions: &'a [crate::collision::RapidCollision],
+    pub rapid_collisions: &'a [crate::stock::collision::RapidCollision],
     pub rapid_collision_move_indices: &'a [usize],
-    pub cut_trace: Option<&'a crate::simulation_cut::SimulationCutTrace>,
+    pub cut_trace: Option<&'a crate::stock::simulation_cut::SimulationCutTrace>,
     /// Per-toolpath holder/shank collision counts, supplied by the
     /// caller from its most recent dedicated collision check. Empty =
     /// no holder evidence (no holder verdicts are emitted).
@@ -1338,7 +1338,7 @@ pub struct ProjectEvidence<'a> {
     pub holder_collisions: Vec<(ToolpathId, usize)>,
     /// Simulation cell size (mm) the trace was captured at, when known.
     ///
-    /// Read only by [`crate::sim_measurability`], and only to enrich the
+    /// Read only by [`crate::stock::sim_measurability`], and only to enrich the
     /// reason payload of a `CellTooCoarseForTipContact` abstention with the
     /// number the operator would have to change. It never decides a verdict,
     /// so `None` costs nothing but a vaguer message.
@@ -2804,7 +2804,7 @@ mod tests {
     #[test]
     fn set_stock_invalidates_simulation() {
         use crate::compute::simulate::SimulationResult;
-        use crate::stock_mesh::StockMesh;
+        use crate::stock::stock_mesh::StockMesh;
 
         let mut session = session_with_toolpath();
 

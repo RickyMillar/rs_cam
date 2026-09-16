@@ -86,7 +86,7 @@ use rs_cam_core::profile::ProfileSide;
 use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::AirCutRatios;
+use rs_cam_core::stock::simulation_cut::AirCutRatios;
 
 // ── Fixture geometry ────────────────────────────────────────────────────
 
@@ -221,12 +221,14 @@ fn measure(family: &'static str, mut session: ProjectSession, cell_mm: f64) -> R
     // Same construction the shipped gate uses
     // (`session::compute::air_cut_offenders_for_toolpaths`): abstain first,
     // compare second. Reading the band here does not move it.
-    let measurability =
-        rs_cam_core::sim_measurability::MeasurabilityReport::from_trace(trace, Some(cell_mm));
+    let measurability = rs_cam_core::stock::sim_measurability::MeasurabilityReport::from_trace(
+        trace,
+        Some(cell_mm),
+    );
     let abstains = measurability
         .for_metric(
             summary.toolpath_id,
-            rs_cam_core::sim_measurability::SimMetric::AirCut,
+            rs_cam_core::stock::sim_measurability::SimMetric::AirCut,
         )
         .abstains();
     let threshold_pct = op.air_cut_high_threshold_pct();

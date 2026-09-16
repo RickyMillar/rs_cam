@@ -87,7 +87,7 @@ use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::CutKinematics;
+use rs_cam_core::stock::simulation_cut::CutKinematics;
 
 const PLATEAU_Z: f64 = -0.5;
 const FLOOR_Z: f64 = -12.0;
@@ -267,7 +267,7 @@ fn subtool_valley_floor_pass_does_not_gouge_walls() {
     let commanded_dpp = 3.0_f64;
     let limit = commanded_dpp + 0.5;
 
-    let mut steady: Vec<&rs_cam_core::simulation_cut::SimulationCutSample> = cut_trace
+    let mut steady: Vec<&rs_cam_core::stock::simulation_cut::SimulationCutSample> = cut_trace
         .samples
         .iter()
         .filter(|s| s.is_cutting && s.cut_kinematics != CutKinematics::Plunge && !s.in_transit_span)

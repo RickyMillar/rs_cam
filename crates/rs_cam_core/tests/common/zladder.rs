@@ -54,7 +54,7 @@
 //! reads green over nothing. (Measured: adaptive3d's spans DO survive the AS013
 //! dressup / TSP / arc-fit chain with `spans_valid == true`.)
 
-use rs_cam_core::simulation_cut::SimulationCutSample;
+use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
 
 /// One rung of the commanded ladder.

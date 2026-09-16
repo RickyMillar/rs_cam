@@ -29,12 +29,12 @@
 //!   When `max_segments > 1`, per-gap horizontal faces and vertical walls are
 //!   emitted in addition to the top/bottom envelope.
 
-use crate::dexel::{DexelGrid, ray_bottom, ray_top};
+use crate::stock::dexel::{DexelGrid, ray_bottom, ray_top};
 // Wood colors live in `dexel_mesh`, which is their home for the preview,
 // side-grid and drill paths; this module reads them rather than keeping a
 // second copy in step by hand.
-use crate::dexel_mesh::{CUT_B, CUT_G, CUT_R, UNCUT_B, UNCUT_G, UNCUT_R};
-use crate::stock_mesh::StockMesh;
+use crate::stock::dexel_mesh::{CUT_B, CUT_G, CUT_R, UNCUT_B, UNCUT_G, UNCUT_R};
+use crate::stock::stock_mesh::StockMesh;
 
 /// Below this material thickness, a ray is treated as a through-hole.
 const MIN_MATERIAL_THICKNESS: f32 = 0.05;
@@ -484,8 +484,8 @@ fn wood_color_at_z(z: f32, stock_top: f32, _stock_bot: f32, range: f32) -> (f32,
 )]
 mod tests {
     use super::*;
-    use crate::dexel::{ray_subtract_above, ray_subtract_interval};
     use crate::dexel_stock::TriDexelStock;
+    use crate::stock::dexel::{ray_subtract_above, ray_subtract_interval};
 
     /// Position-based watertightness: every undirected edge (by quantised
     /// endpoint positions) appears exactly twice. Degenerate (zero-length)

@@ -52,7 +52,7 @@ impl RsCamApp {
     #[allow(clippy::indexing_slicing)]
     pub(super) fn compute_sim_colors(
         &self,
-        mesh: &rs_cam_core::simulation::StockMesh,
+        mesh: &rs_cam_core::stock::stock_mesh::StockMesh,
     ) -> Vec<[f32; 3]> {
         let num_verts = mesh.vertices.len() / 3;
         match self.controller.state().simulation.stock_viz_mode {
@@ -85,7 +85,7 @@ impl RsCamApp {
                 }
             }
             StockVizMode::ByHeight => {
-                rs_cam_core::stock_mesh::height_gradient_colors(&mesh.vertices)
+                rs_cam_core::stock::stock_mesh::height_gradient_colors(&mesh.vertices)
             }
         }
     }
@@ -115,7 +115,7 @@ impl RsCamApp {
     #[allow(clippy::indexing_slicing)]
     pub(super) fn transform_mesh_to_local_frame(
         &self,
-        mesh: &mut rs_cam_core::simulation::StockMesh,
+        mesh: &mut rs_cam_core::stock::stock_mesh::StockMesh,
         move_idx: usize,
     ) {
         let Some((face_up, z_rot, true)) = self.active_setup_orientation(move_idx) else {
@@ -1441,9 +1441,9 @@ fn translate_annotated(
 /// no-shift call is left untouched rather than walked, which is the common
 /// case (`stock.origin == 0`).
 fn shift_stock_mesh(
-    mut mesh: rs_cam_core::stock_mesh::StockMesh,
+    mut mesh: rs_cam_core::stock::stock_mesh::StockMesh,
     shift: rs_cam_core::geo::P3,
-) -> rs_cam_core::stock_mesh::StockMesh {
+) -> rs_cam_core::stock::stock_mesh::StockMesh {
     if shift.x == 0.0 && shift.y == 0.0 && shift.z == 0.0 {
         return mesh;
     }
@@ -1466,7 +1466,7 @@ fn shift_stock_mesh(
 /// (`VendorChiploadBand` — linear advance per tooth).
 fn build_advance_bands(
     session: &rs_cam_core::session::ProjectSession,
-    sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
+    sim_trace: Option<&rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
 ) -> HashMap<rs_cam_core::ToolpathId, VendorChiploadBand> {
     rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace)
         .iter()

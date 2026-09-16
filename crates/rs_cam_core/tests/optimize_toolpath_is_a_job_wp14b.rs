@@ -107,8 +107,8 @@ use rs_cam_core::session::{
     OptimizeToolpathHandle, ProjectSession, SetStockConfigArgs, SimulationOptions,
     execute_optimize_toolpath,
 };
-use rs_cam_core::simulation_cut::SimulationCutTrace;
-use rs_cam_core::stock_mesh::StockMesh;
+use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
+use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::tool_load::optimize::{OptimizeOutcome, OutcomeKind, optimize_toolpath};
 
 // ── constants ────────────────────────────────────────────────────────

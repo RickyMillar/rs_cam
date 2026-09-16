@@ -8,7 +8,7 @@ use crate::state::simulation::{ActiveSemanticItem, SimulationState};
 use crate::ui_command::{NoArgs, SimJumpToMoveArgs, UiCommand};
 use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::simulation_cut::SimulationCutSample;
+use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool_load::ToolLoadReport;
 
 /// Per-toolpath line in the signal plot: a colour plus a sequence of
@@ -2045,7 +2045,7 @@ fn nearest_marker_tooltip(
 
 fn first_exceeded_tool_load_move(
     sim: &SimulationState,
-    trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    trace: &rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict,
 ) -> Option<usize> {
     use rs_cam_core::tool_load::verdict::{ChiploadVerdict, DeflectionVerdict, PowerVerdict};
@@ -2231,10 +2231,10 @@ fn paint_semantic_subband(
             // has four entries.
             #[allow(clippy::indexing_slicing)]
             let color = match issue.kind {
-                rs_cam_core::simulation_cut::SimulationCutIssueKind::AirCut => {
+                rs_cam_core::stock::simulation_cut::SimulationCutIssueKind::AirCut => {
                     crate::ui::tokens::CHART_SERIES[1]
                 }
-                rs_cam_core::simulation_cut::SimulationCutIssueKind::LowEngagement => {
+                rs_cam_core::stock::simulation_cut::SimulationCutIssueKind::LowEngagement => {
                     crate::ui::tokens::CHART_SERIES[3]
                 }
             };

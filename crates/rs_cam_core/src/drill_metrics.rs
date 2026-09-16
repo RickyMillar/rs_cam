@@ -7,7 +7,7 @@
 //! per-toolpath [`DrillToolpathSummary`] that aggregates peck adequacy,
 //! chip-welding risk, and cycle time.
 //!
-//! Both types are carried on [`crate::simulation_cut::SimulationCutTrace`]
+//! Both types are carried on [`crate::stock::simulation_cut::SimulationCutTrace`]
 //! alongside the engagement-side samples and summaries so MCP / narrate /
 //! tool-load consumers can read drill metrics from the same trace surface
 //! used for milling ops.
@@ -86,9 +86,9 @@ pub enum ChipWeldingRisk {
 
 /// Per-toolpath summary for drilling operations.
 ///
-/// Lives on [`crate::simulation_cut::SimulationCutTrace::drill_summaries`]
+/// Lives on [`crate::stock::simulation_cut::SimulationCutTrace::drill_summaries`]
 /// (one entry per drill toolpath). Mirrors the role of
-/// [`crate::simulation_cut::SimulationToolpathCutSummary`] for milling ops —
+/// [`crate::stock::simulation_cut::SimulationToolpathCutSummary`] for milling ops —
 /// the same `toolpath_id` joins the two views.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DrillToolpathSummary {

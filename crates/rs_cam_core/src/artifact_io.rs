@@ -4,7 +4,7 @@
 //! name, write pretty JSON. Only the cut-trace writer carried the collision
 //! fix, so the trace writer could still hand two artifacts one path. The
 //! shared writer gives every artifact the unique name and keeps the prune
-//! contract of [`crate::simulation_cut::prune_simulation_cut_artifacts`]:
+//! contract of [`crate::stock::simulation_cut::prune_simulation_cut_artifacts`]:
 //! the first `_`-field of the name stays the millisecond stamp.
 
 use serde::Serialize;

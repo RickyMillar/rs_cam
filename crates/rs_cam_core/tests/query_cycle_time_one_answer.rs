@@ -57,7 +57,7 @@ use rs_cam_core::session::{
     ProjectSession, ProjectSessionBuilder, Query, QueryAnswer, ToolpathConfig,
     ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
 };
-use rs_cam_core::simulation_cut::{
+use rs_cam_core::stock::simulation_cut::{
     SimulationCutTrace, SimulationToolpathCutSummary, ToolpathKinematicRuntime,
 };
 

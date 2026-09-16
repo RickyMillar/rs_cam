@@ -30,9 +30,9 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::collision::check_rapid_collisions_against_stock;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::geo::P3;
+use rs_cam_core::stock::collision::check_rapid_collisions_against_stock;
 use rs_cam_core::toolpath::Toolpath;
 
 /// Stock top at Z = 2.7 (post-rough: design 2.2 + 0.5 leave), descent to

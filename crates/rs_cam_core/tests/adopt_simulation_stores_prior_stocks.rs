@@ -62,7 +62,7 @@ use rs_cam_core::session::{
     AddToolpathArgs, AdoptSimulationArgs, Command, CommandId, CommandKind, GenerateToolpathArgs,
     Job, ProjectSession, Reach,
 };
-use rs_cam_core::stock_mesh::StockMesh;
+use rs_cam_core::stock::stock_mesh::StockMesh;
 
 mod common;
 use common::session::{

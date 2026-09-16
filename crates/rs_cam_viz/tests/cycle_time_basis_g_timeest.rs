@@ -40,7 +40,7 @@ use rs_cam_core::ToolpathId;
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine_kinematics::{CycleTimeBreakdown, MachineKinematics, compute_cycle_time};
 use rs_cam_core::session::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
-use rs_cam_core::simulation_cut::{
+use rs_cam_core::stock::simulation_cut::{
     SimulationCutTrace, SimulationToolpathCutSummary, ToolpathKinematicRuntime,
 };
 use rs_cam_core::toolpath::Toolpath;

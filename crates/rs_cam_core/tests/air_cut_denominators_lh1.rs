@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 
 use rs_cam_core::ToolpathId;
-use rs_cam_core::simulation_cut::{
+use rs_cam_core::stock::simulation_cut::{
     AirCutRatios, SimulationCutSummary, SimulationCutTrace, SimulationToolpathCutSummary,
 };
 

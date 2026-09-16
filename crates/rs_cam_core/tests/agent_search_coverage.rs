@@ -37,11 +37,11 @@ use rs_cam_core::{
         Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering,
         adaptive_3d_toolpath_annotated,
     },
-    dexel::ray_top,
     dexel_stock::{StockCutDirection, TriDexelStock},
     geo::P3,
     mesh::{SpatialIndex, TriangleMesh},
-    radial_profile::RadialProfileLUT,
+    stock::dexel::ray_top,
+    stock::radial_profile::RadialProfileLUT,
     surface::slope::SurfaceHeightmap,
     tool::{FlatEndmill, MillingCutter},
     toolpath::{MoveType, Toolpath},
@@ -300,7 +300,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
             {
                 let i = row * base_stock.z_grid.cols + col;
                 let clear_z = surface_hm.z_or_bbox_floor_values()[i] as f32;
-                rs_cam_core::dexel::ray_subtract_above(
+                rs_cam_core::stock::dexel::ray_subtract_above(
                     base_stock.z_grid.ray_mut(row, col),
                     clear_z,
                 );
@@ -312,7 +312,8 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
     // (moves between this level's start and its waterline marker), then
     // check coverage. This isolates the 2D-slice agent's stamping so a
     // working waterline cleanup can't mask agent-search gaps.
-    let lut = RadialProfileLUT::from_cutter(&cutter, rs_cam_core::radial_profile::LUT_SAMPLES);
+    let lut =
+        RadialProfileLUT::from_cutter(&cutter, rs_cam_core::stock::radial_profile::LUT_SAMPLES);
     let mut stock = base_stock.clone();
     // Margin = 2 grid cells. Cells right on the bbox edge can have
     // partial-cell stamping artifacts; staying 2 cells in keeps us

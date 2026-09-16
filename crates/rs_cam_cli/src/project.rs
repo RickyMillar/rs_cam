@@ -14,7 +14,7 @@ use rs_cam_core::session::{
     Command, ProjectSession, ReplaceToolpathConfigArgs, SetMachineKinematicsArgs,
     SetPostConfigArgs, SimulationOptions,
 };
-use rs_cam_core::simulation_cut::SimulationCutArtifact;
+use rs_cam_core::stock::simulation_cut::SimulationCutArtifact;
 
 use crate::command::apply_command;
 
@@ -370,7 +370,7 @@ pub fn run_project_command(
     let tp_count = session.toolpath_count();
     let mut collision_reports: std::collections::HashMap<
         rs_cam_core::ToolpathId,
-        rs_cam_core::collision::CollisionReport,
+        rs_cam_core::stock::collision::CollisionReport,
     > = std::collections::HashMap::new();
 
     for idx in 0..tp_count {
@@ -899,8 +899,8 @@ fn kinematics_report_line(
 /// adds nothing of its own — including the truncation notice, which comes
 /// from `Bounded` rather than from a local `.take(10)` that forgets to say
 /// so (R-6's defect, one layer up).
-fn print_triage_report(triage: &rs_cam_core::sim_triage::SimulationTriage) {
-    use rs_cam_core::sim_measurability::Measurability;
+fn print_triage_report(triage: &rs_cam_core::stock::sim_triage::SimulationTriage) {
+    use rs_cam_core::stock::sim_measurability::Measurability;
 
     // Measurability first: it qualifies everything below it.
     let unmeasured: Vec<_> = triage

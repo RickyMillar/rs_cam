@@ -90,7 +90,7 @@ use rs_cam_core::session::{
     AddToolpathArgs, AdoptSimulationArgs, Command, GenObserver, GenerateToolpathArgs,
     GenerateToolpathHandle, Job, JobHandle, ProjectSession, ToolpathComputeResult, execute_job,
 };
-use rs_cam_core::stock_mesh::StockMesh;
+use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::Toolpath;
 
 mod common;

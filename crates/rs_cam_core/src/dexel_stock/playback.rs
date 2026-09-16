@@ -53,9 +53,9 @@ use rayon::prelude::*;
 use super::band::{self, BAND_ROWS};
 use super::stamping::{CoverageFastPath, PlaybackPartial, stamp_segment_on_band};
 use super::tile_mip::TileMaxTop;
-use crate::dexel::DexelGrid;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::radial_profile::RadialProfileLUT;
+use crate::stock::dexel::DexelGrid;
+use crate::stock::radial_profile::RadialProfileLUT;
 
 /// Which dispatch shape the **playback** (non-metric) replay uses.
 ///

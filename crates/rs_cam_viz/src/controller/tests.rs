@@ -130,7 +130,7 @@ fn temp_path(name: &str, extension: &str) -> std::path::PathBuf {
 fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_exist() {
     let mut controller = sample_controller();
     controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
-        mesh: rs_cam_core::simulation::StockMesh {
+        mesh: rs_cam_core::stock::stock_mesh::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
@@ -223,7 +223,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
         .drained
         .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
             core: rs_cam_core::compute::simulate::SimulationResult {
-                mesh: rs_cam_core::simulation::StockMesh {
+                mesh: rs_cam_core::stock::stock_mesh::StockMesh {
                     vertices: Vec::new(),
                     indices: Vec::new(),
                     colors: Vec::new(),
@@ -729,7 +729,7 @@ fn simulation_results_capture_setup_boundaries() {
         .push(ComputeMessage::Simulation(Ok(Box::new(
             crate::compute::SimulationResult {
                 core: rs_cam_core::compute::simulate::SimulationResult {
-                    mesh: rs_cam_core::simulation::StockMesh {
+                    mesh: rs_cam_core::stock::stock_mesh::StockMesh {
                         vertices: Vec::new(),
                         indices: Vec::new(),
                         colors: Vec::new(),
@@ -1269,7 +1269,7 @@ fn playback_defaults_after_reset() {
 
 /// Helper: inject minimal simulation results into the controller.
 fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setups: usize) {
-    use rs_cam_core::stock_mesh::StockMesh;
+    use rs_cam_core::stock::stock_mesh::StockMesh;
 
     let mesh = StockMesh {
         vertices: vec![0.0; 9],
@@ -2266,7 +2266,7 @@ fn add_toolpath_requires_geometry_for_polygon_operations() {
 fn reset_simulation_cancels_analysis_lane() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
-        mesh: rs_cam_core::simulation::StockMesh {
+        mesh: rs_cam_core::stock::stock_mesh::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
@@ -2503,7 +2503,7 @@ fn build_world_stock_bbox_respects_stock_origin_f024() {
 fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024() {
     use rs_cam_core::compute::stock_config::StockConfig;
     use rs_cam_core::material::{Material, WoodSpecies};
-    use rs_cam_core::simulation_cut::CutKinematics;
+    use rs_cam_core::stock::simulation_cut::CutKinematics;
     use std::sync::atomic::AtomicBool;
 
     use crate::compute::{
@@ -2578,7 +2578,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
         stock_bbox: world_stock_bbox,
         stock_top_z: world_stock_bbox.max.z,
         resolution: 1.0,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions {
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
             enabled: true,
             capture_arc_engagement: true,
         },
@@ -3329,7 +3329,7 @@ impl ComputeBackend for RestChainBackend {
         self.drained
             .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
                 core: rs_cam_core::compute::simulate::SimulationResult {
-                    mesh: rs_cam_core::simulation::StockMesh {
+                    mesh: rs_cam_core::stock::stock_mesh::StockMesh {
                         vertices: Vec::new(),
                         indices: Vec::new(),
                         colors: Vec::new(),
@@ -5346,7 +5346,7 @@ fn freshness_does_not_outrank_a_collision() {
         entry.operation.set_feed_rate(4321.0);
     });
     controller.state.simulation.checks.rapid_collisions =
-        vec![rs_cam_core::collision::RapidCollision {
+        vec![rs_cam_core::stock::collision::RapidCollision {
             move_index: 0,
             start: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
             end: rs_cam_core::geo::P3::new(1.0, 0.0, 0.0),

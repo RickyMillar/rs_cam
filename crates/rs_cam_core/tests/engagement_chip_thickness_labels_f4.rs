@@ -63,7 +63,7 @@ use rs_cam_core::dexel_stock::{
 };
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::simulation_cut::SimulationCutSample;
+use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::{EngagementMode, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 

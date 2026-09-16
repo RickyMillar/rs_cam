@@ -22,7 +22,7 @@ use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::ToolpathId;
 use crate::machine::{MachineProfile, PowerModel};
 use crate::session::{ProjectSession, SessionError};
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 
 /// Look up this toolpath's per-toolpath cycle time from the trace's
@@ -45,13 +45,13 @@ pub(crate) fn cycle_time_from_trace(
 /// no summary entry (failed sim) or `total_runtime_s` is non-positive.
 ///
 /// LH-1: the denominator is in the name because the other one
-/// ([`crate::simulation_cut::AirCutRatios::air_cut_pct_of_cutting_time`])
+/// ([`crate::stock::simulation_cut::AirCutRatios::air_cut_pct_of_cutting_time`])
 /// also ships, reads larger, and used to travel under the same word.
 pub(crate) fn air_cut_fraction_of_total_runtime_from_trace(
     trace: &SimulationCutTrace,
     toolpath_id: ToolpathId,
 ) -> Option<f64> {
-    use crate::simulation_cut::AirCutRatios;
+    use crate::stock::simulation_cut::AirCutRatios;
     trace
         .toolpath_summaries
         .iter()
@@ -525,10 +525,10 @@ mod restore_guard_tests {
         toolpath_id: ToolpathId,
         total_runtime_s: f64,
         air_cut_time_s: f64,
-    ) -> crate::simulation_cut::SimulationCutTrace {
-        crate::simulation_cut::SimulationCutTrace {
+    ) -> crate::stock::simulation_cut::SimulationCutTrace {
+        crate::stock::simulation_cut::SimulationCutTrace {
             sample_step_mm: 1.0,
-            toolpath_summaries: vec![crate::simulation_cut::SimulationToolpathCutSummary {
+            toolpath_summaries: vec![crate::stock::simulation_cut::SimulationToolpathCutSummary {
                 toolpath_id,
                 sample_count: 1,
                 total_runtime_s,
@@ -546,7 +546,7 @@ mod restore_guard_tests {
                 per_kinematics: std::collections::BTreeMap::new(),
                 runtime_by_intent: None,
             }],
-            ..crate::simulation_cut::SimulationCutTrace::test_fixture()
+            ..crate::stock::simulation_cut::SimulationCutTrace::test_fixture()
         }
     }
 

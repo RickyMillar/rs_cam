@@ -33,7 +33,7 @@ use rs_cam_core::fingerprint::{
     render_stock_composite_in_frame,
 };
 use rs_cam_core::geo::{BoundingBox3, P3};
-use rs_cam_core::stock_mesh::StockMesh;
+use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::tool::FlatEndmill;
 use rs_cam_core::toolpath::Toolpath;
 

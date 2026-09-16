@@ -39,7 +39,7 @@ pub const PROJECT_PLUNGE_STRESS: &str = "project.plunge_stress";
 pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high";
 pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
 /// A gate declined to produce a verdict because the metric it reads is not
-/// measurable on this trace (Checkpoint D Q2 — [`crate::sim_measurability`]).
+/// measurable on this trace (Checkpoint D Q2 — [`crate::stock::sim_measurability`]).
 /// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
 /// toolpath, it is a statement about the simulation.
 pub const PROJECT_MEASURABILITY_ABSTAINED: &str = "project.measurability_abstained";
@@ -54,7 +54,7 @@ pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_ma
 /// samples and drop entry spans wholesale — correctly, but that left entry
 /// motion with no grader at all, and a pure-vertical entry's removal lands on
 /// `plunge_descent_mm`, which the crosses-standing rule above does not read.
-/// See [`crate::sim_triage::entry_load_observation`].
+/// See [`crate::stock::sim_triage::entry_load_observation`].
 pub const PROJECT_ENTRY_LOAD: &str = "project.entry_load";
 /// Phase 4 (2026-09-07). The plunge-class BACKSTOP: a vertical-dominant fed
 /// descent in the EMITTED motion runs faster in Z than the operation's own

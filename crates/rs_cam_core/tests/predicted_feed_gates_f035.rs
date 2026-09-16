@@ -68,7 +68,7 @@ use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetMachineArgs, SimulationOptions,
     ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::{
+use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
 };
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};

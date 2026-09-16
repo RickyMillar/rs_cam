@@ -54,7 +54,7 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions, ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::CutKinematics;
+use rs_cam_core::stock::simulation_cut::CutKinematics;
 use rs_cam_core::tool_load::DeflectionVerdict;
 
 fn rounded_rect_with_island() -> Polygon2 {

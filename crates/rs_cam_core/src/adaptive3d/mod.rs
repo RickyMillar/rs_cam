@@ -13,11 +13,11 @@
 //! - Boundary cleanup: waterline contours (not polygon offset contours)
 
 use crate::debug_trace::ToolpathDebugContext;
-use crate::dexel::ray_top;
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::stock::dexel::ray_top;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -543,12 +543,12 @@ mod tests {
     use super::path::Adaptive3dSegment;
     use super::search::material_remaining_in_region;
     use super::*;
-    use crate::dexel::{DexelSegment, ray_subtract_above};
     use crate::dexel_stock::StockCutDirection;
     use crate::geo::P3;
     use crate::ids::ToolpathId;
     use crate::mesh::SpatialIndex;
-    use crate::radial_profile::RadialProfileLUT;
+    use crate::stock::dexel::{DexelSegment, ray_subtract_above};
+    use crate::stock::radial_profile::RadialProfileLUT;
     use crate::surface::slope::SurfaceHeightmap;
     use crate::tool::FlatEndmill;
     use crate::toolpath::simplify_path_3d;
@@ -603,14 +603,14 @@ mod tests {
         // values rather than to the bbox top, which would make every descent
         // over this fixture clear the full stock height.
         let conservative_top: Vec<f32> = cell_top_z.iter().map(|&z| z as f32).collect();
-        let grid = crate::dexel::DexelGrid {
+        let grid = crate::stock::dexel::DexelGrid {
             rays,
             rows,
             cols,
             origin_u: origin_x,
             origin_v: origin_y,
             cell_size,
-            axis: crate::dexel::DexelAxis::Z,
+            axis: crate::stock::dexel::DexelAxis::Z,
             conservative_top,
         };
         TriDexelStock {
@@ -1453,7 +1453,7 @@ mod tests {
             .collect();
 
         // Stamp along the path itself
-        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
         for p in &path {
             material_stock.stamp_tool_at(
                 &lut,
@@ -1687,7 +1687,7 @@ mod tests {
     #[test]
     fn test_contour_parallel_complete_clearing() {
         use crate::dexel_stock::StockCutDirection;
-        use crate::radial_profile::RadialProfileLUT;
+        use crate::stock::radial_profile::RadialProfileLUT;
 
         let (mesh, si) = make_flat_mesh(); // 50x50mm flat at z=0
         let cutter = flat_cutter(); // 6.35mm diameter
@@ -1713,7 +1713,7 @@ mod tests {
         let cell_size = 0.3;
         let mut sim_stock =
             TriDexelStock::from_stock(-25.5, -25.5, 25.5, 25.5, -1.0, stock_top_z, cell_size);
-        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
         sim_stock
             .simulate_toolpath_with_lut_cancel(
                 &tp,
@@ -1734,7 +1734,7 @@ mod tests {
     #[test]
     fn test_contour_parallel_complete_clearing_hemisphere() {
         use crate::dexel_stock::StockCutDirection;
-        use crate::radial_profile::RadialProfileLUT;
+        use crate::stock::radial_profile::RadialProfileLUT;
 
         let (mesh, si) = make_hemisphere_mesh(); // radius=20, centered at origin
         let cutter = flat_cutter(); // 6.35mm diameter
@@ -1774,7 +1774,7 @@ mod tests {
             stock_top_z,
             cell_size,
         );
-        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
         sim_stock
             .simulate_toolpath_with_lut_cancel(
                 &tp,
@@ -1854,7 +1854,7 @@ mod tests {
     #[test]
     fn test_small_dpp_hemisphere_clears_without_islands() {
         use crate::dexel_stock::StockCutDirection;
-        use crate::radial_profile::RadialProfileLUT;
+        use crate::stock::radial_profile::RadialProfileLUT;
 
         let radius = 5.0_f64;
         let mesh = crate::mesh::make_test_hemisphere(radius, 12);
@@ -1896,7 +1896,7 @@ mod tests {
             stock_top_z,
             cell_size,
         );
-        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
         sim_stock
             .simulate_toolpath_with_lut_cancel(
                 &tp,

@@ -127,7 +127,7 @@ pub fn draw(
                 let sy = session.stock_config().y;
                 let res = sim.resolution;
                 if !sim.auto_resolution
-                    && rs_cam_core::dexel::DexelGrid::would_exceed_grid(res, sx, sy).is_some()
+                    && rs_cam_core::stock::dexel::DexelGrid::would_exceed_grid(res, sx, sy).is_some()
                 {
                     ui.label(
                         egui::RichText::new("Grid too large — resolution will be coarsened")

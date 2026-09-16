@@ -499,8 +499,9 @@ fn wanaka_back_rough_axial_doc() {
     // Also find the worst STEADY-STATE (non-transit, non-plunge) sample — if
     // that's far lower than the global peak, the gouge is a transit artifact.
     {
-        use rs_cam_core::simulation_cut::CutKinematics;
-        let mut steady_peak: Option<&rs_cam_core::simulation_cut::SimulationCutSample> = None;
+        use rs_cam_core::stock::simulation_cut::CutKinematics;
+        let mut steady_peak: Option<&rs_cam_core::stock::simulation_cut::SimulationCutSample> =
+            None;
         for s in &cut_trace.samples {
             if s.toolpath_id != tp_id
                 || !s.is_cutting

@@ -62,7 +62,7 @@ use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::dexel_stock::effective_chip_thickness_mm;
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::simulation_cut::{
+use rs_cam_core::stock::simulation_cut::{
     CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
 };
 use rs_cam_core::tool::{EngagementMode, FlatEndmill, MillingCutter, ToolDefinition};
@@ -120,7 +120,7 @@ fn half_engagement_sample(
         arc_engagement_radians: Some(arc),
         chipload_mm_per_tooth: chipload,
         effective_chip_thickness_mm: exposed,
-        engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(0.5),
+        engagement: rs_cam_core::stock::simulation_cut::Engagement::with_radial_woc(0.5),
         removed_volume_est_mm3: 0.1,
         mrr_mm3_s: 1.0,
         ..SimulationCutSample::test_fixture()
@@ -390,7 +390,7 @@ fn gate_verdict_at(
         arc_engagement_radians: Some(arc_rad),
         chipload_mm_per_tooth: feed_per_tooth,
         effective_chip_thickness_mm: Some(exposed),
-        engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(radial_woc),
+        engagement: rs_cam_core::stock::simulation_cut::Engagement::with_radial_woc(radial_woc),
         removed_volume_est_mm3: 0.1,
         mrr_mm3_s: 1.0,
         ..SimulationCutSample::test_fixture()

@@ -1,5 +1,5 @@
 use egui_wgpu::wgpu;
-use rs_cam_core::stock_mesh::StockMesh;
+use rs_cam_core::stock::stock_mesh::StockMesh;
 
 use super::LineVertex;
 use super::gpu_safety::{self, GpuLimits};

@@ -20,7 +20,7 @@ pub use wizard_overlay::{ToolChangeMode, WizardOverlay};
 
 use crate::compute::catalog::effective_spindle_rpm;
 use crate::session::ProjectSession;
-use crate::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::toolpath::Toolpath;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -1062,7 +1062,7 @@ mod tests {
     #[test]
     fn a_trace_without_provenance_is_stale() {
         let project = crate::session::ProjectSession::new_empty();
-        let trace = crate::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new());
+        let trace = crate::stock::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new());
         assert!(trace.provenance.is_none(), "the fixture must be unstamped");
         assert!(
             !sim_trace_is_fresh(&project, &trace),

@@ -53,11 +53,11 @@ use super::stamping::{
     segment_cell_coverage, segment_tip_low, stamp_segment_with_metrics,
 };
 use super::tile_mip::TileMaxTop;
-use crate::dexel::{
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::stock::dexel::{
     DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
 };
-use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::radial_profile::RadialProfileLUT;
+use crate::stock::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 
 use super::whole_path::StampDispatchStats;
@@ -1175,7 +1175,7 @@ mod tests {
     #[test]
     fn swept_with_one_bin_matches_per_stamp_bit_for_bit() {
         use crate::geo::{BoundingBox3, P3};
-        use crate::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
+        use crate::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
         use crate::tool::{BallEndmill, FlatEndmill, MillingCutter};
 
         let cutters: [Box<dyn MillingCutter>; 2] = [

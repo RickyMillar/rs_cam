@@ -15,7 +15,7 @@
 //!
 //! Quads with any NaN corner (an untrusted cell, per `RestGrid`'s own
 //! contract) are skipped — the same NaN-skip pattern used by
-//! `crate::dexel_mesh_mc::z_grid_marching_cubes` for hole/cavity quads.
+//! `crate::stock::dexel_mesh_mc::z_grid_marching_cubes` for hole/cavity quads.
 //!
 //! # Color ramp and the one-source-of-truth requirement
 //!
@@ -47,7 +47,7 @@
 use crate::geo::P2;
 use crate::maps::tier_islands::TierIslands;
 use crate::maps::tier_map::{NO_TIER, TierMap};
-use crate::stock_mesh::StockMesh;
+use crate::stock::stock_mesh::StockMesh;
 use crate::surface::rest_field::RestGrid;
 
 /// Vertical lift (mm) applied to every heatmap vertex above the RestGrid's

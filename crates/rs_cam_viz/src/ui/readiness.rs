@@ -37,7 +37,7 @@ use crate::state::runtime::GuiState;
 use crate::state::simulation::HolderCheckScope;
 use rs_cam_core::ToolpathId;
 use rs_cam_core::session::{ProjectSession, Query, QueryAnswer, ToolpathCycleTimeArgs};
-use rs_cam_core::simulation_cut::SimulationCutTrace;
+use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use rs_cam_core::tool_load::ToolLoadReport;
 
 pub use rs_cam_core::session::{CycleTime, CycleTimeBasis};

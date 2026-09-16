@@ -26,7 +26,7 @@ pub mod power;
 pub mod verdict;
 
 use crate::ids::ToolpathId;
-use crate::simulation_cut::SimulationCutSample;
+use crate::stock::simulation_cut::SimulationCutSample;
 
 /// F-035 — Single source of truth for "what feed should this sample
 /// be evaluated against?"
@@ -42,7 +42,7 @@ use crate::simulation_cut::SimulationCutSample;
 /// F-035 plumbs that prediction through to the gates.
 ///
 /// When the trace carries a populated
-/// [`crate::simulation_cut::SimulationCutTrace::predicted_feeds`]
+/// [`crate::stock::simulation_cut::SimulationCutTrace::predicted_feeds`]
 /// map (the simulator stamps it when
 /// `SimulationOptions::use_predicted_feed_in_gates` is on AND the
 /// active `MachineProfile` carries kinematics) **and** the requested
@@ -254,7 +254,7 @@ impl RefuseReason {
 /// for that quantity.
 pub fn chipload_envelopes_for_session(
     session: &crate::session::ProjectSession,
-    sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
 ) -> std::collections::HashMap<ToolpathId, std::ops::Range<f64>> {
     let mut out = std::collections::HashMap::new();
     let material = &session.stock_config().material;
@@ -292,7 +292,7 @@ pub fn chipload_envelope_for_toolpath(
     tool_cfg: &crate::compute::tool_config::ToolConfig,
     operation: &crate::compute::catalog::OperationConfig,
     toolpath_id: ToolpathId,
-    sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
 ) -> Option<std::ops::Range<f64>> {
     use crate::feeds::vendor_normalize::op_family_to_lut;
     use crate::tool::MillingCutter;
@@ -433,7 +433,7 @@ pub struct ToolpathLoadContext<'a> {
 pub struct GateEnv<'a> {
     /// Simulation evidence; `None` routes evidence-driven gates to
     /// `Unmodeled(SimulationRequired)`.
-    pub sim_trace: Option<&'a crate::simulation_cut::SimulationCutTrace>,
+    pub sim_trace: Option<&'a crate::stock::simulation_cut::SimulationCutTrace>,
     /// Only the power gate reads this; `None` routes it to
     /// `Unmodeled(NotImplemented)`.
     pub machine: Option<&'a crate::machine::MachineProfile>,
@@ -506,7 +506,7 @@ impl MetricEvaluator for DeflectionGate {
 /// two sites had silently diverged on pre-Phase-6) cannot drift again.
 pub fn evaluate_toolpath(
     ctx: &ToolpathLoadContext<'_>,
-    sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     machine: Option<&crate::machine::MachineProfile>,
     tolerance: &ToleranceBands,
 ) -> ToolpathLoadVerdict {
@@ -566,7 +566,7 @@ pub fn evaluate_toolpath(
 /// Evaluate every toolpath in a project and roll up to a `ToolLoadReport`.
 pub fn evaluate_project(
     contexts: &[ToolpathLoadContext<'_>],
-    sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
+    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     machine: Option<&crate::machine::MachineProfile>,
     tolerance: &ToleranceBands,
 ) -> ToolLoadReport {

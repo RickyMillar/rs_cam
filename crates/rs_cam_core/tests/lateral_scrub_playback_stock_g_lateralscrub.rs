@@ -64,7 +64,7 @@ use rs_cam_core::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::simulation_cut::SimulationMetricOptions;
+use rs_cam_core::stock::simulation_cut::SimulationMetricOptions;
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;

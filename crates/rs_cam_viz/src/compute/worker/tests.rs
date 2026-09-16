@@ -352,7 +352,7 @@ fn long_simulation_request() -> SimulationRequest {
         stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
@@ -395,7 +395,7 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
         stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions {
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
             enabled,
             capture_arc_engagement: enabled,
         },
@@ -1520,7 +1520,7 @@ fn multi_setup_top_bottom_simulation() {
         stock_bbox,
         stock_top_z: 20.0,
         resolution: 0.5,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
@@ -1664,7 +1664,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
@@ -1818,7 +1818,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
         stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
@@ -1918,7 +1918,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         stock_bbox,
         stock_top_z: 10.0,
         resolution: 0.5,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
@@ -2015,7 +2015,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
         stock_bbox,
         stock_top_z: 8.0,
         resolution: 0.5,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5_000.0,
         model_mesh: None,
@@ -2127,7 +2127,7 @@ fn simulation_metrics_capture_emits_semantic_cut_summaries() {
 /// height). Post-fix: reads ~2 (commanded DOC ± grid discretisation).
 #[test]
 fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
-    use rs_cam_core::simulation_cut::CutKinematics;
+    use rs_cam_core::stock::simulation_cut::CutKinematics;
 
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     tool.diameter = 6.0;
@@ -2190,7 +2190,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
         stock_bbox: world_stock_bbox,
         stock_top_z: 0.0,
         resolution: 1.0,
-        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions {
+        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
             enabled: true,
             capture_arc_engagement: true,
         },

@@ -27,7 +27,7 @@
 //!   `tip_hi + h(far) >= tip_lo >= conservative_top[idx]`, so it is a no-op too.
 //!
 //! Both steps need `h >= 0`, which is checked on the actual table rather than
-//! assumed — [`crate::radial_profile::RadialProfileLUT::profile_is_nonneg_total`].
+//! assumed — [`crate::stock::radial_profile::RadialProfileLUT::profile_is_nonneg_total`].
 //!
 //! # Staleness is safe by construction
 //!
@@ -43,7 +43,7 @@
 //! the maintenance overhead at `1 / REFRESH_VISIT_MULTIPLIER` of the work it
 //! is trying to remove.
 
-use crate::dexel::DexelGrid;
+use crate::stock::dexel::DexelGrid;
 
 /// log2 of the tile edge in cells. 16×16 = 256 cells per `f32`.
 const TILE_LOG2: usize = 4;

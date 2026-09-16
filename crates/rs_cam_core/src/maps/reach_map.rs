@@ -853,7 +853,7 @@ pub fn reach_overlay_stock_mesh(
     gaps: &[f32],
     floors: &[f32],
     ramp: ReachRamp,
-) -> crate::stock_mesh::StockMesh {
+) -> crate::stock::stock_mesh::StockMesh {
     let mut vertices = Vec::with_capacity(mesh.vertices.len() * 3);
     let mut colors = Vec::with_capacity(mesh.vertices.len() * 3);
     for (i, v) in mesh.vertices.iter().enumerate() {
@@ -872,7 +872,7 @@ pub fn reach_overlay_stock_mesh(
         .iter()
         .flat_map(|t| t.iter().copied())
         .collect();
-    crate::stock_mesh::StockMesh {
+    crate::stock::stock_mesh::StockMesh {
         vertices,
         indices,
         colors,

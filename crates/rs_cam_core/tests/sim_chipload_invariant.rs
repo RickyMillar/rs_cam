@@ -35,7 +35,7 @@ fn build_stock_50x50x10() -> TriDexelStock {
 }
 
 fn assert_arc_and_radial_agree<'a>(
-    samples: impl Iterator<Item = &'a rs_cam_core::simulation_cut::SimulationCutSample>,
+    samples: impl Iterator<Item = &'a rs_cam_core::stock::simulation_cut::SimulationCutSample>,
     label: &str,
 ) {
     // Both `arc_engagement_radians` and `radial_engagement` gate on the

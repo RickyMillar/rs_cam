@@ -332,7 +332,7 @@ pub struct BaselineTraceAssumptions {
 }
 
 impl BaselineTraceAssumptions {
-    fn observed(trace: &crate::simulation_cut::SimulationCutTrace) -> Self {
+    fn observed(trace: &crate::stock::simulation_cut::SimulationCutTrace) -> Self {
         Self {
             // Not recorded on the trace — see the field doc.
             resolution_mm: None,
@@ -440,7 +440,7 @@ impl SimAssumptionStamp {
     pub fn of(
         session: &crate::session::ProjectSession,
         toolpath_index: usize,
-        baseline_trace: &crate::simulation_cut::SimulationCutTrace,
+        baseline_trace: &crate::stock::simulation_cut::SimulationCutTrace,
     ) -> Self {
         let lut_query = super::context::EvaluationContext::from_session(session, toolpath_index)
             .map(|ctx| {
