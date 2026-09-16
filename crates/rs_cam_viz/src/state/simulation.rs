@@ -2902,10 +2902,12 @@ mod tests {
         let trace = rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(
             0.5,
             vec![
+                // The core constructor owns the neutral values, so a new
+                // field on `SimulationCutSample` reaches these fixtures.
+                // Only what this test measures is spelled out.
                 rs_cam_core::simulation_cut::SimulationCutSample {
                     toolpath_id: rs_cam_core::ToolpathId(1),
                     move_index: 1,
-                    sample_index: 0,
                     position: [0.0, 0.0, -1.0],
                     cumulative_time_s: 0.2,
                     segment_time_s: 0.2,
@@ -2916,7 +2918,6 @@ mod tests {
                     flute_count: 2,
                     axial_doc_mm: 1.0,
                     axial_engagement_mm: 1.0,
-                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0083,
                     effective_chip_thickness_mm: Some(0.0083),
@@ -2924,9 +2925,7 @@ mod tests {
                     removed_volume_est_mm3: 0.1,
                     mrr_mm3_s: 0.5,
                     semantic_item_id: Some(2),
-                    span_path: Vec::new(),
-                    in_transit_span: false,
-                    source_intent: None,
+                    ..rs_cam_core::simulation_cut::SimulationCutSample::test_fixture()
                 },
                 rs_cam_core::simulation_cut::SimulationCutSample {
                     toolpath_id: rs_cam_core::ToolpathId(1),
@@ -2942,7 +2941,6 @@ mod tests {
                     flute_count: 2,
                     axial_doc_mm: 0.4,
                     axial_engagement_mm: 0.4,
-                    plunge_descent_mm: 0.0,
                     arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
                     chipload_mm_per_tooth: 0.0277,
                     effective_chip_thickness_mm: Some(0.0277),
@@ -2950,9 +2948,7 @@ mod tests {
                     removed_volume_est_mm3: 2.0,
                     mrr_mm3_s: 5.0,
                     semantic_item_id: Some(3),
-                    span_path: Vec::new(),
-                    in_transit_span: false,
-                    source_intent: None,
+                    ..rs_cam_core::simulation_cut::SimulationCutSample::test_fixture()
                 },
             ],
         );

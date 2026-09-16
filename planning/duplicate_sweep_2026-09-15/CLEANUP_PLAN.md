@@ -162,7 +162,7 @@ maintain.
   (I06b). Make core `gcode`'s (side×climb)→G41/G42 mapping `pub`; viz
   `io/export.rs:345` delegates. Sentries: F16 G41→G40 round-trip +
   `program_builder.rs` comp tests. Risk: low.
-- [ ] **C22 — I05 mechanical pair merges.** (a) make core `polygons_bbox`
+- [ ] **C22 — I05 mechanical pair merges.** *(b) and (c) landed 2026-09-16; (a) `polygons_bbox` still open.* (a) make core `polygons_bbox`
   `pub`, delete `state/job.rs:436-463`, adapt the 3 call sites for the
   `Option<&[Polygon2]>` signature (review gap 7); (b) single
   `SimBoundary` type re-exported, delete `compute/worker.rs:204-212` and viz
