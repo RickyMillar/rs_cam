@@ -73,7 +73,7 @@ pub fn draw(
             .map(std::sync::Arc::clone);
         if let Some(trace) = trace_arc.as_ref() {
             ui.add_space(6.0);
-            draw_span_section(ui, sim, gui, max_feed, trace, &issues, events);
+            draw_span_section(ui, sim, gui, trace, &issues, events);
         }
     }
     // DC6 deletes the "View" section. It was a heading plus one paragraph
@@ -1411,12 +1411,10 @@ fn playhead_span_id(sim: &SimulationState, gui: &GuiState, toolpath_id: Toolpath
 /// the in-span findings list, then the nested "Generator item" and "Generation
 /// trace" drill-downs (§2.4), so the inspector has a single "what's selected"
 /// home with two clearly-labelled sub-tiers.
-#[allow(clippy::too_many_arguments)]
 fn draw_span_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     gui: &GuiState,
-    max_feed: f64,
     trace: &rs_cam_core::stock::simulation_cut::SimulationCutTrace,
     issues: &[crate::state::simulation::SimulationIssue],
     events: &mut Vec<AppEvent>,
@@ -1481,8 +1479,8 @@ fn draw_span_section(
             // span, and the generation-phase trace — folded here so the top
             // level no longer carries two competing "selection" collapsers.
             ui.add_space(4.0);
-            draw_generator_item_disclosure(ui, sim, gui, max_feed);
-            draw_generation_trace_disclosure(ui, sim, gui, max_feed);
+            draw_generator_item_disclosure(ui, sim, gui);
+            draw_generation_trace_disclosure(ui, sim, gui);
         });
 }
 
@@ -1742,13 +1740,8 @@ fn draw_span_body(
 /// item under the playhead/pin (label, kind, XY/Z bbox, first few params).
 /// Nested under the Span section instead of floating as a top-level peer
 /// "Selection details" collapser (INS-007).
-fn draw_generator_item_disclosure(
-    ui: &mut egui::Ui,
-    sim: &mut SimulationState,
-    gui: &GuiState,
-    max_feed: f64,
-) {
-    let active_semantic = sim.active_semantic_item(gui, max_feed);
+fn draw_generator_item_disclosure(ui: &mut egui::Ui, sim: &mut SimulationState, gui: &GuiState) {
+    let active_semantic = sim.active_semantic_item(gui);
     let pinned = sim.debug.pinned_semantic_item;
     egui::CollapsingHeader::new("Generator item")
         .id_salt("inspector_generator_item")
@@ -1817,13 +1810,8 @@ fn draw_generator_item_disclosure(
 /// phase timings and the semantic-trace item count. About *how* the toolpath
 /// was built, orthogonal to the structural span tree; nested under the Span
 /// section as a sibling of "Generator item" (INS-007).
-fn draw_generation_trace_disclosure(
-    ui: &mut egui::Ui,
-    sim: &mut SimulationState,
-    gui: &GuiState,
-    max_feed: f64,
-) {
-    let linked_span = sim.active_debug_span(gui, max_feed);
+fn draw_generation_trace_disclosure(ui: &mut egui::Ui, sim: &mut SimulationState, gui: &GuiState) {
+    let linked_span = sim.active_debug_span(gui);
     let current_boundary_id = sim.current_boundary().map(|b| b.id);
     let annotation = sim.current_debug_annotation(gui).map(|(_, a)| a.label);
     egui::CollapsingHeader::new("Generation trace")

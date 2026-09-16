@@ -218,8 +218,8 @@ pub fn draw(
     let setup_boundaries = sim.setup_boundaries().to_vec();
     let issues = sim.issues(gui, max_feed);
     let load_report = sim.cached_load_report(session, gui.edit_counter);
-    sim.sync_debug_state(gui, max_feed);
-    let active_item = sim.active_semantic_item(gui, max_feed);
+    sim.sync_debug_state(gui);
+    let active_item = sim.active_semantic_item(gui);
     let active_item_id = active_item
         .as_ref()
         .map(|item| (item.toolpath_id, item.item.id));

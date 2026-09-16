@@ -55,8 +55,8 @@ pub fn draw(
         FreshnessGate::banner(ui);
         ui.add_space(2.0);
     }
-    sim.sync_debug_state(gui, max_feed);
-    let active_semantic = sim.active_semantic_item(gui, max_feed);
+    sim.sync_debug_state(gui);
+    let active_semantic = sim.active_semantic_item(gui);
     let current_boundary = sim.current_boundary().cloned();
 
     // Compute the project tool-load report once for this frame and pass
@@ -101,7 +101,6 @@ pub fn draw(
         ui,
         sim,
         gui,
-        max_feed,
         &load_report,
         &current_boundary,
         &active_semantic,
@@ -1254,7 +1253,6 @@ fn draw_boundary_timeline(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     gui: &GuiState,
-    max_feed: f64,
     load_report: &ToolLoadReport,
     current_boundary: &Option<crate::state::simulation::ToolpathBoundary>,
     active_semantic: &Option<ActiveSemanticItem>,
@@ -1419,7 +1417,6 @@ fn draw_boundary_timeline(
             &response,
             sim,
             gui,
-            max_feed,
             boundary,
             active_semantic.as_ref(),
             total_moves,
@@ -2155,7 +2152,6 @@ fn paint_semantic_subband(
     response: &egui::Response,
     sim: &mut SimulationState,
     gui: &GuiState,
-    max_feed: f64,
     boundary: &crate::state::simulation::ToolpathBoundary,
     active_semantic: Option<&ActiveSemanticItem>,
     total_moves: f32,
@@ -2336,9 +2332,7 @@ fn paint_semantic_subband(
             sim.pin_semantic_item(boundary.id, item.id);
             sim.debug.focused_issue_index = None;
             sim.debug.focused_hotspot = None;
-            if let Some(target) =
-                sim.trace_target_for_item(gui, max_feed, boundary.id, item.id, false)
-            {
+            if let Some(target) = sim.trace_target_for_item(gui, boundary.id, item.id, false) {
                 events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
                     move_index: target.move_index,
                 })));
