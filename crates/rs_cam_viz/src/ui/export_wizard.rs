@@ -21,6 +21,7 @@ use super::AppEvent;
 use super::readiness::{self, CycleTimeBasisExt};
 use crate::state::AppState;
 use crate::state::wizard::OutputLayout;
+use crate::ui::components::format::slugify;
 use crate::ui::theme;
 use crate::ui_command::{NoArgs, UiCommand};
 
@@ -267,7 +268,14 @@ fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppE
         });
 }
 
-fn render_filename_preview(template: &str, state: &AppState, layout: OutputLayout) -> String {
+/// The wizard's preview of the filename the save path will write.
+/// `pub(crate)` so `app::export` can assert the preview and the
+/// saved name agree.
+pub(crate) fn render_filename_preview(
+    template: &str,
+    state: &AppState,
+    layout: OutputLayout,
+) -> String {
     let job = if state.session.name().is_empty() {
         "untitled"
     } else {
@@ -299,18 +307,6 @@ fn render_filename_preview(template: &str, state: &AppState, layout: OutputLayou
         OutputLayout::PerSetup => format!("{out}  (one per setup)"),
         OutputLayout::PerToolpath => format!("{out}  (one per toolpath)"),
     }
-}
-
-fn slugify(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
 
 // ── Step 3 — Coordinate & units ──────────────────────────────────────

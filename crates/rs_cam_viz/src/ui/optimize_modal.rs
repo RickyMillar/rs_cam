@@ -19,11 +19,12 @@
 use rs_cam_core::tool_load::optimize::{
     BaselineTraceAssumptions, EntryAdvisory, GateKind, KinematicsSource, KnobAxis, LimitingGate,
     LutQueryStamp, MachineSnapshot, OperatorSuggestion, OptimizeCandidate, OptimizeOutcome,
-    OutcomeKind, OutcomeNarrative, ParamDelta, SearchEnvelopeReached, SimAssumptionStamp,
+    OutcomeKind, OutcomeNarrative, SearchEnvelopeReached, SimAssumptionStamp,
     limiting_gates_for_verdict,
 };
 use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 
+use super::components::format::{format_cycle, format_delta};
 use super::components::{FreshnessGate, UiExt};
 use super::{AppEvent, theme};
 use crate::state::AppState;
@@ -948,29 +949,6 @@ fn verdict_badge_state(
     );
 }
 
-/// Render a `ParamDelta` as a compact one-liner: "feed 2100, DOC 2.5".
-/// Empty (no changes) returns "—".
-fn format_delta(delta: &ParamDelta) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(f) = delta.feed_mm_min {
-        parts.push(format!("feed {f:.0}"));
-    }
-    if let Some(rpm) = delta.spindle_rpm {
-        parts.push(format!("rpm {rpm}"));
-    }
-    if let Some(s) = delta.stepover_mm {
-        parts.push(format!("stepover {s:.2}"));
-    }
-    if let Some(d) = delta.depth_per_pass_mm {
-        parts.push(format!("DOC {d:.2}"));
-    }
-    if parts.is_empty() {
-        "—".to_owned()
-    } else {
-        parts.join(", ")
-    }
-}
-
 /// G17 A4 / OPT-005 — render the suggestions as a small inline callout.
 /// `CapAxisAt` / `RaiseAxisAbove` carry a concrete axis + value, so each
 /// gets an **Apply & re-optimize** button that sets that axis and re-runs
@@ -1147,21 +1125,6 @@ fn format_limiting_gate(g: &LimitingGate) -> String {
     }
 }
 
-/// Format cycle time in mm:ss for cycles ≥ 60s, or as "X.Xs" for
-/// shorter runs.
-fn format_cycle(seconds: f64) -> String {
-    if !seconds.is_finite() {
-        return "—".to_owned();
-    }
-    if seconds >= 60.0 {
-        let minutes = (seconds / 60.0).floor();
-        let secs = seconds - 60.0 * minutes;
-        format!("{minutes:.0}:{secs:04.1}")
-    } else {
-        format!("{seconds:.1}s")
-    }
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -1299,36 +1262,6 @@ mod tests {
         };
         assert_eq!(narrative_prose(&narrative), vec!["same sentence"]);
         assert!(narrative_prose(&OutcomeNarrative::default()).is_empty());
-    }
-
-    #[test]
-    fn format_delta_empty() {
-        assert_eq!(format_delta(&ParamDelta::default()), "—");
-    }
-
-    #[test]
-    fn format_delta_with_feed_and_doc() {
-        let delta = ParamDelta {
-            feed_mm_min: Some(2100.0),
-            depth_per_pass_mm: Some(2.5),
-            ..Default::default()
-        };
-        assert_eq!(format_delta(&delta), "feed 2100, DOC 2.50");
-    }
-
-    #[test]
-    fn format_cycle_short_seconds() {
-        assert_eq!(format_cycle(12.3), "12.3s");
-    }
-
-    #[test]
-    fn format_cycle_minutes() {
-        assert_eq!(format_cycle(125.0), "2:05.0");
-    }
-
-    #[test]
-    fn format_cycle_handles_inf() {
-        assert_eq!(format_cycle(f64::INFINITY), "—");
     }
 
     #[test]

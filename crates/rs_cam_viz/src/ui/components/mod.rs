@@ -25,6 +25,7 @@ pub mod card;
 pub mod chip;
 pub mod compare;
 pub mod focus_ring;
+pub mod format;
 pub mod freshness;
 pub mod kv_row;
 pub mod motion;

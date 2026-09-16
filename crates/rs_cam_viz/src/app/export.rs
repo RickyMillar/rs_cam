@@ -1,4 +1,5 @@
 use crate::state::wizard::OutputLayout;
+use crate::ui::components::format::slugify;
 use rs_cam_core::gcode_validator::{Severity, validate};
 use std::path::Path;
 
@@ -257,18 +258,6 @@ impl RsCamApp {
     }
 }
 
-fn slugify(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
 fn render_filename(
     template: &str,
     job: &str,
@@ -486,5 +475,41 @@ impl RsCamApp {
             super::UnsavedGuard::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             super::UnsavedGuard::OpenJob => self.open_job_interactive(),
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use rs_cam_core::session::{Command, SetProjectNameArgs};
+
+    /// The wizard shows a filename preview; this module writes the file.
+    /// Both read the one `slugify` in `ui::components::format`. A job
+    /// name with a space must not preview one name and write another.
+    #[test]
+    fn the_preview_matches_the_saved_filename_for_a_spaced_job_name() {
+        let mut state = crate::state::AppState::default();
+        let _ = state
+            .session
+            .apply(Command::SetProjectName(SetProjectNameArgs {
+                name: "Job 1".to_owned(),
+            }))
+            .expect("a project name moves no generation input");
+
+        let preview = crate::ui::export_wizard::render_filename_preview(
+            "{job}.nc",
+            &state,
+            OutputLayout::SingleFile,
+        );
+        let saved = render_filename("{job}.nc", &slugify(state.session.name()), None, None);
+
+        assert_eq!(preview, saved);
+        assert_eq!(saved, "Job_1.nc");
     }
 }

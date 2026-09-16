@@ -153,7 +153,7 @@ maintain.
 
 ## Phase 3 — mechanical merges (low risk, parallelizable after Phase 1-2)
 
-- [ ] **C20 — `ui/components/format.rs`** (I06a + I07 + I10 pair 1; review
+- [x] **C20 — `ui/components/format.rs`** (I06a + I07 + I10 pair 1; review
   resolution 1 — ONE home). Move `slugify` (from `app/export.rs:260` and
   `ui/export_wizard.rs:304`), `format_cycle` (`optimize_modal.rs:1152` /
   `optimize_project.rs:537`), `format_delta` (`optimize_modal.rs:953` /
