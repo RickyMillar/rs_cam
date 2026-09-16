@@ -675,6 +675,38 @@ pub enum FeedsWarning {
         required_kw: f64,
         available_kw: f64,
     },
+    /// The power ladder made the cut smaller to fit the spindle's budget.
+    ///
+    /// The operator asked for one cut and the engine is recommending a
+    /// different one, so this always surfaces. It is NOT an error: the cut
+    /// fits now, or [`Self::PowerLimited`] fires alongside it saying it still
+    /// does not.
+    ///
+    /// The advance per tooth is unchanged in every case. An RPM move walks
+    /// the constant-chipload line, and a depth or width move touches neither
+    /// the feed nor the RPM. The cut got smaller, not thinner — which is the
+    /// whole point, because a thinner chip is what the pre-ladder feed derate
+    /// produced and it did not fix the constraint.
+    ///
+    /// Each pair is `Some` only for a dial the ladder actually moved.
+    PowerLadderReducedCut {
+        rpm_from: Option<f64>,
+        rpm_to: Option<f64>,
+        axial_from: Option<f64>,
+        axial_to: Option<f64>,
+        radial_from: Option<f64>,
+        radial_to: Option<f64>,
+        /// The LAST-RESORT feed multiplier, when the rungs above could not
+        /// close the gap on their own. `Some` here is the one case where the
+        /// advance per tooth DID change — every other dial holds it.
+        feed_factor: Option<f64>,
+        /// Draw before the ladder ran, on the commanded axis.
+        required_kw_before: f64,
+        /// Draw after it ran. Above `available_kw` when the ladder ran out
+        /// of rungs, in which case `PowerLimited` fires too.
+        required_kw_after: f64,
+        available_kw: f64,
+    },
     ShankTooLarge {
         shank_mm: f64,
         max_mm: f64,
@@ -1111,6 +1143,53 @@ fn power_model_terms(
 }
 
 /// Main calculation entry point.
+/// Smallest axial depth the power ladder may propose (mm).
+///
+/// Mirrors `suggest::DEFLECTION_BACKOFF_DPP_FLOOR_MM`, which bounds the
+/// deflection back-off for the same reason: without a floor a solver that
+/// cannot reach the budget walks the geometry to zero and ships a recipe that
+/// removes no material. When the floor binds, the cut stays over budget and
+/// the `PowerLimited` warning fires — the unmet-constraint signal, not a
+/// fabricated pass.
+pub const POWER_LADDER_AP_FLOOR_MM: f64 = 0.5;
+
+/// Smallest radial width the power ladder may propose (mm). See
+/// [`POWER_LADDER_AP_FLOOR_MM`].
+pub const POWER_LADDER_AE_FLOOR_MM: f64 = 0.5;
+
+/// Largest value in `[floor, current]` that satisfies `fits`, by bisection.
+///
+/// `fits` must be monotone: true at `floor` implies true everywhere below
+/// `current`. Spindle power rises monotonically with both the axial depth and
+/// the radial width, so both callers qualify.
+///
+/// Returns `None` when even `floor` does not fit, which is the caller's
+/// signal that this rung cannot close the gap and the ladder must go on.
+fn largest_fitting(current: f64, floor: f64, fits: impl Fn(f64) -> bool) -> Option<f64> {
+    if !(current.is_finite() && floor.is_finite()) || current <= floor {
+        return None;
+    }
+    if !fits(floor) {
+        // Even the floor is over budget. Give everything this rung has
+        // anyway and let the ladder carry the remainder: unlike the RPM
+        // traverse, a PARTIAL geometry reduction has no downside beyond the
+        // smaller cut the operator is already being told about, and it
+        // lowers the feed cut the last rung has to make.
+        return Some(floor);
+    }
+    let mut lo = floor;
+    let mut hi = current;
+    for _ in 0..40 {
+        let mid = 0.5 * (lo + hi);
+        if fits(mid) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Some(lo)
+}
+
 pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut warnings = Vec::new();
     let machine = input.machine;
@@ -1263,151 +1342,146 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // rests on the RPM anchor, and re-pointing Suggest's *target* at another
     // row is a different change with a different justification.
     let mut floor_band_fallback: Option<ChiploadBounds> = None;
-    let (chip_load, vendor_rpm, vendor_rpm_max, vendor_source, chipload_source, chipload_bounds) =
-        if let Some(lut) = input.vendor_lut
-            && let Some(query) = vendor_normalize::to_lookup_query(input).or_else(|| {
-                // Checkpoint K (a4) — the routing REFUSED. Ruled in on
-                // the Suggest side as well as the gate's: 378
-                // recommendations that carried a confident vendor band on
-                // a surface the gate declined to judge become honest
-                // no-vendor-data. Say which rows are missing, not just
-                // "no data".
-                let tool_family = input.tool_geometry.cutter_kind().lut_family();
-                warnings.push(FeedsWarning::NoVendorRowsForRoutedOperation {
-                    operation_kind: format!("{:?}", input.operation_kind),
-                    tool_family: format!("{tool_family:?}"),
-                    missing_rows: vendor_normalize::missing_project_curve_rows(tool_family)
-                        .to_owned(),
-                });
-                None
-            })
+    let (
+        chip_load,
+        vendor_rpm,
+        vendor_rpm_max,
+        vendor_rpm_min,
+        vendor_source,
+        chipload_source,
+        chipload_bounds,
+    ) = if let Some(lut) = input.vendor_lut
+        && let Some(query) = vendor_normalize::to_lookup_query(input).or_else(|| {
+            // Checkpoint K (a4) — the routing REFUSED. Ruled in on
+            // the Suggest side as well as the gate's: 378
+            // recommendations that carried a confident vendor band on
+            // a surface the gate declined to judge become honest
+            // no-vendor-data. Say which rows are missing, not just
+            // "no data".
+            let tool_family = input.tool_geometry.cutter_kind().lut_family();
+            warnings.push(FeedsWarning::NoVendorRowsForRoutedOperation {
+                operation_kind: format!("{:?}", input.operation_kind),
+                tool_family: format!("{tool_family:?}"),
+                missing_rows: vendor_normalize::missing_project_curve_rows(tool_family).to_owned(),
+            });
+            None
+        }) {
+        if let Some(result) =
+            vendor_lookup::find_best_row_for_geometry(lut, &query, &input.tool_geometry)
         {
-            if let Some(result) =
-                vendor_lookup::find_best_row_for_geometry(lut, &query, &input.tool_geometry)
-            {
-                matched_lut_row = Some(result.clone());
-                let observation_id = result.observation_id;
-                // Capture the LUT-derived chipload band (post diameter
-                // /hardness scaling) for Suggest v2 step 2's feed-up
-                // recalibration loop. Only populated when the row
-                // publishes both bounds — partial-band rows (one side
-                // only) leave it None so the loop doesn't fire on an
-                // ambiguous target.
-                //
-                // DOC derating (2026-06-04): the post-sim chipload gate
-                // scales the matched row's bounds by
-                // `geometry::doc_derating_scale(peak_axial_DOC /
-                // effective_d)`. Apply the same scale here using the
-                // commanded axial DPP so `SuggestAggressiveness::target_chipload`
-                // (median / max / min) aims at a value the gate will
-                // accept at this DOC ratio. Without this, v3.0c median
-                // targeting on high-DOC ops (e.g. wanaka Back Rough at
-                // ~3×D) lands above the gate's derated max and trips
-                // `Exceeds(High)` despite the toolpath being healthy.
-                //
-                // Drill ops are excluded because the post-sim gate
-                // short-circuits drill ops with `NotApplicableForOp` —
-                // the chip-evacuation rule that motivates DOC derating
-                // for milling doesn't apply to drill bands (peck depth,
-                // not engagement). Mirroring the gate's exclusion here
-                // keeps the two paths aligned for the cases where the
-                // gate actually fires. Forcing `chipload_doc_ratio` to
-                // `0.0` bypasses derating (`doc_derating_scale` maps
-                // any ratio `<= 1.0` to a scale of `1.0`), same effect
-                // as the pre-S.8 `chipload_doc_scale = 1.0` branch.
-                //
-                // Validation + scaling both now live in
-                // `geometry::derate_chipload_bounds` — the single home
-                // for this wrapper (S.8), also used by
-                // `suggest::recompute_chipload_bounds_for_dpp` and both
-                // `tool_load` chipload sites.
-                let chipload_doc_ratio = if input.operation == OperationFamily::Drill {
-                    0.0
-                } else if effective_d > 0.0 {
-                    axial_doc_for_eff_d / effective_d
-                } else {
-                    0.0
-                };
-                let bounds = geometry::derate_chipload_bounds(
-                    result.chip_load_min_mm,
-                    result.chip_load_max_mm,
-                    chipload_doc_ratio,
-                    geometry::ChiploadBoundPolicy::RequireBoth,
+            matched_lut_row = Some(result.clone());
+            let observation_id = result.observation_id;
+            // Capture the LUT-derived chipload band (post diameter
+            // /hardness scaling) for Suggest v2 step 2's feed-up
+            // recalibration loop. Only populated when the row
+            // publishes both bounds — partial-band rows (one side
+            // only) leave it None so the loop doesn't fire on an
+            // ambiguous target.
+            //
+            // DOC derating (2026-06-04): the post-sim chipload gate
+            // scales the matched row's bounds by
+            // `geometry::doc_derating_scale(peak_axial_DOC /
+            // effective_d)`. Apply the same scale here using the
+            // commanded axial DPP so `SuggestAggressiveness::target_chipload`
+            // (median / max / min) aims at a value the gate will
+            // accept at this DOC ratio. Without this, v3.0c median
+            // targeting on high-DOC ops (e.g. wanaka Back Rough at
+            // ~3×D) lands above the gate's derated max and trips
+            // `Exceeds(High)` despite the toolpath being healthy.
+            //
+            // Drill ops are excluded because the post-sim gate
+            // short-circuits drill ops with `NotApplicableForOp` —
+            // the chip-evacuation rule that motivates DOC derating
+            // for milling doesn't apply to drill bands (peck depth,
+            // not engagement). Mirroring the gate's exclusion here
+            // keeps the two paths aligned for the cases where the
+            // gate actually fires. Forcing `chipload_doc_ratio` to
+            // `0.0` bypasses derating (`doc_derating_scale` maps
+            // any ratio `<= 1.0` to a scale of `1.0`), same effect
+            // as the pre-S.8 `chipload_doc_scale = 1.0` branch.
+            //
+            // Validation + scaling both now live in
+            // `geometry::derate_chipload_bounds` — the single home
+            // for this wrapper (S.8), also used by
+            // `suggest::recompute_chipload_bounds_for_dpp` and both
+            // `tool_load` chipload sites.
+            let chipload_doc_ratio = if input.operation == OperationFamily::Drill {
+                0.0
+            } else if effective_d > 0.0 {
+                axial_doc_for_eff_d / effective_d
+            } else {
+                0.0
+            };
+            let bounds = geometry::derate_chipload_bounds(
+                result.chip_load_min_mm,
+                result.chip_load_max_mm,
+                chipload_doc_ratio,
+                geometry::ChiploadBoundPolicy::RequireBoth,
+            )
+            .and_then(geometry::DeratedChiploadBand::into_pair)
+            .map(|(min, max)| ChiploadBounds {
+                min_mm_per_tooth: min,
+                max_mm_per_tooth: max,
+            });
+            // RPM-only vendor rows (e.g. whiteside-rd5218h-roughing-down-
+            // spiral-3f-rpm) publish rpm_nominal/rpm_max as anchors but
+            // leave chipload_min/max unset — `chipload_midpoint` then
+            // returns 0.0. Trusting that 0.0 collapses
+            // `raw_feed = rpm × chipload × flutes` to zero, producing a
+            // silent "do not cut" recipe with no diagnostic
+            // (literature-matrix cell flat_12mm_adaptive2d_oak_power:
+            // chipload=0.0000 / mrr=0 / power=0). Keep the vendor RPM
+            // anchor but fall back to formula_chipload when the row
+            // publishes none.
+            if result.chip_load_mm > 0.0 {
+                (
+                    result.chip_load_mm,
+                    result.rpm_nominal,
+                    result.rpm_max,
+                    result.rpm_min,
+                    Some(observation_id.clone()),
+                    ChiploadSource::VendorLut { observation_id },
+                    bounds,
                 )
-                .and_then(geometry::DeratedChiploadBand::into_pair)
-                .map(|(min, max)| ChiploadBounds {
-                    min_mm_per_tooth: min,
-                    max_mm_per_tooth: max,
-                });
-                // RPM-only vendor rows (e.g. whiteside-rd5218h-roughing-down-
-                // spiral-3f-rpm) publish rpm_nominal/rpm_max as anchors but
-                // leave chipload_min/max unset — `chipload_midpoint` then
-                // returns 0.0. Trusting that 0.0 collapses
-                // `raw_feed = rpm × chipload × flutes` to zero, producing a
-                // silent "do not cut" recipe with no diagnostic
-                // (literature-matrix cell flat_12mm_adaptive2d_oak_power:
-                // chipload=0.0000 / mrr=0 / power=0). Keep the vendor RPM
-                // anchor but fall back to formula_chipload when the row
-                // publishes none.
-                if result.chip_load_mm > 0.0 {
-                    (
-                        result.chip_load_mm,
-                        result.rpm_nominal,
-                        result.rpm_max,
-                        Some(observation_id.clone()),
-                        ChiploadSource::VendorLut { observation_id },
-                        bounds,
-                    )
-                } else {
-                    // Checkpoint K (a3) — disclose the fallback. The RPM
-                    // anchor is kept (that is why the two resolvers stay
-                    // separate); what was invisible until now is that the
-                    // chipload beside that row id is the empirical
-                    // formula's, and that this recommendation therefore
-                    // carries no band while the gate will judge it
-                    // against one.
-                    // P1: hand the floor the band the gate will use.
-                    let mut floor_band_row: Option<String> = None;
-                    if let Some(env) = vendor_lookup::find_best_chip_envelope_row(
-                        lut,
-                        &query,
-                        &input.tool_geometry,
-                    ) && let Some((min, max)) = geometry::derate_chipload_bounds(
+            } else {
+                // Checkpoint K (a3) — disclose the fallback. The RPM
+                // anchor is kept (that is why the two resolvers stay
+                // separate); what was invisible until now is that the
+                // chipload beside that row id is the empirical
+                // formula's, and that this recommendation therefore
+                // carries no band while the gate will judge it
+                // against one.
+                // P1: hand the floor the band the gate will use.
+                let mut floor_band_row: Option<String> = None;
+                if let Some(env) =
+                    vendor_lookup::find_best_chip_envelope_row(lut, &query, &input.tool_geometry)
+                    && let Some((min, max)) = geometry::derate_chipload_bounds(
                         env.chip_load_min_mm,
                         env.chip_load_max_mm,
                         chipload_doc_ratio,
                         geometry::ChiploadBoundPolicy::RequireBoth,
                     )
                     .and_then(geometry::DeratedChiploadBand::into_pair)
-                    {
-                        floor_band_fallback = Some(ChiploadBounds {
-                            min_mm_per_tooth: min,
-                            max_mm_per_tooth: max,
-                        });
-                        floor_band_row = Some(env.observation_id);
-                    }
-                    warnings.push(FeedsWarning::VendorRowPublishesNoChipload {
-                        observation_id: observation_id.clone(),
-                        formula_chipload_mm: formula_chipload,
-                        floor_band_from: floor_band_row,
+                {
+                    floor_band_fallback = Some(ChiploadBounds {
+                        min_mm_per_tooth: min,
+                        max_mm_per_tooth: max,
                     });
-                    (
-                        formula_chipload,
-                        result.rpm_nominal,
-                        result.rpm_max,
-                        Some(observation_id),
-                        ChiploadSource::FormulaFallback,
-                        bounds,
-                    )
+                    floor_band_row = Some(env.observation_id);
                 }
-            } else {
+                warnings.push(FeedsWarning::VendorRowPublishesNoChipload {
+                    observation_id: observation_id.clone(),
+                    formula_chipload_mm: formula_chipload,
+                    floor_band_from: floor_band_row,
+                });
                 (
                     formula_chipload,
-                    None,
-                    None,
-                    None,
+                    result.rpm_nominal,
+                    result.rpm_max,
+                    result.rpm_min,
+                    Some(observation_id),
                     ChiploadSource::FormulaFallback,
-                    None,
+                    bounds,
                 )
             }
         } else {
@@ -1416,10 +1490,22 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 None,
                 None,
                 None,
+                None,
                 ChiploadSource::FormulaFallback,
                 None,
             )
-        };
+        }
+    } else {
+        (
+            formula_chipload,
+            None,
+            None,
+            None,
+            None,
+            ChiploadSource::FormulaFallback,
+            None,
+        )
+    };
 
     // Override RPM if vendor provided one within machine range. This
     // is the chart-RPM operating point — preserved verbatim under
@@ -1810,6 +1896,15 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut power_limited = false;
     let mut feed = raw_feed;
     let mut power_factor = 1.0;
+    // Power-ladder bookkeeping. An RPM move is booked on `spindle_scale`, a
+    // geometry move changes `ap` / `ae` themselves, and only the last-resort
+    // feed rung touches `power_factor` — the CHIPLOAD axis — because only
+    // that rung changes the advance per tooth.
+    let rpm_before_ladder = rpm;
+    let mut ladder_moved_rpm = false;
+    let mut ladder_ap_from: Option<f64> = None;
+    let mut ladder_ae_from: Option<f64> = None;
+    let mut ladder_feed_factor: Option<f64> = None;
 
     if let Some(kc) = material.kc_n_per_mm2()
         && available_power > 0.0
@@ -1852,20 +1947,272 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             // stepover or a lower RPM, none of which a feed derate can
             // reach for. Serving a zero feed instead would be a
             // fabricated recipe, not an answer.
-            match terms.feed_for_kw(gate_available_power) {
-                Some(commanded_cap) if raw_feed > 0.0 => {
-                    power_factor = (commanded_cap / sf / raw_feed).clamp(0.0, 1.0);
-                    feed = raw_feed * power_factor;
+            // ── The engagement ladder (2026-09-16) ────────────────────
+            //
+            // Pre-ladder this scaled the feed and nothing else. That is
+            // the wrong dial for this constraint, twice over.
+            //
+            // First, the edge term carries no feed at all, so thinning
+            // the chip sheds only part of the load while pushing the
+            // chipload toward the rubbing floor. On the motivating case
+            // — Ø12 4-flute bull, white oak, Shapeoko VFD at 9 000 rpm —
+            // the feed derate came out at 0.058, a 17x cut, and the
+            // recipe was STILL over budget afterwards and rubbing-
+            // adjacent. Two warnings fired and neither constraint was
+            // honoured. That is literature-matrix cell
+            // `bull_12mm_pocket_oak`.
+            //
+            // Second, what actually sheds spindle load depends on the
+            // spindle. On a constant-torque VFD below its rated speed
+            // the available power falls with the RPM at exactly the rate
+            // the required power falls, so walking the constant-chipload
+            // line changes NOTHING: measured 120 % utilisation at 9 000,
+            // 6 000, 4 500 and 3 000 rpm alike. On a constant-power
+            // router the same walk takes 95 % to 32 %.
+            //
+            // So the ladder asks what this cut can give up, in order,
+            // and stops at the first rung that works:
+            //
+            //   1. RPM, holding the chipload — where it helps.
+            //   2. Axial depth — where the ENGINE chose it.
+            //   3. Radial width — where the ENGINE chose it.
+            //   4. Nothing. Leave the cut alone and say so.
+            //
+            // Rungs 2 and 3 do not move the feed or the RPM, so the
+            // advance per tooth is untouched: the cut gets smaller, not
+            // slower and thinner.
+            //
+            // Rung 1 branches on MEASURED behaviour, not on the
+            // `PowerModel` variant. The physical question is "does a
+            // lower RPM reduce utilisation here", and the numbers answer
+            // it directly — which also covers the flat region above a
+            // VFD's rated speed without a special case, and keeps
+            // working if a new `PowerModel` is added.
+            //
+            // See planning/load_model_2026-09-16/{DERATE_SPEC.md,
+            // IMPLEMENTATION_PLAN.md} and derate_levers.py.
+
+            // Required kW at a candidate operating point, stated on the
+            // COMMANDED axis so it compares like-for-like with the budget.
+            let required_at = |rpm_c: f64, ap_c: f64, ae_c: f64, feed_c: f64| -> f64 {
+                let cs = input.tool_geometry.mrr_cross_section_mm2(ap_c, ae_c);
+                power_model_terms(input, kc, cs, ap_c, ae_c, effective_d, rpm_c)
+                    .kw_at_feed(sf * feed_c)
+            };
+            let budget_at =
+                |rpm_c: f64| machine.power_at_rpm(rpm_c).max(0.0) * machine.safety_factor;
+
+            // ── Rung 1: walk the constant-chipload line ───────────────
+            //
+            // At a fixed chipload the feed is proportional to the RPM, so
+            // a candidate RPM implies its own feed.
+            // The traverse has a FLOOR, and it is not the machine's.
+            //
+            // A published RPM band is a statement about the cut, not about
+            // the machine: below its minimum the surface speed is too low
+            // for the material and the tool rubs or builds up an edge —
+            // acutely so in aluminium. Step 2b already honours the same
+            // row's `rpm_max` on the way up; this is the same rule facing
+            // the other way.
+            //
+            // The literature matrix found this: the first version of the
+            // ladder bounded only by `machine.rpm_range()` and walked
+            // `flat_6mm_pocket_al6061_lut` from 20 000 rpm to 8 000, which
+            // is 55 % under the row's published minimum. Shedding spindle
+            // load by cutting aluminium at a wood RPM is not a trade the
+            // engine gets to make silently.
+            let machine_floor = machine.rpm_range().0;
+            let rpm_floor = match vendor_rpm_min {
+                Some(v) if v.is_finite() && v > 0.0 => machine_floor.max(v),
+                _ => machine_floor,
+            };
+            let chipload_held = if rpm > 0.0 { raw_feed / rpm } else { 0.0 };
+            let feed_at = |rpm_c: f64| chipload_held * rpm_c;
+
+            let fits = |rpm_c: f64, ap_c: f64, ae_c: f64| -> bool {
+                required_at(rpm_c, ap_c, ae_c, feed_at(rpm_c)) <= budget_at(rpm_c)
+            };
+
+            // Does slowing down help AT ALL? Ask the slowest speed this
+            // spindle can run. On a constant-torque VFD the answer is no,
+            // and the ladder must not waste the operator's RPM on it.
+            let slowest = machine.next_rpm_at_or_below(rpm_floor);
+            let util_now = required_at_commanded / gate_available_power.max(1e-12);
+            let util_slowest = {
+                let b = budget_at(slowest);
+                if b > 0.0 {
+                    required_at(slowest, ap, ae, feed_at(slowest)) / b
+                } else {
+                    f64::INFINITY
                 }
-                _ => {}
+            };
+            // 1 % of utilisation is the threshold for "this lever does
+            // something". The VFD case lands at exactly 0 % by
+            // construction; a router moves tens of percent.
+            const TRAVERSE_HELPS_EPS: f64 = 0.01;
+            let traverse_helps = util_slowest < util_now - TRAVERSE_HELPS_EPS;
+
+            // Use the traverse ONLY when it can close the gap by itself.
+            //
+            // The first version bisected regardless, so when the traverse
+            // could not close the gap the bisection converged on the floor
+            // and the ladder spent the machine's entire speed range for a
+            // partial gain — and then shrank the cut anyway. The literature
+            // matrix showed the result plainly: two unrelated cells both
+            // pinned at exactly 8 000 rpm, the floor, for different reasons.
+            //
+            // A partial traverse is not obviously better than no traverse:
+            // both cost time, and a slower spindle also costs surface
+            // finish and tool life. So the rule is all-or-nothing, and when
+            // the RPM cannot do the job the geometry does it at the RPM the
+            // chart chose.
+            let traverse_can_close_it = fits(rpm_floor, ap, ae);
+            if traverse_helps && traverse_can_close_it && rpm > rpm_floor {
+                // Highest RPM that fits, by bisection on the continuous
+                // range, then rounded DOWN to a speed the spindle can
+                // actually run. Rounding down matters: `clamp_rpm` snaps
+                // to the NEAREST speed and would round back up, raising
+                // the load this rung exists to shed.
+                let mut lo = rpm_floor;
+                let mut hi = rpm;
+                for _ in 0..40 {
+                    let mid = 0.5 * (lo + hi);
+                    if fits(mid, ap, ae) {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                let candidate = machine.next_rpm_at_or_below(lo);
+                if candidate < rpm && candidate > 0.0 {
+                    // Book it on the SPEED axis. The chipload did not
+                    // change, so `combined_factor` must not see this.
+                    spindle_scale *= candidate / rpm;
+                    spindle_scale_reason = SpindleScaleReason::PowerLimit;
+                    raw_feed = feed_at(candidate);
+                    rpm = candidate;
+                    feed = raw_feed;
+                    ladder_moved_rpm = true;
+                }
             }
+
+            // ── Rungs 2 and 3: make the cut smaller ───────────────────
+            //
+            // The feed and the RPM are settled now. Power rises
+            // monotonically with both the axial depth and the radial
+            // width, so the largest value that fits is a bisection.
+            //
+            // A knob the USER pinned is not the engine's to move. Pinning
+            // a depth is a statement about the part, and quietly cutting
+            // it shallower would change what was asked for rather than
+            // how fast it is cut.
+            if required_at(rpm, ap, ae, raw_feed) > budget_at(rpm)
+                && input.axial_depth_mm.is_none()
+                && let Some(fitted) = largest_fitting(ap, POWER_LADDER_AP_FLOOR_MM, |c| {
+                    required_at(rpm, c, ae, raw_feed) <= budget_at(rpm)
+                })
+                && fitted < ap
+            {
+                ladder_ap_from = Some(ap);
+                ap = fitted;
+            }
+            if required_at(rpm, ap, ae, raw_feed) > budget_at(rpm)
+                && input.radial_width_mm.is_none()
+                && let Some(fitted) = largest_fitting(ae, POWER_LADDER_AE_FLOOR_MM, |c| {
+                    required_at(rpm, ap, c, raw_feed) <= budget_at(rpm)
+                })
+                && fitted < ae
+            {
+                ladder_ae_from = Some(ae);
+                ae = fitted;
+            }
+
+            // ── Rung 4: the feed, LAST ────────────────────────────────
+            //
+            // The feed is a poor lever for this constraint, not a forbidden
+            // one. The edge term carries no feed, so a feed cut sheds only
+            // part of the load and drives the chipload toward rubbing — which
+            // is why it must not be FIRST. But shipping a recipe the spindle
+            // cannot turn is worse than shipping a thinner chip, and the
+            // gate's contract is that a power-limited recommendation lands ON
+            // the ceiling, never above it (`power_ceiling_parity_f2`).
+            //
+            // By the time the ladder reaches here the RPM and the geometry
+            // have already taken the load down, so the feed cut needed is far
+            // smaller than the pre-ladder one — the motivating case went from
+            // a 17x feed cut to none at all. This rung exists to close the
+            // last sliver, not to carry the constraint.
+            //
+            // It is booked on the CHIPLOAD axis, because unlike every rung
+            // above it this one DOES change the advance per tooth.
+            let mut still_required = required_at(rpm, ap, ae, raw_feed);
+            let still_available = budget_at(rpm);
+            if still_required > still_available {
+                let terms_now = power_model_terms(
+                    input,
+                    kc,
+                    input.tool_geometry.mrr_cross_section_mm2(ap, ae),
+                    ap,
+                    ae,
+                    effective_d,
+                    rpm,
+                );
+                // `None` means the feed-free edge term ALONE is over budget.
+                // No feed rescues that cut: thinning the chip leaves the
+                // ploughing power exactly where it was while driving the
+                // chipload toward the rubbing floor. Leave the feed and let
+                // the warning carry the conflict — the same clamp-and-warn
+                // convention as the rubbing floor at Step 9b.
+                if let Some(commanded_cap) = terms_now.feed_for_kw(still_available)
+                    && raw_feed > 0.0
+                {
+                    let f = (commanded_cap / sf / raw_feed).clamp(0.0, 1.0);
+                    if f < 1.0 {
+                        power_factor = f;
+                        raw_feed *= f;
+                        ladder_feed_factor = Some(f);
+                        still_required = required_at(rpm, ap, ae, raw_feed);
+                    }
+                }
+                feed = raw_feed;
+            }
+
+            // ── Rung 5: report ────────────────────────────────────────
+            //
+            // `PowerLimited` means "the power constraint bound". It carries
+            // the BEFORE pair, which is what it carried pre-ladder and what
+            // makes it self-explaining: `required > available` always holds,
+            // so the warning states the conflict that caused the change
+            // rather than the state after it. `power_ceiling_parity_f2`
+            // asserts exactly that.
+            //
+            // What the engine DID about it, and whether the cut fits now,
+            // is `PowerLadderReducedCut`'s job. Splitting them this way
+            // keeps each warning true on its own terms: one names the
+            // constraint, the other names the response.
             power_limited = true;
             warnings.push(FeedsWarning::PowerLimited {
-                // Both terms sit on the gate's COMMANDED axis so the
-                // warning compares like with like.
                 required_kw: required_at_commanded,
                 available_kw: gate_available_power,
             });
+            if ladder_moved_rpm
+                || ladder_ap_from.is_some()
+                || ladder_ae_from.is_some()
+                || ladder_feed_factor.is_some()
+            {
+                warnings.push(FeedsWarning::PowerLadderReducedCut {
+                    rpm_from: ladder_moved_rpm.then_some(rpm_before_ladder),
+                    rpm_to: ladder_moved_rpm.then_some(rpm),
+                    axial_from: ladder_ap_from,
+                    axial_to: ladder_ap_from.map(|_| ap),
+                    radial_from: ladder_ae_from,
+                    radial_to: ladder_ae_from.map(|_| ae),
+                    feed_factor: ladder_feed_factor,
+                    required_kw_before: required_at_commanded,
+                    required_kw_after: still_required,
+                    available_kw: still_available,
+                });
+            }
         }
     }
 

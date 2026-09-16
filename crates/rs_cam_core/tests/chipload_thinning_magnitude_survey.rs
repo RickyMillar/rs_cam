@@ -628,9 +628,15 @@ fn chip_thinning_is_measured_but_not_applied_to_the_feed() {
     // identity by construction — that is the same exclusion
     // `vendor_sidebyside_chipload.rs` makes for the same reason.
     //
-    // `spindle_scale` is in the product and `combined_factor()` deliberately
-    // omits it (it walks the constant-chipload line), so it is multiplied back
-    // in here.
+    // `spindle_scale` is NOT in the product, and `combined_factor()` omits it
+    // for the same reason: it walks the constant-chipload line, so the RPM and
+    // the feed move together and the advance per tooth does not change.
+    //
+    // Until 2026-09-16 this line multiplied it back in, which contradicted the
+    // sentence justifying it. The term was vacuous — nothing here runs
+    // `MaxSpeed`, so the scale was always 1.0 — until the power ladder began
+    // walking the same line downward. See `vendor_sidebyside_chipload.rs`,
+    // where the same term was off by exactly the scale.
     //
     // The drill family is excluded, and not as a convenience: calculator
     // Step 9c replaces a drill cycle's feed outright ("a drill cycle has
@@ -650,7 +656,7 @@ fn chip_thinning_is_measured_but_not_applied_to_the_feed() {
         let Some(d) = p.derates.as_ref() else {
             continue;
         };
-        let predicted = d.target_chip_load_mm * d.combined_factor() * d.spindle_scale;
+        let predicted = d.target_chip_load_mm * d.combined_factor();
         if !(predicted.is_finite() && predicted > 0.0) {
             continue;
         }

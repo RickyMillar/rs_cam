@@ -439,6 +439,61 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
             format!("Power limited: {required_kw:.2} kW needed, {available_kw:.2} kW available"),
             None,
         ),
+        FeedsWarning::PowerLadderReducedCut {
+            rpm_from,
+            rpm_to,
+            axial_from,
+            axial_to,
+            radial_from,
+            radial_to,
+            feed_factor,
+            required_kw_before,
+            required_kw_after,
+            available_kw,
+        } => {
+            let mut moved: Vec<String> = Vec::new();
+            if let (Some(a), Some(b)) = (rpm_from, rpm_to) {
+                moved.push(format!("RPM {a:.0} → {b:.0}"));
+            }
+            if let (Some(a), Some(b)) = (axial_from, axial_to) {
+                moved.push(format!("depth {a:.2} → {b:.2} mm"));
+            }
+            if let (Some(a), Some(b)) = (radial_from, radial_to) {
+                moved.push(format!("width {a:.2} → {b:.2} mm"));
+            }
+            if let Some(f) = feed_factor {
+                moved.push(format!("feed ×{f:.3} (last resort)"));
+            }
+            let cleared = required_kw_after <= available_kw;
+            (
+                format!(
+                    "Cut reduced to fit spindle power: {}{}",
+                    moved.join(", "),
+                    if cleared { "" } else { " — still over" }
+                ),
+                Some(format!(
+                    "The spindle could not turn the cut you asked for. The engine made the \
+                     cut SMALLER rather than slower: {required_kw_before:.2} kW → \
+                     {required_kw_after:.2} kW against {available_kw:.2} kW available.\n\
+                     {}{}",
+                    if feed_factor.is_some() {
+                        "The chip was thinned as a LAST resort, after the RPM and the cut \
+                         size had already been reduced. The ploughing part of the load \
+                         carries no feed term, so a slower feed sheds only part of it — \
+                         which is why it is the last dial tried, not the first."
+                    } else {
+                        "The advance per tooth is unchanged. The cut got smaller, not \
+                         thinner."
+                    },
+                    if cleared {
+                        ""
+                    } else {
+                        "\nIt is STILL over budget. Take a shallower or narrower cut, or \
+                         use a machine with more spindle power."
+                    }
+                )),
+            )
+        }
         FeedsWarning::DocExceedsFlute { requested, capped } => (
             format!("DOC capped: {requested:.1} → {capped:.1} mm (flute guard)"),
             None,

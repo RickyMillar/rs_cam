@@ -65,6 +65,64 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
+        FeedsWarning::PowerLadderReducedCut {
+            rpm_from,
+            rpm_to,
+            axial_from,
+            axial_to,
+            radial_from,
+            radial_to,
+            feed_factor,
+            required_kw_before,
+            required_kw_after,
+            available_kw,
+        } => {
+            // Name every dial that moved, and only those. A message that
+            // listed a dial the ladder left alone would misreport the cut.
+            let mut moved: Vec<String> = Vec::new();
+            if let (Some(a), Some(b)) = (rpm_from, rpm_to) {
+                moved.push(format!("RPM {a:.0} → {b:.0}"));
+            }
+            if let (Some(a), Some(b)) = (axial_from, axial_to) {
+                moved.push(format!("depth {a:.2} → {b:.2} mm"));
+            }
+            if let (Some(a), Some(b)) = (radial_from, radial_to) {
+                moved.push(format!("width {a:.2} → {b:.2} mm"));
+            }
+            if let Some(f) = feed_factor {
+                moved.push(format!("feed x{f:.3} (last resort)"));
+            }
+            let cleared = required_kw_after <= available_kw;
+            Diagnostic {
+                id: DiagnosticId::from(ids::FEEDS_POWER_LADDER_REDUCED_CUT),
+                scope: Scope::Toolpath { id: tp_id },
+                category: Category::ToolLoad,
+                // Caution, not Info: the operator asked for one cut and is
+                // being handed a different one. When the ladder ran out of
+                // rungs, `PowerLimited` fires alongside at the same level.
+                severity: Severity::Caution,
+                confidence: Confidence::Approximate,
+                state: DiagnosticState::Current,
+                source: Source::FeedsCalculator,
+                message: format!(
+                    "Cut reduced to fit spindle power ({}): {required_kw_before:.2} → \
+                     {required_kw_after:.2} kW against {available_kw:.2} kW available{}. {}",
+                    moved.join(", "),
+                    if cleared { "" } else { " — still over" },
+                    // Only the last-resort feed rung changes the chip. Saying
+                    // "unchanged" when it fired would misreport the recipe.
+                    if feed_factor.is_some() {
+                        "Advance per tooth was thinned as a last resort."
+                    } else {
+                        "Advance per tooth unchanged."
+                    }
+                ),
+                evidence: None,
+                fix: None,
+                supersedes: vec![],
+                suppressed_diagnostics: vec![],
+            }
+        }
         FeedsWarning::ShankTooLarge { shank_mm, max_mm } => Diagnostic {
             id: DiagnosticId::from(ids::FEEDS_SHANK_TOO_LARGE),
             scope: Scope::Toolpath { id: tp_id },

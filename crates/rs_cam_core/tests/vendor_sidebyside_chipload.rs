@@ -313,9 +313,23 @@ fn vendor_sidebyside_chipload_spotcheck() {
 /// commanded advance per tooth equals
 ///
 /// ```text
-/// target_chip_load_mm x depth_tier
-///                     x ld x workholding x safety_factor x spindle_scale
+/// target_chip_load_mm x depth_tier x ld x workholding x safety_factor
 /// ```
+///
+/// **`spindle_scale` left this identity on 2026-09-16.** It was in the
+/// product and it should never have been: the scale walks the CONSTANT-
+/// chipload line — the RPM and the feed move together — so by construction
+/// it does not change the advance per tooth. `FeedsDerates::combined_factor`
+/// says exactly that in its own doc and omits it for the same reason.
+///
+/// The term was harmless only because it was vacuous. Every probe here runs
+/// `SpindleStrategy::MatchChart`, where the scale is 1.0, so nothing ever
+/// multiplied by anything but one. The power ladder made it non-vacuous —
+/// it walks the same line downward — and the term immediately predicted
+/// 0.043470979 where the engine commanded 0.073609736, off by exactly the
+/// scale of 0.5905601744. Dropping the term makes the identity match to
+/// float precision AND lets the power-ladder arms stay in the population
+/// instead of being excluded.
 ///
 /// **`combined_chip_thinning` left this identity on 2026-08-19**
 /// (G-CHIPTHIN-HALFFIX, operator-ruled): the calculator no longer multiplies
@@ -351,8 +365,7 @@ fn the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack() 
             * dr.depth_tier
             * dr.ld_overhang
             * dr.workholding
-            * dr.safety_factor
-            * dr.spindle_scale;
+            * dr.safety_factor;
         assert!(
             (commanded_fpt - predicted).abs() < 1e-9,
             "{}: commanded {commanded_fpt:.9} != seed-midpoint identity {predicted:.9} \

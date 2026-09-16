@@ -86,6 +86,10 @@ pub const PROJECT_KINEMATIC_UTILIZATION: &str = "project.kinematic_utilization";
 // ── Feeds calculator warnings ───────────────────────────────────────
 pub const FEEDS_FEED_CLAMPED: &str = "feeds.feed_clamped";
 pub const FEEDS_POWER_LIMITED: &str = "feeds.power_limited";
+/// The power ladder made the cut smaller so it would fit the spindle.
+/// Distinct from [`FEEDS_POWER_LIMITED`]: this one says the engine CHANGED
+/// the cut, and both fire together when the change was not enough.
+pub const FEEDS_POWER_LADDER_REDUCED_CUT: &str = "feeds.power_ladder_reduced_cut";
 pub const FEEDS_SHANK_TOO_LARGE: &str = "feeds.shank_too_large";
 pub const FEEDS_DOC_EXCEEDS_FLUTE: &str = "feeds.doc_exceeds_flute";
 pub const FEEDS_SLOTTING_DETECTED: &str = "feeds.slotting_detected";
@@ -293,6 +297,7 @@ pub const ALL: &[&str] = &[
     PROJECT_KINEMATIC_UTILIZATION,
     FEEDS_FEED_CLAMPED,
     FEEDS_POWER_LIMITED,
+    FEEDS_POWER_LADDER_REDUCED_CUT,
     FEEDS_SHANK_TOO_LARGE,
     FEEDS_DOC_EXCEEDS_FLUTE,
     FEEDS_SLOTTING_DETECTED,
