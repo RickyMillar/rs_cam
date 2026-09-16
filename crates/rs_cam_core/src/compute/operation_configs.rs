@@ -702,6 +702,14 @@ fn default_stay_down_clearance_mm() -> f64 {
     0.5
 }
 
+/// The shipped default of the inert `stock_to_leave_radial` dial.
+///
+/// L2: the deprecated-dial report compares the project's value against
+/// this one, so the report and the `Default` impl read one number.
+pub(crate) const fn default_adaptive3d_stock_to_leave_radial() -> f64 {
+    0.5
+}
+
 fn default_min_region_cut_length_mm() -> f64 {
     // Threshold tuned against the Wanaka Back Rough wall-clock measurement
     // (F-038 finding, 2026-05-27). At 5.0 mm the entry-plunge count dropped
@@ -718,7 +726,7 @@ impl Default for Adaptive3dConfig {
         Self {
             stepover: 2.0,
             depth_per_pass: 3.0,
-            stock_to_leave_radial: 0.5,
+            stock_to_leave_radial: default_adaptive3d_stock_to_leave_radial(),
             stock_to_leave_axial: 0.5,
             feed_rate: 1500.0,
             plunge_rate: 500.0,
@@ -1698,6 +1706,10 @@ impl OperationParams for FaceConfig {
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
+
+    fn total_depth(&self) -> Option<f64> {
+        Some(self.depth)
+    }
     fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
         true
@@ -1736,6 +1748,10 @@ impl OperationParams for PocketConfig {
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
+
+    fn total_depth(&self) -> Option<f64> {
+        Some(self.depth)
+    }
     fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
         true
@@ -1766,6 +1782,10 @@ impl OperationParams for ProfileConfig {
     }
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
+    }
+
+    fn total_depth(&self) -> Option<f64> {
+        Some(self.depth)
     }
     fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
@@ -1804,6 +1824,10 @@ impl OperationParams for AdaptiveConfig {
     }
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
+    }
+
+    fn total_depth(&self) -> Option<f64> {
+        Some(self.depth)
     }
     fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
@@ -1874,6 +1898,10 @@ impl OperationParams for RestConfig {
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
+
+    fn total_depth(&self) -> Option<f64> {
+        Some(self.depth)
+    }
     fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
         true
@@ -1943,6 +1971,10 @@ impl OperationParams for ZigzagConfig {
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
     }
+
+    fn total_depth(&self) -> Option<f64> {
+        Some(self.depth)
+    }
     fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;
         true
@@ -1973,6 +2005,10 @@ impl OperationParams for TraceConfig {
     }
     fn depth_per_pass(&self) -> Option<f64> {
         Some(self.depth_per_pass)
+    }
+
+    fn total_depth(&self) -> Option<f64> {
+        Some(self.depth)
     }
     fn set_depth_per_pass(&mut self, value: f64) -> bool {
         self.depth_per_pass = value;

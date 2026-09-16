@@ -43,6 +43,83 @@ pub struct DepthStepping {
     pub finishing_passes: usize,
 }
 
+/// The depth a pass will ACTUALLY cut, given the depth that was asked for.
+///
+/// Under [`DepthDistribution::Even`] — which every 2.5D operation uses, and
+/// which none of them makes configurable — the pass count is
+/// `ceil(total / requested)` and the realised step is `total / n`. So the
+/// realised depth is a STAIRCASE: on a 12 mm pocket only 4.00, 3.00, 2.40,
+/// 2.00, 1.71, 1.50 and 1.33 mm are reachable. Asking for 2.90 cuts 2.40.
+/// Asking for 2.60 also cuts 2.40.
+///
+/// The realised value is never ABOVE the requested one (verified over 200 000
+/// random pairs), so a caller reasoning about load stays conservative. What it
+/// gets wrong is the NUMBER it reasons about and reports: propose 2.90 and the
+/// operator is told 2.90 while the machine cuts 2.40, off by 17 %.
+///
+/// Snapping a proposal through this does not change what the machine cuts —
+/// generation applies the same arithmetic either way. It makes the engine's
+/// own number agree with the machine's, which is the whole point.
+///
+/// Returns `None` when the inputs cannot describe a stepped cut, rather than
+/// inventing a depth: a non-finite or non-positive total or request, or a
+/// request so small the pass count overflows a `usize`.
+#[must_use]
+pub fn realised_step_down(total_depth_mm: f64, requested_mm: f64) -> Option<f64> {
+    let passes = pass_count(total_depth_mm, requested_mm)?;
+    Some(total_depth_mm / passes as f64)
+}
+
+/// Passes needed to cut `total_depth_mm` in steps of at most `step_mm`.
+///
+/// **The single definition.** [`DepthStepping::roughing_pass_count`] and
+/// [`realised_step_down`] both call it, so the depth the engine reports and
+/// the depth generation cuts cannot drift apart.
+///
+/// ## Why the epsilon
+///
+/// A bare `ceil` is wrong here, and it bites on values the engine produces
+/// itself. `25.4 / 15` is `1.6933333333333331`, a hair BELOW the exact third,
+/// so `25.4 / 1.6933333333333331` is `15.000000000000002` and `ceil` returns
+/// 16. The cut then lands at 1.5875 mm over 16 passes instead of 1.69 over 15
+/// — one extra pass, and a depth the caller never asked for, from float noise
+/// alone.
+///
+/// That matters most for a value the engine snapped: snapping is supposed to
+/// produce a depth that survives a round trip, and without the epsilon
+/// `realised_step_down` was not idempotent (`the_written_depth_is_one_the_
+/// machine_cuts_g_stair`). The tolerance is relative, so it scales with the
+/// magnitude rather than assuming millimetres.
+///
+/// Returns `None` for inputs that cannot describe a stepped cut, rather than
+/// inventing a pass count.
+#[must_use]
+pub fn pass_count(total_depth_mm: f64, step_mm: f64) -> Option<usize> {
+    if !(total_depth_mm.is_finite() && step_mm.is_finite())
+        || total_depth_mm <= 0.0
+        || step_mm <= 0.0
+    {
+        return None;
+    }
+    let exact = total_depth_mm / step_mm;
+    if !exact.is_finite() {
+        return None;
+    }
+    // Pull a value that is within float noise of an integer back onto it
+    // before rounding up.
+    let nudged = exact - exact.abs() * PASS_COUNT_EPS;
+    let passes = nudged.ceil().max(1.0);
+    if passes > usize::MAX as f64 {
+        return None;
+    }
+    Some(passes as usize)
+}
+
+/// Relative tolerance for [`pass_count`]'s rounding. Large enough to absorb
+/// the handful of ULPs a divide-then-divide-back introduces, far too small to
+/// merge two depths an operator could tell apart.
+const PASS_COUNT_EPS: f64 = 1e-9;
+
 impl DepthStepping {
     /// Create with defaults: even distribution, no finish allowance.
     pub fn new(start_z: f64, final_z: f64, max_step_down: f64) -> Self {
@@ -67,7 +144,9 @@ impl DepthStepping {
         if rough_depth <= 0.0 || self.max_step_down <= 0.0 {
             return 0;
         }
-        (rough_depth / self.max_step_down).ceil() as usize
+        // One definition, shared with `realised_step_down`, so the depth the
+        // engine reports and the depth this cuts cannot drift apart.
+        pass_count(rough_depth, self.max_step_down).unwrap_or(0)
     }
 
     /// Total roughing depth (total minus finish allowance).

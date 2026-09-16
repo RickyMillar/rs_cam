@@ -683,6 +683,21 @@ pub trait OperationParams {
     fn depth_per_pass(&self) -> Option<f64> {
         None
     }
+
+    /// TOTAL depth of the cut (mm), when the operation carries one.
+    ///
+    /// Distinct from [`Self::depth_per_pass`], which is the per-pass step.
+    /// The pair is what makes the realised depth a staircase: generation
+    /// cuts `total / ceil(total / per_pass)` — see
+    /// [`crate::depth::realised_step_down`].
+    ///
+    /// `None` for operations whose depth comes from the model surface rather
+    /// than from a parameter (Adaptive3d, Waterline, RampFinish) and for
+    /// every operation with no depth at all. Absence is the honest answer
+    /// there: those cuts have no total to divide.
+    fn total_depth(&self) -> Option<f64> {
+        None
+    }
     /// Write the depth per pass. Returns `false` when this config has no
     /// such field, so the caller can refuse instead of discarding the
     /// value.
@@ -1047,6 +1062,10 @@ impl OperationConfig {
 
     pub fn depth_per_pass(&self) -> Option<f64> {
         self.as_params().depth_per_pass()
+    }
+
+    pub fn total_depth(&self) -> Option<f64> {
+        self.as_params().total_depth()
     }
 
     /// Write the depth per pass. Returns `false` when this operation
@@ -1728,7 +1747,10 @@ const DROP_CUTTER_PARAMS: &[ParamDef] = &[
 const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
     ParamDef::required("stepover", "f64"),
     ParamDef::required("depth_per_pass", "f64"),
-    ParamDef::required("stock_to_leave_radial", "f64"),
+    // L2: deprecated and inert — the planner reads
+    // `stock_to_leave_axial` alone. A caller that omits it loses
+    // nothing, so the registry stops demanding it.
+    ParamDef::optional("stock_to_leave_radial", "f64"),
     ParamDef::required("stock_to_leave_axial", "f64"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
@@ -2800,6 +2822,19 @@ pub fn feed_optimization_unavailable_reason(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    /// L2: the registry must not demand a dial the planner ignores.
+    #[test]
+    fn the_inert_adaptive3d_radial_leave_is_not_required() {
+        let row = param_defs_for_type(OperationType::Adaptive3d)
+            .iter()
+            .find(|p| p.name == "stock_to_leave_radial")
+            .expect("adaptive3d still carries the radial leave param");
+        assert!(
+            row.optional,
+            "an inert dial is not a required parameter: {row:?}"
+        );
+    }
 
     #[test]
     fn operation_catalog_is_exhaustive_and_consistent() {

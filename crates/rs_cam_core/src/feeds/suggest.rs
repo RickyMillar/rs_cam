@@ -916,6 +916,27 @@ fn apply_feeds_subset(
     let stepover_mm = round_suggestion_value(result.radial_width_mm, 0.001);
     let depth_mm = round_suggestion_value(result.axial_depth_mm, 0.001);
     let stepover_held = scratch.set_stepover(stepover_mm);
+    // Snap the proposal to a depth the machine will actually cut.
+    //
+    // Generation steps a 2.5D cut as `total / ceil(total / per_pass)`
+    // (`DepthDistribution::Even`, which no operation makes configurable), so
+    // the realised depth is a staircase: on a 12 mm pocket only 4.00, 3.00,
+    // 2.40, 2.00, 1.71, 1.50 and 1.33 are reachable.
+    //
+    // This does NOT change the cut — generation applies the same arithmetic to
+    // whatever is written. It makes the number the engine writes, reasons
+    // about and shows the operator equal the number the machine will cut.
+    // Without it a recommendation of 2.90 mm is reported as 2.90 while 2.40 is
+    // cut, off by 17 %, and the power ladder's own account of what it did
+    // names a depth that never happens. See T-12.
+    //
+    // No total, no snap: an operation whose depth comes from the model surface
+    // has nothing to divide, and inventing a total would be worse than leaving
+    // the proposal alone.
+    let depth_mm = match scratch.total_depth() {
+        Some(total) => crate::depth::realised_step_down(total, depth_mm).unwrap_or(depth_mm),
+        None => depth_mm,
+    };
     let depth_held = scratch.set_depth_per_pass(depth_mm);
     // v3.0d (2026-06-04): also write the calculator's chosen RPM so the
     // rest of enforce_invariants reads a consistent operating point
