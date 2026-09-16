@@ -96,9 +96,28 @@ pub fn immersion_angle(ae_mm: f64, radius_mm: f64) -> f64 {
 /// `Kc` relative to the anchor wood. Returns `None` when the material has
 /// no primary-source `Kc`.
 fn affine_coeffs(material: &Material) -> Option<(f64, f64)> {
-    let kc = material.kc_n_per_mm2()?;
-    let scale = kc / LIT_ANCHOR_KC_N_PER_MM2;
-    Some((LIT_KS_N_PER_MM2 * scale, LIT_FEDGE_N_PER_MM * scale))
+    Some(affine_coefficients_for_kc(material.kc_n_per_mm2()?))
+}
+
+/// Affine wood-force coefficients `(Ks, F_edge)` for a raw material `Kc`
+/// (N/mm²), without the `Material` in hand.
+///
+/// [`affine_coefficients`] is the entry point when a `Material` is
+/// available; this one serves the callers that already hold the raw
+/// `Kc` and must not re-derive the scaling — `tool_load::power` reads
+/// the same two coefficients the deflection gate reads, so the power
+/// model and the force model cannot drift apart. The literature
+/// constants live here and nowhere else.
+///
+/// Note the anisotropy split: this returns the RAW-`Kc` coefficients,
+/// which is what `tool_load::deflection` wants (sustained mean force).
+/// `tool_load::power` carries `GRAIN_ANISOTROPY_FACTOR` on top for its
+/// transient-grain-spike safety allowance. See
+/// `tool_load/deflection.rs` module docs for why the two differ.
+#[must_use]
+pub fn affine_coefficients_for_kc(kc_n_per_mm2: f64) -> (f64, f64) {
+    let scale = kc_n_per_mm2 / LIT_ANCHOR_KC_N_PER_MM2;
+    (LIT_KS_N_PER_MM2 * scale, LIT_FEDGE_N_PER_MM * scale)
 }
 
 /// Public accessor for the affine wood-force coefficients `(Ks, F_edge)`

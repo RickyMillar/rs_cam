@@ -363,3 +363,127 @@ D    aggressiveness dial               ← re-evaluate after A–C
 
 Stop after A if it does not read well. Everything after it assumes the
 verdict row earned its place.
+
+---
+
+## R1 shipped — power on the affine model (2026-09-16)
+
+`tool_load/power.rs` now builds power from the same `(Ks, F_edge)` pair
+`feeds/force.rs` owns:
+
+```text
+P_kW = A · ( Ks · MRR  +  F_edge · ap · Vc · z·ψ/2π ) / 60e6
+```
+
+`A = GRAIN_ANISOTROPY_FACTOR = 2.0` rides **both** terms. ADVICE §6's
+correction is honoured: the factor is power's safety allowance for
+transient grain spikes, deflection keeps raw `Kc`, and R1 changed the
+model's SHAPE, not its safety scoping.
+
+### The three sites, closed together
+
+| Site | Before | After |
+|---|---|---|
+| `tool_load/power.rs` `predicted_power_kw` | linear helper | `PowerTerms::of` + `kw_at_feed` + `feed_for_kw` |
+| `feeds/mod.rs:1728, :1950` | called the helper | call `power_model_terms` (one assembly point) |
+| `feed_modulation.rs` power-cap solver | **its own copy** of the formula | calls `PowerTerms::feed_for_kw` |
+
+T-6's last open bullet is closed: there is no second implementation left.
+
+### Measured before/after — ADVICE §1's reference fixture
+
+6 mm 2-flute flat, 17 000 RPM, DOC 4.20, WOC 2.10, generic softwood
+(`Kc = 17.55`, `Ks = 24.975`, `F_edge = 2.650`, ψ = 1.2661 rad). Taken
+from live code; pinned in `tool_load::power::r1_two_term_model`.
+
+| fz (mm/tooth) | MRR | pre-R1 kW | R1 kW | ratio | edge share |
+|---|---|---|---|---|---|
+| 0.0380 (running) | 11 395 | 0.006666 | 0.057399 | **8.61×** | 83.5 % |
+| 0.0675 (vendor mid) | 20 242 | 0.011842 | 0.064763 | 5.47× | 74.0 % |
+| 0.0850 (vendor max) | 25 490 | 0.014912 | 0.069132 | 4.64× | 69.3 % |
+
+8.61× confirms §6's corrected estimate of "roughly 8.6×". §1's table read
+4.3× / 2.7× / 2.3× because it computed the two-term column without `A`.
+Edge shares match §1 to the printed digit (83 % / 74 % / 69 %).
+
+The edge floor on this fixture is **0.0479 kW at any feed**. Halving the
+feed cuts total power by 11 %, not 50 %.
+
+### The duty-cycle factor was checked, not assumed
+
+`z·ψ/2π` is the same expression `tool::flat_chip_geometry_for_radius`
+already computes as `arc_engagement_radians / flute_pitch`
+(`flute_pitch = 2π/z`), and `ψ` is the one immersion angle
+`force::immersion_angle`, `feed_modulation`, `chipload_cap_for_deflection`
+and `dexel_stock::stamping` all share. The existing expression carries a
+helix-wrap term this model does not — logged as **T-9's sibling T-7** in
+`planning/TECH_DEBT_REGISTER.md`, deliberately out of scope because adding
+it is a second feed-moving recalibration.
+
+### Sentries re-baselined — numbers, not assertions
+
+| Sentry | Before | After |
+|---|---|---|
+| `power.rs` `light_cut_is_within_with_available_kw` | peak < 0.01 kW | peak < 0.1 kW (measured 0.04554) |
+| `power.rs` `vbit_triangular_cross_section_halves_power_vs_flat` | 0.00072 kW, renamed `..._halves_the_shear_term` | 0.013320 kW, and the halving claim now pins the shear term, which is what the cross-section actually governs |
+| `power.rs` `heavy_cut_within_with_power_breach_tolerance` | slot 14 mm @ 6000 (0.77 kW) | slot 7 mm @ 3000 (0.82 kW); the Exceeds-at-default arm added so "borderline" is asserted at both ends |
+| `power_ceiling_parity_f2` `the_power_ceiling_does_not_bind_on_shipped_presets` | 0 fixtures, peak 23.6 % | renamed `the_power_ceiling_binds_on_three_shipped_fixtures`; peak **80.0 %**, three fixtures pinned by name |
+| `power_ceiling_parity_f2` `a_power_limited_feed_lands_exactly_on_the_gate_ceiling` | synthetic 0.05 kW | synthetic **0.36 kW**; assertion (100 % ± 2 %) unchanged and still exact |
+| `suggest_power_ceiling_after_pass9` local power model | pre-R1 linear copy | two-term copy |
+| `suggest_power_ceiling_after_pass9` synthetic | 0.05 kW | **0.58 kW** |
+| `suggest_power_ceiling_after_pass9` `shipped_presets_stay_clear...` | `worst <= 1.0` | `worst <= 1.002` — one whole-mm/min feed-rounding step, cause measured (T-9) |
+
+Also fixed, not re-baselined: `shipped_utilisation` in that file multiplied
+`required` by `safety_factor` while the ceiling already carried it, so every
+figure it printed was 25 % low. Removing it **raises** every number there.
+
+Named in the brief but **unmoved**: `_litmatrix_rpm_only_lut_chipload`,
+`_litmatrix_milling_rpm_diameter_tier`, `_litmatrix_rubbing_floor_clamp`,
+`constrained_max_modulation_f039`. No assertion in any sentry was loosened
+except the rounding allowance above, which is stated and 15× the measured
+overshoot.
+
+### Step 6's clamp changed axis, not strength
+
+Pre-R1, clamping `raw_feed` against the unfactored `power_at_rpm` and letting
+Step 9 scale by `safety_factor` landed the commanded power exactly on the
+gate ceiling — linearity did that for free. The edge term carries no feed, so
+`P(sf·f) ≠ sf·P(f)` and the composition is now written out: Step 6 caps
+`raw_feed` so `sf · raw_feed` draws no more than `power_at_rpm · sf`. With no
+edge term the two expressions are algebraically identical.
+
+New refusal: when the feed-free edge term alone exceeds the budget,
+`PowerTerms::feed_for_kw` returns `None` and the calculator leaves the feed
+alone rather than serving a fabricated one (a zero, or the floor). The
+warning carries the conflict. This is the power-side twin of
+`DeflectionCapRefusal::EdgeForceOverBudget`.
+
+### One sentry is left RED, deliberately
+
+`tests/literature_matrix` cell **`bull_12mm_pocket_oak`**: `moderate` →
+**`major`**.
+
+| | master | R1 |
+|---|---|---|
+| feed | 3000 mm/min | 1200 mm/min |
+| fpt | 0.0625 mm/tooth | **0.0250** (at the rubbing-floor clamp) |
+| power | 0.131 kW | 0.649 kW |
+| verdict | moderate (`fpt` −0.8 % under band) | **major** (`anti.bull_misclassified_as_ball_chipload`, `fpt < 0.030`) |
+
+The model is not wrong here. Free-run engagement on that cell is ap 8.400 ×
+ae 4.200 with four flutes at 9 000 RPM, where the edge term alone is
+0.431 kW against a 0.450 kW budget — 96 % of it. Step 6 therefore derates
+the feed 17× (`power_limit: 0.058`), Step 9b clamps the chipload back up to
+the 0.025 floor, and the shipped recipe is **both** rubbing-adjacent and
+still over the ceiling at 0.487 kW.
+
+That is `ADVICE.md` §3's "wrong-ish" derate direction, become live: only the
+shear term responds to feed, so thinning the chip cannot buy the power back
+and it costs specific energy on the way. **The fix is R4**, which traverses
+the constant-chipload line by dropping RPM — cutting both terms — and which
+this brief did not authorise. The anti-pattern was not weakened and the cell
+was not re-pinned. Recorded with its measurements as **T-8** in
+`planning/TECH_DEBT_REGISTER.md`.
+
+R4 is now a prerequisite for R1's gate to go green, not an optional
+follow-up.

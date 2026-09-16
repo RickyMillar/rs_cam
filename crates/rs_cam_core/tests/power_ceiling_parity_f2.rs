@@ -30,47 +30,57 @@
 //!    divides by, so it must be the bound the verdict will use.
 //! 3. [`the_recommended_feed_never_implies_power_above_the_gate_ceiling`]
 //!    — direction check over presets × 10 species × Ø3/Ø6/Ø12.
-//! 4. [`the_power_ceiling_does_not_bind_on_shipped_presets`] — the
-//!    measurement that **narrows the census's claim** (below).
+//! 4. [`the_power_ceiling_binds_on_three_shipped_fixtures`] — the
+//!    measurement, **re-taken for R1** (below).
 //! 5. [`a_power_limited_feed_lands_exactly_on_the_gate_ceiling`] — the
-//!    no-double-count guard, on a synthetic under-powered spindle
-//!    because no shipped preset reaches the branch.
+//!    no-double-count guard, on a synthetic under-powered spindle so the
+//!    clamp arithmetic is exercised on a cut that has a feed answer.
 //! 6. [`the_power_limited_warning_compares_like_with_like`] — the
 //!    warning's two terms sit on the gate's axis too.
 //! 7. [`report_before_after_feeds_on_representative_fixtures`] — not an
 //!    assertion, a **record**, reproducible with `--nocapture`.
 //!
-//! ## What the measurement narrowed
+//! ## What the measurement said, and what R1 changed about it
 //!
 //! The census rated P-2 **HIGH** on the reasoning that "Suggest can ship
 //! a feed the gate calls `Exceeds`". Swept across all three shipped
 //! presets × all ten wood species × Ø3/Ø6/Ø12 full-width slots, the
-//! `power_limited` branch **never fires**: `feeds::calculate` clamps
-//! axial DOC (rigidity) and feed (machine cutting ceiling) long before
-//! spindle power binds. So on shipped profiles F-2 moved **no
-//! recommended feed at all** — what it moved is the published
-//! `available_power_kw`, i.e. the denominator of the headroom the Feeds
-//! & Speeds modal renders, by `safety_factor` (−25 % / −20 %).
+//! `power_limited` branch **never fired** against the pre-R1 linear
+//! power model: `feeds::calculate` clamped axial DOC (rigidity) and feed
+//! (machine cutting ceiling) long before spindle power bound, peak
+//! utilisation 23.6 %. So F-2 itself moved **no recommended feed at
+//! all** — what it moved was the published `available_power_kw`, the
+//! denominator of the headroom the Feeds & Speeds modal renders, by
+//! `safety_factor` (−25 % / −20 %).
+//!
+//! **R1 (2026-09-16) made the branch live.** Rebuilding power on the
+//! affine force model added the feed-free edge term, which is largest
+//! exactly where this sweep looks. Peak utilisation moved 23.6 % → 80 %
+//! and three Ø12 slot fixtures now reach the branch. The parity claims
+//! (tests 1, 2, 3, 6) are unchanged and still hold; only the
+//! measurement in test 4 was re-taken.
 //!
 //! ## Two axes, and why the clamp is NOT multiplied
 //!
-//! `feeds::calculate` already applies `machine.safety_factor` to the
-//! feed at Step 9. So there are two internally-consistent axes:
+//! `feeds::calculate` applies `machine.safety_factor` to the feed at
+//! Step 9. So there are two internally-consistent axes:
 //!
 //! | axis | feed | ceiling |
 //! |---|---|---|
 //! | RAW | `raw_feed` (pre-Step-9) | `power_at_rpm(rpm)` |
 //! | COMMANDED (the gate's) | final feed | `power_at_rpm(rpm) · safety_factor` |
 //!
-//! The Step 6 clamp lives on the RAW axis and is correct there: Step 9
-//! then scales the feed by `safety_factor`, so the commanded result
-//! satisfies the gate's bound by construction, landing exactly on it
-//! (test 5).
+//! The Step 6 clamp caps `raw_feed` so the feed Step 9 will command,
+//! `safety_factor · raw_feed`, lands exactly on the COMMANDED ceiling
+//! (test 5). Pre-R1 that composition came free from linearity and the
+//! clamp was written on the RAW axis; R1's edge term carries no feed, so
+//! `feeds/mod.rs` Step 6 now states the commanded-axis form directly.
+//! With no edge term the two reduce to the same expression.
 //!
-//! Multiplying that clamp's ceiling by `safety_factor` as well — the
+//! Applying `safety_factor` to the ceiling as well as to the feed — the
 //! naive reading of "Suggest gains `machine.safety_factor`" — applies
 //! the factor **twice**. Measured: a power-limited feed drops a further
-//! 25 % (723.4 → 542.5 mm/min on the synthetic fixture) and the
+//! 25 % (723.4 → 542.5 mm/min on the pre-R1 synthetic fixture) and the
 //! literature-matrix cell `flat_6mm_pocket_al6061_lut` goes `major`,
 //! chipload falling to 0.0269 mm/tooth — within 10 % of the 0.025
 //! rubbing floor. That is a feed-moving recalibration Q3 did not
@@ -268,29 +278,39 @@ fn the_recommended_feed_never_implies_power_above_the_gate_ceiling() {
 }
 
 #[test]
-fn the_power_ceiling_does_not_bind_on_shipped_presets() {
-    // MEASUREMENT, pinned so it cannot silently stop being true.
+fn the_power_ceiling_binds_on_three_shipped_fixtures() {
+    // MEASUREMENT, pinned so it cannot silently move.
     //
-    // The census rated P-2 HIGH on the reasoning that "Suggest can ship a
-    // feed the gate calls Exceeds". Swept across every shipped preset,
-    // every wood species and Ø3/Ø6/Ø12, the power branch never fires:
-    // peak utilisation of the *unfactored* ceiling stays far below 1.0,
-    // because `feeds::calculate` clamps axial DOC (rigidity) and feed
-    // (machine cutting ceiling) long before spindle power binds.
+    // R1 (2026-09-16) RE-BASELINE. This arm used to assert that the power
+    // branch NEVER fires on a shipped preset — measured true against the
+    // pre-R1 model (`P = A·Kc·ap·ae·feed/60e6`), where peak utilisation
+    // across the sweep was 23.6 %.
     //
-    // The operator-visible consequence of F-2 is therefore in the
-    // PUBLISHED HEADROOM (`available_power_kw`, the modal's denominator),
-    // not in any recommended feed on these profiles. That is a narrower
-    // claim than the census made, and it is the honest one.
+    // R1 rebuilt power on the affine force model, adding the edge term
+    // `A·F_edge·ap·Vc·z·ψ/2π`. That term carries no feed and grows with
+    // RPM and diameter, so it is largest exactly where this sweep looks:
+    // a Ø12 full-width slot runs its duty cycle at the maximum
+    // (ψ = π ⇒ z·ψ/2π = 1). Peak utilisation of the unfactored ceiling
+    // moved 23.6 % → 80.0 %, and three of the ninety fixtures now reach
+    // the branch — all of them Ø12 slots in the two hardest woods.
+    //
+    // The census's original claim ("Suggest can ship a feed the gate
+    // calls Exceeds") is therefore no longer narrowed to nothing: the
+    // power branch is live. What still holds is
+    // `the_recommended_feed_never_implies_power_above_the_gate_ceiling`
+    // — the clamp keeps every recommendation inside the gate's bound.
+    //
+    // The set is pinned by NAME, not by count, so a fixture leaving the
+    // set and another joining it cannot cancel out.
     let mut worst = 0.0_f64;
     let mut worst_label = String::new();
-    let mut limited_count = 0usize;
+    let mut limited: Vec<String> = Vec::new();
     for (_preset_label, machine) in MachineProfile::presets() {
         for species in ALL_SPECIES {
             for diameter in [3.0, 6.0, 12.0] {
                 let result = slot_cut(&machine, species, diameter);
                 if result.power_limited {
-                    limited_count += 1;
+                    limited.push(format!("{} / {:?} / Ø{diameter}", machine.name, species));
                 }
                 let unfactored = machine.power_at_rpm(result.rpm);
                 if unfactored <= 0.0 {
@@ -306,28 +326,49 @@ fn the_power_ceiling_does_not_bind_on_shipped_presets() {
     }
     eprintln!(
         "  peak spindle-power utilisation across the sweep: {:.1}% of the \
-         unfactored ceiling ({worst_label}); power-limited fixtures: {limited_count}",
+         unfactored ceiling ({worst_label}); power-limited fixtures: {}",
+        100.0 * worst,
+        limited.len(),
+    );
+    limited.sort();
+    assert_eq!(
+        limited,
+        [
+            "Shapeoko (1.5kW VFD) / Ipe / Ø12",
+            "Shapeoko (1.5kW VFD) / Jarrah / Ø12",
+            "Shapeoko (Makita RT0701C) / Ipe / Ø12",
+        ],
+        "the power-limited set moved (peak {:.1}% at {worst_label}). Re-take the \
+         record rather than widening this assertion.",
         100.0 * worst
     );
-    assert_eq!(
-        limited_count,
-        0,
-        "a shipped preset became power-limited ({worst_label} at {:.1}%). That is \
-         not a failure of the fix — it means the module header's claim that the \
-         ceiling never binds on shipped presets is now stale and the before/after \
-         record must be re-taken.",
-        100.0 * worst
+    // Non-vacuity in the other direction: the branch must still be the
+    // exception, not the rule. 3 of 90 fixtures, and the peak sits under
+    // the unfactored ceiling.
+    assert!(
+        worst > 0.5 && worst < 1.0,
+        "peak utilisation {worst} left the band this record describes"
     );
 }
 
 /// Synthetic under-powered spindle, used ONLY to reach the
-/// `power_limited` branch. Not a shipped preset and not a
-/// recommendation — see
+/// `power_limited` branch on a cut the clamp can actually solve. Not a
+/// shipped preset and not a recommendation — see
 /// [`a_power_limited_feed_lands_exactly_on_the_gate_ceiling`].
+///
+/// R1 (2026-09-16) re-baseline: 0.05 kW → 0.36 kW. Under the two-term
+/// model the Ø12 maple slot's feed-free EDGE term alone is 0.197 kW, so
+/// a 0.05 kW spindle (gate ceiling 0.0375 kW) cannot make that cut at
+/// any feed — `PowerTerms::feed_for_kw` correctly refuses, the feed is
+/// left alone and the warning carries the conflict, and the fixture
+/// stops exercising the clamp arithmetic this test is about. 0.36 kW
+/// puts the gate ceiling at 0.270 kW, between the 0.197 kW edge floor
+/// and the 0.355 kW the unclamped cut would draw, so the clamp binds
+/// and has a feed answer.
 fn underpowered_machine() -> MachineProfile {
     let mut machine = MachineProfile::generic_wood_router();
-    machine.name = "SYNTHETIC 0.05 kW (test only)".to_owned();
-    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.05 };
+    machine.name = "SYNTHETIC 0.36 kW (test only)".to_owned();
+    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.36 };
     machine
 }
 
@@ -337,19 +378,25 @@ fn a_power_limited_feed_lands_exactly_on_the_gate_ceiling() {
     // is measurable at all — no shipped preset is power-limited (test
     // above), so a synthetic under-powered spindle reaches the branch.
     //
-    // The Step 6 clamp works on the RAW axis (`required(raw_feed)` vs
-    // `power_at_rpm`), and Step 9 then applies `safety_factor` to the
-    // feed. The two compose so a power-limited op lands at exactly
-    // `power_at_rpm · safety_factor` — the gate's own bound, 100 %
+    // The Step 6 clamp caps `raw_feed` so that the feed Step 9 will
+    // actually command — `safety_factor · raw_feed` — draws exactly
+    // `power_at_rpm · safety_factor`: the gate's own bound, 100 %
     // utilisation, no headroom wasted and none borrowed.
     //
-    // Multiplying the Step 6 ceiling by `safety_factor` as well (the
-    // naive reading of "Suggest gains machine.safety_factor") lands it
-    // at `safety_factor²` instead: utilisation 75 %, feed 723.4 → 542.5
-    // mm/min on this fixture. That extra derate is what drove
-    // `flat_6mm_pocket_al6061_lut` to `major` in the literature matrix,
-    // and it is a feed-moving recalibration Q3 did not authorise. This
-    // assertion is what stops it being reintroduced by accident.
+    // R1 (2026-09-16): pre-R1 that guarantee came free from linearity —
+    // clamp the raw feed against the unfactored `power_at_rpm`, let
+    // Step 9 scale, and the power scaled with it. The two-term model's
+    // edge term carries no feed, so the composition had to be written
+    // out. The assertion below is unchanged, and it is the arm that
+    // proves the rewrite kept the guarantee.
+    //
+    // Applying `safety_factor` to the ceiling as well as to the feed
+    // (the naive reading of "Suggest gains machine.safety_factor")
+    // lands it at `safety_factor²` instead: utilisation 75 %. That extra
+    // derate is what drove `flat_6mm_pocket_al6061_lut` to `major` in
+    // the literature matrix, and it is a feed-moving recalibration Q3
+    // did not authorise. This assertion is what stops it being
+    // reintroduced by accident.
     let machine = underpowered_machine();
     let result = slot_cut(&machine, WoodSpecies::HardMaple, 12.0);
     assert!(

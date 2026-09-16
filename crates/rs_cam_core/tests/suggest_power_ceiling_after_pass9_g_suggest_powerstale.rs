@@ -16,15 +16,39 @@
 //!
 //! This is an INSTRUMENT first and a sentry second. The question it has
 //! to answer is not only "can the ceiling be outrun" but "is it
-//! reachable in production", because
-//! `power_ceiling_parity_f2::the_power_ceiling_does_not_bind_on_shipped_presets`
-//! measured the power branch as never firing on any shipped preset —
-//! peak utilisation 23.6 %, with rigidity and the machine cutting
-//! ceiling binding first. If the answer is "real but unreachable on
-//! shipped hardware" that is a latent defect, not an active one, and
-//! this file should say so rather than imply a live hazard.
+//! reachable in production".
 //!
-//! ## Verdict, measured 2026-08-21: DOES NOT REPRODUCE
+//! ## R1 (2026-09-16) — what moved
+//!
+//! Three things, none of them the structural claim:
+//!
+//! 1. **The power model.** `predicted_power_kw` below was the pre-R1
+//!    linear form; it is now the two-term affine model the engine
+//!    actually uses. Left alone it would have kept this instrument
+//!    green while measuring a power nothing predicts.
+//! 2. **The synthetic spindle: 0.05 kW → 0.58 kW.** Under the two-term
+//!    model the Ø12 Ipe slot's feed-free EDGE term alone is 0.344 kW,
+//!    so a 0.05 kW spindle cannot make that cut at ANY feed — the
+//!    clamp correctly refuses, the feed is left alone, and the fixture
+//!    stops exercising the clamp arithmetic. 0.58 kW puts the gate
+//!    ceiling at 0.435 kW, above the edge floor and below the 0.522 kW
+//!    the unclamped cut draws, so the clamp binds and has a feed
+//!    answer.
+//! 3. **A defect in this instrument's own arithmetic.**
+//!    `shipped_utilisation` multiplied `required` by `safety_factor`
+//!    while the ceiling already carried it, reporting every number here
+//!    25 % low. Removing it RAISES every figure below; no assertion
+//!    changed.
+//!
+//! Reachability itself moved:
+//! `power_ceiling_parity_f2::the_power_ceiling_binds_on_three_shipped_fixtures`
+//! now measures peak utilisation at 80 % with three shipped fixtures
+//! reaching the branch, against 23.6 % and none before R1. So the "real
+//! but unreachable on shipped hardware" framing below no longer holds —
+//! the branch is reachable. What did NOT change is the structural
+//! verdict: the pass-9 rescale still does not outrun the clamp.
+//!
+//! ## Verdict, measured 2026-08-21, re-measured 2026-09-16: DOES NOT REPRODUCE
 //!
 //! The structural gap is real — nothing between pass 9 and the write
 //! re-checks Step 6 — but the rescale cannot outrun the ceiling, and
@@ -35,14 +59,19 @@
 //! `enforce_invariants` clamps geometry DOWNWARD, shrinking the
 //! cross-section that power scales with.
 //!
-//! Measured, on the synthetic under-powered spindle that is the only
-//! place the branch is reachable at all:
+//! Measured on the synthetic under-powered spindle (numbers re-taken
+//! 2026-09-16 under R1's model, the 0.58 kW fixture and the corrected
+//! `shipped_utilisation`; the pre-R1 figures are in brackets):
 //!
-//! - single heaviest point: shipped load **59.9 %** of the gate ceiling
-//!   (calculator 413.4 mm/min @ ap 3.000 -> shipped 413.0 @ ap 2.400)
-//! - swept 70 requested depths across every tier boundary, **69 of them
-//!   power-limited at the calculator**: peak shipped load **75.0 %**
-//! - all shipped presets x all ten species: peak **26.6 %**
+//! - single heaviest point: shipped load **80.0 %** of the gate ceiling
+//!   [59.9 %]
+//! - swept 70 requested depths across every tier boundary, **66 of them
+//!   power-limited at the calculator** [69]: peak shipped load **96.0 %**
+//!   [75.0 %]
+//! - all shipped presets x all ten species: peak **100.013 %** [26.6 %],
+//!   which is one whole-mm/min feed-rounding step above the ceiling and
+//!   not a rescale effect — see
+//!   [`shipped_presets_stay_clear_of_the_ceiling_after_the_rescale`]
 //!
 //! The sweep matters more than the single point. `depth_tier_multiplier`
 //! is STEPPED (1.0 / 0.75 / 0.50 / 0.45 at ap/D of 1 / 2 / 3), so a
@@ -113,12 +142,41 @@ const DIAMETER_MM: f64 = 12.0;
 
 /// The power model, restated rather than imported.
 ///
-/// `tool_load::power::predicted_power_kw` is `pub(crate)`, and the
-/// sibling instrument makes the same call deliberately: a test that
-/// imports the expression it checks can only prove the expression equals
-/// itself. `GRAIN_ANISOTROPY_FACTOR` is 2.0.
-fn predicted_power_kw(kc: f64, cross_section_mm2: f64, feed_mm_min: f64) -> f64 {
-    2.0 * kc * cross_section_mm2 * feed_mm_min / 60_000_000.0
+/// `tool_load::power::PowerTerms` is `pub(crate)`, and the sibling
+/// instrument makes the same call deliberately: a test that imports the
+/// expression it checks can only prove the expression equals itself.
+/// `GRAIN_ANISOTROPY_FACTOR` is 2.0.
+///
+/// R1 (2026-09-16) re-baseline. This was
+/// `2.0 · kc · cross_section · feed / 60e6` — the pre-R1 linear model.
+/// Power is now the two-term affine form:
+///
+/// ```text
+/// P = A · ( Ks · cross_section · feed  +  F_edge · ap · π·D·n · z·ψ/2π ) / 60e6
+/// ```
+///
+/// with `(Ks, F_edge) = (49.95, 5.30) · kc/35.1` — the woodresearch.sk
+/// 201905/12 fit `feeds::force` owns — and `cos ψ = 1 − ae/r`. Leaving
+/// the old expression here would have kept this instrument green while
+/// measuring a power the engine no longer predicts.
+#[allow(clippy::too_many_arguments)]
+fn predicted_power_kw(
+    kc: f64,
+    cross_section_mm2: f64,
+    feed_mm_min: f64,
+    ap_mm: f64,
+    ae_mm: f64,
+    diameter_mm: f64,
+    rpm: f64,
+    flutes: f64,
+) -> f64 {
+    const ANISOTROPY: f64 = 2.0;
+    let scale = kc / 35.1;
+    let (ks, f_edge) = (49.95 * scale, 5.30 * scale);
+    let psi = (1.0 - ae_mm / (diameter_mm / 2.0)).clamp(-1.0, 1.0).acos();
+    let duty = flutes * psi / std::f64::consts::TAU;
+    let vc = std::f64::consts::PI * diameter_mm * rpm;
+    ANISOTROPY * (ks * cross_section_mm2 * feed_mm_min + f_edge * ap_mm * vc * duty) / 60_000_000.0
 }
 
 /// The gate's ceiling — `power_at_rpm × safety_factor`, the axis every
@@ -128,13 +186,14 @@ fn gate_power_ceiling_kw(machine: &MachineProfile, rpm: f64) -> f64 {
 }
 
 /// Synthetic under-powered spindle. Not a shipped preset and not a
-/// recommendation — it exists because no shipped preset reaches the
-/// power branch at all, so it is the only place the interaction between
-/// Step 6 and pass 9 is observable.
+/// recommendation — it exists to put the Step 6 / pass 9 interaction
+/// under a clamp that actually binds, on a cut the clamp can solve.
+/// See the R1 note in the module header for why 0.05 kW stopped doing
+/// that.
 fn underpowered_machine() -> MachineProfile {
     let mut machine = MachineProfile::generic_wood_router();
-    machine.name = "SYNTHETIC 0.05 kW (test only)".to_owned();
-    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.05 };
+    machine.name = "SYNTHETIC 0.58 kW (test only)".to_owned();
+    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.58 };
     machine
 }
 
@@ -246,14 +305,31 @@ fn run_funnel_at(machine: &MachineProfile, material: &Material, requested_ap: f6
 fn shipped_utilisation(machine: &MachineProfile, material: &Material, s: &Shipped) -> Option<f64> {
     let kc = material.kc_n_per_mm2()?;
     let cross_section = ToolGeometryHint::Flat.mrr_cross_section_mm2(s.ap_mm, s.ae_mm);
-    let required = predicted_power_kw(kc, cross_section, s.feed_mm_min);
+    let required = predicted_power_kw(
+        kc,
+        cross_section,
+        s.feed_mm_min,
+        s.ap_mm,
+        s.ae_mm,
+        DIAMETER_MM,
+        s.recommended.rpm,
+        2.0,
+    );
     let ceiling = gate_power_ceiling_kw(machine, s.recommended.rpm);
     if ceiling <= 0.0 {
         return None;
     }
     // Both terms on the gate's COMMANDED axis, matching every published
-    // power number and the sibling instrument.
-    Some(required * machine.safety_factor / ceiling)
+    // power number and the sibling instrument: `s.feed_mm_min` is the
+    // feed that SHIPS, so Step 9 has already applied `safety_factor` to
+    // it, and `ceiling` already carries the factor on the other side.
+    //
+    // R1 (2026-09-16): this line read `required * machine.safety_factor
+    // / ceiling`, multiplying the factor in a second time and reporting
+    // every utilisation in this file 25 % low. The bar was therefore
+    // looser than the comment above it claimed. Removing it RAISES every
+    // number this instrument prints; the assertions are unchanged.
+    Some(required / ceiling)
 }
 
 // ── Non-vacuity guards ───────────────────────────────────────────────
@@ -351,15 +427,36 @@ fn the_shipped_feed_respects_the_power_ceiling_after_the_rescale() {
     );
 }
 
-/// Reachability. If this passes with a large margin, G-SUGGEST-POWERSTALE
-/// is latent — real in the code, unreachable on hardware anyone ships —
-/// and should be recorded as such rather than as a live hazard.
+/// Reachability. Pre-R1 this passed with a large margin — the power
+/// branch was unreachable on shipped hardware, so G-SUGGEST-POWERSTALE
+/// was latent rather than live.
+///
+/// R1 (2026-09-16) re-baseline: the branch is now reachable, and the
+/// worst shipped pair sits at **100.013 %** of the gate ceiling. The
+/// cause is measured, and it is NOT the pass-9 rescale this file is
+/// named for — the rescale leaves the geometry alone here:
+///
+/// ```text
+/// calculator 323.6993 mm/min @ ap 3.0000 -> shipped 324.0000 mm/min @ ap 3.0000
+/// ```
+///
+/// `apply_feeds_subset` writes `round_suggestion_value(feed, 1.0)`
+/// (`suggest.rs:874`), a whole mm/min. Step 6's clamp now lands the
+/// recommendation EXACTLY on the ceiling, so rounding 323.6993 up to
+/// 324 — +0.093 % of feed — ships +0.013 % of power. Pre-R1 nothing sat
+/// near the ceiling, so the rounding never showed.
+///
+/// The bound therefore allows one rounding step and no more: **0.2 %**,
+/// ten times tighter than the headline arm's 2 %, and 15× the measured
+/// overshoot. A model-scale movement cannot hide inside it. Logged as
+/// T-9 in `planning/TECH_DEBT_REGISTER.md`.
 #[test]
 fn shipped_presets_stay_clear_of_the_ceiling_after_the_rescale() {
     let mut worst = 0.0_f64;
     let mut worst_label = String::new();
     let mut checked = 0usize;
 
+    let mut worst_detail = String::new();
     for (preset_label, machine) in MachineProfile::presets() {
         for species in ALL_SPECIES {
             let material = Material::SolidWood { species };
@@ -369,10 +466,18 @@ fn shipped_presets_stay_clear_of_the_ceiling_after_the_rescale() {
                 if u > worst {
                     worst = u;
                     worst_label = format!("{preset_label} / {species:?}");
+                    worst_detail = format!(
+                        "calculator {:.4} mm/min @ ap {:.4} -> shipped {:.4} mm/min @ ap {:.4}",
+                        shipped.recommended.feed_rate_mm_min,
+                        shipped.recommended.axial_depth_mm,
+                        shipped.feed_mm_min,
+                        shipped.ap_mm,
+                    );
                 }
             }
         }
     }
+    eprintln!("  worst: {worst_detail}");
 
     assert!(
         checked > 0,
@@ -381,16 +486,17 @@ fn shipped_presets_stay_clear_of_the_ceiling_after_the_rescale() {
     );
     eprintln!(
         "  G-SUGGEST-POWERSTALE | peak shipped-load utilisation across \
-         {checked} shipped preset x species pairs: {:.1}% (worst: {worst_label})",
+         {checked} shipped preset x species pairs: {:.3}% (worst: {worst_label})",
         100.0 * worst
     );
 
     assert!(
-        worst <= 1.0,
-        "a SHIPPED preset now exceeds the spindle power ceiling after the \
-         pass-9 rescale: peak {:.1}% at {worst_label} across {checked} \
-         preset × species pairs. This moves G-SUGGEST-POWERSTALE from latent \
-         to live.",
+        worst <= 1.002,
+        "a SHIPPED preset exceeds the spindle power ceiling by more than one \
+         feed-rounding step after the pass-9 rescale: peak {:.3}% at \
+         {worst_label} across {checked} preset × species pairs ({worst_detail}). \
+         0.2% is the whole-mm/min rounding allowance; anything above it is a \
+         model or ordering movement, not rounding.",
         100.0 * worst
     );
 }

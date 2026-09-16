@@ -82,8 +82,9 @@ impl ToolGeometryHint {
     /// rectangular slab `ap · ae` for endmills, triangular groove
     /// `½ · ap · ae` for V-bits — so the Suggest path
     /// (`feeds::calculate`) and the Sim verdict
-    /// (`tool_load::power::evaluate`) agree on what area the
-    /// `predicted_power_kw` formula multiplies by.
+    /// (`tool_load::power::evaluate`) agree on what area the power
+    /// model's SHEAR term multiplies by. R1's edge term reads no
+    /// cross-section at all — see `tool_load::power::PowerTerms`.
     ///
     /// The cutter trait method is the canonical source when a full
     /// `ToolDefinition` is available; this hint-level method is the
@@ -1043,6 +1044,38 @@ fn milling_rpm_ceiling_for_diameter(d_mm: f64) -> f64 {
     }
 }
 
+/// Assemble the Suggest path's inputs to the canonical two-term power
+/// model (`tool_load::power`), so Step 6's clamp and the published
+/// `power_kw` are built from one expression rather than two.
+///
+/// `effective_d` must be the CHIP-THINNING diameter — the circle that
+/// actually touches material at this DOC — because it sets both the
+/// immersion angle ψ and the cutting velocity `Vc = π·D·n`. That is the
+/// same binding `radial_chip_thinning_factor` reads, not the LUT-row
+/// diameter this function's callers shadowed earlier.
+fn power_model_terms(
+    input: &FeedsInput,
+    kc: f64,
+    cross_section_mm2: f64,
+    ap: f64,
+    ae: f64,
+    effective_d: f64,
+    rpm: f64,
+) -> crate::tool_load::power::PowerTerms {
+    crate::tool_load::power::PowerTerms::of(crate::tool_load::power::PowerModelInputs {
+        kc_n_per_mm2: kc,
+        cross_section_mm2,
+        axial_doc_mm: ap,
+        // One immersion-angle definition for the whole engine: the same
+        // `force::immersion_angle` the deflection cap and the modulator
+        // consume.
+        immersion_rad: force::immersion_angle(ae, effective_d / 2.0),
+        engagement_diameter_mm: effective_d,
+        spindle_rpm: rpm,
+        flute_count: f64::from(input.flute_count),
+    })
+}
+
 /// Main calculation entry point.
 pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut warnings = Vec::new();
@@ -1671,11 +1704,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // than getting a silently-fabricated feed.
     //
     // Power prediction routes through the canonical
-    // `tool_load::power::predicted_power_kw` helper so the Suggest path
-    // and the Sim verdict can't diverge. The cross-section uses the
-    // geometry-hint's shape-correct area (V-bit triangular,
-    // flat/ball/bull/tapered rectangular) — same contract as the
-    // cutter trait's `mrr_cross_section_mm2` the Sim verdict reads.
+    // `tool_load::power::PowerTerms` so the Suggest path and the Sim
+    // verdict can't diverge. The cross-section uses the geometry-hint's
+    // shape-correct area (V-bit triangular, flat/ball/bull/tapered
+    // rectangular) — same contract as the cutter trait's
+    // `mrr_cross_section_mm2` the Sim verdict reads — and it feeds the
+    // SHEAR term only. R1's edge term reads `ap`, ψ, the engaged
+    // diameter and the RPM instead; `power_model_terms` assembles both
+    // halves from one place.
     //
     // ── F-2: the two power axes, and which one each number lives on ──
     //
@@ -1690,11 +1726,21 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //   COMMANDED   — the final feed (Step 9 has applied `safety_factor`)
     //                 vs `power_at_rpm(rpm) · safety_factor`.
     //
-    // The CLAMP below lives on the RAW axis and is correct there: it
-    // enforces `required(raw_feed) <= power_at_rpm(rpm)`, and since Step
-    // 9 then scales the feed by `safety_factor` (and Steps 7/9b/9c only
-    // reduce it further), the commanded result satisfies the gate's
-    // `required(final) <= power_at_rpm · safety_factor` by construction.
+    // The CLAMP below states the COMMANDED form: it caps `raw_feed` so
+    // that the feed Step 9 will actually command, `safety_factor ·
+    // raw_feed`, satisfies the gate's `required <= power_at_rpm ·
+    // safety_factor`. Steps 7/9c only reduce the feed further, so the
+    // guarantee survives them.
+    //
+    // R1 (2026-09-16) is why the form is written out. Pre-R1 power was
+    // linear in feed, so clamping the RAW feed against the unfactored
+    // `power_at_rpm` gave the same answer for free — Step 9's scale
+    // carried through the model. The two-term model's edge term carries
+    // no feed, so `P(safety_factor · f) != safety_factor · P(f)` and the
+    // composition had to stop being implicit. With no edge term the two
+    // expressions are algebraically identical, which is why this is a
+    // restatement rather than a new derate.
+    //
     // Multiplying this clamp's ceiling by `safety_factor` as well would
     // apply the factor TWICE — measured: it drops a power-limited feed a
     // further 25 % and drove the literature-matrix cell
@@ -1712,10 +1758,15 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // sit on the gate's axis; the `PowerLimited` warning's pair is
     // reported there too, preserving its ratio.
     //
-    // Measured (tests/power_ceiling_parity_f2.rs): across all three
-    // shipped presets × ten species × Ø3/Ø6/Ø12 slots the power branch
-    // never fires at all — rigidity and the machine cutting ceiling bind
-    // first, peak utilisation 23.6 % — so no shipped-profile feed moves.
+    // Measured (tests/power_ceiling_parity_f2.rs,
+    // `the_power_ceiling_binds_on_three_shipped_fixtures`): across all
+    // three shipped presets × ten species × Ø3/Ø6/Ø12 slots, peak
+    // utilisation is 80 % and the branch fires on three of the ninety
+    // fixtures — Ø12 slots in Jarrah and Ipe. Before R1 (2026-09-16) the
+    // pre-R1 linear power model put that peak at 23.6 % and the branch
+    // never fired at all; the edge term is what made it live, and it is
+    // largest exactly here, where a full-width slot runs the duty cycle
+    // `z·ψ/2π` at its maximum of 1.
     let available_power = machine.power_at_rpm(rpm);
     // The gate's ceiling (`power.rs:214`) — what every published power
     // number below is quoted against.
@@ -1724,19 +1775,59 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut feed = raw_feed;
     let mut power_factor = 1.0;
 
-    if let Some(kc) = material.kc_n_per_mm2() {
+    if let Some(kc) = material.kc_n_per_mm2()
+        && available_power > 0.0
+    {
         let cross_section = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
-        let required_power =
-            crate::tool_load::power::predicted_power_kw(kc, cross_section, raw_feed);
-        if required_power > available_power && available_power > 0.0 {
-            power_factor = available_power / required_power;
-            feed = raw_feed * power_factor;
+        let terms = power_model_terms(input, kc, cross_section, ap, ae, effective_d, rpm);
+        // R1 — the clamp is stated on the COMMANDED axis.
+        //
+        // Pre-R1 power was linear in feed, so clamping `raw_feed`
+        // against the unfactored `power_at_rpm` and letting Step 9's
+        // `safety_factor` scale the feed landed the commanded power
+        // exactly on the gate's `power_at_rpm × safety_factor`. That
+        // composition was linearity doing the work for free, and the
+        // two-term model does not have it: the edge term carries no
+        // feed, so scaling the feed by `safety_factor` does NOT scale
+        // the power by `safety_factor`.
+        //
+        // So the same statement is now made explicitly — cap `raw_feed`
+        // such that the feed Step 9 will actually command,
+        // `safety_factor × raw_feed`, draws no more than the gate's
+        // ceiling. With no edge term this reduces algebraically to the
+        // pre-R1 clamp, which is why the two axes above still describe
+        // the same guarantee.
+        let sf = machine.safety_factor.max(1e-9);
+        let required_at_commanded = terms.kw_at_feed(sf * raw_feed);
+        if required_at_commanded > gate_available_power {
+            // `feed_for_kw` answers on the commanded axis; divide back
+            // out to get the raw-axis cap Step 9 will scale.
+            //
+            // It returns `None` when the feed-free edge term ALONE is
+            // over the budget — the power-side twin of
+            // `DeflectionCapRefusal::EdgeForceOverBudget`. No feed
+            // rescues that cut: thinning the chip leaves the ploughing
+            // power exactly where it was, while driving the chipload
+            // toward the rubbing floor and raising the energy spent per
+            // mm³. So the feed is left alone and the warning carries the
+            // conflict — the same clamp-and-warn convention as the
+            // rubbing floor at Step 9b, which also refuses to serve a
+            // recipe it cannot honour. The real fix is less DOC, less
+            // stepover or a lower RPM, none of which a feed derate can
+            // reach for. Serving a zero feed instead would be a
+            // fabricated recipe, not an answer.
+            match terms.feed_for_kw(gate_available_power) {
+                Some(commanded_cap) if raw_feed > 0.0 => {
+                    power_factor = (commanded_cap / sf / raw_feed).clamp(0.0, 1.0);
+                    feed = raw_feed * power_factor;
+                }
+                _ => {}
+            }
             power_limited = true;
             warnings.push(FeedsWarning::PowerLimited {
-                // Both terms moved onto the gate's COMMANDED axis so the
-                // warning compares like with like; the ratio, and hence
-                // the derate it explains, is unchanged.
-                required_kw: required_power * machine.safety_factor,
+                // Both terms sit on the gate's COMMANDED axis so the
+                // warning compares like with like.
+                required_kw: required_at_commanded,
                 available_kw: gate_available_power,
             });
         }
@@ -1949,7 +2040,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let actual_power = match material.kc_n_per_mm2() {
         Some(kc) => {
             let cross_section = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
-            crate::tool_load::power::predicted_power_kw(kc, cross_section, feed)
+            power_model_terms(input, kc, cross_section, ap, ae, effective_d, rpm).kw_at_feed(feed)
         }
         None => 0.0,
     };

@@ -62,6 +62,7 @@ use std::collections::BTreeMap;
 
 use crate::feeds::force::DeflectionCapRefusal;
 use crate::machine_kinematics::{MachineKinematics, predicted_feeds_for_toolpath};
+use crate::tool_load::power::PowerModelInputs;
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
 pub use crate::tool_load::BindingConstraint;
@@ -211,9 +212,11 @@ pub struct PowerLimitInputs {
     /// Effective diameter at the engagement depth (mm).
     pub engagement_diameter_mm: f64,
     /// Available spindle power × safety factor at the running RPM
-    /// (kW). The constrained-max solver caps the feed so predicted
-    /// `P = GRAIN_ANISOTROPY_FACTOR × Kc × DOC × WOC × feed / 60_000_000`
-    /// stays inside this.
+    /// (kW). The constrained-max solver caps the feed so the predicted
+    /// two-term power (`tool_load::power::PowerTerms`) stays inside
+    /// this. Because the edge term carries no feed, a budget below that
+    /// term's own floor has no feed answer at all; the solver pins to
+    /// the chipload-min floor and still tags the move `PowerMax`.
     pub available_kw: f64,
 }
 
@@ -465,8 +468,16 @@ fn max_safe_feed_for_move(
         }
     }
 
-    // 3. Power cap. `P_kW = Kc_eff × DOC × WOC × feed / 60_000_000`.
-    // Solve for the feed that hits `available_kw`.
+    // 3. Power cap. R1 (2026-09-16): power is the two-term affine model
+    // `P = A·(Ks·MRR + F_edge·ap·Vc·z·ψ/2π)`, built from the SAME
+    // `(Ks, F_edge)` pair the deflection cap above consumes. One solver
+    // again: the model lives in `tool_load::power`, not here. This site
+    // previously carried its own copy of the linear formula, so a change
+    // to the gate left the optimizer predicting different power for the
+    // same cut.
+    //
+    // Only the shear term moves with feed, so the cap is an affine
+    // inversion, not a ratio — `PowerTerms::feed_for_kw` does it.
     if let Some(pow) = ctx.power_inputs
         && pow.available_kw > 0.0
     {
@@ -474,14 +485,39 @@ fn max_safe_feed_for_move(
         if axial_mm > 0.0 && woc_eff > 0.0 {
             let radial_width = woc_eff * pow.engagement_diameter_mm.max(0.0);
             if radial_width > 0.0 {
-                // Apply the canonical anisotropy factor at the consumer
-                // (S2-9): callers pass raw Kc, the solver multiplies
-                // here so any future change to GRAIN_ANISOTROPY_FACTOR
-                // is one diff, not N.
-                let kc_eff = crate::tool_load::power::GRAIN_ANISOTROPY_FACTOR * pow.kc_n_per_mm2;
-                let pow_cap = pow.available_kw * 60_000_000.0 / (kc_eff * axial_mm * radial_width);
-                if pow_cap.is_finite() {
-                    limits.push((pow_cap, BindingConstraint::PowerMax));
+                // Callers pass raw Kc; `PowerTerms::of` applies the
+                // canonical anisotropy factor (S2-9) so any future
+                // change to GRAIN_ANISOTROPY_FACTOR is one diff, not N.
+                //
+                // ψ from the same `cos ψ = 1 − 2·woc_fraction` the
+                // deflection cap uses — the modulator has one
+                // engagement definition, not two.
+                let terms = crate::tool_load::power::PowerTerms::of(PowerModelInputs {
+                    kc_n_per_mm2: pow.kc_n_per_mm2,
+                    cross_section_mm2: axial_mm * radial_width,
+                    axial_doc_mm: axial_mm,
+                    immersion_rad: crate::feeds::force::immersion_angle(
+                        radial_width,
+                        pow.engagement_diameter_mm / 2.0,
+                    ),
+                    engagement_diameter_mm: pow.engagement_diameter_mm,
+                    spindle_rpm: ctx.spindle_rpm,
+                    flute_count: flutes,
+                });
+                match terms.feed_for_kw(pow.available_kw) {
+                    Some(pow_cap) => limits.push((pow_cap, BindingConstraint::PowerMax)),
+                    None => {
+                        // The feed-free edge term alone already meets the
+                        // power budget, so no feed rescues it — the same
+                        // shape as `EdgeForceOverBudget` on the
+                        // deflection side, and handled the same way: pin
+                        // to the chipload-min floor and let the binding
+                        // tag name power. The real fix is less DOC,
+                        // less stepover or less RPM, none of which a
+                        // per-move feed solver can reach for.
+                        let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
+                        limits.push((floor.max(1e-9), BindingConstraint::PowerMax));
+                    }
                 }
             }
         }
