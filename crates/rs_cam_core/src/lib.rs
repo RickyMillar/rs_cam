@@ -2,17 +2,25 @@
 //!
 //! The crate is layered roughly in this order:
 //!
-//! 1. **Import** — STL / SVG / DXF / STEP into geometry primitives
-//! 2. **Tool model** — cutter geometry, holder/shank envelope, vendor metadata
-//! 3. **Operations** — 2.5D + 3D toolpath generation (`adaptive`, `pocket`,
-//!    `dropcutter`, `waterline`, `drill`, etc.) emitting the shared
+//! 1. **Import** — STL / SVG / DXF / STEP into geometry primitives (`io`)
+//! 2. **Tool model** — cutter geometry, holder/shank envelope, vendor
+//!    metadata (`tool`, `material`, `machine`)
+//! 3. **Operations** — 2.5D and drilling toolpath generation (`ops`),
+//!    roughing (`adaptive`, `adaptive3d`) and 3D finishing (`finish`),
+//!    over the derived geometry (`geometry`), the surface fields
+//!    (`surface`) and the grid-walk maps (`maps`), emitting the shared
 //!    `Toolpath` IR
 //! 4. **Dressups** — entry strategies, leads, dogbones, arc fitting,
-//!    feed optimization, TSP rapid ordering
-//! 5. **Simulation** — tri-dexel volumetric stock, cut-trace metrics,
-//!    collision checks
-//! 6. **Export** — G-code (`gcode`), SVG/HTML preview (`viz`),
-//!    fingerprints
+//!    feed optimization, TSP rapid ordering (`dressup`)
+//! 5. **Simulation** — tri-dexel volumetric stock (`dexel_stock`), the
+//!    stock model and cut record (`stock`), collision checks
+//! 6. **Export** — G-code (`gcode`), SVG/HTML preview, fingerprints and
+//!    the G-code validator (`export`)
+//!
+//! Two folders cut across those layers: `trace` holds the records that
+//! describe a generated toolpath, and `feeds` with `tool_load` holds the
+//! feeds-and-speeds model. The crate spine stays at the root: `geo`,
+//! `polygon`, `mesh`, `toolpath`, `ids`, `interrupt` and `measurement`.
 //!
 //! The `Toolpath` IR is the boundary between planning and post / output;
 //! GUI and CLI consumers depend only on the public surface of this crate.

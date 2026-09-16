@@ -33,7 +33,7 @@
 //! 5. `ray_blend_above` / `ray_blend_below` primitives behave as expected
 //!    in volume-invariant fashion (smoke test that the kernel primitives
 //!    haven't regressed — full ray_blend unit tests live in
-//!    `src/dexel.rs::tests`).
+//!    `src/stock/dexel.rs::tests`).
 
 #![allow(
     clippy::unwrap_used,

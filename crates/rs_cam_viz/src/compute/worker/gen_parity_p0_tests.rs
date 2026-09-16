@@ -413,7 +413,7 @@ fn the_two_doors_generate_one_geometry_with_feed_optimization_off() {
 /// The geometry always agreed: `apply_dressups` runs feed optimisation LAST
 /// (step 8), after the rapid reorder, and `optimize_feed_rates` rewrites the
 /// feed rate in place — move count, order, targets, arc offsets and intents
-/// all pass through (`core/src/feedopt.rs:179-190`). So the divergence was
+/// all pass through (`core/src/dressup/feedopt.rs:179-190`). So the divergence was
 /// confined to the feed rate.
 ///
 /// This test PINNED the divergence until WP11b. The GUI door now runs core's

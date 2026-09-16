@@ -3830,7 +3830,7 @@ pub(crate) fn write_entry_runtime_to_gui(
 /// Operator-facing caption text for a [`rs_cam_core::surface::rest_field::RestRegionPathology`]
 /// — shared by the Rest Analysis section (this toolpath's own regions) and
 /// the Machining Boundary section (a `DerivedRestRegions` source's regions).
-/// See `crates/rs_cam_core/src/rest_field.rs` for the underlying
+/// See `crates/rs_cam_core/src/surface/rest_field.rs` for the underlying
 /// classification (2026-07-06 sliver-storm incident).
 fn rest_region_pathology_caption(
     pathology: rs_cam_core::surface::rest_field::RestRegionPathology,

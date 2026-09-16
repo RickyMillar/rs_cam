@@ -543,7 +543,7 @@ pub fn containment_shape(polys: &[Polygon2]) -> (usize, usize) {
 
 /// **The twelve-vertex reflex cross.** Donor: the sentry
 /// `pocket::tests::pocket_cascade_terminates_on_the_reflex_cross`
-/// (`crates/rs_cam_core/src/pocket.rs`), where `(a, b) = (20.0, 60.0)`.
+/// (`crates/rs_cam_core/src/ops/pocket.rs`), where `(a, b) = (20.0, 60.0)`.
 /// `common_fixtures_smoke_c6` proves this generator reproduces that literal
 /// bit-for-bit; the sentry itself is deliberately left spelling its own
 /// vertices out, per `common/mod.rs`'s migration policy.

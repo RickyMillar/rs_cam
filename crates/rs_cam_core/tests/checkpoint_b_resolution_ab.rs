@@ -1114,9 +1114,9 @@ fn only_three_consumers_can_see_the_generation_resolution() {
     assert_eq!(
         consumers,
         vec![
-            "ramp_finish.rs".to_owned(),
-            "scallop.rs".to_owned(),
-            "steep_shallow.rs".to_owned()
+            "finish/ramp_finish.rs".to_owned(),
+            "finish/scallop.rs".to_owned(),
+            "finish/steep_shallow.rs".to_owned()
         ],
         "the set of generation-surface consumers changed — UnifiedFinish's \
          waterline/raster bands were resolution-INSENSITIVE because they \

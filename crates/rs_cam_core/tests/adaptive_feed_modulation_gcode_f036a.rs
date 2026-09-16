@@ -1,6 +1,6 @@
 //! F-036a regression net — G-code emitter per-move F-word emission.
 //!
-//! F-036 (`crates/rs_cam_core/src/feed_modulation.rs`) introduced an
+//! F-036 (`crates/rs_cam_core/src/dressup/feed_modulation.rs`) introduced an
 //! adaptive feed modulator that writes per-move `feed_rate` values into
 //! the IR. F-036a's job is to make sure the G-code emitter actually
 //! propagates that per-move variation as per-move `F<rate>` words — and,

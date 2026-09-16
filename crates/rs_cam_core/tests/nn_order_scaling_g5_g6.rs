@@ -11,8 +11,8 @@
 //! It is written to be run **both sides** of the change:
 //!
 //! ```text
-//! git stash push -- crates/rs_cam_core/src/tsp.rs \
-//!     crates/rs_cam_core/src/surface_link.rs crates/rs_cam_core/src/lib.rs
+//! git stash push -- crates/rs_cam_core/src/dressup/tsp.rs \
+//!     crates/rs_cam_core/src/finish/surface_link.rs crates/rs_cam_core/src/lib.rs
 //! cargo test --release -p rs_cam_core --test nn_order_scaling_g5_g6 -- --nocapture
 //! git stash pop
 //! cargo test --release -p rs_cam_core --test nn_order_scaling_g5_g6 -- --nocapture

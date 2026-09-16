@@ -3,10 +3,10 @@
 //!
 //! # The two divide sites
 //!
-//! `crates/rs_cam_core/src/radial_finish.rs:96`
+//! `crates/rs_cam_core/src/finish/radial_finish.rs:96`
 //! `let num_spokes = (360.0 / params.angular_step).ceil() as usize;`
 //!
-//! `crates/rs_cam_core/src/radial_finish.rs:108`
+//! `crates/rs_cam_core/src/finish/radial_finish.rs:108`
 //! `let num_points = (max_radius / params.point_spacing).ceil() as usize + 1;`
 //!
 //! A `0.0` gives `inf`, which casts to `usize::MAX`. The spoke loop then

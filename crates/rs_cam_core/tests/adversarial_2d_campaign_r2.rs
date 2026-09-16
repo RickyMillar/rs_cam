@@ -604,7 +604,7 @@ fn adversarial_2d_fixtures_contain_their_mechanism() {
 /// from the sentry it came from is worse than two honest copies.
 ///
 /// Donor: `pocket::tests::pocket_cascade_terminates_on_the_reflex_cross`,
-/// `crates/rs_cam_core/src/pocket.rs`, `(a, b) = (20.0, 60.0)`.
+/// `crates/rs_cam_core/src/ops/pocket.rs`, `(a, b) = (20.0, 60.0)`.
 #[test]
 fn the_reflex_cross_generator_is_bit_identical_to_its_donor() {
     use rs_cam_core::geo::P2;

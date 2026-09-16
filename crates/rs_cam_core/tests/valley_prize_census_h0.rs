@@ -369,7 +369,7 @@ fn network_length_mm(field: &Field, receivers: &[Option<u32>], network: &[bool])
     total
 }
 
-// ── chamfer DT, the `src/rest_field.rs` convention ──────────────────────
+// ── chamfer DT, the `src/surface/rest_field.rs` convention ──────────────────────
 
 /// Two-pass chamfer distance transform: for each set cell, distance **in
 /// cells** to the nearest unset cell — its local half-width on a region mask.

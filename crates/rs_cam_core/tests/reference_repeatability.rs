@@ -71,7 +71,7 @@ use common::reference_plate::ReferencePlate;
 use common::scallop_oracle::{SlopeBand, quantile};
 
 /// The smallest *interesting* quality difference, from B-5: **20 µm, one fifth
-/// of the shipped 0.1 mm `scallop_height` default** (`src/scallop.rs:128`), on
+/// of the shipped 0.1 mm `scallop_height` default** (`src/finish/scallop.rs:128`), on
 /// the grounds that a difference smaller than a fifth of the dial is not worth
 /// a campaign.
 const INTERESTING_UM: f64 = 20.0;
