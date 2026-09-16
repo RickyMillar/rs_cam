@@ -722,6 +722,34 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::FeedRaisedForChipload { .. }
                 | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
                 | SuggestWarning::StrategyRewrote { .. } => {}
+                // T-12 (2026-09-16): the forcing arm fired, and this is the
+                // deliberate answer it demanded. ALLOWED on Wanaka.
+                //
+                // The variant reports a cut-geometry value the calculator
+                // produced that the operation has no field to hold. Before
+                // T-12 the funnel discarded that value and returned success.
+                // It is warning-only and mutates nothing.
+                //
+                // Census on this fixture, all of them correct:
+                //
+                //   tp 7  (Holes)             Drill             depth + stepover
+                //   tp 14 (Pin Drill)         AlignmentPinDrill depth + stepover
+                //   tp 5  (Rivers)            ProjectCurve      depth + stepover
+                //   tp 6  (Lakes)             ProjectCurve      depth + stepover
+                //   tp 11 (3D Finish 6)       DropCutter        depth only
+                //
+                // A drill's depth IS the hole and it has no stepover. A
+                // ProjectCurve follows the curve. A DropCutter takes its
+                // depth from the model surface — and note it fires for the
+                // depth but NOT the stepover, which it does hold. The
+                // warning is per-field and discriminating, not blanket.
+                //
+                // Allowed rather than suppressed: the value genuinely was
+                // not applied, and the derate work needs to read exactly
+                // this signal to decide whether a shallower pass is a lever
+                // the operation can offer. Suppressing it here would
+                // re-create the silence T-12 exists to remove.
+                SuggestWarning::CutGeometryFieldNotHeld { .. } => {}
                 // v3.3c: must NOT fire on Wanaka — both 3D-rough
                 // toolpaths pin `clearing_strategy = "agent_search"`,
                 // and heuristic-B pinning suppresses the warn-only
@@ -958,6 +986,7 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
         );
         checked += 1;
     }
+
     assert!(
         checked >= 5,
         "expected to exercise the wanaka toolpath set, only checked {checked}"

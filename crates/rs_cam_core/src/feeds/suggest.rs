@@ -565,6 +565,41 @@ pub enum SuggestWarning {
         /// `band_capped_from`.
         band_capped_from: Option<f64>,
     },
+    /// T-12 (2026-09-16): the calculator produced a cut-geometry value that
+    /// this operation has no field to hold, so the value was NOT applied.
+    ///
+    /// `OperationParams::set_depth_per_pass` and `set_stepover` return
+    /// `bool` for exactly this purpose — their doc comments say "so the
+    /// caller can refuse instead of discarding the value". Before this
+    /// variant the funnel discarded it: 10 of the 24 operation configs
+    /// implement `depth_per_pass`, so for the other 14 the calculator's
+    /// axial depth evaporated and the apply path still reported success.
+    ///
+    /// That was harmless while nothing depended on the axial value. The
+    /// derate work makes it load-bearing: a power-limited cut that cannot
+    /// be fixed by speed needs a shallower pass, and on an operation that
+    /// cannot hold one the user must be told that the fix was not applied
+    /// rather than shown a warning with a silent non-fix behind it. See
+    /// `planning/TECH_DEBT_REGISTER.md` T-12.
+    ///
+    /// Warning-only, and it mutates nothing — the sibling of
+    /// [`Self::StrategyRecommendedNotApplied`], which reports the same
+    /// shape for a strategy field.
+    ///
+    /// For several of those 14 the absence is correct rather than a gap:
+    /// a V-carve's depth is `distance / tan(half_angle)` at every point, a
+    /// chamfer's depth IS the chamfer width the user asked for, and the
+    /// surface-finishing ops take their depth from the model surface. The
+    /// warning states what was not applied; it does not claim the field
+    /// ought to exist.
+    CutGeometryFieldNotHeld {
+        /// Snake-case field name: `"depth_per_pass"` or `"stepover"`.
+        param_name: &'static str,
+        /// The operation that refused it, for the rationale line.
+        op_kind: &'static str,
+        /// The value the calculator produced and the operation discarded.
+        recommended_mm: f64,
+    },
 }
 
 /// Reason the v2 step 2 feed-up recalibration terminated early
@@ -873,8 +908,15 @@ fn apply_feeds_subset(
     let mut scratch = operation.clone();
     scratch.set_feed_rate(round_suggestion_value(result.feed_rate_mm_min, 1.0));
     scratch.set_plunge_rate(round_suggestion_value(result.plunge_rate_mm_min, 1.0));
-    scratch.set_stepover(round_suggestion_value(result.radial_width_mm, 0.001));
-    scratch.set_depth_per_pass(round_suggestion_value(result.axial_depth_mm, 0.001));
+    // T-12: both setters return `bool` so the caller can refuse instead of
+    // discarding the value — their doc comments say exactly that. Capture
+    // the refusals here and report them below, but ONLY when this call was
+    // asked to write the cut geometry. Under `ApplyScope::Speeds` not
+    // writing the depth is the contract, not a dropped recommendation.
+    let stepover_mm = round_suggestion_value(result.radial_width_mm, 0.001);
+    let depth_mm = round_suggestion_value(result.axial_depth_mm, 0.001);
+    let stepover_held = scratch.set_stepover(stepover_mm);
+    let depth_held = scratch.set_depth_per_pass(depth_mm);
     // v3.0d (2026-06-04): also write the calculator's chosen RPM so the
     // rest of enforce_invariants reads a consistent operating point
     // instead of the operation's prior spindle_rpm value.
@@ -918,7 +960,8 @@ fn apply_feeds_subset(
         }),
         ..context
     };
-    let warnings = enforce_invariants(&mut scratch, tool, machine, material, pass_role, enriched);
+    let mut warnings =
+        enforce_invariants(&mut scratch, tool, machine, material, pass_role, enriched);
 
     let write_speeds = matches!(subset, ApplyScope::Speeds | ApplyScope::Both);
     let write_geometry = matches!(subset, ApplyScope::CutGeometry | ApplyScope::Both);
@@ -935,6 +978,26 @@ fn apply_feeds_subset(
         }
         if let Some(v) = scratch.as_params().depth_per_pass() {
             operation.set_depth_per_pass(v);
+        }
+        // T-12: this call was asked to write the cut geometry, and the
+        // operation has no field to hold one of the values. Say so. The
+        // pre-T-12 funnel returned success here, so a caller that needed a
+        // shallower pass — the power derate does — could not tell the
+        // difference between "applied" and "silently dropped".
+        let op_kind = operation.op_type().name();
+        if !depth_held {
+            warnings.push(SuggestWarning::CutGeometryFieldNotHeld {
+                param_name: "depth_per_pass",
+                op_kind,
+                recommended_mm: depth_mm,
+            });
+        }
+        if !stepover_held {
+            warnings.push(SuggestWarning::CutGeometryFieldNotHeld {
+                param_name: "stepover",
+                op_kind,
+                recommended_mm: stepover_mm,
+            });
         }
     }
     // Stamp per-field provenance from what actually produced these values

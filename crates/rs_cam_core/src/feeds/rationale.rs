@@ -130,6 +130,11 @@ pub enum RationaleReason {
     /// that geometry. Declared with the warning variants; not emitted until
     /// the rescale pass lands.
     FinalGeometryRescale,
+    /// T-12 (2026-09-16): the operation has no field to hold a cut-geometry
+    /// value the calculator produced, so the value was not applied. The
+    /// entry reports a NON-change: `to_value` is `None`, because nothing
+    /// was written.
+    CutGeometryFieldNotHeld,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -185,6 +190,29 @@ impl SuggestRationale {
 /// stays in lock-step with the warning enum.
 fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
     match w {
+        SuggestWarning::CutGeometryFieldNotHeld {
+            param_name,
+            op_kind,
+            recommended_mm,
+        } => RationaleEntry {
+            param: if *param_name == "stepover" {
+                RationaleParam::Stepover
+            } else {
+                RationaleParam::Dpp
+            },
+            reason: RationaleReason::CutGeometryFieldNotHeld,
+            // `from_value` is the value that was NOT applied, and
+            // `to_value` is `None` because nothing was written. A
+            // `to_value` here would claim a change that did not happen.
+            from_value: Some(*recommended_mm),
+            to_value: None,
+            headline: format!("{op_kind} has no {param_name} to set"),
+            detail: Some(format!(
+                "The calculator recommended {recommended_mm:.3} mm. This \
+                 operation carries no {param_name} field, so the value was \
+                 not applied. Change the cut another way."
+            )),
+        },
         SuggestWarning::PlungeClampedToFeed { requested, capped } => RationaleEntry {
             param: RationaleParam::Plunge,
             reason: RationaleReason::PlungeClampedToFeed,

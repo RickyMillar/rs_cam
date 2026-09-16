@@ -216,6 +216,16 @@ macro_rules! define_operation_type {
                     $(OperationType::$variant => OpCategory::$cat,)+
                 }
             }
+
+            /// The variant's own name, for diagnostics that must name the
+            /// operation that refused a field. GENERATED, so it cannot
+            /// fall out of step with the operation list. Not a UI label —
+            /// it is the Rust variant spelling.
+            pub const fn name(self) -> &'static str {
+                match self {
+                    $(OperationType::$variant => stringify!($variant),)+
+                }
+            }
         }
     };
 }
