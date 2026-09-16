@@ -166,8 +166,9 @@ impl SurfaceHeightmap {
             let col = i % cols;
             let x = origin_x + col as f64 * cell_size;
             let y = origin_y + row as f64 * cell_size;
-            let (cl, covered) =
-                crate::dropcutter::sample_grid_cell(x, y, mesh, index, cutter, min_z, true);
+            let (cl, covered) = crate::surface::dropcutter::sample_grid_cell(
+                x, y, mesh, index, cutter, min_z, true,
+            );
             (cl.z, covered)
         };
 

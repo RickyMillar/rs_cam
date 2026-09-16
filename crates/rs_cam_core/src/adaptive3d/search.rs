@@ -4,7 +4,7 @@
 use crate::adaptive_shared::blend_corners;
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::{P2, P3};
-use crate::slope::SurfaceHeightmap;
+use crate::surface::slope::SurfaceHeightmap;
 
 use super::clearing::MaterialRegion;
 use super::{stock_has_material_above, stock_top_z_at};
@@ -319,7 +319,7 @@ mod link_gate_tests {
     use super::is_clear_path_3d;
     use crate::dexel_stock::TriDexelStock;
     use crate::geo::P3;
-    use crate::slope::SurfaceHeightmap;
+    use crate::surface::slope::SurfaceHeightmap;
 
     const STOCK_TOP: f64 = 10.0;
     const CELL: f64 = 1.0;

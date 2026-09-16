@@ -228,7 +228,7 @@ fn generate_through_session(tool: ToolConfig) -> ProjectSession {
 // ── Gate 1: the derived value, through production wiring ────────────────
 
 /// The stepover that steers the crease fan comes from
-/// [`rs_cam_core::reach::suggested_offset_stepover_mm`], and on the shipped
+/// [`rs_cam_core::surface::reach::suggested_offset_stepover_mm`], and on the shipped
 /// taper it is NOT the envelope rule.
 #[test]
 fn the_claims_stepover_is_the_reach_policy_value_not_the_envelope_rule() {
@@ -268,7 +268,8 @@ fn the_claims_stepover_is_the_reach_policy_value_not_the_envelope_rule() {
     );
     // The policy value, recomputed from the policy itself — one
     // implementation, asserted rather than duplicated.
-    let expected = rs_cam_core::reach::suggested_offset_stepover_mm(&t, finding.reference_depth_mm);
+    let expected =
+        rs_cam_core::surface::reach::suggested_offset_stepover_mm(&t, finding.reference_depth_mm);
     assert!(
         (finding.stepover_mm - expected).abs() < 1e-12,
         "the site must call the policy, not restate it: {} vs {expected}",

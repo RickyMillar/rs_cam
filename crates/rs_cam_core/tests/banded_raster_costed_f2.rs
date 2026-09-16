@@ -180,7 +180,7 @@ fn relink_and_cost_under(
 }
 
 fn raster_candidate(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     regions: &[Polygon2],
     safe_z: f64,
     effective_min_z: f64,
@@ -204,7 +204,7 @@ fn raster_candidate(
 }
 
 fn nearest_contact_z(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     x: f64,
     y: f64,
     min_z: f64,
@@ -239,10 +239,17 @@ fn machined_stock(
         TriDexelStock::from_stock(x0, y0, x1, y1, mesh.bbox.min.z - 1.0, block_top_z, CELL_MM);
 
     let rough_tool = FlatEndmill::new(ROUGH_DIAMETER_MM, ROUGH_CUTTING_LENGTH_MM);
-    let rough_grid =
-        rs_cam_core::dropcutter::batch_drop_cutter(mesh, index, &rough_tool, CELL_MM, 0.0, min_z);
-    let coarse_grid =
-        rs_cam_core::dropcutter::batch_drop_cutter(mesh, index, coarse, CELL_MM, 0.0, min_z);
+    let rough_grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
+        mesh,
+        index,
+        &rough_tool,
+        CELL_MM,
+        0.0,
+        min_z,
+    );
+    let coarse_grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
+        mesh, index, coarse, CELL_MM, 0.0, min_z,
+    );
 
     let tier_zero: Vec<bool> = tier_map.labels.iter().map(|&label| label == 0).collect();
     let distance_to_tier_zero = distance_transform_2d(&tier_zero, tier_map.ny, tier_map.nx);
@@ -864,12 +871,12 @@ fn wanaka_banded_raster_costed_f2() {
         .collect();
     steps.sort_by(f64::total_cmp);
     steps.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    let grids: Vec<(f64, rs_cam_core::dropcutter::DropCutterGrid)> = steps
+    let grids: Vec<(f64, rs_cam_core::surface::dropcutter::DropCutterGrid)> = steps
         .iter()
         .map(|&step| {
             (
                 step,
-                rs_cam_core::dropcutter::batch_drop_cutter(
+                rs_cam_core::surface::dropcutter::batch_drop_cutter(
                     &mesh,
                     &index,
                     &r10,

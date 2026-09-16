@@ -42,7 +42,7 @@
 //! ## Crease corridors (v3 claims semantics)
 //!
 //! Rest-valley centerlines ([`RestCenterline`], from
-//! [`crate::rest_field::detect_rest_valleys`]) implement the design doc's
+//! [`crate::surface::rest_field::detect_rest_valleys`]) implement the design doc's
 //! "pencil claims creases first" rule (`planning/unified_v3_design.md`
 //! §2.1): **every** crease claims a corridor and it is subtracted from the
 //! band label grid before polygon extraction, not just canyon-width ones.
@@ -86,8 +86,8 @@ use crate::geometry::grid2::Grid2;
 use crate::geometry::region_mask::{region_polygons_from_mask, region_polygons_from_mask_clamped};
 use crate::measurement::{CellSource, MeasurementDomain, MeasurementProvenance, MeasurementStage};
 use crate::polygon::Polygon2;
-use crate::rest_field::RestCenterline;
-use crate::slope::SlopeMap;
+use crate::surface::rest_field::RestCenterline;
+use crate::surface::slope::SlopeMap;
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -153,7 +153,7 @@ pub struct FinishPlannerParams {
     /// vocabulary as `pencil_claim_floor`, `close_radius_mm` and
     /// `min_region_area_mm2` — feature scales, all cusp-derived. The FIT
     /// question ("can the cutter stand off the centreline, and how far") was
-    /// already answered upstream by [`crate::reach`]: a crease only reaches
+    /// already answered upstream by [`crate::surface::reach`]: a crease only reaches
     /// this function at all when the detector's coverage criterion routed it
     /// to Pencil, i.e. when the fan the operation can emit already covers its
     /// reachable band. Re-deriving reach here would be a second routing

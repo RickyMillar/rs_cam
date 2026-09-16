@@ -41,13 +41,13 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use rs_cam_core::flow_accum::{
+use rs_cam_core::geo::P3;
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::surface::flow_accum::{
     FILL_EPSILON_MM, FlowField, d8_accumulation, d8_receivers, priority_flood_epsilon,
     resolve_flats,
 };
-use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::rest_field::{
+use rs_cam_core::surface::rest_field::{
     RestFieldParams, RestFieldResult, RestGrid, RestReference, detect_rest_valleys,
 };
 use rs_cam_core::tool::{BallEndmill, MillingCutter};

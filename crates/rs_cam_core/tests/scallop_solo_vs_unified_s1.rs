@@ -611,7 +611,7 @@ fn wanaka_scallop_solo_vs_unified_s1() {
     // ── cost + coverage, identically ──────────────────────────────────────
     // The shared reference envelope: what the R1.5 ball CAN sculpt.
     let envg = {
-        let g = rs_cam_core::dropcutter::batch_drop_cutter(
+        let g = rs_cam_core::surface::dropcutter::batch_drop_cutter(
             &mesh,
             &index,
             &r15,

@@ -2045,7 +2045,7 @@ fn contact_dump(
 ) -> (Vec<ContactRow>, rs_cam_core::tool::CLPoint) {
     use rs_cam_core::tool::CLPoint;
 
-    let whole = rs_cam_core::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
+    let whole = rs_cam_core::surface::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
     let mut rows = Vec::new();
     for &face in &index.query(x, y, cutter.radius()) {
         let tri = &mesh.faces[face];

@@ -6,9 +6,9 @@
 //! vs. retract link) between regions — see
 //! `planning/unified_finish_planner_design.md` step 4.
 
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap};
 use crate::transform_provenance::Transformed;

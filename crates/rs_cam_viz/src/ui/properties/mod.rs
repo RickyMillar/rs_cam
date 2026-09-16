@@ -43,7 +43,7 @@ use crate::ui_command::{NoArgs, UiCommand};
 /// non-empty rest regions ready to use, and — when ready — the regions
 /// themselves). The regions are captured here rather than re-fetched later
 /// so the Machining Boundary panel can run
-/// [`rs_cam_core::rest_field::classify_rest_regions`] against the SOURCE's
+/// [`rs_cam_core::surface::rest_field::classify_rest_regions`] against the SOURCE's
 /// regions (sliver-storm / giant-region warning, 2026-07-06 incident)
 /// without new session/runtime plumbing.
 /// The trailing `Option<f64>` is the SOURCE toolpath's covered XY footprint
@@ -60,10 +60,12 @@ type BoundaryRestCandidate = (
 );
 
 /// The part's covered XY footprint (mm²) measured on a rest grid — the
-/// denominator [`rs_cam_core::rest_field::classify_rest_regions`] requires.
+/// denominator [`rs_cam_core::surface::rest_field::classify_rest_regions`] requires.
 /// `None` when there is no grid to measure it on.
-fn rest_grid_footprint_area(grid: Option<&rs_cam_core::rest_field::RestGrid>) -> Option<f64> {
-    grid.map(rs_cam_core::rest_field::RestGrid::covered_footprint_area_mm2)
+fn rest_grid_footprint_area(
+    grid: Option<&rs_cam_core::surface::rest_field::RestGrid>,
+) -> Option<f64> {
+    grid.map(rs_cam_core::surface::rest_field::RestGrid::covered_footprint_area_mm2)
 }
 
 /// TOO-003 — flush the pending tool draft if the user navigated away from
@@ -3825,20 +3827,20 @@ pub(crate) fn write_entry_runtime_to_gui(
     }
 }
 
-/// Operator-facing caption text for a [`rs_cam_core::rest_field::RestRegionPathology`]
+/// Operator-facing caption text for a [`rs_cam_core::surface::rest_field::RestRegionPathology`]
 /// — shared by the Rest Analysis section (this toolpath's own regions) and
 /// the Machining Boundary section (a `DerivedRestRegions` source's regions).
 /// See `crates/rs_cam_core/src/rest_field.rs` for the underlying
 /// classification (2026-07-06 sliver-storm incident).
 fn rest_region_pathology_caption(
-    pathology: rs_cam_core::rest_field::RestRegionPathology,
+    pathology: rs_cam_core::surface::rest_field::RestRegionPathology,
 ) -> String {
     match pathology {
-        rs_cam_core::rest_field::RestRegionPathology::TooManyIslands { count } => format!(
+        rs_cam_core::surface::rest_field::RestRegionPathology::TooManyIslands { count } => format!(
             "⚠ {count} rest regions — threshold likely below the prior pass's cusp height; \
              raise min_valley_depth."
         ),
-        rs_cam_core::rest_field::RestRegionPathology::SingleGiantRegion {
+        rs_cam_core::surface::rest_field::RestRegionPathology::SingleGiantRegion {
             part_footprint_fraction,
         } => {
             // LH-2: the percentage is of the part's COVERED XY FOOTPRINT (the
@@ -4779,10 +4781,11 @@ fn draw_toolpath_panel(
                     // measured", and `classify_rest_regions` stays silent.
                     let source_footprint_area = selected.and_then(|(_, _, _, _, area)| *area);
                     if let Some(regions) = selected_regions
-                        && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
-                            regions,
-                            source_footprint_area,
-                        )
+                        && let Some(pathology) =
+                            rs_cam_core::surface::rest_field::classify_rest_regions(
+                                regions,
+                                source_footprint_area,
+                            )
                     {
                         ui.label(
                             egui::RichText::new(rest_region_pathology_caption(pathology))
@@ -5000,7 +5003,7 @@ fn draw_toolpath_panel(
             // No grid ⇒ 0.0 ⇒ silence, never a guess.
             if let Some(result) = &entry.result
                 && let Some(regions) = result.annotated.rest_regions.as_ref()
-                && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
+                && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
                     regions,
                     rest_grid_footprint_area(result.annotated.rest_grid.as_deref()),
                 )

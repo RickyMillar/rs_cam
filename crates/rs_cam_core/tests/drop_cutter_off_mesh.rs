@@ -199,7 +199,7 @@ fn drop_cutter_over_peak_stays_at_peak_height() {
     let mesh = pyramid_mesh(0.0, 0.0, 10.0, 5.0, 32);
     let index = SpatialIndex::build_auto(&mesh);
     let cutter = TaperedBallEndmill::new(1.0, 15.0, 6.35, 25.0);
-    let cl = rs_cam_core::dropcutter::point_drop_cutter(0.0, 0.0, &mesh, &index, &cutter);
+    let cl = rs_cam_core::surface::dropcutter::point_drop_cutter(0.0, 0.0, &mesh, &index, &cutter);
     assert!(cl.contacted);
     assert!(
         (cl.z - 5.0).abs() < 0.05,

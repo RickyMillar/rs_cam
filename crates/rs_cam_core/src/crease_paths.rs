@@ -21,11 +21,11 @@ use crate::geo::{polyline_length, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pencil::{PencilPath, paths_from_sampled};
-use crate::rest_field::RestCenterline;
+use crate::surface::rest_field::RestCenterline;
 use crate::tool::MillingCutter;
 
 /// Whether `cl` carries genuine per-point cross-section data — the
-/// detector's own measurement, one [`crate::rest_field::CenterlineSample`]
+/// detector's own measurement, one [`crate::surface::rest_field::CenterlineSample`]
 /// per point — rather than the synthetic fallback
 /// ([`RestCenterline::without_samples`]). The one boolean both
 /// [`resample_with_reach`] and [`centerline_cut_paths`] key off, so "is this
@@ -45,14 +45,14 @@ fn centerline_is_measured(cl: &RestCenterline) -> bool {
 /// # How many passes fit, and how far apart (PR-5/PR-6a, H2.2/H2.3, C9)
 ///
 /// The fit question is answered by the canonical reach policy
-/// ([`crate::reach`]), per side and PER SAMPLED POINT, from the
+/// ([`crate::surface::reach`]), per side and PER SAMPLED POINT, from the
 /// cross-section the detector measured
 /// ([`RestCenterline::samples`]) — not by a tool scalar.
 ///
 /// C9 closed the last scalar left in this equation: the STEPOVER itself.
 /// Before C9, a MEASURED centreline's fan was still spaced at one constant
 /// `offset_stepover` (this function's own argument) end to end, even though
-/// [`crate::reach::suggested_offset_stepover_mm`] is monotone
+/// [`crate::surface::reach::suggested_offset_stepover_mm`] is monotone
 /// non-decreasing in depth. Both shipped callers size that scalar from the
 /// branch's SHALLOWEST reported depth (`unified_finish.rs`'s
 /// `claims_offset_stepover_mm`, sized at `min_valley_depth`; `rest_depth_arm`
@@ -132,7 +132,7 @@ pub fn centerline_cut_paths(
         let stepovers: Vec<f64> = if measured {
             depth_mm
                 .iter()
-                .map(|&d| crate::reach::suggested_offset_stepover_mm(cutter, d))
+                .map(|&d| crate::surface::reach::suggested_offset_stepover_mm(cutter, d))
                 .collect()
         } else {
             Vec::new()
@@ -153,23 +153,30 @@ pub fn centerline_cut_paths(
             let mut left = 0usize;
             let mut right = 0usize;
             for (r, &s) in reach.iter().zip(stepovers.iter()) {
-                let (l, rr) = crate::reach::offset_passes_per_side(r, s, num_offset_passes_cap);
+                let (l, rr) =
+                    crate::surface::reach::offset_passes_per_side(r, s, num_offset_passes_cap);
                 left = left.max(l);
                 right = right.max(rr);
             }
             (left, right)
         } else {
-            let widest = reach.iter().fold(crate::reach::Reach::default(), |acc, r| {
-                crate::reach::Reach {
-                    left_mm: acc.left_mm.max(r.left_mm),
-                    right_mm: acc.right_mm.max(r.right_mm),
-                    refused: acc.refused,
-                    // Provenance rides along; every element of `reach` was solved
-                    // under the same model.
-                    model: r.model,
-                }
-            });
-            crate::reach::offset_passes_per_side(&widest, offset_stepover, num_offset_passes_cap)
+            let widest = reach
+                .iter()
+                .fold(crate::surface::reach::Reach::default(), |acc, r| {
+                    crate::surface::reach::Reach {
+                        left_mm: acc.left_mm.max(r.left_mm),
+                        right_mm: acc.right_mm.max(r.right_mm),
+                        refused: acc.refused,
+                        // Provenance rides along; every element of `reach` was solved
+                        // under the same model.
+                        model: r.model,
+                    }
+                });
+            crate::surface::reach::offset_passes_per_side(
+                &widest,
+                offset_stepover,
+                num_offset_passes_cap,
+            )
         };
         paths_from_sampled(
             &sampled,
@@ -212,24 +219,28 @@ pub fn centerline_cut_paths(
 /// [`centerline_is_measured`], not this depth vector, to decide whether
 /// per-point spacing applies (see [`centerline_cut_paths`]); feeding a
 /// fallback `0.0` straight to
-/// [`crate::reach::suggested_offset_stepover_mm`] would silently produce the
+/// [`crate::surface::reach::suggested_offset_stepover_mm`] would silently produce the
 /// cusp floor instead of the caller's own scalar.
 fn resample_with_reach(
     cl: &RestCenterline,
     cutter: &dyn MillingCutter,
     sampling: f64,
-) -> (Vec<crate::geo::P3>, Vec<crate::reach::Reach>, Vec<f64>) {
+) -> (
+    Vec<crate::geo::P3>,
+    Vec<crate::surface::reach::Reach>,
+    Vec<f64>,
+) {
     let sampled = resample_polyline(&cl.points, sampling);
     if !centerline_is_measured(cl) {
         // Not measured. Solve the branch scalar once through the SAME policy
         // so there is still only one fit implementation, and hand it to every
         // point so per-point truncation is a no-op rather than a refusal.
-        let valley = crate::reach::LocalValley {
+        let valley = crate::surface::reach::LocalValley {
             rest_depth_mm: 0.0,
-            left: crate::reach::ValleySide::vertical(cl.half_width_mm),
-            right: crate::reach::ValleySide::vertical(cl.half_width_mm),
+            left: crate::surface::reach::ValleySide::vertical(cl.half_width_mm),
+            right: crate::surface::reach::ValleySide::vertical(cl.half_width_mm),
         };
-        let r = crate::reach::solve_reach(cutter, &valley);
+        let r = crate::surface::reach::solve_reach(cutter, &valley);
         return (
             sampled.clone(),
             vec![r; sampled.len()],

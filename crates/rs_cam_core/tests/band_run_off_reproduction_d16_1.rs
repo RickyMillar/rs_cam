@@ -169,10 +169,10 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use rs_cam_core::dropcutter::point_drop_cutter;
 use rs_cam_core::finish_planner::FinishPlannerParams;
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::surface::dropcutter::point_drop_cutter;
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::MoveIntent;
 use rs_cam_core::unified_finish::{UnifiedFinishParams, unified_finish_toolpath_with_cancel};

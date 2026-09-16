@@ -45,7 +45,7 @@ use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::contour_extract::weave_contours;
 use rs_cam_core::geometry::fiber::Fiber;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
-use rs_cam_core::pushcutter::{
+use rs_cam_core::surface::pushcutter::{
     batch_push_cutter, fiber_lateral_reach_mm, push_cutter_fiber, push_cutter_triangle,
 };
 use rs_cam_core::tool::{
@@ -428,7 +428,13 @@ fn band_query_actually_prunes() {
     );
     let mut scratch = rs_cam_core::mesh::QueryScratch::new();
     let mut new = Vec::new();
-    rs_cam_core::pushcutter::fiber_query_candidates(&fiber, &index, &ball, &mut scratch, &mut new);
+    rs_cam_core::surface::pushcutter::fiber_query_candidates(
+        &fiber,
+        &index,
+        &ball,
+        &mut scratch,
+        &mut new,
+    );
 
     assert_eq!(
         old.len(),
@@ -498,7 +504,7 @@ fn measure_query_vs_contact_split() {
     for &z in &levels {
         let (xs, ys) = waterline_fibers(&mesh, &ball, z, 2.0);
         for f in xs.iter().chain(ys.iter()) {
-            rs_cam_core::pushcutter::fiber_query_candidates(
+            rs_cam_core::surface::pushcutter::fiber_query_candidates(
                 f,
                 &index,
                 &ball,

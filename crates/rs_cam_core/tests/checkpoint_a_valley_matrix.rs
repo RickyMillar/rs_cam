@@ -143,7 +143,7 @@ use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::pencil::{
     PencilDetector, PencilParams, PencilRuntimeEvent, pencil_toolpath_structured_annotated,
 };
-use rs_cam_core::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 
 mod common;
@@ -1294,7 +1294,7 @@ fn checkpoint_a_matrix_report() {
 //
 // Everything above is the historical Checkpoint A evidence and is kept as
 // written (the tables in `CHECKPOINT_A_EVIDENCE.md` were transcribed from it).
-// What follows drives `rs_cam_core::reach` — the production module PR-4
+// What follows drives `rs_cam_core::surface::reach` — the production module PR-4
 // landed — against the SAME analytic truth, so the approved column is pinned
 // to shipped code rather than to a model reimplemented in a test.
 
@@ -1307,7 +1307,7 @@ fn checkpoint_a_matrix_report() {
 /// `rest_field::measure_cross_section` measures off `RestGrid::surface_z` in
 /// production.
 fn predict_production(cutter: &dyn MillingCutter, v: &Valley, delta: f64) -> Prediction {
-    use rs_cam_core::reach::{
+    use rs_cam_core::surface::reach::{
         LocalValley, RoutingVerdict, ValleySide, coverage_cap_passes, offset_passes_per_side,
         route, solve_reach,
     };
@@ -1429,7 +1429,7 @@ fn sampled_section(
     v: &Valley,
     pitch: f64,
     envelope: f64,
-) -> rs_cam_core::reach::SampledCrossSection {
+) -> rs_cam_core::surface::reach::SampledCrossSection {
     let z0 = v.z(v.x_apex);
     let side = |sign: f64, rim: f64| -> Vec<f64> {
         let n = ((rim + envelope + pitch) / pitch).ceil() as usize;
@@ -1437,7 +1437,7 @@ fn sampled_section(
             .map(|j| v.z(v.x_apex + sign * j as f64 * pitch) - z0)
             .collect()
     };
-    rs_cam_core::reach::SampledCrossSection::from_sides(
+    rs_cam_core::surface::reach::SampledCrossSection::from_sides(
         pitch,
         &side(-1.0, v.x_apex + v.w),
         &side(1.0, v.w - v.x_apex),
@@ -1450,7 +1450,7 @@ fn sampled_section(
 /// `predict_production` uses, so the only thing that differs between the two
 /// columns is which reach solve answered.
 fn predict_sampled(cutter: &dyn MillingCutter, v: &Valley, delta: f64, pitch: f64) -> Prediction {
-    use rs_cam_core::reach::{
+    use rs_cam_core::surface::reach::{
         RoutingVerdict, coverage_cap_passes, offset_passes_per_side, route, solve_reach_sampled,
     };
     let section = sampled_section(v, pitch, cutter.envelope_radius_mm());
@@ -1586,7 +1586,7 @@ fn sampled_cross_section_model_reproduces_the_approved_matrix_column() {
 /// scored. Asserted, not assumed.
 #[test]
 fn coverage_cap_floor_never_binds_on_the_matrix() {
-    use rs_cam_core::reach::coverage_cap_passes;
+    use rs_cam_core::surface::reach::coverage_cap_passes;
     for (name, cutter) in tools() {
         let mut worst = 0usize;
         for &delta in DEPTHS.iter() {

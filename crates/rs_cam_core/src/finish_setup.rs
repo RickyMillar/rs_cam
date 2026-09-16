@@ -31,7 +31,7 @@ use crate::classify_probe::{
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::measurement::CellSource;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::slope::{SlopeMap, SurfaceHeightmap};
+use crate::surface::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
 
 // ── Resolution policy (H3 steps 1-2) ────────────────────────────────────

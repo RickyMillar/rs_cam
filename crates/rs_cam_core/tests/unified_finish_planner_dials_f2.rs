@@ -35,7 +35,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, PlannedRegions, decompose};
 use rs_cam_core::geo::V3;
-use rs_cam_core::slope::SlopeMap;
+use rs_cam_core::surface::slope::SlopeMap;
 
 /// A Ø1-tip tapered ball's cusp radius — the case `for_tool`'s doc warns
 /// about, where the envelope radius would be 3.0 and every derived dial would

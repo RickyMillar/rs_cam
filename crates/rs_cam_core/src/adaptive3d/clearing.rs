@@ -10,7 +10,7 @@ use crate::geometry::grid_field::{edt_curvature_field, smooth_grid};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::radial_profile::RadialProfileLUT;
-use crate::slope::{SlopeMap, SurfaceHeightmap};
+use crate::surface::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
 use crate::waterline::waterline_contours_with_cancel;
 use std::collections::VecDeque;

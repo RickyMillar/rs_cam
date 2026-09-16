@@ -1444,7 +1444,7 @@ fn the_three_ring_budgets_are_three_different_numbers() {
     let clamp_floor = cusp_r * 0.05;
     let flat = rs_cam_core::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
         .max(clamp_floor);
-    let reach = rs_cam_core::reach::suggested_offset_stepover_mm(&t, 0.0).max(clamp_floor);
+    let reach = rs_cam_core::surface::reach::suggested_offset_stepover_mm(&t, 0.0).max(clamp_floor);
     assert!(
         clamp_floor < reach && reach < flat,
         "the budgets must ORDER floor < reach < flat for the experiment to be \

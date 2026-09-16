@@ -1102,7 +1102,7 @@ pub struct DeprecatedDialFinding {
     pub replaced_by: &'static str,
 }
 
-/// An offset stepover an operation sized from [`crate::reach`] rather than
+/// An offset stepover an operation sized from [`crate::surface::reach`] rather than
 /// from a user dial (PR-6a, H2.3).
 ///
 /// The number this records is invisible to the operator: it is not a field
@@ -1117,7 +1117,7 @@ pub struct DerivedStepoverFinding {
     /// `"UnifiedFinish crease/pencil claims"`.
     pub site: &'static str,
     /// The stepover (mm) actually used, from
-    /// [`crate::reach::suggested_offset_stepover_mm`].
+    /// [`crate::surface::reach::suggested_offset_stepover_mm`].
     pub stepover_mm: f64,
     /// Depth (mm) the reach policy was evaluated at. The policy is
     /// depth-aware; a single scalar stepover has to name ITS depth.
@@ -1952,16 +1952,16 @@ pub struct RestAnalysisConfig {
     /// F1 (2026-08-23): the base was the ENVELOPE radius until then, which
     /// on a tapered ball is the shank — 3.5 mm of dilation on the shipped
     /// Ø1-tip / Ø6-shank taper, enough to weld dendritic islands into one
-    /// region. See [`crate::rest_field::RestFieldParams::region_margin_mm`].
+    /// region. See [`crate::surface::rest_field::RestFieldParams::region_margin_mm`].
     pub region_margin_mm: f64,
     /// PR-7 (H2.5): offset stepover (mm) the ROUTING criterion assumes a
     /// downstream pencil fan would emit — `pencil ⟺ X_reach ≤ cap ×
-    /// stepover` ([`crate::reach`]).
+    /// stepover` ([`crate::surface::reach`]).
     ///
     /// `None` (the default, and what every project written before PR-7
     /// deserializes to) means **size it from the canonical reach policy**
     /// for THIS toolpath's own cutter, at [`Self::min_valley_depth`] — the
-    /// same [`crate::reach::suggested_offset_stepover_mm`] call
+    /// same [`crate::surface::reach::suggested_offset_stepover_mm`] call
     /// `UnifiedFinish`'s claims pipeline makes. Before PR-7 this pass took
     /// the detector's literal 0.5 mm default, which on a tapered tool
     /// describes no fan anything would emit.
@@ -1974,7 +1974,7 @@ pub struct RestAnalysisConfig {
     /// in the same criterion. `None` = the detector's own default (0 —
     /// centreline only, which the coverage cap FLOOR still widens to the
     /// band one pass actually works, see
-    /// [`crate::reach::coverage_cap_passes`]).
+    /// [`crate::surface::reach::coverage_cap_passes`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub num_offset_passes: Option<usize>,
 }

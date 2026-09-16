@@ -10,8 +10,8 @@
     clippy::print_stdout
 )]
 
-use rs_cam_core::dropcutter::point_drop_cutter;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::surface::dropcutter::point_drop_cutter;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 

@@ -96,7 +96,6 @@ use std::ops::Range;
 use crate::classify_probe::ClassificationSampler;
 use crate::crease_paths::centerline_cut_paths;
 use crate::debug_trace::ToolpathDebugContext;
-use crate::dropcutter::{DropCutterGrid, LatticeSampling, batch_drop_cutter_windowed_with_cancel};
 use crate::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use crate::finish_setup::{
     FinishResolutionPolicy, FinishSurface, SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG,
@@ -109,13 +108,16 @@ use crate::machine_kinematics::{LinkKinematics, retract_link_time, surface_link_
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pencil::PencilParams;
 use crate::polygon::Polygon2;
-#[cfg(test)]
-use crate::rest_field::RestGrid;
-use crate::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use crate::scallop::{
     ScallopDirection, ScallopParams, ScallopRuntimeAnnotation,
     scallop_toolpath_structured_annotated_with_cancel,
 };
+use crate::surface::dropcutter::{
+    DropCutterGrid, LatticeSampling, batch_drop_cutter_windowed_with_cancel,
+};
+#[cfg(test)]
+use crate::surface::rest_field::RestGrid;
+use crate::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use crate::surface_link::build_surface_link;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath, raster_toolpath_from_grid};
@@ -914,7 +916,7 @@ pub struct ClaimsReport {
     /// mask-ANDed coverage).
     pub post_territory_region_count: usize,
     /// PR-6a (H2.3): the offset stepover (mm) the claims pipeline DERIVED
-    /// from [`crate::reach::suggested_offset_stepover_mm`] and used for both
+    /// from [`crate::surface::reach::suggested_offset_stepover_mm`] and used for both
     /// the routing criterion and the emitted fan. Not a dial — this is the
     /// only place the number is visible.
     pub offset_stepover_mm: f64,
@@ -1126,7 +1128,7 @@ pub struct UnifiedFinishReport {
     /// The claims detector's continuous rest field (design doc §2.4:
     /// carried through so the GUI heatmap and probes can see the op's OWN
     /// territory evidence). `None` when claims didn't run.
-    pub rest_grid: Option<std::sync::Arc<crate::rest_field::RestGrid>>,
+    pub rest_grid: Option<std::sync::Arc<crate::surface::rest_field::RestGrid>>,
     /// The claims detector's rest-region polygons (the
     /// `DerivedRestRegions` source shape). `None` when claims didn't run.
     pub rest_regions: Option<std::sync::Arc<Vec<Polygon2>>>,
@@ -1592,13 +1594,13 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
     // nothing floated".
     let mut claims_tip_float: Option<crate::compute::config::TipFloatFinding> = None;
     let mut claims_report: Option<ClaimsReport> = None;
-    let mut claims_rest_grid: Option<std::sync::Arc<crate::rest_field::RestGrid>> = None;
+    let mut claims_rest_grid: Option<std::sync::Arc<crate::surface::rest_field::RestGrid>> = None;
     let mut claims_rest_regions: Option<std::sync::Arc<Vec<Polygon2>>> = None;
     if let Some(cfg) = claims {
         check_cancel(cancel)?;
         // PR-6a (H2.3): the crease/pencil fan's stepover comes from the
         // CANONICAL REACH POLICY, not from the cutter envelope. See
-        // `crate::reach::suggested_offset_stepover_mm` for the derivation and
+        // `crate::surface::reach::suggested_offset_stepover_mm` for the derivation and
         // why the shank-scaled predecessor (`envelope_radius_mm() * 0.5` —
         // 1.5 mm on the shipped Ø1-tip taper) could not describe passes the
         // tip cuts.
@@ -1622,7 +1624,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // below now does only the two jobs described above — routing and the
         // unmeasured-centreline fallback — and no longer also determines how
         // far apart the emitted passes actually sit.
-        let claims_offset_stepover_mm = crate::reach::suggested_offset_stepover_mm(
+        let claims_offset_stepover_mm = crate::surface::reach::suggested_offset_stepover_mm(
             cutter,
             cfg.rest_field_params.min_valley_depth,
         );
@@ -2818,7 +2820,7 @@ const SHALLOW_DERATE_MIN_SLOPE_DEG: f64 = 1.0;
 ///
 /// * A cell counts only when it AND its in-grid 4-neighbours are
 ///   geometrically covered. An uncovered cell carries the `min_z`
-///   bbox-floor clamp in the Z grid (see [`crate::slope::GridZ`]), so the
+///   bbox-floor clamp in the Z grid (see [`crate::surface::slope::GridZ`]), so the
 ///   finite differences beside a coverage edge read a cliff the mesh does
 ///   not have; such a cliff must not set the derate.
 /// * The result is clamped to `clamp_deg` (the planner's

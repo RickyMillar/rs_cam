@@ -4,7 +4,7 @@
 //! This is task T1 of the multi-tool island-finishing plan
 //! (`planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md` Phase T), and it is
 //! the *n*-tool generalisation of the two-tool residual that
-//! [`crate::rest_field::detect_rest_valleys`] computes
+//! [`crate::surface::rest_field::detect_rest_valleys`] computes
 //! (`rest = drop_z(reference) − drop_z(fine)`).
 //!
 //! ```text
@@ -18,7 +18,7 @@
 //!
 //! # G1 — one index query serves the whole ladder
 //!
-//! [`crate::dropcutter::point_drop_cutter`] runs
+//! [`crate::surface::dropcutter::point_drop_cutter`] runs
 //! `index.query(x, y, cutter.radius())` per call, so an *n*-tool map done
 //! naively is *n* queries per cell. The largest ladder tool's query window is
 //! a **superset** of every smaller tool's, and
@@ -64,7 +64,7 @@
 //! * **No boundary erosion.** Within roughly one envelope radius of the part
 //!   edge a big tool hangs off and rests on the rim, reading a false-high
 //!   residual, so the rim reads as fine-tier territory.
-//!   [`crate::rest_field`] erodes that band with a chamfer distance transform
+//!   [`crate::surface::rest_field`] erodes that band with a chamfer distance transform
 //!   over its contact mask; the equivalent input here is
 //!   [`TierMap::covered_mask`], and the erosion belongs to the consumer
 //!   (Phase I) so that the map itself stays a measurement rather than a
@@ -137,10 +137,10 @@
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::dropcutter::point_is_over_mesh_xy;
 use crate::grid::{GridSpec, walk_rows};
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::surface::dropcutter::point_is_over_mesh_xy;
 use crate::tool::{CLPoint, MillingCutter, drop_cutter_can_contact};
 
 /// Label for a cell no ladder tool owns: off the part, or outside the mesh
@@ -424,7 +424,7 @@ impl fmt::Debug for TierLadder<'_> {
     }
 }
 
-/// Inputs to the tier-map walk. Mirrors [`crate::rest_field::RestFieldParams`]
+/// Inputs to the tier-map walk. Mirrors [`crate::surface::rest_field::RestFieldParams`]
 /// in shape and in units.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TierMapParams {
@@ -463,7 +463,7 @@ impl Default for TierMapParams {
 ///
 /// Row-major `r * nx + c`, cell centre at
 /// `(origin_x + c * cell_mm, origin_y + r * cell_mm)` — the same convention as
-/// [`crate::rest_field::RestGrid`] and [`crate::geometry::grid2::Grid2`].
+/// [`crate::surface::rest_field::RestGrid`] and [`crate::geometry::grid2::Grid2`].
 #[derive(Debug, Clone)]
 pub struct TierMap {
     pub nx: usize,
@@ -581,7 +581,7 @@ impl TierMap {
 /// One CL point per ladder tool at `(x, y)`, from a **single** spatial-index
 /// query at the ladder's largest envelope radius (G1).
 ///
-/// Bit-identical to calling [`crate::dropcutter::point_drop_cutter`] once per
+/// Bit-identical to calling [`crate::surface::dropcutter::point_drop_cutter`] once per
 /// tool — see the module doc for why, and
 /// `tests/tier_map_walk_t1.rs` for the assertion. Returned coarse-first, in
 /// ladder order.
@@ -601,7 +601,7 @@ pub fn ladder_drops_at(
         .collect()
 }
 
-/// [`crate::dropcutter::point_drop_cutter`]'s body with the index query lifted
+/// [`crate::surface::dropcutter::point_drop_cutter`]'s body with the index query lifted
 /// out, so one candidate set can serve every tool on the ladder.
 fn drop_against_candidates(
     x: f64,

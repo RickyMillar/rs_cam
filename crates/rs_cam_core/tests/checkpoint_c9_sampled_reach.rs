@@ -57,7 +57,7 @@
     clippy::print_stdout
 )]
 
-use rs_cam_core::reach::{
+use rs_cam_core::surface::reach::{
     LocalValley, Reach, SampledCrossSection, ValleySide, coverage_cap_passes,
     offset_passes_per_side, route, solve_reach, solve_reach_sampled,
 };
@@ -398,8 +398,8 @@ impl Tally {
         let (nl, nr) = offset_passes_per_side(reach, STEPOVER, CAP);
         let n_model = nl.min(nr);
         let x_model = reach.min_mm();
-        let refused = verdict == rs_cam_core::reach::RoutingVerdict::Refused;
-        let pencil = verdict != rs_cam_core::reach::RoutingVerdict::Clearing;
+        let refused = verdict == rs_cam_core::surface::reach::RoutingVerdict::Refused;
+        let pencil = verdict != rs_cam_core::surface::reach::RoutingVerdict::Clearing;
         let n_true = truth
             .map(|x| ((x / STEPOVER).floor() as usize).min(CAP))
             .unwrap_or(0);

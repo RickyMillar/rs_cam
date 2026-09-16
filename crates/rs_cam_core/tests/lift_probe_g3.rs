@@ -12,8 +12,8 @@
 
 use std::path::Path;
 
-use rs_cam_core::dropcutter::point_drop_cutter;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::surface::dropcutter::point_drop_cutter;
 use rs_cam_core::tool::TaperedBallEndmill;
 
 const WANAKA_MESH: &str = "/home/ricky/Downloads/wanaka200/rivmap_export/terrain.stl";

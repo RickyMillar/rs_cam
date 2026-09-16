@@ -3,7 +3,7 @@
 //!
 //! [`region_polygons_from_mask`] is the one mask→polygon extractor with
 //! dilation (whole-grid EDT) + containment grouping used across the
-//! rest-depth pencil pipeline (`crate::rest_field`) and, going forward, the
+//! rest-depth pencil pipeline (`crate::surface::rest_field`) and, going forward, the
 //! finish planner's steep/shallow region decomposition — see
 //! `planning/unified_finish_planner_design.md`.
 
@@ -22,7 +22,7 @@ use crate::polygon::{Polygon2, detect_containment, shoelace_area};
 /// dozen islands); the 2026-07-06 incident that motivated this cap produced
 /// hundreds. [`region_polygons_from_mask`] keeps the largest `MAX_REST_REGIONS`
 /// by area and warns when the raw count exceeds it — see
-/// [`crate::rest_field::classify_rest_regions`] for the operator-facing
+/// [`crate::surface::rest_field::classify_rest_regions`] for the operator-facing
 /// diagnosis surfaced separately in the GUI.
 pub const MAX_REST_REGIONS: usize = 64;
 

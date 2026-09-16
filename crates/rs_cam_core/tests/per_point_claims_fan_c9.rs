@@ -92,8 +92,8 @@ use rs_cam_core::crease_paths::centerline_cut_paths;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::pencil::PencilPath;
-use rs_cam_core::reach::{self, LocalValley, SUGGESTED_STEPOVER_OVERLAP, ValleySide};
-use rs_cam_core::rest_field::{CenterlineSample, RestCenterline};
+use rs_cam_core::surface::reach::{self, LocalValley, SUGGESTED_STEPOVER_OVERLAP, ValleySide};
+use rs_cam_core::surface::rest_field::{CenterlineSample, RestCenterline};
 use rs_cam_core::tool::MillingCutter;
 
 // ── Fixture geometry: a straight run along X at y = 0 ──────────────────

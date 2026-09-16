@@ -5,12 +5,12 @@
 //! rest-depth gate → offset passes → nearest-neighbor order → emit. The
 //! three valley-detection front-ends themselves ([`PencilDetector`]) each
 //! live in their own module, mirrored on the [`crate::crest_lines`] /
-//! [`crate::rest_field`] pattern:
+//! [`crate::surface::rest_field`] pattern:
 //! - **Dihedral** (the historical default) — [`crate::pencil_dihedral`]:
 //!   mesh-crease detection via per-edge dihedral angle + graph chaining.
 //! - **Curvature** — [`crate::crest_lines`]: curvature crest-line extraction,
 //!   the right choice for dense noisy organic relief.
-//! - **RestDepth** — [`crate::rest_field`]: the tool-radius-aware dual-tool
+//! - **RestDepth** — [`crate::surface::rest_field`]: the tool-radius-aware dual-tool
 //!   rest field.
 //!
 //! Each arm ([`dihedral_arm`], [`curvature_arm`], [`rest_depth_arm`]) turns
@@ -24,7 +24,6 @@ use tracing::{info, warn};
 
 use crate::compute::config::TipFloatFinding;
 use crate::debug_trace::ToolpathDebugContext;
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P3, V3, polyline_length, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -33,6 +32,7 @@ use crate::pencil_dihedral::{
     sample_chain_bisected,
 };
 use crate::polygon::Polygon2;
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::surface_link::build_surface_link;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
@@ -54,7 +54,7 @@ pub enum PencilDetector {
     /// only". See [`crate::crest_lines`]. The right choice for noisy meshes.
     Curvature,
     /// Rest-depth-field detection (the tool-offset-space one; see
-    /// [`crate::rest_field`]). Computes `rest = drop_z(reference) − drop_z(pencil)`
+    /// [`crate::surface::rest_field`]). Computes `rest = drop_z(reference) − drop_z(pencil)`
     /// on an XY grid — the dual-tool comparison every commercial CAM uses — and
     /// traces the skeleton of each rest region. Unlike the other three detectors
     /// it is NOT tool-radius-blind: the field is zero wherever the reference tool
@@ -160,7 +160,7 @@ pub struct PencilParams {
     /// **RETIRED (PR-5, H2.2) — carried, reported, and NOT READ.**
     ///
     /// The `RestDepth` pencil/clearing decision is now the coverage criterion
-    /// in [`crate::reach`]. See
+    /// in [`crate::surface::reach`]. See
     /// [`crate::compute::operation_configs::PencilConfig::route_width_factor`]
     /// for why the field still exists and how a non-default value is
     /// surfaced. Default 2.0 (see [`route_width_factor_default`]).
@@ -354,7 +354,7 @@ impl PencilPath {
 /// this). That is still correct for the Dihedral/Curvature arms and for a
 /// centreline the reach policy never measured ([`OffsetFan::stepover`]
 /// empty), but a MEASURED centreline's own working width is depth-dependent
-/// ([`crate::reach::suggested_offset_stepover_mm`]), so a branch that runs
+/// ([`crate::surface::reach::suggested_offset_stepover_mm`]), so a branch that runs
 /// shallow at one end and deep at the other has no single honest stepover —
 /// see [`paths_from_sampled`]'s doc. One geometry implementation serves both
 /// cases; only the offset each point reads differs.
@@ -743,7 +743,7 @@ impl crate::compute::spans::RuntimeLabel for PencilRuntimeAnnotation {
 /// branch's shallowest reported depth
 /// (`unified_finish.rs`'s `claims_offset_stepover_mm`,
 /// `rest_depth_arm`'s `params.offset_stepover`) — even though
-/// [`crate::reach::suggested_offset_stepover_mm`] is monotone
+/// [`crate::surface::reach::suggested_offset_stepover_mm`] is monotone
 /// non-decreasing in depth, so every deeper point on the same branch got a
 /// stepover too small for its own working width: under a fixed pass-count
 /// cap, passes packed closer together than necessary instead of reaching
@@ -810,7 +810,7 @@ pub(crate) fn paths_from_sampled(
     // describing; fairing preserves the count, but a caller mismatch must
     // degrade to "not measured" rather than mis-attribute one point's reach
     // to another.
-    let reach: &[crate::reach::Reach] = if fan.reach.len() == sampled.len() {
+    let reach: &[crate::surface::reach::Reach] = if fan.reach.len() == sampled.len() {
         fan.reach
     } else {
         &[]
@@ -919,7 +919,7 @@ pub(crate) struct OffsetFan<'a> {
     pub right: usize,
     /// Per-point reach, aligned 1:1 with the polyline handed to
     /// [`paths_from_sampled`]. Empty = not measured; no truncation.
-    pub reach: &'a [crate::reach::Reach],
+    pub reach: &'a [crate::surface::reach::Reach],
     /// Per-point offset stepover (mm), aligned 1:1 with the polyline handed
     /// to [`paths_from_sampled`] (C9). Empty = not measured; every pass
     /// falls back to the flat `offset_stepover` argument for every point —
@@ -1917,7 +1917,7 @@ pub fn pencil_toolpath_structured_annotated(
     debug: Option<&ToolpathDebugContext>,
     // Out: the RestDepth detector's rest-field grid, for the GUI heatmap
     // overlay. Set only when `detector == RestDepth`; left untouched otherwise.
-    rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
+    rest_grid_out: &mut Option<crate::surface::rest_field::RestGrid>,
     // Out: the RestDepth detector's derived machining-region polygons (P2.2
     // selective-finishing boundary source). Set only when
     // `detector == RestDepth`; left untouched otherwise.
@@ -1947,7 +1947,7 @@ pub fn pencil_toolpath_structured_annotated(
 /// Diameter (mm) of the vanishingly small "surface probe" ball substituted
 /// when there's no real or nominal reference tool to compare against (the
 /// self-referenced-gap case, [`ResolvedReference::SelfReferenced`] /
-/// [`crate::rest_field::RestReference`]'s `is_surface_probe` arm). Small
+/// [`crate::surface::rest_field::RestReference`]'s `is_surface_probe` arm). Small
 /// enough to hug the raw surface without perturbing the rest-depth
 /// comparison. Shared with `rest_field`'s test hillshade harness, which
 /// probes the same way to render a DEM.
@@ -1982,7 +1982,7 @@ enum ResolvedReference<'a> {
     /// self-referenced gap; the RestDepth field substitutes a tiny
     /// bare-surface probe with the sign flipped (see [`RestReference`]).
     ///
-    /// [`RestReference`]: crate::rest_field::RestReference
+    /// [`RestReference`]: crate::surface::rest_field::RestReference
     SelfReferenced,
 }
 
@@ -2108,7 +2108,7 @@ fn curvature_arm(
     Ok(all_paths)
 }
 
-/// `RestDepth` detector arm (see [`crate::rest_field`]): build the dual-tool
+/// `RestDepth` detector arm (see [`crate::surface::rest_field`]): build the dual-tool
 /// rest field, threshold at `min_valley_depth`, thin each region to a
 /// skeleton, and route by width. The per-polyline [`polyline_passes_depth`]
 /// gate is REDUNDANT here (the field threshold IS that same quantity,
@@ -2135,7 +2135,7 @@ fn rest_depth_arm(
     params: &PencilParams,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
-    rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
+    rest_grid_out: &mut Option<crate::surface::rest_field::RestGrid>,
     rest_regions_out: &mut Option<Vec<Polygon2>>,
     float: &mut TipFloatFinding,
     cancel: &dyn CancelCheck,
@@ -2168,15 +2168,19 @@ fn rest_depth_arm(
     // reference-mode counter: 0 = nominal ball / probe, 1 = real tool,
     // 2 = machined stock.
     let (reference, probe_mode, rest_reference_mode): (
-        crate::rest_field::RestReference<'_>,
+        crate::surface::rest_field::RestReference<'_>,
         bool,
         u8,
     ) = if let Some(stock) = stock_ref {
-        (crate::rest_field::RestReference::Stock(stock), false, 2)
+        (
+            crate::surface::rest_field::RestReference::Stock(stock),
+            false,
+            2,
+        )
     } else {
         match &resolved {
             ResolvedReference::Real(r) => (
-                crate::rest_field::RestReference::Cutter {
+                crate::surface::rest_field::RestReference::Cutter {
                     tool: *r,
                     is_surface_probe: false,
                 },
@@ -2184,7 +2188,7 @@ fn rest_depth_arm(
                 1,
             ),
             ResolvedReference::Nominal(b) => (
-                crate::rest_field::RestReference::Cutter {
+                crate::surface::rest_field::RestReference::Cutter {
                     tool: b as &dyn MillingCutter,
                     is_surface_probe: false,
                 },
@@ -2192,7 +2196,7 @@ fn rest_depth_arm(
                 0,
             ),
             ResolvedReference::SelfReferenced => (
-                crate::rest_field::RestReference::Cutter {
+                crate::surface::rest_field::RestReference::Cutter {
                     tool: &probe_ball as &dyn MillingCutter,
                     is_surface_probe: true,
                 },
@@ -2201,7 +2205,7 @@ fn rest_depth_arm(
             ),
         }
     };
-    let rf_params = crate::rest_field::RestFieldParams {
+    let rf_params = crate::surface::rest_field::RestFieldParams {
         cell_mm: params.rest_cell_mm,
         min_valley_depth: params.min_valley_depth,
         // Coverage routing (PR-5): the detector routes against the fan this
@@ -2216,7 +2220,8 @@ fn rest_depth_arm(
         // scope: derive region_polygons, not expose a new user-facing knob).
         ..Default::default()
     };
-    let rf = crate::rest_field::detect_rest_valleys(mesh, index, cutter, reference, &rf_params);
+    let rf =
+        crate::surface::rest_field::detect_rest_valleys(mesh, index, cutter, reference, &rf_params);
     let report = &rf.report;
     info!(
         rest_volume_mm3 = format!("{:.1}", report.total_rest_volume_mm3),
@@ -2413,7 +2418,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     params: &PencilParams,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
-    rest_grid_out: &mut Option<crate::rest_field::RestGrid>,
+    rest_grid_out: &mut Option<crate::surface::rest_field::RestGrid>,
     rest_regions_out: &mut Option<Vec<Polygon2>>,
     // Wave D1 out: the centreline TIP-FLOAT tally (see [`TipFloatFinding`]).
     // Always set — a detector that emitted no centreline still measured

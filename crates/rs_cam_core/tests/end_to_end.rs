@@ -11,13 +11,13 @@
 
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
-    dropcutter::batch_drop_cutter,
     gcode::{emit_gcode, post},
     geo::{BoundingBox3, P3},
     mesh::{SpatialIndex, TriangleMesh},
     pocket::{PocketParams, pocket_toolpath},
     polygon::Polygon2,
     profile::{ProfileParams, ProfileSide, profile_toolpath},
+    surface::dropcutter::batch_drop_cutter,
     svg_input::load_svg_data,
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{MoveType, Toolpath, raster_toolpath_from_grid},

@@ -208,7 +208,7 @@ fn surface_z(
     index: &SpatialIndex,
     probe: &BallEndmill,
 ) -> f64 {
-    let cl = rs_cam_core::dropcutter::point_drop_cutter(x, y, mesh, index, probe);
+    let cl = rs_cam_core::surface::dropcutter::point_drop_cutter(x, y, mesh, index, probe);
     if cl.contacted && cl.z.is_finite() {
         cl.z
     } else {
@@ -355,8 +355,9 @@ fn cl_polylines(
         out.input_points += line.len();
         let mut cl: Vec<P3> = Vec::with_capacity(line.len());
         for point in line {
-            let cl_point =
-                rs_cam_core::dropcutter::point_drop_cutter(point.x, point.y, mesh, index, cutter);
+            let cl_point = rs_cam_core::surface::dropcutter::point_drop_cutter(
+                point.x, point.y, mesh, index, cutter,
+            );
             if cl_point.contacted && cl_point.z.is_finite() {
                 cl.push(P3::new(cl_point.x, cl_point.y, cl_point.z));
             } else {

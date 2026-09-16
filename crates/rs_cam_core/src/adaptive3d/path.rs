@@ -9,7 +9,7 @@ use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::radial_profile::RadialProfileLUT;
-use crate::slope::SurfaceHeightmap;
+use crate::surface::slope::SurfaceHeightmap;
 
 /// The Z levels a flat shelf in the surface asks for, top-down order not
 /// guaranteed.
@@ -1062,7 +1062,7 @@ pub(super) fn adaptive_3d_segments(
 /// F-038b: maximum mesh Z along the XY straight line between two points.
 ///
 /// Drops a flat-tip probe down at evenly-spaced samples along
-/// `from`→`to` using `crate::dropcutter::point_drop_cutter`. Returns the
+/// `from`→`to` using `crate::surface::dropcutter::point_drop_cutter`. Returns the
 /// maximum Z reported by any sample, or `None` if the cutter never
 /// contacted the mesh along the line (line is entirely off-mesh).
 ///
@@ -1087,7 +1087,7 @@ fn max_mesh_z_along_line(
         let t = i as f64 / (samples - 1) as f64;
         let x = from_xy.0 + t * (to_xy.0 - from_xy.0);
         let y = from_xy.1 + t * (to_xy.1 - from_xy.1);
-        let cl = crate::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
+        let cl = crate::surface::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
         if cl.contacted && cl.z.is_finite() && cl.z > max_z {
             max_z = cl.z;
             any_contact = true;
@@ -1226,7 +1226,7 @@ pub(super) fn drape_point(
     cutter: &dyn crate::tool::MillingCutter,
     stock_to_leave: f64,
 ) -> P3 {
-    let cl = crate::dropcutter::point_drop_cutter(p.x, p.y, mesh, index, cutter);
+    let cl = crate::surface::dropcutter::point_drop_cutter(p.x, p.y, mesh, index, cutter);
     if cl.contacted && cl.z.is_finite() {
         P3::new(p.x, p.y, p.z.max(cl.z + stock_to_leave))
     } else {
@@ -1247,7 +1247,7 @@ pub(super) fn drape_path_to_leave(
     }
     let step = max_step.max(0.1);
     let drape_pt = |x: f64, y: f64, z: f64| -> P3 {
-        let cl = crate::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
+        let cl = crate::surface::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
         if cl.contacted && cl.z.is_finite() {
             P3::new(x, y, z.max(cl.z + stock_to_leave))
         } else {

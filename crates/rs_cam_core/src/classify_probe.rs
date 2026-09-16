@@ -57,7 +57,7 @@
 use crate::finish_setup::CLASSIFICATION_PROBE_DIAMETER_MM;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
-use crate::slope::SurfaceHeightmap;
+use crate::surface::slope::SurfaceHeightmap;
 use crate::tool::{BallEndmill, CLPoint, MillingCutter};
 
 /// How many cells one cancellation window covers.
@@ -191,7 +191,7 @@ pub struct ClassificationGridSpec {
     pub cols: usize,
     pub cell_size: f64,
     /// Floor every cell is clamped up to — the mesh bbox floor in production.
-    /// Uncovered cells keep it; see [`crate::slope::GridZ`].
+    /// Uncovered cells keep it; see [`crate::surface::slope::GridZ`].
     pub min_z: f64,
 }
 

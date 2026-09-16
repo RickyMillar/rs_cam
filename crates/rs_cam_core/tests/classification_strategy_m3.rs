@@ -90,7 +90,7 @@ use rs_cam_core::classify_probe::{
 };
 use rs_cam_core::finish_setup::{CLASSIFICATION_PROBE_DIAMETER_MM, FinishResolutionPolicy};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::slope::{SlopeMap, SurfaceHeightmap};
+use rs_cam_core::surface::slope::{SlopeMap, SurfaceHeightmap};
 use rs_cam_core::tool::MillingCutter;
 
 use common::meshes;

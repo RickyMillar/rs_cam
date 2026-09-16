@@ -141,7 +141,7 @@ pub enum MongeOutcome {
 /// **One reader, not two.** This delegates to
 /// [`crate::reach_map::surface_z_at`], which is the same question tied to
 /// the same containment predicate the drop cutter uses
-/// ([`crate::dropcutter::point_is_over_mesh_xy`] via
+/// ([`crate::surface::dropcutter::point_is_over_mesh_xy`] via
 /// [`crate::geo::Triangle::contains_point_xy`]), so "is there surface here"
 /// and "how high is it" cannot disagree. This module carried its own
 /// barycentric walk until 2026-09-17, with a tighter edge tolerance

@@ -32,8 +32,8 @@ use common::meshes::plateau;
 use common::tools::ball_cutter;
 
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::slope::{GridZ, SurfaceHeightmap};
 use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath_split_with_cancel};
+use rs_cam_core::surface::slope::{GridZ, SurfaceHeightmap};
 use rs_cam_core::tool::MillingCutter;
 use rs_cam_core::toolpath::MoveType;
 

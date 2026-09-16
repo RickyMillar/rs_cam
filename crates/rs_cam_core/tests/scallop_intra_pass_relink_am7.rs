@@ -100,7 +100,6 @@ use common::tools::ball_tool_config;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::DressupConfig;
 use rs_cam_core::compute::operation_configs::ScallopConfig;
-use rs_cam_core::dropcutter::point_drop_cutter;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine_kinematics::{MachineKinematics, compute_cycle_time};
 use rs_cam_core::measurement::{
@@ -109,6 +108,7 @@ use rs_cam_core::measurement::{
 use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::session::SimulationOptions;
+use rs_cam_core::surface::dropcutter::point_drop_cutter;
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType};
 

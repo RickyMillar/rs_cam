@@ -30,7 +30,7 @@
 //!   machines perfectly.
 //!
 //! So this module builds on the layer *underneath* the tier map — the
-//! drop-cutter contact heights ([`crate::dropcutter::point_drop_cutter`],
+//! drop-cutter contact heights ([`crate::surface::dropcutter::point_drop_cutter`],
 //! the same call [`crate::tier_map::ladder_drops_at`] hoists a query out of)
 //! — and takes the residual against the **machined surface** instead of
 //! against a second drop plane.
@@ -129,11 +129,11 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
 use crate::grid::{GridSpec, walk_rows};
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::{MillingCutter, ToolDefinition};
 
 /// Reach tolerance (mm) for an operation that declares no cusp or scallop
@@ -885,7 +885,7 @@ pub fn reach_overlay_stock_mesh(
 ///
 /// This is the exact zero-radius drop, and it uses the same triangle set and
 /// the same containment test as
-/// [`crate::dropcutter::point_is_over_mesh_xy`] — so "is there surface here"
+/// [`crate::surface::dropcutter::point_is_over_mesh_xy`] — so "is there surface here"
 /// and "how high is it" can never disagree.
 #[must_use]
 pub fn surface_z_at(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> Option<f64> {

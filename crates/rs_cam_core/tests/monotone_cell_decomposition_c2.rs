@@ -34,7 +34,6 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::dropcutter::{DropCutterGrid, batch_drop_cutter};
 use rs_cam_core::finish_planner::FinishPlannerParams;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::monotone_cells::{
@@ -47,6 +46,7 @@ use rs_cam_core::metrology::costing::{
     CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
 };
 use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::surface::dropcutter::{DropCutterGrid, batch_drop_cutter};
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{Toolpath, raster_toolpath_from_grid};
 use rs_cam_core::unified_finish::{UnifiedFinishParams, unified_finish_toolpath_with_cancel};

@@ -60,8 +60,8 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
+use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::tool::{BallEndmill, TaperedBallEndmill};
 
 fn wanaka_taper() -> TaperedBallEndmill {
@@ -276,7 +276,7 @@ fn the_generic_pass_routes_on_the_policy_stepover_and_reports_it() {
     assert_eq!(finding.site, "generic rest analysis routing");
 
     let t = wanaka_taper();
-    let expected = rs_cam_core::reach::suggested_offset_stepover_mm(&t, 0.05);
+    let expected = rs_cam_core::surface::reach::suggested_offset_stepover_mm(&t, 0.05);
     assert!(
         (finding.stepover_mm - expected).abs() < 1e-12,
         "the site must CALL the policy, not restate it: {} vs {expected}",
@@ -340,7 +340,7 @@ fn the_policy_stepover_changes_the_routing_verdict() {
     let t = wanaka_taper();
     let reference = BallEndmill::new(12.0, 25.0);
     let min_valley_depth = 0.05;
-    let policy = rs_cam_core::reach::suggested_offset_stepover_mm(&t, min_valley_depth);
+    let policy = rs_cam_core::surface::reach::suggested_offset_stepover_mm(&t, min_valley_depth);
 
     let run = |stepover: f64| {
         let params = RestFieldParams {

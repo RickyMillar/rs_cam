@@ -54,10 +54,10 @@
 //! must fall back to the undivided raster — a decomposition that silently
 //! drops lattice points is uncut material.
 
-use crate::dropcutter::DropCutterGrid;
 use crate::geo::P2;
 use crate::geometry::contour_extract::marching_squares_bool_grid;
 use crate::polygon::{Polygon2, detect_containment, shoelace_area};
+use crate::surface::dropcutter::DropCutterGrid;
 
 /// The §0f elongation gate: a region rotates to its PCA-minor axis only
 /// above this.

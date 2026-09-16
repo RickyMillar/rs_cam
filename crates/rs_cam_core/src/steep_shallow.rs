@@ -16,13 +16,13 @@
 
 use std::ops::Range;
 
-use crate::dropcutter::batch_drop_cutter;
 use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::slope::{SlopeMap, classify_steep_shallow};
+use crate::surface::dropcutter::batch_drop_cutter;
+use crate::surface::slope::{SlopeMap, classify_steep_shallow};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::waterline::waterline_contours;
@@ -860,7 +860,7 @@ pub fn steep_shallow_toolpath_split_with_resolution(
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;
-    use crate::slope::SurfaceHeightmap;
+    use crate::surface::slope::SurfaceHeightmap;
     use crate::tool::BallEndmill;
 
     fn make_hemisphere() -> (TriangleMesh, SpatialIndex) {

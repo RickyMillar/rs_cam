@@ -7,9 +7,9 @@
 //! - **Tab/bridge**: Insert material tabs to hold parts during profile cutting
 
 use crate::dexel_stock::TriDexelStock;
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};

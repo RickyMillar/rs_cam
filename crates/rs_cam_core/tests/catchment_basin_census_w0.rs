@@ -234,14 +234,14 @@ fn equal_cusp_stepover_mm(cusp_radius_mm: f64, h: f64) -> f64 {
 // ═══════════════════════════════════════════════════════════════════════
 /// A rasterised heightfield: row-major, `nodata` where nothing verified there
 /// is surface.
-use rs_cam_core::flow_accum::{
+use rs_cam_core::surface::flow_accum::{
     FILL_EPSILON_MM, FLAT_EPSILON_MM, FLAT_MAX_RISE_MM, FlowField as Field, d8_accumulation,
     d8_receivers, priority_flood_epsilon, resolve_flats,
 };
 
 /// File-local geometry and the border-connected sea mask on the shared
 /// [`Field`]. The rasterised heightfield and its D8 hydrology now live in
-/// `rs_cam_core::flow_accum` (promoted from three verbatim copies); this census
+/// `rs_cam_core::surface::flow_accum` (promoted from three verbatim copies); this census
 /// keeps these helpers local so the call sites below do not change.
 trait FieldExt {
     fn index_at(&self, x: f64, y: f64) -> Option<usize>;

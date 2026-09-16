@@ -15,7 +15,7 @@ use crate::geometry::fiber::Fiber;
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::pushcutter::batch_push_cutter;
+use crate::surface::pushcutter::batch_push_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
 

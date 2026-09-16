@@ -231,10 +231,10 @@ fn equal_cusp_stepover_mm(cusp_radius_mm: f64, h: f64) -> f64 {
 // ═══════════════════════════════════════════════════════════════════════
 
 /// The rasterised heightfield and its D8 hydrology now live in
-/// `rs_cam_core::flow_accum` (promoted from three verbatim copies for the
+/// `rs_cam_core::surface::flow_accum` (promoted from three verbatim copies for the
 /// pencil watershed-spine experiment). This census keeps its file-local
 /// helpers as an extension trait so the call sites below do not change.
-use rs_cam_core::flow_accum::{
+use rs_cam_core::surface::flow_accum::{
     FlowField as Field, d8_accumulation, d8_receivers, priority_flood_epsilon,
 };
 
@@ -536,7 +536,7 @@ fn relink_and_cost_under(
 }
 
 fn raster_candidate(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     regions: &[Polygon2],
     safe_z: f64,
     effective_min_z: f64,
@@ -561,7 +561,7 @@ fn raster_candidate(
 }
 
 fn nearest_contact_z(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     x: f64,
     y: f64,
     min_z: f64,
@@ -598,10 +598,17 @@ fn machined_stock(
         TriDexelStock::from_stock(x0, y0, x1, y1, mesh.bbox.min.z - 1.0, block_top_z, CELL_MM);
 
     let rough_tool = FlatEndmill::new(ROUGH_DIAMETER_MM, ROUGH_CUTTING_LENGTH_MM);
-    let rough_grid =
-        rs_cam_core::dropcutter::batch_drop_cutter(mesh, index, &rough_tool, CELL_MM, 0.0, min_z);
-    let coarse_grid =
-        rs_cam_core::dropcutter::batch_drop_cutter(mesh, index, coarse, CELL_MM, 0.0, min_z);
+    let rough_grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
+        mesh,
+        index,
+        &rough_tool,
+        CELL_MM,
+        0.0,
+        min_z,
+    );
+    let coarse_grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
+        mesh, index, coarse, CELL_MM, 0.0, min_z,
+    );
 
     let tier_zero: Vec<bool> = tier_map.labels.iter().map(|&label| label == 0).collect();
     let distance_to_tier_zero = distance_transform_2d(&tier_zero, tier_map.ny, tier_map.nx);
@@ -1224,8 +1231,9 @@ fn trace_branch(ctx: &TracerCtx<'_>, cells: &[usize]) -> Option<(Vec<Vec<P3>>, B
                 }
                 continue;
             }
-            let cl: CLPoint =
-                rs_cam_core::dropcutter::point_drop_cutter(x, y, ctx.mesh, ctx.index, ctx.cutter);
+            let cl: CLPoint = rs_cam_core::surface::dropcutter::point_drop_cutter(
+                x, y, ctx.mesh, ctx.index, ctx.cutter,
+            );
             if !cl.contacted || cl.z <= ctx.min_z {
                 if current.len() >= 2 {
                     runs.push(std::mem::take(&mut current));
@@ -1688,7 +1696,7 @@ fn wanaka_valley_branch_falsifier_h1() {
             stepover
         };
         let frame = region_frame(polygon, step);
-        let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+        let grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
             &mesh,
             &index,
             &r10,
@@ -1799,7 +1807,7 @@ fn wanaka_valley_branch_falsifier_h1() {
 
     let build_raster_runs = |step: f64| -> (Vec<Vec<P3>>, f64) {
         let frame = region_frame(&region, step);
-        let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+        let grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
             &mesh,
             &index,
             &r10,

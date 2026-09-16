@@ -499,7 +499,8 @@ impl EnvelopeOracle {
                     continue;
                 }
                 let (x, y) = grid.centre(row, col);
-                let cl = rs_cam_core::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
+                let cl =
+                    rs_cam_core::surface::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
                 if cl.z.is_finite() {
                     tips.push(P3::new(x, y, cl.z));
                 }

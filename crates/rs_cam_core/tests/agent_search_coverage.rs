@@ -42,7 +42,7 @@ use rs_cam_core::{
     geo::P3,
     mesh::{SpatialIndex, TriangleMesh},
     radial_profile::RadialProfileLUT,
-    slope::SurfaceHeightmap,
+    surface::slope::SurfaceHeightmap,
     tool::{FlatEndmill, MillingCutter},
     toolpath::{MoveType, Toolpath},
 };

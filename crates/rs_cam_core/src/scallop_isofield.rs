@@ -74,7 +74,7 @@ use crate::geometry::marching_squares::{
     chain_segments,
 };
 use crate::polygon::Polygon2;
-use crate::slope::SlopeMap;
+use crate::surface::slope::SlopeMap;
 
 /// The per-cell stepover field and the geodesic pass index solved from it.
 pub struct IsoScallopField {

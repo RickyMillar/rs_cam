@@ -5,11 +5,11 @@
 //! Adjacent spokes alternate direction (center-to-edge, then edge-to-center)
 //! for efficient zigzag linking with rapid retracts between spokes.
 
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 

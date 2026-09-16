@@ -7,10 +7,10 @@
 //!
 //! "Holder collision in 3-axis is just drop-cutter at larger radii"
 
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::{BoundingBox3, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::FlatEndmill;
 use crate::toolpath::{MoveType, Toolpath};
 

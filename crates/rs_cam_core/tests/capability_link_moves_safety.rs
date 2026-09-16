@@ -1952,7 +1952,7 @@ fn drop_cutter_raster(
 ) -> Toolpath {
     let never_cancel = || false;
     let floor = mesh.bbox.min.z - 0.1;
-    let grid = rs_cam_core::dropcutter::batch_drop_cutter_with_cancel(
+    let grid = rs_cam_core::surface::dropcutter::batch_drop_cutter_with_cancel(
         mesh,
         index,
         cutter,

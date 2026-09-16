@@ -236,19 +236,19 @@ fn generate_through_session(tool: ToolConfig) -> ProjectSession {
 fn crease_fixture(
     half_width_mm: f64,
 ) -> (
-    rs_cam_core::slope::SlopeMap,
+    rs_cam_core::surface::slope::SlopeMap,
     Vec<bool>,
-    Vec<rs_cam_core::rest_field::RestCenterline>,
+    Vec<rs_cam_core::surface::rest_field::RestCenterline>,
 ) {
     let (rows, cols, cell) = (60usize, 60usize, 1.0f64);
     let z = vec![0.0; rows * cols];
-    let slope_map = rs_cam_core::slope::SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
+    let slope_map =
+        rs_cam_core::surface::slope::SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
     let covered = vec![true; rows * cols];
     let points: Vec<P3> = (10..50).map(|x| P3::new(x as f64, 30.0, 0.0)).collect();
-    let creases = vec![rs_cam_core::rest_field::RestCenterline::without_samples(
-        points,
-        half_width_mm,
-    )];
+    let creases = vec![
+        rs_cam_core::surface::rest_field::RestCenterline::without_samples(points, half_width_mm),
+    ];
     (slope_map, covered, creases)
 }
 

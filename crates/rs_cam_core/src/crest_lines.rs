@@ -951,7 +951,7 @@ mod tests {
         // Hillshade DEM: drop a tiny ball on a grid to read the surface
         // height — shared with rest_field's render_restfield_hillshade via
         // hillshade_test_util.
-        let dem = crate::rest_field::hillshade_test_util::HillshadeDem::build(
+        let dem = crate::surface::rest_field::hillshade_test_util::HillshadeDem::build(
             &mesh,
             &index,
             cell,
@@ -972,7 +972,7 @@ mod tests {
 
         // NW-lit hillshade, overlaid with the valley crest lines in bright green.
         let mut img = dem.render();
-        crate::rest_field::hillshade_test_util::plot_polylines(
+        crate::surface::rest_field::hillshade_test_util::plot_polylines(
             &dem,
             &mut img,
             &lines,

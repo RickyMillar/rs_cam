@@ -10,7 +10,7 @@
 //! rest(x, y) = drop_z(reference_tool, x, y) − drop_z(pencil_tool, x, y)
 //! ```
 //!
-//! evaluated on a regular XY grid with [`crate::dropcutter::point_drop_cutter`]
+//! evaluated on a regular XY grid with [`crate::surface::dropcutter::point_drop_cutter`]
 //! (the same machinery the old drainage DEM used). `rest > 0` exactly where the
 //! pencil tool reaches deeper than the bigger reference tool could — i.e. the
 //! rest material the finish pass left. Flats, everything the reference already
@@ -42,12 +42,12 @@
 use tracing::info;
 
 use crate::dexel_stock::TriDexelStock;
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P3, polyline_length};
 use crate::geometry::grid2::Grid2;
 use crate::geometry::region_mask::MAX_REST_REGIONS;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 
 /// What the pencil rest is measured "deeper than". `Copy` so the sample closure
@@ -138,7 +138,7 @@ pub struct RestFieldParams {
     ///
     /// Zero is meaningful and is the shipped `PencilParams` default
     /// ("centreline only"). It does NOT collapse routing: see
-    /// [`crate::reach::coverage_cap_passes`] for the floor that stops
+    /// [`crate::surface::reach::coverage_cap_passes`] for the floor that stops
     /// `cap × stepover == 0` from sending every branch to clearing.
     pub num_offset_passes_cap: usize,
     /// Minimum kept-cut length (mm) — used only for the coverage report; the
@@ -365,7 +365,7 @@ impl RestCenterline {
 }
 
 /// The local valley cross-section measured at one centreline point, plus the
-/// reach the canonical policy ([`crate::reach`]) resolves from it.
+/// reach the canonical policy ([`crate::surface::reach`]) resolves from it.
 ///
 /// Both halves are kept: the measurement is what a future model would be
 /// re-solved from, and the resolved reach is what the fit and routing
@@ -374,9 +374,9 @@ impl RestCenterline {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CenterlineSample {
     /// What was measured off the grid at this point.
-    pub valley: crate::reach::LocalValley,
-    /// What [`crate::reach::solve_reach`] made of it.
-    pub reach: crate::reach::Reach,
+    pub valley: crate::surface::reach::LocalValley,
+    /// What [`crate::surface::reach::solve_reach`] made of it.
+    pub reach: crate::surface::reach::Reach,
 }
 
 /// Output of [`detect_rest_valleys`].
@@ -447,16 +447,16 @@ fn branch_verdict(
     samples: &[CenterlineSample],
     offset_stepover: f64,
     params: &RestFieldParams,
-) -> crate::reach::RoutingVerdict {
+) -> crate::surface::reach::RoutingVerdict {
     if samples.is_empty() {
         // No measurement: the honest verdict is the permissive one — this is
         // the pre-PR-5 behaviour for a branch nothing could be measured on,
         // not a licence to refuse it.
-        return crate::reach::RoutingVerdict::Pencil;
+        return crate::surface::reach::RoutingVerdict::Pencil;
     }
     let refused = samples.iter().filter(|s| s.reach.refused).count();
     if refused * 2 > samples.len() {
-        return crate::reach::RoutingVerdict::Refused;
+        return crate::surface::reach::RoutingVerdict::Refused;
     }
     let median_of = |mut v: Vec<f64>| -> f64 {
         v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -464,14 +464,14 @@ fn branch_verdict(
     };
     let reach_mm = median_of(samples.iter().map(|s| s.reach.min_mm()).collect());
     let depth_mm = median_of(samples.iter().map(|s| s.valley.rest_depth_mm).collect());
-    let cap = crate::reach::coverage_cap_passes(
+    let cap = crate::surface::reach::coverage_cap_passes(
         pencil,
         depth_mm,
         offset_stepover,
         params.num_offset_passes_cap,
     );
-    crate::reach::route(
-        &crate::reach::Reach {
+    crate::surface::reach::route(
+        &crate::surface::reach::Reach {
             left_mm: reach_mm,
             right_mm: reach_mm,
             refused: false,
@@ -480,7 +480,7 @@ fn branch_verdict(
             model: samples
                 .first()
                 .map(|s| s.reach.model)
-                .unwrap_or(crate::reach::PRODUCTION_REACH_MODEL),
+                .unwrap_or(crate::surface::reach::PRODUCTION_REACH_MODEL),
         },
         offset_stepover,
         cap,
@@ -529,7 +529,7 @@ fn ridge_perpendicular(poly: &[usize], k: usize, nx: usize) -> (f64, f64) {
 ///   gradient rather than the apex-to-rim secant because a trapezoidal
 ///   groove — flat floor, steep walls — reads as an almost-flat wall through
 ///   a secant, and an almost-flat wall is the one reading that refuses
-///   everything. The cost of the choice is recorded in [`crate::reach`]'s
+///   everything. The cost of the choice is recorded in [`crate::surface::reach`]'s
 ///   known-limitation note: on a trapezoid this is optimistic on width while
 ///   staying conservative on refusal.
 ///
@@ -543,8 +543,8 @@ fn ridge_perpendicular(poly: &[usize], k: usize, nx: usize) -> (f64, f64) {
 /// different measurements — the C9 rule that the variable under test has to be
 /// the model and nothing else.
 struct MeasuredCrossSection {
-    valley: crate::reach::LocalValley,
-    sampled: crate::reach::SampledCrossSection,
+    valley: crate::surface::reach::LocalValley,
+    sampled: crate::surface::reach::SampledCrossSection,
 }
 
 /// How many cells the walk continues PAST the rim, purely to feed the sampled
@@ -574,7 +574,7 @@ fn measure_cross_section(
     let depth = rest.at_index_or(ridge, 0.0).max(0.0);
     let z0 = surface_z.at_index_or(ridge, f64::NAN);
 
-    let side = |dir: f64| -> (crate::reach::ValleySide, Vec<f64>) {
+    let side = |dir: f64| -> (crate::surface::reach::ValleySide, Vec<f64>) {
         let mut rim_cells = 0.0f64;
         let mut max_slope = 0.0f64;
         let mut z_prev = z0;
@@ -627,7 +627,7 @@ fn measure_cross_section(
         }
         let dist = rim_cells * cell;
         (
-            crate::reach::ValleySide::new(dist, dist * max_slope),
+            crate::surface::reach::ValleySide::new(dist, dist * max_slope),
             heights,
         )
     };
@@ -635,12 +635,12 @@ fn measure_cross_section(
     let (left, left_h) = side(-1.0);
     let (right, right_h) = side(1.0);
     MeasuredCrossSection {
-        valley: crate::reach::LocalValley {
+        valley: crate::surface::reach::LocalValley {
             rest_depth_mm: depth,
             left,
             right,
         },
-        sampled: crate::reach::SampledCrossSection::from_sides(cell, &left_h, &right_h),
+        sampled: crate::surface::reach::SampledCrossSection::from_sides(cell, &left_h, &right_h),
     }
 }
 
@@ -992,12 +992,12 @@ pub fn detect_rest_valleys(
                 );
                 // C9: which model answers is ONE constant, and the reach
                 // carries its own provenance from here on.
-                let reach = match crate::reach::PRODUCTION_REACH_MODEL {
-                    crate::reach::ReachModel::WallAngleV => {
-                        crate::reach::solve_reach(pencil, &m.valley)
+                let reach = match crate::surface::reach::PRODUCTION_REACH_MODEL {
+                    crate::surface::reach::ReachModel::WallAngleV => {
+                        crate::surface::reach::solve_reach(pencil, &m.valley)
                     }
-                    crate::reach::ReachModel::SampledCrossSection => {
-                        crate::reach::solve_reach_sampled(
+                    crate::surface::reach::ReachModel::SampledCrossSection => {
+                        crate::surface::reach::solve_reach_sampled(
                             pencil,
                             &m.sampled,
                             m.valley.rest_depth_mm,
@@ -1030,7 +1030,7 @@ pub fn detect_rest_valleys(
         // saliency gate and `half_width_mm` already use, so a single noisy
         // ridge cell cannot flip a whole branch.
         let verdict = branch_verdict(pencil, &samples, offset_stepover, params);
-        if verdict == crate::reach::RoutingVerdict::Pencil {
+        if verdict == crate::surface::reach::RoutingVerdict::Pencil {
             if comp != usize::MAX {
                 pencil_comps.insert(comp);
             }
@@ -1872,9 +1872,9 @@ fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
 /// harnesses can share it without pulling PNG rendering into production code.
 #[cfg(test)]
 pub(crate) mod hillshade_test_util {
-    use crate::dropcutter::point_drop_cutter;
     use crate::geo::{BoundingBox3, P3};
     use crate::mesh::{SpatialIndex, TriangleMesh};
+    use crate::surface::dropcutter::point_drop_cutter;
     use crate::tool::BallEndmill;
 
     /// A rasterized digital-elevation-model over a mesh's XY bbox, probed by

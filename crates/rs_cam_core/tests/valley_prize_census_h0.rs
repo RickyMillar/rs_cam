@@ -293,10 +293,10 @@ const MAX_COSTED_REGIONS: usize = 16;
 // ═══════════════════════════════════════════════════════════════════════
 
 /// The rasterised heightfield and its D8 hydrology now live in
-/// `rs_cam_core::flow_accum` (promoted from three verbatim copies for the
+/// `rs_cam_core::surface::flow_accum` (promoted from three verbatim copies for the
 /// pencil watershed-spine experiment). This census keeps its file-local
 /// helpers as an extension trait so the call sites below do not change.
-use rs_cam_core::flow_accum::{
+use rs_cam_core::surface::flow_accum::{
     FILL_EPSILON_MM, FlowField as Field, d8_accumulation, d8_receivers, priority_flood_epsilon,
 };
 
@@ -1093,7 +1093,7 @@ fn relink_and_cost_under(
 }
 
 fn raster_candidate(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     regions: &[Polygon2],
     safe_z: f64,
     effective_min_z: f64,
@@ -1119,7 +1119,7 @@ fn raster_candidate(
 
 /// Nearest sample of an axis-aligned drop-cutter grid. Only valid at 0 deg.
 fn nearest_contact_z(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     x: f64,
     y: f64,
     min_z: f64,
@@ -1159,10 +1159,17 @@ fn machined_stock(
         TriDexelStock::from_stock(x0, y0, x1, y1, mesh.bbox.min.z - 1.0, block_top_z, CELL_MM);
 
     let rough_tool = FlatEndmill::new(ROUGH_DIAMETER_MM, ROUGH_CUTTING_LENGTH_MM);
-    let rough_grid =
-        rs_cam_core::dropcutter::batch_drop_cutter(mesh, index, &rough_tool, CELL_MM, 0.0, min_z);
-    let coarse_grid =
-        rs_cam_core::dropcutter::batch_drop_cutter(mesh, index, coarse, CELL_MM, 0.0, min_z);
+    let rough_grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
+        mesh,
+        index,
+        &rough_tool,
+        CELL_MM,
+        0.0,
+        min_z,
+    );
+    let coarse_grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
+        mesh, index, coarse, CELL_MM, 0.0, min_z,
+    );
 
     let tier_zero: Vec<bool> = tier_map.labels.iter().map(|&label| label == 0).collect();
     let distance_to_tier_zero = distance_transform_2d(&tier_zero, tier_map.ny, tier_map.nx);
@@ -2779,7 +2786,7 @@ fn wanaka_valley_prize_census_h0() {
     );
     for row in &mut rows {
         let t_region = std::time::Instant::now();
-        let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+        let grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
             &mesh,
             &index,
             &r10,

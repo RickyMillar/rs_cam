@@ -25,7 +25,6 @@ use rs_cam_core::{
     chamfer::ChamferParams,
     dexel_stock::{StockCutDirection, TriDexelStock},
     drill::{DrillCycle, DrillParams},
-    dropcutter::batch_drop_cutter,
     face::{FaceDirection, FaceParams},
     fingerprint::{
         FingerprintDiff, ParameterSweepResult, StockFingerprint, SweepArtifacts, SweepVariant,
@@ -46,6 +45,7 @@ use rs_cam_core::{
     scallop::{ScallopDirection, ScallopParams},
     spiral_finish::{SpiralDirection, SpiralFinishParams},
     steep_shallow::SteepShallowParams,
+    surface::dropcutter::batch_drop_cutter,
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{Toolpath, raster_toolpath_from_grid},
     trace::{TraceCompensation, TraceParams},

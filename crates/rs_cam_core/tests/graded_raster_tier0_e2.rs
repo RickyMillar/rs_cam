@@ -164,7 +164,7 @@ fn relink_and_cost_under(
 }
 
 fn raster_candidate(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     regions: &[Polygon2],
     safe_z: f64,
     effective_min_z: f64,
@@ -188,7 +188,7 @@ fn raster_candidate(
 }
 
 fn nearest_contact_z(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     x: f64,
     y: f64,
     min_z: f64,
@@ -209,7 +209,7 @@ fn nearest_contact_z(
 /// Bilinear z on a 0° drop-cutter grid. `None` when any corner has no
 /// contact — the caller drops the point, as the raster's min_z filter does.
 fn bilinear_contact_z(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     x: f64,
     y: f64,
     min_z: f64,
@@ -253,8 +253,14 @@ fn machined_stock(
         TriDexelStock::from_stock(x0, y0, x1, y1, mesh.bbox.min.z - 1.0, block_top_z, CELL_MM);
 
     let rough_tool = FlatEndmill::new(ROUGH_DIAMETER_MM, ROUGH_CUTTING_LENGTH_MM);
-    let rough_grid =
-        rs_cam_core::dropcutter::batch_drop_cutter(mesh, index, &rough_tool, CELL_MM, 0.0, min_z);
+    let rough_grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
+        mesh,
+        index,
+        &rough_tool,
+        CELL_MM,
+        0.0,
+        min_z,
+    );
     // Tier 0 cuts on ROUGH-ONLY stock — no coarse-finish overlay (that is
     // E1's tier-1 ceiling; tier 0 runs before it).
     let _ = coarse;
@@ -847,12 +853,12 @@ fn wanaka_graded_raster_tier0_e2() {
         .collect();
     steps.sort_by(f64::total_cmp);
     steps.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    let grids: Vec<(f64, rs_cam_core::dropcutter::DropCutterGrid)> = steps
+    let grids: Vec<(f64, rs_cam_core::surface::dropcutter::DropCutterGrid)> = steps
         .iter()
         .map(|&step| {
             (
                 step,
-                rs_cam_core::dropcutter::batch_drop_cutter(
+                rs_cam_core::surface::dropcutter::batch_drop_cutter(
                     &mesh,
                     &index,
                     &r15,
@@ -1021,7 +1027,7 @@ fn wanaka_graded_raster_tier0_e2() {
     let erode_y = ((stepover / 2.0) / cell).ceil() as usize;
 
     // Fine z grid for the passes (the H1 convention: nearest lookup).
-    let zgrid = rs_cam_core::dropcutter::batch_drop_cutter(
+    let zgrid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
         &mesh,
         &index,
         &r15,

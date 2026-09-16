@@ -5,11 +5,11 @@
 //! surface on plateaus, ledges, and pocket floors after a roughing or general
 //! 3D finishing pass.
 
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::{BoundingBox3, P2, P3, V3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 

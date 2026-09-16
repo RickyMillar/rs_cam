@@ -2398,7 +2398,7 @@ pub(crate) fn generate_pencil(
                           num_offset_passes x offset_stepover)",
         },
     );
-    let mut rest_grid_out: Option<crate::rest_field::RestGrid> = None;
+    let mut rest_grid_out: Option<crate::surface::rest_field::RestGrid> = None;
     let mut rest_regions_out: Option<Vec<Polygon2>> = None;
     let mut tip_float_out: Option<crate::compute::config::TipFloatFinding> = None;
     let mut link_report_out: Option<crate::pencil::PencilLinkReport> = None;
@@ -2657,16 +2657,15 @@ pub(crate) fn generate_unified_finish(
         // `routing_radius_mm` is set by `unified_finish_toolpath_with_cancel`
         // itself (the op's own cutter), so leaving the default here is a
         // no-op either way.
-        let mut rest_field_params =
-            ctx.rest_analysis
-                .map_or_else(crate::rest_field::RestFieldParams::default, |ra| {
-                    crate::rest_field::RestFieldParams {
-                        cell_mm: ra.cell_mm,
-                        min_valley_depth: ra.min_valley_depth,
-                        region_margin_mm: ra.region_margin_mm,
-                        ..crate::rest_field::RestFieldParams::default()
-                    }
-                });
+        let mut rest_field_params = ctx.rest_analysis.map_or_else(
+            crate::surface::rest_field::RestFieldParams::default,
+            |ra| crate::surface::rest_field::RestFieldParams {
+                cell_mm: ra.cell_mm,
+                min_valley_depth: ra.min_valley_depth,
+                region_margin_mm: ra.region_margin_mm,
+                ..crate::surface::rest_field::RestFieldParams::default()
+            },
+        );
         // S4 threshold coupling (`unified_finish::ClaimsConfig::
         // territory_clip` doc): the detector's own rest field (whose
         // valleys are gated on `rest_field_params.min_valley_depth`) feeds
@@ -3123,7 +3122,7 @@ pub(crate) fn generate_drop_cutter(
         .min_z
         .max(m.bbox.min.z - 0.1)
         .max(ctx.stock_bbox.min.z - 1.0);
-    let mut grid = crate::dropcutter::batch_drop_cutter_with_cancel(
+    let mut grid = crate::surface::dropcutter::batch_drop_cutter_with_cancel(
         m,
         idx,
         ctx.tool_def,
@@ -3178,7 +3177,7 @@ pub(crate) fn generate_drop_cutter(
             "drop_cutter grid must have square cells for SlopeMap conversion"
         );
         let z_values: Vec<f64> = grid.points.iter().map(|cl| cl.z).collect();
-        let slope_map = crate::slope::SlopeMap::from_z_grid(
+        let slope_map = crate::surface::slope::SlopeMap::from_z_grid(
             &z_values,
             grid.rows,
             grid.cols,
@@ -3690,7 +3689,7 @@ fn attach_generic_rest_analysis(
         initial_stock,
         &probe_ball,
     );
-    let defaults = crate::rest_field::RestFieldParams::default();
+    let defaults = crate::surface::rest_field::RestFieldParams::default();
     // PR-7 (H2.5): the fan this pass ROUTES against is now a real one.
     //
     // Wave A left this taking `RestFieldParams::default()` — a literal
@@ -3706,9 +3705,9 @@ fn attach_generic_rest_analysis(
     // `None` on either dial = ask the policy / take the detector default;
     // no parallel formula lives here.
     let offset_stepover_mm = cfg.offset_stepover_mm.unwrap_or_else(|| {
-        crate::reach::suggested_offset_stepover_mm(tool_def, cfg.min_valley_depth)
+        crate::surface::reach::suggested_offset_stepover_mm(tool_def, cfg.min_valley_depth)
     });
-    let rf_params = crate::rest_field::RestFieldParams {
+    let rf_params = crate::surface::rest_field::RestFieldParams {
         cell_mm: cfg.cell_mm,
         min_valley_depth: cfg.min_valley_depth,
         region_margin_mm: cfg.region_margin_mm,
@@ -3735,7 +3734,9 @@ fn attach_generic_rest_analysis(
             },
         );
     }
-    let rf = crate::rest_field::detect_rest_valleys(mesh, index, tool_def, reference, &rf_params);
+    let rf = crate::surface::rest_field::detect_rest_valleys(
+        mesh, index, tool_def, reference, &rf_params,
+    );
     // F3: the regions these artifacts carry are what a `DerivedRestRegions`
     // consumer will be confined to, and the MAX_REST_REGIONS cap can have
     // silently dropped some of them. Record the pre-cap count alongside —
@@ -3783,20 +3784,20 @@ fn resolve_rest_reference<'a>(
     reference_tool: Option<&'a dyn MillingCutter>,
     initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
     probe_ball: &'a crate::tool::BallEndmill,
-) -> crate::rest_field::RestReference<'a> {
+) -> crate::surface::rest_field::RestReference<'a> {
     let stock_ref = initial_stock.filter(|stock| {
         let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
         sb.min.x <= mb.max.x && sb.max.x >= mb.min.x && sb.min.y <= mb.max.y && sb.max.y >= mb.min.y
     });
     if let Some(stock) = stock_ref {
-        crate::rest_field::RestReference::Stock(stock)
+        crate::surface::rest_field::RestReference::Stock(stock)
     } else if let Some(tool) = reference_tool {
-        crate::rest_field::RestReference::Cutter {
+        crate::surface::rest_field::RestReference::Cutter {
             tool,
             is_surface_probe: false,
         }
     } else {
-        crate::rest_field::RestReference::Cutter {
+        crate::surface::rest_field::RestReference::Cutter {
             tool: probe_ball,
             is_surface_probe: true,
         }

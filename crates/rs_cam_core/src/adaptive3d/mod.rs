@@ -225,7 +225,7 @@ pub struct Adaptive3dParams {
     pub stay_down_clearance_mm: f64,
 }
 
-// SurfaceHeightmap is now in crate::slope (shared across finishing strategies)
+// SurfaceHeightmap is now in crate::surface::slope (shared across finishing strategies)
 
 // ── Helpers mapping TriDexelStock to f64 world used by adaptive ────────
 
@@ -549,7 +549,7 @@ mod tests {
     use crate::ids::ToolpathId;
     use crate::mesh::SpatialIndex;
     use crate::radial_profile::RadialProfileLUT;
-    use crate::slope::SurfaceHeightmap;
+    use crate::surface::slope::SurfaceHeightmap;
     use crate::tool::FlatEndmill;
     use crate::toolpath::simplify_path_3d;
 

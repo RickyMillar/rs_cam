@@ -18,7 +18,7 @@
 //!    therefore the MESH BBOX FLOOR on essentially every ramp-finish run. On
 //!    this fixture: −3.000 requested, −2.407 holdable.
 //!    [`the_canonical_reach_policy_refuses_the_requested_depth_in_the_cone`]
-//!    corroborates that independently through `rs_cam_core::reach`.
+//!    corroborates that independently through `rs_cam_core::surface::reach`.
 //! 2. **The per-point blend.** `ramp_between_contours` pairs two contours by
 //!    arc-length parameter after `match_contours` paired the loops by nearest
 //!    centroid; neither correspondence is geometric, so a blended point can
@@ -50,7 +50,7 @@ use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::ramp_finish::{
     RampFinishParams, RampReachClamp, ramp_finish_toolpath_structured_annotated,
 };
-use rs_cam_core::reach::{LocalValley, ValleySide, solve_reach};
+use rs_cam_core::surface::reach::{LocalValley, ValleySide, solve_reach};
 use rs_cam_core::tool::{BallEndmill, TaperedBallEndmill};
 
 /// The project's finishing tool: Ø1 tip, 7° half-angle, Ø6 shank.
@@ -125,7 +125,7 @@ fn run(mesh: &TriangleMesh, cutter: &dyn rs_cam_core::tool::MillingCutter) -> Ra
 
 // ── 1. The canonical reach policy, as the independent oracle ─────────────
 
-/// The ladder half of the defect, checked against `rs_cam_core::reach`
+/// The ladder half of the defect, checked against `rs_cam_core::surface::reach`
 /// rather than against the surface the production clamp uses — two
 /// independent routes to the same verdict.
 ///

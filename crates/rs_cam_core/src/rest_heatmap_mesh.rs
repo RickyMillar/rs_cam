@@ -2,7 +2,7 @@
 //! for the GUI viewport overlay (finishing-speedup backlog task #3, "render
 //! the rest-heatmap"). The data (`RestGrid`, `AnnotatedToolpath::rest_grid`,
 //! `translate_annotated`/`AnnotatedToolpath::translated`) was already
-//! plumbed by the pencil rest-depth detector (`crate::rest_field`); this
+//! plumbed by the pencil rest-depth detector (`crate::surface::rest_field`); this
 //! module is the last mile — grid cells → a `StockMesh` the wgpu viewport
 //! can upload and draw.
 //!
@@ -26,7 +26,7 @@
 //! doesn't wash out the rest of the map's contrast.
 //!
 //! `grid.threshold` IS `RestFieldParams::min_valley_depth` — the same value
-//! [`crate::rest_field::detect_rest_valleys`] thresholds on to build the
+//! [`crate::surface::rest_field::detect_rest_valleys`] thresholds on to build the
 //! mask that becomes `RestFieldResult::region_polygons`. This module reuses
 //! that exact threshold rather than inventing a second one: the heatmap's
 //! "hot" region and the derived region polygons must never disagree about
@@ -45,8 +45,8 @@
 //! independent visibility flags and can be on at once.
 
 use crate::geo::P2;
-use crate::rest_field::RestGrid;
 use crate::stock_mesh::StockMesh;
+use crate::surface::rest_field::RestGrid;
 use crate::tier_islands::TierIslands;
 use crate::tier_map::{NO_TIER, TierMap};
 

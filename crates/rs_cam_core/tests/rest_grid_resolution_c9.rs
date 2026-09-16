@@ -65,7 +65,7 @@
 
 use rs_cam_core::geo::polyline_length;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 
 mod common;

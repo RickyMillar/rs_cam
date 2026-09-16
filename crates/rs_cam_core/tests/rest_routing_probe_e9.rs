@@ -119,7 +119,7 @@
 
 use rs_cam_core::geo::polyline_length;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 
 mod common;
@@ -522,7 +522,7 @@ fn wide_control_reach_collapse_is_read_through_the_pre_routing_seams() {
 /// is void.
 #[test]
 fn reach_sensitivity_to_rim_distance_is_gain_one_only_when_the_wall_angle_is_held() {
-    use rs_cam_core::reach::{LocalValley, ValleySide, solve_reach};
+    use rs_cam_core::surface::reach::{LocalValley, ValleySide, solve_reach};
 
     let mesh = GroovedBlock::new(2.5, 70.0, 1.2).dense_step(0.1).build();
     let index = SpatialIndex::build(&mesh, 5.0);

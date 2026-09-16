@@ -18,7 +18,6 @@ mod common;
 
 use common::scallop_oracle::{EnvelopeOracle, OracleGrid, OracleParams, StampKernel, render_field};
 use common::{meshes, tools};
-use rs_cam_core::dropcutter::point_drop_cutter;
 use rs_cam_core::finish_setup::FinishResolutionPolicy;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -26,6 +25,7 @@ use rs_cam_core::scallop::{
     CurvaturePolicy, RingSource, ScallopDirection, ScallopParams, ScallopRingBudget,
     ScallopStepoverPolicy, StepoverGeometry, scallop_toolpath_research,
 };
+use rs_cam_core::surface::dropcutter::point_drop_cutter;
 use rs_cam_core::tool::MillingCutter;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 

@@ -22,11 +22,11 @@
 
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::reach::{
+use rs_cam_core::surface::reach::{
     LocalValley, RoutingVerdict, ValleySide, coverage_cap_passes, offset_passes_per_side, route,
     solve_reach,
 };
-use rs_cam_core::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 
 /// The tool this project finishes with: Ø1 tip, 7° half-angle, Ø6 shank.
@@ -111,7 +111,7 @@ fn reference() -> BallEndmill {
 }
 
 /// **The detector now measures the cross-section it used to guess at.** Every
-/// emitted centreline carries one [`rs_cam_core::rest_field::CenterlineSample`]
+/// emitted centreline carries one [`rs_cam_core::surface::rest_field::CenterlineSample`]
 /// per point, with a rim distance on each side and a resolved reach — not a
 /// single per-branch scalar.
 ///
@@ -347,7 +347,8 @@ fn a_six_millimetre_reference_is_not_the_same_measurement_as_the_surface_probe()
         },
         &params(&cutter),
     );
-    let vol = |r: &rs_cam_core::rest_field::RestFieldResult| r.report.total_rest_volume_mm3;
+    let vol =
+        |r: &rs_cam_core::surface::rest_field::RestFieldResult| r.report.total_rest_volume_mm3;
     println!(
         "Ø6 nominal reference: {} centrelines, {:.2} mm³ rest; \
          self-referenced probe: {} centrelines, {:.2} mm³ rest",

@@ -3,9 +3,9 @@
 //! Operations produce Toolpath (not G-code). G-code is a final serialization step.
 //! This enables dressups, visualization, and analysis without G-code parsing.
 
-use crate::dropcutter::DropCutterGrid;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
+use crate::surface::dropcutter::DropCutterGrid;
 
 /// Clearance (mm) above the INPUT STOCK's material ceiling used by the
 /// entry-descent post-pass ([`crate::dressup::optimize_entry_descents`]) to

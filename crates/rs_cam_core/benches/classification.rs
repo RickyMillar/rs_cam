@@ -42,7 +42,7 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 
 use rs_cam_core::finish_setup::CLASSIFICATION_PROBE_DIAMETER_MM;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::slope::SurfaceHeightmap;
+use rs_cam_core::surface::slope::SurfaceHeightmap;
 use rs_cam_core::tool::BallEndmill;
 
 mod support;

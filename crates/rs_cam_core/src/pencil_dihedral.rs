@@ -6,7 +6,7 @@
 //! threshold, then chains connected concave edges into polylines via graph
 //! traversal. On dense noisy relief it fires on every triangulation crease
 //! and fragments — see [`crate::crest_lines`] (curvature crest lines) or
-//! [`crate::rest_field`] (the tool-radius-aware rest-depth field) for the
+//! [`crate::surface::rest_field`] (the tool-radius-aware rest-depth field) for the
 //! organic-relief alternatives.
 //!
 //! Pipeline (owned entirely by this module):

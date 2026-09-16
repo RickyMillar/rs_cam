@@ -4,11 +4,11 @@
 //! drops each point onto the mesh via `point_drop_cutter`, and builds a toolpath
 //! that follows the projected contour at a specified depth below the surface.
 
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 

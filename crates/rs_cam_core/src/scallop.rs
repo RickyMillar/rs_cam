@@ -16,7 +16,6 @@
 //! the stepover."
 
 use crate::debug_trace::ToolpathDebugContext;
-use crate::dropcutter::point_drop_cutter;
 use crate::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
@@ -24,6 +23,7 @@ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::scallop_math::variable_stepover;
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
 
@@ -179,7 +179,7 @@ impl Default for ScallopParams {
 #[cfg_attr(not(test), allow(dead_code))]
 fn ring_stepover(
     ring: &[P2],
-    slope_map: &crate::slope::SlopeMap,
+    slope_map: &crate::surface::slope::SlopeMap,
     cusp_r: f64,
     scallop_height: f64,
 ) -> f64 {
@@ -219,7 +219,7 @@ pub struct RingStepoverDecision {
 #[must_use]
 pub fn ring_stepover_with_policy(
     ring: &[P2],
-    slope_map: &crate::slope::SlopeMap,
+    slope_map: &crate::surface::slope::SlopeMap,
     cusp_r: f64,
     scallop_height: f64,
     policy: ScallopStepoverPolicy,
@@ -717,7 +717,7 @@ impl ScallopStepoverPolicy {
     #[must_use]
     pub(crate) fn point_stepover(
         self,
-        slope_map: &crate::slope::SlopeMap,
+        slope_map: &crate::surface::slope::SlopeMap,
         cusp_r: f64,
         scallop_height: f64,
         x: f64,
@@ -755,7 +755,7 @@ pub struct ScallopStepoverTrace {
 
 /// Whether `(x, y)` sits over real mesh surface, EXACTLY.
 ///
-/// Delegates to [`crate::dropcutter::point_is_over_mesh_xy`] — a zero-radius
+/// Delegates to [`crate::surface::dropcutter::point_is_over_mesh_xy`] — a zero-radius
 /// spatial-index query plus point-in-triangle, the same predicate the Shallow
 /// raster band uses (`unified_finish.rs`, "the tool rides the edge and carves
 /// a trench around the part").
@@ -777,7 +777,7 @@ pub struct ScallopStepoverTrace {
 /// (`RingLiftCtx::probe_step`, ring decimation spacing), which is what that
 /// grid is actually for.
 fn point_is_covered(ctx: &RingLiftCtx<'_>, x: f64, y: f64) -> bool {
-    crate::dropcutter::point_is_over_mesh_xy(x, y, ctx.mesh, ctx.index)
+    crate::surface::dropcutter::point_is_over_mesh_xy(x, y, ctx.mesh, ctx.index)
 }
 
 /// Lift a 2D polygon ring to 3D by drop-cutter Z queries, pairing each point
@@ -1160,8 +1160,8 @@ pub fn generate_scallop_rings(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
-    slope_map: &crate::slope::SlopeMap,
-    heightmap: &crate::slope::SurfaceHeightmap,
+    slope_map: &crate::surface::slope::SlopeMap,
+    heightmap: &crate::surface::slope::SurfaceHeightmap,
     cusp_r: f64,
     scallop_height: f64,
     stock_to_leave: f64,
@@ -1199,8 +1199,8 @@ fn generate_scallop_rings_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
-    slope_map: &crate::slope::SlopeMap,
-    heightmap: &crate::slope::SurfaceHeightmap,
+    slope_map: &crate::surface::slope::SlopeMap,
+    heightmap: &crate::surface::slope::SurfaceHeightmap,
     cusp_r: f64,
     scallop_height: f64,
     stock_to_leave: f64,
@@ -2022,7 +2022,7 @@ pub enum ScallopRingBudget {
     /// budget under-counts on any sloped ground. The cap then truncates the
     /// cascade and the loop warns.
     FlatGroundStepover,
-    /// Budget from [`crate::reach::suggested_offset_stepover_mm`] at the
+    /// Budget from [`crate::surface::reach::suggested_offset_stepover_mm`] at the
     /// cutter's own shallow-rest working half-width — the number PR-6a made
     /// canonical for "how far apart may two passes of this cutter sit".
     ///
@@ -2318,7 +2318,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
         // cusp floor binds — the same reference PR-6a uses for a fan it has
         // not measured a depth for yet.
         ScallopRingBudget::ReachPolicyStepover => {
-            crate::reach::suggested_offset_stepover_mm(cutter, 0.0).max(clamp_floor)
+            crate::surface::reach::suggested_offset_stepover_mm(cutter, 0.0).max(clamp_floor)
         }
         ScallopRingBudget::LoopClampFloor => clamp_floor,
     };
@@ -2891,7 +2891,7 @@ mod tests {
         }
 
         let z = make_dome_z_grid(20, 20, 1.0, 8.0);
-        let slope_map = crate::slope::SlopeMap::from_z_grid(&z, 20, 20, 0.0, 0.0, 1.0);
+        let slope_map = crate::surface::slope::SlopeMap::from_z_grid(&z, 20, 20, 0.0, 0.0, 1.0);
 
         let tool_radius = ball_cutter().radius();
         let scallop_height = 0.1;

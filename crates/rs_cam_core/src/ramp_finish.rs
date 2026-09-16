@@ -718,7 +718,8 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
             let mut lifted: Vec<bool> = vec![false; ramp_path.len()];
             for (i, pt) in ramp_path.iter_mut().enumerate() {
                 let contact =
-                    crate::dropcutter::point_drop_cutter(pt.x, pt.y, mesh, index, cutter).z;
+                    crate::surface::dropcutter::point_drop_cutter(pt.x, pt.y, mesh, index, cutter)
+                        .z;
                 let floor = contact.max(bbox.min.z) + params.stock_to_leave;
                 if pt.z < floor {
                     reach_clamp.record_lift(floor - pt.z);
@@ -874,7 +875,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;
-    use crate::slope::SlopeMap;
+    use crate::surface::slope::SlopeMap;
     use crate::tool::BallEndmill;
 
     fn make_hemisphere() -> (TriangleMesh, SpatialIndex) {

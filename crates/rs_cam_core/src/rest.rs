@@ -14,7 +14,7 @@
 //!
 //! Reference: research/raw_algorithms.md §4.5
 //!
-//! Not to be confused with [`crate::rest_field`], the 3D tool-radius-aware
+//! Not to be confused with [`crate::surface::rest_field`], the 3D tool-radius-aware
 //! rest-*depth* field used by pencil finishing to find where a fine detail
 //! tool still has material left after a coarser rough/finish pass. That
 //! module works on mesh dexel/heightmap depth comparisons; this one works

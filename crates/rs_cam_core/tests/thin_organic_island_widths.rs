@@ -707,7 +707,7 @@ fn stage_d(
 
     // One mesh-global raster grid, exactly as the Shallow band builds it
     // (`direction_deg = 0.0`), shared across the regions below.
-    let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+    let grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
         mesh,
         index,
         cutter,
@@ -934,7 +934,7 @@ fn stage_e(
     let mut table: Vec<Vec<(f64, usize, usize, f64)>> = vec![Vec::new(); regions.len()];
 
     for angle in ANGLES {
-        let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+        let grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
             mesh,
             index,
             cutter,
@@ -1172,7 +1172,7 @@ fn stage_f(
             } else {
                 angle
             };
-            let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+            let grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
                 mesh,
                 index,
                 cutter,
@@ -1296,7 +1296,7 @@ fn stage_g(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+    let grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
         mesh,
         index,
         cutter,
@@ -1489,8 +1489,8 @@ fn grid_for_direction(
     cutter: &TaperedBallEndmill,
     stepover: f64,
     direction_deg: f64,
-) -> rs_cam_core::dropcutter::DropCutterGrid {
-    rs_cam_core::dropcutter::batch_drop_cutter(
+) -> rs_cam_core::surface::dropcutter::DropCutterGrid {
+    rs_cam_core::surface::dropcutter::batch_drop_cutter(
         mesh,
         index,
         cutter,
@@ -1505,7 +1505,7 @@ fn grid_for_stage_i(
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
     stepover: f64,
-) -> rs_cam_core::dropcutter::DropCutterGrid {
+) -> rs_cam_core::surface::dropcutter::DropCutterGrid {
     grid_for_direction(mesh, index, cutter, stepover, 0.0)
 }
 
@@ -1530,7 +1530,7 @@ fn runs_overlap(a: (usize, usize), b: (usize, usize)) -> bool {
     a.0 <= b.1 && b.0 <= a.1
 }
 
-fn grid_frame_to_world(grid: &rs_cam_core::dropcutter::DropCutterGrid, point: P2) -> P2 {
+fn grid_frame_to_world(grid: &rs_cam_core::surface::dropcutter::DropCutterGrid, point: P2) -> P2 {
     let angle = grid.direction_deg.to_radians();
     let (cosine, sine) = (angle.cos(), angle.sin());
     P2::new(
@@ -1540,7 +1540,7 @@ fn grid_frame_to_world(grid: &rs_cam_core::dropcutter::DropCutterGrid, point: P2
 }
 
 fn polygons_for_lattice_cell(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     positions: &[usize],
 ) -> Vec<Polygon2> {
     let rows = grid.rows.saturating_add(2);
@@ -1585,7 +1585,7 @@ fn polygons_for_lattice_cell(
 }
 
 fn lattice_boustrophedon_cells(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     boundary: &Polygon2,
     min_z: f64,
 ) -> (Vec<Polygon2>, usize) {
@@ -1691,7 +1691,7 @@ fn pca_minor_and_elongation(poly: &Polygon2, cell: f64) -> Option<(f64, f64)> {
 }
 
 fn stage_i(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     planned: &rs_cam_core::finish_planner::PlannedRegions,
     stepover: f64,
     effective_min_z: f64,
@@ -1921,7 +1921,7 @@ fn relink_and_cost_under(
 }
 
 fn raster_candidate(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     regions: &[Polygon2],
     safe_z: f64,
     effective_min_z: f64,
@@ -1946,7 +1946,7 @@ fn raster_candidate(
 }
 
 fn cell_membership_matches(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     boundary: &Polygon2,
     cells: &[Polygon2],
     effective_min_z: f64,
@@ -1976,7 +1976,7 @@ fn stage_j(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     regions: &[RegionCells],
 ) {
     use rs_cam_core::geometry::region_set::RegionSet;
@@ -2090,7 +2090,7 @@ fn stage_k(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
-    zero_grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    zero_grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     zero_regions: &[RegionCells],
     stepover: f64,
 ) {
@@ -2296,7 +2296,7 @@ struct A3Inputs<'a> {
     /// Production's own ownership field, at `cell_mm`. Used to decide, per
     /// dexel column, WHICH prior op last cut there.
     tier_map: &'a rs_cam_core::tier_map::TierMap,
-    zero_grid: &'a rs_cam_core::dropcutter::DropCutterGrid,
+    zero_grid: &'a rs_cam_core::surface::dropcutter::DropCutterGrid,
     stepover: f64,
 }
 
@@ -2315,7 +2315,7 @@ fn coarse_sweep_reach_mm(coarse: &TaperedBallEndmill) -> f64 {
 /// Only valid at 0°: `u_start`/`v_start` are world X/Y only there
 /// (`dropcutter.rs:45-56`).
 fn nearest_contact_z(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     x: f64,
     y: f64,
     min_z: f64,
@@ -2408,7 +2408,7 @@ fn a3_machined_stock(
     );
 
     let rough_tool = FlatEndmill::new(ROUGH_DIAMETER_MM, ROUGH_CUTTING_LENGTH_MM);
-    let rough_grid = rs_cam_core::dropcutter::batch_drop_cutter(
+    let rough_grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
         mesh,
         input.index,
         &rough_tool,
@@ -2416,7 +2416,7 @@ fn a3_machined_stock(
         0.0,
         min_z,
     );
-    let coarse_grid = rs_cam_core::dropcutter::batch_drop_cutter(
+    let coarse_grid = rs_cam_core::surface::dropcutter::batch_drop_cutter(
         mesh,
         input.index,
         input.coarse,
@@ -2539,7 +2539,7 @@ fn report_ceiling_population(
 /// kernel. The candidate is rebuilt per arm so no arm sees another's toolpath.
 fn cost_under_arms(
     input: &A3Inputs<'_>,
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     polygons: &[Polygon2],
     boundary: &rs_cam_core::geometry::region_set::RegionSet<'_>,
     kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
@@ -3154,7 +3154,7 @@ struct CellPlan {
     /// justify (or kill) a *gated* per-cell rule later — Stage M deliberately
     /// does not build one.
     elongation: f64,
-    grid: rs_cam_core::dropcutter::DropCutterGrid,
+    grid: rs_cam_core::surface::dropcutter::DropCutterGrid,
     /// Points of this cell's own grid that engage the surface inside this
     /// cell's own polygon — the coverage proxy's numerator.
     lattice_points: usize,
@@ -3191,8 +3191,8 @@ fn cell_lattice_grid(
     polygon: &Polygon2,
     angle_deg: f64,
     min_z: f64,
-) -> (rs_cam_core::dropcutter::DropCutterGrid, usize) {
-    use rs_cam_core::dropcutter::{DropCutterGrid, point_drop_cutter};
+) -> (rs_cam_core::surface::dropcutter::DropCutterGrid, usize) {
+    use rs_cam_core::surface::dropcutter::{DropCutterGrid, point_drop_cutter};
     use rs_cam_core::tool::CLPoint;
 
     let radians = angle_deg.to_radians();
@@ -3500,7 +3500,7 @@ fn report_cell_angle_distribution(plans: &[CellPlan], global_deg: Option<f64>, f
 /// Points of a SHARED grid that engage the surface inside `polygon` — the
 /// denominator the per-cell coverage proxy is read against.
 fn shared_lattice_points(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     polygon: &Polygon2,
     min_z: f64,
 ) -> usize {
@@ -3926,7 +3926,7 @@ struct D1Setup {
     coarse: TaperedBallEndmill,
     fine: TaperedBallEndmill,
     tier_map: rs_cam_core::tier_map::TierMap,
-    zero_grid: rs_cam_core::dropcutter::DropCutterGrid,
+    zero_grid: rs_cam_core::surface::dropcutter::DropCutterGrid,
     stepover: f64,
     regions: Vec<RegionCells>,
 }

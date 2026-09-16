@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::geo::P3;
 use crate::polygon::Polygon2;
-use crate::rest_field::RestGrid;
+use crate::surface::rest_field::RestGrid;
 use crate::toolpath::Toolpath;
 
 // ── SpanId ──────────────────────────────────────────────────────────────
@@ -482,7 +482,7 @@ pub struct AnnotatedToolpath {
     /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
     pub rest_grid: Option<Arc<RestGrid>>,
     /// Machining-region polygons derived from the rest-depth field
-    /// ([`crate::rest_field::RestFieldResult::region_polygons`]) — same
+    /// ([`crate::surface::rest_field::RestFieldResult::region_polygons`]) — same
     /// producers as [`Self::rest_grid`]; `None` otherwise. World-frame XY
     /// polygons; `Arc` so cloning the annotated toolpath (sim / result
     /// caching) stays cheap. This is the derived-boundary source for

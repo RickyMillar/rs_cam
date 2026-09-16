@@ -346,8 +346,8 @@ fn grid_for_direction(
     cutter: &BallEndmill,
     stepover: f64,
     direction_deg: f64,
-) -> rs_cam_core::dropcutter::DropCutterGrid {
-    rs_cam_core::dropcutter::batch_drop_cutter(
+) -> rs_cam_core::surface::dropcutter::DropCutterGrid {
+    rs_cam_core::surface::dropcutter::batch_drop_cutter(
         mesh,
         index,
         cutter,
@@ -359,7 +359,7 @@ fn grid_for_direction(
 
 /// **Restated from `thin_organic_island_widths.rs:2015-2038`.**
 fn raster_candidate(
-    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
     regions: &[Polygon2],
     safe_z: f64,
     effective_min_z: f64,
@@ -498,8 +498,9 @@ fn cl_polylines(
         out.input_points += line.len();
         let mut cl: Vec<P3> = Vec::with_capacity(line.len());
         for point in line {
-            let probe =
-                rs_cam_core::dropcutter::point_drop_cutter(point.x, point.y, mesh, index, cutter);
+            let probe = rs_cam_core::surface::dropcutter::point_drop_cutter(
+                point.x, point.y, mesh, index, cutter,
+            );
             if probe.contacted && probe.z.is_finite() {
                 cl.push(probe.position());
             } else {

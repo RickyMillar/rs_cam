@@ -13,13 +13,13 @@
 //! 4. Build a single continuous toolpath segment.
 
 use crate::debug_trace::ToolpathDebugContext;
-use crate::dropcutter::point_drop_cutter;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 #[cfg(test)]
 use crate::polygon::Polygon2;
+use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
