@@ -160,14 +160,6 @@ impl EnrichedMesh {
             .collect()
     }
 
-    /// Get all edges adjacent to a specific face.
-    pub fn edges_for_face(&self, face_id: FaceGroupId) -> Vec<&BrepEdge> {
-        self.edges
-            .iter()
-            .filter(|e| e.face_a == face_id || e.face_b == face_id)
-            .collect()
-    }
-
     /// Uniformly scale all geometry (mesh vertices, face bboxes/loops, edge vertices).
     ///
     /// Rebuilds the inner `TriangleMesh` with scaled vertices and recomputes bounding boxes.
@@ -266,24 +258,6 @@ impl EnrichedMesh {
                 }
             }
         }
-    }
-
-    /// Get edges shared between two specific faces.
-    pub fn edges_between(&self, a: FaceGroupId, b: FaceGroupId) -> Vec<&BrepEdge> {
-        self.edges
-            .iter()
-            .filter(|e| (e.face_a == a && e.face_b == b) || (e.face_a == b && e.face_b == a))
-            .collect()
-    }
-
-    /// Get all edges as 2D polylines (for trace/engrave operations).
-    /// Only returns edges that have 2D projections available.
-    pub fn edge_chains_2d(&self) -> Vec<Vec<P2>> {
-        self.edges
-            .iter()
-            .filter_map(|e| e.vertices_2d.clone())
-            .filter(|pts| pts.len() >= 2)
-            .collect()
     }
 
     /// Project a single planar face's boundary loops to a 2D `Polygon2`.
