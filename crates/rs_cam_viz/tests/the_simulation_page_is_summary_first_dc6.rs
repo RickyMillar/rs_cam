@@ -374,8 +374,8 @@ fn off_workspace_run_producers_hold_their_recorded_ruling_ur3() {
         ),
         (
             "ui/readiness_panel.rs",
-            3,
-            "the Readiness workspace; no simulation panel is on screen with it",
+            1,
+            "UR8 (4a1d8e27): the ordered FirstUnmetAction row is the one Readiness route; no simulation panel is on screen with it",
         ),
     ];
     for (rel, expected, ruling) in ALLOWED {
