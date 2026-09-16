@@ -245,7 +245,7 @@ and doc lines only, so none of them landed here.
 
 ## Progress
 
-- [x] W1  - [x] W2  - [x] W3  - [x] W4  - [x] ruled items  - [ ] review + re-scan
+- [x] W1  - [x] W2  - [x] W3  - [x] W4  - [x] ruled items  - [x] review + re-scan
 
 W2 closed: S25 viz rows and S27 held (ui-premium plan / power-calcs owner).
 
@@ -277,3 +277,18 @@ The S19 / S21 / S23 rows in W1's files went with W1 (`7a81ee4d`): five
 dead `pub` items — `all_toolpath_ids`, `export_diagnostics_json`,
 `ui_style`, `new_default_with_ctx`, `mcp_highlight_effect`. Row 11 of
 the ranked table keeps the rest of S4–S24 for W2.
+
+## Closed 2026-09-17
+
+The completeness review's fix-ups landed as three commits, in order: R1
+`7e53684e` (docs stop describing deleted methods and retired keys as
+live), R2 `f36fa3b3` (the CLI job file accepts canonical tool-type names
+only), R3 `2089e29d` (an orphaned constant, two SAFETY prefixes, and
+fixtures that match the writer). The programme is closed.
+
+One review item did not exist: R1's brief asked for a decision on a
+production `#[serde(alias = "standing_material_mm2")]`. `ToolpathStats`
+is not serde and carries no such attribute. The only alias in the repo
+is the consumer-side migration pinned in
+`tests/standing_material_channel_am9.rs`, which stays. R1 records that
+in the field doc.
