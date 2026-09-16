@@ -272,7 +272,8 @@ footer code{font-family:var(--mono); font-size:12px}
         <tbody id="helixrows"></tbody>
       </table>
     </div>
-    <p class="hint" id="helixnote" style="margin-top:12px; font-family:var(--body); font-size:13px; color:var(--ink-2); line-height:1.5"></p>
+    <div id="helixwhatif" style="margin:18px -16px 0"></div>
+    <p class="hint" id="helixnote" style="margin-top:18px; font-family:var(--body); font-size:13px; color:var(--ink-2); line-height:1.5"></p>
   </div>
 </div>
 
@@ -743,6 +744,48 @@ function drawHelix(){
     row("Edge length per mm depth", "1.0000×",
         `${(1/Math.cos(P.helix*Math.PI/180)).toFixed(4)}×`,
         "a spiral edge is longer than the depth it covers");
+
+  // ---- the open question, sized ----
+  //
+  // Everything above this line is what the ENGINE does. This block is a
+  // what-if for T-13, which is unresolved, so it deliberately does NOT touch
+  // the gauges: those must keep showing the shipped model.
+  //
+  // If the ploughing force arises per unit of EDGE rather than per mm of
+  // depth, only the edge term scales by 1/cos(beta). The shear term does not:
+  // it follows the chip AREA, and a helix removes the same material.
+  const inv = 1 / Math.cos(P.helix * Math.PI / 180);
+  const ks = KS * (P.kc / ANCHOR_KC), fe = FEDGE * (P.kc / ANCHOR_KC);
+  const shear = P.ap * ks * m.h;
+  const edge  = P.ap * fe;
+  const sideNow = shear + edge, sideIf = shear + edge * inv;
+  const gantryNow = m.gantry, gantryIf = m.gantry * (sideIf / Math.max(sideNow, 1e-9));
+  const shearKw = ANISO * ks * (P.ap * P.ae) / 60e6 * m.feed;
+  const edgeKw  = m.powerKw - shearKw;
+  const powerIf = shearKw + edgeKw * inv;
+  const pct = (a, b) => `${((b / a - 1) * 100).toFixed(1)} %`;
+  el("#helixwhatif").innerHTML = `
+    <div class="panel-head" style="border-top:1px solid var(--rule); border-bottom:1px solid var(--rule-2)">
+      If T-13 is real, this is what moves
+      <small>An OPEN question, not the shipped model. The gauges above are unchanged on purpose.</small>
+    </div>
+    <div class="scroller"><table>
+      <thead><tr><th>Quantity</th><th>Engine today</th><th>With 1/cos β on the edge term</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>Tool side force</td><td>${sideNow.toFixed(1)} N</td>
+            <td>${sideIf.toFixed(1)} N</td><td style="text-align:left;color:var(--warn);font-family:var(--body);font-size:12px">+${pct(sideNow, sideIf)}</td></tr>
+        <tr><td>Gantry push</td><td>${gantryNow.toFixed(1)} N</td>
+            <td>${gantryIf.toFixed(1)} N</td><td style="text-align:left;color:var(--warn);font-family:var(--body);font-size:12px">+${pct(gantryNow, gantryIf)}</td></tr>
+        <tr><td>Spindle power</td><td>${m.powerKw.toFixed(3)} kW</td>
+            <td>${powerIf.toFixed(3)} kW</td><td style="text-align:left;color:var(--warn);font-family:var(--body);font-size:12px">+${pct(m.powerKw, powerIf)}</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint" style="margin:12px 16px 4px; font-family:var(--body); font-size:12.5px; color:var(--ink-2); line-height:1.5">
+      Only the edge term scales. The shear term follows the chip <b>area</b>, and a
+      helix removes the same material either way. Whether ploughing really scales
+      with edge length is an oblique-cutting question — the geometry is certain,
+      the mechanics are not. Nothing moves until that has an anchor.
+    </p>`;
 
   const drift = straight.mean > 0
     ? Math.abs(helical.mean - straight.mean) / straight.mean * 100 : 0;
