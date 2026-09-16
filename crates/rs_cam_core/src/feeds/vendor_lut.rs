@@ -151,11 +151,8 @@ pub struct VendorObservation {
     pub observation_id: String,
     pub source_id: String,
     pub source_vendor: Vendor,
-    #[allow(dead_code)]
     pub source_title: String,
-    #[allow(dead_code)]
     pub source_url: String,
-    #[allow(dead_code)]
     pub accessed_on: String,
     pub evidence_grade: EvidenceGrade,
     pub row_kind: ObservationKind,
@@ -164,7 +161,6 @@ pub struct VendorObservation {
     pub operation_family: LutOperationFamily,
     pub pass_role: LutPassRole,
     pub material_family: MaterialFamily,
-    #[allow(dead_code)]
     pub material_label: String,
     pub hardness_kind: Option<HardnessKind>,
     pub hardness_value: Option<f64>,
@@ -189,7 +185,6 @@ pub struct VendorObservation {
     /// `None` for pointed bits and rows that don't record it. Data slot
     /// for incoming flat-tip datasets; not yet consumed by matching.
     #[serde(default)]
-    #[allow(dead_code)]
     pub tip_diameter_mm: Option<f64>,
     pub flute_count: u32,
     pub rpm_min: Option<f64>,
@@ -212,16 +207,12 @@ pub struct VendorObservation {
     pub ap_max_factor: Option<f64>,
     pub ae_min_mm: Option<f64>,
     pub ae_max_mm: Option<f64>,
-    #[allow(dead_code)]
     pub ap_rule: Option<String>,
-    #[allow(dead_code)]
     pub ae_rule: Option<String>,
-    #[allow(dead_code)]
     pub machine_assumption: Option<String>,
     /// Page number or row label in the source PDF for audit traceability.
     /// Optional; older observations did not record this and may be backfilled.
     #[serde(default)]
-    #[allow(dead_code)]
     pub source_page: Option<String>,
 }
 
