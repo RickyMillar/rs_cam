@@ -138,35 +138,22 @@ pub enum MongeOutcome {
 /// Height of the heightfield at `(x, y)`, or `None` when the point is off
 /// the surface.
 ///
-/// Sound because the mesh is a heightfield and `cell_triangles_at` is a
-/// guaranteed superset of the triangles a vertical ray at `(x, y)` can
-/// pierce. `max` over the hits makes the answer the topmost surface, which
-/// for a heightfield is the only surface.
-// SAFETY: `index.cell_triangles_at` returns indices into `mesh.triangles`,
-// and a triangle's vertex ids index `mesh.vertices` by mesh construction.
-#[allow(clippy::indexing_slicing)]
+/// **One reader, not two.** This delegates to
+/// [`crate::reach_map::surface_z_at`], which is the same question tied to
+/// the same containment predicate the drop cutter uses
+/// ([`crate::dropcutter::point_is_over_mesh_xy`] via
+/// [`crate::geo::Triangle::contains_point_xy`]), so "is there surface here"
+/// and "how high is it" cannot disagree. This module carried its own
+/// barycentric walk until 2026-09-17, with a tighter edge tolerance
+/// (`1e-9` against the predicate's `1e-8`) and a tighter degenerate guard,
+/// so the two answered differently on a point sitting on a triangle edge.
+///
+/// Sound for the same reason as before: the mesh is a heightfield, the
+/// index cell is a superset of the triangles a vertical ray at `(x, y)` can
+/// pierce, and `max` over the hits is the topmost surface, which for a
+/// heightfield is the only surface.
 pub fn surface_z(mesh: &TriangleMesh, index: &SpatialIndex, at: P2) -> Option<f64> {
-    const BARY_EPS: f64 = 1e-9;
-    let mut best: Option<f64> = None;
-    for &t in index.cell_triangles_at(at.x, at.y) {
-        let tri = mesh.triangles[t];
-        let p0 = mesh.vertices[tri[0] as usize];
-        let p1 = mesh.vertices[tri[1] as usize];
-        let p2 = mesh.vertices[tri[2] as usize];
-        let den = (p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y);
-        if den.abs() < 1e-14 {
-            continue;
-        }
-        let l0 = ((p1.y - p2.y) * (at.x - p2.x) + (p2.x - p1.x) * (at.y - p2.y)) / den;
-        let l1 = ((p2.y - p0.y) * (at.x - p2.x) + (p0.x - p2.x) * (at.y - p2.y)) / den;
-        let l2 = 1.0 - l0 - l1;
-        if l0 < -BARY_EPS || l1 < -BARY_EPS || l2 < -BARY_EPS {
-            continue;
-        }
-        let z = l0 * p0.z + l1 * p1.z + l2 * p2.z;
-        best = Some(best.map_or(z, |b: f64| b.max(z)));
-    }
-    best
+    crate::reach_map::surface_z_at(at.x, at.y, mesh, index)
 }
 
 /// Solve the symmetric 6x6 system `A x = b` by Gauss-Jordan with partial
