@@ -185,7 +185,9 @@ fn find_best_vbit_row_where(
         };
         let (base_score, diam_score) = score_observation(criteria, obs);
         let score = base_score + angle_bonus;
-        #[allow(clippy::indexing_slicing)] // best.i stored from this same iteration
+        // SAFETY: `best.i` was stored from this same iteration over
+        // `lut.observations`, so the index is in range.
+        #[allow(clippy::indexing_slicing)]
         if beats(
             score,
             &obs.observation_id,
@@ -306,28 +308,6 @@ pub fn find_best_chip_envelope_row(
             lookup_best_where(lut, criteria, has_chipload)
         }
     }
-}
-
-/// All compatible rows for the given criteria, sorted by composite score
-/// descending. Used by the F&S suggest module to enumerate alternatives —
-/// the gate only needs the best, the suggest module needs to consider
-/// trade-offs across rows whose RPM falls inside the machine spindle.
-pub fn enumerate_matching_rows(lut: &VendorLut, criteria: &LookupCriteria) -> Vec<MatchedRow> {
-    let mut all: Vec<(i64, MatchedRow)> = Vec::new();
-    for (i, obs) in lut.observations.iter().enumerate() {
-        if !passes_must_match(criteria, obs) {
-            continue;
-        }
-        let (score, diam_score) = score_observation(criteria, obs);
-        all.push((score, build_result(obs, criteria, score, diam_score, i)));
-    }
-    // F3.2 rule 8 — deterministic order: equal scores break on
-    // observation_id instead of file iteration order.
-    all.sort_by(|(sa, ra), (sb, rb)| {
-        sb.cmp(sa)
-            .then_with(|| ra.observation_id.cmp(&rb.observation_id))
-    });
-    all.into_iter().map(|(_, row)| row).collect()
 }
 
 /// Cap on extrapolation scaling so a wildly mismatched row can't return
@@ -608,7 +588,9 @@ fn lookup_best_where(
             continue;
         }
         let (score, diam_score) = score_observation(query, obs);
-        #[allow(clippy::indexing_slicing)] // best.i stored from this same iteration
+        // SAFETY: `best.i` was stored from this same iteration over
+        // `lut.observations`, so the index is in range.
+        #[allow(clippy::indexing_slicing)]
         if beats(
             score,
             &obs.observation_id,
