@@ -438,13 +438,6 @@ impl ToolpathDebugScope {
         });
     }
 
-    pub fn incr_counter(&self, key: impl Into<String>, delta: f64) {
-        self.update_span(|span| {
-            let key = key.into();
-            *span.counters.entry(key).or_insert(0.0) += delta;
-        });
-    }
-
     pub fn finish(mut self) {
         self.finish_inner();
     }

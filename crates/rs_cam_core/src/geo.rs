@@ -67,13 +67,6 @@ impl BoundingBox3 {
         )
     }
 
-    pub fn overlaps_xy(&self, other: &BoundingBox3) -> bool {
-        self.min.x <= other.max.x
-            && self.max.x >= other.min.x
-            && self.min.y <= other.max.y
-            && self.max.y >= other.min.y
-    }
-
     /// Test whether a point lies inside (or on the boundary of) this AABB.
     pub fn contains_point(&self, p: &P3) -> bool {
         p.x >= self.min.x

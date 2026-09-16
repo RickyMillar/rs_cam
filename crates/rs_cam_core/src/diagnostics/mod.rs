@@ -290,11 +290,3 @@ pub struct Diagnostic {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suppressed_diagnostics: Vec<DiagnosticId>,
 }
-
-impl Diagnostic {
-    /// True when this diagnostic should affect the toolpath badge in
-    /// the headline (Caution or worse, Current evidence).
-    pub fn is_headline(&self) -> bool {
-        self.state == DiagnosticState::Current && self.severity.is_actionable()
-    }
-}

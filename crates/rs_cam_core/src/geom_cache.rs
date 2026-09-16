@@ -303,13 +303,6 @@ impl LazyIndex {
     pub fn force(&self) -> &Arc<SpatialIndex> {
         self.cell.get_or_init(|| cached_auto_index(&self.mesh))
     }
-
-    /// Whether the index is built. A test hook: `false` means NOT BUILT
-    /// YET, never "there is no index".
-    #[must_use]
-    pub fn is_built(&self) -> bool {
-        self.cell.get().is_some()
-    }
 }
 
 /// A [`LazyIndex`] over `mesh`. Builds nothing.

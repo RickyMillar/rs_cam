@@ -53,25 +53,6 @@ impl CLPoint {
         }
     }
 
-    /// Initialize for a raise-cutter test (finds minimum Z contact from below).
-    pub fn new_from_below(x: f64, y: f64) -> Self {
-        Self {
-            x,
-            y,
-            z: f64::INFINITY,
-            contacted: false,
-        }
-    }
-
-    /// Update Z to the minimum contact point (for raise-cutter / from-below).
-    #[inline]
-    pub fn update_z_min(&mut self, z: f64) {
-        if z < self.z {
-            self.z = z;
-            self.contacted = true;
-        }
-    }
-
     pub fn position(&self) -> P3 {
         P3::new(self.x, self.y, self.z)
     }
@@ -111,8 +92,7 @@ const DROP_CONTACT_SLACK_MM: f64 = 1e-4;
 /// 1. **Monotone Z.** Every drop path in this module reaches `cl` through
 ///    [`CLPoint::update_z`], which is a strict max — `update_z` writes only
 ///    when `z > self.z`, and `contacted` flips only on that same branch.
-///    (`update_z_min` exists for a raise-cutter test and has no caller on any
-///    drop path.) A resting cutter tip is never above the highest point of
+///    A resting cutter tip is never above the highest point of
 ///    the triangle it rests on: facet contact yields `cc_z + r₂·n_z −
 ///    center_height` with `r₂·n_z ≤ center_height` for every shipped shape,
 ///    vertex contact yields `v.z − height_at_radius(q)` with

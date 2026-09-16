@@ -333,12 +333,6 @@ impl TierIslandParams {
         (2.0 * cusp_radius_mm.max(0.0)).powi(2) * MIN_REGION_AREA_TOOL_DIAMETERS_SQ * c * c
     }
 
-    /// [`Self::coarseness`] after clamping.
-    #[must_use]
-    pub fn coarseness_clamped(&self) -> f64 {
-        clamp_coarseness(self.coarseness)
-    }
-
     /// The close radius in force for a tier with this cusp radius: the
     /// explicit dial verbatim, or the derivation scaled by coarseness.
     #[must_use]

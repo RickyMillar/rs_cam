@@ -193,12 +193,6 @@ pub fn ray_subtract_interval(ray: &mut DexelRay, a: f32, b: f32) {
     }
 }
 
-/// Returns `true` if the ray has no material.
-#[inline]
-pub fn ray_is_empty(ray: &DexelRay) -> bool {
-    ray.is_empty()
-}
-
 /// Total material length along this ray.
 pub fn ray_material_length(ray: &DexelRay) -> f32 {
     ray.iter().map(|s| s.length()).sum()

@@ -169,10 +169,6 @@ impl<T> Grid2<T> {
         self.data.get(i)
     }
 
-    pub fn at_index_mut(&mut self, i: usize) -> Option<&mut T> {
-        self.data.get_mut(i)
-    }
-
     /// Set a flat index. Returns `false` (no-op) if out of bounds.
     pub fn set_index(&mut self, i: usize, val: T) -> bool {
         match self.data.get_mut(i) {
@@ -195,10 +191,6 @@ impl<T> Grid2<T> {
 
     pub fn as_slice(&self) -> &[T] {
         &self.data
-    }
-
-    pub fn as_mut_slice(&mut self) -> &mut [T] {
-        &mut self.data
     }
 
     pub fn into_vec(self) -> Vec<T> {
