@@ -14,18 +14,24 @@ Usage:
 The report groups the strongest overlapping pairs into clusters, so a chunk
 copied into N places appears once, not N times.
 
-Test code is separated from product code twice over:
+Test code is separated from product code three times over:
 
 * a chunk inside an inline `#[cfg(test)] mod` of a `src` file is dropped
   before the search, because a shared test fixture is not product debt;
+* a chunk in an OUT-OF-LINE test module is dropped for the same reason. A
+  parent declares `#[cfg(test)] mod tests;` and the body lives in its own
+  file under the parent's module directory. Nothing in that file is
+  product code, so the whole file counts as test scope;
 * a surviving pair counts as a test pair when either side lives under
-  `tests/`, `benches/` or `src/bin/`. `--src-only` omits those pairs.
+  `tests/`, `benches/` or `src/bin/`, or in an out-of-line test file.
+  `--src-only` omits those pairs.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -64,7 +70,7 @@ class Chunk:
     vec: list[float]
 
 
-MOD_DECL = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?mod\s+[A-Za-z_][A-Za-z0-9_]*\b")
+MOD_DECL = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\b")
 _STRING_LITERAL = re.compile(
     r"""r\#*"(?:[^"\\]|\\.)*"\#*|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)'"""
 )
@@ -165,10 +171,113 @@ def in_inline_test_module(rel_path: str, start_line: int) -> bool:
     return any(first <= start_line <= last for first, last in scopes)
 
 
+def child_module_dir(parent: Path) -> Path:
+    """The directory Rust looks in for the children of `parent`.
+
+    A `mod.rs`, `lib.rs` or `main.rs` owns its own directory. Any other
+    file owns the directory that carries its name, so `controller.rs`
+    declaring `mod tests;` is backed by `controller/tests.rs`.
+    """
+    if parent.name in {"mod.rs", "lib.rs", "main.rs"}:
+        return parent.parent
+    return parent.parent / parent.stem
+
+
+def out_of_line_test_modules(path: Path) -> list[str]:
+    """The names of the out-of-line `#[cfg(test)]` modules `path` declares.
+
+    A module counts when `#[cfg(test)]` is followed — blank lines,
+    comments and further attributes allowed — by a file-backed
+    `mod NAME;` declaration. An inline `mod NAME { .. }` is not one of
+    these; `test_scopes` already covers it.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as err:
+        print(f"  cannot read {path}: {err}", file=sys.stderr)
+        return []
+    names: list[str] = []
+    for index, raw in enumerate(lines):
+        if not raw.strip().startswith("#[cfg(test)]"):
+            continue
+        head = skip_attributes(lines, index + 1)
+        if head is None:
+            continue
+        match = MOD_DECL.match(lines[head].strip())
+        if match is None:
+            continue
+        if module_extent(lines, head) is not None:
+            continue
+        names.append(match.group(1))
+    return names
+
+
+def scan_src_files() -> list[Path]:
+    """Every `.rs` file under a `src` directory of the workspace."""
+    found: list[Path] = []
+    for root, dirs, files in os.walk(REPO_ROOT):
+        dirs[:] = [d for d in dirs if d not in {"target", ".git", "node_modules"}]
+        root_path = Path(root)
+        if "src" not in root_path.relative_to(REPO_ROOT).parts:
+            continue
+        found.extend(root_path / f for f in files if f.endswith(".rs"))
+    return found
+
+
+_TEST_FILE_CACHE: set[str] | None = None
+
+
+def out_of_line_test_files() -> set[str]:
+    """Repo-relative paths of every file that IS an out-of-line test module.
+
+    For each declaration `#[cfg(test)] mod NAME;` the backing file is
+    `NAME.rs` or `NAME/mod.rs` in the parent's child directory, and every
+    `.rs` file below `NAME/` belongs to that module too.
+    """
+    global _TEST_FILE_CACHE
+    if _TEST_FILE_CACHE is not None:
+        return _TEST_FILE_CACHE
+    marked: set[str] = set()
+    for parent in scan_src_files():
+        names = out_of_line_test_modules(parent)
+        if not names:
+            continue
+        child_dir = child_module_dir(parent)
+        for name in names:
+            single = child_dir / f"{name}.rs"
+            if single.is_file():
+                marked.add(single.relative_to(REPO_ROOT).as_posix())
+            folder = child_dir / name
+            if folder.is_dir():
+                for member in folder.rglob("*.rs"):
+                    marked.add(member.relative_to(REPO_ROOT).as_posix())
+    _TEST_FILE_CACHE = marked
+    return marked
+
+
+def in_test_scope(rel_path: str, start_line: int) -> bool:
+    """True when a `src` chunk is test code rather than product code.
+
+    Either it starts inside an inline `#[cfg(test)]` module, or its whole
+    file is an out-of-line test module.
+    """
+    if "/src/" not in rel_path:
+        return False
+    if rel_path in out_of_line_test_files():
+        return True
+    return in_inline_test_module(rel_path, start_line)
+
+
 def is_test_path(rel_path: str) -> bool:
-    """True for a file the workspace compiles as test or bench code."""
+    """True for a file the workspace compiles as test or bench code.
+
+    That is the `tests/`, `benches/` and `src/bin/` trees, plus every
+    out-of-line `#[cfg(test)]` module file under `src/`.
+    """
     parts = rel_path.split("/")
-    return "tests" in parts or "benches" in parts or "src/bin/" in rel_path
+    if "tests" in parts or "benches" in parts or "src/bin/" in rel_path:
+        return True
+    return rel_path in out_of_line_test_files()
 
 
 def scroll_all(min_len: int) -> list[Chunk]:
@@ -273,13 +382,19 @@ def main() -> None:
     )
     args = ap.parse_args()
 
+    test_files = out_of_line_test_files()
+    print(
+        f"  {len(test_files)} out-of-line #[cfg(test)] module files under src/",
+        file=sys.stderr,
+    )
+
     print("scrolling chunks...", file=sys.stderr)
     chunks = scroll_all(args.min_len)
     print(f"  {len(chunks)} rust code chunks >= {args.min_len} chars", file=sys.stderr)
 
-    kept = [c for c in chunks if not in_inline_test_module(c.path, c.start)]
+    kept = [c for c in chunks if not in_test_scope(c.path, c.start)]
     print(
-        f"  dropped {len(chunks) - len(kept)} chunks inside inline "
+        f"  dropped {len(chunks) - len(kept)} chunks in inline or out-of-line "
         f"#[cfg(test)] modules; {len(kept)} remain",
         file=sys.stderr,
     )
@@ -319,12 +434,13 @@ def main() -> None:
     with open(args.out, "w") as f:
         f.write("# Semantic duplicate sweep — rs_cam\n\n")
         f.write(f"Threshold: cosine >= {args.threshold} · chunks: {len(chunks)} "
-                f"(rust, >= {args.min_len} chars, inline `#[cfg(test)]` modules "
-                f"dropped) · clusters: {len(clusters)}\n\n")
+                f"(rust, >= {args.min_len} chars, inline and out-of-line "
+                f"`#[cfg(test)]` modules dropped) · clusters: {len(clusters)}\n\n")
         f.write(f"src pairs: {len(src_pairs)} · test pairs: {test_count}"
                 f"{' (omitted, --src-only)' if args.src_only else ''}\n\n")
         f.write("A pair counts as a test pair when either side lives under "
-                "`tests/`, `benches/` or `src/bin/`.\n\n")
+                "`tests/`, `benches/` or `src/bin/`, or is an out-of-line "
+                "`#[cfg(test)]` module file under `src/`.\n\n")
         f.write("Near-duplicate candidates across different files. Semantic "
                 "similarity, not proof: shared boilerplate, trait impls with "
                 "the same shape, and intentional parallels all appear here.\n\n---\n\n")

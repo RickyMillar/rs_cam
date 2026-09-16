@@ -262,6 +262,23 @@ maintain.
   plus `--test mcp_wire_surface_pin --test command_surface_completeness
   --test overlays_registry` (46 passed), core lib clippy and viz clippy.
 
+- [x] **C31 — the sweep script recognises out-of-line test modules.**
+  C00 dropped a chunk inside an inline `#[cfg(test)] mod … { }`. It did not
+  see a test module kept in its own FILE, where the parent declares
+  `#[cfg(test)] mod tests;` and the body lives under the parent's module
+  directory. `scripts/duplicate_sweep.py` now scans every `src` `.rs` file
+  for that declaration, resolves `NAME.rs`, `NAME/mod.rs` and `NAME/**/*.rs`
+  against the parent's child directory, and marks each one. A chunk in such
+  a file is dropped with the inline ones, and `is_test_path` counts the file
+  so any surviving pair classifies as `test`. The count prints on stderr.
+  Proof: `python3 -m py_compile scripts/duplicate_sweep.py` clean; a dry
+  check marks 15 files, including `controller/tests.rs`,
+  `controller/workflow_tests.rs`, `controller/results_parity_tests.rs`,
+  `compute/worker/gen_parity_p0_tests.rs` and the two core
+  `compute/execute/unified_finish_*` files, and leaves `controller.rs`,
+  `app/mcp.rs` and `compute/execute.rs` unmarked. The full sweep was not
+  run. Risk: low (tooling only).
+
 ## Phase 4 — documentation / no-action items
 
 - [ ] **C40 — SIBLING/NO-ACTION records**: I08 pairs B/C/D, I09 P1/P3,
