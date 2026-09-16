@@ -57,15 +57,15 @@ use common::offset_lab::{
 };
 use common::scallop_oracle::{EnvelopeOracle, OracleGrid, OracleParams, StampKernel};
 use common::{meshes, tools};
-use rs_cam_core::finish_setup::FinishResolutionPolicy;
+use rs_cam_core::finish::finish_setup::FinishResolutionPolicy;
+use rs_cam_core::finish::scallop::{
+    RingCleanup, ScallopDirection, ScallopParams, ScallopRingBudget, ScallopStepoverPolicy,
+    scallop_toolpath_research, scallop_toolpath_structured_annotated_with_resolution,
+};
 use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::ops::pocket::pocket_contours_with_cancel;
 use rs_cam_core::polygon::{Polygon2, cleanup_collinear, simplify_bounded};
-use rs_cam_core::scallop::{
-    RingCleanup, ScallopDirection, ScallopParams, ScallopRingBudget, ScallopStepoverPolicy,
-    scallop_toolpath_research, scallop_toolpath_structured_annotated_with_resolution,
-};
 use rs_cam_core::tool::MillingCutter;
 
 /// The flattening tolerance every arc-carrying arm is scored at: 1 µm, a

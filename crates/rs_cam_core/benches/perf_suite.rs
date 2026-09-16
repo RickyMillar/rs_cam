@@ -15,6 +15,7 @@ use std::path::Path;
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::arcfit::fit_arcs;
+use rs_cam_core::finish::steep_shallow::dilate_grid;
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::arc_util::linearize_arc;
 use rs_cam_core::geometry::contour_extract::weave_contours;
@@ -22,7 +23,6 @@ use rs_cam_core::geometry::fiber::{Fiber, Interval};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::ops::waterline::waterline_contours;
 use rs_cam_core::polygon::{FlattenPolicy, OffsetRingSet, Polygon2, offset_polygon};
-use rs_cam_core::steep_shallow::dilate_grid;
 use rs_cam_core::stock::dexel_mesh::{dexel_stock_to_mesh, dexel_stock_to_top_surface_mesh};
 use rs_cam_core::stock::radial_profile::RadialProfileLUT;
 use rs_cam_core::stock::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};

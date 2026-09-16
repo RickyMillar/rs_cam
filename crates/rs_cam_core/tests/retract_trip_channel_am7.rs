@@ -448,7 +448,7 @@ fn intra_region_hookup_ships_on_by_operator_ruling() {
          hookup ships ON at 6.0 mm"
     );
     assert_eq!(
-        rs_cam_core::unified_finish::UnifiedFinishParams::default().intra_region_hookup_mm,
+        rs_cam_core::finish::unified_finish::UnifiedFinishParams::default().intra_region_hookup_mm,
         UnifiedFinishConfig::default().intra_region_hookup_mm,
         "the core default and the serde default must agree — a config layer \
          that disagrees with its own core is this programme's recurring \

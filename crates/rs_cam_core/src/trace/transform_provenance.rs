@@ -472,10 +472,10 @@ impl RemapConsumer for SemanticLinkChannel<'_> {
 }
 
 /// Scallop's per-ring runtime annotations
-/// ([`crate::scallop::ScallopRuntimeAnnotation::move_index`]).
+/// ([`crate::finish::scallop::ScallopRuntimeAnnotation::move_index`]).
 ///
 /// Registered in wave 12. Before it, the two call sites of
-/// [`crate::surface_link::relink_fragments`] each hand-rolled
+/// [`crate::finish::surface_link::relink_fragments`] each hand-rolled
 /// `annotations[i].move_index = report.move_remap[old]` off a bespoke
 /// `Vec<usize>` the relinker built privately — the exact convention this
 /// module exists to delete, one transform later.
@@ -499,10 +499,12 @@ impl RemapConsumer for SemanticLinkChannel<'_> {
 /// vector arrives out of emitted order and those two derivations produce
 /// nonsense. The sort is STABLE, so annotations that share a `move_index`
 /// keep the generator's order between them.
-pub struct ScallopAnnotationChannel<'a>(&'a mut Vec<crate::scallop::ScallopRuntimeAnnotation>);
+pub struct ScallopAnnotationChannel<'a>(
+    &'a mut Vec<crate::finish::scallop::ScallopRuntimeAnnotation>,
+);
 
 impl<'a> ScallopAnnotationChannel<'a> {
-    pub fn new(annotations: &'a mut Vec<crate::scallop::ScallopRuntimeAnnotation>) -> Self {
+    pub fn new(annotations: &'a mut Vec<crate::finish::scallop::ScallopRuntimeAnnotation>) -> Self {
         Self(annotations)
     }
 }
@@ -558,7 +560,7 @@ impl<'a> ReconcileSet<'a> {
     ///   `None` for a site that holds none.
     pub fn new(
         semantic_trace: Option<&'a ToolpathSemanticRecorder>,
-        scallop_annotations: Option<&'a mut Vec<crate::scallop::ScallopRuntimeAnnotation>>,
+        scallop_annotations: Option<&'a mut Vec<crate::finish::scallop::ScallopRuntimeAnnotation>>,
     ) -> Self {
         Self {
             semantic_links: semantic_trace.map(SemanticLinkChannel::new),

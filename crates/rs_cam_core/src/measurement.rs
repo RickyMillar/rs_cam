@@ -214,7 +214,7 @@ pub enum CellSource {
     /// `SimulationRequest::resolution`, after any grid-cap clamp.
     SimResolution,
     /// The `.max(tolerance)` FLOOR sized the cell, not the tool scale —
-    /// `crate::finish_setup::FinishResolutionPolicy::tolerance_floor_applied`
+    /// `crate::finish::finish_setup::FinishResolutionPolicy::tolerance_floor_applied`
     /// is true.
     ///
     /// This is a source in its own right because it is the honest answer: on
@@ -263,7 +263,7 @@ impl fmt::Display for CellSource {
 ///
 /// Attached to *reports*, not to individual scalars, so one struct covers a
 /// whole table. Where a report mixes provenances (e.g.
-/// [`crate::unified_finish::UnifiedFinishReport`] carries both band areas and
+/// [`crate::finish::unified_finish::UnifiedFinishReport`] carries both band areas and
 /// a scallop residual) the field documentation says which fields the report's
 /// provenance describes and which carry their own.
 ///

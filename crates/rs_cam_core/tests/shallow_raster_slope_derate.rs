@@ -31,14 +31,14 @@
 
 use std::collections::BTreeMap;
 
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams};
+use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams};
+use rs_cam_core::finish::unified_finish::{
+    UnifiedFinishParams, UnifiedFinishReport, unified_finish_toolpath_with_cancel,
+};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
-use rs_cam_core::unified_finish::{
-    UnifiedFinishParams, UnifiedFinishReport, unified_finish_toolpath_with_cancel,
-};
 
 /// Half-side (mm) of the plane patches in XY.
 const PLANE_HALF_MM: f64 = 6.0;

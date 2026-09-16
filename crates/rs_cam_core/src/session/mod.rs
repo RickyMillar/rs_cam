@@ -1238,7 +1238,7 @@ pub struct ToolpathDiagnostic {
     pub max_tip_float_mm: Option<f64>,
     /// C2: what the shallow band's monotone-cell decomposition did, off
     /// [`crate::compute::config::ToolpathStats::monotone_cells`]. The whole
-    /// [`crate::unified_finish::MonotoneCellTotals`] travels, because its
+    /// [`crate::finish::unified_finish::MonotoneCellTotals`] travels, because its
     /// five counters only mean anything together — `regions` is the
     /// denominator of the other four.
     ///
@@ -1248,7 +1248,7 @@ pub struct ToolpathDiagnostic {
     /// `membership_fallbacks` / `empty_fallbacks` is the reason this is on
     /// the wire at all: those regions emitted the pre-C2 undivided raster,
     /// and until now nothing on an operator surface said so. Report-only.
-    pub monotone_cells: Option<crate::unified_finish::MonotoneCellTotals>,
+    pub monotone_cells: Option<crate::finish::unified_finish::MonotoneCellTotals>,
 }
 
 /// Severity bucket for a [`Verdict`]. Ordered: `Critical < Important < Polish`

@@ -60,12 +60,12 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::{Severity, ids};
+use rs_cam_core::finish::unified_finish::ClaimsReference;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
-use rs_cam_core::unified_finish::ClaimsReference;
 
 /// A value the operator would plausibly dial and the shipped default is not.
 const DIALLED_MM: f64 = 0.05;

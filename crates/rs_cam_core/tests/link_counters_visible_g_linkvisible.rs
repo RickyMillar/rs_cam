@@ -66,9 +66,9 @@ use common::tools::ball_tool_config;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{DropCutterConfig, PencilConfig, WaterlineConfig};
-use rs_cam_core::pencil::PencilLinkReport;
+use rs_cam_core::finish::pencil::PencilLinkReport;
+use rs_cam_core::finish::unified_finish::RelinkTotals;
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::unified_finish::RelinkTotals;
 
 /// The corrugated plate `scallop_intra_pass_relink_am7` uses: a triangular
 /// wave with sharp crests and troughs, Y-invariant. Every family here wants

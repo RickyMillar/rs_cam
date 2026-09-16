@@ -128,7 +128,7 @@ pub struct ToolpathNarrationContext<'a> {
     /// [`crate::compute::config::ToolpathStats::ramp_reach_clamp`]. `None` =
     /// no ramp descent ran, so nothing was measured — NOT "the tool reached
     /// everywhere". A/M9's contract, applied to a third measure.
-    pub ramp_reach_clamp: Option<crate::ramp_finish::RampReachClamp>,
+    pub ramp_reach_clamp: Option<crate::finish::ramp_finish::RampReachClamp>,
     /// Wave D1: the centreline TIP-FLOAT tally, off
     /// [`crate::compute::config::ToolpathStats::tip_float`]. `None` = the
     /// operation emits no valley centrelines, so nothing was measured — NOT
@@ -178,14 +178,14 @@ pub struct ToolpathNarrationContext<'a> {
     /// measure for G-LINKSTAGE, and a stage that linked everything used to
     /// print nothing at all — so the one reading the stage is judged on was
     /// the one reading that never reached an operator surface.
-    pub relink: Option<crate::unified_finish::RelinkTotals>,
+    pub relink: Option<crate::finish::unified_finish::RelinkTotals>,
     /// G-LINKVISIBLE: the PENCIL's own link stage, off
     /// [`crate::compute::config::ToolpathStats::pencil_link`]. `None` = not
     /// a pencil, or a pencil that emitted no centreline. Printed on the same
     /// rule as [`Self::relink`], on its own line and with its own counter
     /// names — the two reports do not have the same shape and must not be
     /// read as if they did.
-    pub pencil_link: Option<crate::pencil::PencilLinkReport>,
+    pub pencil_link: Option<crate::finish::pencil::PencilLinkReport>,
 }
 
 /// Is this toolpath a drill cycle, for the purposes of
@@ -1356,7 +1356,7 @@ fn relink_dial_for(kind: Option<crate::compute::catalog::OperationType>) -> Opti
 /// is stated as such.
 fn append_relink_totals(
     output: &mut String,
-    relink: Option<&crate::unified_finish::RelinkTotals>,
+    relink: Option<&crate::finish::unified_finish::RelinkTotals>,
     kind: Option<crate::compute::catalog::OperationType>,
 ) {
     let Some(r) = relink else {
@@ -1397,14 +1397,14 @@ fn append_relink_totals(
 ///
 /// Deliberately NOT folded into [`append_relink_totals`]. The pencil runs a
 /// different linker, and two of its counters have no counterpart in
-/// [`crate::unified_finish::RelinkTotals`] — `hop_too_far`, which is the
+/// [`crate::finish::unified_finish::RelinkTotals`] — `hop_too_far`, which is the
 /// clearance tier's own cap, and `ceiling_refused`, which is a refusal rather
 /// than a decline against a boundary. Printing them under the shared line's
 /// labels would make a reader compare numbers that do not measure the same
 /// thing.
 ///
 /// Same silence rule: nothing on `None`, which means the emitter never ran.
-fn append_pencil_link(output: &mut String, link: Option<&crate::pencil::PencilLinkReport>) {
+fn append_pencil_link(output: &mut String, link: Option<&crate::finish::pencil::PencilLinkReport>) {
     let Some(p) = link else {
         return;
     };

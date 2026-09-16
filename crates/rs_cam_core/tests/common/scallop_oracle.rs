@@ -86,7 +86,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
-use rs_cam_core::classify_probe::{
+use rs_cam_core::finish::classify_probe::{
     ClassificationGridSpec, ClassificationSampler, sample_classification_grid,
 };
 use rs_cam_core::geo::{P2, P3};

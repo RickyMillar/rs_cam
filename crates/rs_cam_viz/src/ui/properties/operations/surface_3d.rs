@@ -814,10 +814,12 @@ fn draw_unified_finish_claims(
                 crate::ui::tokens::OK
             };
             let used = match r.reference() {
-                rs_cam_core::unified_finish::CreaseReference::MachinedStock => {
+                rs_cam_core::finish::unified_finish::CreaseReference::MachinedStock => {
                     "machined prior stock"
                 }
-                rs_cam_core::unified_finish::CreaseReference::SelfProbe => "analytic self-probe",
+                rs_cam_core::finish::unified_finish::CreaseReference::SelfProbe => {
+                    "analytic self-probe"
+                }
             };
             let verb = if r.is_derived() { "derived" } else { "pinned" };
             ui.label(

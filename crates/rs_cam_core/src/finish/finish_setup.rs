@@ -25,7 +25,7 @@
 //! needs a Z ladder or the slope window takes it from this module; it does
 //! not grow a fourth copy.
 
-use crate::classify_probe::{
+use crate::finish::classify_probe::{
     ClassificationGridSpec, ClassificationSampler, sample_classification_grid,
 };
 use crate::interrupt::{CancelCheck, Cancelled};
@@ -474,7 +474,7 @@ pub fn build_finish_surface_with_cancel(
 }
 
 /// Diameter of the bare-surface probe used by
-/// [`crate::classify_probe::ClassificationSampler::DropCutterProbe`] — the
+/// [`crate::finish::classify_probe::ClassificationSampler::DropCutterProbe`] — the
 /// pre-M3 production classifier, retained as the sentries' oracle and as the
 /// production fallback. Mirrors `rest_field`'s "tiny bare-surface probe"
 /// reference pattern.
@@ -504,7 +504,7 @@ pub const CLASSIFICATION_PROBE_DIAMETER_MM: f64 = 0.05;
 /// [`build_classification_surface_with_sampler_and_cancel`] as the fallback
 /// and as the parity sentries' oracle.
 ///
-/// Slope-band decomposition (`crate::finish_planner`) must read real surface
+/// Slope-band decomposition (`crate::finish::finish_planner`) must read real surface
 /// slopes: a ball tool's offset surface geometrically hides steepness at
 /// feature scales at or below the ball radius — the ball bridges the feature
 /// and its center glides over a smoothed blanket. Measured on the wanaka

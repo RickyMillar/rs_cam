@@ -2,7 +2,7 @@
 //!
 //! ## The defect
 //!
-//! [`rs_cam_core::surface_link::LinkCeiling`] decided how high a stay-down link
+//! [`rs_cam_core::finish::surface_link::LinkCeiling`] decided how high a stay-down link
 //! must fly by reading `max_conservative_top_z_in_disc` over a disc of the
 //! tool's ENVELOPE radius. That models the cutter as a flat cylinder. It is
 //! exact for a flat endmill and wrong for every other profile: past its tip a

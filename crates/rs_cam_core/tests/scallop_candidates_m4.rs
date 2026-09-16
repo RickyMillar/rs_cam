@@ -44,14 +44,14 @@ use common::scallop_oracle::{
     path_structure, render_field,
 };
 use common::{meshes, tools};
-use rs_cam_core::finish_setup::FinishResolutionPolicy;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::scallop::{
+use rs_cam_core::finish::finish_setup::FinishResolutionPolicy;
+use rs_cam_core::finish::scallop::{
     CurvaturePolicy, PolygonReduce, RingReducer, RingSampling, RingSource, ScallopDirection,
     ScallopParams, ScallopRingBudget, ScallopStepoverPolicy, ScallopStepoverTrace,
     StepoverGeometry, scallop_toolpath_research,
     scallop_toolpath_structured_annotated_with_resolution,
 };
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::tool::MillingCutter;
 
 // ---------------------------------------------------------------------------
@@ -526,11 +526,11 @@ fn the_corrected_law_matches_flat_and_tightens_on_slope() {
 }
 
 fn shipped_so(cusp_r: f64, angle: f64, curvature: f64) -> f64 {
-    rs_cam_core::scallop_math::variable_stepover(cusp_r, DIAL_MM, angle, curvature)
+    rs_cam_core::finish::scallop_math::variable_stepover(cusp_r, DIAL_MM, angle, curvature)
 }
 
 fn corrected_so(cusp_r: f64, angle: f64, curvature: f64) -> f64 {
-    rs_cam_core::scallop_math::stepover_from_scallop_curved(cusp_r, DIAL_MM, curvature)
+    rs_cam_core::finish::scallop_math::stepover_from_scallop_curved(cusp_r, DIAL_MM, curvature)
         * angle.cos()
 }
 

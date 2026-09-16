@@ -349,8 +349,8 @@ fn the_derived_stepover_is_reported_as_a_diagnostic() {
 ///    failure mode assertion 2 alone would not catch.
 #[test]
 fn the_per_point_fan_spaces_passes_off_the_tip_whatever_scalar_the_caller_passes() {
+    use rs_cam_core::finish::pencil::{PencilDetector, PencilParams, pencil_toolpath};
     use rs_cam_core::mesh::SpatialIndex;
-    use rs_cam_core::pencil::{PencilDetector, PencilParams, pencil_toolpath};
     use rs_cam_core::toolpath::MoveIntent;
 
     let finding = generate_through_session(tapered_ball_tool())

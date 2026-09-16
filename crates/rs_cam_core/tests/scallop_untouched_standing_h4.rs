@@ -39,12 +39,12 @@
     clippy::print_stderr
 )]
 
-use rs_cam_core::finish_setup::build_finish_surface_with_cell_size_and_cancel;
+use rs_cam_core::finish::finish_setup::build_finish_surface_with_cell_size_and_cancel;
+use rs_cam_core::finish::scallop::{ScallopReport, generate_scallop_rings};
+use rs_cam_core::finish::scallop_math::stepover_from_scallop_flat;
 use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::{SpatialIndex, make_test_flat};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::scallop::{ScallopReport, generate_scallop_rings};
-use rs_cam_core::scallop_math::stepover_from_scallop_flat;
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 
 fn never_cancel() -> bool {

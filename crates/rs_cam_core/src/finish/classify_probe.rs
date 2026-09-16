@@ -2,13 +2,13 @@
 //!
 //! # This module IS production (since M3 wave 7b, 2026-08-02)
 //!
-//! [`crate::finish_setup::build_classification_surface_with_policy_and_cancel`]
+//! [`crate::finish::finish_setup::build_classification_surface_with_policy_and_cancel`]
 //! builds its height grid by calling [`sample_classification_grid`] with
 //! [`ClassificationSampler::PRODUCTION`] — [`ClassificationSampler::TileRaster`],
 //! the direct true-surface arm the M3 study recommended and the
 //! 2026-08-02 checkpoint approved ("Adopt, COLUMNS-gated"). Every other
 //! variant remains callable through
-//! [`crate::finish_setup::build_classification_surface_with_sampler_and_cancel`]:
+//! [`crate::finish::finish_setup::build_classification_surface_with_sampler_and_cancel`]:
 //! [`ClassificationSampler::DropCutterProbe`] is both the **fallback**
 //! (flip `PRODUCTION` back and nothing else changes) and the **oracle** the
 //! parity sentries score against.
@@ -54,7 +54,7 @@
 //!   so the `max`-reduce needs no atomics; the standard way to parallelise a
 //!   scatter (binning by output, as in tiled software rasterisers).
 
-use crate::finish_setup::CLASSIFICATION_PROBE_DIAMETER_MM;
+use crate::finish::finish_setup::CLASSIFICATION_PROBE_DIAMETER_MM;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 use crate::surface::slope::SurfaceHeightmap;
@@ -86,7 +86,7 @@ pub const TILE_EDGE_CELLS: usize = 64;
 ///
 /// [`Self::PRODUCTION`] is what `finish_setup` selects when a caller does not
 /// name one; every variant is reachable through
-/// [`crate::finish_setup::build_classification_surface_with_sampler_and_cancel`].
+/// [`crate::finish::finish_setup::build_classification_surface_with_sampler_and_cancel`].
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
 )]
@@ -825,7 +825,8 @@ mod tests {
         //   * the cell is exactly what the resolution policy resolved to.
         let mesh = ring_plate(5.0);
         let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
-        let policy = crate::finish_setup::FinishResolutionPolicy::cusp_quarter(&cutter, 0.4);
+        let policy =
+            crate::finish::finish_setup::FinishResolutionPolicy::cusp_quarter(&cutter, 0.4);
         let spec = ClassificationGridSpec::for_mesh(&mesh, &cutter, policy.cell_mm());
 
         let envelope = cutter.envelope_radius_mm();
@@ -852,14 +853,18 @@ mod tests {
         let index = SpatialIndex::build_auto(&mesh);
         let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
         let cancel = never();
-        let policy = crate::finish_setup::FinishResolutionPolicy::cusp_quarter(&cutter, 0.4);
-        let production = crate::finish_setup::build_classification_surface_with_policy_and_cancel(
-            &mesh, &index, &cutter, policy, &cancel,
-        )
-        .unwrap();
+        let policy =
+            crate::finish::finish_setup::FinishResolutionPolicy::cusp_quarter(&cutter, 0.4);
+        let production =
+            crate::finish::finish_setup::build_classification_surface_with_policy_and_cancel(
+                &mesh, &index, &cutter, policy, &cancel,
+            )
+            .unwrap();
         assert_eq!(
             production.sampler,
-            crate::finish_setup::SurfaceSampler::Classification(ClassificationSampler::PRODUCTION),
+            crate::finish::finish_setup::SurfaceSampler::Classification(
+                ClassificationSampler::PRODUCTION
+            ),
             "the production classification grid must record which sampler built it"
         );
         assert!(
@@ -884,18 +889,19 @@ mod tests {
         assert_eq!(direct.covered_flags(), production.heightmap.covered_flags());
 
         // The fallback is still reachable, still different, and still tagged.
-        let fallback = crate::finish_setup::build_classification_surface_with_sampler_and_cancel(
-            &mesh,
-            &index,
-            &cutter,
-            policy,
-            ClassificationSampler::DropCutterProbe,
-            &cancel,
-        )
-        .unwrap();
+        let fallback =
+            crate::finish::finish_setup::build_classification_surface_with_sampler_and_cancel(
+                &mesh,
+                &index,
+                &cutter,
+                policy,
+                ClassificationSampler::DropCutterProbe,
+                &cancel,
+            )
+            .unwrap();
         assert_eq!(
             fallback.sampler,
-            crate::finish_setup::SurfaceSampler::Classification(
+            crate::finish::finish_setup::SurfaceSampler::Classification(
                 ClassificationSampler::DropCutterProbe
             )
         );

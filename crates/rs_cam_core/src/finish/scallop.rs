@@ -15,13 +15,13 @@
 //! From Fusion 360 docs: "passes follow sloping and vertical walls to maintain
 //! the stepover."
 
-use crate::finish_setup::FinishResolutionPolicy;
+use crate::finish::finish_setup::FinishResolutionPolicy;
+use crate::finish::scallop_math::variable_stepover;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
-use crate::scallop_math::variable_stepover;
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
@@ -224,7 +224,7 @@ pub fn ring_stepover_with_policy(
     scallop_height: f64,
     policy: ScallopStepoverPolicy,
 ) -> RingStepoverDecision {
-    let flat = crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height);
+    let flat = crate::finish::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height);
     let fallback = RingStepoverDecision {
         selected: flat,
         sample_min: flat,
@@ -356,7 +356,7 @@ impl RingSampling {
 /// Which stepover-vs-slope law the per-sample value is computed from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepoverGeometry {
-    /// **Shipped.** [`crate::scallop_math::variable_stepover`], whose slope
+    /// **Shipped.** [`crate::finish::scallop_math::variable_stepover`], whose slope
     /// term is `R_eff = R / cos θ` — it WIDENS the stepover on slope.
     Shipped,
     /// The measured law. Rings are offset in **XY**, so two adjacent rings on
@@ -390,8 +390,9 @@ impl StepoverGeometry {
         match self {
             Self::Shipped => variable_stepover(cusp_r, height, angle, curvature),
             Self::CosineSlope => {
-                let base =
-                    crate::scallop_math::stepover_from_scallop_curved(cusp_r, height, curvature);
+                let base = crate::finish::scallop_math::stepover_from_scallop_curved(
+                    cusp_r, height, curvature,
+                );
                 (base * angle.cos()).min(cusp_r * 4.0)
             }
         }
@@ -477,7 +478,7 @@ pub enum RingSource {
     /// **Shipped.** Iterated `offset_polygon` from the region boundary
     /// inward, one scalar distance per iteration, bounded by `max_rings`.
     OffsetCascade,
-    /// [`crate::scallop_isofield`] — solve `|∇D| = 1/s(x,y)` from the
+    /// [`crate::finish::scallop_isofield`] — solve `|∇D| = 1/s(x,y)` from the
     /// boundary and take the integer level sets. No per-ring scalar, no
     /// repeated offsetting, and the ring count is `⌊max D⌋` rather than a cap.
     IsoField,
@@ -580,10 +581,12 @@ impl RingSampleBound {
         let floor = cusp_r * 0.1;
         match self {
             Self::ToleranceScaled => Some(
-                crate::scallop_math::stepover_from_scallop_flat(cusp_r, chord_tolerance).max(floor),
+                crate::finish::scallop_math::stepover_from_scallop_flat(cusp_r, chord_tolerance)
+                    .max(floor),
             ),
             Self::FlatGroundStepover => Some(
-                crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height).max(floor),
+                crate::finish::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height)
+                    .max(floor),
             ),
             Self::ToleranceOnly => None,
         }
@@ -712,7 +715,7 @@ impl ScallopStepoverPolicy {
     }
 
     /// The per-point stepover this policy's geometry+curvature choice yields,
-    /// exposed so [`crate::scallop_isofield`] and a harness can build the same
+    /// exposed so [`crate::finish::scallop_isofield`] and a harness can build the same
     /// field the cascade would sample.
     #[must_use]
     pub(crate) fn point_stepover(
@@ -1245,7 +1248,7 @@ fn generate_scallop_rings_with_cancel(
     // chord refinement, the emission — is shared with the cascade branch, so
     // a comparison across this switch isolates ring PLACEMENT alone.
     if matches!(policy.ring_source, RingSource::IsoField) {
-        let field = crate::scallop_isofield::build_field(boundary, slope_map, &|x, y| {
+        let field = crate::finish::scallop_isofield::build_field(boundary, slope_map, &|x, y| {
             policy.point_stepover(slope_map, cusp_r, scallop_height, x, y)
         });
         if let Some(t) = trace.as_deref_mut() {
@@ -1295,7 +1298,7 @@ fn generate_scallop_rings_with_cancel(
         // untouched; chord refinement puts detail back exactly where the
         // surface demands it.
         let ring_min_spacing = heightmap.cell_size * 0.75;
-        for ring in crate::scallop_isofield::extract_rings(&field) {
+        for ring in crate::finish::scallop_isofield::extract_rings(&field) {
             check_cancel(cancel)?;
             if ring.len() < 3 {
                 continue;
@@ -1432,7 +1435,7 @@ fn generate_scallop_rings_with_cancel(
             let so = if so.is_finite() {
                 so
             } else {
-                crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height)
+                crate::finish::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height)
             };
             // Clamp stepover to reasonable bounds
             so.max(cusp_r * 0.05) // At least 5% of the cusp radius
@@ -1718,7 +1721,7 @@ pub struct ScallopReport {
     ///
     /// The counters used to reach a `tracing::info!` line and nothing else,
     /// so the ACCEPTANCE measure for G-LINKSTAGE
-    /// ([`crate::surface_link::RelinkReport::at_depth_links`]) was readable
+    /// ([`crate::finish::surface_link::RelinkReport::at_depth_links`]) was readable
     /// only by scraping a headless run's stdout. This carries it to the op
     /// adapter, which publishes it on
     /// [`crate::compute::config::ToolpathStats::relink`].
@@ -1732,7 +1735,7 @@ pub struct ScallopReport {
     ///   junction to act on.
     ///
     /// Report-only: no gate consumes it.
-    pub relink: Option<crate::unified_finish::RelinkTotals>,
+    pub relink: Option<crate::finish::unified_finish::RelinkTotals>,
 }
 
 impl ScallopReport {
@@ -1949,7 +1952,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel_and_stage(
     params: &ScallopParams,
     debug: Option<&ToolpathDebugContext>,
     boundary_regions: Option<&RegionSet<'_>>,
-    link_stage: Option<&crate::surface_link::FinishingLinkStage<'_>>,
+    link_stage: Option<&crate::finish::surface_link::FinishingLinkStage<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
     let (tp, anns, report, _trace) = scallop_toolpath_research_with_stage(
@@ -2176,7 +2179,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
     resolution: FinishResolutionPolicy,
     ring_budget: ScallopRingBudget,
     stepover_policy: ScallopStepoverPolicy,
-    link_stage: Option<&crate::surface_link::FinishingLinkStage<'_>>,
+    link_stage: Option<&crate::finish::surface_link::FinishingLinkStage<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<
     (
@@ -2235,8 +2238,9 @@ pub(crate) fn scallop_toolpath_research_with_stage(
     let by0 = bbox.min.y;
     let bx1 = bbox.max.x;
     let by1 = bbox.max.y;
-    let flat_so = crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
-        .max(cusp_r * 0.1);
+    let flat_so =
+        crate::finish::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
+            .max(cusp_r * 0.1);
     let boundary = {
         let mut pts = Vec::new();
         // Bottom edge
@@ -2310,7 +2314,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
     let clamp_floor = cusp_r * 0.05;
     let min_stepover = match ring_budget {
         ScallopRingBudget::FlatGroundStepover => {
-            crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
+            crate::finish::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
                 .max(clamp_floor)
         }
         // The reach policy's own answer for "how far apart may two passes of
@@ -2407,7 +2411,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
 
     // Slope confinement
     let use_slope_filter =
-        crate::finish_setup::slope_filter_active(params.slope_from, params.slope_to);
+        crate::finish::finish_setup::slope_filter_active(params.slope_from, params.slope_to);
     let slope_from_rad = params.slope_from.to_radians();
     let slope_to_rad = params.slope_to.to_radians();
 
@@ -2440,7 +2444,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
     // `emitted_runs` afterwards would drift the moment a run is skipped, and
     // a mis-aligned kind rotates the wrong fragment. Left empty in the
     // `continuous` branch, which the relink skips.
-    let mut fragment_kinds: Vec<crate::surface_link::FragmentKind> = Vec::new();
+    let mut fragment_kinds: Vec<crate::finish::surface_link::FragmentKind> = Vec::new();
 
     if params.continuous && rings.len() >= 2 {
         // Continuous spiral mode: connect adjacent rings at their nearest
@@ -2470,7 +2474,10 @@ pub(crate) fn scallop_toolpath_research_with_stage(
         let link_threshold = match stepover_policy.ring_source {
             RingSource::OffsetCascade => cusp_r * 3.0,
             RingSource::IsoField => {
-                1.5 * crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
+                1.5 * crate::finish::scallop_math::stepover_from_scallop_flat(
+                    cusp_r,
+                    params.scallop_height,
+                )
             }
         };
         // The tool's last emitted position. Seeded from the first ring's
@@ -2614,9 +2621,9 @@ pub(crate) fn scallop_toolpath_research_with_stage(
             // split is an open arc: its ends are where the excluded ground
             // begins, and moving them would cut it.
             fragment_kinds.push(if *close_loop {
-                crate::surface_link::FragmentKind::ClosedLoop
+                crate::finish::surface_link::FragmentKind::ClosedLoop
             } else {
-                crate::surface_link::FragmentKind::OpenRun
+                crate::finish::surface_link::FragmentKind::OpenRun
             });
             tp.rapid_to_with_intent(
                 P3::new(first.x, first.y, params.safe_z),
@@ -2667,7 +2674,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
     // G-LINKVISIBLE: `relink_totals` stays `None` unless the block below
     // runs. That is the "not measured" half of `ScallopReport::relink` —
     // written exactly where the pass is, so the two cannot disagree.
-    let mut relink_totals: Option<crate::unified_finish::RelinkTotals> = None;
+    let mut relink_totals: Option<crate::finish::unified_finish::RelinkTotals> = None;
     if params.intra_pass_hookup_mm > 0.0 && !params.continuous {
         // G-LINKSTAGE. Two configurations, and the caller picks by handing a
         // stage or not.
@@ -2685,14 +2692,14 @@ pub(crate) fn scallop_toolpath_research_with_stage(
         //
         // Without one (the iso field, every research seam, every existing
         // test): the legacy literal below, byte for byte.
-        let geom = crate::surface_link::LinkGeometry {
+        let geom = crate::finish::surface_link::LinkGeometry {
             stock_to_leave: params.stock_to_leave,
             sampling: params.tolerance.max(0.01),
             feed_rate: params.feed_rate,
             plunge_rate: params.plunge_rate,
             safe_z: params.safe_z,
         };
-        let legacy = crate::surface_link::RelinkParams {
+        let legacy = crate::finish::surface_link::RelinkParams {
             hookup_distance: params.intra_pass_hookup_mm,
             stock_to_leave: geom.stock_to_leave,
             sampling: geom.sampling,
@@ -2730,7 +2737,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
             Some(stage) => (stage.params(&geom), Some(fragment_kinds.as_slice())),
             None => (legacy, None),
         };
-        let (linked, rep) = crate::surface_link::relink_fragments_with_kinds(
+        let (linked, rep) = crate::finish::surface_link::relink_fragments_with_kinds(
             crate::trace::toolpath_spans::AnnotatedToolpath::new(tp),
             mesh,
             index,
@@ -2760,7 +2767,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
         // to `ToolpathStats::relink`. Recorded even when every one is zero —
         // "the stage ran and had no junction to act on" is a different
         // answer from "the stage never ran".
-        let mut totals = crate::unified_finish::RelinkTotals::default();
+        let mut totals = crate::finish::unified_finish::RelinkTotals::default();
         totals.add(&rep);
         relink_totals = Some(totals);
         // C1: the ring annotations are this site's index-carrying channel,
@@ -2834,12 +2841,12 @@ mod tests {
         let scallop_height = 0.1;
 
         let expected_so =
-            crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
+            crate::finish::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
 
         let cell_size = 1.0;
         let never_cancel = || false;
         // SAFETY: never_cancel always returns false
-        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
+        let surface = crate::finish::finish_setup::build_finish_surface_with_cell_size_and_cancel(
             &mesh,
             &si,
             &cutter,
@@ -2910,7 +2917,8 @@ mod tests {
         let angle = slope_map.angle_at(10, 10);
 
         let so_dome = variable_stepover(tool_radius, scallop_height, angle, curvature);
-        let so_flat = crate::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
+        let so_flat =
+            crate::finish::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
 
         assert!(
             so_dome < so_flat,
@@ -2949,7 +2957,7 @@ mod tests {
         ]);
 
         let never_cancel = || false;
-        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
+        let surface = crate::finish::finish_setup::build_finish_surface_with_cell_size_and_cancel(
             &mesh,
             &si,
             &cutter,
@@ -3008,7 +3016,7 @@ mod tests {
         let cell_size = 1.0;
         let never_cancel = || false;
         // SAFETY: never_cancel always returns false
-        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
+        let surface = crate::finish::finish_setup::build_finish_surface_with_cell_size_and_cancel(
             &mesh,
             &si,
             &cutter,
@@ -3055,7 +3063,7 @@ mod tests {
         );
 
         // Ring count should be bounded (polygon eventually collapses)
-        let flat_so = crate::scallop_math::stepover_from_scallop_flat(tool_radius, 0.1);
+        let flat_so = crate::finish::scallop_math::stepover_from_scallop_flat(tool_radius, 0.1);
         let expected_max = (25.0 / flat_so).ceil() as usize + 5; // half extent / stepover
         assert!(
             rings.len() <= expected_max,
@@ -3225,8 +3233,10 @@ mod tests {
 
         let tp = scallop_toolpath(&mesh, &si, &cutter, &params);
 
-        let stepover =
-            crate::scallop_math::stepover_from_scallop_flat(cutter.radius(), params.scallop_height);
+        let stepover = crate::finish::scallop_math::stepover_from_scallop_flat(
+            cutter.radius(),
+            params.scallop_height,
+        );
         assert_no_chord_across_gap(&tp, (stepover * 6.0).max(3.0));
     }
 
@@ -3247,8 +3257,10 @@ mod tests {
 
         let tp = scallop_toolpath(&mesh, &si, &cutter, &params);
 
-        let stepover =
-            crate::scallop_math::stepover_from_scallop_flat(cutter.radius(), params.scallop_height);
+        let stepover = crate::finish::scallop_math::stepover_from_scallop_flat(
+            cutter.radius(),
+            params.scallop_height,
+        );
         assert_no_chord_across_gap(&tp, (stepover * 6.0).max(3.0));
     }
 

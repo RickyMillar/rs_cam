@@ -22,8 +22,8 @@
 )]
 
 use rs_cam_core::compute::tool_config::ToolMaterial;
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
-use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
+use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
+use rs_cam_core::finish::finish_setup::build_classification_surface_with_cancel;
 use rs_cam_core::geo::P3;
 use rs_cam_core::measurement::ProjectedXyAreaMm2;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -182,7 +182,7 @@ fn steep_ribbon_survives_decomposition_under_a_tapered_tool() {
         .regions
         .iter()
         .filter(|r| r.band != FinishBand::Shallow)
-        .map(rs_cam_core::finish_planner::PlannedRegion::projected_xy_area_mm2)
+        .map(rs_cam_core::finish::finish_planner::PlannedRegion::projected_xy_area_mm2)
         .sum();
     assert!(
         non_shallow.mm2() > 1.0,

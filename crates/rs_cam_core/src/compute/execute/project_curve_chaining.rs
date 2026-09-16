@@ -714,7 +714,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
     let (mesh, index) = plate();
     let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
     let tool_def = build_cutter(&tool_cfg);
-    let params = crate::surface_link::RelinkParams {
+    let params = crate::finish::surface_link::RelinkParams {
         hookup_distance: CANDIDATE_CHAIN_MM,
         stock_to_leave: 0.0,
         sampling: POINT_SPACING_MM,
@@ -724,7 +724,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
         link_kinematics: None,
         reorder: true,
         boundary: Some(&region_set),
-        link_ceiling: Some(crate::surface_link::LinkCeiling {
+        link_ceiling: Some(crate::finish::surface_link::LinkCeiling {
             stock: None,
             tool_radius: tool_def.radius(),
             fallback_top_z: 0.0,
@@ -735,7 +735,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
         // an airborne link gets no exemption from it.
         airborne_links_may_leave_territory: false,
     };
-    let (_, report) = crate::surface_link::relink_fragments(
+    let (_, report) = crate::finish::surface_link::relink_fragments(
         AnnotatedToolpath::new(unbounded_baseline()),
         &mesh,
         &index,

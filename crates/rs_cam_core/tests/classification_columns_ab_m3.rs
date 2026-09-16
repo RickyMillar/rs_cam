@@ -100,12 +100,12 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
-use rs_cam_core::classify_probe::ClassificationSampler;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
 use rs_cam_core::compute::simulate::ColumnDeviation;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::finish::classify_probe::ClassificationSampler;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::{ProjectSession, SimulationOptions};

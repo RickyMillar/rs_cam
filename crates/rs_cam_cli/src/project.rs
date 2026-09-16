@@ -98,7 +98,7 @@ struct ToolpathDiagnostic<'a> {
     /// whose reconstructed cells did not select its own emitted lattice
     /// emits the pre-C2 undivided raster and increments
     /// `membership_fallbacks`, and nothing in this report said so.
-    monotone_cells: Option<rs_cam_core::unified_finish::MonotoneCellTotals>,
+    monotone_cells: Option<rs_cam_core::finish::unified_finish::MonotoneCellTotals>,
 }
 
 impl<'a> ToolpathDiagnostic<'a> {
@@ -1002,7 +1002,7 @@ mod tests {
             // Populated, and with five DISTINCT counters, so the nested
             // object's shape and field order are pinned below — not just the
             // fact that a key exists.
-            monotone_cells: Some(rs_cam_core::unified_finish::MonotoneCellTotals {
+            monotone_cells: Some(rs_cam_core::finish::unified_finish::MonotoneCellTotals {
                 regions: 11,
                 regions_rotated: 5,
                 cells_emitted: 23,

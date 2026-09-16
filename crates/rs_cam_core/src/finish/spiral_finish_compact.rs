@@ -2,8 +2,8 @@
 //!
 //! Research-only. Nothing here is on a production path: no operation, no
 //! generator, no GUI surface and no MCP tool reaches this module. It follows
-//! the precedent of [`crate::conformal_spiral`] (Phase F2) and
-//! [`crate::direction_field`] (Phase F1) — unshipped research candidates that
+//! the precedent of [`crate::finish::conformal_spiral`] (Phase F2) and
+//! [`crate::finish::direction_field`] (Phase F1) — unshipped research candidates that
 //! document their own limitations.
 //!
 //! # What this module does
@@ -12,7 +12,7 @@
 //! in Track C, the medial/EDT field of `planning/finishing_synthesis_2026-08-30.md`
 //! §9, whose level sets are iso-distance offsets of the region boundary — and
 //! bridges them into **one continuous spiral** with the F2 log-rectangle
-//! bridging blend ([`crate::conformal_spiral::blend_sigma`], [SOURCE-2024
+//! bridging blend ([`crate::finish::conformal_spiral::blend_sigma`], [SOURCE-2024
 //! arXiv:2309.10655 Eq. A-11]). The synthesis §2a states the design fact this
 //! module rests on: *the bridging is a property of the connection step, not of
 //! the conformal map* — any field whose level sets are nested closed loops can
@@ -47,7 +47,7 @@
 
 use std::f64::consts::TAU;
 
-use crate::conformal_spiral::{DEFAULT_BLEND_P, PAPER_INITIAL_BRIDGE_SHIFT, blend_sigma};
+use crate::finish::conformal_spiral::{DEFAULT_BLEND_P, PAPER_INITIAL_BRIDGE_SHIFT, blend_sigma};
 use crate::geo::P3;
 
 /// Consecutive spiral points closer than this (mm) are merged.
@@ -69,7 +69,7 @@ const WINDING_TOL_TURNS: f64 = 0.02;
 #[derive(Debug, Clone)]
 pub struct CompactSpiralParams {
     /// Grading parameter `p` of the bridge blend `σ` —
-    /// [`crate::conformal_spiral::DEFAULT_BLEND_P`].
+    /// [`crate::finish::conformal_spiral::DEFAULT_BLEND_P`].
     pub blend_p: f64,
     /// Ceiling on one lattice chord (mm) at the outermost ring; sets the
     /// shared angular lattice density. [REPO] default 0.1.
@@ -82,7 +82,7 @@ pub struct CompactSpiralParams {
     /// backtracking vertices are dropped and counted. [REPO] default 0.35.
     pub max_backtrack_rad: f64,
     /// Bridge sector span (rad) away from the hub —
-    /// [`crate::conformal_spiral::PAPER_INITIAL_BRIDGE_SHIFT`] (`π/10`).
+    /// [`crate::finish::conformal_spiral::PAPER_INITIAL_BRIDGE_SHIFT`] (`π/10`).
     pub bridge_span_rad: f64,
     /// A ring whose mean radius is below this fraction of the outermost
     /// ring's mean radius takes the near-hub bridge span — the paper's
@@ -330,7 +330,7 @@ impl PolarRing {
 ///
 /// `levels` is one entry per field level, each holding that level's loops as
 /// closed 3D polylines (a closed loop repeats its first point as its last —
-/// [`crate::direction_field::FieldPathResult`]'s convention; a helper for
+/// [`crate::finish::direction_field::FieldPathResult`]'s convention; a helper for
 /// that type is [`levels_from_field_result`]). Level order need not be
 /// radial; rings are sorted by enclosed XY area and the reordering is
 /// reported.
@@ -533,11 +533,11 @@ pub fn bridge_nested_levels(
     )
 }
 
-/// Group a [`crate::direction_field::FieldPathResult`]'s polylines by level,
+/// Group a [`crate::finish::direction_field::FieldPathResult`]'s polylines by level,
 /// in level order — the shape [`bridge_nested_levels`] takes.
 #[must_use]
 pub fn levels_from_field_result(
-    result: &crate::direction_field::FieldPathResult,
+    result: &crate::finish::direction_field::FieldPathResult,
 ) -> Vec<Vec<Vec<P3>>> {
     let mut out: Vec<Vec<Vec<P3>>> = vec![Vec::new(); result.levels.len()];
     for (line, &level) in result.polylines.iter().zip(result.polyline_levels.iter()) {

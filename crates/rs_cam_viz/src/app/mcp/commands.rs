@@ -2663,8 +2663,8 @@ impl RsCamApp {
                     let is_rest_depth_pencil = matches!(
                         &source_tc.operation,
                         rs_cam_core::compute::catalog::OperationConfig::Pencil(cfg)
-                            if rs_cam_core::pencil::PencilDetector::parse(&cfg.detector)
-                                == rs_cam_core::pencil::PencilDetector::RestDepth
+                            if rs_cam_core::finish::pencil::PencilDetector::parse(&cfg.detector)
+                                == rs_cam_core::finish::pencil::PencilDetector::RestDepth
                     );
                     (idx, source_toolpath_id, is_rest_depth_pencil)
                 })

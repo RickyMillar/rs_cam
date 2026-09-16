@@ -122,7 +122,7 @@ pub(crate) fn scallop_height_curved(tool_radius: f64, stepover: f64, curvature: 
 /// `scallop_oracle_validation_m4::inclined_plane_cusp_follows_the_secant_law`,
 /// which measures the law to ≤4.5% at 0–60° against an analytic tool-envelope
 /// oracle; the correct form is available as
-/// [`crate::scallop::StepoverGeometry::CosineSlope`].
+/// [`crate::finish::scallop::StepoverGeometry::CosineSlope`].
 ///
 /// # Why it has not simply been fixed
 ///

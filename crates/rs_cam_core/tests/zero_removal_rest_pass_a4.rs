@@ -78,8 +78,8 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{ClaimsReference, UnifiedFinishConfig};
 use rs_cam_core::diagnostics::ids;
+use rs_cam_core::finish::unified_finish::ClaimsReferenceResolution;
 use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SimulationOptions};
-use rs_cam_core::unified_finish::ClaimsReferenceResolution;
 
 /// Half-extent (mm) of the fixture surface.
 const HALF: f64 = 20.0;

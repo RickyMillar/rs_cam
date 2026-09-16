@@ -44,9 +44,9 @@ mod fingerprint;
 
 use std::time::Instant;
 
+use rs_cam_core::finish::surface_link::{RelinkParams, relink_fragments};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::surface_link::{RelinkParams, relink_fragments};
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;

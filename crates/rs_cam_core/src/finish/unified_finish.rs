@@ -3,7 +3,7 @@
 //! orchestrator and the region ROUTER.
 //!
 //! [`unified_finish_toolpath_with_cancel`] composes the P2.b decomposition
-//! ([`crate::finish_planner::decompose`]) with three EXISTING region-scoped
+//! ([`crate::finish::finish_planner::decompose`]) with three EXISTING region-scoped
 //! strategy generators — since P2.d, one call PER REGION (single-polygon
 //! [`RegionSet`]) rather than per band, so regions can be ordered freely.
 //! With a [`LinkKinematics`] envelope in scope the regions are then routed
@@ -93,32 +93,32 @@
 
 use std::ops::Range;
 
-use crate::classify_probe::ClassificationSampler;
-use crate::crease_paths::centerline_cut_paths;
-use crate::finish_planner::{FinishBand, FinishPlannerParams, decompose};
-use crate::finish_setup::{
+use crate::finish::classify_probe::ClassificationSampler;
+use crate::finish::crease_paths::centerline_cut_paths;
+use crate::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose};
+use crate::finish::finish_setup::{
     FinishResolutionPolicy, FinishSurface, SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG,
     build_classification_surface_with_sampler_and_cancel,
 };
+use crate::finish::pencil::PencilParams;
+use crate::finish::scallop::{
+    ScallopDirection, ScallopParams, ScallopRuntimeAnnotation,
+    scallop_toolpath_structured_annotated_with_cancel,
+};
+use crate::finish::surface_link::build_surface_link;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::machine::kinematics::{LinkKinematics, retract_link_time, surface_link_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::ops::waterline::{WaterlineParams, waterline_toolpath_with_cancel, waterline_z_levels};
-use crate::pencil::PencilParams;
 use crate::polygon::Polygon2;
-use crate::scallop::{
-    ScallopDirection, ScallopParams, ScallopRuntimeAnnotation,
-    scallop_toolpath_structured_annotated_with_cancel,
-};
 use crate::surface::dropcutter::{
     DropCutterGrid, LatticeSampling, batch_drop_cutter_windowed_with_cancel,
 };
 #[cfg(test)]
 use crate::surface::rest_field::RestGrid;
 use crate::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
-use crate::surface_link::build_surface_link;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath, raster_toolpath_from_grid};
 use crate::trace::debug_trace::ToolpathDebugContext;
@@ -300,7 +300,7 @@ pub struct RoutedLink {
 /// detector, never whether corridors get carved.
 ///
 /// Derives `Serialize`/`Deserialize` directly — mirrors
-/// [`crate::scallop::ScallopDirection`]'s pattern (a core enum re-exported
+/// [`crate::finish::scallop::ScallopDirection`]'s pattern (a core enum re-exported
 /// as-is into `compute::operation_configs`, rather than a parallel
 /// config-side enum) — so `UnifiedFinishConfig::claims_reference` can use
 /// this type verbatim.
@@ -386,7 +386,7 @@ pub enum ClaimsReference {
 /// Fieldless on purpose: the three facts a reader needs (what was asked for,
 /// what was used, whether a machined prior was in scope) are exactly one of
 /// six combinations, so the variant IS the record. This mirrors
-/// [`crate::finish_setup::CellSource`], which carries the same kind of
+/// [`crate::finish::finish_setup::CellSource`], which carries the same kind of
 /// "which rule produced this number" provenance for the finish grid.
 ///
 /// [`Self::resolve`] is the ONE place the mapping lives, so a new
@@ -643,14 +643,14 @@ pub struct ClaimsConfig<'a> {
     pub territory_clip: bool,
     /// XY gap (mm) the crease node's emitter may bridge with a stay-down
     /// SURFACE FEED instead of retracting (Step 3.5 →
-    /// [`crate::pencil::emit_paths`] → `PencilParams::hookup_distance`).
+    /// [`crate::finish::pencil::emit_paths`] → `PencilParams::hookup_distance`).
     ///
     /// A dial rather than a constant because `emit_paths` links with NO
     /// territory boundary: `build_surface_link` only checks that the
     /// cutter keeps mesh contact, so a crease link is free to leave the
     /// rest island it belongs to and feed across ground the op was
     /// confined away from. That is the same gouge class
-    /// [`crate::surface_link::RelinkParams::boundary`] exists to prevent,
+    /// [`crate::finish::surface_link::RelinkParams::boundary`] exists to prevent,
     /// and until the boundary is threaded through `emit_paths` this is the
     /// only lever on it. `0.0` disables crease linking entirely (every
     /// crease run gets its own retract + entry).
@@ -1107,7 +1107,7 @@ pub fn dropped_band_finding(
 /// the P2.d route.
 #[derive(Debug, Clone, Default)]
 pub struct UnifiedFinishReport {
-    pub decompose: crate::finish_planner::DecomposeStats,
+    pub decompose: crate::finish::finish_planner::DecomposeStats,
     pub very_steep: BandGenStats,
     pub mid_steep: BandGenStats,
     pub shallow: BandGenStats,
@@ -1139,22 +1139,22 @@ pub struct UnifiedFinishReport {
     /// Region-interior area (mm²) left UNCUT by a mid-steep scallop ring
     /// cascade that hit `max_rings` before collapsing, summed over every
     /// mid-steep region. `0.0` when every cascade collapsed normally.
-    /// See [`crate::scallop::ScallopReport::uncut_core_mm2`].
+    /// See [`crate::finish::scallop::ScallopReport::uncut_core_mm2`].
     ///
     /// **Different provenance from [`Self::provenance`]**: this one is
-    /// [`crate::scallop::ScallopReport::PROVENANCE`] — a ring-cascade
+    /// [`crate::finish::scallop::ScallopReport::PROVENANCE`] — a ring-cascade
     /// residual, not a grid-quantised band area. The two must never be
     /// summed or ratio'd against each other.
     pub uncut_core_mm2: f64,
     /// M4 §5b: the hole-aware sibling of [`Self::uncut_core_mm2`], summed
     /// over the same mid-steep regions. `0.0` when every cascade collapsed
-    /// normally. See [`crate::scallop::ScallopReport::untouched_mm2`] and
-    /// [`crate::scallop::ScallopReport::UNTOUCHED_PROVENANCE`].
+    /// normally. See [`crate::finish::scallop::ScallopReport::untouched_mm2`] and
+    /// [`crate::finish::scallop::ScallopReport::UNTOUCHED_PROVENANCE`].
     pub untouched_mm2: f64,
     /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
     /// [`Self::uncut_core_mm2`], summed over the same mid-steep regions. See
-    /// [`crate::scallop::ScallopReport::standing_mm2`] and
-    /// [`crate::scallop::ScallopReport::STANDING_PROVENANCE`] for the
+    /// [`crate::finish::scallop::ScallopReport::standing_mm2`] and
+    /// [`crate::finish::scallop::ScallopReport::STANDING_PROVENANCE`] for the
     /// estimator's formula and stated limitations.
     pub standing_mm2: f64,
     /// Wave D1: planned band regions whose cutting was entirely erased by
@@ -1254,7 +1254,7 @@ pub struct MonotoneCellTotals {
     pub empty_fallbacks: usize,
 }
 
-/// Summed [`crate::surface_link::RelinkReport`] counters across regions.
+/// Summed [`crate::finish::surface_link::RelinkReport`] counters across regions.
 ///
 /// Every DECLINE reason the relinker distinguishes is carried, because the
 /// question this record has to answer is not "did linking happen" but "why
@@ -1269,7 +1269,7 @@ pub struct RelinkTotals {
     /// TIER (a) — links that arrive at cutting depth, so the next fragment
     /// needs no entry at all. The ACCEPTANCE measure for G-LINKSTAGE: on an
     /// entry-bound pass this is the only counter that moves the wall clock.
-    /// See [`crate::surface_link::RelinkReport::at_depth_links`].
+    /// See [`crate::finish::surface_link::RelinkReport::at_depth_links`].
     pub at_depth_links: usize,
     /// TIER (b) — links that lifted to the local stock ceiling and descended
     /// again. They remove a RETRACT, not an entry.
@@ -1282,10 +1282,10 @@ pub struct RelinkTotals {
     pub off_surface: usize,
     pub slower_than_retract: usize,
     pub outside_boundary: usize,
-    /// Junctions where a [`crate::surface_link::LinkCeiling`] put the
+    /// Junctions where a [`crate::finish::surface_link::LinkCeiling`] put the
     /// clearance at or above `safe_z`, so the retract was kept. Structurally
     /// `0` for every op generated without a ceiling — see
-    /// [`crate::surface_link::RelinkReport::ceiling_above_safe_z`].
+    /// [`crate::finish::surface_link::RelinkReport::ceiling_above_safe_z`].
     pub ceiling_above_safe_z: usize,
 }
 
@@ -1311,9 +1311,9 @@ impl RelinkTotals {
     }
 
     /// Fold one region's report into the running totals. One site, so a new
-    /// counter on [`crate::surface_link::RelinkReport`] is added here rather
+    /// counter on [`crate::finish::surface_link::RelinkReport`] is added here rather
     /// than in however many hand-written `+=` blocks exist.
-    pub fn add(&mut self, rep: &crate::surface_link::RelinkReport) {
+    pub fn add(&mut self, rep: &crate::finish::surface_link::RelinkReport) {
         self.fragments += rep.fragments;
         self.surface_links += rep.surface_links;
         self.at_depth_links += rep.at_depth_links;
@@ -1428,7 +1428,7 @@ pub fn unified_finish_classification_resolution(
 /// UnifiedFinish does not build a generation grid itself: each band delegates
 /// to an existing strategy generator, and only the MidSteep band's scallop
 /// generator builds one. So UnifiedFinish's generation resolution IS
-/// [`crate::scallop::scallop_generation_resolution`] — this function names
+/// [`crate::finish::scallop::scallop_generation_resolution`] — this function names
 /// that inheritance rather than re-deriving it, so moving scallop's policy
 /// (H3 step 4) moves UnifiedFinish's MidSteep band with it, by construction.
 ///
@@ -1442,7 +1442,7 @@ pub fn unified_finish_mid_steep_generation_resolution(
     cutter: &dyn MillingCutter,
     tolerance: f64,
 ) -> FinishResolutionPolicy {
-    crate::scallop::scallop_generation_resolution(cutter, tolerance)
+    crate::finish::scallop::scallop_generation_resolution(cutter, tolerance)
 }
 
 // ── Orchestrator ─────────────────────────────────────────────────────────
@@ -1504,7 +1504,7 @@ pub fn unified_finish_toolpath_with_cancel(
 /// traverse at `max(mesh surface, standing material) + PLUNGE_CLEARANCE_MM`,
 /// and re-enter vertically — and refuses the link outright (keeping the
 /// retract) once that clearance reaches `safe_z`, counted on
-/// [`RelinkTotals::ceiling_above_safe_z`]. See [`crate::surface_link::LinkCeiling`]
+/// [`RelinkTotals::ceiling_above_safe_z`]. See [`crate::finish::surface_link::LinkCeiling`]
 /// for why a surface-riding link on standing stock is a cutting feed through
 /// material (the G-LINKLOAD class).
 ///
@@ -1526,7 +1526,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
     // v3 S1 claims pipeline (module doc). `None` is a byte-identical no-op.
     claims: Option<&ClaimsConfig<'_>>,
     debug: Option<&ToolpathDebugContext>,
-    link_ceiling: Option<crate::surface_link::LinkCeiling<'_>>,
+    link_ceiling: Option<crate::finish::surface_link::LinkCeiling<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, UnifiedFinishReport), Cancelled> {
     check_cancel(cancel)?;
@@ -1588,7 +1588,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
     // `claims: None` leaves `creases` empty and `covered` untouched —
     // byte-identical to the pre-v3 op (module doc).
     let mut claimed_creases = 0usize;
-    let mut claims_paths: Vec<crate::pencil::PencilPath> = Vec::new();
+    let mut claims_paths: Vec<crate::finish::pencil::PencilPath> = Vec::new();
     // Wave D1: `None` until the claims pipeline actually emits a centreline,
     // so "the claims pass never ran" stays distinguishable from "it ran and
     // nothing floated".
@@ -1650,8 +1650,8 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // where the S1 A/B proved the same swap reads roughing terraces as
         // a phantom dendritic crease network. See `CreaseReference` doc.
         let probe = crate::tool::BallEndmill::new(
-            crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-            crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+            crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+            crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
         );
         let self_probe_reference = || RestReference::Cutter {
             tool: &probe,
@@ -1699,7 +1699,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // emission chain drops every path. Claim == emitted output is the
         // only carve-and-abandon-proof contract.
         let detected = rf.centerlines.len();
-        let mut emitted_paths: Vec<crate::pencil::PencilPath> = Vec::new();
+        let mut emitted_paths: Vec<crate::finish::pencil::PencilPath> = Vec::new();
         let mut float = crate::compute::config::TipFloatFinding::default();
         for centerline in rf.centerlines {
             check_cancel(cancel)?;
@@ -1927,7 +1927,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // G-ENTRYLOAD: give crease entries the same bite-budgeted ramp the
         // standalone pencil gets; the claims territory stock is the input
         // stock the entries descend through.
-        let (tp, _anns) = crate::pencil::emit_paths_with_entry_stock(
+        let (tp, _anns) = crate::finish::pencil::emit_paths_with_entry_stock(
             &claims_paths,
             mesh,
             index,
@@ -2324,7 +2324,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // INTERIORS are copied verbatim by `relink_fragments`; only the
         // (previously airborne) junctions change.
         let (tp, anns) = if params.intra_region_hookup_mm > 0.0 {
-            let rp = crate::surface_link::RelinkParams {
+            let rp = crate::finish::surface_link::RelinkParams {
                 hookup_distance: params.intra_region_hookup_mm,
                 stock_to_leave: params.stock_to_leave,
                 sampling: params.sampling,
@@ -2363,7 +2363,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 // (raw face at surface height) keeps this false there.
                 flush_ride: true,
             };
-            let (linked, rep) = crate::surface_link::relink_fragments(
+            let (linked, rep) = crate::finish::surface_link::relink_fragments(
                 crate::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                 mesh,
                 index,

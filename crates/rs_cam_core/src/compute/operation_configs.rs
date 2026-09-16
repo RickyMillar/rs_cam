@@ -2,16 +2,16 @@ use serde::{Deserialize, Serialize};
 
 use super::catalog::{DepthSemantics, OperationParams};
 use super::tool_config::ToolId;
-use crate::finish_planner::FinishPlannerParams;
+use crate::finish::finish_planner::FinishPlannerParams;
 
 // Re-export operation parameter enums from core (single source of truth).
+pub use crate::finish::ramp_finish::CutDirection;
+pub use crate::finish::scallop::ScallopDirection;
+pub use crate::finish::spiral_finish::SpiralDirection;
+pub use crate::finish::unified_finish::{ClaimsReference, CreaseReference};
 pub use crate::ops::face::FaceDirection;
 pub use crate::ops::profile::ProfileSide;
 pub use crate::ops::trace_path::TraceCompensation;
-pub use crate::ramp_finish::CutDirection;
-pub use crate::scallop::ScallopDirection;
-pub use crate::spiral_finish::SpiralDirection;
-pub use crate::unified_finish::{ClaimsReference, CreaseReference};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -780,7 +780,7 @@ pub struct WaterlineConfig {
     ///
     /// Waterline levels are closed loops, so this family has the most to gain
     /// from the stage's loop rotation — but it does not declare a
-    /// [`crate::surface_link::FragmentKind`] yet (the adapter cannot tell a
+    /// [`crate::finish::surface_link::FragmentKind`] yet (the adapter cannot tell a
     /// whole level from a boundary-split arc), so today the stage links and
     /// reorders it without rotating. Declaring the kinds in the generator is
     /// the follow-up.
@@ -817,39 +817,39 @@ pub struct PencilConfig {
     /// Reach-gap tolerance (mm): minimum uncut valley depth for the tool-radius-
     /// aware gate to keep a concave seam. Higher = ignore shallow surface texture,
     /// keep only deeper channels. `#[serde(default)]` so older project files load.
-    #[serde(default = "crate::pencil::reach_gap_threshold")]
+    #[serde(default = "crate::finish::pencil::reach_gap_threshold")]
     pub min_valley_depth: f64,
     /// Bisector positioning strength (0 = off, 1 = geometrically correct). Shifts
     /// the trace out along the wall bisector in asymmetric corners so the ball
     /// nestles instead of riding up the steep wall. `#[serde(default)]` so older
     /// project files load.
-    #[serde(default = "crate::pencil::bisector_strength_default")]
+    #[serde(default = "crate::finish::pencil::bisector_strength_default")]
     pub bisector_strength: f64,
     /// Diameter (mm) of the bigger reference (finishing) tool this pencil pass
     /// cleans up after. The gate keeps a seam by how much deeper the pencil tool
     /// reaches than this reference could, so it traces the valleys a bigger bit
     /// missed and skips reachable walls + sub-pencil texture. `#[serde(default)]`
     /// so older project files load.
-    #[serde(default = "crate::pencil::reference_tool_diameter_default")]
+    #[serde(default = "crate::finish::pencil::reference_tool_diameter_default")]
     pub reference_tool_diameter: f64,
     /// Valley-detection algorithm: `"dihedral"` (mesh crease detection, default)
     /// or `"curvature"` (curvature crest lines, best for noisy organic relief).
     /// `#[serde(default)]` so older project files load.
-    #[serde(default = "crate::pencil::detector_string_default")]
+    #[serde(default = "crate::finish::pencil::detector_string_default")]
     pub detector: String,
     /// Minimum concave curvature |κ₂| (1/mm) a valley must reach for the
     /// `curvature` detector to trace it — the valley significance dial. Low →
     /// every concave seam; high → only deep sharp valleys. `#[serde(default)]`.
-    #[serde(default = "crate::pencil::valley_saliency_default")]
+    #[serde(default = "crate::finish::pencil::valley_saliency_default")]
     pub valley_saliency: f64,
     /// Curvature-tensor smoothing iterations for the `curvature` detector (the
     /// literature denoise — smooths the curvature field, not the geometry).
     /// `#[serde(default)]` so older project files load.
-    #[serde(default = "crate::pencil::curvature_smoothing_default")]
+    #[serde(default = "crate::finish::pencil::curvature_smoothing_default")]
     pub curvature_smoothing: usize,
     /// XY grid cell size (mm) for the `rest_depth` detector's rest field. Smaller
     /// = finer regions, more drops. `#[serde(default)]` so older files load.
-    #[serde(default = "crate::pencil::rest_cell_default")]
+    #[serde(default = "crate::finish::pencil::rest_cell_default")]
     pub rest_cell_mm: f64,
     /// **RETIRED (PR-5, H2.2) — deserialized, saved, and NOT READ.**
     ///
@@ -867,7 +867,7 @@ pub struct PencilConfig {
     /// [`crate::compute::config::DeprecatedDialFinding`] →
     /// `diagnostics::ids::CONFIG_DEPRECATED_DIAL`, so the operator is told
     /// once rather than left with a dial that quietly does nothing.
-    #[serde(default = "crate::pencil::route_width_factor_default")]
+    #[serde(default = "crate::finish::pencil::route_width_factor_default")]
     pub route_width_factor: f64,
     /// R1: optional library tool id whose *real* cutter geometry defines the
     /// rest reference (all three detectors). `None` = legacy nominal-diameter
@@ -892,7 +892,7 @@ pub struct PencilConfig {
     ///   `0b5f1cd2`).
     /// * `Some(0.0)` — the OFF switch for the hop tier alone. The pass
     ///   refuses every lifted candidate and counts it in
-    ///   [`crate::pencil::PencilLinkReport::hop_too_far`]. The at-depth tier
+    ///   [`crate::finish::pencil::PencilLinkReport::hop_too_far`]. The at-depth tier
     ///   does not change, so this is the control arm that separates the two
     ///   tiers on one fixture.
     /// * `Some(d)` — hops reach `d` mm; at-depth links keep
@@ -920,14 +920,14 @@ impl Default for PencilConfig {
             feed_rate: 800.0,
             plunge_rate: 400.0,
             stock_to_leave: 0.0,
-            min_valley_depth: crate::pencil::reach_gap_threshold(),
-            bisector_strength: crate::pencil::bisector_strength_default(),
-            reference_tool_diameter: crate::pencil::reference_tool_diameter_default(),
-            detector: crate::pencil::detector_string_default(),
-            valley_saliency: crate::pencil::valley_saliency_default(),
-            curvature_smoothing: crate::pencil::curvature_smoothing_default(),
-            rest_cell_mm: crate::pencil::rest_cell_default(),
-            route_width_factor: crate::pencil::route_width_factor_default(),
+            min_valley_depth: crate::finish::pencil::reach_gap_threshold(),
+            bisector_strength: crate::finish::pencil::bisector_strength_default(),
+            reference_tool_diameter: crate::finish::pencil::reference_tool_diameter_default(),
+            detector: crate::finish::pencil::detector_string_default(),
+            valley_saliency: crate::finish::pencil::valley_saliency_default(),
+            curvature_smoothing: crate::finish::pencil::curvature_smoothing_default(),
+            rest_cell_mm: crate::finish::pencil::rest_cell_default(),
+            route_width_factor: crate::finish::pencil::route_width_factor_default(),
             reference_tool_id: None,
             // One cap for both tiers — the shipped emission. See the field.
             link_hop_distance_mm: None,
@@ -951,7 +951,7 @@ pub struct ScallopConfig {
     pub spindle_rpm: Option<u32>,
     /// A/M7 — cap (mm) on the XY gap a ring-to-ring surface link may span
     /// instead of a full `retract → rapid → replunge` round trip. `0.0`
-    /// disables it. See [`crate::scallop::ScallopParams::intra_pass_hookup_mm`]
+    /// disables it. See [`crate::finish::scallop::ScallopParams::intra_pass_hookup_mm`]
     /// for what the relink does and refuses to do.
     #[serde(default = "default_scallop_intra_pass_hookup_mm")]
     pub intra_pass_hookup_mm: f64,
@@ -987,7 +987,7 @@ pub struct ScallopConfig {
 /// fragment boundary and a lead-out is what terminates one. See
 /// `tests/scallop_intra_pass_relink_am7.rs`, which now gates on surface
 /// membership rather than on a label, and on the relinker's own
-/// position-preservation unit tests in `crate::surface_link`.
+/// position-preservation unit tests in `crate::finish::surface_link`.
 ///
 /// The value is a CAP, not a target: every candidate within it is still
 /// drop-cutter sampled for gouge, refused if it would leave the operation's
@@ -1170,7 +1170,7 @@ pub struct UnifiedFinishConfig {
     pub intra_region_hookup_mm: f64,
     /// XY gap (mm) the crease-claims node's emitter may bridge with a
     /// stay-down surface feed instead of retracting. See
-    /// [`crate::unified_finish::ClaimsConfig::crease_hookup_mm`] — that
+    /// [`crate::finish::unified_finish::ClaimsConfig::crease_hookup_mm`] — that
     /// emitter links with NO territory boundary, so this is the only lever
     /// on crease links leaving their rest island. Meaningful only
     /// alongside `pencil_claims = true`. Default 5.0 (the historical
@@ -1178,13 +1178,13 @@ pub struct UnifiedFinishConfig {
     #[serde(default = "default_unified_finish_crease_hookup_mm")]
     pub crease_hookup_mm: f64,
     /// F2 (multi-tool island finishing): island **absorption floor** (mm²)
-    /// for [`crate::finish_planner::decompose`]'s min-area step — a
+    /// for [`crate::finish::finish_planner::decompose`]'s min-area step — a
     /// connected band island smaller than this is absorbed into its
     /// surrounding band instead of becoming its own region.
     ///
     /// `None` (**the default, and byte-identical to every pre-F2 project**)
     /// keeps the tool-derived value
-    /// [`crate::finish_planner::FinishPlannerParams::for_tool`] computes:
+    /// [`crate::finish::finish_planner::FinishPlannerParams::for_tool`] computes:
     /// `(2 · cusp_radius)² · 4`, i.e. roughly four tool-diameters². `Some(v)`
     /// overrides that ONE dial and leaves every other planner dial derived.
     ///
@@ -1200,7 +1200,7 @@ pub struct UnifiedFinishConfig {
     ///
     /// `None` (**the default, byte-identical to every pre-F2 project**) keeps
     /// the tool-derived `cusp_radius · 0.5` from
-    /// [`crate::finish_planner::FinishPlannerParams::for_tool`]. `Some(v)`
+    /// [`crate::finish::finish_planner::FinishPlannerParams::for_tool`]. `Some(v)`
     /// overrides that one dial only.
     ///
     /// Cusp radius, not envelope radius — same footgun as
@@ -1212,7 +1212,7 @@ pub struct UnifiedFinishConfig {
     /// stops the raw slope masks from storming into O(100) speckled islands.
     ///
     /// `None` (**the default, byte-identical to every pre-F2 project**) keeps
-    /// [`crate::finish_planner::FinishPlannerParams::for_tool`]'s fixed
+    /// [`crate::finish::finish_planner::FinishPlannerParams::for_tool`]'s fixed
     /// `10.0` — the only one of the three that is a constant rather than a
     /// tool-derived scale. `Some(v)` overrides it.
     ///
@@ -1235,9 +1235,9 @@ pub struct UnifiedFinishConfig {
     /// pinned a non-production sampler. An absent field loads as production.
     #[serde(
         default,
-        skip_serializing_if = "crate::classify_probe::ClassificationSampler::is_production"
+        skip_serializing_if = "crate::finish::classify_probe::ClassificationSampler::is_production"
     )]
-    pub classification_sampler: crate::classify_probe::ClassificationSampler,
+    pub classification_sampler: crate::finish::classify_probe::ClassificationSampler,
 }
 
 impl Default for UnifiedFinishConfig {
@@ -1272,20 +1272,21 @@ impl Default for UnifiedFinishConfig {
             min_region_area_mm2: None,
             close_radius_mm: None,
             hysteresis_deg: None,
-            classification_sampler: crate::classify_probe::ClassificationSampler::PRODUCTION,
+            classification_sampler:
+                crate::finish::classify_probe::ClassificationSampler::PRODUCTION,
         }
     }
 }
 
 impl UnifiedFinishConfig {
-    /// Build the [`crate::finish_planner::FinishPlannerParams`] this
+    /// Build the [`crate::finish::finish_planner::FinishPlannerParams`] this
     /// operation decomposes with — the ONE construction site, shared by the
     /// generator (`compute::execute::generate_unified_finish`) and by the F2
     /// sentries.
     ///
     /// Two layers, in order:
     ///
-    /// 1. [`crate::finish_planner::FinishPlannerParams::for_tool`] derives
+    /// 1. [`crate::finish::finish_planner::FinishPlannerParams::for_tool`] derives
     ///    every dial from `cusp_radius_mm`. **`cusp_radius_mm` must be the
     ///    tool's cusp-forming (TIP) radius** — `MillingCutter::cusp_radius`,
     ///    never `radius()`. Every dial `for_tool` derives is a feature scale,
@@ -1364,7 +1365,7 @@ fn default_unified_finish_territory_clip() -> bool {
 /// per-operation opt-out, and the X5 back-compat test pins both directions.
 ///
 /// Kept in lockstep with
-/// [`crate::unified_finish::UnifiedFinishParams::default`]'s own value — a
+/// [`crate::finish::unified_finish::UnifiedFinishParams::default`]'s own value — a
 /// core default and a serde default that disagree is a divergence class this
 /// repo has already found twice.
 fn default_unified_finish_monotone_cell_decomposition() -> bool {
@@ -1626,8 +1627,8 @@ pub struct ProjectCurveConfig {
     /// A rivers/engraving DXF is hundreds of short chains, and each one
     /// costs two safe-Z legs however short the hop between them is, so the
     /// air on this family is COUNT-bound. See
-    /// [`crate::surface_link::relink_fragments`] for what the link does and
-    /// [`crate::surface_link::LinkCeiling`] for why it travels above the
+    /// [`crate::finish::surface_link::relink_fragments`] for what the link does and
+    /// [`crate::finish::surface_link::LinkCeiling`] for why it travels above the
     /// standing material rather than on the mesh.
     #[serde(default = "default_project_curve_chain_distance_mm")]
     pub chain_distance_mm: f64,
@@ -2612,7 +2613,7 @@ mod tests {
     /// and the three properties every consumer reads off them.
     #[test]
     fn claims_reference_resolution_is_total_and_names_its_provenance() {
-        use crate::unified_finish::ClaimsReferenceResolution as R;
+        use crate::finish::unified_finish::ClaimsReferenceResolution as R;
 
         let cases = [
             (ClaimsReference::Auto, true, R::DerivedMachinedStock),

@@ -88,10 +88,10 @@ use common::meshes::plateau;
 use common::tools::{ball_control, wanaka_taper};
 
 use rs_cam_core::compute::config::TipFloatFinding;
-use rs_cam_core::crease_paths::centerline_cut_paths;
+use rs_cam_core::finish::crease_paths::centerline_cut_paths;
+use rs_cam_core::finish::pencil::PencilPath;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::pencil::PencilPath;
 use rs_cam_core::surface::reach::{self, LocalValley, SUGGESTED_STEPOVER_OVERLAP, ValleySide};
 use rs_cam_core::surface::rest_field::{CenterlineSample, RestCenterline};
 use rs_cam_core::tool::MillingCutter;

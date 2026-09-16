@@ -78,18 +78,18 @@ use rs_cam_core::{
     compute::execute::apply_dressups,
     compute::operation_configs::ScallopConfig,
     dexel_stock::{StockCutDirection, TriDexelStock},
+    finish::horizontal_finish::{HorizontalFinishParams, horizontal_finish_toolpath},
+    finish::pencil::{PencilParams, pencil_toolpath},
+    finish::radial_finish::{RadialFinishParams, radial_finish_toolpath},
+    finish::scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
     geo::{BoundingBox3, P2, P3},
-    horizontal_finish::{HorizontalFinishParams, horizontal_finish_toolpath},
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
     ops::chamfer::{ChamferParams, chamfer_toolpath},
     ops::drill::{DrillCycle, DrillParams, drill_toolpath},
     ops::project_curve::{
         ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath,
     },
-    pencil::{PencilParams, pencil_toolpath},
     polygon::Polygon2,
-    radial_finish::{RadialFinishParams, radial_finish_toolpath},
-    scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{MoveIntent, MoveType, Toolpath},
     trace::transform_provenance::ReconcileSet,
@@ -710,7 +710,7 @@ fn pencil_link_moves_preserves_material_state() {
             reference_tool_diameter: 0.0,
             // Crease detector — this suite exercises link_moves on a synthetic
             // V-groove, not the curvature path.
-            detector: rs_cam_core::pencil::PencilDetector::Dihedral,
+            detector: rs_cam_core::finish::pencil::PencilDetector::Dihedral,
             valley_saliency: 0.05,
             curvature_smoothing: 3,
             rest_cell_mm: 0.5,
@@ -1549,11 +1549,11 @@ fn nominal_z_levels(tp: &Toolpath, range: std::ops::Range<usize>) -> Vec<f64> {
 
 #[test]
 fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
-    use rs_cam_core::finish_planner::FinishPlannerParams;
-    use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, SpanKind};
-    use rs_cam_core::unified_finish::{
+    use rs_cam_core::finish::finish_planner::FinishPlannerParams;
+    use rs_cam_core::finish::unified_finish::{
         RegionKind, UnifiedFinishParams, unified_finish_spans, unified_finish_toolpath_with_cancel,
     };
+    use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, SpanKind};
 
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(3.0, 25.0);
@@ -1800,7 +1800,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
 
 #[test]
 fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
-    use rs_cam_core::steep_shallow::{
+    use rs_cam_core::finish::steep_shallow::{
         STEEP_HALF_LABEL, SteepShallowParams, steep_shallow_spans,
         steep_shallow_toolpath_split_with_cancel,
     };

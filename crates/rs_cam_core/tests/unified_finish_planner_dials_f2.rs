@@ -33,7 +33,9 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, PlannedRegions, decompose};
+use rs_cam_core::finish::finish_planner::{
+    FinishBand, FinishPlannerParams, PlannedRegions, decompose,
+};
 use rs_cam_core::geo::V3;
 use rs_cam_core::surface::slope::SlopeMap;
 

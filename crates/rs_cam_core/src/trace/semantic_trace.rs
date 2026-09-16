@@ -61,7 +61,7 @@ pub enum ToolpathSemanticKind {
 /// **H4's mix tables — and any other report that groups semantic items —
 /// must be built on this enum, on
 /// [`crate::trace::toolpath_spans::RegionSpanRole`], or on
-/// [`crate::unified_finish::RegionKind::from_span_label`]. Never on a
+/// [`crate::finish::unified_finish::RegionKind::from_span_label`]. Never on a
 /// `label`, and never on a key literal spelled out at the consumer.**
 ///
 /// Adding a parameter means adding a variant here: the match in

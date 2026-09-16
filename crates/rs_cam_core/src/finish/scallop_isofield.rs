@@ -4,7 +4,7 @@
 //! itself: *"whether scallop remains an offset-ring algorithm or should become
 //! an iso-field contour extractor."* This module is the second half of that
 //! comparison. Nothing here is on a production path; it is reachable only
-//! through [`crate::scallop::RingSource::IsoField`], which no shipped caller
+//! through [`crate::finish::scallop::RingSource::IsoField`], which no shipped caller
 //! selects.
 //!
 //! # The idea

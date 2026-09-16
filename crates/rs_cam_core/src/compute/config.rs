@@ -195,7 +195,7 @@ pub struct ToolpathStats {
     /// polygon's EXTERIOR only (`MEASUREMENT_DOMAINS.md` X-5) — an island
     /// inside the truncated core over-reports as uncut. This field nets out
     /// holes instead, straight off
-    /// [`crate::scallop::ScallopReport::untouched_mm2`].
+    /// [`crate::finish::scallop::ScallopReport::untouched_mm2`].
     ///
     /// Same three-valued contract as [`Self::truncated_core_mm2`]: `None`
     /// = not measured, `Some(0.0)` = measured and clean.
@@ -206,7 +206,7 @@ pub struct ToolpathStats {
     pub untouched_material_mm2: Option<f64>,
     /// M4 §5b: area the ring cascade **DID reach** — it ringed there — but
     /// where the keep predicate dropped every point, so no cut landed.
-    /// Straight off [`crate::scallop::ScallopReport::standing_mm2`]. Same
+    /// Straight off [`crate::finish::scallop::ScallopReport::standing_mm2`]. Same
     /// three-valued contract.
     ///
     /// **This is NOT an estimate of [`Self::truncated_core_mm2`].** It is
@@ -336,7 +336,7 @@ pub struct ToolpathStats {
     /// Report-only: no gate consumes it. The clamp itself is not report-only
     /// — it changes emitted geometry — but nothing downstream branches on
     /// this record.
-    pub ramp_reach_clamp: Option<Box<crate::ramp_finish::RampReachClamp>>,
+    pub ramp_reach_clamp: Option<Box<crate::finish::ramp_finish::RampReachClamp>>,
     /// A/M6: which rest reference this operation's crease/pencil claims
     /// pipeline ran against, and whether that was pinned or derived.
     ///
@@ -453,7 +453,7 @@ pub struct ToolpathStats {
     pub inert_claims_dial: Option<InertClaimsDialFinding>,
     /// C2 (`planning/thin_organic_2026-08-27/PROGRAMME.md` Track C): what
     /// the shallow band's monotone-cell decomposition did. See
-    /// [`crate::unified_finish::MonotoneCellTotals`].
+    /// [`crate::finish::unified_finish::MonotoneCellTotals`].
     ///
     /// This is the three-valued family, not the two-valued one:
     ///
@@ -478,7 +478,7 @@ pub struct ToolpathStats {
     /// [`crate::session::ToolpathDiagnostic`]'s `Serialize` (MCP
     /// `get_diagnostics`) and the CLI's `tp_*.json` — because the five
     /// counters only mean anything together.
-    pub monotone_cells: Option<crate::unified_finish::MonotoneCellTotals>,
+    pub monotone_cells: Option<crate::finish::unified_finish::MonotoneCellTotals>,
     /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
     /// generation consumed. See [`StockSnapshotStamp`].
     ///
@@ -554,7 +554,7 @@ pub struct ToolpathStats {
     /// through its own dial: `unified_finish` (`intra_region_hookup_mm`),
     /// `scallop` (`intra_pass_hookup_mm`), `drop_cutter` and `waterline`
     /// (`hookup_mm`). They share the slot because they share the KERNEL —
-    /// every one of them sums a [`crate::surface_link::RelinkReport`], so
+    /// every one of them sums a [`crate::finish::surface_link::RelinkReport`], so
     /// the counters mean the same thing in each — and because one toolpath
     /// is one operation, so which dial produced a reading is never
     /// ambiguous. Until G-LINKVISIBLE only `unified_finish` wrote here and
@@ -568,7 +568,7 @@ pub struct ToolpathStats {
     /// NOT boxed: eight words, the same call [`Self::region_cap`] makes.
     ///
     /// Report-only: no gate consumes it and no verdict changes on it.
-    pub relink: Option<crate::unified_finish::RelinkTotals>,
+    pub relink: Option<crate::finish::unified_finish::RelinkTotals>,
     /// G-LINKVISIBLE (2026-09-09): what the PENCIL's own link stage did.
     ///
     /// **The same three-valued contract [`Self::relink`] documents:**
@@ -584,9 +584,9 @@ pub struct ToolpathStats {
     ///
     /// **Why its own slot rather than [`Self::relink`].** The pencil's
     /// report carries eight counters against
-    /// [`crate::unified_finish::RelinkTotals`]' six, and the two that a
+    /// [`crate::finish::unified_finish::RelinkTotals`]' six, and the two that a
     /// mapping would have to drop —
-    /// [`crate::pencil::PencilLinkReport::hop_too_far`] and this pass's own
+    /// [`crate::finish::pencil::PencilLinkReport::hop_too_far`] and this pass's own
     /// at-depth/hop split — are exactly the ones that name the pencil's
     /// binding constraint. A measurement squeezed into another
     /// measurement's shape reads clean and means something else.
@@ -594,7 +594,7 @@ pub struct ToolpathStats {
     /// NOT boxed: eight words, the same call [`Self::region_cap`] makes.
     ///
     /// Report-only: no gate consumes it and no verdict changes on it.
-    pub pencil_link: Option<crate::pencil::PencilLinkReport>,
+    pub pencil_link: Option<crate::finish::pencil::PencilLinkReport>,
 }
 
 /// S-4 (G-BYTE): which machined-stock snapshot a generation consumed.
@@ -933,8 +933,8 @@ impl ZeroRemovalFinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClaimsReferenceFinding {
     /// What the dial said, what was used, and whether a machined prior was
-    /// in scope — see [`crate::unified_finish::ClaimsReferenceResolution`].
-    pub resolution: crate::unified_finish::ClaimsReferenceResolution,
+    /// in scope — see [`crate::finish::unified_finish::ClaimsReferenceResolution`].
+    pub resolution: crate::finish::unified_finish::ClaimsReferenceResolution,
     /// The operation also asked for S4 rest-territory confinement
     /// (`territory_clip`), which only runs under a machined-stock reference.
     /// When this is `true` and the resolution is a self-probe one, the
@@ -952,7 +952,7 @@ impl ClaimsReferenceFinding {
         self.territory_clip_requested
             && matches!(
                 self.resolution.reference(),
-                crate::unified_finish::CreaseReference::SelfProbe
+                crate::finish::unified_finish::CreaseReference::SelfProbe
             )
     }
 }
@@ -1006,7 +1006,7 @@ pub struct InertClaimsDialFinding {
     /// therefore steered nothing.
     pub min_rest_depth_inert: bool,
     /// The reference the operator pinned.
-    pub claims_reference: crate::unified_finish::ClaimsReference,
+    pub claims_reference: crate::finish::unified_finish::ClaimsReference,
     /// `true` when [`Self::claims_reference`] is non-default AND the claims
     /// pipeline is off, so it too steered nothing.
     pub claims_reference_inert: bool,
@@ -1140,7 +1140,7 @@ pub struct DerivedStepoverFinding {
 
 /// Per-region detail for a slope-derated Shallow raster stepover — see
 /// [`DerivedStepoverFinding::slope_derate`] and
-/// [`crate::unified_finish::ShallowSlopeDerate`].
+/// [`crate::finish::unified_finish::ShallowSlopeDerate`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SlopeDerateDetail {
     /// Index into the finish decomposition's planned regions.
@@ -1175,7 +1175,7 @@ impl DerivedStepoverFinding {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DroppedBandFinding {
     /// Stable band token (`"VerySteep"`, `"MidSteep"`, `"Shallow"`) —
-    /// `crate::unified_finish::RegionKind::band_label`. Names the band of the
+    /// `crate::finish::unified_finish::RegionKind::band_label`. Names the band of the
     /// LARGEST dropped region when several were dropped.
     pub band_label: &'static str,
     /// How many planned regions were dropped, across every band.
@@ -1417,7 +1417,7 @@ impl TipFloatFinding {
 /// counts as FLOATING.
 ///
 /// Deliberately the same absolute number as
-/// `crate::pencil::reach_gap_threshold` — 0.05 mm — because it is the same
+/// `crate::finish::pencil::reach_gap_threshold` — 0.05 mm — because it is the same
 /// physical question the pencil's own rest gate asks ("is the tool actually
 /// off the surface here, or is this triangulation noise?"), and two
 /// thresholds for one question is how instruments start disagreeing with
@@ -1527,9 +1527,9 @@ pub const RETRACT_TRIP_RESOLUTION: &str = RETRACT_TRIP_PROVENANCE.resolution_not
 /// produced the number).
 ///
 /// It is exactly the scallop ring cascade's residual, because that is where
-/// the number comes from: [`crate::scallop::ScallopReport::PROVENANCE`].
+/// the number comes from: [`crate::finish::scallop::ScallopReport::PROVENANCE`].
 pub const TRUNCATED_CORE_PROVENANCE: crate::measurement::MeasurementProvenance =
-    crate::scallop::ScallopReport::PROVENANCE;
+    crate::finish::scallop::ScallopReport::PROVENANCE;
 
 /// Measurement domain of [`ToolpathStats::truncated_core_mm2`].
 ///
@@ -1561,10 +1561,10 @@ pub const TRUNCATED_CORE_RESOLUTION: &str = TRUNCATED_CORE_PROVENANCE.resolution
 ///
 /// Same domain and stage as [`TRUNCATED_CORE_PROVENANCE`] — both are
 /// exact shoelace areas over the same truncated-cascade polygons — but this
-/// one is [`crate::scallop::ScallopReport::UNTOUCHED_PROVENANCE`], which
+/// one is [`crate::finish::scallop::ScallopReport::UNTOUCHED_PROVENANCE`], which
 /// nets out holes where the other sums exteriors only.
 pub const UNTOUCHED_MATERIAL_PROVENANCE: crate::measurement::MeasurementProvenance =
-    crate::scallop::ScallopReport::UNTOUCHED_PROVENANCE;
+    crate::finish::scallop::ScallopReport::UNTOUCHED_PROVENANCE;
 
 /// Measurement domain of [`ToolpathStats::untouched_material_mm2`].
 pub const UNTOUCHED_MATERIAL_DOMAIN: &str = UNTOUCHED_MATERIAL_PROVENANCE.domain.label();
@@ -1573,7 +1573,7 @@ pub const UNTOUCHED_MATERIAL_DOMAIN: &str = UNTOUCHED_MATERIAL_PROVENANCE.domain
 pub const UNTOUCHED_MATERIAL_STAGE: &str = UNTOUCHED_MATERIAL_PROVENANCE.stage.label();
 
 /// Resolution of [`ToolpathStats::untouched_material_mm2`]: the hole-aware
-/// net area — see [`crate::scallop::ScallopReport::untouched_mm2`]'s doc.
+/// net area — see [`crate::finish::scallop::ScallopReport::untouched_mm2`]'s doc.
 pub const UNTOUCHED_MATERIAL_RESOLUTION: &str = UNTOUCHED_MATERIAL_PROVENANCE.resolution_note;
 
 /// The measurement contract of
@@ -1582,12 +1582,12 @@ pub const UNTOUCHED_MATERIAL_RESOLUTION: &str = UNTOUCHED_MATERIAL_PROVENANCE.re
 ///
 /// A DIFFERENT [`crate::measurement::MeasurementStage`] from
 /// [`TRUNCATED_CORE_PROVENANCE`] / [`UNTOUCHED_MATERIAL_PROVENANCE`] —
-/// [`crate::scallop::ScallopReport::STANDING_PROVENANCE`] — so
+/// [`crate::finish::scallop::ScallopReport::STANDING_PROVENANCE`] — so
 /// [`crate::measurement::MeasurementProvenance::comparable_to`] refuses to
 /// treat this ESTIMATOR as interchangeable with either exact polygon area,
 /// even though all three travel on the same `ToolpathStats`.
 pub const REACHED_UNCUT_ESTIMATE_PROVENANCE: crate::measurement::MeasurementProvenance =
-    crate::scallop::ScallopReport::STANDING_PROVENANCE;
+    crate::finish::scallop::ScallopReport::STANDING_PROVENANCE;
 
 /// Measurement domain of [`ToolpathStats::reached_uncut_estimate_mm2`].
 pub const REACHED_UNCUT_ESTIMATE_DOMAIN: &str = REACHED_UNCUT_ESTIMATE_PROVENANCE.domain.label();
@@ -1598,7 +1598,7 @@ pub const REACHED_UNCUT_ESTIMATE_STAGE: &str = REACHED_UNCUT_ESTIMATE_PROVENANCE
 
 /// Resolution of [`ToolpathStats::reached_uncut_estimate_mm2`]: an
 /// estimator, not a polygon area — see
-/// [`crate::scallop::ScallopReport::standing_mm2`]'s doc for the formula and
+/// [`crate::finish::scallop::ScallopReport::standing_mm2`]'s doc for the formula and
 /// its stated limitations.
 pub const REACHED_UNCUT_ESTIMATE_RESOLUTION: &str =
     REACHED_UNCUT_ESTIMATE_PROVENANCE.resolution_note;

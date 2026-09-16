@@ -319,8 +319,9 @@ fn claims_reference(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
             "Rest reference: {used} ({verb} — `{label}`). {why}{clip_note} \
              [Report-only — no gate.]",
             used = match r.reference() {
-                crate::unified_finish::CreaseReference::MachinedStock => "machined prior stock",
-                crate::unified_finish::CreaseReference::SelfProbe => "analytic self-probe",
+                crate::finish::unified_finish::CreaseReference::MachinedStock =>
+                    "machined prior stock",
+                crate::finish::unified_finish::CreaseReference::SelfProbe => "analytic self-probe",
             },
             verb = if r.is_derived() {
                 "derived"

@@ -58,12 +58,12 @@
 use std::collections::{HashMap, HashSet};
 
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::pencil::{
+use rs_cam_core::finish::pencil::{
     PencilDetector, PencilParams, entry_bite_budget_mm, pencil_toolpath_structured_annotated,
 };
-use rs_cam_core::surface_link::build_surface_link;
+use rs_cam_core::finish::surface_link::build_surface_link;
+use rs_cam_core::geo::P3;
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::tool::MillingCutter;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, PLUNGE_CLEARANCE_MM, Toolpath};
 

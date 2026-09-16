@@ -616,7 +616,7 @@ fn standing_material_finding(
 /// How many times its own median BODY bite an entry-intent sample may remove
 /// before the entry is reported — the `k` of G-ENTRYLOAD, and the same `k`
 /// the pencil generator's entry ramp
-/// ([`crate::pencil::entry_bite_budget_mm`]) is budgeted to stay inside.
+/// ([`crate::finish::pencil::entry_bite_budget_mm`]) is budgeted to stay inside.
 pub const ENTRY_LOAD_MEDIAN_MULTIPLE: f64 = 2.0;
 
 /// Peak entry bite (mm) at which the finding escalates `Caution` ->
@@ -642,11 +642,11 @@ pub(crate) const ENTRY_LOAD_MIN_BODY_SAMPLES: usize = 50;
 /// This rule reports LOAD, not ratios. On a pass whose median bite is 0.02 mm
 /// — an ordinary fine finishing pass — a 0.06 mm entry is 3x the median and
 /// nothing at all in the spindle. The floor is
-/// [`crate::pencil::ENTRY_RAMP_MIN_BITE_MM`], the smallest per-lap budget any
+/// [`crate::finish::pencil::ENTRY_RAMP_MIN_BITE_MM`], the smallest per-lap budget any
 /// tool earns from the generator side: an entry that removes less than the
 /// least a ramp lap is allowed to take is, by that same standard, not an
 /// event. The case this rule exists for is 37x it.
-pub const ENTRY_LOAD_MIN_PEAK_MM: f64 = crate::pencil::ENTRY_RAMP_MIN_BITE_MM;
+pub const ENTRY_LOAD_MIN_PEAK_MM: f64 = crate::finish::pencil::ENTRY_RAMP_MIN_BITE_MM;
 
 /// What the entry-load rule measured — published whether or not it fires, so
 /// "no entry samples" and "entries were clean" can never be read as the same

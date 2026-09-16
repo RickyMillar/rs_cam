@@ -74,7 +74,7 @@ pub fn waterline_contours(
 /// Inclusive-bounds epsilon for waterline's Z ladder.
 ///
 /// Eight orders of magnitude tighter than
-/// [`crate::finish_setup::Z_LADDER_DEFAULT_EPSILON`], which is what
+/// [`crate::finish::finish_setup::Z_LADDER_DEFAULT_EPSILON`], which is what
 /// `steep_shallow` uses. That is not an oversight on either side: this value
 /// reproduces the generator's original `while z >= final_z - 1e-10` loop
 /// exactly, and waterline's callers pass ladder bounds taken straight from a
@@ -88,14 +88,14 @@ pub const WATERLINE_LADDER_EPSILON: f64 = 1e-10;
 /// consumes the same helper, so there is one ladder per operation and — since
 /// C3 — one ladder IMPLEMENTATION for the crate.
 ///
-/// C3: this was a private copy of [`crate::finish_setup::z_ladder`]'s
+/// C3: this was a private copy of [`crate::finish::finish_setup::z_ladder`]'s
 /// `snap_to_bottom = false` arm, differing only in hard-coding its epsilon
 /// where the shared version takes one. It is now an adapter that names the
 /// epsilon and delegates. `tests/waterline_shared_finish_setup_c3.rs` pins
 /// the two against each other across the boundary cases (exact multiples, a
 /// remainder, an inverted range, a zero range).
 pub fn waterline_z_levels(start_z: f64, final_z: f64, z_step: f64) -> Vec<f64> {
-    crate::finish_setup::z_ladder(start_z, final_z, z_step, WATERLINE_LADDER_EPSILON, false)
+    crate::finish::finish_setup::z_ladder(start_z, final_z, z_step, WATERLINE_LADDER_EPSILON, false)
 }
 
 /// PR-8d's minimum-segment floor, inherited by waterline at C3.

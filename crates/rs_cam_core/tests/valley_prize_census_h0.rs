@@ -193,9 +193,10 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
-use rs_cam_core::classify_probe::ClassificationSampler;
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
-use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish::classify_probe::ClassificationSampler;
+use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose};
+use rs_cam_core::finish::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish::unified_finish::unified_finish_classification_resolution;
 use rs_cam_core::geo::P2;
 use rs_cam_core::geometry::contour_extract::marching_squares_bool_grid;
 use rs_cam_core::geometry::grid_field::distance_transform_2d;
@@ -205,7 +206,6 @@ use rs_cam_core::maps::tier_map::{ResidualTreatment, TierLadder, TierMapParams, 
 use rs_cam_core::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
-use rs_cam_core::unified_finish::unified_finish_classification_resolution;
 
 // ── fixtures (outside the repo, by nature) ──────────────────────────────
 
@@ -1033,7 +1033,7 @@ struct CandidateCost {
 
 struct LinkRegime<'a> {
     safe_z: f64,
-    ceiling: Option<rs_cam_core::surface_link::LinkCeiling<'a>>,
+    ceiling: Option<rs_cam_core::finish::surface_link::LinkCeiling<'a>>,
     flush_ride: bool,
     airborne: bool,
 }
@@ -1058,7 +1058,7 @@ fn relink_and_cost_under(
         max_feed_mm_min: MAX_FEED_MM_MIN,
         rapid_feed_mm_min: RAPID_FEED_MM_MIN,
     };
-    let params = rs_cam_core::surface_link::RelinkParams {
+    let params = rs_cam_core::finish::surface_link::RelinkParams {
         hookup_distance: 25.0,
         stock_to_leave: 0.0,
         sampling: 0.5,
@@ -1072,7 +1072,7 @@ fn relink_and_cost_under(
         flush_ride: regime.flush_ride,
         airborne_links_may_leave_territory: regime.airborne,
     };
-    let (linked, report) = rs_cam_core::surface_link::relink_fragments(
+    let (linked, report) = rs_cam_core::finish::surface_link::relink_fragments(
         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raw),
         mesh,
         index,
@@ -1348,7 +1348,7 @@ fn axis_angle_deg(a: f64, b: f64) -> f64 {
 /// 4-neighbours are geometrically covered, and the result is clamped to the
 /// planner's `steep_threshold_deg`.
 fn region_max_slope_deg(
-    surface: &rs_cam_core::finish_setup::FinishSurface,
+    surface: &rs_cam_core::finish::finish_setup::FinishSurface,
     covered: &[bool],
     polygon: &Polygon2,
     clamp_deg: f64,
@@ -1742,7 +1742,7 @@ struct EvalCtx<'a> {
     mesh: &'a TriangleMesh,
     index: &'a SpatialIndex,
     field: &'a Field,
-    surface: &'a rs_cam_core::finish_setup::FinishSurface,
+    surface: &'a rs_cam_core::finish::finish_setup::FinishSurface,
     covered: &'a [bool],
     steep_clamp_deg: f64,
     stepover: f64,
@@ -2729,9 +2729,9 @@ fn wanaka_valley_prize_census_h0() {
          \x20  airborne exemption true), F-034 costing on the project kinematics.\n\
          \x20  This arm does not depend on either mask, so it is costed ONCE.\n"
     );
+    use rs_cam_core::finish::surface_link::LinkCeiling;
     use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::machine::kinematics::MachineKinematics;
-    use rs_cam_core::surface_link::LinkCeiling;
     let kinematics = MachineKinematics {
         acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
         acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),

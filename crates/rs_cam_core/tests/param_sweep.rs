@@ -27,8 +27,14 @@ use rs_cam_core::{
         FingerprintDiff, ParameterSweepResult, StockFingerprint, SweepArtifacts, SweepVariant,
         ToolpathFingerprint, diff_fingerprints,
     },
+    finish::horizontal_finish::HorizontalFinishParams,
+    finish::pencil::PencilParams,
+    finish::radial_finish::RadialFinishParams,
+    finish::ramp_finish::{CutDirection, RampFinishParams},
+    finish::scallop::{ScallopDirection, ScallopParams},
+    finish::spiral_finish::{SpiralDirection, SpiralFinishParams},
+    finish::steep_shallow::SteepShallowParams,
     geo::{BoundingBox3, P2},
-    horizontal_finish::HorizontalFinishParams,
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
     ops::chamfer::ChamferParams,
     ops::drill::{DrillCycle, DrillParams},
@@ -42,13 +48,7 @@ use rs_cam_core::{
     ops::vcarve::VCarveParams,
     ops::waterline::{WaterlineParams, waterline_toolpath},
     ops::zigzag::ZigzagParams,
-    pencil::PencilParams,
     polygon::Polygon2,
-    radial_finish::RadialFinishParams,
-    ramp_finish::{CutDirection, RampFinishParams},
-    scallop::{ScallopDirection, ScallopParams},
-    spiral_finish::{SpiralDirection, SpiralFinishParams},
-    steep_shallow::SteepShallowParams,
     surface::dropcutter::batch_drop_cutter,
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{Toolpath, raster_toolpath_from_grid},
@@ -1682,7 +1682,7 @@ fn default_pencil_params() -> PencilParams {
         min_valley_depth: 0.0,
         bisector_strength: 0.0,
         reference_tool_diameter: 0.0,
-        detector: rs_cam_core::pencil::PencilDetector::Dihedral,
+        detector: rs_cam_core::finish::pencil::PencilDetector::Dihedral,
         valley_saliency: 0.05,
         curvature_smoothing: 3,
         rest_cell_mm: 0.5,
@@ -1708,7 +1708,7 @@ fn sweep_pencil_bitangency_angle() {
             if let Some(v) = ov {
                 p.bitangency_angle = v.as_f64().unwrap();
             }
-            rs_cam_core::pencil::pencil_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::pencil::pencil_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     // Hemisphere may have no detectable creases at default angle threshold.
@@ -1733,7 +1733,7 @@ fn sweep_pencil_num_offset_passes() {
             if let Some(v) = ov {
                 p.num_offset_passes = v.as_f64().unwrap() as usize;
             }
-            rs_cam_core::pencil::pencil_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::pencil::pencil_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     // See bitangency_angle note — hemisphere may lack creases for this param to affect.
@@ -1779,7 +1779,7 @@ fn sweep_scallop_height() {
             if let Some(v) = ov {
                 p.scallop_height = v.as_f64().unwrap();
             }
-            rs_cam_core::scallop::scallop_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::scallop::scallop_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     for v in &result.variants {
@@ -1804,7 +1804,7 @@ fn sweep_scallop_direction() {
             if ov.is_some() {
                 p.direction = ScallopDirection::InsideOut;
             }
-            rs_cam_core::scallop::scallop_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::scallop::scallop_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     // On a symmetric hemisphere, OutsideIn vs InsideOut may produce identical
@@ -1849,7 +1849,7 @@ fn sweep_steep_shallow_threshold() {
             if let Some(v) = ov {
                 p.threshold_angle = v.as_f64().unwrap();
             }
-            rs_cam_core::steep_shallow::steep_shallow_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::steep_shallow::steep_shallow_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     for v in &result.variants {
@@ -1893,7 +1893,7 @@ fn sweep_ramp_finish_max_stepdown() {
             if let Some(v) = ov {
                 p.max_stepdown = v.as_f64().unwrap();
             }
-            rs_cam_core::ramp_finish::ramp_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::ramp_finish::ramp_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     for v in &result.variants {
@@ -1924,7 +1924,7 @@ fn sweep_ramp_finish_direction() {
                     _ => CutDirection::Climb,
                 };
             }
-            rs_cam_core::ramp_finish::ramp_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::ramp_finish::ramp_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     for v in &result.variants {
@@ -1963,7 +1963,7 @@ fn sweep_spiral_finish_stepover() {
             if let Some(v) = ov {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::spiral_finish::spiral_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::spiral_finish::spiral_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     for v in &result.variants {
@@ -1988,7 +1988,7 @@ fn sweep_spiral_finish_direction() {
             if ov.is_some() {
                 p.direction = SpiralDirection::OutsideIn;
             }
-            rs_cam_core::spiral_finish::spiral_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::spiral_finish::spiral_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     for v in &result.variants {
@@ -2027,7 +2027,7 @@ fn sweep_radial_finish_angular_step() {
             if let Some(v) = ov {
                 p.angular_step = v.as_f64().unwrap();
             }
-            rs_cam_core::radial_finish::radial_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::radial_finish::radial_finish_toolpath(&mesh, &index, &cutter, &p)
         },
     );
     for v in &result.variants {
@@ -2067,7 +2067,9 @@ fn sweep_horizontal_finish_angle_threshold() {
             if let Some(v) = ov {
                 p.angle_threshold = v.as_f64().unwrap();
             }
-            rs_cam_core::horizontal_finish::horizontal_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::horizontal_finish::horizontal_finish_toolpath(
+                &mesh, &index, &cutter, &p,
+            )
         },
     );
     for v in &result.variants {
@@ -2091,7 +2093,9 @@ fn sweep_horizontal_finish_stepover() {
             if let Some(v) = ov {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::horizontal_finish::horizontal_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::finish::horizontal_finish::horizontal_finish_toolpath(
+                &mesh, &index, &cutter, &p,
+            )
         },
     );
     for v in &result.variants {

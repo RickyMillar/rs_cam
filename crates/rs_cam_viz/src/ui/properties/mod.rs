@@ -4861,8 +4861,8 @@ fn draw_toolpath_panel(
             let is_rest_depth_pencil = matches!(
                 &entry.operation,
                 OperationConfig::Pencil(cfg)
-                    if rs_cam_core::pencil::PencilDetector::parse(&cfg.detector)
-                        == rs_cam_core::pencil::PencilDetector::RestDepth
+                    if rs_cam_core::finish::pencil::PencilDetector::parse(&cfg.detector)
+                        == rs_cam_core::finish::pencil::PencilDetector::RestDepth
             );
             ui.add_space(8.0);
             if is_rest_depth_pencil {

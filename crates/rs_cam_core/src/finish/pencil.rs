@@ -4,11 +4,11 @@
 //! shared pipeline every detector arm feeds into: fair → lift-to-surface →
 //! rest-depth gate → offset passes → nearest-neighbor order → emit. The
 //! three valley-detection front-ends themselves ([`PencilDetector`]) each
-//! live in their own module, mirrored on the [`crate::crest_lines`] /
+//! live in their own module, mirrored on the [`crate::finish::crest_lines`] /
 //! [`crate::surface::rest_field`] pattern:
-//! - **Dihedral** (the historical default) — [`crate::pencil_dihedral`]:
+//! - **Dihedral** (the historical default) — [`crate::finish::pencil_dihedral`]:
 //!   mesh-crease detection via per-edge dihedral angle + graph chaining.
-//! - **Curvature** — [`crate::crest_lines`]: curvature crest-line extraction,
+//! - **Curvature** — [`crate::finish::crest_lines`]: curvature crest-line extraction,
 //!   the right choice for dense noisy organic relief.
 //! - **RestDepth** — [`crate::surface::rest_field`]: the tool-radius-aware dual-tool
 //!   rest field.
@@ -23,16 +23,16 @@ use std::collections::HashMap;
 use tracing::{info, warn};
 
 use crate::compute::config::TipFloatFinding;
-use crate::geo::{P3, V3, polyline_length, resample_polyline};
-use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::pencil_dihedral::{
+use crate::finish::pencil_dihedral::{
     EdgeKey, SharedEdge, build_edge_adjacency, chain_concave_edges, compute_shared_edges,
     sample_chain_bisected,
 };
+use crate::finish::surface_link::build_surface_link;
+use crate::geo::{P3, V3, polyline_length, resample_polyline};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::surface::dropcutter::point_drop_cutter;
-use crate::surface_link::build_surface_link;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::trace::debug_trace::ToolpathDebugContext;
@@ -51,7 +51,7 @@ pub enum PencilDetector {
     /// minimal-curvature extremality → zero-crossing valley lines, filtered by a
     /// single `valley_saliency` (|κ₂|) dial. Traces every concave seam on dense
     /// organic relief and dials cleanly from "all seams" to "deep sharp valleys
-    /// only". See [`crate::crest_lines`]. The right choice for noisy meshes.
+    /// only". See [`crate::finish::crest_lines`]. The right choice for noisy meshes.
     Curvature,
     /// Rest-depth-field detection (the tool-offset-space one; see
     /// [`crate::surface::rest_field`]). Computes `rest = drop_z(reference) − drop_z(pencil)`
@@ -290,7 +290,7 @@ impl PencilRuntimeEvent {
     }
 }
 
-/// `pub` (not `pub(crate)`) so [`crate::crease_paths::centerline_cut_paths`]
+/// `pub` (not `pub(crate)`) so [`crate::finish::crease_paths::centerline_cut_paths`]
 /// can be `pub` too and name `Vec<PencilPath>` as its return type — C9
 /// (`tests/per_point_claims_fan_c9.rs`) needs a caller OUTSIDE the crate
 /// able to hand `centerline_cut_paths` a hand-built `RestCenterline` (exact
@@ -721,7 +721,7 @@ impl crate::compute::spans::RuntimeLabel for PencilRuntimeAnnotation {
 /// scalar is forced to the narrow side, so the wide side was under-covered
 /// BY CONSTRUCTION. The Dihedral/Curvature arms pass
 /// `params.num_offset_passes` on both sides (unchanged behaviour); the
-/// RestDepth arm (via [`crate::crease_paths::centerline_cut_paths`]) passes
+/// RestDepth arm (via [`crate::finish::crease_paths::centerline_cut_paths`]) passes
 /// what the reach policy resolved.
 ///
 /// `fan.reach` additionally truncates each pass POINT BY POINT: a pass runs
@@ -768,7 +768,7 @@ impl crate::compute::spans::RuntimeLabel for PencilRuntimeAnnotation {
 ///
 /// Takes `stock_to_leave`/`offset_stepover` as plain scalars (rather than a
 /// `&PencilParams`) so non-pencil callers — currently
-/// [`crate::crease_paths::centerline_cut_paths`] — don't need a full
+/// [`crate::finish::crease_paths::centerline_cut_paths`] — don't need a full
 /// `PencilParams` just to emit cut paths. `pub(crate)` for that same reason.
 ///
 /// # Tip float (Wave D1)
@@ -1396,7 +1396,7 @@ enum LinkLift {
     /// Clearing the standing material reaches `safe_z`. A fed link at retract
     /// height is strictly worse than the rapid it would replace, so the
     /// retract is kept — the same call
-    /// [`crate::surface_link::relink_fragments`] makes via
+    /// [`crate::finish::surface_link::relink_fragments`] makes via
     /// `RelinkReport::ceiling_above_safe_z`.
     Refused,
 }
@@ -1405,7 +1405,7 @@ enum LinkLift {
 ///
 /// # Why this is gated rather than unconditional
 ///
-/// [`crate::surface_link::relink_fragments`] lifts every sample of every link
+/// [`crate::finish::surface_link::relink_fragments`] lifts every sample of every link
 /// it keeps, because its caller (project-curve engraving on raw or partly
 /// roughed stock) knows the mesh is never the material. A pencil pass has the
 /// opposite prior: it usually runs after a finish pass that already cut most
@@ -1443,7 +1443,7 @@ enum LinkLift {
 ///   groove a hop that clears nothing.
 ///
 /// The third read is the CLEARANCE itself
-/// ([`crate::surface_link::LinkCeiling::clear_z`]), over the tip disc, once
+/// ([`crate::finish::surface_link::LinkCeiling::clear_z`]), over the tip disc, once
 /// the trigger has fired. That one is PROFILE-AWARE: it lifts only as far as
 /// the material the cutter can actually reach at each lateral offset requires,
 /// so a ridge standing under the far edge of the disc — where the tool's own
@@ -1469,7 +1469,7 @@ fn plan_link_lift(
     contact_rise: f64,
     params: &PencilParams,
 ) -> LinkLift {
-    let ceiling = crate::surface_link::LinkCeiling {
+    let ceiling = crate::finish::surface_link::LinkCeiling {
         stock: Some(stock),
         tool_radius: contact_radius,
         // Off-grid the dexel has no answer; the analytic fresh-stock top is
@@ -1479,7 +1479,7 @@ fn plan_link_lift(
     };
     // Same stock, same fallback, one column wide — `max_conservative_top_z_in_disc`
     // dilates by half a cell, so radius 0 is "the cells the tip is over".
-    let tip_column = crate::surface_link::LinkCeiling {
+    let tip_column = crate::finish::surface_link::LinkCeiling {
         tool_radius: 0.0,
         ..ceiling
     };
@@ -1547,7 +1547,7 @@ fn plan_link_lift(
 ///
 /// Entries and links have no stock reading on this form, so entries keep the
 /// legacy single fed descent and links keep riding the mesh surface. Every
-/// production caller — the pencil generator and [`crate::unified_finish`]'s
+/// production caller — the pencil generator and [`crate::finish::unified_finish`]'s
 /// pencil-claims pipeline — holds the input stock and calls
 /// [`emit_paths_with_entry_stock`] directly (G-ENTRYLOAD, G-LINKLOAD), so this
 /// wrapper survives only as the tests' stock-less spelling.
@@ -1606,7 +1606,7 @@ pub(crate) fn emit_paths_with_entry_stock(
 /// leaves the ramp standing scores zero here, correctly.
 /// G-LINKVISIBLE (2026-09-09): published on
 /// [`crate::compute::config::ToolpathStats::pencil_link`], in its OWN slot
-/// rather than mapped onto [`crate::unified_finish::RelinkTotals`]. The two
+/// rather than mapped onto [`crate::finish::unified_finish::RelinkTotals`]. The two
 /// counters a mapping would have to drop — [`Self::hop_too_far`] and this
 /// pass's own at-depth/hop split — are exactly the ones that name the
 /// pencil's binding constraint, and a measurement squeezed into another
@@ -2042,7 +2042,7 @@ fn resolve_reference_cutter<'a>(
     ResolvedReference::SelfReferenced
 }
 
-/// `Curvature` detector arm (see [`crate::crest_lines`]): trace the zero-set
+/// `Curvature` detector arm (see [`crate::finish::crest_lines`]): trace the zero-set
 /// of the minimal-curvature extremality, filtered by the single
 /// `valley_saliency` (|κ₂|) dial. Keep lines long enough, then optionally
 /// apply the reference-tool rest-depth gate (only when `min_valley_depth >
@@ -2062,12 +2062,12 @@ fn curvature_arm(
     let resolved = resolve_reference_cutter(params, cutter);
     let reference_ref = resolved.as_dyn();
 
-    let cp = crate::crest_lines::CrestParams {
+    let cp = crate::finish::crest_lines::CrestParams {
         valley_saliency: params.valley_saliency,
         smoothing_iters: params.curvature_smoothing,
         min_line_length: params.min_cut_length,
     };
-    let lines = crate::crest_lines::detect_valley_lines(mesh, &cp);
+    let lines = crate::finish::crest_lines::detect_valley_lines(mesh, &cp);
     let apply_rest_gate = gap_threshold > 0.0;
     let kept: Vec<Vec<P3>> = lines
         .into_iter()
@@ -2265,7 +2265,7 @@ fn rest_depth_arm(
     // Length-gate + resample + width-capped offset-pass emission, factored
     // into `crease_paths::centerline_cut_paths` so the P2 finish planner's
     // future crease pass can reuse it without pencil's detector dispatch.
-    let all_paths = crate::crease_paths::centerline_cut_paths(
+    let all_paths = crate::finish::crease_paths::centerline_cut_paths(
         &rf.centerlines,
         mesh,
         index,
@@ -2284,7 +2284,7 @@ fn rest_depth_arm(
     Ok(all_paths)
 }
 
-/// `Dihedral` detector arm (see [`crate::pencil_dihedral`]): the historical
+/// `Dihedral` detector arm (see [`crate::finish::pencil_dihedral`]): the historical
 /// mesh-crease detector. Angle-filter candidate edges, chain them, keep only
 /// chains holding genuine REST material (`rest_depth = reference_gap −
 /// pencil_gap > threshold`), then sample each surviving chain

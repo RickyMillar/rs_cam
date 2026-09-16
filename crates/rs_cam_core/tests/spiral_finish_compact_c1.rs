@@ -4,7 +4,7 @@
 //! Nested iso-distance (medial/EDT) offset rings from the field machinery of
 //! synthesis §9 (`direction_field::solve_paths_with_target`, `V = −|V|·∇̂EDT`),
 //! bridged into ONE continuous gouge-checked path by
-//! [`rs_cam_core::spiral_finish_compact`], which reuses the F2 log-rectangle
+//! [`rs_cam_core::finish::spiral_finish_compact`], which reuses the F2 log-rectangle
 //! bridging blend. **No conformal map anywhere** — the slit map measured
 //! 1.87× slower (FINDINGS_F2 §F2-4) and is out of scope by charter.
 //!
@@ -49,7 +49,11 @@ use std::f64::consts::TAU;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-use rs_cam_core::direction_field::{self, FieldParams};
+use rs_cam_core::finish::direction_field::{self, FieldParams};
+use rs_cam_core::finish::scallop_math;
+use rs_cam_core::finish::spiral_finish_compact::{
+    CompactSpiralParams, CompactSpiralRefusal, bridge_nested_levels, levels_from_field_result,
+};
 use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::geometry::region_set::RegionSet;
 use rs_cam_core::machine::kinematics::MachineKinematics;
@@ -59,10 +63,6 @@ use rs_cam_core::metrology::costing::{
 };
 use rs_cam_core::metrology::floor::{FloorReport, region_floor as metrology_region_floor};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::scallop_math;
-use rs_cam_core::spiral_finish_compact::{
-    CompactSpiralParams, CompactSpiralRefusal, bridge_nested_levels, levels_from_field_result,
-};
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
@@ -904,7 +904,7 @@ fn run_fixture(spec: &FixtureSpec) {
     // of the steeper near-hub bridges.
     let bridge_params = CompactSpiralParams {
         hub_cover_reach_mm: lateral_reach,
-        near_hub_bridge_span_rad: rs_cam_core::conformal_spiral::PAPER_INITIAL_BRIDGE_SHIFT,
+        near_hub_bridge_span_rad: rs_cam_core::finish::conformal_spiral::PAPER_INITIAL_BRIDGE_SHIFT,
         ..CompactSpiralParams::default()
     };
     let (bridged, bridge_report) = bridge_nested_levels(&levels, &bridge_params);

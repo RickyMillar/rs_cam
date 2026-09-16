@@ -826,7 +826,9 @@ pub fn execute_job(
                     context
                         .entry_probe_leave
                         .map(|_| crate::dressup::RestEntryRamp {
-                            contact_radius_mm: crate::pencil::tip_contact_radius(&inputs.tool_def),
+                            contact_radius_mm: crate::finish::pencil::tip_contact_radius(
+                                &inputs.tool_def,
+                            ),
                             feed_rate: context.feed_rate,
                             plunge_rate: context.plunge_rate,
                         });

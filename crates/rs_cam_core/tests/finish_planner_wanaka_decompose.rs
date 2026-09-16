@@ -20,10 +20,10 @@
 
 use std::path::PathBuf;
 
-use rs_cam_core::finish_planner::{
+use rs_cam_core::finish::finish_planner::{
     FinishBand, FinishPlannerParams, decompose_surface, planned_regions_to_svg,
 };
-use rs_cam_core::finish_setup::{
+use rs_cam_core::finish::finish_setup::{
     build_classification_surface_with_cancel, build_finish_surface_with_cancel,
 };
 use rs_cam_core::measurement::{ProjectedXyAreaMm2, SurfaceAreaMm2};

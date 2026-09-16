@@ -94,9 +94,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rs_cam_core::classify_probe::ClassificationSampler;
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
-use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish::classify_probe::ClassificationSampler;
+use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose};
+use rs_cam_core::finish::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish::unified_finish::unified_finish_classification_resolution;
 use rs_cam_core::geo::P2;
 use rs_cam_core::geometry::contour_extract::marching_squares_bool_grid;
 use rs_cam_core::geometry::grid_field::distance_transform_2d;
@@ -109,7 +110,6 @@ use rs_cam_core::metrology::costing::{
 };
 use rs_cam_core::polygon::{Polygon2, detect_containment, shoelace_area};
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
-use rs_cam_core::unified_finish::unified_finish_classification_resolution;
 
 /// The operator's wanaka board. Absolute, outside the repo, by nature.
 const WANAKA_MESH: &str = "/home/ricky/Downloads/wanaka200/rivmap_export/terrain.stl";
@@ -683,14 +683,14 @@ fn stage_d(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
-    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    planned: &rs_cam_core::finish::finish_planner::PlannedRegions,
     stepover: f64,
 ) {
-    use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::machine::kinematics::{MachineKinematics, compute_cycle_time};
-    use rs_cam_core::scallop::{
+    use rs_cam_core::finish::scallop::{
         ScallopDirection, ScallopParams, scallop_toolpath_structured_annotated_with_cancel,
     };
+    use rs_cam_core::geometry::region_set::RegionSet;
+    use rs_cam_core::machine::kinematics::{MachineKinematics, compute_cycle_time};
     use rs_cam_core::toolpath::raster_toolpath_from_grid;
 
     println!("========== STAGE D — integrated TIME, raster vs cascade (same region) ==========\n");
@@ -762,7 +762,7 @@ fn stage_d(
             max_feed_mm_min: MAX_FEED_MM_MIN,
             rapid_feed_mm_min: RAPID_FEED_MM_MIN,
         };
-        let rp = rs_cam_core::surface_link::RelinkParams {
+        let rp = rs_cam_core::finish::surface_link::RelinkParams {
             hookup_distance: 25.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -776,7 +776,7 @@ fn stage_d(
             flush_ride: false,
             airborne_links_may_leave_territory: false,
         };
-        let (linked, rep) = rs_cam_core::surface_link::relink_fragments(
+        let (linked, rep) = rs_cam_core::finish::surface_link::relink_fragments(
             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raster),
             mesh,
             index,
@@ -822,7 +822,7 @@ fn stage_d(
         // Same treatment for the cascade — production relinks every region's
         // toolpath regardless of which generator produced it, so anything less
         // here would rig the comparison the other way.
-        let (clinked, crep) = rs_cam_core::surface_link::relink_fragments(
+        let (clinked, crep) = rs_cam_core::finish::surface_link::relink_fragments(
             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(cascade),
             mesh,
             index,
@@ -891,7 +891,7 @@ fn stage_e(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
-    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    planned: &rs_cam_core::finish::finish_planner::PlannedRegions,
     stepover: f64,
 ) {
     use rs_cam_core::geometry::region_set::RegionSet;
@@ -952,7 +952,7 @@ fn stage_e(
                 Some(effective_min_z),
                 Some(&region),
             );
-            let rp = rs_cam_core::surface_link::RelinkParams {
+            let rp = rs_cam_core::finish::surface_link::RelinkParams {
                 hookup_distance: 25.0,
                 stock_to_leave: 0.0,
                 sampling: 0.5,
@@ -966,7 +966,7 @@ fn stage_e(
                 flush_ride: false,
                 airborne_links_may_leave_territory: false,
             };
-            let (linked, rep) = rs_cam_core::surface_link::relink_fragments(
+            let (linked, rep) = rs_cam_core::finish::surface_link::relink_fragments(
                 rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raster),
                 mesh,
                 index,
@@ -1050,7 +1050,7 @@ fn stage_f(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
-    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    planned: &rs_cam_core::finish::finish_planner::PlannedRegions,
     stepover: f64,
     cell: f64,
 ) {
@@ -1188,7 +1188,7 @@ fn stage_f(
                 Some(effective_min_z),
                 Some(&region),
             );
-            let rp = rs_cam_core::surface_link::RelinkParams {
+            let rp = rs_cam_core::finish::surface_link::RelinkParams {
                 hookup_distance: 25.0,
                 stock_to_leave: 0.0,
                 sampling: 0.5,
@@ -1202,7 +1202,7 @@ fn stage_f(
                 flush_ride: false,
                 airborne_links_may_leave_territory: false,
             };
-            let (linked, _rep) = rs_cam_core::surface_link::relink_fragments(
+            let (linked, _rep) = rs_cam_core::finish::surface_link::relink_fragments(
                 rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raster),
                 mesh,
                 index,
@@ -1259,12 +1259,12 @@ fn stage_g(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
-    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    planned: &rs_cam_core::finish::finish_planner::PlannedRegions,
     stepover: f64,
 ) {
+    use rs_cam_core::finish::surface_link::LinkCeiling;
     use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
-    use rs_cam_core::surface_link::LinkCeiling;
     use rs_cam_core::toolpath::raster_toolpath_from_grid;
 
     println!("========== STAGE G — what a REST op's link ceiling costs (the walls) ==========\n");
@@ -1338,7 +1338,7 @@ fn stage_g(
                 tool_radius: tool_r,
                 fallback_top_z: top,
             });
-            let rp = rs_cam_core::surface_link::RelinkParams {
+            let rp = rs_cam_core::finish::surface_link::RelinkParams {
                 hookup_distance: 25.0,
                 stock_to_leave: 0.0,
                 sampling: 0.5,
@@ -1354,7 +1354,7 @@ fn stage_g(
                 // a ceiling is present, which is the whole point here.
                 airborne_links_may_leave_territory: ceiling.is_some(),
             };
-            let (linked, rep) = rs_cam_core::surface_link::relink_fragments(
+            let (linked, rep) = rs_cam_core::finish::surface_link::relink_fragments(
                 rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raster),
                 mesh,
                 index,
@@ -1692,7 +1692,7 @@ fn pca_minor_and_elongation(poly: &Polygon2, cell: f64) -> Option<(f64, f64)> {
 
 fn stage_i(
     grid: &rs_cam_core::surface::dropcutter::DropCutterGrid,
-    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    planned: &rs_cam_core::finish::finish_planner::PlannedRegions,
     stepover: f64,
     effective_min_z: f64,
 ) -> Vec<RegionCells> {
@@ -2622,9 +2622,9 @@ fn delta(undivided: &CandidateCost, celled: &CandidateCost) -> f64 {
 }
 
 fn stage_l(input: &A3Inputs<'_>, regions: &[RegionCells]) {
+    use rs_cam_core::finish::surface_link::LinkCeiling;
     use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::machine::kinematics::MachineKinematics;
-    use rs_cam_core::surface_link::LinkCeiling;
 
     println!("========== STAGE L — A3: the §0g/§0h decision table under a REAL ceiling ==========");
     if regions.is_empty() {
@@ -2795,8 +2795,8 @@ fn stage_l_region_one(
     arms: &[LinkRegime<'_>; 2],
     kinematics: &rs_cam_core::machine::kinematics::MachineKinematics,
 ) {
+    use rs_cam_core::finish::surface_link::LinkCeiling;
     use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::surface_link::LinkCeiling;
 
     let Some(region) = regions.first() else {
         return;
@@ -3827,8 +3827,8 @@ fn stage_m_region(
 }
 
 fn stage_m(input: &A3Inputs<'_>, regions: &[RegionCells]) {
+    use rs_cam_core::finish::surface_link::LinkCeiling;
     use rs_cam_core::machine::kinematics::MachineKinematics;
-    use rs_cam_core::surface_link::LinkCeiling;
 
     println!(
         "========== STAGE M — D1: PER-CELL sweep direction vs one global direction =========="
@@ -4269,12 +4269,12 @@ fn cell_contour_candidate(
     safe_z: f64,
 ) -> Option<(
     rs_cam_core::toolpath::Toolpath,
-    rs_cam_core::scallop::ScallopReport,
+    rs_cam_core::finish::scallop::ScallopReport,
 )> {
-    use rs_cam_core::geometry::region_set::RegionSet;
-    use rs_cam_core::scallop::{
+    use rs_cam_core::finish::scallop::{
         ScallopDirection, ScallopParams, scallop_toolpath_structured_annotated_with_cancel,
     };
+    use rs_cam_core::geometry::region_set::RegionSet;
 
     let never_cancel = || false;
     let region = RegionSet::new(vec![polygon.clone()]);
@@ -4747,8 +4747,8 @@ fn stage_n_region(
 }
 
 fn stage_n(input: &A3Inputs<'_>, regions: &[RegionCells]) {
+    use rs_cam_core::finish::surface_link::LinkCeiling;
     use rs_cam_core::machine::kinematics::MachineKinematics;
-    use rs_cam_core::surface_link::LinkCeiling;
 
     println!("========== STAGE N — D2: per-cell PATTERN, contour rings vs raster ==========");
     if regions.is_empty() {

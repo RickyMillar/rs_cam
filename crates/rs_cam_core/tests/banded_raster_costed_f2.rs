@@ -43,11 +43,13 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use rayon::prelude::*;
-use rs_cam_core::classify_probe::ClassificationSampler;
-use rs_cam_core::conformal_spiral::{CoverageAudit, DistanceStats};
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
-use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish::classify_probe::ClassificationSampler;
+use rs_cam_core::finish::conformal_spiral::{CoverageAudit, DistanceStats};
+use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose};
+use rs_cam_core::finish::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish::surface_link::LinkCeiling;
+use rs_cam_core::finish::unified_finish::unified_finish_classification_resolution;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::grid_field::distance_transform_2d;
 use rs_cam_core::geometry::region_set::RegionSet;
@@ -58,10 +60,8 @@ use rs_cam_core::maps::tier_map::{
 };
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::surface_link::LinkCeiling;
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
-use rs_cam_core::unified_finish::unified_finish_classification_resolution;
 
 // ── fixtures and dials — verbatim from the H1 / G2 / F1 chain ───────────
 
@@ -145,7 +145,7 @@ fn relink_and_cost_under(
         max_feed_mm_min: MAX_FEED_MM_MIN,
         rapid_feed_mm_min: RAPID_FEED_MM_MIN,
     };
-    let params = rs_cam_core::surface_link::RelinkParams {
+    let params = rs_cam_core::finish::surface_link::RelinkParams {
         hookup_distance: 25.0,
         stock_to_leave: 0.0,
         sampling: 0.5,
@@ -159,7 +159,7 @@ fn relink_and_cost_under(
         flush_ride: regime.flush_ride,
         airborne_links_may_leave_territory: regime.airborne,
     };
-    let (linked, report) = rs_cam_core::surface_link::relink_fragments(
+    let (linked, report) = rs_cam_core::finish::surface_link::relink_fragments(
         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raw),
         mesh,
         index,

@@ -1,7 +1,7 @@
 //! Turn [`RestCenterline`]s into pencil-style centreline + width-capped
 //! offset-pass cut paths.
 //!
-//! Factored out of `crate::pencil::rest_depth_arm`'s emission loop so a
+//! Factored out of `crate::finish::pencil::rest_depth_arm`'s emission loop so a
 //! future caller (the P2 unified-finish planner's crease pass — see
 //! `planning/unified_finish_planner_design.md`) can turn
 //! `detect_rest_valleys`'s centrelines into cut paths without depending on
@@ -9,7 +9,7 @@
 //! curvature front-ends, path ordering/emission). `rest_depth_arm` itself is
 //! now a thin caller of [`centerline_cut_paths`].
 //!
-//! [`centerline_cut_paths`] and [`crate::pencil::PencilPath`] are `pub`
+//! [`centerline_cut_paths`] and [`crate::finish::pencil::PencilPath`] are `pub`
 //! (C9): a caller OUTSIDE the crate can hand this function a hand-built
 //! [`RestCenterline`] — `samples` and all — and inspect exactly what came
 //! out, without a mesh detector in the loop. `tests/per_point_claims_fan_c9.rs`
@@ -17,10 +17,10 @@
 //! `RestCenterline` whose depths are literal numbers, not detector output,
 //! so the sentry cannot be confused by detector noise.
 
+use crate::finish::pencil::{PencilPath, paths_from_sampled};
 use crate::geo::{polyline_length, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::pencil::{PencilPath, paths_from_sampled};
 use crate::surface::rest_field::RestCenterline;
 use crate::tool::MillingCutter;
 
@@ -37,8 +37,8 @@ fn centerline_is_measured(cl: &RestCenterline) -> bool {
 
 /// Length-gate `centerlines`, resample each survivor, and emit its
 /// centreline + width-capped offset passes via
-/// [`crate::pencil::paths_from_sampled`] — exactly the loop
-/// `crate::pencil::rest_depth_arm` used to run inline.
+/// [`crate::finish::pencil::paths_from_sampled`] — exactly the loop
+/// `crate::finish::pencil::rest_depth_arm` used to run inline.
 ///
 /// `num_offset_passes_cap` is a CAP, not a fixed count.
 ///
@@ -68,7 +68,7 @@ fn centerline_is_measured(cl: &RestCenterline) -> bool {
 /// for exactly this — and the per-side pass COUNT is the max over points of
 /// how many of THAT point's own stepovers its OWN reach supports, not a
 /// single scalar-stepover count folded from the branch's widest reach.
-/// [`crate::pencil::paths_from_sampled`] does the matching per-point
+/// [`crate::finish::pencil::paths_from_sampled`] does the matching per-point
 /// truncation and emission.
 ///
 /// The equation this replaces was
@@ -187,7 +187,7 @@ pub fn centerline_cut_paths(
             cutter,
             stock_to_leave,
             offset_stepover,
-            crate::pencil::OffsetFan {
+            crate::finish::pencil::OffsetFan {
                 left,
                 right,
                 reach: &reach,

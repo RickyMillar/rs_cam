@@ -64,18 +64,18 @@
     clippy::print_stderr
 )]
 
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams};
+use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams};
+use rs_cam_core::finish::scallop_math;
+use rs_cam_core::finish::unified_finish::{
+    UnifiedFinishParams, UnifiedFinishReport, unified_finish_toolpath_with_cancel,
+};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::metrology::spacing::{
     ContactMaps, SpacingMeasurement, SpacingSample, measure_raster_spacing,
 };
-use rs_cam_core::scallop_math;
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::unified_finish::{
-    UnifiedFinishParams, UnifiedFinishReport, unified_finish_toolpath_with_cancel,
-};
 
 // ---- Pinned dials, shared with the F2 instrument -------------------------
 

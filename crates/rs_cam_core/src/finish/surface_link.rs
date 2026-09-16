@@ -1,6 +1,6 @@
 //! Gouge-safe, drop-cutter-sampled surface links between two cut points.
 //!
-//! Promoted out of `crate::pencil` (where it joins consecutive pencil passes
+//! Promoted out of `crate::finish::pencil` (where it joins consecutive pencil passes
 //! without a retract-and-replunge) so the P2 unified-finish planner's global
 //! router can reuse it as one of the two link-cost candidates (surface link
 //! vs. retract link) between regions — see
@@ -120,7 +120,7 @@ impl LinkCeiling<'_> {
     ///
     /// Exposed separately because a caller may need to ask *whether* anything
     /// stands above a candidate link before deciding to lift it.
-    /// [`crate::pencil`] does: its links are between valley runs on a surface
+    /// [`crate::finish::pencil`] does: its links are between valley runs on a surface
     /// the finish pass has usually already cut to shape, so lifting every
     /// junction unconditionally would buy a
     /// [`crate::toolpath::PLUNGE_CLEARANCE_MM`] hop per junction and clear
@@ -132,7 +132,7 @@ impl LinkCeiling<'_> {
     /// It is therefore an upper bound on [`Self::required_tip_z`] and is kept
     /// deliberately for the two places where the cruder answer is the safe
     /// one — the flush-ride test below (a lower reading would ride the
-    /// surface more often) and [`crate::pencil`]'s lift TRIGGER (a lower
+    /// surface more often) and [`crate::finish::pencil`]'s lift TRIGGER (a lower
     /// reading would lift less often).
     pub(crate) fn material_top(&self, x: f64, y: f64) -> f64 {
         self.stock
@@ -454,7 +454,7 @@ pub struct RelinkParams<'a> {
     /// When `Some`, a candidate link is additionally costed against the
     /// retract it would replace with the F-034 integrator and only kept
     /// when it is actually faster — the same decision
-    /// [`crate::pencil::emit_paths`] makes. `None` keeps any gouge-safe
+    /// [`crate::finish::pencil::emit_paths`] makes. `None` keeps any gouge-safe
     /// link within `hookup_distance`.
     pub link_kinematics: Option<&'a crate::machine::kinematics::LinkKinematics>,
     /// Visit fragments nearest-first (from the previous fragment's exit)

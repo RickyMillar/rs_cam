@@ -4,7 +4,7 @@
 //! generator, no GUI surface and no MCP tool reaches this module, and none
 //! should until the Phase F1 evidence in
 //! `planning/conformal_finish_2026-08-28/PROGRAMME.md` says what it is worth.
-//! It follows the precedent of [`crate::scallop_isofield`] — an unshipped
+//! It follows the precedent of [`crate::finish::scallop_isofield`] — an unshipped
 //! research candidate that documents its own limitations rather than
 //! pretending to be a feature.
 //!
@@ -56,7 +56,7 @@
 //!   `k_s + 1/r ≤ 0`; the paper never mentions it (gap 5). Clamped to the
 //!   smallest valid magnitude on the region and **counted** in the report.
 //! * **[REPO] `k_s` estimator.** Rusinkiewicz 2004 per-vertex second
-//!   fundamental form, already implemented in [`crate::crest_lines`]; the
+//!   fundamental form, already implemented in [`crate::finish::crest_lines`]; the
 //!   paper names no estimator (gap 6).
 //! * **[REPO] Eq. 17 index typo.** The paper sums over incident triangles `k`
 //!   but writes `V_j` inside. Resolved as the standard cotangent divergence
@@ -73,7 +73,7 @@
 //!
 //! The Poisson system is solved **matrix-free** with a Jacobi-preconditioned
 //! conjugate gradient over adjacency lists in `f64` — no new dependency, for
-//! the same reasons [`crate::scallop_isofield`] chose matrix-free fast
+//! the same reasons [`crate::finish::scallop_isofield`] chose matrix-free fast
 //! sweeping for its Eikonal solve: deterministic, no heap surprises, nothing
 //! added to a manifest. The assembled matrix is the Dirichlet-energy Hessian,
 //! so it is positive semi-definite by construction and SPD once pinned, even
@@ -99,11 +99,11 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use crate::crest_lines::{Curvature, compute_curvature, vertex_adjacency};
+use crate::finish::crest_lines::{Curvature, compute_curvature, vertex_adjacency};
+use crate::finish::pencil_dihedral::{EdgeKey, build_edge_adjacency};
 use crate::geo::{P3, V3};
 use crate::geometry::marching_squares::CHAIN_EPS;
 use crate::mesh::TriangleMesh;
-use crate::pencil_dihedral::{EdgeKey, build_edge_adjacency};
 
 /// The three edges of a triangle as (local corner a, local corner b).
 const TRI_EDGES: [(usize, usize); 3] = [(0, 1), (1, 2), (2, 0)];
@@ -133,7 +133,7 @@ pub struct FieldParams {
     /// (§5.2); F1 uses 0.03.
     pub scallop_h_mm: f64,
     /// Curvature-tensor smoothing iterations passed through to
-    /// [`crate::crest_lines`] (Rusinkiewicz tensor diffusion, geometry
+    /// [`crate::finish::crest_lines`] (Rusinkiewicz tensor diffusion, geometry
     /// untouched).
     pub curvature_smoothing_iters: usize,
     /// **[REPO]** Line-field Laplacian smoothing iterations (§4.2 asks for
@@ -367,7 +367,7 @@ pub fn solve_field_paths_with(
 /// `target(global_triangle_index, centroid, unit_normal)` and must return `V`
 /// in world coordinates; the component along the triangle normal is discarded
 /// (`V` is a tangent field). The normal handed in is oriented +Z, matching the
-/// convention [`crate::crest_lines`] uses for curvature signs.
+/// convention [`crate::finish::crest_lines`] uses for curvature signs.
 ///
 /// This is how the F1 evidence instrument substitutes an analytic or
 /// externally-computed field, and how the closed-form tests in this module
@@ -434,7 +434,7 @@ fn solve_and_extract(
 /// BFS and the extraction need.
 ///
 /// The neighbour lookup is built on top of
-/// [`crate::pencil_dihedral::build_edge_adjacency`] — the repo's existing
+/// [`crate::finish::pencil_dihedral::build_edge_adjacency`] — the repo's existing
 /// edge→incident-face map — rather than a general half-edge library, which
 /// F1 does not need.
 pub(crate) struct RegionMesh {
@@ -1223,7 +1223,7 @@ fn norm(a: &[f64]) -> f64 {
 /// lists, with the pinned rows held at zero (Dirichlet).
 ///
 /// Deterministic: a fixed iteration cap, a fixed tolerance, and no allocation
-/// inside the loop. This mirrors [`crate::scallop_isofield`]'s reason for
+/// inside the loop. This mirrors [`crate::finish::scallop_isofield`]'s reason for
 /// hand-rolling its own solver — no dependency, no heap surprises.
 pub(crate) fn cg_solve(
     lap: &SparseLaplacian,

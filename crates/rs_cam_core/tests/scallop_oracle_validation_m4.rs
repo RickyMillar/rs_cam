@@ -547,7 +547,7 @@ fn inclined_plane_cusp_follows_the_secant_law() {
     for &deg in &[30.0_f64, 45.0, 60.0] {
         let th = deg.to_radians();
         let required = pitch * th.cos();
-        let shipped = rs_cam_core::scallop_math::variable_stepover(r, DIAL_MM, th, 0.0);
+        let shipped = rs_cam_core::finish::scallop_math::variable_stepover(r, DIAL_MM, th, 0.0);
         println!(
             "slope {deg}°: geometry requires stepover {required:.4} mm, \
              variable_stepover returns {shipped:.4} mm ({:.2}× too wide)",

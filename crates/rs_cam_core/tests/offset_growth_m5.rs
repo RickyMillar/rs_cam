@@ -369,8 +369,8 @@ fn where_the_new_vertices_come_from() {
 #[test]
 #[ignore = "capture: full-mesh classification sampling; --ignored --nocapture"]
 fn capture_terrain_mid_steep_polygon() {
-    use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
-    use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
+    use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
+    use rs_cam_core::finish::finish_setup::build_classification_surface_with_cancel;
     use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
     use rs_cam_core::tool::BallEndmill;
 

@@ -130,8 +130,8 @@ impl BandMap {
 /// module doc for what v3 appended past that point and why it is not
 /// here).
 pub fn build_band_map(s: &ProjectSession, tool_radius: f64) -> BandMap {
-    use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
-    use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
+    use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose};
+    use rs_cam_core::finish::finish_setup::build_classification_surface_with_cancel;
     use rs_cam_core::geo::P2;
     use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::mesh::SpatialIndex;

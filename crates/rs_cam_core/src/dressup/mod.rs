@@ -309,7 +309,7 @@ pub fn apply_entry_with_provenance(
 /// the door never sees the descent it invents. This is the post-clip door.
 pub struct RestEntryRamp {
     /// The radius that actually nestles into the surface — the tip, never the
-    /// envelope. Use [`crate::pencil::tip_contact_radius`].
+    /// envelope. Use [`crate::finish::pencil::tip_contact_radius`].
     pub contact_radius_mm: f64,
     /// Feed for the lap moves. The laps are a peripheral cut, so this is the
     /// operation's cutting feed, not its plunge rate.
@@ -341,7 +341,7 @@ pub struct RestEntryRamp {
 /// material has to stand before it can touch, so the target height is
 /// [`crate::dexel_stock::TriDexelStock::max_clearance_tip_z_for_profile`]
 /// `+ PLUNGE_CLEARANCE_MM` — the same primitive
-/// [`crate::surface_link::LinkCeiling`] adopted for stay-down links (Track A1).
+/// [`crate::finish::surface_link::LinkCeiling`] adopted for stay-down links (Track A1).
 /// The flat disc demanded clearance over ridges a tapered flank physically
 /// clears, so descents stopped higher than needed and the surplus was spent
 /// as fed air at plunge rate.
@@ -377,7 +377,7 @@ pub struct RestEntryRamp {
 /// surface-riding pass everything below that ceiling is material an upstream
 /// tool could not reach — so the fed part was a full-diameter vertical bite,
 /// once per entry. It is now bite-budgeted zig-zag laps along the run's own
-/// first millimetre or so ([`crate::pencil::plan_entry_ramp`] with
+/// first millimetre or so ([`crate::finish::pencil::plan_entry_ramp`] with
 /// `end_at_start`), which is the same manoeuvre and the same construction site
 /// the pencil family already used against G-ENTRYLOAD.
 ///
@@ -629,7 +629,13 @@ pub fn optimize_entry_descents_with_provenance(
                 return None;
             }
             let run = upcoming_run(&followers, rapid_index + 1);
-            crate::pencil::plan_entry_ramp(&run, snapshot, cfg.contact_radius_mm, rapid_z, true)
+            crate::finish::pencil::plan_entry_ramp(
+                &run,
+                snapshot,
+                cfg.contact_radius_mm,
+                rapid_z,
+                true,
+            )
         });
 
         new_moves.push(rapid);
@@ -1043,8 +1049,8 @@ pub(crate) fn emit_ramp(
     if let Some(probe) = &safety.surface
         && let Some(stock) = probe.rest_stock
     {
-        let contact = crate::pencil::tip_contact_radius(probe.cutter);
-        let window = crate::pencil::entry_ramp_window_mm(contact);
+        let contact = crate::finish::pencil::tip_contact_radius(probe.cutter);
+        let window = crate::finish::pencil::entry_ramp_window_mm(contact);
         let far_xy = (end.x + dir.0 * window, end.y + dir.1 * window);
         // G-ISOCLIPRAMPFALL: where a rest stock is in scope this emitter is
         // LADDER OR PLUNGE, and never the legacy legs below. Both of the
@@ -1064,7 +1070,7 @@ pub(crate) fn emit_ramp(
         // point can only make the laps shallower.
         let far_floor = probe.floor_z(far_xy.0, far_xy.1).unwrap_or(end.z);
         let run = [*end, P3::new(far_xy.0, far_xy.1, far_floor.max(end.z))];
-        match crate::pencil::plan_entry_ramp(&run, stock, contact, start.z, true) {
+        match crate::finish::pencil::plan_entry_ramp(&run, stock, contact, start.z, true) {
             Some(plan) => {
                 // Air only: the ladder starts at the conservative stock
                 // ceiling read over the whole window.

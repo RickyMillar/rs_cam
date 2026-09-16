@@ -63,11 +63,11 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{ClaimsReferenceFinding, StockSource};
 use rs_cam_core::compute::operation_configs::{ClaimsReference, UnifiedFinishConfig};
 use rs_cam_core::compute::tool_config::ToolConfig;
+use rs_cam_core::finish::unified_finish::{ClaimsReferenceResolution, CreaseReference};
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, SetStockSourceArgs,
     SimulationOptions,
 };
-use rs_cam_core::unified_finish::{ClaimsReferenceResolution, CreaseReference};
 
 /// Half-extent (mm) of the fixture surface. Small on purpose: the cascade
 /// has to generate two surface ops AND a dexel simulation per arm, four

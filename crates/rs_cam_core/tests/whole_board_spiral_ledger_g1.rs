@@ -56,6 +56,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use rs_cam_core::finish::spiral_finish_compact::{CompactSpiralParams, bridge_nested_levels};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::region_set::RegionSet;
 use rs_cam_core::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
@@ -64,7 +65,6 @@ use rs_cam_core::metrology::costing::{
     CandidateCost, CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
 };
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::spiral_finish_compact::{CompactSpiralParams, bridge_nested_levels};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
@@ -713,7 +713,7 @@ fn run_spiral_arm(label: &str, slug: &str, derate: bool) {
     let bridge_params = CompactSpiralParams {
         max_chord_mm: RING_STEP_MM,
         hub_cover_reach_mm: lateral_reach,
-        near_hub_bridge_span_rad: rs_cam_core::conformal_spiral::PAPER_INITIAL_BRIDGE_SHIFT,
+        near_hub_bridge_span_rad: rs_cam_core::finish::conformal_spiral::PAPER_INITIAL_BRIDGE_SHIFT,
         ..CompactSpiralParams::default()
     };
     let bridge_start = std::time::Instant::now();
@@ -874,8 +874,10 @@ fn ledger_d1_spec_honest_spiral() {
 #[test]
 #[ignore = "Track G evidence instrument — run explicitly with --ignored --nocapture"]
 fn ledger_cal_unified_whole_board() {
-    use rs_cam_core::finish_planner::FinishPlannerParams;
-    use rs_cam_core::unified_finish::{UnifiedFinishParams, unified_finish_toolpath_with_cancel};
+    use rs_cam_core::finish::finish_planner::FinishPlannerParams;
+    use rs_cam_core::finish::unified_finish::{
+        UnifiedFinishParams, unified_finish_toolpath_with_cancel,
+    };
 
     eprintln!(
         "\n══════════ ARM CAL — shipped unified_finish, whole board, harness scale ══════════"

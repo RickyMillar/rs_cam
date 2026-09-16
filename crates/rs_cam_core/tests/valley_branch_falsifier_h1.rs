@@ -136,10 +136,11 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
-use rs_cam_core::classify_probe::ClassificationSampler;
-use rs_cam_core::conformal_spiral::CoverageAudit;
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
-use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish::classify_probe::ClassificationSampler;
+use rs_cam_core::finish::conformal_spiral::CoverageAudit;
+use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose};
+use rs_cam_core::finish::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish::unified_finish::unified_finish_classification_resolution;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::contour_extract::marching_squares_bool_grid;
 use rs_cam_core::geometry::grid_field::distance_transform_2d;
@@ -150,7 +151,6 @@ use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{CLPoint, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
-use rs_cam_core::unified_finish::unified_finish_classification_resolution;
 
 // ── fixtures ────────────────────────────────────────────────────────────
 
@@ -480,7 +480,7 @@ struct CandidateCost {
 
 struct LinkRegime<'a> {
     safe_z: f64,
-    ceiling: Option<rs_cam_core::surface_link::LinkCeiling<'a>>,
+    ceiling: Option<rs_cam_core::finish::surface_link::LinkCeiling<'a>>,
     flush_ride: bool,
     airborne: bool,
 }
@@ -501,7 +501,7 @@ fn relink_and_cost_under(
         max_feed_mm_min: MAX_FEED_MM_MIN,
         rapid_feed_mm_min: RAPID_FEED_MM_MIN,
     };
-    let params = rs_cam_core::surface_link::RelinkParams {
+    let params = rs_cam_core::finish::surface_link::RelinkParams {
         hookup_distance: 25.0,
         stock_to_leave: 0.0,
         sampling: 0.5,
@@ -515,7 +515,7 @@ fn relink_and_cost_under(
         flush_ride: regime.flush_ride,
         airborne_links_may_leave_territory: regime.airborne,
     };
-    let (linked, report) = rs_cam_core::surface_link::relink_fragments(
+    let (linked, report) = rs_cam_core::finish::surface_link::relink_fragments(
         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(raw),
         mesh,
         index,
@@ -648,7 +648,7 @@ fn machined_stock(
 /// `shallow_region_max_slope_deg` (`unified_finish.rs:2813`), restated with
 /// one extra filter. Both coverage guards and the steep clamp are verbatim.
 fn region_max_slope_deg(
-    surface: &rs_cam_core::finish_setup::FinishSurface,
+    surface: &rs_cam_core::finish::finish_setup::FinishSurface,
     covered: &[bool],
     polygon: &Polygon2,
     clamp_deg: f64,
@@ -794,7 +794,7 @@ fn point_segment_dist_sq(p: P3, a: P3, b: P3) -> f64 {
 }
 
 /// Distance statistics in the shape the shipped audit reports.
-fn summarise(values: &mut [f64]) -> rs_cam_core::conformal_spiral::DistanceStats {
+fn summarise(values: &mut [f64]) -> rs_cam_core::finish::conformal_spiral::DistanceStats {
     values.sort_by(f64::total_cmp);
     let pick = |q: f64| -> f64 {
         if values.is_empty() {
@@ -803,7 +803,7 @@ fn summarise(values: &mut [f64]) -> rs_cam_core::conformal_spiral::DistanceStats
             values[((values.len() - 1) as f64 * q).round() as usize]
         }
     };
-    rs_cam_core::conformal_spiral::DistanceStats {
+    rs_cam_core::finish::conformal_spiral::DistanceStats {
         samples: values.len(),
         min_mm: values.first().copied().unwrap_or(0.0),
         median_mm: pick(0.5),
@@ -1122,7 +1122,7 @@ struct TracerCtx<'a> {
     mesh: &'a TriangleMesh,
     index: &'a SpatialIndex,
     cutter: &'a TaperedBallEndmill,
-    surface: &'a rs_cam_core::finish_setup::FinishSurface,
+    surface: &'a rs_cam_core::finish::finish_setup::FinishSurface,
     field: &'a Field,
     /// Chamfer DT of the low-ground mask, in CELLS.
     dt_cells: &'a [f64],
@@ -1133,7 +1133,10 @@ struct TracerCtx<'a> {
 }
 
 /// The heightfield gradient at a field cell, from the classification normal.
-fn gradient_at(surface: &rs_cam_core::finish_setup::FinishSurface, i: usize) -> Option<(f64, f64)> {
+fn gradient_at(
+    surface: &rs_cam_core::finish::finish_setup::FinishSurface,
+    i: usize,
+) -> Option<(f64, f64)> {
     const MIN_NZ: f64 = 1e-6;
     let n = surface.slope_map.normals.get(i)?;
     if n.z.abs() < MIN_NZ {
@@ -1467,9 +1470,9 @@ struct ArmReport {
 #[test]
 #[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_valley_branch_falsifier_h1() {
+    use rs_cam_core::finish::surface_link::LinkCeiling;
     use rs_cam_core::geometry::region_set::RegionSet;
     use rs_cam_core::machine::kinematics::MachineKinematics;
-    use rs_cam_core::surface_link::LinkCeiling;
 
     eprintln!(
         "\n========== Track H V1 — BRANCH-TRACING FALSIFIER ==========\n\

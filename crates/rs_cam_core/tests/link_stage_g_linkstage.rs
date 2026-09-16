@@ -46,11 +46,11 @@
 )]
 
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::surface_link::{
+use rs_cam_core::finish::surface_link::{
     FragmentKind, LinkCeiling, RelinkParams, relink_fragments, relink_fragments_with_kinds,
 };
+use rs_cam_core::geo::P3;
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -236,7 +236,7 @@ fn relink(
     tool: &dyn MillingCutter,
     params: &RelinkParams<'_>,
     kinds: Option<&[FragmentKind]>,
-) -> (Toolpath, rs_cam_core::surface_link::RelinkReport) {
+) -> (Toolpath, rs_cam_core::finish::surface_link::RelinkReport) {
     let (transformed, report) =
         relink_fragments_with_kinds(AnnotatedToolpath::new(tp), mesh, index, tool, params, kinds);
     (

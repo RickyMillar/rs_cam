@@ -85,10 +85,10 @@ mod common;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use rs_cam_core::classify_probe::{
+use rs_cam_core::finish::classify_probe::{
     ClassificationGridSpec, ClassificationSampler, TILE_EDGE_CELLS, sample_classification_grid,
 };
-use rs_cam_core::finish_setup::{CLASSIFICATION_PROBE_DIAMETER_MM, FinishResolutionPolicy};
+use rs_cam_core::finish::finish_setup::{CLASSIFICATION_PROBE_DIAMETER_MM, FinishResolutionPolicy};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::surface::slope::{SlopeMap, SurfaceHeightmap};
 use rs_cam_core::tool::MillingCutter;
@@ -542,7 +542,7 @@ fn true_surface_reference(
     spec: ClassificationGridSpec,
 ) -> SurfaceHeightmap {
     let cancel = never();
-    rs_cam_core::classify_probe::sample_with_probe_diameter(
+    rs_cam_core::finish::classify_probe::sample_with_probe_diameter(
         mesh,
         index,
         spec,
@@ -680,7 +680,7 @@ fn the_production_builder_is_deterministic_across_thread_counts() {
     // production entry point — grid arithmetic, sampler dispatch, stencil —
     // because that is what a GUI worker on N threads and a headless run on 1
     // must agree about.
-    use rs_cam_core::finish_setup::build_classification_surface_with_policy_and_cancel;
+    use rs_cam_core::finish::finish_setup::build_classification_surface_with_policy_and_cancel;
     let cutter = common::tools::wanaka_taper();
     let fx = &analytic_fixtures()[2]; // mixed-slope: every band populated
     let index = SpatialIndex::build_auto(&fx.mesh);
@@ -727,7 +727,7 @@ fn the_production_builder_is_deterministic_across_thread_counts() {
 
 #[test]
 fn the_production_builder_cancels_and_discards_the_partial_grid() {
-    use rs_cam_core::finish_setup::build_classification_surface_with_policy_and_cancel;
+    use rs_cam_core::finish::finish_setup::build_classification_surface_with_policy_and_cancel;
     use std::sync::atomic::{AtomicUsize, Ordering};
     let cutter = common::tools::wanaka_taper();
     let fx = &analytic_fixtures()[2];
@@ -760,7 +760,7 @@ fn the_unified_finish_op_defaults_to_the_production_sampler() {
     // must LOAD as production, and a production value must not be written
     // into any project file.
     use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
-    use rs_cam_core::unified_finish::UnifiedFinishParams;
+    use rs_cam_core::finish::unified_finish::UnifiedFinishParams;
 
     assert_eq!(
         UnifiedFinishParams::default().classification_sampler,
@@ -894,7 +894,7 @@ fn direct_arm_divergence_is_the_probe_offset() {
         let direct = run(&fx.mesh, &index, spec, ClassificationSampler::VerticalRay);
         let mut disagreements = Vec::new();
         for diameter in [0.05f64, 0.005, 0.0005] {
-            let probed = rs_cam_core::classify_probe::sample_with_probe_diameter(
+            let probed = rs_cam_core::finish::classify_probe::sample_with_probe_diameter(
                 &fx.mesh, &index, spec, diameter, &cancel,
             )
             .expect("never cancelled");

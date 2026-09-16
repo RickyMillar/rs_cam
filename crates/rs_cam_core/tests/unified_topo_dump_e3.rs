@@ -28,16 +28,16 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use rs_cam_core::classify_probe::ClassificationSampler;
-use rs_cam_core::finish_planner::FinishPlannerParams;
-use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
-use rs_cam_core::toolpath::{MoveIntent, MoveType};
-use rs_cam_core::unified_finish::{
+use rs_cam_core::finish::classify_probe::ClassificationSampler;
+use rs_cam_core::finish::finish_planner::FinishPlannerParams;
+use rs_cam_core::finish::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish::unified_finish::{
     UnifiedFinishParams, unified_finish_classification_resolution,
     unified_finish_toolpath_with_cancel,
 };
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
+use rs_cam_core::toolpath::{MoveIntent, MoveType};
 
 const WANAKA_MESH: &str = "/home/ricky/Downloads/wanaka200/rivmap_export/terrain.stl";
 

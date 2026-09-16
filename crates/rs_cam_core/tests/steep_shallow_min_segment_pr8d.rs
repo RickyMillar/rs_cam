@@ -38,9 +38,11 @@
     clippy::print_stdout
 )]
 
+use rs_cam_core::finish::steep_shallow::{
+    SteepShallowParams, steep_shallow_toolpath_split_with_cancel,
+};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath_split_with_cancel};
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MIN_EMITTED_SEGMENT_MM, Toolpath, drop_sub_minimum_segments};
 

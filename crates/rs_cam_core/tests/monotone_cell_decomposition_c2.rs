@@ -34,7 +34,10 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::finish_planner::FinishPlannerParams;
+use rs_cam_core::finish::finish_planner::FinishPlannerParams;
+use rs_cam_core::finish::unified_finish::{
+    UnifiedFinishParams, unified_finish_toolpath_with_cancel,
+};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::monotone_cells::{
     ELONGATION_GATE, cells_select_same_lattice, honest_raster_direction_deg,
@@ -49,7 +52,6 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::surface::dropcutter::{DropCutterGrid, batch_drop_cutter};
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{Toolpath, raster_toolpath_from_grid};
-use rs_cam_core::unified_finish::{UnifiedFinishParams, unified_finish_toolpath_with_cancel};
 
 const STEPOVER_MM: f64 = 0.8;
 const FEED_MM_MIN: f64 = 1000.0;
@@ -264,7 +266,10 @@ fn params_with(dial: bool) -> UnifiedFinishParams {
     }
 }
 
-type UnifiedRun = (Toolpath, rs_cam_core::unified_finish::UnifiedFinishReport);
+type UnifiedRun = (
+    Toolpath,
+    rs_cam_core::finish::unified_finish::UnifiedFinishReport,
+);
 
 fn run_unified(f: &Fixture, dial: bool) -> UnifiedRun {
     let params = params_with(dial);

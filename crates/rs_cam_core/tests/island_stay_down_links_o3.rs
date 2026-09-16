@@ -60,14 +60,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::tools::ball_cutter;
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::finish_planner::FinishPlannerParams;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::surface_link::LinkCeiling;
-use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
-use rs_cam_core::unified_finish::{
+use rs_cam_core::finish::finish_planner::FinishPlannerParams;
+use rs_cam_core::finish::surface_link::LinkCeiling;
+use rs_cam_core::finish::unified_finish::{
     UnifiedFinishParams, unified_finish_toolpath_with_cancel,
     unified_finish_toolpath_with_cancel_and_ceiling,
 };
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
 
 /// Half-extent of the fixture plate (mm).
 const HALF_MM: f64 = 9.0;

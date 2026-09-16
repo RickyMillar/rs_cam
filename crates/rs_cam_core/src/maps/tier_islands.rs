@@ -42,8 +42,8 @@
 //! ```
 //!
 //! Steps 2 (close), 4 (min-area) and 6 (marching squares) of
-//! [`crate::finish_planner::decompose`] are the same three operations, reused
-//! rather than re-implemented: [`crate::finish_planner`]'s
+//! [`crate::finish::finish_planner::decompose`] are the same three operations, reused
+//! rather than re-implemented: [`crate::finish::finish_planner`]'s
 //! `morphological_close` and `label_components` are the actual functions
 //! called here, and the polygon extraction is
 //! [`crate::geometry::region_mask::region_polygons_from_mask_reported`].
@@ -97,7 +97,7 @@ use std::fmt::Write as _;
 
 use tracing::warn;
 
-use crate::finish_planner::{and_masks_in_place, label_components, morphological_close};
+use crate::finish::finish_planner::{and_masks_in_place, label_components, morphological_close};
 use crate::geo::P2;
 use crate::geometry::grid_field::distance_transform_2d;
 use crate::geometry::grid2::Grid2;
@@ -134,12 +134,12 @@ pub const CAP_CLOSE_RAISE_FACTOR: f64 = 1.5;
 pub const MAX_CLOSE_RAISES: usize = 3;
 
 /// `close_radius_mm = cusp_radius · CLOSE_RADIUS_PER_CUSP_RADIUS`, the same
-/// derivation [`crate::finish_planner::FinishPlannerParams::for_tool`] uses.
+/// derivation [`crate::finish::finish_planner::FinishPlannerParams::for_tool`] uses.
 pub const CLOSE_RADIUS_PER_CUSP_RADIUS: f64 = 0.5;
 
 /// `min_region_area_mm2 = (2·cusp_radius)² · MIN_REGION_AREA_TOOL_DIAMETERS_SQ`
 /// — "a few tool diameters²", the same derivation
-/// [`crate::finish_planner::FinishPlannerParams::for_tool`] uses.
+/// [`crate::finish::finish_planner::FinishPlannerParams::for_tool`] uses.
 pub const MIN_REGION_AREA_TOOL_DIAMETERS_SQ: f64 = 4.0;
 
 /// Bound on `machining_area ÷ owned_area` above which
@@ -233,7 +233,7 @@ impl std::error::Error for TierIslandError {}
 
 /// Island-filtering dials. Every `Option` is "`None` = derive from this tier's
 /// own cusp radius", mirroring
-/// [`crate::finish_planner::FinishPlannerParams::for_tool`].
+/// [`crate::finish::finish_planner::FinishPlannerParams::for_tool`].
 ///
 /// # The coarseness slider
 ///
@@ -1074,7 +1074,7 @@ fn tier_svg_color(tier: u8) -> &'static str {
 ///
 /// # Conventions
 ///
-/// Follows [`crate::finish_planner::planned_regions_to_svg`]: same header
+/// Follows [`crate::finish::finish_planner::planned_regions_to_svg`]: same header
 /// shape, same background, `evenodd` so holes render, and the Y axis flipped
 /// so north is up. It DIVERGES in one place — the viewBox is the map's own
 /// millimetre extent rather than a pixel canvas, so stroke widths and dash
@@ -1260,7 +1260,7 @@ mod tests {
         // The two derivations must not drift: this module's defaults ARE
         // `FinishPlannerParams::for_tool`'s, scaled by the slider.
         let cusp = 1.5;
-        let theirs = crate::finish_planner::FinishPlannerParams::for_tool(cusp);
+        let theirs = crate::finish::finish_planner::FinishPlannerParams::for_tool(cusp);
         let close = TierIslandParams::derived_close_radius_mm(cusp, 1.0);
         let area = TierIslandParams::derived_min_region_area_mm2(cusp, 1.0);
         assert!((close - theirs.close_radius_mm).abs() < 1e-12);

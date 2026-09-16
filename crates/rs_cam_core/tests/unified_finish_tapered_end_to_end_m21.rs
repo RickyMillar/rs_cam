@@ -85,8 +85,8 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
-use rs_cam_core::finish_setup::build_classification_surface_with_cancel;
+use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
+use rs_cam_core::finish::finish_setup::build_classification_surface_with_cancel;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
@@ -881,7 +881,7 @@ fn would_have_been_red_the_prefix_dials_erase_every_steep_region() {
         &FinishPlannerParams::for_tool(taper.radius()),
     );
 
-    let count_non_shallow = |planned: &rs_cam_core::finish_planner::PlannedRegions| {
+    let count_non_shallow = |planned: &rs_cam_core::finish::finish_planner::PlannedRegions| {
         planned
             .regions
             .iter()

@@ -139,10 +139,10 @@
     clippy::print_stdout
 )]
 
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::pencil::{
+use rs_cam_core::finish::pencil::{
     PencilDetector, PencilParams, PencilRuntimeEvent, pencil_toolpath_structured_annotated,
 };
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 

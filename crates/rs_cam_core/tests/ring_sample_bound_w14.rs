@@ -40,12 +40,12 @@ use std::time::Instant;
 
 use common::scallop_oracle::{EnvelopeOracle, OracleGrid, OracleParams, OracleReport, StampKernel};
 use common::{meshes, tools};
-use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::scallop::{
+use rs_cam_core::finish::scallop::{
     RingSampleBound, ScallopDirection, ScallopParams, ScallopRingBudget, ScallopStepoverPolicy,
     scallop_generation_resolution, scallop_toolpath_research,
 };
+use rs_cam_core::geo::P3;
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::tool::MillingCutter;
 
 /// The stamp cap M4 uses, for the same reason: the wanaka taper's envelope is

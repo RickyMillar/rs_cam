@@ -1,5 +1,5 @@
 //! Bounded memo for the GENERATION finish surface —
-//! [`crate::finish_setup::build_finish_surface_with_policy_and_cancel`].
+//! [`crate::finish::finish_setup::build_finish_surface_with_policy_and_cancel`].
 //!
 //! # Why this exists
 //!
@@ -97,7 +97,7 @@
 //! millimetres would serve one under the other's name.
 //!
 //! **The sampler is not in the key** because this builder has none: it always
-//! produces [`crate::finish_setup::SurfaceSampler::CutterOffset`]. The
+//! produces [`crate::finish::finish_setup::SurfaceSampler::CutterOffset`]. The
 //! CLASSIFICATION builder, which does take a sampler, is deliberately not
 //! memoised here — see "What is not cached".
 //!
@@ -129,7 +129,7 @@
 //!
 //! [`stats`] counts builds and hits. The bar is not "the second call is faster"
 //! but "the second call does **no** surface-build work", which is read off
-//! [`crate::finish_setup::surface_build_count`] — a counter inside the builder
+//! [`crate::finish::finish_setup::surface_build_count`] — a counter inside the builder
 //! itself, so a cache that reported a hit while something else rebuilt would
 //! still fail. See `tests/finish_surface_cache.rs`.
 
@@ -137,7 +137,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::finish_setup::{
+use crate::finish::finish_setup::{
     FinishResolutionMode, FinishResolutionPolicy, FinishSurface,
     build_finish_surface_with_policy_and_cancel,
 };
@@ -378,7 +378,7 @@ fn put(key: SurfaceKey, surface: Arc<FinishSurface>) {
 )]
 mod tests {
     use super::{IndexKey, MeshContentKey, ResolutionKey};
-    use crate::finish_setup::FinishResolutionPolicy;
+    use crate::finish::finish_setup::FinishResolutionPolicy;
     use crate::geo::P3;
     use crate::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphere};
     use crate::tool::BallEndmill;

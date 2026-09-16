@@ -5,7 +5,7 @@
 //! # What this measures
 //!
 //! One question, staged: does
-//! [`rs_cam_core::conformal_spiral::plan_spiral`] produce a single
+//! [`rs_cam_core::finish::conformal_spiral::plan_spiral`] produce a single
 //! continuous, non-self-intersecting, **correctly-spaced** spiral over a
 //! simply-connected region — and at what length overhead over the pure rings
 //! it was bridged from?
@@ -339,11 +339,12 @@ use std::f64::consts::{PI, SQRT_2, TAU};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use rs_cam_core::conformal_spiral::{
+use rs_cam_core::finish::conformal_spiral::{
     self, DistanceStats, PAPER_START_ANGLE_STEP, SpiralParams, SpiralRefusal, SpiralReport,
     SpiralResult,
 };
-use rs_cam_core::direction_field::{self, FieldParams, FieldPathResult, FieldReport};
+use rs_cam_core::finish::direction_field::{self, FieldParams, FieldPathResult, FieldReport};
+use rs_cam_core::finish::scallop_math;
 use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::geometry::grid_field::distance_transform_2d;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -354,7 +355,6 @@ use rs_cam_core::metrology::floor::{
     AreaWeighted, FloorReport, area_weighted, region_floor as metrology_region_floor,
 };
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::scallop_math;
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{Move, MoveIntent, Toolpath};
 
@@ -5146,7 +5146,7 @@ const MIN_UP_NORMAL_Z: f64 = 0.0;
 /// about connectivity or manifoldness. [`clean_selection`] is what makes it a
 /// candidate disk.
 fn conformal_spiral_region(mesh: &TriangleMesh, polygon: &Polygon2) -> Vec<u32> {
-    rs_cam_core::direction_field::triangles_where(mesh, |i, centroid| {
+    rs_cam_core::finish::direction_field::triangles_where(mesh, |i, centroid| {
         mesh.faces
             .get(i)
             .is_some_and(|f| f.normal.z > MIN_UP_NORMAL_Z)
@@ -11988,7 +11988,7 @@ fn coarsened_sweep_snaps_onto_both_stage_e_lattices() {
 /// §B.4 conditions must trip on its own, and a clean report must pass.
 #[test]
 fn falsifier_conditions_are_independent() {
-    use rs_cam_core::conformal_spiral::CoverageAudit;
+    use rs_cam_core::finish::conformal_spiral::CoverageAudit;
 
     // Mirrors `stage_a`'s four conditions EXACTLY, including the rule that an
     // ABSENT audit is a STOP. If the two ever drift, this test is a docstring
@@ -12058,7 +12058,7 @@ fn falsifier_conditions_are_independent() {
 /// of the region unmachined — must now STOP.
 #[test]
 fn the_arm_sphere_hole_would_now_be_caught() {
-    use rs_cam_core::conformal_spiral::CoverageAudit;
+    use rs_cam_core::finish::conformal_spiral::CoverageAudit;
 
     // Exactly what the run printed: three green self-reported conditions...
     let report = SpiralReport {

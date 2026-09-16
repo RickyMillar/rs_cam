@@ -74,10 +74,10 @@ use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::dressup::{
     EntrySurfaceProbe, OffMeshEntry, RestEntryRamp, optimize_entry_descents,
 };
+use rs_cam_core::finish::pencil::{entry_bite_budget_mm, tip_contact_radius};
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance;
 use rs_cam_core::mesh::SpatialIndex;
-use rs_cam_core::pencil::{entry_bite_budget_mm, tip_contact_radius};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
@@ -569,7 +569,7 @@ fn f_without_the_rest_stock_the_dressup_ramp_takes_the_lot() {
 /// Where the rest stock starts standing, measured along the cut direction.
 ///
 /// Far enough past the entry column that the ladder planner's own window —
-/// [`rs_cam_core::pencil::entry_ramp_window_mm`], 1.18 mm on this tip, plus
+/// [`rs_cam_core::finish::pencil::entry_ramp_window_mm`], 1.18 mm on this tip, plus
 /// the conservative disc — reads clear ground and abstains. Close enough that
 /// the legacy legs walk right over it.
 const STEP_X: f64 = 11.5;

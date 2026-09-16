@@ -4,8 +4,8 @@
 //! generator, no GUI surface and no MCP tool reaches this module, and none
 //! should until the Phase F2 evidence in
 //! `planning/conformal_finish_2026-08-28/PROGRAMME.md` says what it is worth.
-//! It follows the precedent of [`crate::direction_field`] (Phase F1) and
-//! [`crate::scallop_isofield`] — unshipped research candidates that document
+//! It follows the precedent of [`crate::finish::direction_field`] (Phase F1) and
+//! [`crate::finish::scallop_isofield`] — unshipped research candidates that document
 //! their own limitations rather than pretending to be features.
 //!
 //! # Sources — three, and they must be kept apart
@@ -139,7 +139,7 @@
 //! done.
 //!
 //! Instead the interior system is solved by **Gauss–Seidel sweeps** in
-//! ascending vertex order (the [`crate::scallop_isofield`] precedent for a
+//! ascending vertex order (the [`crate::finish::scallop_isofield`] precedent for a
 //! hand-rolled sweep solver). Each sweep sets every interior vertex to the
 //! weighted average of its neighbours, boundary values held fixed:
 //! `u_i ← (Σ_j w_ij u_j) / (Σ_j w_ij)`. Convergence is unconditional: the
@@ -166,7 +166,7 @@
 //!   handling anywhere (extraction gap 3), and drop-cutter projection is the
 //!   rs_cam convention.
 //! * **Normals inherit `build_region_mesh`'s +Z forcing** (the same
-//!   convention `crest_lines` and [`crate::direction_field`] use). Correct
+//!   convention `crest_lines` and [`crate::finish::direction_field`] use). Correct
 //!   for the terrain-like regions F2 targets and for both fixtures here;
 //!   **wrong for a region whose surface faces away from +Z**.
 //! * **No reachability, no gouge check, no collision check.** 3-axis
@@ -244,12 +244,12 @@
 //!   curvature and a radius and is dimensionally inconsistent (extraction
 //!   gap 3). Where scallop arithmetic is needed — only in this module's
 //!   tests, to state the expected ring spacing — it comes from
-//!   [`crate::scallop_math`].
+//!   [`crate::finish::scallop_math`].
 
 use std::collections::HashMap;
 use std::f64::consts::{PI, TAU};
 
-use crate::direction_field::{RegionMesh, build_region_mesh};
+use crate::finish::direction_field::{RegionMesh, build_region_mesh};
 use crate::geo::{P3, V3, polyline_length};
 use crate::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 
@@ -1410,7 +1410,7 @@ struct Flattening {
 ///
 /// **[SOURCE-FLOATER]** Floater, *Mean value coordinates*, CAGD 20(1):19–27,
 /// 2003. Deliberately a separate assembly from
-/// [`crate::direction_field`]'s cotangent one: they are different matrices
+/// [`crate::finish::direction_field`]'s cotangent one: they are different matrices
 /// with different guarantees, and sharing an assembly would invite exactly the
 /// silent symmetrisation the module header rules out.
 struct MeanValueWeights {
@@ -1957,7 +1957,7 @@ fn median_sorted(v: &[f64]) -> f64 {
 /// Area-weighted per-vertex normals over the region.
 ///
 /// Inherits [`build_region_mesh`]'s +Z-forced triangle normals — the same
-/// convention `crest_lines` and [`crate::direction_field`] use, and a stated
+/// convention `crest_lines` and [`crate::finish::direction_field`] use, and a stated
 /// limitation of this module.
 fn vertex_normals(region: &RegionMesh) -> Vec<V3> {
     let mut acc = vec![V3::zeros(); region.verts.len()];
@@ -3479,10 +3479,10 @@ mod tests {
         blend_sigma, build_region_mesh, flatten_to_disk, measure_flattening, plan_spiral,
         region_topology,
     };
-    use crate::direction_field::all_triangles;
+    use crate::finish::direction_field::all_triangles;
+    use crate::finish::scallop_math::{stepover_from_scallop_curved, stepover_from_scallop_flat};
     use crate::geo::P3;
     use crate::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphere};
-    use crate::scallop_math::{stepover_from_scallop_curved, stepover_from_scallop_flat};
     use std::f64::consts::TAU;
 
     /// A triangulated disk: a centre vertex, `n_rings` concentric rings and a

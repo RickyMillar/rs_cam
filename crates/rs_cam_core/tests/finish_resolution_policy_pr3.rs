@@ -35,31 +35,33 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::finish_setup::{
+use rs_cam_core::finish::finish_setup::{
     FinishResolutionMode, FinishResolutionPolicy, build_classification_surface_with_cancel,
     build_classification_surface_with_policy_and_cancel, build_finish_surface_with_cancel,
     build_finish_surface_with_cell_size_and_cancel, build_finish_surface_with_policy_and_cancel,
+};
+use rs_cam_core::finish::ramp_finish::{
+    RampFinishParams, ramp_finish_generation_resolution, ramp_finish_toolpath,
+    ramp_finish_toolpath_structured_annotated_with_resolution,
+};
+use rs_cam_core::finish::scallop::{
+    ScallopParams, scallop_generation_resolution, scallop_toolpath,
+};
+use rs_cam_core::finish::steep_shallow::{
+    SteepShallowParams, steep_shallow_generation_resolution, steep_shallow_toolpath,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::measurement::{
     CellSource, MeasurementDomain, MeasurementProvenance, MeasurementStage,
 };
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::ramp_finish::{
-    RampFinishParams, ramp_finish_generation_resolution, ramp_finish_toolpath,
-    ramp_finish_toolpath_structured_annotated_with_resolution,
-};
-use rs_cam_core::scallop::{ScallopParams, scallop_generation_resolution, scallop_toolpath};
-use rs_cam_core::steep_shallow::{
-    SteepShallowParams, steep_shallow_generation_resolution, steep_shallow_toolpath,
-};
 use rs_cam_core::tool::MillingCutter;
 
 mod common;
 
 use common::fingerprint::move_fingerprint as fingerprint;
 use common::tools::{ball_cutter, wanaka_taper as taper};
-use rs_cam_core::unified_finish::{
+use rs_cam_core::finish::unified_finish::{
     unified_finish_classification_resolution, unified_finish_mid_steep_generation_resolution,
 };
 

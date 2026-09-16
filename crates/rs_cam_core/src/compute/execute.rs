@@ -74,16 +74,16 @@ pub struct GenerationFindings {
     /// run one write here, which is what keeps the two apart all the way to
     /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`]
     /// (A/M9 / `MEASUREMENT_DOMAINS.md` X-19). See
-    /// [`crate::scallop::ScallopReport::uncut_core_mm2`].
+    /// [`crate::finish::scallop::ScallopReport::uncut_core_mm2`].
     pub truncated_core_mm2: Option<f64>,
     /// M4 §5b: the hole-aware sibling of [`Self::truncated_core_mm2`] —
     /// summed the same way, over the same adapters, straight off
-    /// [`crate::scallop::ScallopReport::untouched_mm2`]. Same X-19
+    /// [`crate::finish::scallop::ScallopReport::untouched_mm2`]. Same X-19
     /// three-valued contract: `None` = no cascade ran.
     pub untouched_material_mm2: Option<f64>,
     /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
     /// [`Self::truncated_core_mm2`], off
-    /// [`crate::scallop::ScallopReport::standing_mm2`]. Same X-19 contract.
+    /// [`crate::finish::scallop::ScallopReport::standing_mm2`]. Same X-19 contract.
     /// Remember this one is an estimator, not an exact area — see the
     /// source field's doc for what it cannot distinguish.
     pub reached_uncut_estimate_mm2: Option<f64>,
@@ -122,8 +122,8 @@ pub struct GenerationFindings {
     pub derived_stepovers: Vec<crate::compute::config::DerivedStepoverFinding>,
     /// PR-8b: what the ramp-finish reach clamp did. `None` = no ramp descent
     /// ran, so nothing was measured; `Some` with an inert clamp is a
-    /// measured-clean descent. See [`crate::ramp_finish::RampReachClamp`].
-    pub ramp_reach_clamp: Option<crate::ramp_finish::RampReachClamp>,
+    /// measured-clean descent. See [`crate::finish::ramp_finish::RampReachClamp`].
+    pub ramp_reach_clamp: Option<crate::finish::ramp_finish::RampReachClamp>,
     /// A/M6: which rest reference the crease/pencil claims pipeline resolved
     /// to, and whether it was pinned or derived. `None` = the claims
     /// pipeline did not run, so nothing was resolved.
@@ -171,18 +171,18 @@ pub struct GenerationFindings {
     /// family that has none, or one whose hookup dial is `0.0`). Written by
     /// `unified_finish`, `scallop`, `drop_cutter` and `waterline`. See
     /// [`crate::compute::config::ToolpathStats::relink`].
-    pub relink: Option<crate::unified_finish::RelinkTotals>,
+    pub relink: Option<crate::finish::unified_finish::RelinkTotals>,
     /// G-LINKVISIBLE: what the PENCIL's own link stage did. `None` = not a
     /// pencil, or a pencil whose detector produced no centreline, so the
     /// emitter — and with it every junction decision — never ran. Its own
     /// slot rather than [`Self::relink`] because its counter set differs;
     /// see [`crate::compute::config::ToolpathStats::pencil_link`].
-    pub pencil_link: Option<crate::pencil::PencilLinkReport>,
+    pub pencil_link: Option<crate::finish::pencil::PencilLinkReport>,
     /// C2: what the shallow band's monotone-cell decomposition did. `None` =
     /// the pass never ran (not a `UnifiedFinish`, or its
     /// `monotone_cell_decomposition` is off, or the op emitted no Shallow
     /// region). See [`crate::compute::config::ToolpathStats::monotone_cells`].
-    pub monotone_cells: Option<crate::unified_finish::MonotoneCellTotals>,
+    pub monotone_cells: Option<crate::finish::unified_finish::MonotoneCellTotals>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -291,7 +291,7 @@ fn record_deprecated_dial(
 /// adapter is what stays quiet when nothing moved.
 fn record_ramp_reach_clamp(
     cell: &std::cell::RefCell<GenerationFindings>,
-    finding: crate::ramp_finish::RampReachClamp,
+    finding: crate::finish::ramp_finish::RampReachClamp,
 ) {
     cell.borrow_mut().ramp_reach_clamp = Some(finding);
 }
@@ -381,13 +381,13 @@ fn record_region_cap(
 /// `unified_finish` (`intra_region_hookup_mm`), `scallop`
 /// (`intra_pass_hookup_mm`), `drop_cutter` and `waterline` (`hookup_mm`).
 /// They share the slot because they share the kernel — every one of them
-/// sums a [`crate::surface_link::RelinkReport`] — and one toolpath is one
+/// sums a [`crate::finish::surface_link::RelinkReport`] — and one toolpath is one
 /// operation, so which dial produced a reading is never ambiguous. The
 /// pencil runs a DIFFERENT linker with a different counter set and has its
 /// own slot ([`record_pencil_link`]).
 fn record_relink_totals(
     cell: &std::cell::RefCell<GenerationFindings>,
-    totals: crate::unified_finish::RelinkTotals,
+    totals: crate::finish::unified_finish::RelinkTotals,
 ) {
     cell.borrow_mut().relink = Some(totals);
 }
@@ -402,7 +402,7 @@ fn record_relink_totals(
 /// [`crate::compute::config::ToolpathStats`] contract forbids.
 fn record_monotone_cells(
     cell: &std::cell::RefCell<GenerationFindings>,
-    totals: crate::unified_finish::MonotoneCellTotals,
+    totals: crate::finish::unified_finish::MonotoneCellTotals,
 ) {
     cell.borrow_mut().monotone_cells = Some(totals);
 }
@@ -411,7 +411,7 @@ fn record_monotone_cells(
 ///
 /// Separate from [`record_relink_totals`] because the pencil runs its own
 /// linker, whose report carries eight counters against
-/// [`crate::unified_finish::RelinkTotals`]' six — including `hop_too_far`
+/// [`crate::finish::unified_finish::RelinkTotals`]' six — including `hop_too_far`
 /// and its own at-depth/hop split, which is exactly the pair that names this
 /// pass's binding constraint. Folding it into the shared shape would drop
 /// them, and a measurement squeezed into another measurement's shape reads
@@ -421,7 +421,7 @@ fn record_monotone_cells(
 /// [`record_relink_totals`] says so.
 fn record_pencil_link(
     cell: &std::cell::RefCell<GenerationFindings>,
-    report: crate::pencil::PencilLinkReport,
+    report: crate::finish::pencil::PencilLinkReport,
 ) {
     cell.borrow_mut().pencil_link = Some(report);
 }
@@ -2120,7 +2120,7 @@ pub(crate) fn generate_project_curve(
 /// pays two full safe-Z legs whatever its XY length. This runs across the
 /// WHOLE combined path (not per polygon), so chains from different DXF
 /// entities can join, and re-decides each junction on evidence:
-/// [`crate::surface_link::relink_fragments`] drop-cutter samples the link so
+/// [`crate::finish::surface_link::relink_fragments`] drop-cutter samples the link so
 /// it cannot gouge the mesh, refuses it if it would leave the operation's
 /// boundary, lifts it clear of anything standing in the input stock, refuses
 /// it outright when that clearance reaches safe Z, and (with kinematics in
@@ -2173,15 +2173,15 @@ pub(crate) fn generate_project_curve(
 fn finishing_link_stage<'c, 'a: 'c>(
     ctx: &'c ExecutionContext<'a>,
     hookup_mm: f64,
-) -> Option<crate::surface_link::FinishingLinkStage<'c>> {
+) -> Option<crate::finish::surface_link::FinishingLinkStage<'c>> {
     if hookup_mm <= 0.0 {
         return None;
     }
-    Some(crate::surface_link::FinishingLinkStage {
+    Some(crate::finish::surface_link::FinishingLinkStage {
         hookup_distance: hookup_mm,
         link_ceiling: ctx
             .initial_stock
-            .map(|stock| crate::surface_link::LinkCeiling {
+            .map(|stock| crate::finish::surface_link::LinkCeiling {
                 stock: Some(stock),
                 tool_radius: ctx.tool_def.envelope_radius_mm(),
                 // The analytic stock top in the emission frame — the same
@@ -2208,17 +2208,22 @@ fn finishing_link_stage<'c, 'a: 'c>(
 /// and the two callers each already hold their own `ctx`. The caller records
 /// them unconditionally — reaching this function at all IS the measurement.
 fn relink_in_adapter(
-    stage: &crate::surface_link::FinishingLinkStage<'_>,
-    geom: &crate::surface_link::LinkGeometry,
+    stage: &crate::finish::surface_link::FinishingLinkStage<'_>,
+    geom: &crate::finish::surface_link::LinkGeometry,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &ToolDefinition,
     tp: Toolpath,
     family: &'static str,
-) -> (Toolpath, crate::unified_finish::RelinkTotals) {
+) -> (Toolpath, crate::finish::unified_finish::RelinkTotals) {
     let rp = stage.params(geom);
-    let (linked, rep) =
-        crate::surface_link::relink_fragments(AnnotatedToolpath::new(tp), mesh, index, cutter, &rp);
+    let (linked, rep) = crate::finish::surface_link::relink_fragments(
+        AnnotatedToolpath::new(tp),
+        mesh,
+        index,
+        cutter,
+        &rp,
+    );
     tracing::info!(
         family,
         hookup_mm = stage.hookup_distance,
@@ -2235,7 +2240,7 @@ fn relink_in_adapter(
         ceiling_above_safe_z = rep.ceiling_above_safe_z,
         "Finishing link stage"
     );
-    let mut totals = crate::unified_finish::RelinkTotals::default();
+    let mut totals = crate::finish::unified_finish::RelinkTotals::default();
     totals.add(&rep);
     (
         linked
@@ -2278,7 +2283,7 @@ fn chain_project_curve(
         );
         return tp;
     }
-    let rp = crate::surface_link::RelinkParams {
+    let rp = crate::finish::surface_link::RelinkParams {
         hookup_distance: cfg.chain_distance_mm,
         // The link does not ride the surface at all — see `link_ceiling`
         // below — so there is no crest to stand off from here.
@@ -2313,14 +2318,19 @@ fn chain_project_curve(
         // slide across it drags the cutter over stock this op must not
         // touch (`stock_safety_links_clear_standing_material` pins it).
         flush_ride: false,
-        link_ceiling: Some(crate::surface_link::LinkCeiling {
+        link_ceiling: Some(crate::finish::surface_link::LinkCeiling {
             stock: ctx.initial_stock,
             tool_radius: ctx.tool_def.radius(),
             fallback_top_z: ctx.heights.top_z,
         }),
     };
-    let (linked, rep) =
-        crate::surface_link::relink_fragments(AnnotatedToolpath::new(tp), mesh, index, cutter, &rp);
+    let (linked, rep) = crate::finish::surface_link::relink_fragments(
+        AnnotatedToolpath::new(tp),
+        mesh,
+        index,
+        cutter,
+        &rp,
+    );
     tracing::info!(
         chain_distance_mm = cfg.chain_distance_mm,
         fragments = rep.fragments,
@@ -2353,7 +2363,7 @@ pub(crate) fn generate_pencil(
     let cfg = config_guard!(op, Pencil, "generate_pencil");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "Pencil")?;
-    let params = crate::pencil::PencilParams {
+    let params = crate::finish::pencil::PencilParams {
         bitangency_angle: cfg.bitangency_angle,
         min_cut_length: cfg.min_cut_length,
         hookup_distance: cfg.hookup_distance,
@@ -2367,7 +2377,7 @@ pub(crate) fn generate_pencil(
         min_valley_depth: cfg.min_valley_depth,
         bisector_strength: cfg.bisector_strength,
         reference_tool_diameter: cfg.reference_tool_diameter,
-        detector: crate::pencil::PencilDetector::parse(&cfg.detector),
+        detector: crate::finish::pencil::PencilDetector::parse(&cfg.detector),
         valley_saliency: cfg.valley_saliency,
         curvature_smoothing: cfg.curvature_smoothing,
         rest_cell_mm: cfg.rest_cell_mm,
@@ -2399,7 +2409,7 @@ pub(crate) fn generate_pencil(
         crate::compute::config::DeprecatedDialFinding {
             dial: "route_width_factor",
             value: cfg.route_width_factor,
-            default_value: crate::pencil::route_width_factor_default(),
+            default_value: crate::finish::pencil::route_width_factor_default(),
             replaced_by: "the coverage criterion (reachable band vs \
                           num_offset_passes x offset_stepover)",
         },
@@ -2407,23 +2417,24 @@ pub(crate) fn generate_pencil(
     let mut rest_grid_out: Option<crate::surface::rest_field::RestGrid> = None;
     let mut rest_regions_out: Option<Vec<Polygon2>> = None;
     let mut tip_float_out: Option<crate::compute::config::TipFloatFinding> = None;
-    let mut link_report_out: Option<crate::pencil::PencilLinkReport> = None;
-    let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated_with_cancel(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        // R2: the prior-op machined stock (FromRemainingStock + a prior sim);
-        // the RestDepth detector prefers it as the rest reference.
-        ctx.initial_stock,
-        ctx.debug_ctx,
-        &mut rest_grid_out,
-        &mut rest_regions_out,
-        &mut tip_float_out,
-        &mut link_report_out,
-        &(|| ctx.cancel.load(Ordering::SeqCst)),
-    )
-    .map_err(|_e| OperationError::Cancelled)?;
+    let mut link_report_out: Option<crate::finish::pencil::PencilLinkReport> = None;
+    let (tp, annotations) =
+        crate::finish::pencil::pencil_toolpath_structured_annotated_with_cancel(
+            m,
+            idx,
+            ctx.tool_def,
+            &params,
+            // R2: the prior-op machined stock (FromRemainingStock + a prior sim);
+            // the RestDepth detector prefers it as the rest reference.
+            ctx.initial_stock,
+            ctx.debug_ctx,
+            &mut rest_grid_out,
+            &mut rest_regions_out,
+            &mut tip_float_out,
+            &mut link_report_out,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
     // Wave D1: pencil is a centreline op, so it always MEASURES float — even
     // when the answer is zero. That is the whole point: a silent pass and a
     // pass that proved the tool reached the floor must not look alike.
@@ -2477,7 +2488,7 @@ pub(crate) fn generate_scallop(
     }
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "Scallop")?;
-    let params = crate::scallop::ScallopParams {
+    let params = crate::finish::scallop::ScallopParams {
         scallop_height: cfg.scallop_height,
         tolerance: cfg.tolerance,
         direction: cfg.direction,
@@ -2502,7 +2513,7 @@ pub(crate) fn generate_scallop(
         // offset cascade's, and its fingerprint is pinned by
         // `scallop_isofield_gouge_m4` and the multitool tiers. It keeps the
         // legacy relink at the same `intra_pass_hookup_mm`, byte for byte.
-        crate::scallop::scallop_toolpath_iso_field_with_cancel(
+        crate::finish::scallop::scallop_toolpath_iso_field_with_cancel(
             m,
             idx,
             ctx.tool_def,
@@ -2517,7 +2528,7 @@ pub(crate) fn generate_scallop(
         // measured: breadth-first ring order, no reorder, no loop rotation
         // and no stock ceiling. It opts in.
         let stage = finishing_link_stage(ctx, cfg.intra_pass_hookup_mm);
-        crate::scallop::scallop_toolpath_structured_annotated_with_cancel_and_stage(
+        crate::finish::scallop::scallop_toolpath_structured_annotated_with_cancel_and_stage(
             m,
             idx,
             ctx.tool_def,
@@ -2587,7 +2598,7 @@ pub(crate) fn generate_unified_finish(
     }
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "UnifiedFinish")?;
-    let params = crate::unified_finish::UnifiedFinishParams {
+    let params = crate::finish::unified_finish::UnifiedFinishParams {
         scallop_height: cfg.scallop_height,
         tolerance: cfg.tolerance,
         raster_stepover: cfg.raster_stepover,
@@ -2644,7 +2655,7 @@ pub(crate) fn generate_unified_finish(
         // stock in scope is an op that asked for FRESH stock, and that is a
         // configuration statement, not a block; the finding's `why()` names
         // both remedies.
-        let resolution = crate::unified_finish::ClaimsReferenceResolution::resolve(
+        let resolution = crate::finish::unified_finish::ClaimsReferenceResolution::resolve(
             cfg.claims_reference,
             territory_stock.is_some(),
         );
@@ -2690,7 +2701,7 @@ pub(crate) fn generate_unified_finish(
         if cfg.territory_clip && !ctx.rest_analysis.is_some_and(|ra| ra.enabled) {
             rest_field_params.min_valley_depth = cfg.min_rest_depth_mm;
         }
-        crate::unified_finish::ClaimsConfig {
+        crate::finish::unified_finish::ClaimsConfig {
             territory_stock,
             // A/M6: the RESOLVED reference, never the raw dial. `ClaimsConfig`
             // takes `CreaseReference` (two-valued, what the detector reads);
@@ -2733,7 +2744,7 @@ pub(crate) fn generate_unified_finish(
     // byte-identical to the flat disc, which is the safety anchor.
     let link_ceiling = ctx
         .initial_stock
-        .map(|stock| crate::surface_link::LinkCeiling {
+        .map(|stock| crate::finish::surface_link::LinkCeiling {
             stock: Some(stock),
             tool_radius: ctx.tool_def.envelope_radius_mm(),
             // The analytic stock top in the emission frame — the same
@@ -2742,7 +2753,7 @@ pub(crate) fn generate_unified_finish(
             fallback_top_z: ctx.stock_bbox.max.z,
         });
     let (tp, annotations, report) =
-        crate::unified_finish::unified_finish_toolpath_with_cancel_and_ceiling(
+        crate::finish::unified_finish::unified_finish_toolpath_with_cancel_and_ceiling(
             m,
             idx,
             ctx.tool_def,
@@ -2786,7 +2797,7 @@ pub(crate) fn generate_unified_finish(
     if let Some(cfg) = claims_cfg.as_ref()
         && matches!(
             cfg.crease_reference,
-            crate::unified_finish::CreaseReference::MachinedStock
+            crate::finish::unified_finish::CreaseReference::MachinedStock
         )
         && let Some(stock) = cfg.territory_stock
     {
@@ -2796,12 +2807,12 @@ pub(crate) fn generate_unified_finish(
     // on the toolpath — the whole reason `GenerationFindings` exists.
     record_dropped_band(
         ctx.findings,
-        crate::unified_finish::dropped_band_finding(&report),
+        crate::finish::unified_finish::dropped_band_finding(&report),
     );
     // C8: the quiet sibling — bands the heights SHORTENED but did not erase.
     record_clipped_band(
         ctx.findings,
-        crate::unified_finish::clipped_band_finding(&report),
+        crate::finish::unified_finish::clipped_band_finding(&report),
     );
     // Wave D1: the crease node's centrelines are pencil centrelines and
     // float for the same reasons. `None` when claims never ran.
@@ -2840,7 +2851,7 @@ pub(crate) fn generate_unified_finish(
                 site: "UnifiedFinish crease/pencil claims",
                 stepover_mm: claims.offset_stepover_mm,
                 reference_depth_mm: claims.offset_stepover_reference_depth_mm,
-                reference_depth_basis: crate::unified_finish::CLAIMS_STEPOVER_DEPTH_BASIS,
+                reference_depth_basis: crate::finish::unified_finish::CLAIMS_STEPOVER_DEPTH_BASIS,
                 envelope_rule_mm: claims.envelope_rule_stepover_mm,
                 slope_derate: None,
             },
@@ -2862,7 +2873,7 @@ pub(crate) fn generate_unified_finish(
         // builds the STRUCTURAL region-node spans from. Annotation only —
         // no move is touched.
         crate::compute::annotate::annotate_unified_finish_regions(
-            &crate::unified_finish::unified_finish_region_annotations(&report),
+            &crate::finish::unified_finish::unified_finish_region_annotations(&report),
             &tp,
             sem,
         );
@@ -2871,7 +2882,7 @@ pub(crate) fn generate_unified_finish(
     // op's barriered TSP safe) are built by `unified_finish::
     // unified_finish_spans` so the capability sentries can assert against
     // the same definition production ships.
-    let spans = crate::unified_finish::unified_finish_spans(&tp, &annotations, &report);
+    let spans = crate::finish::unified_finish::unified_finish_spans(&tp, &annotations, &report);
     let mut generated = generated_with_spans(tp, spans);
     // §2.4 carry-through: the claims detector's rest field + region
     // polygons ride the generated result exactly like the pencil
@@ -2893,7 +2904,7 @@ pub(crate) fn generate_steep_shallow(
     let cfg = config_guard!(op, SteepShallow, "generate_steep_shallow");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "SteepShallow")?;
-    let params = crate::steep_shallow::SteepShallowParams {
+    let params = crate::finish::steep_shallow::SteepShallowParams {
         threshold_angle: cfg.threshold_angle,
         overlap_distance: cfg.overlap_distance,
         wall_clearance: cfg.wall_clearance,
@@ -2907,7 +2918,7 @@ pub(crate) fn generate_steep_shallow(
         stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
-    let (tp, split) = crate::steep_shallow::steep_shallow_toolpath_split_with_cancel(
+    let (tp, split) = crate::finish::steep_shallow::steep_shallow_toolpath_split_with_cancel(
         m,
         idx,
         ctx.tool_def,
@@ -2920,7 +2931,7 @@ pub(crate) fn generate_steep_shallow(
     // halves in their emitted order and keep the steep half's Z ladder,
     // which is what lets `UnifiedFinish`-style intra-node reordering apply
     // here too (capability arm in `compute/catalog.rs`).
-    let spans = crate::steep_shallow::steep_shallow_spans(&tp, &split);
+    let spans = crate::finish::steep_shallow::steep_shallow_spans(&tp, &split);
     Ok(with_depth_run_annotation(
         generated_with_spans(tp, spans),
         ctx.semantic_ctx,
@@ -2937,7 +2948,7 @@ pub(crate) fn generate_ramp_finish(
     let cfg = config_guard!(op, RampFinish, "generate_ramp_finish");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "RampFinish")?;
-    let params = crate::ramp_finish::RampFinishParams {
+    let params = crate::finish::ramp_finish::RampFinishParams {
         max_stepdown: cfg.max_stepdown,
         slope_from: cfg.slope_from,
         slope_to: cfg.slope_to,
@@ -2951,7 +2962,7 @@ pub(crate) fn generate_ramp_finish(
         tolerance: cfg.tolerance,
     };
     let (tp, annotations, reach_clamp) =
-        crate::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
+        crate::finish::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
             m,
             idx,
             ctx.tool_def,
@@ -2990,7 +3001,7 @@ pub(crate) fn generate_spiral_finish(
     let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "SpiralFinish")?;
-    let params = crate::spiral_finish::SpiralFinishParams {
+    let params = crate::finish::spiral_finish::SpiralFinishParams {
         stepover: cfg.stepover,
         direction: cfg.direction,
         feed_rate: op.feed_rate(),
@@ -2999,7 +3010,7 @@ pub(crate) fn generate_spiral_finish(
         stock_to_leave: cfg.stock_to_leave,
     };
     let (tp, annotations) =
-        crate::spiral_finish::spiral_finish_toolpath_structured_annotated_with_cancel(
+        crate::finish::spiral_finish::spiral_finish_toolpath_structured_annotated_with_cancel(
             m,
             idx,
             ctx.tool_def,
@@ -3053,7 +3064,7 @@ pub(crate) fn generate_radial_finish(
     }
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "RadialFinish")?;
-    let params = crate::radial_finish::RadialFinishParams {
+    let params = crate::finish::radial_finish::RadialFinishParams {
         angular_step: cfg.angular_step,
         point_spacing: cfg.point_spacing,
         feed_rate: op.feed_rate(),
@@ -3061,7 +3072,7 @@ pub(crate) fn generate_radial_finish(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let tp = crate::radial_finish::radial_finish_toolpath_with_cancel(
+    let tp = crate::finish::radial_finish::radial_finish_toolpath_with_cancel(
         m,
         idx,
         ctx.tool_def,
@@ -3086,7 +3097,7 @@ pub(crate) fn generate_horizontal_finish(
     let cfg = config_guard!(op, HorizontalFinish, "generate_horizontal_finish");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "HorizontalFinish")?;
-    let params = crate::horizontal_finish::HorizontalFinishParams {
+    let params = crate::finish::horizontal_finish::HorizontalFinishParams {
         angle_threshold: cfg.angle_threshold,
         stepover: cfg.stepover,
         feed_rate: op.feed_rate(),
@@ -3094,7 +3105,7 @@ pub(crate) fn generate_horizontal_finish(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let tp = crate::horizontal_finish::horizontal_finish_toolpath_with_cancel(
+    let tp = crate::finish::horizontal_finish::horizontal_finish_toolpath_with_cancel(
         m,
         idx,
         ctx.tool_def,
@@ -3164,7 +3175,7 @@ pub(crate) fn generate_drop_cutter(
     // the mesh boundary.
     let min_z_filter = Some(effective_min_z);
     let slope_filter_active =
-        crate::finish_setup::slope_filter_active(cfg.slope_from, cfg.slope_to);
+        crate::finish::finish_setup::slope_filter_active(cfg.slope_from, cfg.slope_to);
     let feed_rate = op.feed_rate();
     let plunge_rate = op.plunge_rate();
     let safe_z = ctx.heights.retract_z;
@@ -3231,7 +3242,7 @@ pub(crate) fn generate_drop_cutter(
         Some(stage) => {
             let (tp, totals) = relink_in_adapter(
                 &stage,
-                &crate::surface_link::LinkGeometry {
+                &crate::finish::surface_link::LinkGeometry {
                     // The raster rides the drop-cutter grid itself, so there
                     // is no crest to stand off from and no separate leave
                     // dial on this op (`WaterlineConfig`'s
@@ -3308,7 +3319,7 @@ pub(crate) fn generate_waterline(
         Some(stage) => {
             let (tp, totals) = relink_in_adapter(
                 &stage,
-                &crate::surface_link::LinkGeometry {
+                &crate::finish::surface_link::LinkGeometry {
                     stock_to_leave: params.stock_to_leave,
                     sampling: cfg.sampling.max(0.01),
                     feed_rate: params.feed_rate,
@@ -3689,8 +3700,8 @@ fn attach_generic_rest_analysis(
 ) {
     let reference_tool = reference_tool_cfg.map(build_cutter);
     let probe_ball = crate::tool::BallEndmill::new(
-        crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-        crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+        crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+        crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
     );
     let reference = resolve_rest_reference(
         mesh,

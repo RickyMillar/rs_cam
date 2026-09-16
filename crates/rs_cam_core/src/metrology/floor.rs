@@ -34,8 +34,8 @@
 //! collapsed. This module keeps the F2 (both-bases) rule. On c1's umbilic
 //! fixtures the two rules coincide, so c1's numbers do not move.
 
+use crate::finish::scallop_math;
 use crate::mesh::TriangleMesh;
-use crate::scallop_math;
 
 /// Area-weighted percentiles of a per-triangle scalar. `pairs` is
 /// `(value, area)`.
@@ -246,7 +246,7 @@ mod tests {
             vec![[0, 1, 2], [0, 2, 3]],
         );
         let (radius, cusp) = (1.0, 0.03);
-        let flat = crate::scallop_math::stepover_from_scallop_flat(radius, cusp);
+        let flat = crate::finish::scallop_math::stepover_from_scallop_flat(radius, cusp);
         let report = region_floor(&mesh, None, radius, cusp, &|_, _| (0.0, 0.0));
         assert_eq!(report.degenerate, 0);
         assert!((report.area_mm2 - 100.0).abs() < 1e-9);

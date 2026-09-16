@@ -32,10 +32,10 @@
 //! boundary. Feeds were per-instrument constants and ride
 //! [`CostingFeeds`].
 
+use crate::finish::surface_link::LinkCeiling;
 use crate::geometry::region_set::RegionSet;
 use crate::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::surface_link::LinkCeiling;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -180,7 +180,7 @@ pub fn relink_and_cost_under(
         max_feed_mm_min: ctx.feeds.max_feed_mm_min,
         rapid_feed_mm_min: ctx.feeds.rapid_feed_mm_min,
     });
-    let params = crate::surface_link::RelinkParams {
+    let params = crate::finish::surface_link::RelinkParams {
         hookup_distance: 25.0,
         stock_to_leave: 0.0,
         sampling: 0.5,
@@ -194,7 +194,7 @@ pub fn relink_and_cost_under(
         flush_ride: regime.flush_ride,
         airborne_links_may_leave_territory: regime.airborne,
     };
-    let (linked, report) = crate::surface_link::relink_fragments(
+    let (linked, report) = crate::finish::surface_link::relink_fragments(
         crate::trace::toolpath_spans::AnnotatedToolpath::new(raw),
         ctx.mesh,
         ctx.index,

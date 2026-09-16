@@ -41,27 +41,27 @@ mod common;
 use common::scallop_oracle::{EnvelopeOracle, OracleGrid, OracleParams, StampKernel};
 
 use rayon::prelude::*;
-use rs_cam_core::classify_probe::ClassificationSampler;
-use rs_cam_core::finish_planner::{FinishPlannerParams, decompose};
-use rs_cam_core::finish_setup::{
+use rs_cam_core::finish::classify_probe::ClassificationSampler;
+use rs_cam_core::finish::finish_planner::{FinishPlannerParams, decompose};
+use rs_cam_core::finish::finish_setup::{
     FinishResolutionPolicy, build_classification_surface_with_sampler_and_cancel,
 };
-use rs_cam_core::geo::P3;
-use rs_cam_core::geometry::region_set::RegionSet;
-use rs_cam_core::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::scallop::{
+use rs_cam_core::finish::scallop::{
     RingSource, ScallopDirection, ScallopParams, ScallopRingBudget, ScallopStepoverPolicy,
     StepoverGeometry, scallop_generation_resolution, scallop_toolpath_research,
     scallop_toolpath_structured_annotated_with_cancel,
     scallop_toolpath_structured_annotated_with_resolution_and_ring_budget,
 };
-use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
-use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
-use rs_cam_core::unified_finish::{
+use rs_cam_core::finish::unified_finish::{
     UnifiedFinishParams, unified_finish_classification_resolution,
     unified_finish_toolpath_with_cancel,
 };
+use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::region_set::RegionSet;
+use rs_cam_core::machine::kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
+use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
 const WANAKA_MESH: &str = "/home/ricky/Downloads/wanaka200/rivmap_export/terrain.stl";
 

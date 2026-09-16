@@ -11,7 +11,7 @@
 //!
 //! | stage | contract item | what it prints |
 //! |---|---|---|
-//! | **F1-A** | 1, 4 | the full [`rs_cam_core::direction_field::FieldReport`] plus the **cheap falsifier**: total polylines vs the 141-fragment PCA-cell reference |
+//! | **F1-A** | 1, 4 | the full [`rs_cam_core::finish::direction_field::FieldReport`] plus the **cheap falsifier**: total polylines vs the 141-fragment PCA-cell reference |
 //! | **F1-B** | 6 | one SVG of every iso-curve over the captured boundary |
 //! | **F1-C** | 3 | measured spacing between adjacent levels vs the target stepover — geometry only, no simulation |
 //! | **F1-D** | 1, 2, 4 | contact→cutter-centre conversion, a boundary containment proof, and the F-034 cost |
@@ -49,7 +49,7 @@
 //!   (committed `7f341f9d`) and takes `t₁` from the **shape operator's**
 //!   eigenvector — see [`fit_from_derivatives`].
 //! * **The solve runs through
-//!   [`rs_cam_core::direction_field::solve_paths_with_target`]**, not
+//!   [`rs_cam_core::finish::direction_field::solve_paths_with_target`]**, not
 //!   `solve_field_paths`. That is the entry point the module header reserves
 //!   for exactly this ("how the F1 evidence instrument substitutes an
 //!   externally-computed field"), and it buys two things: the direction the
@@ -153,7 +153,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use rs_cam_core::direction_field::{self, FieldPathResult, FieldReport};
+use rs_cam_core::finish::direction_field::{self, FieldPathResult, FieldReport};
 use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 use rs_cam_core::metrology::costing::{
@@ -2288,7 +2288,7 @@ struct SolveOutcome {
 /// array. A lookup outside `geom` yields a zero field rather than a panic.
 ///
 /// Every arm calls
-/// [`rs_cam_core::direction_field::solve_paths_with_target`] with the same
+/// [`rs_cam_core::finish::direction_field::solve_paths_with_target`] with the same
 /// magnitudes and the same lift; the patch list is the only thing that moves.
 fn solve_segmented(
     mesh: &TriangleMesh,

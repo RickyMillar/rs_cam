@@ -49,9 +49,9 @@ use std::collections::HashMap;
 use nalgebra::{Matrix3, Matrix4, Vector3 as NaVector3, Vector4};
 use tracing::info;
 
+use crate::finish::pencil_dihedral::EdgeKey;
 use crate::geo::{P3, V3, polyline_length};
 use crate::mesh::TriangleMesh;
-use crate::pencil_dihedral::EdgeKey;
 
 /// Tunables for curvature-based valley detection.
 #[derive(Debug, Clone)]
@@ -91,13 +91,13 @@ impl Default for CrestParams {
 /// orientation across a triangle), both signed principal curvatures (κ₁ ≥ κ₂,
 /// for the concave-dominance test), and the minimal-curvature extremality.
 ///
-/// `pub(crate)` (with `pdir1` added) so [`crate::direction_field`] can read the
+/// `pub(crate)` (with `pdir1` added) so [`crate::finish::direction_field`] can read the
 /// same Rusinkiewicz tensor rather than duplicating it — the valley march
 /// itself needs only t₂, but a feed-direction field needs t₁.
 pub(crate) struct Curvature {
     /// Maximal principal direction (t₁) per vertex — the direction of maximum
     /// **signed** normal curvature, paired with `k1`. Not read by the valley
-    /// march; carried for [`crate::direction_field`].
+    /// march; carried for [`crate::finish::direction_field`].
     pub(crate) pdir1: Vec<V3>,
     /// Minimal principal direction (t₂) per vertex.
     pub(crate) pdir2: Vec<V3>,
@@ -955,8 +955,8 @@ mod tests {
             &mesh,
             &index,
             cell,
-            crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-            crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+            crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+            crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
         );
         let (nx, ny) = (dem.nx, dem.ny);
 

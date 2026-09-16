@@ -80,24 +80,24 @@
 
 use std::time::Instant;
 
-use rs_cam_core::finish_setup::{
+use rs_cam_core::finish::finish_setup::{
     FinishResolutionMode, FinishResolutionPolicy, FinishSurface,
     build_finish_surface_with_policy_and_cancel,
 };
-use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::ramp_finish::{
+use rs_cam_core::finish::ramp_finish::{
     RampFinishParams, ramp_finish_generation_resolution,
     ramp_finish_toolpath_structured_annotated_with_resolution,
 };
-use rs_cam_core::scallop::{
+use rs_cam_core::finish::scallop::{
     ScallopParams, ScallopRingBudget, ScallopRuntimeAnnotation, scallop_generation_resolution,
     scallop_toolpath_structured_annotated_with_resolution,
     scallop_toolpath_structured_annotated_with_resolution_and_ring_budget,
 };
-use rs_cam_core::steep_shallow::{
+use rs_cam_core::finish::steep_shallow::{
     SteepShallowParams, steep_shallow_toolpath_split_with_resolution,
 };
+use rs_cam_core::geo::P3;
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::Toolpath;
 
@@ -1442,8 +1442,11 @@ fn the_three_ring_budgets_are_three_different_numbers() {
     let params = scallop_params();
     let cusp_r = t.cusp_radius_mm();
     let clamp_floor = cusp_r * 0.05;
-    let flat = rs_cam_core::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
-        .max(clamp_floor);
+    let flat = rs_cam_core::finish::scallop_math::stepover_from_scallop_flat(
+        cusp_r,
+        params.scallop_height,
+    )
+    .max(clamp_floor);
     let reach = rs_cam_core::surface::reach::suggested_offset_stepover_mm(&t, 0.0).max(clamp_floor);
     assert!(
         clamp_floor < reach && reach < flat,

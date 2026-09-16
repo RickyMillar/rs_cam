@@ -91,7 +91,8 @@ impl ProjectSession {
             .and_then(|stepover_mm| {
                 let tool = self.find_tool_by_raw_id(tc.tool_id)?;
                 let tip_radius_mm = tip_sphere_radius_mm(&build_cutter(tool))?;
-                let cusp = crate::scallop_math::scallop_height_flat(tip_radius_mm, stepover_mm);
+                let cusp =
+                    crate::finish::scallop_math::scallop_height_flat(tip_radius_mm, stepover_mm);
                 cusp.is_finite().then_some((
                     cusp,
                     ReachToleranceSource::CuspOfStepover {

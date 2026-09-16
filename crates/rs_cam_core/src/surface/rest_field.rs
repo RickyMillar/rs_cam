@@ -130,7 +130,7 @@ pub struct RestFieldParams {
     /// pencil_radius` rule PR-4 documented and PR-5 retired.
     ///
     /// Pass the same value the caller hands
-    /// [`crate::crease_paths::centerline_cut_paths`]; a mismatch means the
+    /// [`crate::finish::crease_paths::centerline_cut_paths`]; a mismatch means the
     /// detector routes against a fan nobody emits.
     pub offset_stepover_mm: f64,
     /// Offset passes per side the caller is permitted to emit — the CAP, not
@@ -317,7 +317,7 @@ impl RestGrid {
 /// [`region_polygons_from_mask`] dilates), sampled along the ridge's cells,
 /// converted to mm. It is the same "how wide is the rest material here"
 /// metric the pencil/clearing routing decision uses, and lets
-/// [`crate::pencil::rest_depth_arm`] size its offset-pass count to the local
+/// [`crate::finish::pencil::rest_depth_arm`] size its offset-pass count to the local
 /// valley width instead of a fixed count everywhere. `0.0` where a ridge cell
 /// sits just outside the mask — the ridge's hysteresis LO floor (`0.5 ×
 /// min_valley_depth`) is below the mask's own threshold, so a ridge can dip
@@ -341,8 +341,8 @@ pub struct RestCenterline {
     ///
     /// Not serialized: `RestCenterline` has no `serde` derive and reaches no
     /// project file or wire format. It is consumed in-process by
-    /// [`crate::crease_paths::centerline_cut_paths`] and
-    /// [`crate::finish_planner`] and is rebuilt on every generate. Audited at
+    /// [`crate::finish::crease_paths::centerline_cut_paths`] and
+    /// [`crate::finish::finish_planner`] and is rebuilt on every generate. Audited at
     /// PR-4 — if that ever changes, this vector is the field that has to
     /// carry a schema note.
     pub samples: Vec<CenterlineSample>,
@@ -1465,7 +1465,7 @@ const NMS_PROMINENCE_FLOOR_MM: f64 = 0.005;
 /// Consequence worth knowing: a V-groove made of two PLANES has a constant
 /// rest field (no ridge at all — the crease is a plateau edge, not a local
 /// maximum), so the RestDepth detector intentionally traces nothing along
-/// it; clean CAD plane-wall creases are the [`crate::pencil_dihedral`]
+/// it; clean CAD plane-wall creases are the [`crate::finish::pencil_dihedral`]
 /// detector's home turf. Bridged channels/creases on relief — where the
 /// reference ball spans the feature and floats — are exactly where this
 /// detector shines.
@@ -1865,7 +1865,7 @@ fn trace_skeleton(skel: &Grid2<bool>) -> Vec<Vec<usize>> {
 
 /// Shared hillshade-rendering support for the opt-in, fixture-driven visual
 /// test harnesses in this module (`render_restfield_hillshade`) and in
-/// [`crate::crest_lines`] (`render_crest_hillshade`). Both drop a tiny probe
+/// [`crate::finish::crest_lines`] (`render_crest_hillshade`). Both drop a tiny probe
 /// ball on a grid over a real mesh, NW-lit-shade the resulting DEM into a
 /// PNG, and overlay algorithm output (centerlines / valley lines) as bright
 /// plus-marks. `#[cfg(test)] pub(crate)` so both modules' `--ignored`
@@ -1891,8 +1891,8 @@ pub(crate) mod hillshade_test_util {
     impl HillshadeDem {
         /// Build a DEM by dropping a `probe_diameter`mm / `probe_length`mm
         /// ball across `mesh`'s bbox on a `cell`mm grid (typically the
-        /// canonical [`crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM`] /
-        /// [`crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM`] pair).
+        /// canonical [`crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM`] /
+        /// [`crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM`] pair).
         pub(crate) fn build(
             mesh: &TriangleMesh,
             index: &SpatialIndex,
@@ -2717,15 +2717,21 @@ mod tests {
 
         let mesh = TriangleMesh::from_stl(std::path::Path::new(&path)).unwrap();
         let index = SpatialIndex::build_auto(&mesh);
-        let pencil = BallEndmill::new(pencild, crate::pencil::NOMINAL_REFERENCE_BALL_LENGTH_MM);
+        let pencil = BallEndmill::new(
+            pencild,
+            crate::finish::pencil::NOMINAL_REFERENCE_BALL_LENGTH_MM,
+        );
         let probe_mode = refd <= pencild + 1e-6;
         let reference = if probe_mode {
             BallEndmill::new(
-                crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-                crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+                crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+                crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
             )
         } else {
-            BallEndmill::new(refd, crate::pencil::NOMINAL_REFERENCE_BALL_LENGTH_MM)
+            BallEndmill::new(
+                refd,
+                crate::finish::pencil::NOMINAL_REFERENCE_BALL_LENGTH_MM,
+            )
         };
 
         let params = RestFieldParams {
@@ -2750,8 +2756,8 @@ mod tests {
             &mesh,
             &index,
             cell,
-            crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-            crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+            crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+            crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
         );
         let (gnx, gny) = (dem.nx, dem.ny);
         let mut img = dem.render();

@@ -96,13 +96,13 @@
 mod common;
 
 use common::meshes::height_field;
-use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams};
+use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams};
+use rs_cam_core::finish::unified_finish::{
+    UnifiedFinishParams, UnifiedFinishReport, unified_finish_toolpath_with_cancel,
+};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
-use rs_cam_core::unified_finish::{
-    UnifiedFinishParams, UnifiedFinishReport, unified_finish_toolpath_with_cancel,
-};
 
 // ── Constants ────────────────────────────────────────────────────────────
 

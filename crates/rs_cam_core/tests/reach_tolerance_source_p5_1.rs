@@ -82,7 +82,7 @@ fn a_raster_finish_takes_the_cusp_of_its_own_stepover() {
     let (tolerance, source) = session.reach_tolerance_for(0);
 
     let expected =
-        rs_cam_core::scallop_math::scallop_height_flat(WANAKA_TIP_R_MM, WANAKA_STEPOVER_MM);
+        rs_cam_core::finish::scallop_math::scallop_height_flat(WANAKA_TIP_R_MM, WANAKA_STEPOVER_MM);
     assert!(
         (expected - 0.146).abs() < 0.001,
         "the fixture must reproduce the reported 0.146 mm; the closed form gives \
@@ -140,7 +140,7 @@ fn a_flat_tip_keeps_the_default_however_coarse_its_stepover() {
     // The trap this guards: `cusp_radius_mm()` on the same tool is 3.0, and a
     // cusp derived from THAT would be a plausible-looking 0.19 mm.
     let flat_cusp_radius = rs_cam_core::tool::FlatEndmill::new(6.0, 25.0).cusp_radius_mm();
-    let wrong = rs_cam_core::scallop_math::scallop_height_flat(flat_cusp_radius, 3.0);
+    let wrong = rs_cam_core::finish::scallop_math::scallop_height_flat(flat_cusp_radius, 3.0);
     assert!(
         wrong > 0.15,
         "the fixture must be one where the WRONG rule gives a distinctly \
@@ -188,7 +188,7 @@ fn a_fine_stepover_does_not_tighten_the_bar_below_the_default() {
         tapered_ball_tool_config(2.0 * WANAKA_TIP_R_MM, 3.0, 6.0),
         drop_cutter(0.3, None),
     );
-    let cusp = rs_cam_core::scallop_math::scallop_height_flat(WANAKA_TIP_R_MM, 0.3);
+    let cusp = rs_cam_core::finish::scallop_math::scallop_height_flat(WANAKA_TIP_R_MM, 0.3);
     assert!(
         cusp < DEFAULT_REACH_TOLERANCE_MM,
         "the fixture must have a cusp under the default; got {cusp:.5}"

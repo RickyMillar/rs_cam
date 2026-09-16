@@ -15,7 +15,7 @@
 //! 4. Interpolate between matched contours to create continuous helical descent
 //! 5. Apply slope confinement to restrict to steep regions
 
-use crate::finish_setup::FinishResolutionPolicy;
+use crate::finish::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -146,7 +146,7 @@ impl RampReachClamp {
     /// from the code that fills it, and this number's whole failure mode is
     /// being read as something it is not.
     ///
-    /// Follows [`crate::scallop::ScallopReport::PROVENANCE`]'s shape and
+    /// Follows [`crate::finish::scallop::ScallopReport::PROVENANCE`]'s shape and
     /// deliberately NOT its content: that one is a ring-cascade residual
     /// measured from polygons, this one is the swath a PATH sweeps.
     pub(crate) const AREA_PROVENANCE: crate::measurement::MeasurementProvenance =
@@ -401,7 +401,7 @@ fn ramp_between_contours(
 
 /// The resolution policy ramp-finish generates on (H3 step 2; moved by PR-8a).
 ///
-/// RampFinish selects [`crate::finish_setup::FinishResolutionMode::GeoMeanEnvelopeCusp`] — the
+/// RampFinish selects [`crate::finish::finish_setup::FinishResolutionMode::GeoMeanEnvelopeCusp`] — the
 /// geometric mean of `envelope/4` and `cusp/4`. It selected
 /// `LegacyEnvelopeQuarter` until PR-8a, under the approved Checkpoint B.
 ///
@@ -524,7 +524,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
 /// generation grid resolution supplied by the caller.
 ///
 /// **Research seam, not a production entry point** — see
-/// [`crate::scallop::scallop_toolpath_structured_annotated_with_resolution`]
+/// [`crate::finish::scallop::scallop_toolpath_structured_annotated_with_resolution`]
 /// for why H3's Checkpoint B harness needs one. Passing
 /// `ramp_finish_generation_resolution(cutter, params.tolerance)` reproduces
 /// the shipped path exactly.
@@ -596,7 +596,8 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     // exactly at `z_bottom` (needed so the final terrace's lower contour is
     // the true bottom, not an arbitrary short-of-bottom level); epsilon is
     // half a step, matching the original inline arithmetic exactly.
-    let z_levels = crate::finish_setup::z_ladder(z_top, z_bottom, z_step, z_step * 0.5, true);
+    let z_levels =
+        crate::finish::finish_setup::z_ladder(z_top, z_bottom, z_step, z_step * 0.5, true);
 
     if z_levels.len() < 2 {
         info!("Ramp finish: insufficient Z range for ramping");
@@ -627,7 +628,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     let slope_from_rad = params.slope_from.to_radians();
     let slope_to_rad = params.slope_to.to_radians();
     let use_slope_filter =
-        crate::finish_setup::slope_filter_active(params.slope_from, params.slope_to);
+        crate::finish::finish_setup::slope_filter_active(params.slope_from, params.slope_to);
 
     // Step length for ramp point generation (controls output resolution)
     let step_len = cell_size * 2.0;

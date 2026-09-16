@@ -16,7 +16,7 @@
 
 use std::ops::Range;
 
-use crate::finish_setup::FinishResolutionPolicy;
+use crate::finish::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -205,11 +205,11 @@ fn generate_steep_passes_with_cancel(
     // `snap_to_bottom = false`: matches the prior inline loop exactly — the
     // ladder is not guaranteed to land exactly on `z_bottom` when the range
     // isn't a whole multiple of `z_step` (see finish_setup::z_ladder docs).
-    let z_levels = crate::finish_setup::z_ladder(
+    let z_levels = crate::finish::finish_setup::z_ladder(
         z_top,
         z_bottom,
         z_step,
-        crate::finish_setup::Z_LADDER_DEFAULT_EPSILON,
+        crate::finish::finish_setup::Z_LADDER_DEFAULT_EPSILON,
         false,
     );
     for z in z_levels {
@@ -691,7 +691,7 @@ pub fn steep_shallow_toolpath_split_with_cancel(
 /// resolution supplied by the caller.
 ///
 /// **Research seam, not a production entry point** — see
-/// [`crate::scallop::scallop_toolpath_structured_annotated_with_resolution`]
+/// [`crate::finish::scallop::scallop_toolpath_structured_annotated_with_resolution`]
 /// for why H3's Checkpoint B harness needs one. This op is the one where the
 /// cell also decides CLASSIFICATION (steep vs shallow is read off this same
 /// grid), so it is the sharpest of the three arms. Passing

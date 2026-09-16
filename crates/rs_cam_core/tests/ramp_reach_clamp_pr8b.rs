@@ -44,12 +44,12 @@
 
 use rs_cam_core::compute::config::ToolpathStats;
 use rs_cam_core::diagnostics::{Severity, ids};
+use rs_cam_core::finish::ramp_finish::{
+    RampFinishParams, RampReachClamp, ramp_finish_toolpath_structured_annotated,
+};
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::ramp_finish::{
-    RampFinishParams, RampReachClamp, ramp_finish_toolpath_structured_annotated,
-};
 use rs_cam_core::surface::reach::{LocalValley, ValleySide, solve_reach};
 use rs_cam_core::tool::{BallEndmill, TaperedBallEndmill};
 
@@ -417,7 +417,7 @@ fn the_clamp_measures_the_area_it_leaves_standing() {
     );
     assert_ne!(
         provenance,
-        rs_cam_core::scallop::ScallopReport::PROVENANCE,
+        rs_cam_core::finish::scallop::ScallopReport::PROVENANCE,
         "a path swath is not a ring-cascade residual; the two must never be \
          summed or ratio'd"
     );

@@ -256,7 +256,7 @@ fn crease_fixture(
 /// whether a crease becomes its own planned region.
 #[test]
 fn the_crease_threshold_decides_own_region_ownership() {
-    use rs_cam_core::finish_planner::{FinishPlannerParams, decompose};
+    use rs_cam_core::finish::finish_planner::{FinishPlannerParams, decompose};
 
     // Shipped dials for the Ø1-tip taper: `for_tool(cusp_radius)`.
     let t = taper();
@@ -321,7 +321,9 @@ fn the_crease_threshold_decides_own_region_ownership() {
 /// Pencil). See `FinishPlannerParams::crease_own_region_half_width_mm`.
 #[test]
 fn the_threshold_is_cusp_scale_not_envelope_scale() {
-    use rs_cam_core::finish_planner::{CREASE_OWN_REGION_K, FinishPlannerParams, decompose};
+    use rs_cam_core::finish::finish_planner::{
+        CREASE_OWN_REGION_K, FinishPlannerParams, decompose,
+    };
 
     let t = taper();
     let params = FinishPlannerParams::for_tool(t.cusp_radius());

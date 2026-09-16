@@ -555,7 +555,7 @@ pub(super) enum ScallopRegionGrouping {
 /// Rings with no region wrapper — the pre-C8 shape, kept for sub-generator
 /// callers. See [`ScallopRegionGrouping`].
 fn annotate_scallop_rings_flat(
-    events: &[crate::scallop::ScallopRuntimeAnnotation],
+    events: &[crate::finish::scallop::ScallopRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
@@ -563,7 +563,7 @@ fn annotate_scallop_rings_flat(
     let tp_len = toolpath.moves.len();
     for (i, ann) in events.iter().enumerate() {
         let end = move_end(&move_indices, i, tp_len);
-        let crate::scallop::ScallopRuntimeEvent::Ring {
+        let crate::finish::scallop::ScallopRuntimeEvent::Ring {
             ring_index,
             ring_total,
             continuous,
@@ -599,7 +599,7 @@ fn annotate_scallop_rings_flat(
 /// Rings keep their global index in their label, so an operator comparing
 /// narration against the GUI span list still sees the same numbering.
 pub(super) fn annotate_scallop(
-    events: &[crate::scallop::ScallopRuntimeAnnotation],
+    events: &[crate::finish::scallop::ScallopRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
     group_by_region: ScallopRegionGrouping,
@@ -619,8 +619,8 @@ pub(super) fn annotate_scallop(
     // region order (and reversed wholesale for `InsideOut`), so consecutive
     // grouping reproduces the generator's own partition without assuming
     // the regions arrive in index order.
-    let region_of = |ann: &crate::scallop::ScallopRuntimeAnnotation| {
-        let crate::scallop::ScallopRuntimeEvent::Ring {
+    let region_of = |ann: &crate::finish::scallop::ScallopRuntimeAnnotation| {
+        let crate::finish::scallop::ScallopRuntimeEvent::Ring {
             region_index,
             region_total,
             ..
@@ -659,7 +659,7 @@ pub(super) fn annotate_scallop(
         for (k, ann) in events.iter().enumerate().take(j).skip(i) {
             let end = move_end(&move_indices, k, tp_len);
 
-            let crate::scallop::ScallopRuntimeEvent::Ring {
+            let crate::finish::scallop::ScallopRuntimeEvent::Ring {
                 ring_index,
                 ring_total,
                 continuous,
@@ -694,12 +694,12 @@ pub(super) fn annotate_scallop(
 /// one operation whose entire premise is mixing strategies.
 ///
 /// Both systems are built from the same
-/// [`crate::unified_finish::RegionAnnotation`] table, and
+/// [`crate::finish::unified_finish::RegionAnnotation`] table, and
 /// `tests/unified_finish_semantic_regions.rs` asserts they agree on count
 /// and move range. This is annotation only: no move is added, removed, or
 /// moved.
 pub(super) fn annotate_unified_finish_regions(
-    regions: &[crate::unified_finish::RegionAnnotation],
+    regions: &[crate::finish::unified_finish::RegionAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
@@ -741,7 +741,7 @@ pub(super) fn annotate_unified_finish_regions(
 // ── RampFinish ──────────────────────────────────────────────────────
 
 pub(super) fn annotate_ramp_finish(
-    events: &[crate::ramp_finish::RampFinishRuntimeAnnotation],
+    events: &[crate::finish::ramp_finish::RampFinishRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
@@ -755,7 +755,7 @@ pub(super) fn annotate_ramp_finish(
     for (i, ann) in events.iter().enumerate() {
         let end = move_end(&move_indices, i, tp_len);
 
-        let crate::ramp_finish::RampFinishRuntimeEvent::Ramp {
+        let crate::finish::ramp_finish::RampFinishRuntimeEvent::Ramp {
             terrace_index,
             terrace_total,
             upper_level_index,
@@ -805,7 +805,7 @@ pub(super) fn annotate_ramp_finish(
 /// [`annotate_scallop`]: inventing a per-boundary partition here would
 /// report a structure the generator does not have.
 pub(super) fn annotate_spiral_finish(
-    events: &[crate::spiral_finish::SpiralFinishRuntimeAnnotation],
+    events: &[crate::finish::spiral_finish::SpiralFinishRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
@@ -834,7 +834,7 @@ pub(super) fn annotate_spiral_finish(
     for (i, ann) in events.iter().enumerate() {
         let end = move_end(&move_indices, i, tp_len);
 
-        let crate::spiral_finish::SpiralFinishRuntimeEvent::Ring {
+        let crate::finish::spiral_finish::SpiralFinishRuntimeEvent::Ring {
             ring_index,
             ring_total,
             radius_mm,
@@ -857,7 +857,7 @@ pub(super) fn annotate_spiral_finish(
 // ── Pencil ──────────────────────────────────────────────────────────
 
 pub(super) fn annotate_pencil(
-    events: &[crate::pencil::PencilRuntimeAnnotation],
+    events: &[crate::finish::pencil::PencilRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
@@ -871,7 +871,7 @@ pub(super) fn annotate_pencil(
     for (i, ann) in events.iter().enumerate() {
         let end = move_end(&move_indices, i, tp_len);
 
-        let crate::pencil::PencilRuntimeEvent::OffsetPass {
+        let crate::finish::pencil::PencilRuntimeEvent::OffsetPass {
             chain_index,
             chain_total,
             offset_index,

@@ -1,11 +1,11 @@
 //! Mesh-dihedral crease detection for pencil finishing (detector #1, the
-//! historical default — see [`crate::pencil::PencilDetector::Dihedral`]).
+//! historical default — see [`crate::finish::pencil::PencilDetector::Dihedral`]).
 //!
 //! Robust on clean CAD-style meshes with sharp internal corners: it detects
 //! edges where two faces meet at a concave angle below the bitangency
 //! threshold, then chains connected concave edges into polylines via graph
 //! traversal. On dense noisy relief it fires on every triangulation crease
-//! and fragments — see [`crate::crest_lines`] (curvature crest lines) or
+//! and fragments — see [`crate::finish::crest_lines`] (curvature crest lines) or
 //! [`crate::surface::rest_field`] (the tool-radius-aware rest-depth field) for the
 //! organic-relief alternatives.
 //!
@@ -18,7 +18,7 @@
 //!    nestles into asymmetric corners.
 //!
 //! The rest-depth gate, path ordering, and toolpath emission are detector-
-//! agnostic and stay in [`crate::pencil`] as the shared pipeline.
+//! agnostic and stay in [`crate::finish::pencil`] as the shared pipeline.
 
 use std::collections::HashMap;
 
