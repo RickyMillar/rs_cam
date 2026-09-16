@@ -84,12 +84,6 @@ fn path_in(dir: &Path, name: &str) -> Result<PathBuf, MachineLibraryError> {
     Ok(dir.join(format!("{name}.toml")))
 }
 
-/// Path to the `.toml` for `name` in the resolved library dir.
-pub fn path_for(name: &str) -> Result<PathBuf, MachineLibraryError> {
-    let dir = library_dir().ok_or(MachineLibraryError::NoLibraryDir)?;
-    path_in(&dir, name)
-}
-
 /// List the machine names (file stems) available in `dir`. Missing dir
 /// returns an empty list (not an error).
 pub fn list_in(dir: &Path) -> Vec<String> {
