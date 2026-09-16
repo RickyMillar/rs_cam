@@ -73,11 +73,6 @@ struct ToolpathDiagnostic<'a> {
     /// *standing*, the number means *untouched*). `null` = **not measured**
     /// (this operation runs no ring cascade), never "nothing left uncut".
     truncated_core_mm2: Option<f64>,
-    /// A6 compatibility duplicate: the SAME value as
-    /// [`Self::truncated_core_mm2`] under the pre-rename key, kept so
-    /// existing scripts reading this report keep working. Deprecated; it
-    /// carries no independent meaning and will not gain one.
-    standing_material_mm2: Option<f64>,
     /// B8: hole-aware sibling of [`Self::truncated_core_mm2`] — the same
     /// truncated core with islands netted out. `null` = not measured.
     untouched_material_mm2: Option<f64>,
@@ -159,8 +154,6 @@ impl<'a> ToolpathDiagnostic<'a> {
             rapid_collision_count: *rapid_collision_count,
             min_safe_stickout,
             truncated_core_mm2: *truncated_core_mm2,
-            // A6: same value, pre-rename key, for existing readers.
-            standing_material_mm2: *truncated_core_mm2,
             untouched_material_mm2: *untouched_material_mm2,
             reached_uncut_estimate_mm2: *reached_uncut_estimate_mm2,
             unmachined_band_area_mm2: *unmachined_band_area_mm2,
@@ -189,10 +182,6 @@ struct ProjectSummary {
     total_cutting_distance_mm: f64,
     total_rapid_distance_mm: f64,
     total_runtime_s: f64,
-    /// Legacy key, unchanged value: identical to
-    /// `air_cut_pct_of_total_runtime`. Kept so existing scripts reading this
-    /// report keep working.
-    air_cut_percentage: f64,
     /// LH-1: air cut over TOTAL runtime (cutting + rapids) - the measure
     /// every threshold in the codebase uses. The cutting-time reading of the
     /// same seconds ships beside it so neither travels unnamed.
@@ -591,7 +580,6 @@ pub fn run_project_command(
         total_cutting_distance_mm: total_cutting,
         total_rapid_distance_mm: total_rapid,
         total_runtime_s: diag.total_runtime_s,
-        air_cut_percentage: diag.air_cut_percentage,
         air_cut_pct_of_total_runtime: diag.air_cut_pct_of_total_runtime,
         air_cut_pct_of_cutting_time: diag.air_cut_pct_of_cutting_time,
         average_engagement: diag.average_engagement,
@@ -1056,7 +1044,6 @@ mod tests {
   "rapid_collision_count": 2,
   "min_safe_stickout": 21.5,
   "truncated_core_mm2": 12.5,
-  "standing_material_mm2": 12.5,
   "untouched_material_mm2": 9.75,
   "reached_uncut_estimate_mm2": 1.5,
   "unmachined_band_area_mm2": 3.25,
@@ -1091,9 +1078,6 @@ mod tests {
         let json = serde_json::to_string(&record).unwrap();
         for key in [
             "truncated_core_mm2",
-            // A6: the compatibility duplicate obeys the same contract — an
-            // unmeasured channel must be `null` under BOTH keys.
-            "standing_material_mm2",
             "untouched_material_mm2",
             "reached_uncut_estimate_mm2",
             "unmachined_band_area_mm2",

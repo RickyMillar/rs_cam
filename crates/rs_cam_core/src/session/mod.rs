@@ -1197,9 +1197,8 @@ pub struct ToolpathDiagnostic {
     /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`], which
     /// carries the wave-16 rename (A6) and the vocabulary it fixes.
     ///
-    /// The wire emits this under BOTH `truncated_core_mm2` and the legacy
-    /// key `standing_material_mm2`, same value — see the `Serialize` impl.
-    /// Report-only: no verdict reads it.
+    /// L5 retired the duplicate key `standing_material_mm2`, which named
+    /// the wrong quantity. Report-only: no verdict reads this.
     pub truncated_core_mm2: Option<f64>,
     /// B8 (Checkpoint E): the hole-aware sibling of
     /// [`Self::truncated_core_mm2`], off
@@ -1394,12 +1393,6 @@ pub struct Verdict {
 #[derive(Debug, Clone)]
 pub struct ProjectDiagnostics {
     pub total_runtime_s: f64,
-    /// Legacy name, unchanged value: identical to
-    /// [`Self::air_cut_pct_of_total_runtime`]. Kept so the MCP wire key
-    /// `air_cut_percentage` and its consumers keep working; new code should
-    /// read one of the two named fields below so the denominator is visible
-    /// at the call site (`MEASUREMENT_DOMAINS.md` LH-1).
-    pub air_cut_percentage: f64,
     /// Air-cut time ÷ **total runtime (cutting + rapids)** × 100.
     /// The measure every shipped threshold is tuned against — the GUI's 40%
     /// banner, the CLI's 40% verdict, and
@@ -1414,10 +1407,6 @@ pub struct ProjectDiagnostics {
     pub collision_count: usize,
     pub rapid_collision_count: usize,
     pub per_toolpath: Vec<ToolpathDiagnostic>,
-    /// Legacy single-line verdict. Derived from the highest-severity entry
-    /// in [`Self::verdicts`]; `"OK"` when no verdicts fire. Kept for old
-    /// consumers — new code should read `verdicts` directly.
-    pub verdict: String,
     /// Severity-ranked list of structured verdicts (critical → polish).
     /// Empty when the project has no findings.
     pub verdicts: Vec<Verdict>,
@@ -2100,16 +2089,6 @@ impl serde::Serialize for ToolpathDiagnostic {
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
         // `null` = not measured (A/M9). Consumers must not coerce it to 0.
         s.serialize_field("truncated_core_mm2", &self.truncated_core_mm2)?;
-        // Wave 16 / A6 compatibility: the SAME value under the pre-rename
-        // key. This wire is Serialize-only, so `serde(alias)` — the read-side
-        // mechanism the ruling names — has nothing to attach to here; the
-        // emit-side equivalent is to keep publishing the old key until
-        // consumers move. New readers must take `truncated_core_mm2`; the
-        // duplicate is deprecated and carries no independent meaning.
-        // A reader must NOT put a `serde(alias)` over both — the field would
-        // arrive twice and serde rejects it (pinned in
-        // `tests/standing_material_channel_am9.rs`).
-        s.serialize_field("standing_material_mm2", &self.truncated_core_mm2)?;
         // B8: the untouched/standing split narration has carried since wave
         // 15. `null` = not measured on both. `reached_uncut_estimate_mm2` is
         // an ESTIMATOR of a DIFFERENT quantity — never sum it with the core.
@@ -2177,12 +2156,10 @@ impl serde::Serialize for Verdict {
 impl serde::Serialize for ProjectDiagnostics {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ProjectDiagnostics", 10)?;
+        let mut s = serializer.serialize_struct("ProjectDiagnostics", 8)?;
         s.serialize_field("total_runtime_s", &self.total_runtime_s)?;
-        // LH-1: the legacy key keeps its (total-runtime) value for wire
-        // compatibility; the two named keys beside it say which denominator
-        // each number used, so an agent never has to guess.
-        s.serialize_field("air_cut_percentage", &self.air_cut_percentage)?;
+        // LH-1: each key names its own denominator, so a reader never
+        // has to guess. L10 retired the unnamed `air_cut_percentage`.
         s.serialize_field(
             "air_cut_pct_of_total_runtime",
             &self.air_cut_pct_of_total_runtime,
@@ -2195,7 +2172,6 @@ impl serde::Serialize for ProjectDiagnostics {
         s.serialize_field("collision_count", &self.collision_count)?;
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
         s.serialize_field("per_toolpath", &self.per_toolpath)?;
-        s.serialize_field("verdict", &self.verdict)?;
         s.serialize_field("verdicts", &self.verdicts)?;
         s.end()
     }
@@ -2265,7 +2241,7 @@ mod tests {
         };
         let session = ProjectSession::from_project_file(project, Path::new(".")).unwrap();
         let diag = session.diagnostics();
-        assert_eq!(diag.verdict, "OK");
+        assert!(diag.verdicts.is_empty());
         assert!(diag.per_toolpath.is_empty());
     }
 

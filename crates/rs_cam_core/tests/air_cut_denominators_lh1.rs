@@ -104,20 +104,19 @@ fn the_two_air_cut_denominators_disagree() {
     assert!((idle.air_cut_pct_of_cutting_time()).abs() < 1e-12);
 }
 
-/// The MCP wire (`ProjectDiagnostics`) publishes both, named, and the legacy
-/// key keeps its total-runtime value so existing agents keep working.
+/// The MCP wire (`ProjectDiagnostics`) publishes both readings, each under
+/// a key that names its own denominator. L10 retired the unnamed
+/// `air_cut_percentage`, which duplicated the total-runtime one.
 #[test]
 fn project_diagnostics_wire_names_both_denominators() {
     let diag = rs_cam_core::session::ProjectDiagnostics {
         total_runtime_s: 100.0,
-        air_cut_percentage: 10.0,
         air_cut_pct_of_total_runtime: 10.0,
         air_cut_pct_of_cutting_time: 40.0,
         average_engagement: 0.31,
         collision_count: 0,
         rapid_collision_count: 0,
         per_toolpath: Vec::new(),
-        verdict: "OK".to_owned(),
         verdicts: Vec::new(),
     };
 
@@ -134,17 +133,19 @@ fn project_diagnostics_wire_names_both_denominators() {
             .and_then(serde_json::Value::as_f64),
         Some(40.0)
     );
-    // Legacy key: same value as the total-runtime reading, never the other.
-    assert_eq!(
-        obj.get("air_cut_percentage")
-            .and_then(serde_json::Value::as_f64),
-        Some(10.0),
-        "the legacy key must keep its (total-runtime) value — renaming its \
-         meaning would silently move every consumer's threshold"
+    // L10: the unnamed duplicate is gone. A reader that asks for it must
+    // get nothing, not a number whose denominator it has to guess.
+    assert!(
+        obj.get("air_cut_percentage").is_none(),
+        "L10 retired the unnamed air-cut key: {obj:?}"
+    );
+    assert!(
+        obj.get("verdict").is_none(),
+        "L11 retired the derived single-line verdict: {obj:?}"
     );
     assert_eq!(
         obj.len(),
-        10,
+        8,
         "serialize_struct arity must match the field count, or serde formats \
          that count fields (bincode, MessagePack) truncate: {obj:?}"
     );

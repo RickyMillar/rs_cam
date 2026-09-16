@@ -352,27 +352,27 @@ fn operation_without_a_cascade_reports_not_measured() {
 
 // ── Wave 16 / Checkpoint E ──────────────────────────────────────────────
 
-/// A6 — the rename's compatibility contract, proved on the real wire.
+/// A6, closed by L5 — the wire now carries one name.
 ///
 /// `ToolpathStats::standing_material_mm2` became `truncated_core_mm2` on
 /// 2026-08-04 because the old name asserted the M4 oracle's *standing*
 /// ("reached, left high") for a number that measures its *untouched*
-/// ("never reached"). The ruling asked for the rename to be a
-/// non-event for anything already reading the figure.
+/// ("never reached"). A6 kept the old key beside the new one so a reader
+/// could migrate. L5 (2026-09-17) retired the duplicate: a reader who
+/// trusted the old NAME read the wrong quantity, which is the defect the
+/// rename was for.
 ///
-/// The audit behind that ruling assumed a `Deserialize` surface (project
-/// files), and there is none — `ToolpathStats` has never been serde at all,
-/// and every wire that carries the value is `Serialize`-only. So the
-/// read-side mechanism the ruling names, `#[serde(alias)]`, is demonstrated
-/// here on the CONSUMER side, which is where it can actually run: a reader
-/// that adopts the alias parses BOTH an old document and the current wire
-/// into the new field name. What production does is the emit-side
-/// equivalent — keep publishing the old key beside the new one.
+/// `ToolpathStats` has never been serde, and every wire that carries the
+/// value is `Serialize`-only, so the migration mechanism the ruling names —
+/// `#[serde(alias)]` — runs on the CONSUMER side. A reader that adopts the
+/// alias parses an old document AND the current wire into the new field
+/// name. Before L5 it could not do the second: both keys arrived and serde
+/// rejected the duplicate.
 ///
 /// Gate, not characterisation. Fixed: the truncated-cascade fixture and its
 /// measured area. Domain: XY-projected mm², generation stage.
 #[test]
-fn the_old_key_still_loads_and_the_wire_still_emits_it() {
+fn the_old_key_still_loads_and_the_wire_emits_one_name() {
     #[derive(serde::Deserialize)]
     struct LegacyReader {
         /// Exactly the migration a consumer performs.
@@ -399,8 +399,9 @@ fn the_old_key_still_loads_and_the_wire_still_emits_it() {
         "a document written before the rename must deserialize unchanged"
     );
 
-    // 2. The live wire emits BOTH keys, same value, so a script that never
-    //    migrates keeps working and one that does gets the honest name.
+    // 2. The live wire emits ONE key, the honest one. L5 deleted the
+    //    duplicate, so a reader cannot pick up the wrong quantity by
+    //    trusting a name that says *standing*.
     let project = session.diagnostics();
     let summary = project
         .per_toolpath
@@ -413,27 +414,21 @@ fn the_old_key_still_loads_and_the_wire_still_emits_it() {
         Some(area),
         "the new key must carry the measurement:\n{json}"
     );
-    assert_eq!(
-        json.get("standing_material_mm2").and_then(|v| v.as_f64()),
-        Some(area),
-        "the pre-rename key must still be emitted with the SAME value — a \
-         consumer that never migrates must not silently read `null`:\n{json}"
+    assert!(
+        json.get("standing_material_mm2").is_none(),
+        "L5 retired the pre-rename key; a name that says *standing* must \
+         not carry the untouched core:\n{json}"
     );
 
-    // 3. The cost of (2), pinned rather than left to be discovered: a reader
-    //    that adopts the alias AND reads the current wire sees the same field
-    //    twice, and serde rejects that. The alias is for OLD documents; on the
-    //    current wire a consumer takes `truncated_core_mm2` plainly. Written
-    //    as an assertion because the tempting "fix" — dropping the legacy key
-    //    — is exactly the compatibility break A6 was ruled to avoid.
-    let via_alias: Result<LegacyReader, _> = serde_json::from_value(json);
-    let err = via_alias
-        .err()
-        .expect("the alias cannot ALSO be used on the dual-key wire")
-        .to_string();
-    assert!(
-        err.contains("duplicate field"),
-        "expected serde's duplicate-field rejection, got: {err}"
+    // 3. The payoff of (2): one alias reader now serves BOTH an old
+    //    document and the current wire. While the wire carried both keys
+    //    the same field arrived twice and serde rejected it.
+    let via_alias: LegacyReader =
+        serde_json::from_value(json).expect("one alias reader must serve both shapes");
+    assert_eq!(
+        via_alias.truncated_core_mm2,
+        Some(area),
+        "the alias reader must read the current wire into the new name"
     );
 }
 

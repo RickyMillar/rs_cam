@@ -277,7 +277,6 @@ fn mcp_get_diagnostics_row_publishes_the_core_finding_channels() {
         "collision_count",
         "rapid_collision_count",
         "truncated_core_mm2",
-        "standing_material_mm2",
         "untouched_material_mm2",
         "reached_uncut_estimate_mm2",
         "unmachined_band_area_mm2",
@@ -301,10 +300,11 @@ fn mcp_get_diagnostics_row_publishes_the_core_finding_channels() {
         Some(TRUNCATED_CORE_MM2),
         "the row must carry the MEASURED value, not a placeholder"
     );
-    assert_eq!(
-        row["standing_material_mm2"].as_f64(),
-        Some(TRUNCATED_CORE_MM2),
-        "the deprecated A6 duplicate key carries the same value, as on the CLI wire"
+    // L5 retired the duplicate key. The name said *standing*, and the
+    // number is the core no cutter entered.
+    assert!(
+        row.get("standing_material_mm2").is_none(),
+        "L5 retired the duplicate key: {row}"
     );
     assert_eq!(
         row["untouched_material_mm2"].as_f64(),

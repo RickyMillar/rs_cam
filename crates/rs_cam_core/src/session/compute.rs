@@ -5208,10 +5208,9 @@ impl ProjectSession {
         // Extract simulation metrics if available.
         //
         // LH-1: air cut is published under BOTH denominators, each named.
-        // The legacy `air_cut_percentage` keeps its total-runtime value —
-        // every threshold in this file and in the GUI was tuned against it —
-        // and the cutting-time reading (what the MCP narration reports)
-        // travels beside it instead of contradicting it under the same name.
+        // Every threshold in this file and in the GUI is tuned against the
+        // total-runtime reading. The cutting-time reading (what the MCP
+        // narration reports) travels beside it under its own name.
         let (
             total_runtime_s,
             air_cut_pct_of_total_runtime,
@@ -5445,23 +5444,14 @@ impl ProjectSession {
         // severity the insertion order above is the intended display order.
         verdicts.sort_by_key(|v| v.severity);
 
-        // Legacy single-line verdict for backward-compat callers: take the
-        // highest-severity entry's headline; "OK" when empty.
-        let verdict = verdicts
-            .first()
-            .map(|v| v.headline.clone())
-            .unwrap_or_else(|| "OK".to_owned());
-
         ProjectDiagnostics {
             total_runtime_s,
-            air_cut_percentage: air_cut_pct_of_total_runtime,
             air_cut_pct_of_total_runtime,
             air_cut_pct_of_cutting_time,
             average_engagement,
             collision_count: total_collision_count,
             rapid_collision_count: total_rapid_collision_count,
             per_toolpath,
-            verdict,
             verdicts,
         }
     }
@@ -6771,7 +6761,6 @@ mod tests {
     fn diagnostics_empty() {
         let s = ProjectSession::new_empty();
         let diag = s.diagnostics();
-        assert_eq!(diag.verdict, "OK");
         assert!(diag.per_toolpath.is_empty());
         assert!(diag.verdicts.is_empty());
     }
@@ -6979,8 +6968,6 @@ mod tests {
                 .any(|v| v.kind == VerdictKind::GeneratedEmpty),
             "GeneratedEmpty must still surface alongside RapidCollision"
         );
-        // Legacy single-line verdict mirrors the top-severity headline.
-        assert_eq!(diag.verdict, diag.verdicts[0].headline);
     }
 
     /// B1 (verdict half) + A4: rapid-collision verdict names the offending

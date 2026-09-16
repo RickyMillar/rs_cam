@@ -452,9 +452,11 @@ fn swept_wanaka_ab_s1() {
         diag.rapid_collision_count,
     );
     int(mode, "project", "verdict_count", diag.verdicts.len());
+    // L11 retired the derived single-line verdict. The top-severity
+    // headline is where it came from, so the harness reads that.
     println!(
         "S1AB mode={mode} scope=project metric=verdict text=\"{}\"",
-        diag.verdict
+        diag.verdicts.first().map_or("OK", |v| v.headline.as_str())
     );
     for (k, v) in diag.verdicts.iter().enumerate() {
         println!(

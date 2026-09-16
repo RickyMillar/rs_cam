@@ -2098,12 +2098,12 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         // LH-1: publish BOTH air-cut denominators under names that say which
-        // is which. The legacy `air_cut_percentage` key keeps its
-        // total-runtime value (the verdict rule below and every
-        // `air_cut_high_threshold_pct` band are tuned against it); the
-        // cutting-time reading - what `narrate_toolpath` prints for the same
-        // seconds - ships beside it instead of contradicting it under one
-        // name. See `MEASUREMENT_DOMAINS.md` LH-1.
+        // is which. The verdict rule below and every
+        // `air_cut_high_threshold_pct` band are tuned against the
+        // total-runtime reading; the cutting-time reading - what
+        // `narrate_toolpath` prints for the same seconds - ships beside it
+        // under its own name. L10 retired the unnamed `air_cut_percentage`.
+        // See `MEASUREMENT_DOMAINS.md` LH-1.
         let (total_runtime_s, air_cut_pct, air_cut_pct_of_cutting, avg_engagement) =
             if let Some(ref sim_results) = self.state.simulation.results
                 && let Some(ref ct) = sim_results.cut_trace
@@ -2140,7 +2140,6 @@ impl<B: ComputeBackend> AppController<B> {
 
         let mut resp = serde_json::json!({
             "total_runtime_s": total_runtime_s,
-            "air_cut_percentage": air_cut_pct,
             "air_cut_pct_of_total_runtime": air_cut_pct,
             "air_cut_pct_of_cutting_time": air_cut_pct_of_cutting,
             "average_engagement": avg_engagement,

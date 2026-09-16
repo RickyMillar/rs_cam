@@ -2605,7 +2605,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
 // the whole run. Round-07 MCP smoke evidence:
 //   AS001 pocket: z_level = 10/8/6, peak_axial_doc_mm = 0,
 //   total_removed_volume_est_mm3 = 0, chipload = Unmodeled
-//   (all_samples_air_cut_or_rapid), air_cut_percentage = 96 %, 0 rapid
+//   (all_samples_air_cut_or_rapid), air cut = 96 % of total runtime, 0 rapid
 //   collisions, 0 sampling errors.
 //
 // The fix mirrors `session::compute::compute` (site 1): identity setups

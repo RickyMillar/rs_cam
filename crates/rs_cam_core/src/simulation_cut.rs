@@ -585,7 +585,7 @@ pub struct SimulationCutSummary {
 ///
 /// | surface | denominator |
 /// |---|---|
-/// | `ProjectDiagnostics::air_cut_percentage`, the GUI banner + "% of total runtime" chips, the `>40%` verdict rule, `OperationType::air_cut_high_threshold_pct` | **total runtime** (cutting + rapids) |
+/// | `ProjectDiagnostics::air_cut_pct_of_total_runtime`, the GUI banner + "% of total runtime" chips, the `>40%` verdict rule, `OperationType::air_cut_high_threshold_pct` | **total runtime** (cutting + rapids) |
 /// | the MCP `narrate_toolpath` air-cut line, and `CLAUDE.md`'s metric caveats | **cutting runtime** (rapids excluded) |
 ///
 /// On a retract-heavy op the two differ by a large factor: total runtime is
