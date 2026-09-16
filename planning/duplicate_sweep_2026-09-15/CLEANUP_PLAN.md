@@ -92,7 +92,7 @@ two disagree.
   asserting pins, datum, post format, tool type, resolved model path match
   between `ProjectSession::load` and the fallback) — fails today, passes
   after. Risk: low. Gate: `cargo test -p rs_cam_core -q`.
-- [ ] **C04 — CLI sweep tool-field loss** (I10 pair 4, review-corrected).
+- [x] **C04 — CLI sweep tool-field loss** (I10 pair 4, review-corrected).
   `sweep.rs:360-410` `SerializableToolDef` drops `shank_diameter`,
   `shank_length`, `holder_diameter`, `holder_length` from baselines. Restore
   the four fields; make `CliToolType: Serialize` (string form must match the

@@ -28,7 +28,7 @@
 //! ```
 
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -52,7 +52,7 @@ use rs_cam_core::{
     toolpath::Toolpath,
 };
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CliToolType {
     #[serde(alias = "endmill")]
@@ -94,26 +94,27 @@ impl CliToolType {
 
 // ── TOML types ─────────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct JobFile {
     pub job: JobConfig,
     #[serde(default)]
     pub tools: HashMap<String, ToolDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub setup: Vec<SetupDef>,
     #[serde(default)]
     pub operation: Vec<OperationDef>,
 }
 
 /// A setup definition for multi-setup jobs. Each setup can have its own output file.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct SetupDef {
     pub name: String,
     /// Per-setup output file. If absent, uses the global job output.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<PathBuf>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct JobConfig {
     pub output: PathBuf,
     #[serde(default = "default_post")]
@@ -122,7 +123,9 @@ pub struct JobConfig {
     pub spindle_speed: u32,
     #[serde(default = "default_safe_z")]
     pub safe_z: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub svg: Option<PathBuf>,
     #[serde(default)]
     pub simulate: bool,
@@ -130,6 +133,7 @@ pub struct JobConfig {
     pub sim_resolution: f64,
     #[serde(default)]
     pub diagnostics: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub diagnostics_json: Option<PathBuf>,
 }
 
@@ -146,34 +150,44 @@ fn default_sim_resolution() -> f64 {
     0.25
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct ToolDef {
     #[serde(rename = "type")]
     pub tool_type: CliToolType,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub number: Option<u32>,
     pub diameter: f64,
     /// Number of cutting flutes (default: 2). Used for chipload calculation in diagnostics.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flute_count: Option<u32>,
     /// Corner radius for bull nose
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub corner_radius: Option<f64>,
     /// Included angle in degrees for V-bit
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub included_angle: Option<f64>,
     /// Taper half-angle for tapered ball
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub taper_angle: Option<f64>,
     /// Shaft diameter for tapered ball
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub shaft_diameter: Option<f64>,
     /// Shank diameter above the cutting flutes (mm).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub shank_diameter: Option<f64>,
     /// Shank length above the cutting flutes (mm).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub shank_length: Option<f64>,
     /// Holder diameter (mm).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub holder_diameter: Option<f64>,
     /// Holder length (mm).
     #[allow(dead_code)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub holder_length: Option<f64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct OperationDef {
     #[serde(rename = "type")]
     pub op_type: String,
@@ -181,69 +195,106 @@ pub struct OperationDef {
     pub tool: String,
     /// Which setup this operation belongs to. If absent, belongs to a default setup.
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub setup: Option<String>,
 
     // Common parameters (override job defaults if present)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stepover: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub depth: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub depth_per_pass: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub feed_rate: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub plunge_rate: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub safe_z: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub spindle_speed: Option<u32>,
     #[serde(default)]
     pub coolant: CoolantMode,
 
     // Pocket-specific
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pattern: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub angle: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub climb: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<String>,
 
     // Profile-specific
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub side: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tabs: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tab_width: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tab_height: Option<f64>,
 
     // Dogbone
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dogbone: Option<bool>,
 
     // Adaptive-specific
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tolerance: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub slot_clearing: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_cutting_radius: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub z_blend: Option<bool>,
 
     // Rest machining-specific
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prev_tool: Option<String>,
 
     // STL scaling
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f64>,
 
     // 3D adaptive-specific
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stock_top_z: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stock_to_leave: Option<f64>,
     /// Entry style for 3D ops. Accepts both `entry` and legacy `entry_style`.
     #[serde(alias = "entry_style")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub entry_3d: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fine_stepdown: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub detect_flat_areas: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_stay_down_dist: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub order_by: Option<String>,
     /// Clearing strategy: "agent" (default) or "contour"/"contour_parallel".
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub strategy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mill_shallow_areas: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub shallow_angle_deg: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub shallow_stepdown: Option<f64>,
     /// F-038: minimum forecast cut length (mm) for a marching-squares region
     /// to be retained in AgentSearch. Default 5.0 mm. Set to 0.0 to disable.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_region_cut_length_mm: Option<f64>,
     /// F-038b: maximum XY stay-down link distance (mm) between cut groups.
     /// `None` ⇒ planner defaults to 8 × tool diameter. `Some(0.0)` disables.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_stay_down_distance_mm: Option<f64>,
     /// F-038b: vertical clearance (mm) above the heightfield sample max
     /// when emitting a keep-tool-down link. Default 0.5 mm.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stay_down_clearance_mm: Option<f64>,
 }
 

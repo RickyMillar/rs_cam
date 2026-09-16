@@ -6,7 +6,7 @@
 #![allow(clippy::print_stdout, clippy::indexing_slicing)]
 
 use anyhow::{Context, Result, bail};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tracing::info;
 
 use rs_cam_core::fingerprint::{
@@ -204,10 +204,10 @@ fn patch_job_param(base: &job::JobFile, field: &str, value: &str) -> Result<job:
     // Re-serialize the job to TOML, patch the field, and re-parse.
     // This is the safest way to handle all field types without manual cloning.
     //
-    // Since JobFile uses Deserialize but not Serialize, we work with the raw
-    // TOML string instead.
-    let base_toml = toml::to_string(&SerializableJobFile::from(base))
-        .context("Serializing base job to TOML")?;
+    // `job::JobFile` derives both directions, so the sweep baseline keeps
+    // every field the parser knows (I10 pair 4: a hand-written mirror dropped
+    // the shank and holder geometry).
+    let base_toml = toml::to_string(base).context("Serializing base job to TOML")?;
 
     // Find the first [[operation]] table and patch the field
     let patched = patch_toml_field(&base_toml, field, value)?;
@@ -357,218 +357,178 @@ fn simulate_and_export(
     Ok(StockFingerprint::from_stock(&stock))
 }
 
-// ── Serializable wrapper for JobFile ────────────────────────────────────
-//
-// JobFile uses Deserialize but not Serialize. We need a serializable mirror
-// to generate TOML strings for patching.
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use crate::job::{CliToolType, JobFile};
 
-use serde::Serialize;
+    /// I10 pair 4: the sweep baseline is a serialize-then-reparse round trip.
+    /// Every field the parser knows must survive it. The hand-written mirror
+    /// this replaced dropped the shank and holder geometry, so deflection and
+    /// reach modelling read different tools in a sweep than in the base job.
+    #[test]
+    fn sweep_baseline_round_trip_keeps_every_job_field() {
+        let source = r#"
+[job]
+output = "part.nc"
+post = "grbl"
+spindle_speed = 16000
+safe_z = 12.0
+view = "view.png"
+svg = "part.svg"
+simulate = true
+sim_resolution = 0.35
+diagnostics = true
+diagnostics_json = "diag.json"
 
-#[derive(Serialize)]
-struct SerializableJobFile {
-    job: SerializableJobConfig,
-    tools: std::collections::HashMap<String, SerializableToolDef>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    setup: Vec<SerializableSetupDef>,
-    operation: Vec<SerializableOperationDef>,
-}
+[tools.flat_6mm]
+type = "flat"
+number = 3
+diameter = 6.35
+flute_count = 3
+corner_radius = 0.5
+included_angle = 60.0
+taper_angle = 4.0
+shaft_diameter = 3.0
+shank_diameter = 6.0
+shank_length = 20.0
+holder_diameter = 40.0
+holder_length = 35.0
 
-#[derive(Serialize)]
-struct SerializableJobConfig {
-    output: PathBuf,
-    post: String,
-    spindle_speed: u32,
-    safe_z: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    view: Option<PathBuf>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    svg: Option<PathBuf>,
-    simulate: bool,
-    sim_resolution: f64,
-    diagnostics: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    diagnostics_json: Option<PathBuf>,
-}
+[[setup]]
+name = "front"
+output = "front.nc"
 
-#[derive(Serialize)]
-struct SerializableToolDef {
-    #[serde(rename = "type")]
-    tool_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    number: Option<u32>,
-    diameter: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    flute_count: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    corner_radius: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    included_angle: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    taper_angle: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    shaft_diameter: Option<f64>,
-}
+[[operation]]
+type = "adaptive3d"
+input = "design.stl"
+tool = "flat_6mm"
+setup = "front"
+stepover = 2.0
+depth = 6.0
+depth_per_pass = 3.0
+feed_rate = 1000.0
+plunge_rate = 500.0
+safe_z = 11.0
+spindle_speed = 17000
+coolant = "mist"
+pattern = "zigzag"
+angle = 45.0
+climb = true
+entry = "ramp"
+side = "outside"
+tabs = 4
+tab_width = 6.0
+tab_height = 1.5
+dogbone = true
+tolerance = 0.05
+slot_clearing = true
+min_cutting_radius = 1.2
+z_blend = true
+prev_tool = "flat_6mm"
+scale = 2.0
+stock_top_z = 1.0
+stock_to_leave = 0.3
+entry_3d = "helix"
+fine_stepdown = 0.4
+detect_flat_areas = true
+max_stay_down_dist = 30.0
+order_by = "depth"
+strategy = "contour"
+mill_shallow_areas = true
+shallow_angle_deg = 25.0
+shallow_stepdown = 0.6
+min_region_cut_length_mm = 4.0
+max_stay_down_distance_mm = 18.0
+stay_down_clearance_mm = 0.75
+"#;
+        let base: JobFile = toml::from_str(source).unwrap();
+        // The sweep serializes the parsed job exactly this way.
+        let emitted = toml::to_string(&base).unwrap();
+        let back: JobFile = toml::from_str(&emitted).unwrap();
 
-#[derive(Serialize)]
-struct SerializableSetupDef {
-    name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    output: Option<PathBuf>,
-}
+        let tool = back.tools.get("flat_6mm").unwrap();
+        assert_eq!(tool.shank_diameter, Some(6.0));
+        assert_eq!(tool.shank_length, Some(20.0));
+        assert_eq!(tool.holder_diameter, Some(40.0));
+        assert_eq!(tool.holder_length, Some(35.0));
+        assert_eq!(tool.number, Some(3));
+        assert_eq!(tool.flute_count, Some(3));
+        assert_eq!(tool.corner_radius, Some(0.5));
+        assert_eq!(tool.included_angle, Some(60.0));
+        assert_eq!(tool.taper_angle, Some(4.0));
+        assert_eq!(tool.shaft_diameter, Some(3.0));
+        assert!(matches!(tool.tool_type, CliToolType::Flat));
+        assert_eq!(tool.diameter, 6.35);
 
-#[derive(Serialize)]
-struct SerializableOperationDef {
-    #[serde(rename = "type")]
-    op_type: String,
-    input: PathBuf,
-    tool: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    setup: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stepover: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    depth: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    depth_per_pass: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    feed_rate: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    plunge_rate: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    safe_z: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    spindle_speed: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pattern: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    angle: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    climb: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    entry: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    side: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tabs: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tab_width: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tab_height: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dogbone: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tolerance: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    slot_clearing: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    min_cutting_radius: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    z_blend: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    prev_tool: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    scale: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stock_top_z: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stock_to_leave: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    entry_3d: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    fine_stepdown: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    detect_flat_areas: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_stay_down_dist: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    order_by: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    strategy: Option<String>,
-}
+        assert_eq!(back.job.view, base.job.view);
+        assert_eq!(back.job.svg, base.job.svg);
+        assert_eq!(back.job.diagnostics_json, base.job.diagnostics_json);
+        assert_eq!(back.job.spindle_speed, 16000);
+        assert_eq!(back.setup.len(), 1);
+        assert_eq!(back.setup[0].name, "front");
 
-impl From<&job::JobFile> for SerializableJobFile {
-    #[allow(clippy::indexing_slicing)] // bounded by structure
-    fn from(j: &job::JobFile) -> Self {
-        Self {
-            job: SerializableJobConfig {
-                output: j.job.output.clone(),
-                post: j.job.post.clone(),
-                spindle_speed: j.job.spindle_speed,
-                safe_z: j.job.safe_z,
-                view: j.job.view.clone(),
-                svg: j.job.svg.clone(),
-                simulate: j.job.simulate,
-                sim_resolution: j.job.sim_resolution,
-                diagnostics: j.job.diagnostics,
-                diagnostics_json: j.job.diagnostics_json.clone(),
-            },
-            tools: j
-                .tools
-                .iter()
-                .map(|(k, v)| {
-                    (
-                        k.clone(),
-                        SerializableToolDef {
-                            tool_type: v.tool_type.to_string(),
-                            number: v.number,
-                            diameter: v.diameter,
-                            flute_count: v.flute_count,
-                            corner_radius: v.corner_radius,
-                            included_angle: v.included_angle,
-                            taper_angle: v.taper_angle,
-                            shaft_diameter: v.shaft_diameter,
-                        },
-                    )
-                })
-                .collect(),
-            setup: j
-                .setup
-                .iter()
-                .map(|s| SerializableSetupDef {
-                    name: s.name.clone(),
-                    output: s.output.clone(),
-                })
-                .collect(),
-            operation: j
-                .operation
-                .iter()
-                .map(|o| SerializableOperationDef {
-                    op_type: o.op_type.clone(),
-                    input: o.input.clone(),
-                    tool: o.tool.clone(),
-                    setup: o.setup.clone(),
-                    stepover: o.stepover,
-                    depth: o.depth,
-                    depth_per_pass: o.depth_per_pass,
-                    feed_rate: o.feed_rate,
-                    plunge_rate: o.plunge_rate,
-                    safe_z: o.safe_z,
-                    spindle_speed: o.spindle_speed,
-                    pattern: o.pattern.clone(),
-                    angle: o.angle,
-                    climb: o.climb,
-                    entry: o.entry.clone(),
-                    side: o.side.clone(),
-                    tabs: o.tabs,
-                    tab_width: o.tab_width,
-                    tab_height: o.tab_height,
-                    dogbone: o.dogbone,
-                    tolerance: o.tolerance,
-                    slot_clearing: o.slot_clearing,
-                    min_cutting_radius: o.min_cutting_radius,
-                    z_blend: o.z_blend,
-                    prev_tool: o.prev_tool.clone(),
-                    scale: o.scale,
-                    stock_top_z: o.stock_top_z,
-                    stock_to_leave: o.stock_to_leave,
-                    entry_3d: o.entry_3d.clone(),
-                    fine_stepdown: o.fine_stepdown,
-                    detect_flat_areas: o.detect_flat_areas,
-                    max_stay_down_dist: o.max_stay_down_dist,
-                    order_by: o.order_by.clone(),
-                    strategy: o.strategy.clone(),
-                })
-                .collect(),
+        let op = &back.operation[0];
+        assert_eq!(op.coolant, rs_cam_core::gcode::CoolantMode::Mist);
+        assert_eq!(op.mill_shallow_areas, Some(true));
+        assert_eq!(op.shallow_angle_deg, Some(25.0));
+        assert_eq!(op.shallow_stepdown, Some(0.6));
+        assert_eq!(op.min_region_cut_length_mm, Some(4.0));
+        assert_eq!(op.max_stay_down_distance_mm, Some(18.0));
+        assert_eq!(op.stay_down_clearance_mm, Some(0.75));
+        assert_eq!(op.entry_3d.as_deref(), Some("helix"));
+        assert_eq!(op.tabs, Some(4));
+        assert_eq!(op.prev_tool.as_deref(), Some("flat_6mm"));
+        assert_eq!(op.strategy.as_deref(), Some("contour"));
+        assert_eq!(op.order_by.as_deref(), Some("depth"));
+    }
+
+    /// The emitted tool-type strings must re-parse as the same variants.
+    #[test]
+    fn sweep_baseline_round_trip_keeps_every_tool_type() {
+        let source = r#"
+[job]
+output = "part.nc"
+
+[tools.a]
+type = "flat"
+diameter = 6.0
+
+[tools.b]
+type = "ball"
+diameter = 6.0
+
+[tools.c]
+type = "bullnose"
+diameter = 6.0
+
+[tools.d]
+type = "vbit"
+diameter = 6.0
+
+[tools.e]
+type = "tapered_ball"
+diameter = 6.0
+
+[[operation]]
+type = "pocket"
+input = "design.svg"
+tool = "a"
+"#;
+        let base: JobFile = toml::from_str(source).unwrap();
+        let emitted = toml::to_string(&base).unwrap();
+        let back: JobFile = toml::from_str(&emitted).unwrap();
+        for (name, tool) in &base.tools {
+            let round = back.tools.get(name).unwrap();
+            assert_eq!(
+                tool.tool_type.to_string(),
+                round.tool_type.to_string(),
+                "tool {name} changed type through the round trip"
+            );
         }
+        assert!(matches!(
+            back.tools.get("e").unwrap().tool_type,
+            CliToolType::TaperedBall
+        ));
     }
 }
