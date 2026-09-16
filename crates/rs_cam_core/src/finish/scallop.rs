@@ -1878,7 +1878,7 @@ impl crate::compute::spans::RuntimeLabel for ScallopRuntimeAnnotation {
     }
 }
 
-pub fn scallop_toolpath_structured_annotated(
+fn scallop_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
@@ -1892,7 +1892,7 @@ pub fn scallop_toolpath_structured_annotated(
     })
 }
 
-/// Cancellable variant of [`scallop_toolpath_structured_annotated`]. Polls
+/// Cancellable variant of `scallop_toolpath_structured_annotated`. Polls
 /// `cancel` once per ring during 3D ring generation (`ring_to_3d`'s
 /// per-point drop-cutter queries are the expensive step) and once per ring
 /// again while chaining rings into the toolpath.

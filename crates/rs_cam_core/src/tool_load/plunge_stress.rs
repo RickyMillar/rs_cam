@@ -40,6 +40,9 @@ pub fn safe_plunge_cap_mm_min(geometry: ToolGeometryHint, diameter_mm: f64) -> O
 }
 
 /// A plunge-stress warning surfaced at diagnostics time.
+///
+/// Stays `pub`: `check_plunge_stress` returns it, so a crate-private form
+/// raises `private_interfaces`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlungeStressWarning {
     pub plunge_rate_mm_min: f64,

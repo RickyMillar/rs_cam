@@ -615,6 +615,9 @@ pub enum SpindleScaleReason {
 /// Empirical chipload formula evaluation `K₀ × D^p × (1/H)^q`.
 /// Captured so the UI can show *why* the no-LUT recommendation is what
 /// it is (rather than just "fallback").
+///
+/// Stays `pub`: it is the payload of the `pub` field `FeedsDerates::formula`,
+/// so a crate-private form raises `private_interfaces`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FormulaBreakdown {
     pub k0: f64,

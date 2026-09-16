@@ -934,34 +934,6 @@ impl Drop for ToolpathSemanticScope {
     }
 }
 
-pub struct ToolpathSemanticWriter<'a> {
-    toolpath: &'a mut Toolpath,
-}
-
-impl<'a> ToolpathSemanticWriter<'a> {
-    pub fn new(toolpath: &'a mut Toolpath) -> Self {
-        Self { toolpath }
-    }
-
-    pub fn move_count(&self) -> usize {
-        self.toolpath.moves.len()
-    }
-
-    pub fn append_toolpath(&mut self, scope: Option<&ToolpathSemanticScope>, mut other: Toolpath) {
-        let start = self.toolpath.moves.len();
-        self.toolpath.moves.append(&mut other.moves);
-        if let Some(scope) = scope {
-            scope.bind_to_toolpath(self.toolpath, start, self.toolpath.moves.len());
-        }
-    }
-
-    pub fn toolpath(&self) -> &Toolpath {
-        self.toolpath
-    }
-
-    pub fn finish(self) {}
-}
-
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn enrich_traces(
     debug_trace: &mut ToolpathDebugTrace,

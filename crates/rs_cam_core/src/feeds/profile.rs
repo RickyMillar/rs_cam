@@ -43,6 +43,10 @@ use crate::tool::ToolDefinition;
 /// [`crate::feeds::predict`], evaluated at one operating point. Each
 /// predictor keeps its own refusal contract (zero = "no constraint
 /// signal") — see the per-field docs on the wrapped types.
+///
+/// Stays `pub`: it is the type of the `pub` field
+/// `CutterOpProfile::predictions`, so a crate-private form raises
+/// `private_interfaces`.
 #[derive(Debug, Clone)]
 pub struct Predictions {
     /// Closed-form peak tip deflection (µm) — see
@@ -62,6 +66,10 @@ pub struct Predictions {
 /// Pre-sim constraint envelopes for the combination. Currently the
 /// Phase-0 axial-DOC envelope; radial joins when a radial builder
 /// ships.
+///
+/// Stays `pub`: it is the type of the `pub` field
+/// `CutterOpProfile::constraints`, so a crate-private form raises
+/// `private_interfaces`.
 #[derive(Debug, Clone)]
 pub struct ConstraintEnvelopes {
     /// Axial-DOC envelope per the Suggest pass-0 routing

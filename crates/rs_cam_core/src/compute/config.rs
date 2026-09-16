@@ -1376,7 +1376,7 @@ impl TipFloatFinding {
     /// Fraction of examined centreline points that float. `None` when
     /// nothing was examined — never a fabricated zero.
     #[must_use]
-    pub fn floating_fraction(&self) -> Option<f64> {
+    fn floating_fraction(&self) -> Option<f64> {
         (self.centreline_points > 0)
             .then(|| self.floating_points as f64 / self.centreline_points as f64)
     }

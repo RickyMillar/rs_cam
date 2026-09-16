@@ -111,7 +111,7 @@ impl crate::compute::spans::RuntimeLabel for SpiralFinishRuntimeAnnotation {
     }
 }
 
-pub fn spiral_finish_toolpath_structured_annotated(
+fn spiral_finish_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
@@ -132,7 +132,7 @@ pub fn spiral_finish_toolpath_structured_annotated(
     })
 }
 
-/// Cancellable variant of [`spiral_finish_toolpath_structured_annotated`].
+/// Cancellable variant of `spiral_finish_toolpath_structured_annotated`.
 /// Polls `cancel` every [`CANCEL_POLL_STRIDE`] points in both the drop-cutter
 /// sampling loop and the toolpath-emission loop (a full-radius fine-stepover
 /// spiral can carry tens of thousands of points).

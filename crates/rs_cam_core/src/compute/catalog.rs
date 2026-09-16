@@ -2672,53 +2672,7 @@ impl OperationConfig {
     }
 }
 
-/// Stock context for
-/// [`OperationConfig::apply_stock_defaults`]. Carries the few stock
-/// dimensions a sensible per-op depth default needs to know about.
-#[derive(Debug, Clone, Copy)]
-pub struct NewDefaultCtx {
-    /// Top of the stock in the part-Z frame (typically 0 for 3D, may be
-    /// negative for 2D where the stock origin is below Z=0).
-    pub stock_top_z: f64,
-    /// Bottom of the stock in the part-Z frame.
-    pub stock_bottom_z: f64,
-    /// Stock thickness in mm (`stock_top_z - stock_bottom_z`).
-    pub stock_z: f64,
-    /// Stock-top minus model-top margin in mm. Drives the face skim
-    /// depth default. Falls back to `5.0` when no model is loaded.
-    pub stock_padding: f64,
-}
-
-impl NewDefaultCtx {
-    /// Build a context from a session's stock config + bbox. Use this
-    /// from production sites that have a `&ProjectSession` in scope.
-    pub fn from_stock_bbox(bbox: crate::geo::BoundingBox3, padding: f64) -> Self {
-        let stock_z = (bbox.max.z - bbox.min.z).max(0.0);
-        Self {
-            stock_top_z: bbox.max.z,
-            stock_bottom_z: bbox.min.z,
-            stock_z,
-            stock_padding: padding,
-        }
-    }
-}
-
 impl OperationConfig {
-    /// Apply stock-aware overrides to depth-style fields that the
-    /// per-config `Default` impl can't see (it has no stock context).
-    /// Roadmap B.1–B.3: drop_cutter `min_z`, face `depth`, pocket /
-    /// profile / drill / adaptive `depth`. No-op for ops whose default
-    /// is already stock-agnostic.
-    pub fn apply_stock_defaults(&mut self, ctx: &NewDefaultCtx) {
-        let stock_ctx = crate::feeds::suggest::StockContext {
-            stock_top_z: ctx.stock_top_z,
-            stock_bottom_z: ctx.stock_bottom_z,
-            stock_z: ctx.stock_z,
-            stock_padding: ctx.stock_padding,
-        };
-        crate::feeds::suggest::apply_stock_defaults(self, &stock_ctx);
-    }
-
     /// Pre-compute Z levels for depth stepping (top -> bottom).
     ///
     /// Returns an empty `Vec` for operations that don't use standard depth
