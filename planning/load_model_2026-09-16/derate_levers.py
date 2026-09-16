@@ -438,6 +438,125 @@ def rule_5_the_ratio_is_not_a_half() -> None:
     )
 
 
+
+def mean_and_peak_engaged_axial(
+    flutes: int,
+    psi: float,
+    ap_mm: float,
+    helix_deg: float,
+    radius_mm: float,
+    slices: int = 240,
+    steps: int = 720,
+) -> tuple[float, float]:
+    """Engaged axial extent of a helical cutter, averaged over one turn.
+
+    The tool is modelled as a stack of thin axial slices. Each slice is
+    LOCALLY a straight edge that sees the same immersion arc `psi`. A helix
+    does one thing to that picture: it gives each slice a different phase,
+    because the spiral reaches the wood lower-first.
+
+    Returns `(mean, peak)` in mm of axial engagement.
+    """
+    wrap = ap_mm * math.tan(math.radians(helix_deg)) / radius_mm
+    pitch = 2.0 * math.pi / flutes
+    total = 0.0
+    peak = 0.0
+    for s_i in range(steps):
+        theta = 2.0 * math.pi * s_i / steps
+        engaged = 0.0
+        for i in range(slices):
+            phase = (i / slices) * wrap
+            for f in range(flutes):
+                a = (theta - phase + f * pitch) % (2.0 * math.pi)
+                if a < psi:
+                    engaged += ap_mm / slices
+                    break
+        total += engaged
+        peak = max(peak, engaged)
+    return total / steps, peak
+
+
+def rule_6_the_helix_does_not_change_mean_power() -> None:
+    """T-7's premise, tested before anybody writes Rust for it.
+
+    The register claims the power model is helix-blind and under-reads the
+    engaged edge by about 49 %, because `tool/mod.rs` counts teeth in cut as
+    `(psi + wrap) / pitch` while the power model uses `psi / pitch`.
+
+    If that were true it would matter a great deal: the edge term carries
+    about 83 % of the cutting power at wood chiploads.
+    """
+    print("\nRule 6 — a helix moves engagement in time, not in amount")
+    base = Cut()
+    psi = base.psi_rad
+    r = base.diameter_mm / 2.0
+    ap = 4.0
+
+    print(f"\n         Ø{base.diameter_mm:.0f} mm, {base.flutes} flutes, "
+          f"psi {math.degrees(psi):.0f} deg, ap {ap:.0f} mm")
+    print(f"         {'helix':>7}{'wrap rad':>11}{'mean mm':>10}{'vs 0 deg':>10}{'peak mm':>9}")
+    means = []
+    for h in (0.0, 10.0, 20.0, 30.0, 45.0):
+        mean, peak = mean_and_peak_engaged_axial(base.flutes, psi, ap, h, r)
+        means.append(mean)
+        wrap = ap * math.tan(math.radians(h)) / r
+        print(f"         {h:>5.0f}deg{wrap:>11.3f}{mean:>10.4f}"
+              f"{mean / means[0]:>9.3f}x{peak:>9.3f}")
+
+    # Compare against the CLOSED FORM, not against the 0-degree sample.
+    #
+    # The 0-degree row is the noisy one, and for a reason worth knowing: with
+    # no helix every slice shares a phase, so engagement is a STEP function of
+    # rotation and a finite step count lands the boundary imprecisely. It reads
+    # 0.63 % high at 720 steps and converges to 0.11 % at 2880. Every helical
+    # row ramps instead of stepping and sits at 0.002 % at either resolution.
+    # Using the noisiest sample as the reference would have made the physics
+    # look wrong when it is the integration that is coarse.
+    duty = base.flutes * psi / (2.0 * math.pi)
+    closed_form = ap * duty
+    worst = max(abs(m - closed_form) / closed_form for m in means)
+    check(
+        "every helix angle gives the mean the power model already assumes",
+        worst < 0.01,
+        f"worst error {worst * 100:.3f} % against the closed form "
+        f"ap x z x psi / 2pi = {closed_form:.4f} mm. The helix moves "
+        f"engagement in time, not in amount, so adding the wrap would "
+        f"OVERSTATE mean power rather than correct it.",
+    )
+
+    # T-7's own example, on the geometry it was stated for: Ø6 2-flute, 30
+    # degrees, 4 mm deep, half immersion. The reference cut above is Ø12, where
+    # the bigger radius makes the same wrap a smaller share of the arc.
+    r6, psi6, ap6 = 3.0, math.pi / 2.0, 4.0
+    wrap6 = ap6 * math.tan(math.radians(30.0)) / r6
+    mean6, _ = mean_and_peak_engaged_axial(2, psi6, ap6, 30.0, r6)
+    closed6 = ap6 * 2 * psi6 / (2.0 * math.pi)
+    check(
+        "T-7's 49 % is real arithmetic about the WRONG quantity",
+        abs((psi6 + wrap6) / psi6 - 1.49) < 0.03
+        and abs(mean6 - closed6) / closed6 < 0.01,
+        f"on T-7's own Ø6 30-degree example (psi + wrap) / psi = "
+        f"{(psi6 + wrap6) / psi6:.2f}x, so the register's 49 % checks out as "
+        f"arithmetic. But the measured mean is {mean6:.4f} mm against a closed "
+        f"form of {closed6:.4f} mm — unchanged. The 49 % counts how many teeth "
+        f"touch AT ONCE, which sets peak force and smoothness. It is not the "
+        f"mean power bill, and power.rs wants the mean.",
+    )
+
+    print("\n         What the helix DOES change: edge length per mm of depth.")
+    print(f"         {'helix':>7}{'1/cos':>10}")
+    for h in (0.0, 10.0, 20.0, 30.0, 45.0):
+        print(f"         {h:>5.0f}deg{1.0 / math.cos(math.radians(h)):>10.4f}")
+    check(
+        "the real helix correction is the edge length, and it is far smaller",
+        abs(1.0 / math.cos(math.radians(30.0)) - 1.155) < 0.01,
+        "a 30 degree edge is 15.5 % longer than the depth it covers, not 49 %. "
+        "F_edge was fitted quasi-orthogonally, where the edge is straight, so "
+        "this one is arguable — but it needs oblique-cutting theory, not "
+        "geometry alone.",
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--gantry", choices=sorted(AXIS_THRUST_N),
@@ -456,6 +575,7 @@ def main() -> int:
     rule_3_deflection()
     rule_4_gantry(args.gantry, not args.conventional)
     rule_5_the_ratio_is_not_a_half()
+    rule_6_the_helix_does_not_change_mean_power()
 
     print("\n" + "=" * 70)
     if FAILURES:

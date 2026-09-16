@@ -20,12 +20,13 @@ need a register.
 | T-4 | `predict_peak_deflection_um` returns `0.0` for every refusal | open |
 | T-5 | `feeds/mod.rs` 4 144 lines, `suggest.rs` 5 667 | open |
 | T-6 | Two implementations of one physical model | closed |
-| T-7 | Two definitions of "teeth in cut", differing by helix wrap | open |
+| T-7 | Two definitions of "teeth in cut", differing by helix wrap | **withdrawn** — the premise fails |
 | T-8 | The power derate thins the chip, and only half the power responds | **closed** `348facbb` |
 | T-9 | A feed clamped onto a ceiling ships one rounding step above it | open |
 | T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating |
 | T-11 | Feed modulation multiplies mm by a fraction of a different quantity | **closed** `bf8824ad` |
 | T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `0dc9141f` |
+| T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
 
 ---
 
@@ -196,10 +197,51 @@ not a rounding difference — it under-reads exactly the cuts most likely to
 stall a hobby spindle. And a reader who finds both expressions has no way
 to tell which one the engine means.
 
-**Fix:** give `feeds::force` one `teeth_in_cut(z, ψ, ap, helix, r)` and have
-both consume it, with the helix term either carried by both or by neither.
-Deliberately out of R1's scope: adding helix wrap is a second feed-moving
-recalibration, and R1 already moved the recommended numbers once.
+**WITHDRAWN 2026-09-17. The entry above is wrong, and the fix it proposes
+would have made the model worse.** Tested before writing any Rust, in
+`planning/load_model_2026-09-16/derate_levers.py` rule 6, and visible in the
+bench artifact.
+
+**A helix moves engagement in TIME, not in amount.** Model the tool as a
+stack of thin axial slices. Each slice is locally a straight edge and sees
+the same immersion arc `ψ`. All a helix does is give each slice a different
+phase, because the spiral reaches the wood lower-first. Measured mean engaged
+edge over one revolution, Ø12 4-flute at 4 mm depth:
+
+| helix | wrap | mean engaged edge |
+|---|---|---|
+| 0° | 0.000 | 3.224 mm |
+| 20° | 0.243 | 3.224 mm |
+| 30° | 0.385 | 3.224 mm |
+| 45° | 0.667 | 3.224 mm |
+
+Flat, and equal to the closed form `ap · z·ψ/2π` — which is exactly what
+`power.rs` already uses. **Adding the wrap would OVERSTATE mean power by
+about 50 %, not correct an under-read.**
+
+The 49 % in the entry above is real arithmetic. It is arithmetic about a
+different question: how many teeth touch AT ONCE, which sets peak force and
+smoothness. That is the question `tool/mod.rs` is answering, and it answers
+it correctly. The two expressions were never in conflict.
+
+**A second reason the entry overstated the risk:**
+`instantaneous_flutes_in_cut` has exactly one consumer in the whole
+workspace — a cache-invalidation hash in `compute/sim_prefix.rs`. No physics
+reads it. The "two competing definitions a reader cannot tell apart" is one
+definition and one value that is hashed and discarded.
+
+**What survives, and it is much smaller.** A helical edge is physically
+LONGER than the depth it covers, by `1/cos(β)` — 15.5 % at 30°, not 49 %.
+Logged as T-13 rather than left inside a withdrawn entry.
+
+**The lesson worth keeping:** this entry was written from a correct
+observation (two expressions, one has a term the other lacks) and an
+incorrect inference (therefore one is wrong). A twenty-line numerical model
+settled it in minutes and saved a feed-moving recalibration in the wrong
+direction. Test the premise before scheduling the fix.
+
+**Superseded fix note:** give `feeds::force` one `teeth_in_cut(z, ψ, ap,
+helix, r)` and have both consume it.
 
 ---
 
@@ -541,6 +583,51 @@ about is the number the machine will cut.
 Verified: the trait defaults at `compute/catalog.rs:673-681`, the 10 overrides,
 the discarded return at `feeds/suggest.rs:877`, the `None` guard at `:936`, and
 the `Even` distribution at `depth.rs:16-19`. Read statically. Not benched.
+
+---
+
+## T-13 — `F_edge` is applied per mm of depth to an edge that is longer
+
+`feeds/force.rs` documents `F_edge` as "N/mm of **axial engagement**", and
+the load model applies it that way: the edge power term is
+`F_edge · ap · Vc · duty`.
+
+The coefficient comes from the woodresearch.sk **quasi-orthogonal** fit,
+where the cutting edge is straight and parallel to the axis. On that tool a
+millimetre of axial depth is a millimetre of edge. On a helical router bit it
+is not: the edge spirals, so it is `1/cos(β)` longer than the depth it
+covers. At a 30° helix that is **15.5 %** more edge per mm of depth; at 45°
+it is 41 %.
+
+If the ploughing force arises per unit of EDGE, as the physical picture of a
+rounded edge rubbing suggests, the edge term is under-read by that factor on
+every helical tool — which is every router bit we model.
+
+**Why nothing catches it:** the coefficient and its consumer agree with each
+other. Both say "per mm of axial engagement", consistently, and every sentry
+pins that consistency. Nothing asks whether the calibration tool and the
+modelled tool have the same edge geometry.
+
+**Why this is NOT simply a bug to fix.** Two things must be true, and only
+the first is settled:
+
+1. The geometry is certain: a helical edge is `1/cos(β)` longer. That is
+   trigonometry.
+2. Whether the ploughing force scales with edge length is NOT certain. A
+   helical edge cuts obliquely, which changes the effective rake, the chip
+   flow direction and the force distribution along the edge. Part of the
+   force on an inclined edge is axial and does no work against rotation.
+   Oblique-cutting mechanics may already absorb some or all of the extra
+   length.
+
+**What it needs:** a literature anchor for oblique wood cutting of the same
+standard `force.rs` holds for the affine fit, or a measurement. Until then
+this is a question, not a defect, and it must not be "fixed" by multiplying
+by `1/cos(β)` and hoping.
+
+**Found by:** withdrawing T-7, 2026-09-17. T-7 claimed a 49 % helix
+under-read that turned out to be about a different quantity. This is the
+residue that survived the test, and it is a quarter the size.
 
 ---
 
