@@ -27,28 +27,65 @@ fn push_segment(out: &mut Vec<LineVertex>, p0: [f32; 3], p1: [f32; 3], color: [f
     });
 }
 
+/// Emit a dashed line from `p0` to `p1` as a `dash_len` / `gap_len` cycle
+/// along its own direction, both in model units.
+///
+/// **The one dash emitter.** `app.rs` carried a second copy of this walk
+/// until 2026-09-17, and [`push_dashed_segment`] carried a third dash model
+/// beside it. The dash MODEL is the parameter; the walk is not repeated.
+///
+/// A line shorter than 1e-6 emits nothing: it has no direction to walk.
+pub(crate) fn push_dashed_line(
+    out: &mut Vec<LineVertex>,
+    start: [f32; 3],
+    end: [f32; 3],
+    color: [f32; 3],
+    dash_len: f32,
+    gap_len: f32,
+) {
+    let dx = end[0] - start[0];
+    let dy = end[1] - start[1];
+    let dz = end[2] - start[2];
+    let total = (dx * dx + dy * dy + dz * dz).sqrt();
+    if total < 1e-6 {
+        return;
+    }
+    let (ux, uy, uz) = (dx / total, dy / total, dz / total);
+
+    let cycle = dash_len + gap_len;
+    let mut t = 0.0_f32;
+    while t < total {
+        let t_end = (t + dash_len).min(total);
+        out.push(LineVertex {
+            position: [start[0] + ux * t, start[1] + uy * t, start[2] + uz * t],
+            color,
+        });
+        out.push(LineVertex {
+            position: [
+                start[0] + ux * t_end,
+                start[1] + uy * t_end,
+                start[2] + uz * t_end,
+            ],
+            color,
+        });
+        t += cycle;
+    }
+}
+
 /// Emit a single segment as two short sub-segments (start third + end third)
 /// so it reads as a centre-gapped dash without needing a stipple shader.
+///
+/// This is [`push_dashed_line`] with a dash model expressed as a FRACTION of
+/// the segment rather than in model units: a 0.35 dash and a 0.30 gap put
+/// one dash on `[0, 0.35]` and the next on `[0.65, 1]`, which is the centre
+/// gap this has always drawn. The fraction is what makes the gap read the
+/// same on a 2 mm link move and a 200 mm one.
 fn push_dashed_segment(out: &mut Vec<LineVertex>, p0: [f32; 3], p1: [f32; 3], color: [f32; 3]) {
-    let lerp = |t: f32| {
-        [
-            p0[0] + (p1[0] - p0[0]) * t,
-            p0[1] + (p1[1] - p0[1]) * t,
-            p0[2] + (p1[2] - p0[2]) * t,
-        ]
-    };
-    let a = lerp(0.35);
-    let b = lerp(0.65);
-    out.push(LineVertex {
-        position: p0,
-        color,
-    });
-    out.push(LineVertex { position: a, color });
-    out.push(LineVertex { position: b, color });
-    out.push(LineVertex {
-        position: p1,
-        color,
-    });
+    let dx = p1[0] - p0[0];
+    let dy = p1[1] - p0[1];
+    let dz = p1[2] - p0[2];
+    let total = (dx * dx + dy * dy + dz * dz).sqrt();
+    push_dashed_line(out, p0, p1, color, 0.35 * total, 0.30 * total);
 }
 
 /// Toolpath line data uploaded to GPU.

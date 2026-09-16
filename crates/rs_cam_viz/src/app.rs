@@ -1174,46 +1174,6 @@ fn push_circle_vertices(
     }
 }
 
-/// Push line-segment vertices for a dashed line from `start` to `end`.
-fn push_dashed_line_vertices(
-    verts: &mut Vec<crate::render::LineVertex>,
-    start: [f32; 3],
-    end: [f32; 3],
-    color: [f32; 3],
-    dash_len: f32,
-    gap_len: f32,
-) {
-    let dx = end[0] - start[0];
-    let dy = end[1] - start[1];
-    let dz = end[2] - start[2];
-    let total = (dx * dx + dy * dy + dz * dz).sqrt();
-    if total < 1e-6 {
-        return;
-    }
-    let ux = dx / total;
-    let uy = dy / total;
-    let uz = dz / total;
-
-    let cycle = dash_len + gap_len;
-    let mut t = 0.0_f32;
-    while t < total {
-        let t_end = (t + dash_len).min(total);
-        verts.push(crate::render::LineVertex {
-            position: [start[0] + ux * t, start[1] + uy * t, start[2] + uz * t],
-            color,
-        });
-        verts.push(crate::render::LineVertex {
-            position: [
-                start[0] + ux * t_end,
-                start[1] + uy * t_end,
-                start[2] + uz * t_end,
-            ],
-            color,
-        });
-        t += cycle;
-    }
-}
-
 /// Every upload-time overlay dial, in one comparable value — plus the two
 /// inputs of the WP27 draw rule, which is consumed in the same pass.
 ///

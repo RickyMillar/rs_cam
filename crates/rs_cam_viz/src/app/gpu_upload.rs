@@ -681,7 +681,14 @@ impl RsCamApp {
                     let s = [start_l.x as f32, start_l.y as f32, start_l.z as f32];
                     let e = [end_l.x as f32, end_l.y as f32, end_l.z as f32];
                     let axis_color = [0.9_f32, 0.7, 0.2];
-                    super::push_dashed_line_vertices(&mut pin_vertices, s, e, axis_color, 5.0, 3.0);
+                    crate::render::toolpath_render::push_dashed_line(
+                        &mut pin_vertices,
+                        s,
+                        e,
+                        axis_color,
+                        5.0,
+                        3.0,
+                    );
                 }
             }
 
