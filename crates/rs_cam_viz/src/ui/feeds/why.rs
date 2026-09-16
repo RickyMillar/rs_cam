@@ -29,8 +29,8 @@
 //! measured value to show. The achieved figure lives on the properties
 //! panel's operating-point card, after a sim (Checkpoint H2, 2026-08-08).
 
-use rs_cam_core::feeds::FeedsExplain;
 use rs_cam_core::feeds::rationale::SuggestRationale;
+use rs_cam_core::feeds::{FeedsExplain, SpindleScaleReason};
 
 use super::shared::{CurrentValues, engaged_diameter_context, vendor_band};
 use crate::ui::{theme, tokens};
@@ -125,15 +125,36 @@ fn explain_rpm(out: &mut String, explain: &FeedsExplain) {
         },
         None => out.push_str("No vendor row matched. This is the empirical formula's RPM.\n"),
     }
-    let speedup = explain.recommended.derates.spindle_speedup;
-    if (speedup - 1.0).abs() > UNITY_TOLERANCE {
-        out.push_str(&format!(
-            "Spindle policy MaxSpeed lifted it ×{speedup:.3} toward the spindle \
+    // The sentence comes from the RECORDED reason, never from the factor.
+    // Until 2026-09-16 this read the factor alone and said "MaxSpeed lifted
+    // it" for anything that was not 1.0 — which was true only while MaxSpeed
+    // was the one thing that could move it. The power ladder walks the same
+    // line downward, so a factor-only reading would name the wrong cause.
+    let scale = explain.recommended.derates.spindle_scale;
+    let reason = explain.recommended.derates.spindle_scale_reason;
+    match reason {
+        SpindleScaleReason::MaxSpeedPolicy => out.push_str(&format!(
+            "Spindle policy MaxSpeed lifted it ×{scale:.3} toward the spindle \
              ceiling, and scaled the feed with it to hold the advance/tooth \
              constant.\n"
-        ));
-    } else {
-        out.push_str("Spindle policy is Match chart, so the RPM follows the vendor row.\n");
+        )),
+        SpindleScaleReason::PowerLimit => out.push_str(&format!(
+            "The cut was over the spindle's power budget, so the RPM came DOWN \
+             ×{scale:.3} and the feed came down with it. The advance per tooth \
+             is unchanged — the cut is the same shape, just slower.\n"
+        )),
+        SpindleScaleReason::Unchanged => {
+            if (scale - 1.0).abs() > UNITY_TOLERANCE {
+                // A factor that moved with no reason recorded is a bug in the
+                // calculator, not something to narrate over.
+                out.push_str(&format!(
+                    "The RPM was scaled ×{scale:.3} and the engine did not \
+                     record why. Treat this recommendation as unexplained.\n"
+                ));
+            } else {
+                out.push_str("Spindle policy is Match chart, so the RPM follows the vendor row.\n");
+            }
+        }
     }
 }
 

@@ -567,15 +567,49 @@ pub struct FeedsDerates {
     pub feed_clamp: f64,
     /// Machine safety factor (0.75–0.80 typical).
     pub safety_factor: f64,
-    /// Spindle-speedup multiplier (≥ 1.0). Under
-    /// [`SpindleStrategy::MaxSpeed`] the calculator lifts RPM toward
-    /// the spindle ceiling and scales feed proportionally to keep the
-    /// chipload constant. `1.0` under `MatchChart` (the default) and
-    /// when the chart RPM is already at or above the ceiling.
-    /// Applied multiplicatively in [`combined_factor`].
+    /// Multiplier applied to the RPM while holding the chipload — a walk
+    /// along the constant-chipload line, in either direction. The feed
+    /// scales with it, so the advance per tooth does not move.
+    ///
+    /// **Was `spindle_scale`, renamed 2026-09-16.** It could only ever
+    /// exceed 1.0, because the only thing that moved it was
+    /// [`SpindleStrategy::MaxSpeed`] lifting RPM toward the spindle
+    /// ceiling. The power ladder walks the same line DOWNWARD on a
+    /// constant-power spindle, so the value can now be below 1.0 and a
+    /// field called "speedup" holding 0.5 would be a lie.
+    ///
+    /// Read [`Self::spindle_scale_reason`] before rendering this. A bare
+    /// factor cannot tell an operator whether the spindle sped up by
+    /// policy or slowed down because the cut was over power.
+    ///
+    /// NOT part of [`combined_factor`], deliberately: this walks the
+    /// constant-chipload line, so the chipload is unchanged.
     ///
     /// [`combined_factor`]: Self::combined_factor
-    pub spindle_speedup: f64,
+    pub spindle_scale: f64,
+    /// Why [`Self::spindle_scale`] is not 1.0.
+    pub spindle_scale_reason: SpindleScaleReason,
+}
+
+/// What moved the spindle off the RPM the chart or formula chose.
+///
+/// Added 2026-09-16 with the power ladder. Before it, `why.rs` rendered
+/// "Spindle policy MaxSpeed lifted it" for ANY scale that was not 1.0,
+/// because `MaxSpeed` was the only thing that could move it. Once a power
+/// limit can move it the other way, that sentence names the wrong cause —
+/// the same defect shape this programme has been clearing throughout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpindleScaleReason {
+    /// The scale is 1.0. The RPM is the chart's or the formula's.
+    #[default]
+    Unchanged,
+    /// [`SpindleStrategy::MaxSpeed`] lifted the RPM toward the spindle
+    /// ceiling and scaled the feed with it.
+    MaxSpeedPolicy,
+    /// The cut was over the spindle's power budget and the spindle is one
+    /// where a slower RPM genuinely reduces the load. See the power ladder
+    /// in [`calculate`].
+    PowerLimit,
 }
 
 /// Empirical chipload formula evaluation `K₀ × D^p × (1/H)^q`.
@@ -605,7 +639,7 @@ impl FeedsDerates {
         // target chipload to get the effective chipload. Spindle
         // speedup walks the constant-chipload line (RPM and feed
         // scale together), so chipload is unchanged. The modal
-        // renders `spindle_speedup` as a peer row so the operator
+        // renders `spindle_scale` as a peer row so the operator
         // sees the speed-axis change separately from the chipload
         // derates.
         //
@@ -1405,9 +1439,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // exceeds spindle power the existing `power_limit` claws feed
     // back, and the modal renders the resulting binding constraint.
     //
-    // `spindle_speedup` is captured into `FeedsDerates` for the modal.
+    // `spindle_scale` is captured into `FeedsDerates` for the modal.
     // Default (MatchChart) leaves it at 1.0; smoke baselines unchanged.
-    let mut spindle_speedup = 1.0_f64;
+    let mut spindle_scale = 1.0_f64;
+    let mut spindle_scale_reason = SpindleScaleReason::Unchanged;
     if matches!(input.spindle_strategy, SpindleStrategy::MaxSpeed) && rpm > 0.0 {
         let (_, machine_max_rpm) = machine.rpm_range();
         let machine_ceiling = machine_max_rpm * SPINDLE_CEILING_HEADROOM;
@@ -1453,8 +1488,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         };
         if ceiling > rpm {
             let raw_speedup = ceiling / rpm;
-            spindle_speedup = raw_speedup.min(MAX_SPINDLE_SPEEDUP);
-            rpm = machine.clamp_rpm(rpm * spindle_speedup);
+            spindle_scale = raw_speedup.min(MAX_SPINDLE_SPEEDUP);
+            spindle_scale_reason = SpindleScaleReason::MaxSpeedPolicy;
+            rpm = machine.clamp_rpm(rpm * spindle_scale);
         }
     }
 
@@ -1491,7 +1527,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             rpm = tier_ceiling;
             rpm = machine.clamp_rpm(rpm);
             if pre_clamp > 0.0 && rpm < pre_clamp {
-                spindle_speedup *= rpm / pre_clamp;
+                spindle_scale *= rpm / pre_clamp;
             }
         }
     }
@@ -1506,7 +1542,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // MaxSpeed lifted clamped 14000 → 14000 × MAX_SPINDLE_SPEEDUP =
     // 21000, +50% over the 8-14k wood-drill band).
     //
-    // We also roll `spindle_speedup` back proportionally so the modal
+    // We also roll `spindle_scale` back proportionally so the modal
     // reports the actual speedup the engine kept, not the requested
     // one it then undid.
     if input.operation == OperationFamily::Drill {
@@ -1515,7 +1551,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         rpm = rpm.clamp(floor, ceil);
         rpm = machine.clamp_rpm(rpm);
         if pre_clamp > 0.0 && rpm < pre_clamp {
-            spindle_speedup *= rpm / pre_clamp;
+            spindle_scale *= rpm / pre_clamp;
         }
     }
 
@@ -2022,7 +2058,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                     let target_rpm =
                         machine.clamp_rpm((clamped / (kept_fpt * flutes)).max(band_floor));
                     if target_rpm < rpm {
-                        spindle_speedup *= target_rpm / rpm;
+                        spindle_scale *= target_rpm / rpm;
                         rpm = target_rpm;
                     }
                 }
@@ -2074,7 +2110,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         power_limit: power_factor,
         feed_clamp: feed_clamp_factor,
         safety_factor: machine.safety_factor,
-        spindle_speedup,
+        spindle_scale,
+        spindle_scale_reason,
     };
 
     FeedsResult {
@@ -3996,16 +4033,16 @@ mod tests {
             max_speed.rpm
         );
 
-        // FeedsDerates.spindle_speedup tracks the multiplier for UI.
+        // FeedsDerates.spindle_scale tracks the multiplier for UI.
         assert!(
-            (max_speed.derates.spindle_speedup - speedup).abs() < 0.05,
-            "derates.spindle_speedup {} should match observed RPM speedup {}",
-            max_speed.derates.spindle_speedup,
+            (max_speed.derates.spindle_scale - speedup).abs() < 0.05,
+            "derates.spindle_scale {} should match observed RPM speedup {}",
+            max_speed.derates.spindle_scale,
             speedup,
         );
 
         // combined_factor (chipload multiplier) does NOT include
-        // spindle_speedup — it's purely a speed-axis change.
+        // spindle_scale — it's purely a speed-axis change.
         let factor_max = max_speed.derates.combined_factor();
         let factor_chart = match_chart.derates.combined_factor();
         assert!(
@@ -4048,9 +4085,9 @@ mod tests {
             spindle_strategy: SpindleStrategy::MaxSpeed,
         });
         assert!(
-            result.derates.spindle_speedup <= MAX_SPINDLE_SPEEDUP + 1e-6,
-            "spindle_speedup {} must not exceed MAX_SPINDLE_SPEEDUP {}",
-            result.derates.spindle_speedup,
+            result.derates.spindle_scale <= MAX_SPINDLE_SPEEDUP + 1e-6,
+            "spindle_scale {} must not exceed MAX_SPINDLE_SPEEDUP {}",
+            result.derates.spindle_scale,
             MAX_SPINDLE_SPEEDUP,
         );
     }

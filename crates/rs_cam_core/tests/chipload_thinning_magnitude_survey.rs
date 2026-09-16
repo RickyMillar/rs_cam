@@ -628,7 +628,7 @@ fn chip_thinning_is_measured_but_not_applied_to_the_feed() {
     // identity by construction — that is the same exclusion
     // `vendor_sidebyside_chipload.rs` makes for the same reason.
     //
-    // `spindle_speedup` is in the product and `combined_factor()` deliberately
+    // `spindle_scale` is in the product and `combined_factor()` deliberately
     // omits it (it walks the constant-chipload line), so it is multiplied back
     // in here.
     //
@@ -650,7 +650,7 @@ fn chip_thinning_is_measured_but_not_applied_to_the_feed() {
         let Some(d) = p.derates.as_ref() else {
             continue;
         };
-        let predicted = d.target_chip_load_mm * d.combined_factor() * d.spindle_speedup;
+        let predicted = d.target_chip_load_mm * d.combined_factor() * d.spindle_scale;
         if !(predicted.is_finite() && predicted > 0.0) {
             continue;
         }
@@ -668,7 +668,7 @@ fn chip_thinning_is_measured_but_not_applied_to_the_feed() {
             (observed - predicted).abs() <= rounding_tolerance + predicted * 1e-9,
             "{:?} / {:?} Ø{} {}F in {}: the commanded advance does not equal the target \
              chipload times the APPLIED derates.\n  commanded {:.8} mm/tooth\n  predicted \
-             {:.8} mm/tooth  (target {:.8} × applied {:.6} × spindle_speedup {:.6})\n  \
+             {:.8} mm/tooth  (target {:.8} × applied {:.6} × spindle_scale {:.6})\n  \
              relative disagreement {rel:.6}\n  An unexplained multiplier is in the feed. If \
              it is chip thinning ({:.4}× here), it was deleted on 2026-08-19 by operator \
              ruling and must not return without one — see the Step 5 note in feeds/mod.rs.",
@@ -681,7 +681,7 @@ fn chip_thinning_is_measured_but_not_applied_to_the_feed() {
             predicted,
             d.target_chip_load_mm,
             d.combined_factor(),
-            d.spindle_speedup,
+            d.spindle_scale,
             p.thinning
         );
         mechanism_checked += 1;

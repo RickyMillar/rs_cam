@@ -205,14 +205,14 @@ fn vendor_sidebyside_chipload_spotcheck() {
         );
         println!(
             "           depth_tier={:.6}  ld={:.6}  workholding={:.6}  power={:.6}  \
-             feed_clamp={:.6}  safety={:.6}  spindle_speedup={:.6}",
+             feed_clamp={:.6}  safety={:.6}  spindle_scale={:.6}",
             dr.depth_tier,
             dr.ld_overhang,
             dr.workholding,
             dr.power_limit,
             dr.feed_clamp,
             dr.safety_factor,
-            dr.spindle_speedup
+            dr.spindle_scale
         );
 
         match (&result.matched_lut_row, result.chipload_bounds) {
@@ -314,7 +314,7 @@ fn vendor_sidebyside_chipload_spotcheck() {
 ///
 /// ```text
 /// target_chip_load_mm x depth_tier
-///                     x ld x workholding x safety_factor x spindle_speedup
+///                     x ld x workholding x safety_factor x spindle_scale
 /// ```
 ///
 /// **`combined_chip_thinning` left this identity on 2026-08-19**
@@ -352,7 +352,7 @@ fn the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack() 
             * dr.ld_overhang
             * dr.workholding
             * dr.safety_factor
-            * dr.spindle_speedup;
+            * dr.spindle_scale;
         assert!(
             (commanded_fpt - predicted).abs() < 1e-9,
             "{}: commanded {commanded_fpt:.9} != seed-midpoint identity {predicted:.9} \

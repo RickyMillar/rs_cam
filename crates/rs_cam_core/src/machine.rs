@@ -255,6 +255,42 @@ impl MachineProfile {
         }
     }
 
+    /// The highest RPM this spindle can actually run that is **at or below**
+    /// `rpm`, clamped into the spindle's range.
+    ///
+    /// [`Self::clamp_rpm`] snaps a discrete spindle to the NEAREST listed
+    /// speed, which rounds UP about half the time. That is right for "what
+    /// will this machine actually run", and wrong for any caller reducing the
+    /// RPM to shed load: asking a Makita for 9 000 gets 10 000 back, so a
+    /// power-limited traverse would raise the power it was called to reduce.
+    ///
+    /// Returns the spindle's minimum when `rpm` sits below everything the
+    /// spindle offers. The caller must therefore check the result rather than
+    /// assume it got what it asked for — the traverse is often partial, and a
+    /// partial traverse reported as a whole one is a lie about the cut.
+    pub fn next_rpm_at_or_below(&self, rpm: f64) -> f64 {
+        match &self.spindle {
+            SpindleConfig::Variable { min_rpm, max_rpm } => rpm.clamp(*min_rpm, *max_rpm),
+            SpindleConfig::Discrete { speeds } => {
+                let at_or_below = speeds
+                    .iter()
+                    .copied()
+                    .filter(|s| *s <= rpm)
+                    .reduce(f64::max);
+                match at_or_below {
+                    Some(s) => s,
+                    // Nothing this slow exists. Hand back the slowest speed
+                    // the spindle has, which is the closest it can get.
+                    None => speeds
+                        .iter()
+                        .copied()
+                        .reduce(f64::min)
+                        .unwrap_or_else(|| self.clamp_rpm(rpm)),
+                }
+            }
+        }
+    }
+
     /// Available spindle power at the given RPM.
     pub fn power_at_rpm(&self, rpm: f64) -> f64 {
         match self.power {
