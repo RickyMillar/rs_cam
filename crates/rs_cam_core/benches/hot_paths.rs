@@ -46,7 +46,7 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 use rs_cam_core::dexel_stock::{PlaybackDispatch, StampDispatch, StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::radial_profile::RadialProfileLUT;
 use rs_cam_core::region_set::RegionSet;
@@ -54,6 +54,9 @@ use rs_cam_core::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+
+mod support;
+use support::rolling_field;
 
 // ── Shared fixtures ─────────────────────────────────────────────────────
 
@@ -93,36 +96,6 @@ fn ring_with_holes(radius: f64, verts: usize, hole_verts: usize) -> Polygon2 {
         );
     }
     poly
-}
-
-/// A rolling height field — the same generator shape `classification.rs`
-/// uses, at the size the waterline bench can afford.
-///
-/// `n` vertices per side → `2·(n−1)²` triangles.
-fn rolling_field(half: f64, n: usize) -> TriangleMesh {
-    let step = 2.0 * half / (n - 1) as f64;
-    let mut vertices = Vec::with_capacity(n * n);
-    for iy in 0..n {
-        let y = -half + iy as f64 * step;
-        for ix in 0..n {
-            let x = -half + ix as f64 * step;
-            let z = 1.6 * (x * 0.9).sin() * (y * 0.7).cos() + 0.9 * (x * 2.3 + y * 1.7).sin()
-                - 0.35 * (x * x + y * y).sqrt();
-            vertices.push(P3::new(x, y, z));
-        }
-    }
-    let mut triangles = Vec::with_capacity(2 * (n - 1) * (n - 1));
-    for iy in 0..n - 1 {
-        for ix in 0..n - 1 {
-            let a = (iy * n + ix) as u32;
-            let b = a + 1;
-            let c = a + n as u32;
-            let d = c + 1;
-            triangles.push([a, c, b]);
-            triangles.push([b, c, d]);
-        }
-    }
-    TriangleMesh::from_raw(vertices, triangles)
 }
 
 // ── S1a / S2 / S3 / S7 / S8: lateral stamp kernel ───────────────────────

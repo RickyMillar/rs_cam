@@ -232,7 +232,7 @@ maintain.
   `planning/PROGRESS.md:903`, `planning/DEXEL_Z_ONLY_INVESTIGATION.md:25`
   (review gap 4). Risk: low. Gate: `step5_marching_cubes` +
   `lateral_scrub_playback_stock_g_lateralscrub`.
-- [ ] **C28 — bench helper** (I10 pair 5). Single `rolling_field` in a
+- [x] **C28 — bench helper** (I10 pair 5). Single `rolling_field` in a
   benches helper. Risk: low.
 
 ## Phase 4 — documentation / no-action items

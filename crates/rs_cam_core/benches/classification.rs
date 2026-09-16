@@ -41,10 +41,12 @@ use std::time::Duration;
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use rs_cam_core::finish_setup::CLASSIFICATION_PROBE_DIAMETER_MM;
-use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::slope::SurfaceHeightmap;
 use rs_cam_core::tool::BallEndmill;
+
+mod support;
+use support::rolling_field;
 
 /// Set `RS_CAM_M3_HEAVY=1` to include the real-fixture rows.
 fn heavy_enabled() -> bool {
@@ -61,38 +63,6 @@ fn repo_root() -> PathBuf {
 }
 
 // ── Fixtures ────────────────────────────────────────────────────────────
-
-/// A rolling height field with enough triangles that the spatial index has
-/// real work to do, but small enough to build in milliseconds.
-///
-/// `n` vertices per side → `2·(n−1)²` triangles. `n = 121` gives 28 800.
-fn rolling_field(half: f64, n: usize) -> TriangleMesh {
-    let step = 2.0 * half / (n - 1) as f64;
-    let mut vertices = Vec::with_capacity(n * n);
-    for iy in 0..n {
-        let y = -half + iy as f64 * step;
-        for ix in 0..n {
-            let x = -half + ix as f64 * step;
-            // Two incommensurate ripples plus a ridge: slopes from flat to
-            // near-vertical, so the classifier sees every band.
-            let z = 1.6 * (x * 0.9).sin() * (y * 0.7).cos() + 0.9 * (x * 2.3 + y * 1.7).sin()
-                - 0.35 * (x * x + y * y).sqrt();
-            vertices.push(P3::new(x, y, z));
-        }
-    }
-    let mut triangles = Vec::with_capacity(2 * (n - 1) * (n - 1));
-    for iy in 0..n - 1 {
-        for ix in 0..n - 1 {
-            let a = (iy * n + ix) as u32;
-            let b = a + 1;
-            let c = a + n as u32;
-            let d = c + 1;
-            triangles.push([a, c, b]);
-            triangles.push([b, c, d]);
-        }
-    }
-    TriangleMesh::from_raw(vertices, triangles)
-}
 
 fn load_terrain(name: &str) -> Option<TriangleMesh> {
     let candidates = [
