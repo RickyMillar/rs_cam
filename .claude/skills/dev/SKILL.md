@@ -43,27 +43,30 @@ Note: the 12 heaviest core binaries sit behind the `heavy-tests` feature (75% of
 
 ## Module Map
 
-### rs_cam_core — CAM engine (56 modules)
+### rs_cam_core — CAM engine (folders since 2026-09-17)
 
-**Operations (22):** `adaptive.rs`, `adaptive3d.rs`, `chamfer.rs`, `drill.rs`, `dropcutter.rs`, `face.rs`, `horizontal_finish.rs`, `inlay.rs`, `pencil.rs`, `pocket.rs`, `profile.rs`, `project_curve.rs`, `radial_finish.rs`, `ramp_finish.rs`, `rest.rs`, `scallop.rs`, `spiral_finish.rs`, `steep_shallow.rs`, `trace.rs`, `vcarve.rs`, `waterline.rs`, `zigzag.rs`
+The crate root holds `lib.rs` and the spine only: `geo.rs`, `polygon.rs`,
+`mesh.rs`, `toolpath.rs`, `ids.rs`, `interrupt.rs`, `measurement.rs`.
+Every other module sits in a folder. `folder/mod.rs` carries the folder's
+principal type where one exists (`io`, `machine`, `dressup`, `material`).
 
-**Tools:** `tool/` — `FlatEndmill`, `BallEndmill`, `BullNoseEndmill`, `VBitEndmill`, `TaperedBallEndmill`
-
-**Simulation:** `dexel.rs`, `dexel_stock.rs`, `dexel_mesh.rs`, `simulation.rs`, `simulation_cut.rs`
-
-**Diagnostics:** `debug_trace.rs`, `semantic_trace.rs`, `collision.rs`
-
-**Dressups & post:** `dressup.rs` (includes air-cut filter for stock-aware ops), `feedopt.rs`, `arcfit.rs`, `depth.rs`, `tsp.rs`
-
-**Stock:** `radial_profile.rs`, `stock_mesh.rs`, `arc_util.rs` (extracted shared types)
-
-**Import:** `mesh.rs`, `svg_input.rs`, `dxf_input.rs`
-
-**Export:** `gcode.rs`
-
-**Geometry:** `geo.rs`, `polygon.rs`, `boundary.rs`, `contour_extract.rs`, `fiber.rs`, `slope.rs`, `scallop_math.rs`, `pushcutter.rs`
-
-**Other:** `adaptive_shared.rs`, `feeds/`, `interrupt.rs`, `machine.rs`, `material.rs`, `pipeline.rs`, `toolpath.rs`, `viz.rs`
+| Folder | Holds |
+|---|---|
+| `ops/` | 2.5D and drilling operations: `pocket`, `profile`, `face`, `drill`, `drill_op`, `drill_metrics`, `vcarve`, `inlay`, `chamfer`, `waterline`, `zigzag`, `trace_path`, `rest`, `project_curve`, `depth`, `adaptive_shared` |
+| `finish/` | 3D finishing: `scallop`, `scallop_isofield`, `scallop_math`, `pencil`, `pencil_dihedral`, `unified_finish`, `finish_planner`, `finish_setup`, `conformal_spiral`, `direction_field`, `crest_lines`, `crease_paths`, `classify_probe`, `steep_shallow`, `surface_link`, `ramp_finish`, `spiral_finish`, `spiral_finish_compact`, `radial_finish`, `horizontal_finish` |
+| `adaptive/`, `adaptive3d/` | adaptive clearing, 2D and 3D |
+| `geometry/` | derived geometry: `boundary`, `contour_extract`, `edge_distance`, `enriched_mesh`, `fiber`, `grid2`, `grid_field`, `marching_squares`, `monotone_cells`, `nn_order`, `point_runs`, `region_mask`, `region_set`, `arc_util` |
+| `surface/` | surface queries: `dropcutter`, `pushcutter`, `slope`, `rest_field`, `reach`, `flow_accum` |
+| `maps/` | tier and reach maps and their caches: `tier_map`, `tier_islands`, `reach_map`, `rest_heatmap_mesh`, `*_cache`, `memo`, `grid`, `tool_shape_key` |
+| `stock/`, `dexel_stock/` | stock model and simulation: `dexel`, `dexel_mesh`, `dexel_mesh_mc`, `simulation_cut`, `sim_triage`, `sim_measurability`, `collision`, `stock_mesh`, `radial_profile`; the engine is `dexel_stock/` |
+| `dressup/` | post-generation passes: `dressup` (mod), `arcfit`, `condition`, `feedopt`, `feed_modulation`, `tsp`, `entry_audit` |
+| `feeds/`, `tool_load/` | feeds and speeds; load, chipload and power gates; the optimizer |
+| `tool/`, `material/`, `machine/` | cutter families; material library; machine profile, `kinematics`, `kinematic_utilization`, `strategy_advisor` |
+| `io/` | importers and libraries: `svg_input`, `dxf_input`, `step_input`, `tool_library`, `machine_library`, `named_toml_library`; the project-file reader is `io/mod.rs` |
+| `gcode/`, `export/` | post-processors; `viz`, `fingerprint`, `gcode_validator`, `artifact_io` |
+| `trace/`, `diagnostics/` | `debug_trace`, `semantic_trace`, `toolpath_spans`, `narrate`, `transform_provenance`; typed findings |
+| `session/`, `compute/` | `ProjectSession` and `Command`; operation dispatch, catalog, config, simulate |
+| `metrology/`, `util/` | measurement instruments; `panic_message`, `build_info` |
 
 ### rs_cam_viz — Desktop GUI
 

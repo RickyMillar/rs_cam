@@ -1890,7 +1890,7 @@ fn cost_field_result(
 /// mesh — would put an estimator inside both the floor and the target field,
 /// and every number this experiment produces would then be a statement about
 /// the estimator as much as about the geometry. These fixtures are analytic
-/// *precisely* so that confound can be removed; `crate::crest_lines` is
+/// *precisely* so that confound can be removed; `crate::finish::crest_lines` is
 /// `pub(crate)` to `direction_field` anyway, so the estimator is not reachable
 /// from a test even if it were wanted.
 #[derive(Clone, Copy)]

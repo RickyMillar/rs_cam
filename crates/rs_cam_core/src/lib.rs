@@ -38,7 +38,6 @@ pub mod feeds;
 pub mod finish;
 pub mod gcode;
 pub mod geo;
-// The walk grid `tier_map` and `reach_map` share; private to the crate.
 pub mod geometry;
 pub mod ids;
 pub mod interrupt;

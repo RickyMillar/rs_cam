@@ -34,7 +34,7 @@ Adaptive clearing in `rs_cam` is explicitly documented as Freesteel/Adaptive2d-i
 
 Repo references:
 
-- `crates/rs_cam_core/src/adaptive.rs`
+- `crates/rs_cam_core/src/adaptive/mod.rs`
 - `research/02_algorithms.md`
 - `research/04_open_source_reference.md`
 
@@ -131,7 +131,7 @@ supply a shipped algorithm, parameter, implementation, or product claim.
   any implementation must attribute at the implementation site.
 
 **Implementation sites (Phase F2.1, 2026-08-30).** The research module
-`crates/rs_cam_core/src/conformal_spiral.rs` — unshipped, no production
+`crates/rs_cam_core/src/finish/conformal_spiral.rs` — unshipped, no production
 caller — implements two source-derived pieces and attributes both at their
 own definitions:
 
@@ -176,9 +176,9 @@ The implementation uses `SmallVec<[DexelSegment; 1]>` for allocation-free single
 
 Repo references:
 
-- `crates/rs_cam_core/src/dexel.rs` — core segment, ray, and grid primitives
-- `crates/rs_cam_core/src/dexel_stock.rs` — volumetric stock representation with tool stamping
-- `crates/rs_cam_core/src/dexel_mesh.rs` — mesh extraction for viewport rendering
+- `crates/rs_cam_core/src/stock/dexel.rs` — core segment, ray, and grid primitives
+- `crates/rs_cam_core/src/dexel_stock/mod.rs` — volumetric stock representation with tool stamping
+- `crates/rs_cam_core/src/stock/dexel_mesh.rs` — mesh extraction for viewport rendering
 - `architecture/TRI_DEXEL_SIMULATION.md` — design rationale and implementation plan
 
 Industry references:
@@ -202,13 +202,13 @@ The repo text or code explicitly references these algorithm families or techniqu
 
 Key repo references:
 
-- `crates/rs_cam_core/src/dropcutter.rs`
-- `crates/rs_cam_core/src/waterline.rs`
+- `crates/rs_cam_core/src/surface/dropcutter.rs`
+- `crates/rs_cam_core/src/ops/waterline.rs`
 - `crates/rs_cam_core/src/toolpath.rs`
-- `crates/rs_cam_core/src/tsp.rs`
-- `crates/rs_cam_core/src/scallop_math.rs`
-- `crates/rs_cam_core/src/arcfit.rs`
-- `crates/rs_cam_core/src/contour_extract.rs`
+- `crates/rs_cam_core/src/dressup/tsp.rs`
+- `crates/rs_cam_core/src/finish/scallop_math.rs`
+- `crates/rs_cam_core/src/dressup/arcfit.rs`
+- `crates/rs_cam_core/src/geometry/contour_extract.rs`
 
 ## Data sources and formulas
 
@@ -467,7 +467,7 @@ report once Step 5.5 lands.
 `MaterialFamily::Fiberglass` to
 `crates/rs_cam_core/src/feeds/vendor_lut.rs` and the matching
 `Material::Fiberglass { grade: FiberglassGrade }` lifecycle to
-`crates/rs_cam_core/src/material.rs` (`FiberglassGrade::{G10Fr4,
+`crates/rs_cam_core/src/material/mod.rs` (`FiberglassGrade::{G10Fr4,
 Generic}`). Composites are abrasive + fiber-reinforced — their
 cutting class doesn't map onto polymers or metals, so the LUT
 matcher assigns Fiberglass its own `material_category` (3) and
@@ -522,7 +522,7 @@ Bundled vendor LUT count unchanged (252); the change is purely on
 the material-side Kc accessor.
 
 2026-05-31 Phase C (completion plan) added 5 new
-`AluminumAlloy` variants to `crates/rs_cam_core/src/material.rs`,
+`AluminumAlloy` variants to `crates/rs_cam_core/src/material/mod.rs`,
 extending aluminum coverage from 2 alloys (6061-T6, 7075-T6) to 7:
 
 - `Alloy2024T3` — Brinell 120, ASM matweb verbatim
@@ -542,7 +542,7 @@ pin each Brinell value to its citation. See
 
 2026-05-31 Phase D (completion plan) added 6 new `PlasticFamily`
 variants and a new `PlasticHardness::RockwellR` scale variant to
-`crates/rs_cam_core/src/material.rs`, extending plastic coverage
+`crates/rs_cam_core/src/material/mod.rs`, extending plastic coverage
 from 5 families (Generic / Acrylic / HDPE / Delrin / Polycarbonate)
 to 11:
 
@@ -810,7 +810,7 @@ For the full transitive dependency graph, see `Cargo.lock`.
 
 The HTML visualization path loads `three.js` from jsDelivr:
 
-- `crates/rs_cam_core/src/viz.rs`
+- `crates/rs_cam_core/src/export/viz.rs`
 
 Those viewer templates should be considered part of the third-party runtime surface when packaging or redistributing exported HTML.
 

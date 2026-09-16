@@ -24,7 +24,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 | 2.5D | Rest Machining | `rest.rs` | Yes | Yes | Shipped |
 | 2.5D | Inlay | `inlay.rs` | Yes | Yes | Shipped |
 | 2.5D | Zigzag | `zigzag.rs` | Yes | No | Shipped |
-| 2.5D | Trace | `trace.rs` | Yes | No | Shipped |
+| 2.5D | Trace | `ops/trace_path.rs` | Yes | No | Shipped |
 | 2.5D | Drill | `drill.rs` | Yes | No | Shipped — first-class `OperationFamily` with peck cycles, diameter-scaled `peck_depth` / `plunge_rate_base`, and drill-native metrics (`DrillToolpathSummary` + `drill_gates`) in place of engagement axes. Hole positions come from the model's drill targets — circle-like closed polygons (every vertex within max(2 %, 0.05 mm) of the mean radius, 8+ vertices; `svg_input::circle_like_drill_targets`, layer `circles`) and DXF POINT entities / circle/arc centres with layer attribution — picked via viewport click or per-layer "select all"; default (no selection) drills every target the model exposes. A drawing with none (a star, an outline, a mesh) refuses with "No drill targets — pick points/circles or import a drawing with circles"; the inspector, the static validator and the diagnostics ribbon print the same sentence (G-DRILLCENTROID, 2026-09-10 — before that the default drilled the centroid of EVERY closed polygon, so a drawing with no circles got a hole through the middle of each shape) |
 | 2.5D | Chamfer | `chamfer.rs` | Yes | No | Shipped |
 | 3D | 3D Finish | `dropcutter.rs` | Yes | Yes | Shipped |

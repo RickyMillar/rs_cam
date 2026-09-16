@@ -11,7 +11,7 @@
 //! The rest field is built ONCE by [`rest_field::detect_rest_valleys`].
 //! Extractor A is that call's own output (`result.centerlines` / `report`).
 //! Extractor B reads `result.rest_grid` and runs the promoted D8 hydrology
-//! (`crate::flow_accum`) on its `surface_z` — the real topography, which has
+//! (`crate::surface::flow_accum`) on its `surface_z` — the real topography, which has
 //! outlets — NOT on the rest field, which is a closed basin (amendment A1 in
 //! `FINDINGS.md`). The pencil criterion is preserved by rest-GATING the
 //! trunks.

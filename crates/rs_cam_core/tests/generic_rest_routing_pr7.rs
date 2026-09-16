@@ -9,7 +9,7 @@
 //!   the coverage routing criterion `X_reach ≤ cap × stepover` was evaluated
 //!   against a LITERAL 0.5 mm stepover and a 0-pass cap — a fan no operation
 //!   on a tapered tool would ever emit, and the last parallel answer to a
-//!   question `crate::reach` owns. `RestAnalysisConfig` carried neither dial
+//!   question `crate::surface::reach` owns. `RestAnalysisConfig` carried neither dial
 //!   (wave-A note in `planning/review_2026-07-29/ORCHESTRATION_LOG.md`).
 //! * **Variables held fixed**: one mesh per gate, one tool, one cell size,
 //!   one `min_valley_depth`. Gate 2's two arms differ ONLY in the stepover

@@ -2,7 +2,7 @@
 //!
 //! ## Background
 //!
-//! The face op planner (`crate::face::face_toolpath`) used to hardcode
+//! The face op planner (`crate::ops::face::face_toolpath`) used to hardcode
 //! `start_z = 0.0` for its depth stepping, emitting cuts at world
 //! Z=[-depth, 0]. This produced the correct stock-engaging behavior for
 //! the AS001 convention (stock origin chosen so the world stock top

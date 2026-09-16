@@ -143,7 +143,7 @@ Optimizer flow today:
 |---|---|
 | `svg_input.rs`, `dxf_input.rs`, `step_input.rs`, `mesh.rs`, `enriched_mesh.rs` | Geometry import/parsing and mesh/BREP enrichment. |
 | `gcode.rs` | G-code generation/post output. |
-| `io.rs` | Shared IO helpers. |
+| `io/mod.rs` | Shared IO helpers. |
 | `fingerprint.rs` | Toolpath fingerprinting and sweep comparison support. |
 
 ## GUI map (`rs_cam_viz`)
