@@ -167,6 +167,11 @@ pub fn drop_call_count() -> u64 {
 
 /// Zero the drop-cutter work counter, for harnesses that want a per-run
 /// delta. Touches no cached value, so it cannot change any result.
+///
+/// **Test door.** The harnesses
+/// `crates/rs_cam_core/tests/tier_map_slope_t2.rs` and
+/// `crates/rs_cam_core/tests/tier_map_cache_t3.rs` are the only callers. No
+/// production path reads it.
 pub fn reset_drop_call_count() {
     DROP_CALLS.store(0, Ordering::Relaxed);
 }

@@ -448,9 +448,10 @@ pub(crate) fn adaptive_3d_toolpath_traced_with_cancel(
 
 /// Like `adaptive_3d_toolpath` but also returns annotations for simulation display.
 /// Each annotation is `(move_index, label)`.
-#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
+///
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
 /// only callers. No production path reads it.
+#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
 #[allow(clippy::expect_used)]
 pub fn adaptive_3d_toolpath_annotated(
     mesh: &TriangleMesh,

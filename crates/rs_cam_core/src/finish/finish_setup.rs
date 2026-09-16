@@ -364,6 +364,10 @@ pub fn surface_build_count() -> u64 {
 /// Zero the whole-board surface-build counter. For harnesses that want a
 /// per-run delta; no cached or computed value is touched, so this cannot
 /// change any result.
+///
+/// **Test door.** The harness
+/// `crates/rs_cam_core/tests/finish_surface_cache.rs` is the only caller.
+/// No production path reads it.
 pub fn reset_surface_build_count() {
     SURFACE_BUILDS.store(0, std::sync::atomic::Ordering::Relaxed);
 }

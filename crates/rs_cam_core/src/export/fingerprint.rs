@@ -828,6 +828,10 @@ pub fn render_toolpath_composite_subject(
 /// bounding box — computed **once and shared by all six panels**, so panels
 /// are mutually comparable even though two renders of different meshes are
 /// not. Prefer [`render_mesh_composite_in_frame`] when a stock bbox is known.
+///
+/// **Test door.** The harness
+/// `crates/rs_cam_core/tests/composite_render_convention.rs` is the only
+/// caller. No production path reads it.
 pub fn render_mesh_composite(
     mesh: &crate::stock::stock_mesh::StockMesh,
     width: u32,
@@ -977,6 +981,10 @@ pub struct CompositePanel {
 /// without re-deriving the layout arithmetic and silently drifting from it.
 /// Order matches the drawn layout: rear row left-to-right, then front row.
 /// Empty when the requested size is too small to lay out.
+///
+/// **Test door.** The harness
+/// `crates/rs_cam_core/tests/composite_render_convention.rs` is the only
+/// caller. No production path reads it.
 pub fn composite_panel_layout(width: u32, height: u32) -> Vec<CompositePanel> {
     let Some(l) = composite_layout(width as usize, height as usize) else {
         return Vec::new();

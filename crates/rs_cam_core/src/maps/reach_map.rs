@@ -1825,6 +1825,11 @@ pub fn compute_reach_map(
 /// [`compute_reach_map`] for a caller that holds no spatial index — a
 /// fixture or a one-shot probe. Production callers hold a memoised index
 /// ([`crate::maps::geom_cache::cached_auto_index`]) and should pass it.
+///
+/// **Test door.** The harnesses `crates/rs_cam_core/tests/reach_map_p5.rs`,
+/// `crates/rs_cam_core/tests/reach_map_residual_p5_1.rs` and
+/// `crates/rs_cam_viz/tests/reach_overlay_p5.rs` are the only callers. No
+/// production path reads it.
 #[must_use]
 pub fn reach_map_for_mesh(
     mesh: &TriangleMesh,

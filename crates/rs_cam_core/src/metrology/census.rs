@@ -90,6 +90,10 @@ pub(crate) const PRIZE_RATIO_BANDS: [f64; 4] = [1.05, 1.10, 1.25, 1.50];
 /// **+9.75 %** prize ceiling ([`WANAKA_REGION1_PRIZE_CEILING_PCT`],
 /// `planning/finishing_synthesis_2026-08-30.md` §11) — which sits in the
 /// literature band below.
+///
+/// **Test door.** The harness
+/// `crates/rs_cam_core/tests/wanaka_curvature_anisotropy.rs` is the only
+/// caller. No production path reads it.
 pub const PRIZE_CLOSE_BELOW: f64 = 1.05;
 
 /// The anisotropy prize bar, upper edge: above this the measured prize is
