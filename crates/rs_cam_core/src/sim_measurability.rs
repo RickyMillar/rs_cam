@@ -61,7 +61,6 @@
 //! size); above it, the material was thick enough and the *lateral* extent is
 //! what failed, which is Floor 2.
 
-use crate::compute::catalog::OperationType;
 use crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM;
 use crate::ids::ToolpathId;
 use crate::simulation_cut::SimulationCutTrace;
@@ -253,11 +252,6 @@ impl Measurability {
     /// than it protects.
     pub fn abstains(&self) -> bool {
         matches!(self, Self::NotMeasurable(_))
-    }
-
-    /// True when the value may be published as a number at all.
-    pub fn publishable(&self) -> bool {
-        !self.abstains()
     }
 
     pub fn reason(&self) -> Option<MeasurabilityReason> {
@@ -452,30 +446,6 @@ fn classify_engagement(
     } else {
         Measurability::Degraded(reason)
     }
-}
-
-/// Operation families whose per-stamp axial engagement routinely sits at or
-/// under the fresh-material floor, from the census §5.3 matrix.
-///
-/// **Advisory only — this is not the detector.** The verdict always comes
-/// from the measured trace ([`MeasurabilityReport::from_trace`]); this is for
-/// pre-simulation UI copy that wants to warn before there is anything to
-/// measure. A finish op at a coarse stepover can be perfectly measurable and
-/// a pocket at a 0.02 mm spring pass can be blind, so never gate on this.
-pub fn engagement_is_floor_prone(op: OperationType) -> bool {
-    matches!(
-        op,
-        OperationType::DropCutter
-            | OperationType::Scallop
-            | OperationType::Waterline
-            | OperationType::HorizontalFinish
-            | OperationType::SteepShallow
-            | OperationType::RampFinish
-            | OperationType::SpiralFinish
-            | OperationType::RadialFinish
-            | OperationType::UnifiedFinish
-            | OperationType::Pencil
-    )
 }
 
 #[cfg(test)]
