@@ -244,6 +244,27 @@ tr.base td:first-child{color:var(--ink-2)}
   display:flex; justify-content:space-between;
   margin-top:5px; font-family:var(--mono); font-size:10.5px; color:var(--ink-3);
 }
+
+.proto-stage{
+  display:inline-flex; margin:0 0 22px; border:1px solid var(--rule);
+  border-radius:3px; overflow:hidden;
+}
+.proto-stage button{
+  font-family:var(--body); font-size:12.5px; font-weight:500;
+  padding:7px 14px; border:0; background:var(--panel); color:var(--ink-2);
+  cursor:pointer;
+}
+.proto-stage button[aria-pressed="true"]{background:var(--accent); color:#fff}
+.lim-hist{
+  height:38px; margin-top:10px; position:relative;
+  border-bottom:1px solid var(--rule);
+}
+.lim-hist canvas{width:100%; height:38px; display:block}
+.lim-mark{
+  position:absolute; top:-3px; bottom:-1px; width:2px;
+  background:var(--ink); opacity:.75;
+}
+.lim-mark.lim-edge{background:var(--over); opacity:1}
 .proto-foot{margin:22px 0 0; font-size:13px; color:var(--ink-2); line-height:1.55; max-width:66ch}
 @media (max-width:640px){ .proto-screen{padding:20px 16px 18px} }
 
@@ -348,6 +369,10 @@ footer code{font-family:var(--mono); font-size:12px}
   <div class="proto-screen">
     <h2 class="proto-head" id="p-head"></h2>
     <p class="proto-sub" id="p-sub"></p>
+    <div class="proto-stage" role="group" aria-label="Stage">
+      <button id="stage-pre" aria-pressed="true">Before the cut — predicted</button>
+      <button id="stage-post" aria-pressed="false">After the cut — measured</button>
+    </div>
     <div id="p-limits"></div>
     <p class="proto-foot" id="p-foot"></p>
   </div>
@@ -927,8 +952,10 @@ function limitRows(m){
   return [
     {
       name: "Chip thickness", unit: "mm/tooth",
-      value: RUBBING_FLOOR, limit: P.fz,
-      shown: `${P.fz.toFixed(4)} of ${RUBBING_FLOOR.toFixed(3)} floor`,
+      // A FLOOR, not a ceiling: the danger is being BELOW it. `used` still
+      // reads "how close to the limit", so it inverts here and nowhere else.
+      value: P.fz, limit: RUBBING_FLOOR, isFloor: true,
+      shown: `${P.fz.toFixed(4)} against a ${RUBBING_FLOOR.toFixed(3)} floor`,
       from: "Material and tool",
       why: "The chip must be thicker than the rubbing floor. Below the floor "
          + "the tooth rubs and does not cut. The floor is 0.025 mm per tooth. "
@@ -982,49 +1009,165 @@ function limitRows(m){
   ];
 }
 
+// Stage: before the cut there is nothing measured, so the row shows ONE
+// predicted value. After the cut every sample is available, so the row shows
+// the distribution on the SAME scale. Keeping the scale identical is the
+// point: the operator can see whether the prediction matched the job.
+let P_STAGE = "pre";
+
+// A synthetic spread standing in for a cut trace, so the shape of the idea is
+// visible without a simulator. NOT a simulation. Real samples carry their own
+// time weight; this is a plausible shape, nothing more.
+function syntheticSamples(centre, spread, n){
+  const out = [];
+  let seed = 12345;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < n; i++){
+    // Sum of three uniforms — a soft bell, plus an occasional heavy corner.
+    const bell = (rnd() + rnd() + rnd()) / 3 - 0.5;
+    const corner = rnd() < 0.04 ? rnd() * spread * 1.6 : 0;
+    out.push(Math.max(0, centre * (1 + bell * spread * 2) + corner * centre));
+  }
+  return out;
+}
+
+function drawHistogram(cv, samples, limit, axisMax, isFloor){
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const C = n => css.getPropertyValue(n).trim();
+
+  const BINS = 44;
+  const bins = new Array(BINS).fill(0);
+  for (const v of samples){
+    const b = Math.min(BINS - 1, Math.max(0, Math.floor(v / axisMax * BINS)));
+    bins[b] += 1;
+  }
+  const top = Math.max(...bins, 1);
+  const bw = w / BINS;
+  for (let i = 0; i < BINS; i++){
+    if (!bins[i]) continue;
+    const v = (i + 0.5) / BINS * axisMax;
+    const over = limit !== null && (isFloor ? v < limit : v > limit);
+    g.fillStyle = over ? C("--over") : C("--accent");
+    g.globalAlpha = over ? 0.95 : 0.75;
+    const bh = bins[i] / top * (h - 2);
+    g.fillRect(i * bw, h - bh, Math.max(bw - 1, 1), bh);
+  }
+  g.globalAlpha = 1;
+}
+
+// The axis a row is drawn on. It must hold BOTH the limit and the data:
+// scaling to the limit alone squashed a 350 %-of-limit distribution into the
+// last few pixels, where its shape could not be read at all.
+function rowAxisMax(l){
+  const reach = Math.max(l.limit, l.value * 1.45);
+  return (l.isFloor ? Math.max(l.value, l.limit) : reach) * 1.3;
+}
+
 function renderPrototype(m){
   const rows = limitRows(m);
   const scored = rows.filter(l => l.limit !== null && l.limit > 0);
-  const used = l => l.value / l.limit;
+  // How close this row is to ITS limit, as a fraction. Above 1.0 is past it.
+  // A floor inverts: being under a floor is what "past" means there.
+  const used = l => (l.isFloor ? l.limit / l.value : l.value / l.limit);
   const worst = scored.reduce((a, b) => (used(b) > used(a) ? b : a), scored[0]);
   const pct = Math.round(used(worst) * 100);
   const unset = rows.length - scored.length;
+  const post = P_STAGE === "post";
 
-  el("#p-head").textContent = used(worst) > 1
-    ? "This cut is past a limit."
+  el("#stage-pre").setAttribute("aria-pressed", String(!post));
+  el("#stage-post").setAttribute("aria-pressed", String(post));
+
+  el("#p-head").textContent = post
+    ? "The cut is done. This is where it ran."
+    : used(worst) > 1 ? "This cut is past a limit."
     : `This cut runs at ${pct} % of its closest limit.`;
 
-  el("#p-sub").innerHTML =
-    `<b>${worst.name}</b> is the closest limit${used(worst) > 1
-      ? `. The cut is past it by ${Math.round((used(worst) - 1) * 100)} %` : ""}. ` +
-    `${unset} of ${rows.length} limits are not set, so this page cannot say ` +
-    `how close the cut is to them.`;
+  el("#p-sub").innerHTML = post
+    ? `Each row shows every sample of the run, on the same scale as the ` +
+      `prediction. <b>The share past the limit is the number that matters</b> — ` +
+      `one corner and half the job look identical as a peak.`
+    : `<b>${worst.name}</b> is the closest limit${used(worst) > 1
+        ? `. The cut is past it by ${Math.round((used(worst) - 1) * 100)} %` : ""}. ` +
+      `${unset} of ${rows.length} limits are not set, so this page cannot say ` +
+      `how close the cut is to them.`;
 
-  el("#p-limits").innerHTML = rows.map(l => {
+  el("#p-limits").innerHTML = rows.map((l, i) => {
     const has = l.limit !== null && l.limit > 0;
     const f = has ? used(l) : 0;
     const colour = !has ? "var(--ink-3)"
       : f > 1 ? "var(--over)" : f > 0.85 ? "var(--warn)" : "var(--ok)";
+    // One scale for both stages: zero to 130 % of the limit, so a prediction
+    // and a distribution sit on the same axis and can be read against it.
+    const axisMax = has ? rowAxisMax(l) : 1;
+    const body = post && has
+      ? `<div class="lim-hist"><canvas data-hist="${i}"></canvas>
+           <span class="lim-mark lim-edge" style="left:${
+             Math.min(99, l.limit / axisMax * 100)}%"></span></div>`
+      : `<div class="lim-bar${has ? "" : " unset"}">${
+          has ? `<i style="width:${Math.min(100, f * 100)}%;background:${colour}"></i>` : ""}</div>`;
     return `<div class="lim">
       <div class="lim-top">
         <span class="lim-name">${l.name}<i class="lim-i" tabindex="0"
           title="${l.why.replace(/"/g, "&quot;")}">i</i></span>
-        <span class="lim-val">${l.shown} ${l.unit} &nbsp;<b>${
+        <span class="lim-val" data-val="${i}">${l.shown} ${l.unit} &nbsp;<b>${
           has ? `${Math.round(f * 100)} %` : "limit not set"}</b></span>
       </div>
-      <div class="lim-bar${has ? "" : " unset"}">${
-        has ? `<i style="width:${Math.min(100, f * 100)}%;background:${colour}"></i>` : ""}</div>
+      ${body}
       <div class="lim-scale"><span>0</span><span>${l.from}</span><span>limit</span></div>
     </div>`;
   }).join("");
 
-  el("#p-foot").innerHTML =
-    `Every limit is drawn the same way, from zero to its own limit, so they can ` +
-    `be compared at a glance. Hover the <b>ⓘ</b> on any row to read what sets ` +
-    `that limit and which setting moves it.<br><br>` +
-    `A limit that is not set shows no bar. It is never drawn as a comfortable ` +
-    `one. Two of the five are in that state today.`;
+  if (post){
+    rows.forEach((l, i) => {
+      const cv = el(`canvas[data-hist="${i}"]`);
+      if (!cv || l.limit === null) return;
+      const axisMax = rowAxisMax(l);
+      const samples = syntheticSamples(l.value, 0.30, 4000);
+      drawHistogram(cv, samples, l.limit, axisMax, !!l.isFloor);
+      const over = samples.filter(v => l.isFloor ? v < l.limit : v > l.limit)
+        .length / samples.length;
+      const val = el(`[data-val="${i}"]`);
+      val.innerHTML = `${l.shown} ${l.unit} &nbsp;<b>${
+        over > 0
+          ? `${(over * 100).toFixed(1)} % of the run ${
+              l.isFloor ? "under the floor" : "past the limit"}`
+          : (l.isFloor ? "no sample under the floor" : "no sample past the limit")
+      }</b>`;
+    });
+  }
+
+  el("#p-foot").innerHTML = post
+    ? `A distribution answers the question a peak cannot: <b>is this one corner ` +
+      `or half the job?</b> A peak of 120 % is a non-event if it lasts 0.3 % of ` +
+      `the run and a stop-now if it lasts 40 %, and today the engine reports ` +
+      `both as the same number.<br><br>` +
+      `It also makes thin evidence look thin. A mean taken from three samples ` +
+      `reads exactly like one taken from thirty thousand; a histogram of three ` +
+      `samples obviously is not enough to judge. The full time series belongs ` +
+      `behind a click, for the moment an operator wants to know <em>where</em> ` +
+      `in the job it happened.<br><br>` +
+      `<em>The spread drawn here is synthetic — a plausible shape, not a ` +
+      `simulation. The real samples exist: the cut trace already carries a ` +
+      `chipload, an axial depth and a time weight for every one.</em>`
+    : `Every limit is drawn the same way, from zero to its own limit, so they ` +
+      `can be compared at a glance. Hover the <b>ⓘ</b> on any row to read what ` +
+      `sets that limit and which setting moves it.<br><br>` +
+      `A limit that is not set draws no bar. It is never shown as a comfortable ` +
+      `one. Two of the five are in that state today.`;
 }
+
+el("#stage-pre").addEventListener("click", () => {
+  P_STAGE = "pre"; render();
+});
+el("#stage-post").addEventListener("click", () => {
+  P_STAGE = "post"; render();
+});
 
 el("#machine").addEventListener("change", render);
 window.addEventListener("resize", () => { drawChart(el("#machine").value); drawHelix(); });
