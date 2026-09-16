@@ -232,10 +232,11 @@ pub fn height_context_from_session(
         .iter()
         .find(|m| m.id == tc.model_id)
         .and_then(|m| {
-            m.mesh
-                .as_ref()
-                .map(|mesh| mesh.bbox)
-                .or_else(|| session_polygons_bbox(m.polygons.as_deref().map(|v| v.as_slice())))
+            m.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
+                m.polygons
+                    .as_deref()
+                    .and_then(|polys| rs_cam_core::session::polygons_bbox(polys))
+            })
         });
     // For non-identity setups, project the raw world-frame model bbox into
     // the setup-local frame so the Heights tab numbers match the toolpath
@@ -254,36 +255,6 @@ pub fn height_context_from_session(
         model_top_z: mb.map(|b| b.max.z),
         model_bottom_z: mb.map(|b| b.min.z),
     }
-}
-
-/// Compute a 2D bounding box from a polygon slice (for DXF/SVG models without a mesh).
-pub fn session_polygons_bbox(
-    polygons: Option<&[rs_cam_core::polygon::Polygon2]>,
-) -> Option<BoundingBox3> {
-    let polygons = polygons?;
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
-    for poly in polygons {
-        for pt in poly
-            .exterior
-            .iter()
-            .chain(poly.holes.iter().flat_map(|h| h.iter()))
-        {
-            min_x = min_x.min(pt.x);
-            min_y = min_y.min(pt.y);
-            max_x = max_x.max(pt.x);
-            max_y = max_y.max(pt.y);
-        }
-    }
-    if !min_x.is_finite() {
-        return None;
-    }
-    Some(BoundingBox3 {
-        min: rs_cam_core::geo::P3::new(min_x, min_y, 0.0),
-        max: rs_cam_core::geo::P3::new(max_x, max_y, 0.0),
-    })
 }
 
 /// Bounding box of a session `Fixture` (physical extents, no clearance).

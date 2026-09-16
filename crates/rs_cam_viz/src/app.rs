@@ -292,9 +292,10 @@ impl RsCamApp {
             .iter()
             .find_map(|model| {
                 model.mesh.as_ref().map(|m| m.bbox).or_else(|| {
-                    crate::state::job::session_polygons_bbox(
-                        model.polygons.as_deref().map(|v| v.as_slice()),
-                    )
+                    model
+                        .polygons
+                        .as_deref()
+                        .and_then(|polys| rs_cam_core::session::polygons_bbox(polys))
                 })
             })
         {

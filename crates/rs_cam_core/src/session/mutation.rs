@@ -79,7 +79,12 @@ fn post_change_reaches_motion(before: &ProjectPostConfig, after: &ProjectPostCon
 /// Compute a 3D bounding box from a slice of 2D polygons (SVG/DXF models).
 /// Z extent is zero; `update_from_bbox` preserves stock Z for 2D models.
 /// Returns `None` if all polygons are empty.
-pub(crate) fn polygons_bbox(polygons: &[Polygon2]) -> Option<BoundingBox3> {
+///
+/// C22(a): `pub` because the GUI asks the same question. It used to carry
+/// its own copy in `state/job.rs`, written the other way round
+/// (`min_x.min(pt.x)` against `if pt.x < min_x`) but with the same answer,
+/// only because this one was `pub(crate)`.
+pub fn polygons_bbox(polygons: &[Polygon2]) -> Option<BoundingBox3> {
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;

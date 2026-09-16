@@ -1554,8 +1554,8 @@ const BOTTOM_LINE_INDEX: usize = 4;
 /// `ctx.model_bottom_z`, and drew nothing at all when either was `None`.
 /// Both branches were wrong on the wanaka project, and in different ways.
 ///
-/// **A 2D model carries no Z.** `session_polygons_bbox`
-/// (`crates/rs_cam_viz/src/state/job.rs`) reports an SVG or DXF bbox at
+/// **A 2D model carries no Z.** `rs_cam_core::session::polygons_bbox`
+/// reports an SVG or DXF bbox at
 /// `z = 0.0 ..= 0.0`, so an operation bound to a drawing got a model
 /// rectangle of ZERO height. epaint collapses such a rectangle to a
 /// one-point line in the STROKE colour (`Tessellator::tessellate_rect`

@@ -76,7 +76,7 @@ two disagree.
   formats just stop loading. Proof: viz test that a non-CAM TOML and a
   pre-v1 file both return `Err` from `open_job_from_path`. Risk: low.
   Gate: `cargo test -p rs_cam_viz -q`.
-- [ ] **C02 — fixture `size_y` default reconciliation** (I05 pair 4).
+- [x] **C02 — fixture `size_y` default reconciliation** (I05 pair 4).
   Decide the correct default between viz `Fixture::new_default` 15.0
   (`state/job.rs:91`), core serde 30.0 (`session/mod.rs:544-546`), and the
   re-hardcode at `controller/events/model.rs:543`. **DECIDED 2026-09-16: use the GUI value, 15.0** — core serde default and all copies become 15.0. Legacy files missing
@@ -162,7 +162,7 @@ maintain.
   (I06b). Make core `gcode`'s (side×climb)→G41/G42 mapping `pub`; viz
   `io/export.rs:345` delegates. Sentries: F16 G41→G40 round-trip +
   `program_builder.rs` comp tests. Risk: low.
-- [ ] **C22 — I05 mechanical pair merges.** *(b) and (c) landed 2026-09-16; (a) `polygons_bbox` still open.* (a) make core `polygons_bbox`
+- [x] **C22 — I05 mechanical pair merges.** *(a), (b) and (c) all landed 2026-09-16.* (a) make core `polygons_bbox`
   `pub`, delete `state/job.rs:436-463`, adapt the 3 call sites for the
   `Option<&[Polygon2]>` signature (review gap 7); (b) single
   `SimBoundary` type re-exported, delete `compute/worker.rs:204-212` and viz

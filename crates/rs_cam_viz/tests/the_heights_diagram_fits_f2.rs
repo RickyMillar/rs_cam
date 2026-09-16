@@ -11,7 +11,8 @@
 //! Heights diagram shows the stock and nothing else. The legend still prints
 //! the word `Model`, which is the tell: `ctx.model_top_z` was `Some`, so the
 //! diagram DID have a profile and drew it. A 2D model carries no Z —
-//! `session_polygons_bbox` reports an SVG or DXF bbox at `z = 0.0 ..= 0.0` —
+//! `rs_cam_core::session::polygons_bbox` reports such a bbox at
+//! `z = 0.0 ..= 0.0` —
 //! so the model rectangle had ZERO height, and epaint collapses such a
 //! rectangle to a one-point line in the stroke colour
 //! (`Tessellator::tessellate_rect`). That stroke was `DIAGRAM_MATERIAL`, a

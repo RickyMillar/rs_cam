@@ -56,6 +56,8 @@ pub use multitool::{
     equal_cusp_stepover_mm, execute_preview_tier_map,
 };
 
+pub use mutation::polygons_bbox;
+
 // Re-export all public project_file types so external crates see no path change.
 pub use project_file::{
     ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
@@ -541,9 +543,9 @@ pub struct Fixture {
     #[serde(default)]
     pub origin_z: f64,
     /// Dimensions of the fixture bounding box (mm).
-    #[serde(default = "default_fixture_size")]
+    #[serde(default = "default_fixture_size_x")]
     pub size_x: f64,
-    #[serde(default = "default_fixture_size")]
+    #[serde(default = "default_fixture_size_y")]
     pub size_y: f64,
     #[serde(default = "default_fixture_height")]
     pub size_z: f64,
@@ -555,8 +557,17 @@ pub struct Fixture {
 fn default_true() -> bool {
     true
 }
-fn default_fixture_size() -> f64 {
+/// A clamp is wider than it is deep, so the two spans differ.
+///
+/// C02: one `default_fixture_size` of 30.0 used to serve both spans. The
+/// GUI creates a clamp 30 by 15, and `ProjectFixtureSection` defaults to
+/// 30 by 15 as well, so a file that omitted `size_y` restored a fixture
+/// the GUI would never have drawn.
+fn default_fixture_size_x() -> f64 {
     30.0
+}
+fn default_fixture_size_y() -> f64 {
+    15.0
 }
 fn default_fixture_height() -> f64 {
     20.0
@@ -566,6 +577,27 @@ fn default_fixture_clearance() -> f64 {
 }
 
 impl Fixture {
+    /// A new clamp, at the stock origin, with the default spans.
+    ///
+    /// C02: the GUI used to build this record from six hard-coded numbers
+    /// in `controller/events/model.rs`. The numbers are the serde
+    /// defaults, so they belong beside them.
+    pub fn new_default(id: FixtureId) -> Self {
+        Self {
+            name: format!("Fixture {}", id.0 + 1),
+            id,
+            kind: FixtureKind::Clamp,
+            enabled: default_true(),
+            origin_x: 0.0,
+            origin_y: 0.0,
+            origin_z: 0.0,
+            size_x: default_fixture_size_x(),
+            size_y: default_fixture_size_y(),
+            size_z: default_fixture_height(),
+            clearance: default_fixture_clearance(),
+        }
+    }
+
     /// XY footprint polygon (with clearance) for boundary subtraction.
     pub fn footprint(&self) -> Polygon2 {
         let min_x = self.origin_x - self.clearance;

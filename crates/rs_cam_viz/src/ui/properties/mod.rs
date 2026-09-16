@@ -156,8 +156,10 @@ pub(crate) fn commit_tool_draft(
 fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> {
     state.session.models().iter().find_map(|model| {
         model.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
-            let polygons = model.polygons.as_deref().map(Vec::as_slice);
-            crate::state::job::session_polygons_bbox(polygons)
+            model
+                .polygons
+                .as_deref()
+                .and_then(|polys| rs_cam_core::session::polygons_bbox(polys))
         })
     })
 }

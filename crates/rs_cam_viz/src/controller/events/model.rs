@@ -1,9 +1,9 @@
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::session::{
     AddFixtureArgs, AddKeepOutArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command, Fixture,
-    FixtureKind, KeepOutZone, RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs,
-    RemoveToolArgs, RemoveToolpathArgs, SetAlignmentPinDrillHolesArgs, SetMachineArgs,
-    SetSetupNameArgs, SetSetupPauseMessageArgs, SetStockConfigArgs,
+    KeepOutZone, RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs, RemoveToolArgs,
+    RemoveToolpathArgs, SetAlignmentPinDrillHolesArgs, SetMachineArgs, SetSetupNameArgs,
+    SetSetupPauseMessageArgs, SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -348,9 +348,9 @@ impl<B: ComputeBackend> AppController<B> {
     fn first_model_bbox(&self) -> Option<rs_cam_core::geo::BoundingBox3> {
         self.state.session.models().iter().find_map(|m| {
             m.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
-                crate::state::job::session_polygons_bbox(
-                    m.polygons.as_deref().map(|v| v.as_slice()),
-                )
+                m.polygons
+                    .as_deref()
+                    .and_then(|polys| rs_cam_core::session::polygons_bbox(polys))
             })
         })
     }
@@ -531,19 +531,10 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .position(|s| s.id == setup_id.0)
         {
-            let fixture = Fixture {
-                id: fixture_id,
-                name: format!("Fixture {}", fixture_id.0 + 1),
-                kind: FixtureKind::Clamp,
-                enabled: true,
-                origin_x: 0.0,
-                origin_y: 0.0,
-                origin_z: 0.0,
-                size_x: 30.0,
-                size_y: 15.0,
-                size_z: 20.0,
-                clearance: 3.0,
-            };
+            // C02: the six numbers this used to spell out are core's
+            // serde defaults. A file that omitted `size_y` restored a
+            // fixture the GUI would never have drawn.
+            let fixture = Fixture::new_default(fixture_id);
             let command = Command::AddFixture(AddFixtureArgs {
                 setup_index: idx,
                 fixture: Box::new(fixture),
