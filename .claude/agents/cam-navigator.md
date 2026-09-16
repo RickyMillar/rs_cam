@@ -14,7 +14,7 @@ You are a specialist agent for navigating the rs_cam codebase — a Rust CAM wor
 | Progress | `planning/PROGRESS.md` | Current status, recent work |
 | Features | `FEATURE_CATALOG.md` | What is shipped vs partial |
 | Architecture | `architecture/` | Design docs |
-| Core index | `crates/rs_cam_core/src/lib.rs` | 56 public module list |
+| Core index | `crates/rs_cam_core/src/lib.rs` | 31 module list: 24 folders and 7 spine files |
 | GUI state | `crates/rs_cam_viz/src/state/mod.rs` | AppState structure |
 | Controller | `crates/rs_cam_viz/src/controller.rs` | Event dispatch hub |
 | Compute | `crates/rs_cam_viz/src/compute/worker.rs` | Operation execution |

@@ -24,8 +24,27 @@ Graph caveat: Rust `mod`/crate dependency extraction is sparse in the current gr
 
 ### Public module root
 
-- `crates/rs_cam_core/src/lib.rs` exports all core modules.
-- Operation modules are mostly one file per operation: `pocket.rs`, `profile.rs`, `adaptive/`, `adaptive3d/`, `dropcutter.rs`, `waterline.rs`, `scallop.rs`, etc.
+- `crates/rs_cam_core/src/lib.rs` declares 31 modules: 24 folders and the 7 spine files.
+- The spine sits at the root: `geo.rs`, `polygon.rs`, `mesh.rs`, `toolpath.rs`, `ids.rs`, `interrupt.rs` and `measurement.rs`. Every other core file sits in a folder.
+- The folder set (P2, 2026-09-17):
+
+| Folder | What it holds |
+|---|---|
+| `io/` | Model, DXF, SVG and STEP import; the TOML tool and machine libraries |
+| `tool/`, `material/`, `machine/` | Cutter geometry, stock material, machine profile and kinematics |
+| `geometry/` | Regions, grids, distance fields, contours, the machining boundary |
+| `surface/` | Drop/push cutter, slope, rest field, flow routing, reach |
+| `maps/` | Tier and reach maps, islands, and their bounded caches |
+| `ops/` | 2.5D and drilling operations (`pocket`, `profile`, `drill`, `trace_path`, …) |
+| `adaptive/`, `adaptive3d/` | Adaptive clearing, 2D and 3D |
+| `finish/` | 3D finishing strategies and the unified finish planner |
+| `dressup/` | Entry/lead/dogbone, arc fitting, conditioning, feed optimisation, TSP |
+| `dexel_stock/`, `stock/` | Tri-dexel engine; the stock model, cut record and stock meshes |
+| `trace/` | Debug trace, semantic trace, spans, narration, transform provenance |
+| `gcode/`, `export/` | G-code emit and post; SVG/HTML preview, fingerprints, validator |
+| `feeds/`, `tool_load/` | Feeds and speeds, cutting load model, optimiser |
+| `compute/`, `session/`, `diagnostics/`, `metrology/`, `util/` | Dispatch, project state, diagnostics, measurement instruments, helpers |
+- Operation modules are mostly one file per operation: `ops/pocket.rs`, `ops/profile.rs`, `adaptive/`, `adaptive3d/`, `surface/dropcutter.rs`, `ops/waterline.rs`, `finish/scallop.rs`, etc.
 
 ### Data model and operation catalog
 
@@ -37,8 +56,8 @@ Graph caveat: Rust `mod`/crate dependency extraction is sparse in the current gr
 | `crates/rs_cam_core/src/compute/stock_config.rs` | Stock/material/workholding configuration. |
 | `crates/rs_cam_core/src/compute/config.rs` | Shared compute/dressup/boundary/height config. |
 | `crates/rs_cam_core/src/toolpath.rs` | Toolpath IR/move representation; boundary between planning and output. |
-| `crates/rs_cam_core/src/toolpath_spans.rs` | Structural spans attached to generated toolpaths. |
-| `crates/rs_cam_core/src/semantic_trace.rs` | Semantic trace items for operation-level diagnostics. |
+| `crates/rs_cam_core/src/trace/toolpath_spans.rs` | Structural spans attached to generated toolpaths. |
+| `crates/rs_cam_core/src/trace/semantic_trace.rs` | Semantic trace items for operation-level diagnostics. |
 
 ### Generation pipeline
 
@@ -47,10 +66,10 @@ Graph caveat: Rust `mod`/crate dependency extraction is sparse in the current gr
 | `crates/rs_cam_core/src/compute/execute.rs` | Central operation dispatch. SocratiCode symbols: `execute_operation`, `execute_operation_annotated`, `apply_dressups`, validation helpers. |
 | `crates/rs_cam_core/src/compute/spans.rs` | Generic span derivation helpers for depth runs, cut runs, drill holes, labeled runtime events. |
 | `crates/rs_cam_core/src/compute/annotate.rs` | Semantic annotation helpers for trace/drill/depth regions. |
-| `crates/rs_cam_core/src/dressup.rs` | Entry/link/lead/dogbone/arcfit/feed optimization dressups. |
-| `crates/rs_cam_core/src/depth.rs` | Depth stepping helpers. |
-| `crates/rs_cam_core/src/boundary.rs` / `polygon.rs` | Boundary and polygon utilities. |
-| `crates/rs_cam_core/src/tsp.rs` | Rapid-order optimization. |
+| `crates/rs_cam_core/src/dressup/mod.rs` | Entry/link/lead/dogbone/arcfit/feed optimization dressups. |
+| `crates/rs_cam_core/src/ops/depth.rs` | Depth stepping helpers. |
+| `crates/rs_cam_core/src/geometry/boundary.rs` / `crates/rs_cam_core/src/polygon.rs` | Boundary and polygon utilities. |
+| `crates/rs_cam_core/src/dressup/tsp.rs` | Rapid-order optimization. |
 
 Typical flow:
 
@@ -79,10 +98,10 @@ Use `ProjectSession` APIs when adding CLI/MCP/headless features. Avoid bypassing
 |---|---|
 | `crates/rs_cam_core/src/compute/simulate.rs` | Core simulation orchestration, `SimulationRequest`, setup groups, toolpath boundaries/checkpoints. |
 | `crates/rs_cam_core/src/dexel_stock/` | Tri-dexel stock engine, stamping, metric sample generation. |
-| `crates/rs_cam_core/src/simulation_cut.rs` | Cut trace schema/samples/provenance/summaries. |
-| `crates/rs_cam_core/src/narrate.rs` | Agent-readable toolpath narration. |
-| `crates/rs_cam_core/src/collision.rs` / `compute/collision_check.rs` | Holder/shank/rapid collision checks. |
-| `crates/rs_cam_core/src/stock_mesh.rs`, `dexel_mesh.rs` | Mesh output from stock simulation. |
+| `crates/rs_cam_core/src/stock/simulation_cut.rs` | Cut trace schema/samples/provenance/summaries. |
+| `crates/rs_cam_core/src/trace/narrate.rs` | Agent-readable toolpath narration. |
+| `crates/rs_cam_core/src/stock/collision.rs` / `compute/collision_check.rs` | Holder/shank/rapid collision checks. |
+| `crates/rs_cam_core/src/stock/stock_mesh.rs`, `dexel_mesh.rs` | Mesh output from stock simulation. |
 
 Typical flow:
 

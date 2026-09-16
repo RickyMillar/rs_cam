@@ -4,6 +4,44 @@
 feeds, diagnostics, project/session state and G-code export. Keep it GUI-free.
 Read the root `CLAUDE.md` first for workspace-wide architecture and gates.
 
+## The folder map
+
+`src/` holds 8 files and 24 folders. The 8 root files are the crate spine —
+the vocabulary every layer names: `lib.rs`, `geo.rs`, `polygon.rs`,
+`mesh.rs`, `toolpath.rs`, `ids.rs`, `interrupt.rs` and `measurement.rs`.
+Everything else sits in a folder. Read the folder, not the root, to find a
+module.
+
+| Folder | What it holds |
+|---|---|
+| `io/` | Every door that reads a file: model, DXF, SVG, STEP, and the TOML tool and machine libraries |
+| `tool/` | Cutter geometry, holder and shank envelope, vendor metadata |
+| `material/` | Material catalogue and the wood species library |
+| `machine/` | Machine profile, kinematics, utilisation, strategy advisor |
+| `geometry/` | Regions, grids, distance fields, contours, the machining boundary |
+| `surface/` | Drop and push cutter, slope, rest field, flow routing, reach |
+| `maps/` | Tier and reach maps, islands, and their bounded caches |
+| `ops/` | 2.5D and drilling operations, and the depth-stepping helper |
+| `adaptive/`, `adaptive3d/` | Adaptive clearing, 2D and 3D |
+| `finish/` | 3D finishing strategies and the unified finish planner |
+| `dressup/` | Post-generation transforms: entry, leads, arc fitting, conditioning, feed optimisation, feed modulation, TSP |
+| `dexel_stock/` | The tri-dexel simulation engine |
+| `stock/` | The stock data model, the cut record, the triage and the stock meshes |
+| `trace/` | The records that describe a generated toolpath |
+| `gcode/` | G-code emit and the post-processors |
+| `export/` | Output that is not G-code: preview, fingerprints, the G-code validator |
+| `feeds/`, `tool_load/` | Feeds and speeds, the cutting load model, the optimiser |
+| `compute/` | Operation dispatch, configuration catalogue, simulation orchestration |
+| `session/` | `ProjectSession`, commands and effects |
+| `diagnostics/` | Diagnostic findings and their adapters |
+| `metrology/` | Measurement instruments |
+| `util/` | Panic classification and crate build identity |
+
+Two names read alike and are not: `ops/trace_path.rs` is the follow-path
+OPERATION; `trace/` holds the toolpath records. A folder `mod.rs` may carry
+the folder's principal type (`io`, `machine`, `dressup`, `material`) or be a
+plain facade of `pub mod` lines (every other folder).
+
 ## Core contracts
 
 - Mutate `ProjectSession` through `ProjectSession::apply(Command)`; commands

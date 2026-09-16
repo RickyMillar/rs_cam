@@ -11,10 +11,10 @@ You are a specialist agent for interpreting simulation diagnostic output from rs
 
 | Source | Path | Contains |
 |--------|------|----------|
-| Cut trace types | `crates/rs_cam_core/src/simulation_cut.rs` | SimulationCutSample, issues, hotspots, artifacts |
-| Performance trace | `crates/rs_cam_core/src/debug_trace.rs` | ToolpathDebugSpan, hierarchical timing |
-| Semantic trace | `crates/rs_cam_core/src/semantic_trace.rs` | 26 semantic kinds, move ranges, parameters |
-| Collision | `crates/rs_cam_core/src/collision.rs` | CollisionReport, RapidCollision, min safe stickout |
+| Cut trace types | `crates/rs_cam_core/src/stock/simulation_cut.rs` | SimulationCutSample, issues, hotspots, artifacts |
+| Performance trace | `crates/rs_cam_core/src/trace/debug_trace.rs` | ToolpathDebugSpan, hierarchical timing |
+| Semantic trace | `crates/rs_cam_core/src/trace/semantic_trace.rs` | 26 semantic kinds, move ranges, parameters |
+| Collision | `crates/rs_cam_core/src/stock/collision.rs` | CollisionReport, RapidCollision, min safe stickout |
 | Sim state | `crates/rs_cam_viz/src/state/simulation.rs` | SimulationState methods, issue aggregation |
 
 ## How to Answer Queries

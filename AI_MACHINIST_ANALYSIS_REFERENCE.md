@@ -70,13 +70,13 @@ The simulation uses a tri-dexel volumetric representation — three orthogonal g
 For 3-axis routers, only the Z-grid (FromTop) is typically needed. Multi-setup adds other grids.
 
 ### Resolution
-Default ~0.5mm cell size. Finer = more accurate but slower. Dexel rays are `SmallVec<[DexelSegment; 1]>` (`crates/rs_cam_core/src/dexel.rs`), which keeps the common single-segment case off the heap; no committed benchmark backs a specific throughput percentage against a raw heightmap, so none is quoted here.
+Default ~0.5mm cell size. Finer = more accurate but slower. Dexel rays are `SmallVec<[DexelSegment; 1]>` (`crates/rs_cam_core/src/stock/dexel.rs`), which keeps the common single-segment case off the heap; no committed benchmark backs a specific throughput percentage against a raw heightmap, so none is quoted here.
 
 ---
 
 ## 2. Cut Trace Analysis
 
-**Source:** `crates/rs_cam_core/src/simulation_cut.rs` (2706 lines)
+**Source:** `crates/rs_cam_core/src/stock/simulation_cut.rs` (2706 lines)
 
 The cut trace captures per-sample metrics at ~mm intervals along every toolpath move.
 
@@ -158,7 +158,7 @@ trace_target_for_hotspot(...) / trace_target_for_cut_issue(...)
 
 ## 3. Collision Detection
 
-**Source:** `crates/rs_cam_core/src/collision.rs`
+**Source:** `crates/rs_cam_core/src/stock/collision.rs`
 
 ### Collision Types (Priority Order)
 
@@ -196,7 +196,7 @@ ToolAssembly {
 
 ## 4. Performance Tracing
 
-**Source:** `crates/rs_cam_core/src/debug_trace.rs` (676 lines)
+**Source:** `crates/rs_cam_core/src/trace/debug_trace.rs` (676 lines)
 
 Hierarchical timing traces of toolpath generation algorithm phases.
 
@@ -216,7 +216,7 @@ Spans record why an algorithm phase ended — boundary hit, iteration limit, con
 
 ## 5. Semantic Tracing
 
-**Source:** `crates/rs_cam_core/src/semantic_trace.rs` (1768 lines)
+**Source:** `crates/rs_cam_core/src/trace/semantic_trace.rs` (1768 lines)
 
 Captures the logical structure of toolpath generation — what the algorithm was doing and why.
 
@@ -290,7 +290,7 @@ GUI: Select "Deviation" in stock visualization mode dropdown. Computed per-check
 
 ## 7. Feed Rate Optimization
 
-**Source:** `crates/rs_cam_core/src/feedopt.rs`
+**Source:** `crates/rs_cam_core/src/dressup/feedopt.rs`
 
 Post-dressup that adjusts feed rates based on real-time material engagement.
 
@@ -308,13 +308,13 @@ Post-dressup that adjusts feed rates based on real-time material engagement.
 - `air_cut_threshold` — below this engagement, use max feed (air cutting)
 
 ### Benefits
-Reduces feed rate in light-engagement regions and raises it in heavier ones to hold a more consistent chip load, which eliminates burn marks from dwelling in light cuts. The "15-30% faster cycle times" figure that used to appear here traces to an unmeasured assertion in the `feedopt.rs` module doc (`crates/rs_cam_core/src/feedopt.rs:11`) — no fixture, no baseline, no date attached. The capability is real; the number is not measured and is not quoted here.
+Reduces feed rate in light-engagement regions and raises it in heavier ones to hold a more consistent chip load, which eliminates burn marks from dwelling in light cuts. The "15-30% faster cycle times" figure that used to appear here traces to an unmeasured assertion in the `feedopt.rs` module doc (`crates/rs_cam_core/src/dressup/feedopt.rs:11`) — no fixture, no baseline, no date attached. The capability is real; the number is not measured and is not quoted here.
 
 ---
 
 ## 8. Fingerprinting & Parameter Sweeps
 
-**Source:** `crates/rs_cam_core/src/fingerprint.rs` (1253 lines) + `crates/rs_cam_cli/src/sweep.rs`
+**Source:** `crates/rs_cam_core/src/export/fingerprint.rs` (1253 lines) + `crates/rs_cam_cli/src/sweep.rs`
 
 ### Toolpath Fingerprint
 Single-pass extraction of toolpath metrics: move counts (by type), distances (cutting/rapid), Z levels, feed rates, bounding box, rapid/cutting fractions.
@@ -403,7 +403,7 @@ Reference benchmarks for 3-axis wood router analysis.
 
 ### Efficiency
 
-**Air cut ratio has no single fixed band — it requires naming a denominator, and the codebase publishes two.** `air_cut_time_s` becomes a percentage of either `air_cut_pct_of_total_runtime` (cutting + rapids) or `air_cut_pct_of_cutting_time` (rapids excluded, always ≥ the total-runtime reading) — see `AirCutRatios` and its doc comment at `crates/rs_cam_core/src/simulation_cut.rs:537-566, 592-595`. Every SHIPPED threshold uses the total-runtime reading, and it is set PER OPERATION TYPE, not one fixed band — see `OperationType::air_cut_high_threshold_pct` (`crates/rs_cam_core/src/compute/catalog.rs:456-491`): `None` (suppressed) for Drill/AlignmentPinDrill, 60.0 for ProjectCurve, 45.0 for the 3D finish family, 40.0 for 2.5D clearing/rough and 2D contour ops.
+**Air cut ratio has no single fixed band — it requires naming a denominator, and the codebase publishes two.** `air_cut_time_s` becomes a percentage of either `air_cut_pct_of_total_runtime` (cutting + rapids) or `air_cut_pct_of_cutting_time` (rapids excluded, always ≥ the total-runtime reading) — see `AirCutRatios` and its doc comment at `crates/rs_cam_core/src/stock/simulation_cut.rs:537-566, 592-595`. Every SHIPPED threshold uses the total-runtime reading, and it is set PER OPERATION TYPE, not one fixed band — see `OperationType::air_cut_high_threshold_pct` (`crates/rs_cam_core/src/compute/catalog.rs:456-491`): `None` (suppressed) for Drill/AlignmentPinDrill, 60.0 for ProjectCurve, 45.0 for the 3D finish family, 40.0 for 2.5D clearing/rough and 2D contour ops.
 
 | Metric | Good | Warning | Bad |
 |--------|------|---------|-----|
@@ -493,7 +493,7 @@ Use this checklist when analyzing a toolpath program:
 ## 11. Issue Aggregation
 
 **Start at the triage block, not at this list.** `SimulationTriage`
-(`crates/rs_cam_core/src/sim_triage.rs`, built once by
+(`crates/rs_cam_core/src/stock/sim_triage.rs`, built once by
 `ProjectSession::simulation_triage`) is the single typed contract the
 GUI panel, MCP `get_diagnostics` (`resp["triage"]`), the CLI `project`
 report and narration all consume. It partitions into `measurability`,
@@ -574,12 +574,12 @@ Collision markers colored by spatial density (5mm clustering radius):
 | File | Purpose |
 |------|---------|
 | `crates/rs_cam_core/src/dexel_stock/` (directory: `mod.rs`, `simulation.rs`, `stamping.rs`, `cut_direction.rs`) | Tri-dexel stock simulation engine |
-| `crates/rs_cam_core/src/simulation_cut.rs` | Cut trace metrics, issues, hotspots |
-| `crates/rs_cam_core/src/collision.rs` | Collision detection (holder, rapid) |
-| `crates/rs_cam_core/src/debug_trace.rs` | Performance tracing, computation hotspots |
-| `crates/rs_cam_core/src/semantic_trace.rs` | 26-kind structural hierarchy |
-| `crates/rs_cam_core/src/fingerprint.rs` | Toolpath/stock fingerprinting and diffing |
-| `crates/rs_cam_core/src/feedopt.rs` | Engagement-based feed optimization |
+| `crates/rs_cam_core/src/stock/simulation_cut.rs` | Cut trace metrics, issues, hotspots |
+| `crates/rs_cam_core/src/stock/collision.rs` | Collision detection (holder, rapid) |
+| `crates/rs_cam_core/src/trace/debug_trace.rs` | Performance tracing, computation hotspots |
+| `crates/rs_cam_core/src/trace/semantic_trace.rs` | 26-kind structural hierarchy |
+| `crates/rs_cam_core/src/export/fingerprint.rs` | Toolpath/stock fingerprinting and diffing |
+| `crates/rs_cam_core/src/dressup/feedopt.rs` | Engagement-based feed optimization |
 
 ### GUI Integration
 | File | Purpose |

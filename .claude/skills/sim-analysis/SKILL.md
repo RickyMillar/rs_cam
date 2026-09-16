@@ -9,10 +9,10 @@ description: Interpret simulation diagnostic output — cut traces, issues, hots
 
 | Trace | File | Contains |
 |-------|------|----------|
-| Cut trace | `rs_cam_core/src/simulation_cut.rs` | Per-sample cutting metrics, issues, hotspots, summaries |
-| Performance trace | `rs_cam_core/src/debug_trace.rs` | Hierarchical timing spans, computation hotspots |
-| Semantic trace | `rs_cam_core/src/semantic_trace.rs` | 26 structural kinds with move ranges, bounds, parameters |
-| Collision | `rs_cam_core/src/collision.rs` | Holder/shank events, rapid collisions, min safe stickout |
+| Cut trace | `rs_cam_core/src/stock/simulation_cut.rs` | Per-sample cutting metrics, issues, hotspots, summaries |
+| Performance trace | `rs_cam_core/src/trace/debug_trace.rs` | Hierarchical timing spans, computation hotspots |
+| Semantic trace | `rs_cam_core/src/trace/semantic_trace.rs` | 26 structural kinds with move ranges, bounds, parameters |
+| Collision | `rs_cam_core/src/stock/collision.rs` | Holder/shank events, rapid collisions, min safe stickout |
 
 State access: `rs_cam_viz/src/state/simulation.rs` — `SimulationState` methods.
 
