@@ -3,7 +3,7 @@
 //! Takes a base TOML job file, varies one parameter across specified values,
 //! runs each variant through the full job pipeline (dressups, depth stepping,
 //! simulation, G-code), and produces structured JSON output for agent analysis.
-#![allow(clippy::print_stdout, clippy::indexing_slicing)]
+#![allow(clippy::print_stdout)]
 
 use anyhow::{Context, Result, bail};
 use std::path::Path;
@@ -50,9 +50,16 @@ pub fn run_sweep(
     let base_tp = &base_result.combined;
     let base_fp = ToolpathFingerprint::from_toolpath(base_tp);
 
-    // Get baseline value of the parameter being swept
-    let base_value = get_op_field(&base_job.operation[0], param_name)
+    // Get baseline value of the parameter being swept. The sweep patches
+    // the FIRST `[[operation]]` block, so a job file with none has nothing
+    // to sweep and the run stops here with that sentence.
+    let first_op = base_job
+        .operation
+        .first()
+        .context("the job file declares no [[operation]] block to sweep")?;
+    let base_value = get_op_field(first_op, param_name)
         .unwrap_or_else(|| serde_json::Value::String("default".to_owned()));
+    let base_op_type = first_op.op_type.clone();
 
     // Write baseline artifacts
     write_json(&output_dir.join("baseline.json"), &base_fp)?;
@@ -143,7 +150,7 @@ pub fn run_sweep(
 
     // Write sweep summary
     let sweep_result = ParameterSweepResult {
-        operation: base_job.operation[0].op_type.clone(),
+        operation: base_op_type,
         parameter_name: param_name.to_owned(),
         base_value,
         base_fingerprint: base_fp,
@@ -155,13 +162,10 @@ pub fn run_sweep(
     println!("Sweep complete: {param_name}");
     println!("  Baseline + {} variants", values.len());
     println!("  Output: {}", output_dir.display());
-    for (i, v) in sweep_result.variants.iter().enumerate() {
+    for (i, (v, value)) in sweep_result.variants.iter().zip(values).enumerate() {
         let changed = v.diff.changed_fields.len();
         let unchanged = v.diff.unchanged_fields.len();
-        println!(
-            "  [{i}] {param_name}={}: {changed} fields changed, {unchanged} unchanged",
-            values[i]
-        );
+        println!("  [{i}] {param_name}={value}: {changed} fields changed, {unchanged} unchanged");
     }
 
     Ok(())
@@ -323,19 +327,11 @@ fn simulate_and_export(
 
     // Build stock from first operation's geometry bounds + margin
     let tp = &result.combined;
-    let (bbox_min, bbox_max) = tp.bounding_box();
+    let ([min_x, min_y, min_z], [max_x, max_y, max_z]) = tp.bounding_box();
     let margin = 5.0;
     let stock_bbox = BoundingBox3 {
-        min: rs_cam_core::geo::P3::new(
-            bbox_min[0] - margin,
-            bbox_min[1] - margin,
-            bbox_min[2] - margin,
-        ),
-        max: rs_cam_core::geo::P3::new(
-            bbox_max[0] + margin,
-            bbox_max[1] + margin,
-            bbox_max[2] + margin,
-        ),
+        min: rs_cam_core::geo::P3::new(min_x - margin, min_y - margin, min_z - margin),
+        max: rs_cam_core::geo::P3::new(max_x + margin, max_y + margin, max_z + margin),
     };
 
     let cell_size = job.job.sim_resolution;
@@ -358,7 +354,7 @@ fn simulate_and_export(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use crate::job::{CliToolType, JobFile};
 

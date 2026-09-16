@@ -33,7 +33,7 @@ and are NOT touched by this programme's fix waves.
 | 12 | S26, S27, S28 | C | S | 26 `allow(dead_code)` attributes that cannot fire (items are `pub` in a `pub mod` of a lib crate) and claim a live MCP surface is dead | W2 viz+mcp ✅ 293165f1; S27 power-calcs open |
 | 13 | S25 | C | M | 29 `pub` items used only from tests and not declared fixtures → `pub(crate)` + `#[cfg(test)]` scope or move into the test | W2 core ✅ dab59c0e; viz HELD (see the Wave 2b table); power-calcs open |
 | 14 | L8 | C | S | three `Command` variants with no production constructor (`ReplaceSetupsAndToolpaths`, `SetProjectName`, `SetMachineRef`) | W1 (ruled) ✅ cd6bba1a (SetMachineRef went with L6) |
-| 15 | L7 | C | S | a trace with no `provenance` block is treated as fresh; the one producer is the CLI | W1 (ruled) |
+| 15 | L7 | C | S | a trace with no `provenance` block is treated as fresh; the one producer is the CLI | W1 (ruled) ✅ 3ead7135 |
 | 16 | D11 | D | M | viz mirrors core's two simulation structs by hand (the class that dropped 11 fields in C04); inherits G-MCPSIMMIRROR / WP28 | W3 ✅ |
 | 17 | D13 | D | M | each finding's operator sentence is written twice (`from_generation.rs` vs `narrate.rs`) and the copies already differ | W3 ✅ |
 | 18 | D12 | D | M | two "mesh surface Z at (x, y)" readers with different containment tests (`monge.rs` vs `reach_map.rs`) | W3 ✅ |
