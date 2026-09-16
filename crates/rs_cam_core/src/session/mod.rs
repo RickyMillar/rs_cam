@@ -2443,11 +2443,11 @@ mod tests {
         );
     }
 
-    /// Q4 tripwire, deliberately re-baselined in T8: the loader still
-    /// defaults unknown tokens to EndMill (now with a tracing warning
-    /// instead of silently), and the unified vocabulary additionally
-    /// accepts the former viz-legacy aliases — pre-T8 `"ball"` parsed
-    /// to EndMill here but BallNose in the viz legacy loader.
+    /// Q4 tripwire, re-baselined by T8 and again by L9: the loader
+    /// defaults an unknown token to EndMill and reports the
+    /// substitution. L9 deleted the loader aliases, so `"ball"` and
+    /// `"tapered_ball"` are unknown tokens now and each raises its own
+    /// warning.
     #[test]
     fn tool_type_parsing() {
         let mut warnings = Vec::new();
@@ -2461,19 +2461,29 @@ mod tests {
             ToolType::TaperedBallNose
         ));
         assert!(matches!(parse("unknown"), ToolType::EndMill));
-        // T8 unified-vocabulary additions (were EndMill via wildcard).
-        assert!(matches!(parse("ball"), ToolType::BallNose));
-        assert!(matches!(parse("tapered_ball"), ToolType::TaperedBallNose));
+        // L9: the deleted aliases take the unknown arm.
+        assert!(matches!(parse("ball"), ToolType::EndMill));
+        assert!(matches!(parse("tapered_ball"), ToolType::EndMill));
 
-        // C10: the substitution is reported, not only traced. One token
-        // was unknown, so the channel carries exactly one warning.
+        // C10: the substitution is reported, not only traced. Three
+        // tokens were unknown, so the channel carries three warnings.
         assert_eq!(
             warnings,
-            vec![ProjectLoadWarning::UnknownToolType {
-                tool: "Tool".to_owned(),
-                token: "unknown".to_owned(),
-            }],
-            "the loader must report the end-mill substitution"
+            vec![
+                ProjectLoadWarning::UnknownToolType {
+                    tool: "Tool".to_owned(),
+                    token: "unknown".to_owned(),
+                },
+                ProjectLoadWarning::UnknownToolType {
+                    tool: "Tool".to_owned(),
+                    token: "ball".to_owned(),
+                },
+                ProjectLoadWarning::UnknownToolType {
+                    tool: "Tool".to_owned(),
+                    token: "tapered_ball".to_owned(),
+                },
+            ],
+            "the loader must report every end-mill substitution"
         );
     }
 

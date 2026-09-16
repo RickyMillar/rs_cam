@@ -25,7 +25,7 @@ and are NOT touched by this programme's fix waves.
 | 4 | L3 + L4 (+D1) | B | S | `_legacy_feeds_auto` and the top-level `toolpaths` pre-setup reader read pre-v3 shapes that `check_format_version` already refuses; delete both | W1 (ruled: delete L4 too) ✅ 9c720ea3 |
 | 5 | L6 | B | M | the whole `machine_ref` chain is dead end to end (nothing writes it, save persists it, load drops it, `SetMachineRef` has no constructor, `machine_library_link_cleared` is always `null` on the wire) | W1 ✅ d496e5df |
 | 6 | Q2 | B | S | the only production file-wide `#![allow(clippy::indexing_slicing)]` (`cli/sweep.rs`, ~18 sites) | W1 |
-| 7 | L5 | B | S | `standing_material_mm2` is still emitted beside `truncated_core_mm2` although core documents the old name as measuring the wrong quantity | W1 (ruled) |
+| 7 | L5 | B | S | `standing_material_mm2` is still emitted beside `truncated_core_mm2` although core documents the old name as measuring the wrong quantity | W1 (ruled) ✅ 5e4165ce (with L10 + L11) |
 | 8 | S2 | C | L | `viz.rs` `toolpath_to_3d_html` + `simulation_3d_html`: 765 dead lines | W2 ✅ d76fa7bc |
 | 9 | S3 | C | M | `rs_cam_viz/src/io/presets.rs`: a whole dead module (280 lines, 9 tests) | W2 ✅ 863d9c70 (the 280 lines went out in `0761b14d`) |
 | 10 | D2 | C | S | `compute/semantic_helpers.rs` is dead and `pub`-re-exported; `spans.rs` carries its own drifted `CutRun`/`cutting_runs` | W2 ✅ 73d4ce1c |
@@ -71,6 +71,10 @@ breaking change stated in the commit body:
    `results_parity_tests.rs`) and the CLI report readers.
 4. **L9** — delete the five `parse_lenient` aliases; MCP accepts canonical
    tool-type names only; add nothing in their place.
+   *Count correction (2026-09-17):* the table holds five TYPES and eight
+   ALIASES — `endmill`, `flat`, `ballnose`, `ball`, `bullnose`, `vbit`,
+   `taperedballnose`, `tapered_ball`. "Canonical names only" decides it, so
+   all eight went.
 5. **L7** — a trace with no `provenance` block is stale, not fresh.
 6. **L8** — delete the three no-constructor `Command` variants with their
    registry rows, `CommandId` arms, `fmt` arms and the two tests.

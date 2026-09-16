@@ -568,8 +568,9 @@ pub(crate) fn stock_from_project(ps: &ProjectStockConfig) -> StockConfig {
 
 /// Q4 warn-and-default file-loading policy over the unified
 /// [`ToolType::parse_lenient`] vocabulary (T8). Pre-T8 this had its own
-/// alias table and a SILENT `_ => EndMill` — an unknown token (or a viz
-/// legacy alias like `ball`) became an end mill with no trace.
+/// alias table and a SILENT `_ => EndMill` — an unknown token became an
+/// end mill with no trace. L9 deleted the aliases, so a file that
+/// carries one now takes this arm and the operator reads the warning.
 pub(crate) fn parse_tool_type(
     s: &str,
     tool_name: &str,

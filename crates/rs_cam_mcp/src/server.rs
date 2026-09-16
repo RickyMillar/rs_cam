@@ -1054,11 +1054,13 @@ pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
 /// Parse a string into a `ToolType`.
 ///
 /// Vocabulary is the unified core [`ToolType::parse_lenient`] (T8) —
-/// canonical snake_case plus the historical loader aliases — so the
-/// MCP surface can't drift from the project-file parsers. Unknown
-/// input stays an explicit `Err` here (deliberate Q4 carve-out: this
-/// feeds live mutations like `add_tool`, where an error beats silently
-/// creating an end mill the caller didn't ask for).
+/// the canonical snake_case token of each type, case folded — so the
+/// MCP surface can't drift from the project-file parsers. L9 deleted
+/// the historical loader aliases, so this surface accepts canonical
+/// names only. Unknown input stays an explicit `Err` here (deliberate
+/// Q4 carve-out: this feeds live mutations like `add_tool`, where an
+/// error beats silently creating an end mill the caller didn't ask
+/// for).
 pub fn parse_tool_type(s: &str) -> Result<ToolType, String> {
     ToolType::parse_lenient(s).ok_or_else(|| {
         format!(
@@ -1728,10 +1730,10 @@ mod tests {
             err.contains("tapered_ball_nose"),
             "error must list valid types: {err}"
         );
-        // T8: the unified lenient vocabulary reaches this surface too —
-        // historical loader aliases parse instead of erroring.
-        assert_eq!(parse_tool_type("ball"), Ok(ToolType::BallNose));
-        assert_eq!(parse_tool_type("flat"), Ok(ToolType::EndMill));
+        // L9: the historical loader aliases are gone. This surface
+        // takes canonical names only, and it says so.
+        assert!(parse_tool_type("ball").is_err());
+        assert!(parse_tool_type("flat").is_err());
     }
 
     /// GUI-capture surface (2026-06-11): `ScreenshotGuiParam` must accept

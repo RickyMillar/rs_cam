@@ -69,32 +69,26 @@ impl ToolType {
 
     /// THE tool-type string parser (Phase 3 T8, decision Q4).
     ///
-    /// Unifies the four historically divergent vocabularies — core
-    /// project loader (`ballnose`, wildcard→EndMill), viz legacy loader
-    /// (`ball`/`tapered_ball`, wildcard→EndMill), MCP (canonical
-    /// snake_case only, `Err` on unknown), viz serde-direct (canonical
-    /// only, whole-file parse error on unknown) — into one
-    /// case-insensitive union. Pre-T8 the vocabularies disagreed:
-    /// `"ball"` parsed to `BallNose` in the viz legacy loader but
-    /// silently became `EndMill` in core.
+    /// One vocabulary for every surface: the canonical serde token of
+    /// each type, matched case-insensitively. T8 unified four divergent
+    /// alias tables here; L9 then deleted the eight aliases those
+    /// tables had carried (`endmill`, `flat`, `ballnose`, `ball`,
+    /// `bullnose`, `vbit`, `taperedballnose`, `tapered_ball`). Each one
+    /// named a loader this build no longer has.
+    ///
+    /// "Lenient" now means the case fold and the `Option` return, not a
+    /// second spelling.
     ///
     /// Returns `None` for unrecognized input. Policy at the call sites
     /// (Q4): file-loading surfaces warn and default to `EndMill`; the
     /// MCP mutation surface returns an explicit error (an interactive
     /// caller should hear "unknown type", not get a surprise end mill).
     pub fn parse_lenient(s: &str) -> Option<ToolType> {
-        match s.to_ascii_lowercase().as_str() {
-            // "flat" is the legacy save format's EndMill token
-            // (pre-TOML-rework writer, commit 978dc9c).
-            "end_mill" | "endmill" | "flat" => Some(ToolType::EndMill),
-            "ball_nose" | "ballnose" | "ball" => Some(ToolType::BallNose),
-            "bull_nose" | "bullnose" => Some(ToolType::BullNose),
-            "v_bit" | "vbit" => Some(ToolType::VBit),
-            "tapered_ball_nose" | "taperedballnose" | "tapered_ball" => {
-                Some(ToolType::TaperedBallNose)
-            }
-            _ => None,
-        }
+        let token = s.to_ascii_lowercase();
+        ToolType::ALL
+            .iter()
+            .copied()
+            .find(|t| t.serde_token() == token)
     }
 }
 
@@ -972,26 +966,18 @@ mod tests {
         }
     }
 
-    /// T8: the unified lenient vocabulary, pinned exactly — canonical
-    /// serde tokens, the historical core-loader aliases, and the
-    /// historical viz-legacy aliases all parse; case is folded; unknown
-    /// input is `None` (each surface applies its own Q4 policy on top).
+    /// T8 + L9: the vocabulary, pinned exactly — the canonical serde
+    /// token of each type, case folded. L9 deleted the eight historical
+    /// aliases, so every one of them must now read as unknown. Unknown
+    /// input is `None`; each surface applies its own Q4 policy on top.
     #[test]
     fn parse_lenient_vocabulary_is_pinned() {
         let table: &[(&str, ToolType)] = &[
             ("end_mill", ToolType::EndMill),
-            ("endmill", ToolType::EndMill),
-            ("flat", ToolType::EndMill),
             ("ball_nose", ToolType::BallNose),
-            ("ballnose", ToolType::BallNose),
-            ("ball", ToolType::BallNose),
             ("bull_nose", ToolType::BullNose),
-            ("bullnose", ToolType::BullNose),
             ("v_bit", ToolType::VBit),
-            ("vbit", ToolType::VBit),
             ("tapered_ball_nose", ToolType::TaperedBallNose),
-            ("taperedballnose", ToolType::TaperedBallNose),
-            ("tapered_ball", ToolType::TaperedBallNose),
         ];
         for &(token, expected) in table {
             assert_eq!(ToolType::parse_lenient(token), Some(expected), "{token}");
@@ -1008,6 +994,20 @@ mod tests {
                 ToolType::parse_lenient(tool_type.serde_token()),
                 Some(tool_type)
             );
+        }
+        // L9: every deleted alias reads as unknown. A caller that sends
+        // one now hears so, instead of getting a tool it did not name.
+        for alias in [
+            "endmill",
+            "flat",
+            "ballnose",
+            "ball",
+            "bullnose",
+            "vbit",
+            "taperedballnose",
+            "tapered_ball",
+        ] {
+            assert_eq!(ToolType::parse_lenient(alias), None, "{alias}");
         }
         // Unknown stays None — the default-EndMill policy is the
         // caller's, not the parser's.
