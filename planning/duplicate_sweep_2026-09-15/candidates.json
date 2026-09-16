@@ -1,0 +1,887 @@
+[
+ {
+  "score": 0.98278105,
+  "a": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L556-567",
+   "len": 410,
+   "preview": "\npub(crate) fn infer_model_kind(path: &Path) -> Option<ModelKind> {\n    path.extension()\n        .and_then(|ext| ext.to_str())\n        .and_then(|ext| match ext.to_ascii_lowercase().as_str() {\n            \"stl\" => Some(ModelKind::Stl),\n            \"svg\" => Some(ModelKind::Svg),\n            \"dxf\" => Some(ModelKind::Dxf),\n            \"step\" | \"stp\" => Some(ModelKind::Step),\n            _ => None,\n  "
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L1309-1320",
+   "len": 513,
+   "preview": "\nfn infer_model_kind(path: &Path) -> Option<ModelKind> {\n    match path.extension().and_then(|ext| ext.to_str()) {\n        Some(ext) if ext.eq_ignore_ascii_case(\"stl\") => Some(ModelKind::Stl),\n        Some(ext) if ext.eq_ignore_ascii_case(\"svg\") => Some(ModelKind::Svg),\n        Some(ext) if ext.eq_ignore_ascii_case(\"dxf\") => Some(ModelKind::Dxf),\n        Some(ext) if ext.eq_ignore_ascii_case(\"step"
+  }
+ },
+ {
+  "score": 0.98152757,
+  "a": {
+   "path": "crates/rs_cam_core/src/adaptive3d/path.rs",
+   "lines": "L1653-1661",
+   "len": 252,
+   "preview": "\npub(super) fn runtime_annotations_to_labels(\n    annotations: &[Adaptive3dRuntimeAnnotation],\n) -> Vec<(usize, String)> {\n    annotations\n        .iter()\n        .map(|annotation| (annotation.move_index, annotation.event.label()))\n        .collect()\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/adaptive/path.rs",
+   "lines": "L1603-1611",
+   "len": 250,
+   "preview": "\npub(super) fn runtime_annotations_to_labels(\n    annotations: &[AdaptiveRuntimeAnnotation],\n) -> Vec<(usize, String)> {\n    annotations\n        .iter()\n        .map(|annotation| (annotation.move_index, annotation.event.label()))\n        .collect()\n}"
+  }
+ },
+ {
+  "score": 0.9756739,
+  "a": {
+   "path": "crates/rs_cam_viz/src/app/export.rs",
+   "lines": "L259-270",
+   "len": 249,
+   "preview": "\nfn slugify(s: &str) -> String {\n    s.chars()\n        .map(|c| {\n            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {\n                c\n            } else {\n                '_'\n            }\n        })\n        .collect()\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/ui/export_wizard.rs",
+   "lines": "L303-314",
+   "len": 249,
+   "preview": "\nfn slugify(s: &str) -> String {\n    s.chars()\n        .map(|c| {\n            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {\n                c\n            } else {\n                '_'\n            }\n        })\n        .collect()\n}"
+  }
+ },
+ {
+  "score": 0.97412354,
+  "a": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L336-361",
+   "len": 800,
+   "preview": "\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectFixtureSection {\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub id: Option<FixtureId>,\n    #[serde(default = \"default_fixture_name\")]\n    pub name: String,\n    #[serde(default = \"default_fixture_kind\")]\n    pub kind: String,\n    #[serde(default = \"default_true\")]\n    pub enabled: bool,\n    #[serde(default)]\n"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L321-347",
+   "len": 796,
+   "preview": "\n/// Fixture section in the project file.\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectFixtureSection {\n    #[serde(default)]\n    pub id: Option<usize>,\n    #[serde(default = \"default_fixture_name\")]\n    pub name: String,\n    #[serde(default = \"default_fixture_kind\")]\n    pub kind: String,\n    #[serde(default = \"default_true\")]\n    pub enabled: bool,\n    #[serde(default)]\n    "
+  }
+ },
+ {
+  "score": 0.9729016,
+  "a": {
+   "path": "crates/rs_cam_viz/src/controller/tests.rs",
+   "lines": "L72-119",
+   "len": 1887,
+   "preview": "\nimpl ComputeBackend for ScriptedBackend {\n    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {\n        let id = request.viz.toolpath_id;\n        self.submitted.push(id);\n        if self.active_toolpath_id == Some(id) {\n            ToolpathSubmitOutcome::SupersededActive\n        } else {\n            ToolpathSubmitOutcome::Queued\n        }\n    }\n    fn submit_simula"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/controller/workflow_tests.rs",
+   "lines": "L50-89",
+   "len": 1603,
+   "preview": "\nimpl ComputeBackend for ScriptedBackend {\n    fn submit_toolpath(\n        &mut self,\n        _request: crate::compute::ComputeRequest,\n    ) -> crate::compute::ToolpathSubmitOutcome {\n        crate::compute::ToolpathSubmitOutcome::Queued\n    }\n    fn submit_simulation(&mut self, _request: SimulationRequest) {}\n    fn submit_collision(&mut self, _request: CollisionRequest) {}\n    fn submit_optimiz"
+  }
+ },
+ {
+  "score": 0.9724724,
+  "a": {
+   "path": "crates/rs_cam_viz/src/ui/feeds/shared.rs",
+   "lines": "L91-108",
+   "len": 736,
+   "preview": "\npub(crate) fn material_family_label(m: MaterialFamily) -> &'static str {\n    match m {\n        MaterialFamily::Softwood => \"Softwood\",\n        MaterialFamily::Hardwood => \"Hardwood\",\n        MaterialFamily::PlywoodSoftwood => \"Plywood (soft)\",\n        MaterialFamily::PlywoodHardwood => \"Plywood (hard)\",\n        MaterialFamily::Mdf => \"MDF\",\n        MaterialFamily::Hdf => \"HDF\",\n        MaterialFa"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/ui/properties/mod.rs",
+   "lines": "L2711-2730",
+   "len": 861,
+   "preview": "\n/// Human-readable label for a `MaterialFamily`.\nfn material_family_label(m: rs_cam_core::feeds::vendor_lut::MaterialFamily) -> &'static str {\n    use rs_cam_core::feeds::vendor_lut::MaterialFamily;\n    match m {\n        MaterialFamily::Softwood => \"Softwood\",\n        MaterialFamily::Hardwood => \"Hardwood\",\n        MaterialFamily::PlywoodSoftwood => \"Plywood (Soft)\",\n        MaterialFamily::Plywo"
+  }
+ },
+ {
+  "score": 0.9688328,
+  "a": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L151-201",
+   "len": 2000,
+   "preview": "\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectToolSection {\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub id: Option<ToolId>,\n    #[serde(default = \"default_tool_name\")]\n    pub name: String,\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub tool_number: Option<u32>,\n    /// Tool-type token, parsed leniently via [`ToolType::parse_l"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L174-220",
+   "len": 1596,
+   "preview": "\n/// Tool definition in the project file.\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectToolSection {\n    #[serde(default)]\n    pub id: Option<usize>,\n    #[serde(default = \"default_tool_name\")]\n    pub name: String,\n    #[serde(rename = \"type\", default = \"default_tool_type_str\")]\n    pub tool_type: String,\n    #[serde(default = \"default_tool_diameter\")]\n    pub diameter: f64,\n"
+  }
+ },
+ {
+  "score": 0.9661783,
+  "a": {
+   "path": "crates/rs_cam_viz/src/controller/workflow_tests.rs",
+   "lines": "L37-49",
+   "len": 446,
+   "preview": "\nimpl ScriptedBackend {\n    fn new() -> Self {\n        Self {\n            toolpath_lane: LaneSnapshot::idle(ComputeLane::Toolpath),\n            analysis_lane: LaneSnapshot::idle(ComputeLane::Analysis),\n            optimize_lane: LaneSnapshot::idle(ComputeLane::Optimize),\n            reach_lane: LaneSnapshot::idle(ComputeLane::Reach),\n            job_lane: LaneSnapshot::idle(ComputeLane::Job),\n    "
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/controller/tests.rs",
+   "lines": "L55-71",
+   "len": 600,
+   "preview": "\nimpl ScriptedBackend {\n    fn new() -> Self {\n        Self {\n            toolpath_lane: LaneSnapshot::idle(ComputeLane::Toolpath),\n            analysis_lane: LaneSnapshot::idle(ComputeLane::Analysis),\n            optimize_lane: LaneSnapshot::idle(ComputeLane::Optimize),\n            reach_lane: LaneSnapshot::idle(ComputeLane::Reach),\n            job_lane: LaneSnapshot::idle(ComputeLane::Job),\n    "
+  }
+ },
+ {
+  "score": 0.96447337,
+  "a": {
+   "path": "crates/rs_cam_viz/src/ui/sim_diagnostics.rs",
+   "lines": "L972-982",
+   "len": 446,
+   "preview": "\nfn issue_kind_label(kind: SimulationIssueKind) -> &'static str {\n    match kind {\n        SimulationIssueKind::Hotspot => \"Hotspot\",\n        SimulationIssueKind::Annotation => \"Annotation\",\n        SimulationIssueKind::AirCut => \"Air cut\",\n        SimulationIssueKind::LowEngagement => \"Low engagement\",\n        SimulationIssueKind::RapidCollision => \"Rapid collision\",\n        SimulationIssueKind::"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/ui/sim_op_list.rs",
+   "lines": "L1119-1129",
+   "len": 415,
+   "preview": "\nfn issue_kind_short_label(kind: SimulationIssueKind) -> &'static str {\n    match kind {\n        SimulationIssueKind::Hotspot => \"hotspot\",\n        SimulationIssueKind::Annotation => \"note\",\n        SimulationIssueKind::AirCut => \"air\",\n        SimulationIssueKind::LowEngagement => \"low-eng\",\n        SimulationIssueKind::RapidCollision => \"rapid\",\n        SimulationIssueKind::HolderCollision => \"h"
+  }
+ },
+ {
+  "score": 0.96428967,
+  "a": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L556-567",
+   "len": 410,
+   "preview": "\npub(crate) fn infer_model_kind(path: &Path) -> Option<ModelKind> {\n    path.extension()\n        .and_then(|ext| ext.to_str())\n        .and_then(|ext| match ext.to_ascii_lowercase().as_str() {\n            \"stl\" => Some(ModelKind::Stl),\n            \"svg\" => Some(ModelKind::Svg),\n            \"dxf\" => Some(ModelKind::Dxf),\n            \"step\" | \"stp\" => Some(ModelKind::Step),\n            _ => None,\n  "
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/io.rs",
+   "lines": "L132-145",
+   "len": 466,
+   "preview": "\n/// Infer a model kind from a file extension.\npub fn infer_kind_from_path(path: &Path) -> Option<ModelKind> {\n    path.extension()\n        .and_then(|e| e.to_str())\n        .map(str::to_ascii_lowercase)\n        .and_then(|ext| match ext.as_str() {\n            \"stl\" => Some(ModelKind::Stl),\n            \"svg\" => Some(ModelKind::Svg),\n            \"dxf\" => Some(ModelKind::Dxf),\n            \"step\" | \""
+  }
+ },
+ {
+  "score": 0.96282154,
+  "a": {
+   "path": "crates/rs_cam_core/src/dexel_mesh.rs",
+   "lines": "L632-647",
+   "len": 588,
+   "preview": "\n/// Find a gap in `gaps` that overlaps `reference` by at least 50% of the\n/// reference gap height. Returns the matched gap interval if found.\nfn find_matching_gap(gaps: &[[f32; 2]], reference: &[f32; 2]) -> Option<[f32; 2]> {\n    let ref_height = reference[1] - reference[0];\n    let threshold = ref_height * 0.5;\n    for gap in gaps {\n        let overlap_lo = gap[0].max(reference[0]);\n        let"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/dexel_mesh_mc.rs",
+   "lines": "L549-562",
+   "len": 445,
+   "preview": "\nfn find_matching_gap(gaps: &[[f32; 2]], reference: &[f32; 2]) -> Option<[f32; 2]> {\n    let ref_height = reference[1] - reference[0];\n    let threshold = ref_height * 0.5;\n    for gap in gaps {\n        let overlap_lo = gap[0].max(reference[0]);\n        let overlap_hi = gap[1].min(reference[1]);\n        let overlap = (overlap_hi - overlap_lo).max(0.0);\n        if overlap > threshold {\n            "
+  }
+ },
+ {
+  "score": 0.9623806,
+  "a": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L270-284",
+   "len": 373,
+   "preview": "\n/// Model reference in the project file.\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectModelSection {\n    #[serde(default)]\n    pub id: Option<usize>,\n    #[serde(default)]\n    pub path: String,\n    #[serde(default)]\n    pub name: String,\n    #[serde(default)]\n    pub kind: Option<ModelKind>,\n    #[serde(default)]\n    pub units: Option<ModelUnits>,\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L202-215",
+   "len": 457,
+   "preview": "\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectModelSection {\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub id: Option<ModelId>,\n    #[serde(default)]\n    pub path: String,\n    #[serde(default)]\n    pub name: String,\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub kind: Option<ModelKind>,\n    #[serde(default, skip_serializing_if ="
+  }
+ },
+ {
+  "score": 0.9619042,
+  "a": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L362-379",
+   "len": 539,
+   "preview": "\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectKeepOutSection {\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub id: Option<KeepOutId>,\n    #[serde(default = \"default_keep_out_name\")]\n    pub name: String,\n    #[serde(default = \"default_true\")]\n    pub enabled: bool,\n    #[serde(default)]\n    pub origin_x: f64,\n    #[serde(default)]\n    pub origin_y: f64,\n"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L367-385",
+   "len": 541,
+   "preview": "\n/// Keep-out zone section in the project file.\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectKeepOutSection {\n    #[serde(default)]\n    pub id: Option<usize>,\n    #[serde(default = \"default_keep_out_name\")]\n    pub name: String,\n    #[serde(default = \"default_true\")]\n    pub enabled: bool,\n    #[serde(default)]\n    pub origin_x: f64,\n    #[serde(default)]\n    pub origin_y: f64"
+  }
+ },
+ {
+  "score": 0.9615228,
+  "a": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L26-44",
+   "len": 520,
+   "preview": "pub struct ProjectFile {\n    #[serde(default = \"default_format_version\")]\n    pub format_version: u32,\n    #[serde(default)]\n    pub job: ProjectJobSection,\n    #[serde(default)]\n    pub tools: Vec<ProjectToolSection>,\n    #[serde(default)]\n    pub models: Vec<ProjectModelSection>,\n    #[serde(default)]\n    pub setups: Vec<ProjectSetupSection>,\n    /// Legacy: top-level toolpaths (pre-setup format"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L118-133",
+   "len": 475,
+   "preview": "\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectFile {\n    #[serde(default = \"default_project_format_version\")]\n    pub format_version: u32,\n    #[serde(default)]\n    pub job: ProjectJobSection,\n    #[serde(default)]\n    pub tools: Vec<ProjectToolSection>,\n    #[serde(default)]\n    pub models: Vec<ProjectModelSection>,\n    #[serde(default)]\n    pub setups: Vec<ProjectSetupSectio"
+  }
+ },
+ {
+  "score": 0.9612545,
+  "a": {
+   "path": "crates/rs_cam_viz/src/ui/properties/mod.rs",
+   "lines": "L2731-2743",
+   "len": 480,
+   "preview": "\n/// Human-readable label for a `ToolFamily`.\nfn tool_family_label(f: rs_cam_core::feeds::vendor_lut::ToolFamily) -> &'static str {\n    use rs_cam_core::feeds::vendor_lut::ToolFamily;\n    match f {\n        ToolFamily::FlatEnd => \"Flat End\",\n        ToolFamily::BallNose => \"Ball Nose\",\n        ToolFamily::TaperedBallNose => \"Tapered Ball\",\n        ToolFamily::BullNose => \"Bull Nose\",\n        ToolFa"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/ui/feeds/shared.rs",
+   "lines": "L80-90",
+   "len": 366,
+   "preview": "\npub(crate) fn tool_family_label(f: ToolFamily) -> &'static str {\n    match f {\n        ToolFamily::FlatEnd => \"Flat end\",\n        ToolFamily::BallNose => \"Ball nose\",\n        ToolFamily::BullNose => \"Bull nose\",\n        ToolFamily::ChamferVbit => \"V-bit\",\n        ToolFamily::TaperedBallNose => \"Tapered ball\",\n        ToolFamily::FacingBit => \"Facing bit\",\n    }\n}"
+  }
+ },
+ {
+  "score": 0.96031314,
+  "a": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L1309-1320",
+   "len": 513,
+   "preview": "\nfn infer_model_kind(path: &Path) -> Option<ModelKind> {\n    match path.extension().and_then(|ext| ext.to_str()) {\n        Some(ext) if ext.eq_ignore_ascii_case(\"stl\") => Some(ModelKind::Stl),\n        Some(ext) if ext.eq_ignore_ascii_case(\"svg\") => Some(ModelKind::Svg),\n        Some(ext) if ext.eq_ignore_ascii_case(\"dxf\") => Some(ModelKind::Dxf),\n        Some(ext) if ext.eq_ignore_ascii_case(\"step"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/io.rs",
+   "lines": "L132-145",
+   "len": 466,
+   "preview": "\n/// Infer a model kind from a file extension.\npub fn infer_kind_from_path(path: &Path) -> Option<ModelKind> {\n    path.extension()\n        .and_then(|e| e.to_str())\n        .map(str::to_ascii_lowercase)\n        .and_then(|ext| match ext.as_str() {\n            \"stl\" => Some(ModelKind::Stl),\n            \"svg\" => Some(ModelKind::Svg),\n            \"dxf\" => Some(ModelKind::Dxf),\n            \"step\" | \""
+  }
+ },
+ {
+  "score": 0.95913255,
+  "a": {
+   "path": "crates/rs_cam_core/src/io.rs",
+   "lines": "L132-145",
+   "len": 466,
+   "preview": "\n/// Infer a model kind from a file extension.\npub fn infer_kind_from_path(path: &Path) -> Option<ModelKind> {\n    path.extension()\n        .and_then(|e| e.to_str())\n        .map(str::to_ascii_lowercase)\n        .and_then(|ext| match ext.as_str() {\n            \"stl\" => Some(ModelKind::Stl),\n            \"svg\" => Some(ModelKind::Svg),\n            \"dxf\" => Some(ModelKind::Dxf),\n            \"step\" | \""
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/controller/io.rs",
+   "lines": "L781-801",
+   "len": 697,
+   "preview": "\n/// The model kind a file extension names, or `None` when rs_cam does not\n/// read that extension (G-MODELRELINK).\n///\n/// Mirrors the `match` in `app::mcp::commands`' `import_model` arm; core's\n/// `project_file::infer_model_kind` is `pub(crate)` and not reachable from\n/// this crate.\nfn kind_from_extension(path: &Path) -> Option<ModelKind> {\n    match path\n        .extension()\n        .and_then"
+  }
+ },
+ {
+  "score": 0.95480037,
+  "a": {
+   "path": "crates/rs_cam_viz/src/ui/sim_diagnostics.rs",
+   "lines": "L1371-1387",
+   "len": 696,
+   "preview": "\nfn span_kind_label(kind: SpanKind) -> &'static str {\n    match kind {\n        SpanKind::Operation => \"Operation\",\n        SpanKind::DepthPass => \"DepthPass\",\n        SpanKind::Region => \"Region\",\n        SpanKind::Entry => \"Entry\",\n        SpanKind::LeadOut => \"LeadOut\",\n        SpanKind::LinkBridge => \"LinkBridge\",\n        SpanKind::DressupArtifact => \"DressupArtifact\",\n        SpanKind::Geometr"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/app/mcp.rs",
+   "lines": "L5150-5167",
+   "len": 765,
+   "preview": "\nfn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {\n    use rs_cam_core::toolpath_spans::SpanKind;\n    match k {\n        SpanKind::Operation => \"Operation\",\n        SpanKind::DepthPass => \"DepthPass\",\n        SpanKind::Region => \"Region\",\n        SpanKind::Entry => \"Entry\",\n        SpanKind::LeadOut => \"LeadOut\",\n        SpanKind::LinkBridge => \"LinkBridge\",\n        Spa"
+  }
+ },
+ {
+  "score": 0.95453084,
+  "a": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L297-327",
+   "len": 1088,
+   "preview": "\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectSetupSection {\n    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub id: Option<SetupId>,\n    #[serde(default = \"default_setup_name\")]\n    pub name: String,\n    #[serde(default = \"default_setup_face_up\")]\n    pub face_up: String,\n    #[serde(default = \"default_setup_z_rotation\")]\n    pub z_rotation: String,\n    #[s"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L285-320",
+   "len": 1509,
+   "preview": "\n/// Setup section in the project file.\n#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct ProjectSetupSection {\n    #[serde(default)]\n    pub id: Option<usize>,\n    #[serde(default = \"default_setup_name\")]\n    pub name: String,\n    #[serde(default = \"default_face_up\")]\n    pub face_up: String,\n    #[serde(default)]\n    pub z_rotation: String,\n    #[serde(default, skip_serializing_if = \"Op"
+  }
+ },
+ {
+  "score": 0.953519,
+  "a": {
+   "path": "crates/rs_cam_core/src/tier_map_cache.rs",
+   "lines": "L161-185",
+   "len": 646,
+   "preview": "\nstatic BUILDS: AtomicU64 = AtomicU64::new(0);\nstatic HITS: AtomicU64 = AtomicU64::new(0);\n\n/// Read the counters.\n#[must_use]\npub fn stats() -> TierMapCacheStats {\n    TierMapCacheStats {\n        builds: BUILDS.load(Ordering::Relaxed),\n        hits: HITS.load(Ordering::Relaxed),\n    }\n}\n\n/// Zero the counters. The cached values themselves are untouched, so this\n/// cannot change any result.\npub f"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/reach_map_cache.rs",
+   "lines": "L112-136",
+   "len": 648,
+   "preview": "\nstatic BUILDS: AtomicU64 = AtomicU64::new(0);\nstatic HITS: AtomicU64 = AtomicU64::new(0);\n\n/// Read the counters.\n#[must_use]\npub fn stats() -> ReachMapCacheStats {\n    ReachMapCacheStats {\n        builds: BUILDS.load(Ordering::Relaxed),\n        hits: HITS.load(Ordering::Relaxed),\n    }\n}\n\n/// Zero the counters. The cached values themselves are untouched, so this\n/// cannot change any result.\npub"
+  }
+ },
+ {
+  "score": 0.95286185,
+  "a": {
+   "path": "crates/rs_cam_core/src/ramp_finish.rs",
+   "lines": "L471-479",
+   "len": 241,
+   "preview": "\nfn runtime_annotations_to_labels(\n    annotations: &[RampFinishRuntimeAnnotation],\n) -> Vec<(usize, String)> {\n    annotations\n        .iter()\n        .map(|annotation| (annotation.move_index, annotation.event.label()))\n        .collect()\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/spiral_finish.rs",
+   "lines": "L118-126",
+   "len": 243,
+   "preview": "\nfn runtime_annotations_to_labels(\n    annotations: &[SpiralFinishRuntimeAnnotation],\n) -> Vec<(usize, String)> {\n    annotations\n        .iter()\n        .map(|annotation| (annotation.move_index, annotation.event.label()))\n        .collect()\n}"
+  }
+ },
+ {
+  "score": 0.9527061,
+  "a": {
+   "path": "crates/rs_cam_viz/src/ui/optimize_modal.rs",
+   "lines": "L1149-1163",
+   "len": 409,
+   "preview": "\n/// Format cycle time in mm:ss for cycles \u2265 60s, or as \"X.Xs\" for\n/// shorter runs.\nfn format_cycle(seconds: f64) -> String {\n    if !seconds.is_finite() {\n        return \"\u2014\".to_owned();\n    }\n    if seconds >= 60.0 {\n        let minutes = (seconds / 60.0).floor();\n        let secs = seconds - 60.0 * minutes;\n        format!(\"{minutes:.0}:{secs:04.1}\")\n    } else {\n        format!(\"{seconds:.1}s\""
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/ui/optimize_project.rs",
+   "lines": "L536-548",
+   "len": 325,
+   "preview": "\nfn format_cycle(seconds: f64) -> String {\n    if !seconds.is_finite() {\n        return \"\u2014\".to_owned();\n    }\n    if seconds >= 60.0 {\n        let minutes = (seconds / 60.0).floor();\n        let secs = seconds - 60.0 * minutes;\n        format!(\"{minutes:.0}:{secs:04.1}\")\n    } else {\n        format!(\"{seconds:.1}s\")\n    }\n}"
+  }
+ },
+ {
+  "score": 0.95226586,
+  "a": {
+   "path": "crates/rs_cam_viz/src/ui/optimize_project.rs",
+   "lines": "L515-535",
+   "len": 561,
+   "preview": "\nfn format_delta(delta: &ParamDelta) -> String {\n    let mut parts: Vec<String> = Vec::new();\n    if let Some(f) = delta.feed_mm_min {\n        parts.push(format!(\"feed {f:.0}\"));\n    }\n    if let Some(rpm) = delta.spindle_rpm {\n        parts.push(format!(\"rpm {rpm}\"));\n    }\n    if let Some(s) = delta.stepover_mm {\n        parts.push(format!(\"stepover {s:.2}\"));\n    }\n    if let Some(d) = delta.de"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/ui/optimize_modal.rs",
+   "lines": "L950-972",
+   "len": 669,
+   "preview": "\n/// Render a `ParamDelta` as a compact one-liner: \"feed 2100, DOC 2.5\".\n/// Empty (no changes) returns \"\u2014\".\nfn format_delta(delta: &ParamDelta) -> String {\n    let mut parts: Vec<String> = Vec::new();\n    if let Some(f) = delta.feed_mm_min {\n        parts.push(format!(\"feed {f:.0}\"));\n    }\n    if let Some(rpm) = delta.spindle_rpm {\n        parts.push(format!(\"rpm {rpm}\"));\n    }\n    if let Some("
+  }
+ },
+ {
+  "score": 0.9517281,
+  "a": {
+   "path": "crates/rs_cam_core/src/compute/config.rs",
+   "lines": "L1124-1182",
+   "len": 2000,
+   "preview": "\n/// A planned finish band whose Z ladder was SHORTENED by the resolved\n/// heights but which still emitted cutting (C8).\n///\n/// The complement of [`DroppedBandFinding`], and the gap\n/// `ANTIPATTERNS_BACKLOG.md` P8 logged. Wave D1 measured the clip on EVERY\n/// band and discarded the measurement unless the region emitted nothing at\n/// all \u2014 so a band that machined the top 2 mm of a 12 mm wall a"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/unified_finish.rs",
+   "lines": "L1007-1035",
+   "len": 1416,
+   "preview": "\n/// One planned band region whose Z ladder was SHORTENED by height\n/// resolution but which still emitted cutting (C8).\n///\n/// The complement of [`DroppedBand`], and the gap `ANTIPATTERNS_BACKLOG.md`\n/// P8 logged: \"Partial height clipping is unreported (only total band\n/// collapse produces the D1 finding).\" Wave D1 measured the clip on every\n/// band and then threw the measurement away unless "
+  }
+ },
+ {
+  "score": 0.9498632,
+  "a": {
+   "path": "crates/rs_cam_core/src/debug_trace.rs",
+   "lines": "L550-568",
+   "len": 522,
+   "preview": "\nfn sanitize_filename_component(input: &str) -> String {\n    let mut output = String::with_capacity(input.len());\n    for ch in input.chars() {\n        if ch.is_ascii_alphanumeric() {\n            output.push(ch.to_ascii_lowercase());\n        } else if matches!(ch, '-' | '_') {\n            output.push(ch);\n        } else {\n            output.push('_');\n        }\n    }\n    let output = output.trim_m"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/semantic_trace.rs",
+   "lines": "L1225-1243",
+   "len": 522,
+   "preview": "\nfn sanitize_filename_component(input: &str) -> String {\n    let mut output = String::with_capacity(input.len());\n    for ch in input.chars() {\n        if ch.is_ascii_alphanumeric() {\n            output.push(ch.to_ascii_lowercase());\n        } else if matches!(ch, '-' | '_') {\n            output.push(ch);\n        } else {\n            output.push('_');\n        }\n    }\n    let output = output.trim_m"
+  }
+ },
+ {
+  "score": 0.9477316,
+  "a": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L134-150",
+   "len": 621,
+   "preview": "\n#[derive(Debug, Clone, Serialize, Deserialize, Default)]\npub struct ProjectJobSection {\n    #[serde(default = \"default_job_name\")]\n    pub name: String,\n    #[serde(default)]\n    pub stock: StockConfig,\n    #[serde(default)]\n    pub post: PostConfig,\n    #[serde(default)]\n    pub machine: rs_cam_core::machine::MachineProfile,\n    /// Optional reference to a library machine (see\n    /// `rs_cam_co"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L45-67",
+   "len": 830,
+   "preview": "\n/// Job-level settings (name, stock, post).\n#[derive(Debug, Clone, Serialize, Deserialize, Default)]\npub struct ProjectJobSection {\n    #[serde(default = \"default_job_name\")]\n    pub name: String,\n    #[serde(default)]\n    pub stock: ProjectStockConfig,\n    #[serde(default)]\n    pub post: ProjectPostConfig,\n    #[serde(default)]\n    pub machine: crate::machine::MachineProfile,\n    /// LEGACY. Mac"
+  }
+ },
+ {
+  "score": 0.9470969,
+  "a": {
+   "path": "crates/rs_cam_core/src/session/mod.rs",
+   "lines": "L1149-1218",
+   "len": 2000,
+   "preview": "\n/// Per-toolpath diagnostic summary.\n#[derive(Debug, Clone)]\npub struct ToolpathDiagnostic {\n    pub toolpath_id: ToolpathId,\n    pub name: String,\n    pub operation_type: String,\n    /// Stable op-kind tag (e.g. `\"drill\"`, `\"alignment_pin_drill\"`, `\"pocket\"`).\n    /// Lets consumers filter Z-only kinematics ops out of rapid:cut-ratio\n    /// signals \u2014 see [`crate::compute::catalog::OperationType"
+  },
+  "b": {
+   "path": "crates/rs_cam_cli/src/project.rs",
+   "lines": "L48-107",
+   "len": 2000,
+   "preview": "struct ToolpathDiagnostic<'a> {\n    toolpath_id: rs_cam_core::ToolpathId,\n    toolpath_name: &'a str,\n    operation_type: &'a str,\n    /// Stable op-kind tag, mirroring\n    /// [`rs_cam_core::session::ToolpathDiagnostic::op_kind`]. `Option` only\n    /// because it has always serialised as `null` when the session published\n    /// no diagnostic; see [`Self::from_core`].\n    op_kind: Option<&'a str>"
+  }
+ },
+ {
+  "score": 0.9468912,
+  "a": {
+   "path": "crates/rs_cam_core/src/feeds/vendor_normalize.rs",
+   "lines": "L125-141",
+   "len": 863,
+   "preview": "\n/// Canonical `feeds::OperationFamily` \u2192 `LutOperationFamily` mapping.\n/// F3.2: extracted from `to_lookup_query` so the loader's reachability\n/// rule and gate-side query builders share one mapping instead of\n/// re-deriving it inline (defect class C5).\npub fn op_family_to_lut(family: OperationFamily) -> LutOperationFamily {\n    match family {\n        OperationFamily::Adaptive => LutOperationFam"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/tool_load/optimize/context.rs",
+   "lines": "L152-168",
+   "len": 882,
+   "preview": "\n/// Map the operation's `feeds_family` (used by the F&S calculator) to\n/// the `LutOperationFamily` (used by the chipload/power gate's LUT\n/// lookup). Same mapping the suggest module applied \u2014 kept as a\n/// shared helper so optimize and suggest can't drift apart.\npub(crate) fn lut_op_family_from(family: OperationFamily) -> LutOperationFamily {\n    match family {\n        OperationFamily::Adaptive"
+  }
+ },
+ {
+  "score": 0.94593,
+  "a": {
+   "path": "crates/rs_cam_core/src/tier_map_cache.rs",
+   "lines": "L257-278",
+   "len": 638,
+   "preview": "\nfn put(mesh: &Arc<TriangleMesh>, key: TierMapKey, map: Arc<TierMap>) {\n    let Ok(mut table) = table().lock() else {\n        return;\n    };\n    // Sweep entries whose mesh is gone, so a closed model's map is released\n    // at the next plan rather than held for the life of the process.\n    table.retain(|entry| entry.mesh.strong_count() > 0);\n\n    if let Some(entry) = table.iter_mut().find(|entry|"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/reach_map_cache.rs",
+   "lines": "L198-219",
+   "len": 645,
+   "preview": "\nfn put(mesh: &Arc<TriangleMesh>, key: ReachMapKey, map: Arc<ReachMap>) {\n    let Ok(mut table) = table().lock() else {\n        return;\n    };\n    // Sweep entries whose mesh is gone, so a closed model's map is released\n    // at the next selection rather than held for the life of the process.\n    table.retain(|entry| entry.mesh.strong_count() > 0);\n\n    if let Some(entry) = table.iter_mut().find("
+  }
+ },
+ {
+  "score": 0.94507265,
+  "a": {
+   "path": "crates/rs_cam_core/src/debug_trace.rs",
+   "lines": "L124-134",
+   "len": 320,
+   "preview": "\n#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]\npub struct ToolpathDebugArtifact {\n    pub schema_version: u32,\n    pub toolpath_id: ToolpathId,\n    pub toolpath_name: String,\n    pub operation_label: String,\n    pub tool_summary: String,\n    pub request_snapshot: Value,\n    pub trace: ToolpathDebugTrace,\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/semantic_trace.rs",
+   "lines": "L497-508",
+   "len": 395,
+   "preview": "\n#[derive(Debug, Clone, PartialEq, DeriveSerialize, Deserialize)]\npub struct ToolpathTraceArtifact {\n    pub schema_version: u32,\n    pub toolpath_id: ToolpathId,\n    pub toolpath_name: String,\n    pub operation_label: String,\n    pub tool_summary: String,\n    pub request_snapshot: Value,\n    pub debug_trace: Option<ToolpathDebugTrace>,\n    pub semantic_trace: Option<ToolpathSemanticTrace>,\n}"
+  }
+ },
+ {
+  "score": 0.9442251,
+  "a": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L1309-1320",
+   "len": 513,
+   "preview": "\nfn infer_model_kind(path: &Path) -> Option<ModelKind> {\n    match path.extension().and_then(|ext| ext.to_str()) {\n        Some(ext) if ext.eq_ignore_ascii_case(\"stl\") => Some(ModelKind::Stl),\n        Some(ext) if ext.eq_ignore_ascii_case(\"svg\") => Some(ModelKind::Svg),\n        Some(ext) if ext.eq_ignore_ascii_case(\"dxf\") => Some(ModelKind::Dxf),\n        Some(ext) if ext.eq_ignore_ascii_case(\"step"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/controller/io.rs",
+   "lines": "L781-801",
+   "len": 697,
+   "preview": "\n/// The model kind a file extension names, or `None` when rs_cam does not\n/// read that extension (G-MODELRELINK).\n///\n/// Mirrors the `match` in `app::mcp::commands`' `import_model` arm; core's\n/// `project_file::infer_model_kind` is `pub(crate)` and not reachable from\n/// this crate.\nfn kind_from_extension(path: &Path) -> Option<ModelKind> {\n    match path\n        .extension()\n        .and_then"
+  }
+ },
+ {
+  "score": 0.94352365,
+  "a": {
+   "path": "crates/rs_cam_core/src/compute/execute/unified_finish_semantic_regions.rs",
+   "lines": "L66-76",
+   "len": 358,
+   "preview": "\n/// Tapered ball: the tool class where `radius()` (shank) and\n/// `cusp_radius()` (tip) diverge, so band structure is the most sensitive.\nfn tapered_ball_tool() -> ToolConfig {\n    ToolConfig {\n        diameter: 1.5,\n        taper_half_angle: 10.0,\n        shaft_diameter: 6.0,\n        ..ToolConfig::new_default(ToolId(2), ToolType::TaperedBallNose)\n    }\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/compute/execute/unified_finish_ring_collapse_g_unifiedcrash.rs",
+   "lines": "L57-67",
+   "len": 371,
+   "preview": "\n/// The live project's tool: a tapered ball, where `radius()` (shank) and\n/// `cusp_radius()` (tip) diverge \u2014 the class the ring cascade is sized off.\nfn tapered_ball_tool() -> ToolConfig {\n    ToolConfig {\n        diameter: 1.5,\n        taper_half_angle: 10.0,\n        shaft_diameter: 6.0,\n        ..ToolConfig::new_default(ToolId(2), ToolType::TaperedBallNose)\n    }\n}"
+  }
+ },
+ {
+  "score": 0.9433775,
+  "a": {
+   "path": "crates/rs_cam_core/src/project_curve.rs",
+   "lines": "L28-39",
+   "len": 376,
+   "preview": "\n/// Tool-radius compensation side for closed rings. Open rings ignore this.\n#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\npub enum ProjectSide {\n    /// Tool centerline rides exactly on the curve.\n    #[default]\n    Center,\n    /// Offset inward by tool radius (closed rings only).\n    Inside,\n    /// Offset outward by tool radius (closed rings only).\n    Outside,\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/compute/operation_configs.rs",
+   "lines": "L1583-1596",
+   "len": 481,
+   "preview": "\n#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]\n#[serde(rename_all = \"snake_case\")]\npub enum ProjectCurveSide {\n    /// Tool centerline rides exactly on the curve.\n    #[default]\n    Center,\n    /// Closed rings only \u2014 offset inward by tool radius before projecting.\n    /// Open rings fall back to Center.\n    Inside,\n    /// Closed rings only \u2014 offset outward by tool"
+  }
+ },
+ {
+  "score": 0.9425738,
+  "a": {
+   "path": "crates/rs_cam_viz/src/ui/components/compare.rs",
+   "lines": "L85-92",
+   "len": 290,
+   "preview": "\n/// A `MRR: N mm\u00b3/min` readout.\npub fn mrr_row(ui: &mut egui::Ui, mrr_mm3_min: f64) {\n    ui.horizontal(|ui| {\n        ui.label(egui::RichText::new(\"MRR:\").small().color(theme::TEXT_DIM));\n        ui.label(egui::RichText::new(format!(\"{mrr_mm3_min:.0} mm\\u{00B3}/min\")).small());\n    });\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/ui/feeds/compare.rs",
+   "lines": "L697-709",
+   "len": 437,
+   "preview": "\n/// The rail's MRR readout, wrapped like its neighbours.\nfn rail_mrr_row(ui: &mut egui::Ui, mrr_mm3_min: f64) {\n    ui.horizontal_wrapped(|ui| {\n        ui.add(egui::Label::new(egui::RichText::new(\"MRR:\").small().color(theme::TEXT_DIM)).wrap());\n        ui.add(\n            egui::Label::new(\n                egui::RichText::new(format!(\"{mrr_mm3_min:.0} mm\\u{00B3}/min\")).small(),\n            )\n    "
+  }
+ },
+ {
+  "score": 0.94167376,
+  "a": {
+   "path": "crates/rs_cam_core/src/dexel_mesh_mc.rs",
+   "lines": "L563-572",
+   "len": 319,
+   "preview": "\n#[inline]\nfn wood_color_at_z(z: f32, stock_top: f32, _stock_bot: f32, range: f32) -> (f32, f32, f32) {\n    let depth_t = ((stock_top - z) / range).clamp(0.0, 1.0);\n    (\n        UNCUT_R + (CUT_R - UNCUT_R) * depth_t,\n        UNCUT_G + (CUT_G - UNCUT_G) * depth_t,\n        UNCUT_B + (CUT_B - UNCUT_B) * depth_t,\n    )\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/dexel_mesh.rs",
+   "lines": "L789-800",
+   "len": 496,
+   "preview": "\n/// Compute wood-tone color for an internal surface at a given Z depth.\nfn cut_color(z: f32, stock_top: f32, stock_bot: f32, z_range: f32) -> (f32, f32, f32) {\n    // Depth from top surface as a fraction of total range.\n    let depth_t = ((stock_top - z) / z_range).clamp(0.0, 1.0);\n    let _ = stock_bot; // used implicitly through z_range\n    (\n        UNCUT_R + (CUT_R - UNCUT_R) * depth_t,\n     "
+  }
+ },
+ {
+  "score": 0.94160116,
+  "a": {
+   "path": "crates/rs_cam_viz/src/io/export.rs",
+   "lines": "L344-360",
+   "len": 651,
+   "preview": "\nfn controller_comp_for_session_toolpath(\n    tc: &rs_cam_core::session::ToolpathConfig,\n) -> Option<ControllerCompensation> {\n    if let OperationConfig::Profile(ref cfg) = tc.operation\n        && cfg.compensation == CompensationType::InControl\n    {\n        let dir = match (cfg.side, cfg.climb) {\n            (ProfileSide::Outside, true) => ControllerCompensation::Right,\n            (ProfileSide:"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/gcode/mod.rs",
+   "lines": "L801-819",
+   "len": 721,
+   "preview": "\nfn controller_comp_for_project_toolpath(\n    tc: &crate::session::ToolpathConfig,\n) -> Option<ControllerCompensation> {\n    use crate::compute::{CompensationType, OperationConfig};\n    use crate::profile::ProfileSide;\n\n    if let OperationConfig::Profile(ref cfg) = tc.operation\n        && cfg.compensation == CompensationType::InControl\n    {\n        return Some(match (cfg.side, cfg.climb) {\n     "
+  }
+ },
+ {
+  "score": 0.9407525,
+  "a": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L556-567",
+   "len": 410,
+   "preview": "\npub(crate) fn infer_model_kind(path: &Path) -> Option<ModelKind> {\n    path.extension()\n        .and_then(|ext| ext.to_str())\n        .and_then(|ext| match ext.to_ascii_lowercase().as_str() {\n            \"stl\" => Some(ModelKind::Stl),\n            \"svg\" => Some(ModelKind::Svg),\n            \"dxf\" => Some(ModelKind::Dxf),\n            \"step\" | \"stp\" => Some(ModelKind::Step),\n            _ => None,\n  "
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/controller/io.rs",
+   "lines": "L781-801",
+   "len": 697,
+   "preview": "\n/// The model kind a file extension names, or `None` when rs_cam does not\n/// read that extension (G-MODELRELINK).\n///\n/// Mirrors the `match` in `app::mcp::commands`' `import_model` arm; core's\n/// `project_file::infer_model_kind` is `pub(crate)` and not reachable from\n/// this crate.\nfn kind_from_extension(path: &Path) -> Option<ModelKind> {\n    match path\n        .extension()\n        .and_then"
+  }
+ },
+ {
+  "score": 0.93863475,
+  "a": {
+   "path": "crates/rs_cam_core/src/tier_map.rs",
+   "lines": "L737-747",
+   "len": 245,
+   "preview": "\n/// The grid a walk lays over the mesh bbox. Same row-major convention as\n/// [`TierMap`], which it becomes.\n#[derive(Debug, Clone, Copy)]\nstruct GridSpec {\n    nx: usize,\n    ny: usize,\n    origin_x: f64,\n    origin_y: f64,\n    cell_mm: f64,\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/reach_map.rs",
+   "lines": "L920-930",
+   "len": 246,
+   "preview": "\n/// The grid a walk lays over the mesh bbox. Same row-major convention as\n/// [`ReachMap`], which it becomes.\n#[derive(Debug, Clone, Copy)]\nstruct GridSpec {\n    nx: usize,\n    ny: usize,\n    origin_x: f64,\n    origin_y: f64,\n    cell_mm: f64,\n}"
+  }
+ },
+ {
+  "score": 0.9383619,
+  "a": {
+   "path": "crates/rs_cam_core/src/tier_map_cache.rs",
+   "lines": "L186-194",
+   "len": 293,
+   "preview": "\n/// Drop every entry. Not needed for correctness \u2014 a stale entry is\n/// unreachable once its mesh is gone \u2014 but lets a test start from a known\n/// state and lets an embedder release the retained maps eagerly.\npub fn clear() {\n    if let Ok(mut t) = table().lock() {\n        t.clear();\n    }\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/geom_cache.rs",
+   "lines": "L227-235",
+   "len": 296,
+   "preview": "\n/// Drop every entry. Not needed for correctness \u2014 a stale entry is\n/// unreachable once its mesh is gone \u2014 but lets a test start from a known\n/// state and lets an embedder release the retained buffers eagerly.\npub fn clear() {\n    if let Ok(mut t) = table().lock() {\n        t.clear();\n    }\n}"
+  }
+ },
+ {
+  "score": 0.9367005,
+  "a": {
+   "path": "crates/rs_cam_viz/src/state/simulation.rs",
+   "lines": "L2919-3018",
+   "len": 2000,
+   "preview": "                    feed_rate_mm_min: 300.0,\n                    spindle_rpm: 18_000,\n                    flute_count: 2,\n                    axial_doc_mm: 1.0,\n                    axial_engagement_mm: 1.0,\n                    plunge_descent_mm: 0.0,\n                    arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),\n                    chipload_mm_per_tooth: 0.0083,\n                   "
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/simulation_cut.rs",
+   "lines": "L1954-2053",
+   "len": 2000,
+   "preview": "                    move_index: 4,\n                    position: [1.0, 2.0, -1.0],\n                    cumulative_time_s: 0.2,\n                    segment_time_s: 0.2,\n                    is_cutting: true,\n                    cut_kinematics: crate::simulation_cut::CutKinematics::Linear,\n                    feed_rate_mm_min: 600.0,\n                    spindle_rpm: 18_000,\n                    flute_"
+  }
+ },
+ {
+  "score": 0.9366518,
+  "a": {
+   "path": "crates/rs_cam_viz/src/state/job.rs",
+   "lines": "L130-143",
+   "len": 363,
+   "preview": "\n/// A rectangular region the tool must avoid (XY only, full Z extent).\n#[derive(Debug, Clone)]\npub struct KeepOutZone {\n    pub id: KeepOutId,\n    pub name: String,\n    pub enabled: bool,\n    /// Position of the zone's min corner (mm).\n    pub origin_x: f64,\n    pub origin_y: f64,\n    /// Dimensions of the zone (mm).\n    pub size_x: f64,\n    pub size_y: f64,\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/session/mod.rs",
+   "lines": "L564-588",
+   "len": 711,
+   "preview": "\n/// A rectangular region the tool must avoid (XY only, full Z extent).\n///\n/// The record derives `PartialEq` for the reason [`Fixture`] does.\n#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]\npub struct KeepOutZone {\n    pub id: KeepOutId,\n    pub name: String,\n    #[serde(default = \"default_true\")]\n    pub enabled: bool,\n    /// Position of the zone's min corner (mm).\n   "
+  }
+ },
+ {
+  "score": 0.93602043,
+  "a": {
+   "path": "crates/rs_cam_core/src/tier_map.rs",
+   "lines": "L784-833",
+   "len": 1883,
+   "preview": "\n/// Run `row_fn` over every grid row and concatenate the results, polling\n/// `cancel` **once per row** and folding each row's drop count into\n/// [`DROP_CALLS`].\n///\n/// The one site both passes and both build configurations share, so the\n/// cancellation granularity the module doc promises cannot drift between them.\nfn walk_rows<T: Send>(\n    grid: &GridSpec,\n    cancel: &(dyn CancelCheck + Syn"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/reach_map.rs",
+   "lines": "L981-1021",
+   "len": 1331,
+   "preview": "\n/// Run `row_fn` over every grid row and concatenate the results, polling\n/// `cancel` once per row.\n///\n/// One site for both build configurations, so the cancellation granularity\n/// cannot drift between them \u2014 the same rule\n/// [`crate::tier_map`]'s `walk_rows` keeps.\nfn walk_rows<T: Send>(\n    grid: &GridSpec,\n    cancel: &(dyn CancelCheck + Sync),\n    row_fn: impl Fn(usize) -> Vec<T> + Sync,"
+  }
+ },
+ {
+  "score": 0.9355777,
+  "a": {
+   "path": "crates/rs_cam_core/src/session/project_file.rs",
+   "lines": "L221-269",
+   "len": 814,
+   "preview": "\nfn default_tool_name() -> String {\n    \"Tool\".to_owned()\n}\nfn default_tool_type_str() -> String {\n    \"end_mill\".to_owned()\n}\nfn default_tool_diameter() -> f64 {\n    6.35\n}\nfn default_cutting_length() -> f64 {\n    25.0\n}\nfn default_helix_deg() -> f64 {\n    30.0\n}\nfn default_corner_radius() -> f64 {\n    2.0\n}\nfn default_included_angle() -> f64 {\n    90.0\n}\nfn default_taper_half_angle() -> f64 {\n  "
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/io/project.rs",
+   "lines": "L1443-1510",
+   "len": 871,
+   "preview": "\nfn default_tool_diameter() -> f64 {\n    6.35\n}\n\nfn default_cutting_length() -> f64 {\n    25.0\n}\n\nfn default_tool_helix_deg() -> f64 {\n    30.0\n}\n\nfn default_included_angle() -> f64 {\n    90.0\n}\n\nfn default_corner_radius() -> f64 {\n    2.0\n}\n\nfn default_taper_half_angle() -> f64 {\n    15.0\n}\n\nfn default_shaft_diameter() -> f64 {\n    6.35\n}\n\nfn default_holder_diameter() -> f64 {\n    25.0\n}\n\nfn defa"
+  }
+ },
+ {
+  "score": 0.9354954,
+  "a": {
+   "path": "crates/rs_cam_viz/src/render/sim_render.rs",
+   "lines": "L15-40",
+   "len": 876,
+   "preview": "\nimpl ColoredMeshVertex {\n    pub fn layout() -> wgpu::VertexBufferLayout<'static> {\n        wgpu::VertexBufferLayout {\n            array_stride: std::mem::size_of::<ColoredMeshVertex>() as u64,\n            step_mode: wgpu::VertexStepMode::Vertex,\n            attributes: &[\n                wgpu::VertexAttribute {\n                    offset: 0,\n                    shader_location: 0,\n              "
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/render/mesh_render.rs",
+   "lines": "L15-35",
+   "len": 672,
+   "preview": "\nimpl MeshVertex {\n    pub fn layout() -> wgpu::VertexBufferLayout<'static> {\n        wgpu::VertexBufferLayout {\n            array_stride: std::mem::size_of::<MeshVertex>() as u64,\n            step_mode: wgpu::VertexStepMode::Vertex,\n            attributes: &[\n                wgpu::VertexAttribute {\n                    offset: 0,\n                    shader_location: 0,\n                    format: "
+  }
+ },
+ {
+  "score": 0.9336196,
+  "a": {
+   "path": "crates/rs_cam_core/src/session/mutation.rs",
+   "lines": "L78-114",
+   "len": 1066,
+   "preview": "\n/// Compute a 3D bounding box from a slice of 2D polygons (SVG/DXF models).\n/// Z extent is zero; `update_from_bbox` preserves stock Z for 2D models.\n/// Returns `None` if all polygons are empty.\npub(crate) fn polygons_bbox(polygons: &[Polygon2]) -> Option<BoundingBox3> {\n    let mut min_x = f64::INFINITY;\n    let mut min_y = f64::INFINITY;\n    let mut max_x = f64::NEG_INFINITY;\n    let mut max_y"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/state/job.rs",
+   "lines": "L434-463",
+   "len": 914,
+   "preview": "\n/// Compute a 2D bounding box from a polygon slice (for DXF/SVG models without a mesh).\npub fn session_polygons_bbox(\n    polygons: Option<&[rs_cam_core::polygon::Polygon2]>,\n) -> Option<BoundingBox3> {\n    let polygons = polygons?;\n    let mut min_x = f64::INFINITY;\n    let mut min_y = f64::INFINITY;\n    let mut max_x = f64::NEG_INFINITY;\n    let mut max_y = f64::NEG_INFINITY;\n    for poly in po"
+  }
+ },
+ {
+  "score": 0.93357885,
+  "a": {
+   "path": "crates/rs_cam_core/src/semantic_trace.rs",
+   "lines": "L1225-1243",
+   "len": 522,
+   "preview": "\nfn sanitize_filename_component(input: &str) -> String {\n    let mut output = String::with_capacity(input.len());\n    for ch in input.chars() {\n        if ch.is_ascii_alphanumeric() {\n            output.push(ch.to_ascii_lowercase());\n        } else if matches!(ch, '-' | '_') {\n            output.push(ch);\n        } else {\n            output.push('_');\n        }\n    }\n    let output = output.trim_m"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/simulation_cut.rs",
+   "lines": "L1845-1863",
+   "len": 528,
+   "preview": "\nfn sanitize_filename_component(input: &str) -> String {\n    let mut output = String::with_capacity(input.len());\n    for ch in input.chars() {\n        if ch.is_ascii_alphanumeric() {\n            output.push(ch.to_ascii_lowercase());\n        } else if matches!(ch, '-' | '_') {\n            output.push(ch);\n        } else {\n            output.push('_');\n        }\n    }\n    let output = output.trim_m"
+  }
+ },
+ {
+  "score": 0.9328754,
+  "a": {
+   "path": "crates/rs_cam_core/src/semantic_trace.rs",
+   "lines": "L1204-1224",
+   "len": 579,
+   "preview": "\npub fn write_toolpath_trace_artifact(\n    dir: &Path,\n    file_stem: &str,\n    artifact: &ToolpathTraceArtifact,\n) -> std::io::Result<PathBuf> {\n    std::fs::create_dir_all(dir)?;\n    let timestamp_ms = SystemTime::now()\n        .duration_since(UNIX_EPOCH)\n        .unwrap_or_default()\n        .as_millis();\n    let file_name = format!(\n        \"{}_{}.json\",\n        timestamp_ms,\n        sanitize_f"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/debug_trace.rs",
+   "lines": "L529-549",
+   "len": 579,
+   "preview": "\npub fn write_toolpath_debug_artifact(\n    dir: &Path,\n    file_stem: &str,\n    artifact: &ToolpathDebugArtifact,\n) -> std::io::Result<PathBuf> {\n    std::fs::create_dir_all(dir)?;\n    let timestamp_ms = SystemTime::now()\n        .duration_since(UNIX_EPOCH)\n        .unwrap_or_default()\n        .as_millis();\n    let file_name = format!(\n        \"{}_{}.json\",\n        timestamp_ms,\n        sanitize_f"
+  }
+ },
+ {
+  "score": 0.9286727,
+  "a": {
+   "path": "crates/rs_cam_core/src/drill_op.rs",
+   "lines": "L160-182",
+   "len": 636,
+   "preview": "\nimpl OpData {\n    /// Linearized toolpath view. Both variants carry one \u2014 see the\n    /// dual-representation invariant.\n    pub fn annotated(&self) -> &Arc<AnnotatedToolpath> {\n        match self {\n            OpData::Toolpath(a) => a,\n            OpData::DrillOp(_, a) => a,\n        }\n    }\n\n    /// Drill-op view when present. `None` for non-drill operations.\n    pub fn drill_op(&self) -> Option"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/session/mod.rs",
+   "lines": "L942-966",
+   "len": 869,
+   "preview": "\nimpl ToolpathComputeResult {\n    /// Convenience accessor for the linearized annotated toolpath.\n    /// Returns a reference regardless of whether `op_data` is the plain\n    /// `Toolpath` or the `DrillOp` variant.\n    pub fn annotated(&self) -> &Arc<crate::toolpath_spans::AnnotatedToolpath> {\n        self.op_data.annotated()\n    }\n\n    /// Convenience accessor for the underlying [`Toolpath`].\n  "
+  }
+ },
+ {
+  "score": 0.9283775,
+  "a": {
+   "path": "crates/rs_cam_core/src/compute/simulate.rs",
+   "lines": "L272-309",
+   "len": 2000,
+   "preview": "\n/// A per-toolpath checkpoint capturing the stock state after simulation.\n#[derive(Clone)]\npub struct SimCheckpointMesh {\n    pub boundary_index: usize,\n    /// Display mesh, always in the ZERO-ROOTED stock-relative global frame:\n    /// extracted from the per-setup **local** stock and then mapped by\n    /// [`transform_stock_mesh_to_global`].\n    pub mesh: StockMesh,\n    /// The stock the live-s"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/state/simulation.rs",
+   "lines": "L552-576",
+   "len": 873,
+   "preview": "\nimpl SimCheckpoint {\n    /// Composited stock mesh at this boundary, in the global stock frame.\n    #[must_use]\n    pub fn mesh(&self) -> &StockMesh {\n        &self.core.mesh\n    }\n\n    /// Tri-dexel stock at this boundary, for resuming incremental simulation.\n    ///\n    /// Read [`Self::stock_local_to_global`] alongside it \u2014 the frame is not\n    /// the same for every setup.\n    #[must_use]\n   "
+  }
+ },
+ {
+  "score": 0.9271319,
+  "a": {
+   "path": "crates/rs_cam_core/src/tool_load/optimize/narrative.rs",
+   "lines": "L105-116",
+   "len": 490,
+   "preview": "\n/// F2.3 \u2014 the numbers behind a `DeflectionSetupLocked` refusal\n/// (mirrors `refusal::DeflectionSetupPrescription` minus the prose).\n#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]\npub struct DeflectionSetupDetail {\n    /// Predicted peak tip deflection at baseline load, \u00b5m.\n    pub peak_um: f64,\n    /// The Exceeds safety limit the peak breached, \u00b5m.\n    pub bound_um: f64,\n    /// St"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/tool_load/optimize/refusal.rs",
+   "lines": "L20-30",
+   "len": 443,
+   "preview": "pub(crate) struct DeflectionSetupPrescription {\n    /// Predicted peak tip deflection at baseline load, \u00b5m.\n    pub peak_um: f64,\n    /// The Exceeds safety limit the peak breached, \u00b5m\n    /// (`deflection::EXCEEDS_BOUND_MM`).\n    pub bound_um: f64,\n    /// Stickout estimated to land peak \u03b4 in the Within band, mm.\n    pub target_stickout_mm: f64,\n    /// Operator-facing prose rendered verbatim by "
+  }
+ },
+ {
+  "score": 0.92646456,
+  "a": {
+   "path": "crates/rs_cam_viz/src/ui/properties/operations/mod.rs",
+   "lines": "L2435-2459",
+   "len": 1178,
+   "preview": "\n/// UX-R03-007 / G-DEPTHSTOCK: does this cut go below the stock bottom?\n///\n/// **This function carries no rule.** It is an input adapter: it resolves the\n/// entry's heights and hands them to [`core_static_checks::depth_beyond_stock`].\n/// Which operations the rule answers for, the comparison, the epsilon and the\n/// sentence all live in core.\n///\n/// Two things a reader must not infer wrongly.\n"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/diagnostics/adapters/from_static_checks.rs",
+   "lines": "L500-533",
+   "len": 1522,
+   "preview": "\n/// Compare the operation's emitted cut floor with the bottom of the stock.\n///\n/// `None` covers three states and the caller must not read it as \"clean\":\n/// the operation is outside [`depth_beyond_stock_applies`]; the caller\n/// supplied no stock span (`ResolvedHeights::stock_bottom_z` is `None`); or\n/// the floor is at or above the stock bottom, which is the only one of the\n/// three that mean"
+  }
+ },
+ {
+  "score": 0.9261007,
+  "a": {
+   "path": "crates/rs_cam_core/benches/classification.rs",
+   "lines": "L62-95",
+   "len": 1319,
+   "preview": "\n// \u2500\u2500 Fixtures \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n/// A rolling height field with enough triangles that the spatial index has\n/// real work to do, but small enough to build in milliseconds.\n///\n/// `n` vertices per side \u2192 `2\u00b7(n\u22121)\u00b2` triangles. `n = 121` gives 28 800.\nfn rolling_field(half: f64, n: usize) -> TriangleMesh {\n    let step = 2.0 * half / (n - 1) as f64;\n    "
+  },
+  "b": {
+   "path": "crates/rs_cam_core/benches/hot_paths.rs",
+   "lines": "L97-126",
+   "len": 1065,
+   "preview": "\n/// A rolling height field \u2014 the same generator shape `classification.rs`\n/// uses, at the size the waterline bench can afford.\n///\n/// `n` vertices per side \u2192 `2\u00b7(n\u22121)\u00b2` triangles.\nfn rolling_field(half: f64, n: usize) -> TriangleMesh {\n    let step = 2.0 * half / (n - 1) as f64;\n    let mut vertices = Vec::with_capacity(n * n);\n    for iy in 0..n {\n        let y = -half + iy as f64 * step;\n    "
+  }
+ },
+ {
+  "score": 0.9247029,
+  "a": {
+   "path": "crates/rs_cam_viz/src/state/simulation.rs",
+   "lines": "L517-528",
+   "len": 363,
+   "preview": "\n/// Per-toolpath boundary in the simulation: toolpath ID and cumulative move count at its end.\n#[derive(Debug, Clone)]\npub struct ToolpathBoundary {\n    pub id: ToolpathId,\n    pub name: String,\n    pub tool_name: String,\n    pub start_move: usize,\n    pub end_move: usize,\n    /// Cut direction for this toolpath's setup.\n    pub direction: StockCutDirection,\n}"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/compute/simulate.rs",
+   "lines": "L260-271",
+   "len": 323,
+   "preview": "\n/// Metadata for one toolpath boundary in the simulation timeline.\n#[derive(Clone)]\npub struct SimBoundary {\n    pub id: ToolpathId,\n    pub name: String,\n    pub tool_name: String,\n    pub start_move: usize,\n    pub end_move: usize,\n    /// Cut direction for this toolpath's setup.\n    pub direction: StockCutDirection,\n}"
+  }
+ },
+ {
+  "score": 0.92389345,
+  "a": {
+   "path": "crates/rs_cam_viz/src/state/job.rs",
+   "lines": "L60-78",
+   "len": 562,
+   "preview": "\n/// A physical workholding device positioned on the machine table.\n#[derive(Debug, Clone)]\npub struct Fixture {\n    pub id: FixtureId,\n    pub name: String,\n    pub kind: FixtureKind,\n    pub enabled: bool,\n    /// Position of the fixture's min corner in workpiece coordinates (mm).\n    pub origin_x: f64,\n    pub origin_y: f64,\n    pub origin_z: f64,\n    /// Dimensions of the fixture bounding box "
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/session/mod.rs",
+   "lines": "L509-539",
+   "len": 1075,
+   "preview": "\n/// A physical workholding fixture \u2014 compute-relevant fields only.\n///\n/// The record derives `PartialEq` because the GUI fixture panel edits a\n/// CLONE of it and must not apply a command for an edit that moved\n/// nothing (WP6).\n#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]\npub struct Fixture {\n    pub id: FixtureId,\n    pub name: String,\n    pub kind: FixtureKind,\n  "
+  }
+ },
+ {
+  "score": 0.9238703,
+  "a": {
+   "path": "crates/rs_cam_viz/src/controller/tests.rs",
+   "lines": "L2634-2653",
+   "len": 863,
+   "preview": "\nimpl crate::compute::ComputeBackend for CapturingBackend {\n    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {\n        self.captured = Some(request);\n        ToolpathSubmitOutcome::Queued\n    }\n    fn submit_simulation(&mut self, _request: SimulationRequest) {}\n    fn submit_collision(&mut self, _request: CollisionRequest) {}\n    fn submit_optimize(&mut self, _re"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/compute/worker/gen_parity_p0_tests.rs",
+   "lines": "L101-122",
+   "len": 806,
+   "preview": "\nimpl ComputeBackend for RecordingBackend {\n    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {\n        if let Ok(mut log) = self.submitted.lock() {\n            log.push(request);\n        }\n        ToolpathSubmitOutcome::Queued\n    }\n    fn submit_simulation(&mut self, _request: SimulationRequest) {}\n    fn submit_collision(&mut self, _request: CollisionRequest) {"
+  }
+ },
+ {
+  "score": 0.9224495,
+  "a": {
+   "path": "crates/rs_cam_cli/src/sweep.rs",
+   "lines": "L375-391",
+   "len": 456,
+   "preview": "\n#[derive(Serialize)]\nstruct SerializableJobConfig {\n    output: PathBuf,\n    post: String,\n    spindle_speed: u32,\n    safe_z: f64,\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    view: Option<PathBuf>,\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    svg: Option<PathBuf>,\n    simulate: bool,\n    sim_resolution: f64,\n    diagnostics: bool,\n    #[serde(skip_serializing_if = \"Opt"
+  },
+  "b": {
+   "path": "crates/rs_cam_cli/src/job.rs",
+   "lines": "L115-134",
+   "len": 549,
+   "preview": "\n#[derive(Deserialize)]\npub struct JobConfig {\n    pub output: PathBuf,\n    #[serde(default = \"default_post\")]\n    pub post: String,\n    #[serde(default = \"default_spindle_speed\")]\n    pub spindle_speed: u32,\n    #[serde(default = \"default_safe_z\")]\n    pub safe_z: f64,\n    pub view: Option<PathBuf>,\n    pub svg: Option<PathBuf>,\n    #[serde(default)]\n    pub simulate: bool,\n    #[serde(default = "
+  }
+ },
+ {
+  "score": 0.92178077,
+  "a": {
+   "path": "crates/rs_cam_core/src/feeds/efficiency.rs",
+   "lines": "L309-351",
+   "len": 1504,
+   "preview": "\n/// The advance-per-tooth ceiling (mm) that holds the predicted tip\n/// deflection inside `EXCEEDS_BOUND_MM`.\n///\n/// The inputs are assembled exactly as `session::compute` assembles them\n/// for the feed-modulation optimizer's `DeflectionLimitInputs`: the\n/// affine coefficients, the integrated cantilever compliance at this\n/// axial DOC, and the gate's own bound. One assembly, so the inspector\n"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/feeds/force.rs",
+   "lines": "L271-296",
+   "len": 838,
+   "preview": "\n/// Feed-per-tooth ceiling (mm/tooth) that holds the tip deflection at or\n/// below `max_tip_deflection_mm`.\n///\n/// See [`chipload_cap_for_deflection_with_reason`] for the model, the\n/// immersion form and each refusal. `None` covers every refusal: no\n/// lateral engagement, the edge force alone over budget, and inputs that\n/// carry no model. Render a `None` as an abstention, never as a zero.\np"
+  }
+ },
+ {
+  "score": 0.92160416,
+  "a": {
+   "path": "crates/rs_cam_core/src/pencil.rs",
+   "lines": "L705-746",
+   "len": 1533,
+   "preview": "\n/// Resample a polyline to ~`spacing` mm between points (linear interpolation),\n/// preserving the first and last vertices. Curvature crest lines arrive at\n/// mesh-edge resolution; this decouples cut-point spacing from mesh density.\n///\n/// `pub(crate)`: also used by [`crate::crease_paths::centerline_cut_paths`].\n#[allow(clippy::indexing_slicing)] // first/last + windows(2) indices are bounded\np"
+  },
+  "b": {
+   "path": "crates/rs_cam_core/src/project_curve.rs",
+   "lines": "L80-141",
+   "len": 2000,
+   "preview": "\n/// Resample a polyline (open or closed-irrelevant here) at regular spacing.\n///\n/// Walks edge-by-edge, accumulating distance. When the accumulated distance\n/// exceeds `spacing`, a linearly interpolated point is inserted. The first\n/// and last points of the input are always included.\nfn resample_polyline(points: &[P2], spacing: f64) -> Vec<P2> {\n    if points.len() < 2 || spacing <= 0.0 {\n    "
+  }
+ },
+ {
+  "score": 0.92073536,
+  "a": {
+   "path": "crates/rs_cam_viz/src/controller/results_parity_tests.rs",
+   "lines": "L48-66",
+   "len": 764,
+   "preview": "\nimpl ComputeBackend for InertBackend {\n    fn submit_toolpath(&mut self, _request: ComputeRequest) -> ToolpathSubmitOutcome {\n        ToolpathSubmitOutcome::Queued\n    }\n    fn submit_simulation(&mut self, _request: SimulationRequest) {}\n    fn submit_collision(&mut self, _request: CollisionRequest) {}\n    fn submit_optimize(&mut self, _request: OptimizeRequest) {}\n    fn cancel_lane(&mut self, _"
+  },
+  "b": {
+   "path": "crates/rs_cam_viz/src/controller/tests.rs",
+   "lines": "L2634-2653",
+   "len": 863,
+   "preview": "\nimpl crate::compute::ComputeBackend for CapturingBackend {\n    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {\n        self.captured = Some(request);\n        ToolpathSubmitOutcome::Queued\n    }\n    fn submit_simulation(&mut self, _request: SimulationRequest) {}\n    fn submit_collision(&mut self, _request: CollisionRequest) {}\n    fn submit_optimize(&mut self, _re"
+  }
+ }
+]
