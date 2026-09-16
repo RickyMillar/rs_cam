@@ -30,7 +30,7 @@ and are NOT touched by this programme's fix waves.
 | 9 | S3 | C | M | `rs_cam_viz/src/io/presets.rs`: a whole dead module (280 lines, 9 tests) | W2 ✅ |
 | 10 | D2 | C | S | `compute/semantic_helpers.rs` is dead and `pub`-re-exported; `spans.rs` carries its own drifted `CutRun`/`cutting_runs` | W2 ✅ 73d4ce1c |
 | 11 | S4, S5, S6, S8, S9, S11–S24 | C | M | 64 confirmed-dead pub items and private helpers, ~900 lines across core and viz (per-file groups in `S_*.md`) | W2 core ✅ S5 ebfa0a49 · S6 1cf332ae · S8 5e11d53d · S9 e15d4e1e · S11 c90da49a · S12 d6ba1f04 · S13 ff95800c · S14 6d1fc0c5 · S15 7f4a0ddb · S16 818342bb · S17 4ba62234 · S21 62ce17da · S23 a65c9469 + f8a869df; viz rows open |
-| 12 | S26, S27, S28 | C | S | 26 `allow(dead_code)` attributes that cannot fire (items are `pub` in a `pub mod` of a lib crate) and claim a live MCP surface is dead | W2 |
+| 12 | S26, S27, S28 | C | S | 26 `allow(dead_code)` attributes that cannot fire (items are `pub` in a `pub mod` of a lib crate) and claim a live MCP surface is dead | W2 viz+mcp ✅; S27 power-calcs open |
 | 13 | S25 | C | M | 29 `pub` items used only from tests and not declared fixtures → `pub(crate)` + `#[cfg(test)]` scope or move into the test | W2 core ✅ dab59c0e; viz + power-calcs rows open |
 | 14 | L8 | C | S | three `Command` variants with no production constructor (`ReplaceSetupsAndToolpaths`, `SetProjectName`, `SetMachineRef`) | W1 (ruled) |
 | 15 | L7 | C | S | a trace with no `provenance` block is treated as fresh; the one producer is the CLI | W1 (ruled) |
@@ -124,6 +124,7 @@ carries the change, so this table is filled by the closing docs commit.
 | S19 (viz rows) | — | `json_f64` deleted, 7 lines. `row_hover_tint` is HELD: it implements `ui_premium_2026-09-13/DESIGN_SPEC.md:580` §4.7 "Hover tints the whole row one ramp step", and its own doc cites §4.7. Same class as the S1 hold; the ui-premium account owns the call |
 | S20 | — | five dead colours deleted, 15 lines with their doc lines and the emptied "Mesh face palette" header. `COLLISION_POINT` stays: it is the held S1 row (`ui_premium_2026-09-13/PLAN.md:601`, `AUDIT.md:561`) |
 | S24 | — | **FINDING CONTRADICTED.** The finding says the `tool.tool_type` reads at 2203-2296 are on `ToolConfig`. They are not: `tool` binds from `ctx.tools.iter().find(...)`, which is `&ValidationTool`. `tool_type` has six reads and `diameter` four, so both fields are LIVE and both allows were inert. Only `cutting_length` is dead. Fix: delete `cutting_length` and its write site, and delete the three inert `#[allow(dead_code)]` lines |
+| S26 + S28 | — | 17 inert `#[allow(dead_code)]` attributes deleted: 16 in `rs_cam_mcp/src/server.rs` and one on `SetupSimToolpath.metrics_not_applicable`. No wire type changed and `tests/snapshots/mcp_wire_surface.json` is untouched |
 
 ## Progress
 

@@ -117,7 +117,6 @@ pub struct SetupSimToolpath {
     /// request's project/post default RPM.
     pub spindle_rpm: Option<u32>,
     /// P4: true for drill / pin-drill kinds — see `SimToolpathEntry`.
-    #[allow(dead_code)] // populated by caller; consumed by execute pipeline
     pub metrics_not_applicable: bool,
     /// §6.E first-class drill-op view (dual-representation invariant).
     /// When `Some`, the worker forwards this onto `SimToolpathEntry.drill_op`

@@ -18,14 +18,12 @@ use rs_cam_core::material::Material;
 
 // ── Parameter structs ─────────────────────────────────────────────────
 
-#[allow(dead_code)]
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct AddSetupParam {
     /// Optional name for the new setup
     pub name: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetSetupFaceParam {
     /// Setup index (0-based)
@@ -34,7 +32,6 @@ pub struct SetSetupFaceParam {
     pub face_up: String,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetSetupRotationParam {
     /// Setup index (0-based)
@@ -47,7 +44,6 @@ pub struct SetSetupRotationParam {
     pub z_rotation: String,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct MoveToolpathToSetupParam {
     /// Toolpath index (0-based, global across all setups)
@@ -56,7 +52,6 @@ pub struct MoveToolpathToSetupParam {
     pub target_setup_index: usize,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct ImportModelParam {
     /// File path to import. Supported formats: .stl, .dxf, .svg, .step/.stp
@@ -502,25 +497,20 @@ pub struct CutTraceParam {
     /// a span of this kind. Accepted values match `SpanKind`:
     /// "operation", "depth_pass", "region", "entry", "lead_out", "link_bridge",
     /// "dressup_artifact", "geometry_refit", "rapid_order_barrier".
-    #[allow(dead_code)]
     pub span_kind: Option<String>,
     /// Optional: only include samples/issues/hotspots whose `span_path` contains
     /// this exact span id. SpanIds come from `inspect_spans`.
-    #[allow(dead_code)]
     pub span_id: Option<u32>,
     /// Optional: only include samples/issues/hotspots whose `span_path` contains
     /// a `DepthPass` span with this `pass_index` payload value (0-based).
-    #[allow(dead_code)]
     pub pass_index: Option<u32>,
     /// Optional: also include the per-peck `drill_samples` array in the
     /// response. Defaults to `false` because the stream can be verbose on
     /// large drill cycles; per-toolpath `drill_summaries` are always
     /// included regardless.
-    #[allow(dead_code)]
     pub include_drill_samples: Option<bool>,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct InspectSpansParam {
     /// Toolpath index (0-based). Must have been generated first.
@@ -1005,7 +995,6 @@ pub struct SaveProjectParam {
 
 /// Model ID parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-#[allow(dead_code)]
 pub struct ModelIdParam {
     /// Model ID as returned by `inspect_model` (the opaque DB-assigned
     /// `id` field). NOT a 0-based positional index — IDs typically start
@@ -1017,7 +1006,6 @@ pub struct ModelIdParam {
 
 /// Add alignment pin parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-#[allow(dead_code)]
 pub struct AddAlignmentPinParam {
     /// X position of the alignment pin in mm
     pub x: f64,
@@ -1029,7 +1017,6 @@ pub struct AddAlignmentPinParam {
 
 /// Remove alignment pin parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-#[allow(dead_code)]
 pub struct RemoveAlignmentPinParam {
     /// Index of the alignment pin to remove (0-based)
     pub index: usize,
@@ -1037,7 +1024,6 @@ pub struct RemoveAlignmentPinParam {
 
 /// Simulation jump-to-move parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-#[allow(dead_code)]
 pub struct SimJumpToMoveParam {
     /// Move index to jump to (0-based, up to total_moves)
     pub move_index: usize,
@@ -1045,7 +1031,6 @@ pub struct SimJumpToMoveParam {
 
 /// Per-toolpath percentage-based simulation scrub parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-#[allow(dead_code)]
 pub struct SimScrubToolpathParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -1055,7 +1040,6 @@ pub struct SimScrubToolpathParam {
 
 /// Jump to the start or end of a specific toolpath in the simulation.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
-#[allow(dead_code)]
 pub struct SimJumpToToolpathBoundaryParam {
     /// Toolpath index (0-based)
     pub index: usize,
