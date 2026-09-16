@@ -25,7 +25,7 @@ use tracing::{info, warn};
 use crate::compute::config::TipFloatFinding;
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::point_drop_cutter;
-use crate::geo::{P3, V3, polyline_length};
+use crate::geo::{P3, V3, polyline_length, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::pencil_dihedral::{
@@ -701,48 +701,6 @@ fn runtime_annotations_to_labels(annotations: &[PencilRuntimeAnnotation]) -> Vec
         .iter()
         .map(|annotation| (annotation.move_index, annotation.event.label()))
         .collect()
-}
-
-/// Resample a polyline to ~`spacing` mm between points (linear interpolation),
-/// preserving the first and last vertices. Curvature crest lines arrive at
-/// mesh-edge resolution; this decouples cut-point spacing from mesh density.
-///
-/// `pub(crate)`: also used by [`crate::crease_paths::centerline_cut_paths`].
-#[allow(clippy::indexing_slicing)] // first/last + windows(2) indices are bounded
-pub(crate) fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
-    if points.len() < 2 || spacing <= 1e-6 {
-        return points.to_vec();
-    }
-    let mut out = vec![points[0]];
-    // Distance already travelled past the last emitted point along the current
-    // walk, so spacing is continuous across segment boundaries.
-    let mut carry = 0.0;
-    for w in points.windows(2) {
-        let (a, b) = (w[0], w[1]);
-        let seg = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt();
-        if seg < 1e-9 {
-            continue;
-        }
-        let mut d = spacing - carry;
-        while d < seg {
-            let t = d / seg;
-            out.push(P3::new(
-                a.x + (b.x - a.x) * t,
-                a.y + (b.y - a.y) * t,
-                a.z + (b.z - a.z) * t,
-            ));
-            d += spacing;
-        }
-        carry = seg - (d - spacing);
-    }
-    let last = points[points.len() - 1];
-    let need_last = out
-        .last()
-        .is_none_or(|p| (p.x - last.x).abs() > 1e-6 || (p.y - last.y).abs() > 1e-6);
-    if need_last {
-        out.push(last);
-    }
-    out
 }
 
 /// Build the centreline + offset `PencilPath`s for one already-sampled valley

@@ -17,10 +17,10 @@
 //! `RestCenterline` whose depths are literal numbers, not detector output,
 //! so the sentry cannot be confused by detector noise.
 
-use crate::geo::polyline_length;
+use crate::geo::{polyline_length, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::pencil::{PencilPath, paths_from_sampled, resample_polyline};
+use crate::pencil::{PencilPath, paths_from_sampled};
 use crate::rest_field::RestCenterline;
 use crate::tool::MillingCutter;
 

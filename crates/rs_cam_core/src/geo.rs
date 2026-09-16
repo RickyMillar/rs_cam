@@ -1,5 +1,6 @@
 //! Geometry primitives and type aliases.
 
+use nalgebra::{Const, DefaultAllocator, Point, allocator::Allocator};
 pub use nalgebra::{Point2, Point3, Vector2, Vector3};
 
 /// 2D point alias
@@ -261,6 +262,80 @@ pub fn polyline_length(points: &[P3]) -> f64 {
             ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
         })
         .sum()
+}
+
+/// Resample a polyline to ~`spacing` mm between points (linear
+/// interpolation), preserving the first and last vertices. Curvature crest
+/// lines arrive at mesh-edge resolution; this decouples cut-point spacing
+/// from mesh density.
+///
+/// The walk is continuous across segment boundaries: the distance already
+/// travelled past the last emitted point carries into the next segment, so
+/// the spacing does not restart at every vertex. A segment shorter than
+/// 1e-9 mm is skipped. The last vertex is appended unless the last emitted
+/// point already shares its XY within 1e-6 mm.
+///
+/// A `spacing` at or below 1e-6 returns the input unchanged: the caller
+/// means "do not resample", and a length divided by a spacing near zero
+/// asks for an unbounded number of points.
+///
+/// Generic over the point dimension, so the 2D ring walk in
+/// [`crate::project_curve`] and the 3D valley walk in [`crate::pencil`] and
+/// [`crate::crease_paths`] share one function.
+pub fn resample_polyline<const D: usize>(
+    points: &[Point<f64, D>],
+    spacing: f64,
+) -> Vec<Point<f64, D>>
+where
+    DefaultAllocator: Allocator<Const<D>>,
+{
+    let Some(first) = points.first() else {
+        return Vec::new();
+    };
+    if points.len() < 2 || spacing <= 1e-6 {
+        return points.to_vec();
+    }
+    let mut out = vec![first.clone()];
+    // Distance already travelled past the last emitted point along the
+    // current walk, so spacing is continuous across segment boundaries.
+    let mut carry = 0.0;
+    for w in points.windows(2) {
+        let (Some(a), Some(b)) = (w.first(), w.get(1)) else {
+            continue;
+        };
+        let delta = b - a;
+        let seg = delta.norm();
+        if seg < 1e-9 {
+            continue;
+        }
+        let mut d = spacing - carry;
+        while d < seg {
+            out.push(a + &delta * (d / seg));
+            d += spacing;
+        }
+        carry = seg - (d - spacing);
+    }
+    if let Some(last) = points.last() {
+        let need_last = out.last().is_none_or(|p| xy_apart(p, last, 1e-6));
+        if need_last {
+            out.push(last.clone());
+        }
+    }
+    out
+}
+
+/// True when two points differ by more than `eps` in their first two
+/// coordinates. Two points that share XY are a zero-length move to a
+/// machine, whatever their Z.
+fn xy_apart<const D: usize>(a: &Point<f64, D>, b: &Point<f64, D>, eps: f64) -> bool
+where
+    DefaultAllocator: Allocator<Const<D>>,
+{
+    a.coords
+        .iter()
+        .zip(b.coords.iter())
+        .take(2)
+        .any(|(p, q)| (p - q).abs() > eps)
 }
 
 /// Compute the minimum Euclidean distance from a point to a line segment.

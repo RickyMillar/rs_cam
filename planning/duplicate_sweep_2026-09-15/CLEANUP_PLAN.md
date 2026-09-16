@@ -176,7 +176,7 @@ maintain.
   `grid.rs`: `GridSpec` + merged `walk_rows` (after C06). Also fix the stale
   reach_map_cache doc (key DOES include tool/model ids). Risk: med. Gate:
   core cache sentries (`tier_map_cache_t3` etc.).
-- [ ] **C24 — resampler merge** (I08 pair A). Home `crate::geo`; pencil.rs's
+- [x] **C24 — resampler merge** (I08 pair A). Home `crate::geo`; pencil.rs's
   `resample_polyline` authoritative (spacing floor; capacity-safe); project_curve
   delegates. **Run the project_curve tests against the shared function first**
   (review gap: I08's hand-trace is not evidence). Also delete pencil's

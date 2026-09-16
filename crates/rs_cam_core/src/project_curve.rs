@@ -5,7 +5,7 @@
 //! that follows the projected contour at a specified depth below the surface.
 
 use crate::dropcutter::point_drop_cutter;
-use crate::geo::{P2, P3};
+use crate::geo::{P2, P3, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
@@ -76,80 +76,6 @@ impl Default for ProjectCurveParams {
             setup_z_flipped: false,
         }
     }
-}
-
-/// Resample a polyline (open or closed-irrelevant here) at regular spacing.
-///
-/// Walks edge-by-edge, accumulating distance. When the accumulated distance
-/// exceeds `spacing`, a linearly interpolated point is inserted. The first
-/// and last points of the input are always included.
-fn resample_polyline(points: &[P2], spacing: f64) -> Vec<P2> {
-    if points.len() < 2 || spacing <= 0.0 {
-        return points.to_vec();
-    }
-
-    let mut result = Vec::with_capacity((polyline_length(points) / spacing) as usize + 2);
-    // SAFETY: len >= 2 checked above
-    #[allow(clippy::indexing_slicing)]
-    result.push(points[0]);
-
-    let mut accumulated = 0.0;
-
-    // SAFETY: i ranges 1..len, so i and i-1 are always valid
-    #[allow(clippy::indexing_slicing)]
-    for i in 1..points.len() {
-        let prev = points[i - 1];
-        let curr = points[i];
-        let dx = curr.x - prev.x;
-        let dy = curr.y - prev.y;
-        let seg_len = (dx * dx + dy * dy).sqrt();
-
-        if seg_len < 1e-12 {
-            continue;
-        }
-
-        let mut remaining = seg_len;
-
-        // How far along this segment before we emit the next sample?
-        let mut next_emit = spacing - accumulated;
-
-        while next_emit <= remaining + 1e-12 {
-            // Interpolate from the original segment start (prev) by accumulated fraction
-            let frac = 1.0 - (remaining - next_emit) / seg_len;
-            let pt = P2::new(prev.x + dx * frac, prev.y + dy * frac);
-            result.push(pt);
-            remaining -= next_emit;
-            accumulated = 0.0;
-            next_emit = spacing;
-        }
-
-        accumulated += remaining;
-    }
-
-    // Always include the last point (avoid duplicate if very close)
-    // SAFETY: len >= 2 checked at function entry
-    #[allow(clippy::indexing_slicing)]
-    let last = points[points.len() - 1];
-    if let Some(prev) = result.last() {
-        let d = ((last.x - prev.x).powi(2) + (last.y - prev.y).powi(2)).sqrt();
-        if d > 1e-9 {
-            result.push(last);
-        }
-    }
-
-    result
-}
-
-/// Total length of a polyline.
-#[allow(clippy::indexing_slicing)] // windows(2) guarantees w[0] and w[1] exist
-fn polyline_length(points: &[P2]) -> f64 {
-    let mut len = 0.0;
-    for w in points.windows(2) {
-        let dx = w[1].x - w[0].x;
-        let dy = w[1].y - w[0].y;
-        len += (dx * dx + dy * dy).sqrt();
-    }
-    len
 }
 
 /// Return true if the vertical ray from (x, y) passes through the 2D
@@ -472,12 +398,5 @@ mod tests {
         ];
         let closed = close_ring(&ring);
         assert_eq!(closed.len(), 4); // Should not add duplicate
-    }
-
-    #[test]
-    fn test_polyline_length() {
-        let pts = vec![P2::new(0.0, 0.0), P2::new(3.0, 0.0), P2::new(3.0, 4.0)];
-        let len = polyline_length(&pts);
-        assert!((len - 7.0).abs() < 1e-9);
     }
 }
