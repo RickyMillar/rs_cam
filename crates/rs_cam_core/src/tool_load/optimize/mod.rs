@@ -425,8 +425,7 @@ fn optimize_toolpath_inner(
 
     // 8. Axis-grid strategy: joint DOC × stepover × scallop_height
     //    variant grid, anchored on the headroom candidate's params
-    //    (when stage F fired) or baseline (when it didn't). Replaces
-    //    the legacy `run_stage_1_grid` (G16 Step 6c).
+    //    (when stage F fired) or baseline (when it didn't).
     let stage_1_candidates = run_grid_strategy(
         &mut guard,
         &ctx,
@@ -563,10 +562,9 @@ const NARROW_BAND_HEADLINE: &str = "No candidate proposed — the chipload retar
 /// finds no headroom (`k ≤ 1`), or if the candidate sim fails.
 ///
 /// Run the headroom-scale strategy against the baseline and return
-/// the (at most one) candidate it produces. Replaces the legacy
-/// `run_stage_0` (G16 Step 6) — the strategy emits `CandidatePatch`es;
-/// this wrapper applies them to the baseline op via `apply_patches_to_op`
-/// and runs the per-candidate sim.
+/// the (at most one) candidate it produces. The strategy emits
+/// `CandidatePatch`es; this wrapper applies them to the baseline op via
+/// `apply_patches_to_op` and runs the per-candidate sim.
 // SAFETY: the strategy needs the guard, the context, the baseline op,
 // its RPM, its verdict, the matched LUT row, the machine and the cancel
 // flag; no subset builds a candidate.
@@ -626,7 +624,7 @@ fn run_headroom_strategy(
 /// chipload gate is `Exceeds`. For each load-driving gate that's also
 /// Exceeds, the strategy emits one [`CandidatePatch`]; this wrapper
 /// applies each via `apply_patches_to_op` and runs the per-candidate
-/// sim. Replaces the legacy `run_stage_f_retarget` (G16 Step 6b).
+/// sim.
 ///
 /// **Behaviour change.** The legacy chipload retarget produced a
 /// `commanded × RCTF` solve that lowered feed on `BurnRisk`. The new
@@ -774,9 +772,8 @@ struct RetargetStageOutput {
 }
 
 /// Run the [`AxisGridStrategy`] against the baseline (or the headroom
-/// candidate, when stage F fired) and evaluate every emitted cell.
-/// Replaces the legacy `run_stage_1_grid` (G16 Step 6c) — same anchor
-/// + dedup + variant logic, now lifted into the strategy module.
+/// candidate, when stage F fired) and evaluate every emitted cell. The
+/// anchor, dedup and variant logic live in the strategy module.
 fn run_grid_strategy(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
@@ -2892,8 +2889,8 @@ mod stage1_grid_tests {
 
     #[test]
     fn profile_config_exposes_doc_but_not_stepover() {
-        // Used by `run_stage_1_grid` to collapse the stepover dimension
-        // for ops without a stepover knob — Profile is a contour follow.
+        // `AxisGridStrategy` collapses the stepover dimension for ops
+        // without a stepover knob — Profile is a contour follow.
         let p = ProfileConfig::default();
         assert!(p.depth_per_pass().is_some(), "Profile should expose DOC");
         assert!(p.stepover().is_none(), "Profile should NOT expose stepover");

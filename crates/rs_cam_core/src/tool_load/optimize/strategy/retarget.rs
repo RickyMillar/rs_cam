@@ -1,7 +1,7 @@
 //! Per-gate retargeter strategy — Step 6b, G16.
 //!
-//! Replaces `run_stage_f_retarget`. For each load-driving gate that's
-//! `Exceeds`, runs that gate's [`Retargeter`] and emits one
+//! For each load-driving gate that's `Exceeds`, this strategy runs
+//! that gate's [`Retargeter`] and emits one
 //! [`CandidatePatch`]. Per design doc §3.5 there is no multi-gate
 //! composition — the orchestrator evaluates each candidate
 //! independently and ranks. A future `JointRetargetStrategy` may

@@ -1,10 +1,9 @@
 //! Headroom scale-up strategy — closed-form `(feed, rpm)` solve at
 //! constant chipload until a machine, tool, or LUT-row limit binds.
 //!
-//! Replaces the old `run_stage_0` helper. Same arithmetic
-//! ([`super::super::solve_headroom_scale`]); the wrapping is what's
-//! new — the strategy returns a [`CandidatePatch`] with two axis
-//! patches (feed, rpm) instead of mutating an op directly.
+//! The arithmetic is [`super::super::solve_headroom_scale`]. The
+//! strategy returns a [`CandidatePatch`] with two axis patches (feed,
+//! rpm) instead of mutating an op directly.
 //!
 //! Skipped when the baseline trips chipload — proportional scaling
 //! preserves chipload, so it can't fix `Exceeds`. Skipped when

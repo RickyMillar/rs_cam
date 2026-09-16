@@ -95,7 +95,7 @@ pub struct OptimizeCandidate {
 ///   `depth_per_pass()`; RampFinish wraps `max_stepdown` and Waterline
 ///   wraps `z_step` as DOC-equivalent axes via the trait.
 ///
-/// `run_stage_1_grid` collapses the stepover and scallop_height
+/// `AxisGridStrategy` collapses the stepover and scallop_height
 /// dimensions for ops that don't expose those, so adding ops here
 /// doesn't fan out duplicate sims.
 pub(crate) fn has_doc_knob(op_kind: OperationType) -> bool {

@@ -1,10 +1,9 @@
 //! Axis-grid sweep strategy — joint DOC × stepover × scallop variant
-//! grid for the geometry ops. Replaces the old `run_stage_1_grid`.
+//! grid for the geometry ops.
 //!
-//! Same anchor-and-dedup logic as before; the variant builders
+//! The strategy anchors, dedups, and calls the variant builders
 //! (`build_doc_variants`, `build_stepover_variants`,
-//! `build_scallop_height_variants`) are reused, so the candidate set
-//! is identical to the prior commit's snapshot for any given anchor.
+//! `build_scallop_height_variants`).
 //!
 //! The strategy is anchored on a caller-supplied `anchor_op` rather
 //! than the bare baseline. When the headroom strategy fired, the
