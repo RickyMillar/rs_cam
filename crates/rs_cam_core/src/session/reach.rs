@@ -1,12 +1,8 @@
 //! Session-side resolution of a per-tool reach map — P5, 2026-09-08.
 //!
-//! Two entry points, deliberately split:
-//!
-//! * [`ProjectSession::reach_map_spec`] resolves everything the walk needs —
-//!   mesh, spatial index, cutter, tolerance, cell — and does **no**
-//!   drop-cutter work. It is cheap enough to call from the UI thread.
-//! * [`ProjectSession::reach_map_for`] is the memoised build. It takes
-//!   seconds on a cold key, so it belongs on a worker.
+//! [`ProjectSession::reach_map_spec`] resolves everything the walk needs —
+//! mesh, spatial index, cutter, tolerance, cell — and does **no**
+//! drop-cutter work. It is cheap enough to call from the UI thread.
 //!
 //! The split is what lets the GUI keep the walk off the render loop without
 //! lending the whole session out: [`crate::reach_map::ReachMapRequest`] is
@@ -18,9 +14,8 @@ use std::sync::Arc;
 
 use crate::compute::cutter::build_cutter;
 use crate::feeds::ToolGeometryHint;
-use crate::interrupt::{CancelCheck, Cancelled};
 use crate::reach_map::{
-    DEFAULT_REACH_TOLERANCE_MM, ReachMap, ReachMapParams, ReachMapRequest, ReachToleranceSource,
+    DEFAULT_REACH_TOLERANCE_MM, ReachMapParams, ReachMapRequest, ReachToleranceSource,
 };
 use crate::tool::MillingCutter;
 
@@ -179,28 +174,5 @@ impl ProjectSession {
             model_id,
             tolerance_source,
         })
-    }
-
-    /// The memoised reach map for one toolpath.
-    ///
-    /// **Seconds of drop-cutter work on a cold key** — call it from a worker,
-    /// never from the UI thread or a render pass. The GUI resolves
-    /// [`Self::reach_map_spec`] on the main thread and hands the request to a
-    /// background thread, which calls
-    /// [`crate::reach_map_cache::cached_reach_map`] directly.
-    ///
-    /// # Errors
-    ///
-    /// [`Cancelled`] if `cancel` fires during a build.
-    pub fn reach_map_for(
-        &self,
-        toolpath_index: usize,
-        tolerance_override: Option<f64>,
-        cancel: &(dyn CancelCheck + Sync),
-    ) -> Result<Option<Arc<ReachMap>>, Cancelled> {
-        let Some(spec) = self.reach_map_spec(toolpath_index, tolerance_override) else {
-            return Ok(None);
-        };
-        crate::reach_map_cache::cached_reach_map(&spec, cancel).map(Some)
     }
 }
