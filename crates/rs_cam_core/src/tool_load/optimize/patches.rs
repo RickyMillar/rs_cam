@@ -78,8 +78,9 @@ pub fn apply_axis_patch_to_op(
             Ok(())
         }
         SearchAxis::SpindleRpm => {
-            // Truncation to u32 matches existing optimize.rs behaviour
-            // (machine.clamp_rpm(..).round() as u32).
+            // SAFETY: the guard above rejects a non-finite or negative
+            // value, and `round()` removes the fraction, so the cast to
+            // u32 is exact for every RPM the machine accepts.
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let rpm = patch.value.round() as u32;
             op.set_spindle_rpm(Some(rpm));

@@ -567,6 +567,9 @@ const NARROW_BAND_HEADLINE: &str = "No candidate proposed — the chipload retar
 /// `run_stage_0` (G16 Step 6) — the strategy emits `CandidatePatch`es;
 /// this wrapper applies them to the baseline op via `apply_patches_to_op`
 /// and runs the per-candidate sim.
+// SAFETY: the strategy needs the guard, the context, the baseline op,
+// its RPM, its verdict, the matched LUT row, the machine and the cancel
+// flag; no subset builds a candidate.
 #[allow(clippy::too_many_arguments)]
 fn run_headroom_strategy(
     guard: &mut BaselineRestoreGuard<'_>,
@@ -645,6 +648,9 @@ fn any_load_gate_exceeds(v: &ToolpathLoadVerdict) -> bool {
         || matches!(v.deflection, DeflectionVerdict::Exceeds { .. })
 }
 
+// SAFETY: the strategy needs the guard, the context, the baseline op,
+// its RPM, its verdict, the matched LUT row, the machine and the cancel
+// flag; no subset builds a candidate.
 #[allow(clippy::too_many_arguments)]
 fn run_retarget_strategy(
     guard: &mut BaselineRestoreGuard<'_>,
