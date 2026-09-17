@@ -545,8 +545,8 @@ fn kind_filter_returns_only_matching_spans() {
     let spans = fixture_spans();
     let v = build(&spans, Some("depth_pass"), None, None, None, None);
 
-    assert_eq!(v["total_matching"], 2);
-    assert_eq!(v["truncated"], false);
+    assert_eq!(v["spans_total_matching"], 2);
+    assert_eq!(v["spans_truncated"], false);
     let arr = v["spans"].as_array().expect("spans array");
     assert_eq!(arr.len(), 2);
     for s in arr {
@@ -571,7 +571,7 @@ fn parent_id_combined_with_kind_filters_correctly() {
     let spans = fixture_spans();
     // parent_id=0 (Operation), kind=region → all 4 regions.
     let v = build(&spans, Some("region"), Some(0), None, None, None);
-    assert_eq!(v["total_matching"], 4);
+    assert_eq!(v["spans_total_matching"], 4);
 }
 
 #[test]
@@ -598,9 +598,9 @@ fn region_id_filters_to_matching_region() {
 fn max_spans_truncates_and_reports_total() {
     let spans = fixture_spans();
     let v = build(&spans, Some("region"), None, None, None, Some(2));
-    assert_eq!(v["total_matching"], 4);
-    assert_eq!(v["truncated"], true);
-    assert_eq!(v["max_spans"], 2);
+    assert_eq!(v["spans_total_matching"], 4);
+    assert_eq!(v["spans_truncated"], true);
+    assert_eq!(v["spans_cap"], 2);
     let arr = v["spans"].as_array().expect("spans array");
     assert_eq!(arr.len(), 2);
 }
@@ -632,9 +632,9 @@ fn default_max_spans_is_50() {
         None,
     )
     .unwrap();
-    assert_eq!(v["total_matching"], 60);
-    assert_eq!(v["truncated"], true);
-    assert_eq!(v["max_spans"], 50);
+    assert_eq!(v["spans_total_matching"], 60);
+    assert_eq!(v["spans_truncated"], true);
+    assert_eq!(v["spans_cap"], 50);
     assert_eq!(v["spans"].as_array().unwrap().len(), 50);
 }
 

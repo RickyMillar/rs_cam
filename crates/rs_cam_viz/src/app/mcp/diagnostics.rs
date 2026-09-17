@@ -920,18 +920,13 @@ pub(super) fn build_inspect_spans_response(
     );
 
     if let serde_json::Value::Object(map) = &mut response {
-        // The key names stay as they shipped. `mcp_server.rs`'s
-        // `inspect_spans` description names `truncated` and
-        // `total_matching`, and this wave does not own that file — the
-        // `<prefix>_` vocabulary here needs that description to move with
-        // it, so it is a follow-up, not this commit.
-        map.insert(
-            "total_matching".into(),
-            serde_json::json!(capped.total_matching()),
-        );
-        map.insert("truncated".into(), serde_json::json!(capped.truncated()));
-        map.insert("max_spans".into(), serde_json::json!(capped.cap()));
-        map.insert("returned".into(), serde_json::json!(capped.returned()));
+        // CLI-04 follow-up (2026-09-18): the four keys were `truncated`,
+        // `total_matching`, `max_spans` and `returned` — bare words, while
+        // the summary branch twelve lines up already published
+        // `top_level_*` through the same primitive. One vocabulary now:
+        // `spans_total_matching`, `spans_returned`, `spans_truncated`,
+        // `spans_cap`. The `inspect_spans` tool description moved with it.
+        capped.insert_keys("spans", map);
         map.insert("spans".into(), capped.into_value());
     }
     Ok(response)

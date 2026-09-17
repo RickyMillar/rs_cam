@@ -13,8 +13,12 @@ the UI thread. The entry point is `compute::worker`.
 
 - The worker calls the core door. It does not re-implement generation. A
   worker result must agree with `ProjectSession` for the same inputs.
-- A result arrives with the revision it was computed for. The controller
-  rejects a result whose revision no longer matches.
+- A toolpath result arrives with the revision it was computed for. The
+  controller rejects a result whose revision no longer matches.
+- Simulation and collision carry an EDIT-COUNTER stamp instead, taken at
+  submit. An unstamped simulation falls back to the live counter; an
+  unstamped collision does NOT — a holder verdict is a safety claim, so it
+  reads "Not checked" rather than guess when it was measured.
 - A generation-input change drops the affected result. It does not paint a
   stale label over a live one.
 

@@ -2166,7 +2166,23 @@ impl<B: ComputeBackend> AppController<B> {
         // no information. Interim constant; the recommended end state is to
         // derive this from the per-op offender list. Verdict flips: none.
         // `planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md` §5.6.
-        let verdict = if rapid_collision_count > 0 {
+        // CMP-14 follow-up (2026-09-18): the failed-check arm goes FIRST,
+        // above every finding, and it reads UNKNOWN rather than WARNING —
+        // the same order and the same word the CLI uses
+        // (`rs_cam_cli/src/project.rs`). "Some checks did not run" is a
+        // statement about the EVIDENCE, and a finding from the rest of the
+        // evidence must not hide it. This surface said "OK" over an
+        // unmeasured holder check, which is the claim G-COLFAIL exists to
+        // stop.
+        let unknown_verdict;
+        let verdict = if core_diagnostics.collision_checks_failed > 0 {
+            unknown_verdict = format!(
+                "UNKNOWN: {} toolpath collision check(s) failed — the collision \
+                 result is incomplete",
+                core_diagnostics.collision_checks_failed
+            );
+            unknown_verdict.as_str()
+        } else if rapid_collision_count > 0 {
             "WARNING: rapid collisions detected"
         } else if air_cut_pct > 40.0 {
             "WARNING: high air cutting (>40% of total runtime)"
@@ -2184,6 +2200,13 @@ impl<B: ComputeBackend> AppController<B> {
             // here — a number that had never been measured, printed on the
             // surface an agent reads as a safety tally (X-VAC).
             "collision_count": core_diagnostics.collision_count,
+            // CMP-14 follow-up (2026-09-18): `collision_count` is a sum
+            // over the toolpaths whose check MEASURED. Without this
+            // number beside it, an agent reads a partial sum as the
+            // project's clean bill of health. The CLI and the core
+            // diagnostics carry the pair; the GUI's MCP surface carried
+            // only the first half.
+            "collision_checks_failed": core_diagnostics.collision_checks_failed,
             "rapid_collision_count": rapid_collision_count,
             "verdict": verdict,
             "per_toolpath": per_toolpath,
