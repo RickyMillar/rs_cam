@@ -12,13 +12,18 @@
 //!
 //! **The corridor is one-sided for ordinary tools.** Measured on this
 //! file's ordinary fixture — a 6 mm two-flute flat at 45 mm stickout in
-//! generic softwood — the deflection ceiling is **3.143 mm/tooth** while the
-//! top of the chart is **0.1235 mm/tooth**: twenty-five times off scale. The
-//! package's own reference cut (4.20 DOC, 2.10 WOC) measured 9.36 against
-//! 0.1176, eighty times off. A stubby carbide cutter in wood genuinely is
-//! not deflection-limited, which is what `feeds::force`'s module docs and
-//! `ADVICE.md` §4 both already said. The binding constraints on this class
-//! of machine are the feed cap, the rubbing floor and rigidity.
+//! generic softwood, which cuts 4.20 DOC by 2.10 WOC — the deflection
+//! ceiling is **2.4315 mm/tooth** while the top of the chart is **0.12353
+//! mm/tooth**: about twenty times off scale. A stubby carbide cutter in
+//! wood genuinely is not deflection-limited, which is what `feeds::force`'s
+//! module docs and `ADVICE.md` §4 both already said. The binding
+//! constraints on this class of machine are the feed cap, the rubbing floor
+//! and rigidity.
+//!
+//! `explore.rs`'s `Ceiling::OffScale` doc still prints 9.36 mm/tooth
+//! against 0.1176 for that same stated cut. This file measures 2.4315
+//! against 0.12353 and does not reproduce the pair. Re-derive that comment
+//! before citing it.
 //!
 //! Arm 4 carries those numbers, so the threshold can be checked without
 //! reading pixels.
@@ -31,10 +36,19 @@
 //! (`the_nomogram_readout_abstains_g_hoverbound.rs`). Arm 2 pins that
 //! nothing is painted up there.
 //!
-//! The ceiling DOES come on chart for long or thin tools — compliance rises
-//! with the cube of stickout — so arm 1 pins that the upper wedge is a
-//! conditional, not a deletion. A 1.5 mm cutter at 90 mm stickout has a
-//! ceiling of 0.0951 mm/tooth against the same 0.1167 chart top.
+//! The ceiling DOES come on chart for a thin tool, so arm 1 pins that the
+//! upper wedge is a conditional, not a deletion. A 2 mm cutter at 120 mm
+//! stickout has a ceiling of 0.04796 mm/tooth against a 0.11667 chart top.
+//!
+//! **The diameter is the lever here, not the stickout.**
+//! `ToolDefinition::tip_deflection_mm` models a STEPPED cantilever: a fixed
+//! 25 mm flute section of the cutter diameter, below a 6.35 mm shank that
+//! fills the rest of the stickout. The shank carries almost none of the
+//! compliance at these diameters, so stickout is a weak knob. Measured at
+//! Ø2 mm, a stickout of 40 mm gives 2.618e-2 mm/N and a stickout of 120 mm
+//! gives 3.767e-2 mm/N — 3x the length for 1.44x the compliance, not 27x.
+//! Any prose that says compliance goes with the cube of stickout describes
+//! a plain cantilever, not this model.
 //!
 //! # Rendered, not source-scanned
 //!
@@ -102,17 +116,39 @@ const STUBBY: Cutter = Cutter {
     stickout_mm: 45.0,
 };
 
-/// A long, thin cutter. Compliance goes with the cube of stickout and the
-/// fourth power of diameter, so this one IS deflection-limited and its
-/// ceiling lands on the chart, at 0.0951 mm/tooth.
+/// A long, thin cutter. Its section is compliant enough that it IS
+/// deflection-limited, and its ceiling lands on the chart at 0.04796
+/// mm/tooth against a chart top of 0.11667.
 ///
-/// Both numbers matter. Below 1.5 mm the affine inversion runs out of force
-/// budget and refuses outright, which is a DIFFERENT abstention from the
-/// off-scale one arm 2 measures; above it the ceiling climbs back off the
-/// chart. Arm 4 holds the fixture inside that window.
+/// # The window, and why the fixture sits in the middle of it
+///
+/// Arm 1 and arm 4 both need a ceiling that EXISTS and is ON chart, so the
+/// fixture is bounded on two sides. Write the tip compliance at unit load
+/// as `C` (mm/N). Both bounds are bounds on `C`:
+///
+/// - **Too compliant and the model refuses.** The budget force is
+///   `EXCEEDS_BOUND_MM / C`, and the feed-independent edge force is
+///   `ap · F_edge`. When the second meets the first, no feed satisfies the
+///   bound and `chipload_cap_for_deflection` returns
+///   `DeflectionCapRefusal::EdgeForceOverBudget`. At this fixture's cut
+///   that is `C = 5.3908e-2`.
+/// - **Too stiff and the ceiling leaves the chart**, which is arm 2's case,
+///   not arm 1's. The ceiling reaches the chart top at `C = 2.6311e-2`.
+///
+/// Measured for a Ø2 mm two-flute flat in generic softwood, the window in
+/// stickout is **43.685 mm to 159.705 mm**. The fixture takes 120 mm, the
+/// geometric centre: the compliance may RISE by **1.4312x** before the
+/// model refuses, and FALL by **1.4316x** before the ceiling goes off
+/// chart.
+///
+/// Check a load-model change against those two factors. The previous
+/// fixture (Ø1.5 mm at 90 mm) sat outside the refusal bound the moment
+/// `93dd145c` made every fluted section bend on 0.80 of its cutting
+/// diameter — 2.441x more compliant — because it had no margin on that
+/// side at all.
 const LONG_AND_THIN: Cutter = Cutter {
-    diameter_mm: 1.5,
-    stickout_mm: 90.0,
+    diameter_mm: 2.0,
+    stickout_mm: 120.0,
 };
 
 fn fixture(cutter: &Cutter) -> AppState {
@@ -122,7 +158,7 @@ fn fixture(cutter: &Cutter) -> AppState {
     tool.flute_count = 2;
 
     // Generic softwood — the reference fixture's material, and the one the
-    // measured 9.36 mm/tooth ceiling was taken on.
+    // measured 2.4315 mm/tooth ceiling was taken on.
     let stock = StockConfig {
         material: Material::default(),
         ..Default::default()
@@ -266,10 +302,10 @@ fn the_corridor_draws_both_bounds_when_the_ceiling_is_on_chart_g_corridor() {
         wedges.len(),
         2,
         "a deflection-limited tool must get BOTH corridor bounds, and the \
-         nomogram painted {}. Compliance rises with the cube of stickout, so \
-         a long thin cutter is exactly the case where the ceiling comes on \
-         chart; if it no longer does for this fixture, re-derive \
-         `LONG_AND_THIN` rather than dropping the arm.",
+         nomogram painted {}. A thin section is exactly the case where the \
+         ceiling comes on chart; if it no longer does for this fixture, \
+         re-derive `LONG_AND_THIN` against the window its doc records \
+         rather than dropping the arm.",
         wedges.len()
     );
     wedges.sort_by(|a, b| a.centre_y.total_cmp(&b.centre_y));
@@ -296,7 +332,7 @@ fn the_corridor_draws_both_bounds_when_the_ceiling_is_on_chart_g_corridor() {
 // ── arm 2 — the ceiling is off scale (the ordinary case) ─────────────────
 
 /// The arm that matters. On the reference fixture the ceiling is about
-/// eighty times the highest chipload the chart can draw, so exactly ONE
+/// twenty times the highest chipload the chart can draw, so exactly ONE
 /// wedge is painted and nothing sits at the top edge pretending to be a
 /// limit.
 #[test]
@@ -308,9 +344,9 @@ fn the_upper_wedge_is_absent_when_the_ceiling_is_off_scale_g_corridor() {
         wedges.len(),
         1,
         "the nomogram painted {} corridor wedges for a stubby carbide \
-         cutter. Its deflection ceiling is around 9 mm/tooth against a chart \
-         that draws around 0.12 — a second wedge here is a force limit \
-         manufactured from an absence, wrong by two orders of magnitude.",
+         cutter. Its deflection ceiling is around 2.4 mm/tooth against a \
+         chart that draws around 0.12 — a second wedge here is a force \
+         limit manufactured from an absence, wrong by twenty times.",
         wedges.len()
     );
     let floor = wedges[0];
@@ -421,7 +457,13 @@ fn the_ceiling_decision_is_made_on_the_charts_own_range_g_corridor() {
     );
 
     let (_, thin_ceiling, thin_chart_top) = measured(&LONG_AND_THIN);
-    let thin_ceiling = thin_ceiling.expect("the deflection model refused for the long thin cutter");
+    let thin_ceiling = thin_ceiling.expect(
+        "the deflection model refused for the long thin cutter. \
+         `LONG_AND_THIN` left the window its doc block records: the edge \
+         force alone now meets the deflection budget, so no feed satisfies \
+         the bound. Re-derive the fixture against that window; do not drop \
+         the arm.",
+    );
     assert!(
         thin_ceiling <= thin_chart_top,
         "the long thin cutter's ceiling is {thin_ceiling} mm/tooth against a \
