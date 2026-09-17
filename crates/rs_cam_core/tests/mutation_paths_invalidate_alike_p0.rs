@@ -3,9 +3,11 @@
 //!
 //! Programme: `planning/arch_consolidation_2026-09-09/STATUS.md`,
 //! Finding 2 and rows N6, N14, N15. Phase 1A owns the fix. This file owns
-//! the evidence. It runs the SAME logical edit — `feed_rate = 4321.0` on
-//! the toolpath at index 0 — through four core write paths. It records
-//! what each path invalidates.
+//! the evidence. Arms 1 to 4 run the SAME logical edit — `feed_rate =
+//! 4321.0` on the toolpath at index 0 — through four core write paths.
+//! Arms 5 and 6 (SES-07) run a tool edit and a model refresh, which are
+//! different edits that must reach the same invalidated set. Every arm
+//! records what its path invalidates.
 //!
 //! ## The four paths, and what each one invalidates today
 //!
@@ -82,6 +84,12 @@
 //! - `n14_undo_and_the_setter_invalidate_alike` — WP8 closed N14.
 //! - `n6_a_drill_pick_invalidates_the_chain` — WP8 closed N6.
 //! - `the_fixture_is_live`, the non-vacuity guard.
+//! - `ses07_a_tool_edit_invalidates_the_chain`,
+//!   `ses07_a_model_refresh_invalidates_the_chain` and
+//!   `ses07_the_tool_and_model_doors_invalidate_alike` — SES-07 routed
+//!   `drop_tool_results` and `drop_results_for_model` onto the one chain
+//!   walker. Their fixture, `fixture_split_inputs`, gives the downstream
+//!   row its own tool and its own model, so only the walk reaches it.
 //!
 //! PINNED DIVERGENCE — none remain. One stood here and named the narrow
 //! answer the second staleness producer gave. WP28 part 2 deleted that

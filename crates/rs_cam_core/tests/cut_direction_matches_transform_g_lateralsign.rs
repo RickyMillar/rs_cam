@@ -197,6 +197,7 @@ fn no_session_file_open_codes_the_group_stock_rule() {
     assert!(session.is_dir(), "{} no longer exists", session.display());
 
     let mut scanned = 0usize;
+    let mut found_rule = false;
     let mut offenders: Vec<String> = Vec::new();
     let mut stack = vec![session];
     while let Some(dir) = stack.pop() {
@@ -209,7 +210,14 @@ fn no_session_file_open_codes_the_group_stock_rule() {
             if path.extension().is_none_or(|e| e != "rs") {
                 continue;
             }
-            let text = std::fs::read_to_string(&path).expect("read a session source");
+            let raw = std::fs::read_to_string(&path).expect("read a session source");
+            // `tests/CLAUDE.md`: a source scan does not match comments. A
+            // doc comment that NAMES the variant is prose, not a copy.
+            let text: String = raw
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n");
             scanned += 1;
             // A test module that PINS the rule must name the variant it
             // pins. `compute/tests.rs` holds the two value tests.
@@ -224,11 +232,21 @@ fn no_session_file_open_codes_the_group_stock_rule() {
             }
             // The named rule is allowed to write the arm. Nothing else is.
             if path.ends_with("compute/simulation.rs") {
+                // Non-vacuity: the needle this scan hunts must be PRESENT
+                // here, in the one place that is allowed to write it.
+                // Otherwise an empty read would pass as a clean tree.
                 assert!(
                     text.contains("pub(crate) fn group_stock_cut_direction"),
                     "the named rule must live in {}",
                     path.display()
                 );
+                assert!(
+                    text.contains("StockCutDirection::FromBottom"),
+                    "the rule must still write the FromBottom arm in {}, or \
+                     this scan hunts a needle that exists nowhere",
+                    path.display()
+                );
+                found_rule = true;
                 continue;
             }
             // The name, not one spelling of the arm: a second copy
@@ -239,6 +257,11 @@ fn no_session_file_open_codes_the_group_stock_rule() {
         }
     }
 
+    assert!(
+        found_rule,
+        "the scan never read session/compute/simulation.rs, so it proved \
+         nothing about where the rule lives"
+    );
     assert!(
         scanned >= 8,
         "the scan must read the session tree, not an empty one. I read \
