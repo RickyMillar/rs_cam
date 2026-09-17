@@ -14,6 +14,12 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
 - Generated G-code must use the core export path, including coolant,
   stale-geometry refusal and explicit safety overrides.
 - Treat a missing diagnostic row as absent evidence, not a clean verdict.
+- One vocabulary per concept across `job` TOML, `run` and MCP. A tool
+  type is `ToolType`'s own serde token (`end_mill`, `ball_nose`,
+  `bull_nose`, `v_bit`, `tapered_ball_nose`) on every surface; do not
+  add a CLI-only spelling.
+- A machine profile comes from `io::machine_library`, the library the
+  GUI and MCP share. Do not hardcode a preset in a subcommand.
 
 ## Verification and sweeps
 
