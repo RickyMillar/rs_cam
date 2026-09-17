@@ -10,7 +10,7 @@ fn the_post_door_rebuilds_the_whole_mirror_shl01() {
     let mut controller = sample_controller();
 
     let mut post = controller.state.session.post_config().clone();
-    post.format = "grblhal".to_owned();
+    post.format = rs_cam_core::gcode::PostFormat::GrblHal;
     post.safe_z = 42.0;
     post.spindle_speed = 21_000;
     let effects = controller

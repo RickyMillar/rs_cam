@@ -168,7 +168,8 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
     }
 
     let mut post = session.post_config().clone();
-    post.format = args.post.clone();
+    post.format = rs_cam_core::gcode::PostFormat::from_token(&args.post)
+        .unwrap_or(rs_cam_core::gcode::PostFormat::Grbl);
     post.safe_z = args.safe_z;
     post.spindle_speed = args.spindle_speed;
     let _ = apply_command(

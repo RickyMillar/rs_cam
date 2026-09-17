@@ -70,8 +70,8 @@ pub use mutation::polygons_bbox;
 // Re-export all public project_file types so external crates see no path change.
 pub use project_file::{
     ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
-    ProjectLoadWarning, ProjectModelSection, ProjectPostConfig, ProjectSetupSection,
-    ProjectStockConfig, ProjectToolSection, ProjectToolpathSection, SUPPORTED_FORMAT_VERSION,
+    ProjectLoadWarning, ProjectModelSection, ProjectSetupSection, ProjectStockConfig,
+    ProjectToolSection, ProjectToolpathSection, SUPPORTED_FORMAT_VERSION,
 };
 
 use crate::ids::ToolpathId;
@@ -1227,7 +1227,7 @@ pub struct ProjectSession {
     // Project metadata
     pub(crate) name: String,
     pub(crate) stock: StockConfig,
-    pub(crate) post: ProjectPostConfig,
+    pub(crate) post: crate::gcode::PostConfig,
     pub(crate) machine: crate::machine::MachineProfile,
 
     // Loaded state
@@ -1273,7 +1273,7 @@ impl ProjectSession {
         Self {
             name: String::new(),
             stock: StockConfig::default(),
-            post: ProjectPostConfig::default(),
+            post: crate::gcode::PostConfig::default(),
             machine: crate::machine::MachineProfile::default(),
             models: Vec::new(),
             tools: Vec::new(),
@@ -1462,7 +1462,7 @@ impl ProjectSession {
     }
 
     /// Post-processor configuration.
-    pub fn post_config(&self) -> &ProjectPostConfig {
+    pub fn post_config(&self) -> &crate::gcode::PostConfig {
         &self.post
     }
 

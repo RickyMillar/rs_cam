@@ -345,8 +345,7 @@ fn cutting_feed_words(session: &ProjectSession) -> CuttingFeedWords {
     use rs_cam_core::toolpath::MoveIntent;
     use std::collections::{BTreeMap, BTreeSet};
 
-    let post = rs_cam_core::gcode::get_post_definition(&session.post_config().format)
-        .expect("the export's post definition resolves");
+    let post = session.post_config().format.definition();
     let dp = post.decimals.feed;
     let max_feed = post.limits.max_feed.map(|f| f.get());
     // Render a feed the way the emitter writes it: clamp first

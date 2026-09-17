@@ -15,7 +15,7 @@
 use crate::geo::{BoundingBox3, P3};
 use crate::polygon::Polygon2;
 
-use super::{Fixture, KeepOutZone, ProjectPostConfig};
+use super::{Fixture, KeepOutZone};
 
 // Path anchors for the children. A child names each of these as
 // `super::Name`, in code or in a doc link, so the binding must sit in
@@ -76,9 +76,12 @@ fn keep_out_collision_inputs_moved(before: &KeepOutZone, after: &KeepOutZone) ->
 ///
 /// It follows [`fixture_collision_inputs_moved`]: it equalises the two
 /// exempt fields and compares the WHOLE record, so a field ADDED to
-/// [`ProjectPostConfig`] later counts as a motion input until someone
+/// [`crate::gcode::PostConfig`] later counts as a motion input until someone
 /// states otherwise. That is the safe default.
-fn post_change_reaches_motion(before: &ProjectPostConfig, after: &ProjectPostConfig) -> bool {
+fn post_change_reaches_motion(
+    before: &crate::gcode::PostConfig,
+    after: &crate::gcode::PostConfig,
+) -> bool {
     let mut exempt_before = before.clone();
     exempt_before.format.clone_from(&after.format);
     exempt_before.spindle_strategy = after.spindle_strategy;

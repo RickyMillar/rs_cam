@@ -118,7 +118,7 @@ impl RsCamApp {
                         let s = self.controller.state_mut();
                         s.gui.mark_edited();
                         let mut post = s.session.post_config().clone();
-                        post.format = format.to_token().to_owned();
+                        post.format = format;
                         rs_cam_core::session::Command::SetPostConfig(
                             rs_cam_core::session::SetPostConfigArgs {
                                 post: Box::new(post),

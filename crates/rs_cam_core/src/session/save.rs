@@ -7,8 +7,8 @@ use tracing::instrument;
 
 use super::project_file::{
     ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
-    ProjectModelSection, ProjectPostConfig, ProjectSetupSection, ProjectStockConfig,
-    ProjectToolSection, ProjectToolpathSection,
+    ProjectModelSection, ProjectSetupSection, ProjectStockConfig, ProjectToolSection,
+    ProjectToolpathSection,
 };
 use super::{ProjectSession, SessionError};
 use crate::compute::tool_config::{BitCutDirection, ToolMaterial, ToolType};
@@ -155,15 +155,9 @@ impl ProjectSession {
             flip_axis: self.stock.flip_axis,
         };
 
-        // Post
-        let post = ProjectPostConfig {
-            format: self.post.format.clone(),
-            spindle_speed: self.post.spindle_speed,
-            safe_z: self.post.safe_z,
-            high_feedrate_mode: self.post.high_feedrate_mode,
-            high_feedrate: self.post.high_feedrate,
-            spindle_strategy: self.post.spindle_strategy,
-        };
+        // Post. UI-07: one type, so this is a clone rather than a
+        // field-by-field copy that a new field could miss.
+        let post = self.post.clone();
 
         // Job
         let job = ProjectJobSection {

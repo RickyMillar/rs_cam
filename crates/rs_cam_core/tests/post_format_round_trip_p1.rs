@@ -92,7 +92,7 @@ fn write_model(dir: &Path) -> PathBuf {
 
 /// A one-pocket project whose post format is the caller's token and
 /// whose single toolpath carries `M7` as its post-gcode snippet.
-fn build_project(dir: &Path, post_token: &str) -> PathBuf {
+fn build_project(dir: &Path, format: PostFormat) -> PathBuf {
     let model_path = write_model(dir);
 
     let mut builder = ProjectSessionBuilder::new();
@@ -112,7 +112,7 @@ fn build_project(dir: &Path, post_token: &str) -> PathBuf {
     let mut session = builder.build();
 
     let mut post = session.post_config().clone();
-    post.format = post_token.to_owned();
+    post.format = format;
     let _ = session
         .apply(Command::SetPostConfig(SetPostConfigArgs {
             post: Box::new(post),
@@ -233,7 +233,7 @@ fn reload_and_export(project_path: &Path) -> String {
 #[test]
 fn the_saved_token_is_unchanged() {
     let dir = scratch_dir("token");
-    let project_path = build_project(&dir, "grblhal");
+    let project_path = build_project(&dir, PostFormat::GrblHal);
     let toml = std::fs::read_to_string(&project_path).expect("read project toml");
     assert!(
         toml.contains("format = \"grblhal\""),
@@ -241,11 +241,10 @@ fn the_saved_token_is_unchanged() {
     );
 
     let reloaded = ProjectSession::load(&project_path).expect("reload");
-    assert_eq!(reloaded.post_config().format, "grblhal");
     assert_eq!(
-        PostFormat::from_token(&reloaded.post_config().format),
-        Some(PostFormat::GrblHal),
-        "the resolver must recognise the token the writer emitted"
+        reloaded.post_config().format,
+        PostFormat::GrblHal,
+        "the reader must resolve the token the writer emitted"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -255,7 +254,7 @@ fn the_saved_token_is_unchanged() {
 #[test]
 fn the_exported_gcode_uses_the_grblhal_definition() {
     let dir = scratch_dir("export_hal");
-    let project_path = build_project(&dir, "grblhal");
+    let project_path = build_project(&dir, PostFormat::GrblHal);
     let gcode = reload_and_export(&project_path);
 
     assert!(
@@ -276,7 +275,7 @@ fn the_exported_gcode_uses_the_grblhal_definition() {
 #[test]
 fn the_same_project_saved_as_grbl_still_filters_the_mcode() {
     let dir = scratch_dir("export_grbl");
-    let project_path = build_project(&dir, "grbl");
+    let project_path = build_project(&dir, PostFormat::Grbl);
     let gcode = reload_and_export(&project_path);
 
     assert!(
@@ -297,7 +296,16 @@ fn the_same_project_saved_as_grbl_still_filters_the_mcode() {
 #[test]
 fn an_unknown_post_token_still_falls_back_to_grbl() {
     let dir = scratch_dir("export_unknown");
-    let project_path = build_project(&dir, "cobalt-cnc");
+    let project_path = build_project(&dir, PostFormat::Grbl);
+    // UI-07: `format` is the typed enum now, so an unknown token can only
+    // arrive from a file. Write one, the way a hand-edited or older project
+    // would carry it.
+    let toml = std::fs::read_to_string(&project_path).expect("read project toml");
+    std::fs::write(
+        &project_path,
+        toml.replace("format = \"grbl\"", "format = \"cobalt-cnc\""),
+    )
+    .expect("write the unknown token back");
     let gcode = reload_and_export(&project_path);
 
     assert_eq!(PostFormat::from_token("cobalt-cnc"), None);

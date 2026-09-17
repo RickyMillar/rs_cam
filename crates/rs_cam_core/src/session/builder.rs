@@ -33,8 +33,7 @@ use crate::compute::transform::FaceUp;
 use crate::machine::MachineProfile;
 
 use super::{
-    LoadedModel, ProjectPostConfig, ProjectSession, SessionError, SetupData, ToolpathComputeResult,
-    ToolpathConfig,
+    LoadedModel, ProjectSession, SessionError, SetupData, ToolpathComputeResult, ToolpathConfig,
 };
 
 /// Builds a [`ProjectSession`] from parts the caller supplies.
@@ -127,7 +126,7 @@ impl ProjectSessionBuilder {
     }
 
     /// Set the post-processor configuration.
-    pub fn post(mut self, post: ProjectPostConfig) -> Self {
+    pub fn post(mut self, post: crate::gcode::PostConfig) -> Self {
         self.session.post = post;
         self
     }

@@ -1199,7 +1199,8 @@ fn execute_op_via_session(
     }
 
     let mut post = session.post_config().clone();
-    post.format = job.job.post.clone();
+    post.format = rs_cam_core::gcode::PostFormat::from_token(&job.job.post)
+        .unwrap_or(rs_cam_core::gcode::PostFormat::Grbl);
     post.safe_z = op.safe_z.unwrap_or(job.job.safe_z);
     post.spindle_speed = op.spindle_speed.unwrap_or(job.job.spindle_speed);
     let _ = crate::command::apply_command(

@@ -199,7 +199,7 @@ fn start_refusal(session: &mut ProjectSession) -> Option<String> {
 /// Write the post block through the command row.
 fn set_post(
     session: &mut ProjectSession,
-    post: rs_cam_core::session::ProjectPostConfig,
+    post: rs_cam_core::gcode::PostConfig,
 ) -> rs_cam_core::session::Effects {
     session
         .apply(Command::SetPostConfig(SetPostConfigArgs {

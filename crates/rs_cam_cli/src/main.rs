@@ -232,7 +232,7 @@ enum Commands {
         /// the vendor LUT row's chart RPM verbatim. "max_speed" walks
         /// the constant-chipload line up to the spindle ceiling and
         /// scales feed proportionally. When unset, the strategy from
-        /// the loaded project's ProjectPostConfig is used.
+        /// the loaded project's post config is used.
         #[arg(long, value_parser = ["match_chart", "max_speed"])]
         spindle_strategy: Option<String>,
     },

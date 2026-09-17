@@ -11,7 +11,7 @@ use crate::compute::config::{BoundaryConfig, BoundarySource, DressupConfig, Heig
 use crate::compute::stock_config::{ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::geo::BoundingBox3;
-use crate::session::{Effects, ProjectPostConfig, ProjectSession, SessionError};
+use crate::session::{Effects, ProjectSession, SessionError};
 
 use super::post_change_reaches_motion;
 
@@ -501,7 +501,7 @@ impl ProjectSession {
     /// drags the spinner. The panel needs the draft-commit the stock
     /// panel has before that drop is safe.
     #[instrument(skip(self, post))]
-    pub(crate) fn set_post_config(&mut self, post: ProjectPostConfig) -> Effects {
+    pub(crate) fn set_post_config(&mut self, post: crate::gcode::PostConfig) -> Effects {
         let reaches_motion = post_change_reaches_motion(&self.post, &post);
         self.with_effects(None, move |session| {
             session.post = post;

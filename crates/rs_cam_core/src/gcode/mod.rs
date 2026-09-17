@@ -310,11 +310,10 @@ pub fn export_gcode_checked(
     let report = project_load_report(project, sim_trace);
 
     // W9 / P-1: this used to open-code a token match that had no
-    // `"grblhal"` arm, so a grblHAL project exported GRBL. One
-    // resolver now; an unrecognised token still falls back to GRBL
-    // (the historic behaviour) rather than refusing the export.
-    let post_format =
-        PostFormat::from_token(&project.post_config().format).unwrap_or(PostFormat::Grbl);
+    // `"grblhal"` arm, so a grblHAL project exported GRBL. UI-07 closed
+    // the class: the session holds the ENUM, so there is no token to
+    // mis-resolve.
+    let post_format = project.post_config().format;
     let post = post_format.definition();
 
     // G-EXPORT-DATUM: re-express each toolpath in the shared export
@@ -952,20 +951,23 @@ pub fn replace_rapids_with_feed(gcode: &str, high_feedrate: f64, post: &PostDefi
 }
 
 /// Post-processor format selector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PostFormat {
+    /// The default dialect. A project file written before the `format`
+    /// field existed reads back as GRBL, which is the historic behaviour.
+    #[default]
     Grbl,
-    /// `rename_all = "snake_case"` serialises this as `"grbl_hal"`,
-    /// while the project-file writer spells it `"grblhal"`
-    /// ([`PostFormat::to_token`]). The alias makes the typed serde wire
-    /// accept the project-file spelling too, so a grblHAL project cannot
-    /// be rejected by a surface that deserialises the value directly.
-    /// The two spellings first met in the viz fallback schema, which C11
-    /// deleted. Serialisation output is unchanged.
-    #[serde(alias = "grblhal")]
+    /// UI-07: serde WRITES what [`PostFormat::to_token`] writes.
+    ///
+    /// `rename_all = "snake_case"` used to serialise this as `"grbl_hal"`
+    /// while the project-file writer spelled it `"grblhal"`. The project
+    /// file now holds the typed enum, so the two spellings must be one; the
+    /// canonical form is the one already on disk. The underscore spelling
+    /// stays readable as an alias.
+    #[serde(rename = "grblhal", alias = "grbl_hal")]
     GrblHal,
-    #[serde(alias = "linuxcnc")]
+    #[serde(rename = "linuxcnc", alias = "linux_cnc")]
     LinuxCnc,
     Mach3,
 }
@@ -1037,13 +1039,27 @@ impl PostFormat {
 }
 
 /// Post-processor configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// UI-07: this is the ONE post config. `session::ProjectPostConfig` was a
+/// second copy with `format` as a `String`, and `GuiState` translated
+/// between the two in both directions on every load, save and undo. The
+/// project file now holds this type, so the translation pair and the
+/// `to_token` / `from_token` round trip through a project file are gone.
+///
+/// Every field states a default, because a project file written before a
+/// field existed does not carry it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PostConfig {
+    #[serde(default, deserialize_with = "post_format_or_grbl")]
     pub format: PostFormat,
+    #[serde(default = "default_spindle_speed")]
     pub spindle_speed: u32,
+    #[serde(default = "default_safe_z")]
     pub safe_z: f64,
     /// Convert G0 rapids to G1 at high feedrate (for machines with unpredictable rapid behavior).
+    #[serde(default)]
     pub high_feedrate_mode: bool,
+    #[serde(default = "default_high_feedrate")]
     pub high_feedrate: f64,
     /// Project-level spindle policy used by Suggest. `MatchChart`
     /// (default) preserves chart RPM. `MaxSpeed` walks the constant-
@@ -1053,17 +1069,43 @@ pub struct PostConfig {
     pub spindle_strategy: crate::feeds::SpindleStrategy,
 }
 
+fn default_spindle_speed() -> u32 {
+    18000
+}
+
+fn default_safe_z() -> f64 {
+    10.0
+}
+
+fn default_high_feedrate() -> f64 {
+    5000.0
+}
+
 impl Default for PostConfig {
     fn default() -> Self {
         Self {
             format: PostFormat::Grbl,
-            spindle_speed: 18000,
-            safe_z: 10.0,
+            spindle_speed: default_spindle_speed(),
+            safe_z: default_safe_z(),
             high_feedrate_mode: false,
-            high_feedrate: 5000.0,
+            high_feedrate: default_high_feedrate(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
         }
     }
+}
+
+/// Read a post token from a project file, falling back to GRBL.
+///
+/// UI-07 kept the behaviour the two deleted translations had: a token the
+/// resolver does not know degrades to GRBL rather than refusing the whole
+/// project load. This is the ONE place that decides; `PostFormat::from_token`
+/// still returns `None` so a CLI flag can refuse instead.
+fn post_format_or_grbl<'de, D>(deserializer: D) -> Result<PostFormat, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let token = String::deserialize(deserializer)?;
+    Ok(PostFormat::from_token(&token).unwrap_or(PostFormat::Grbl))
 }
 
 /// Get a `PostDefinition` by name (CLI / config-string lookup).

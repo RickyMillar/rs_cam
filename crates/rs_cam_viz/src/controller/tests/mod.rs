@@ -1222,7 +1222,7 @@ fn assert_post_mirror_matches_session<B: ComputeBackend>(
     controller: &AppController<B>,
     route: &str,
 ) {
-    let mirrored = crate::state::runtime::GuiState::post_to_session(&controller.state.gui.post);
+    let mirrored = controller.state.gui.post.clone();
     assert_eq!(
         &mirrored,
         controller.state.session.post_config(),

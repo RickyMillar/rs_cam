@@ -320,7 +320,7 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
     }
 
     let mut gui = GuiState::new();
-    gui.post = GuiState::post_from_session(session.post_config());
+    gui.post = session.post_config().clone();
     // The GUI gate reads the same absent trace the core door reads.
     gui.tool_load_overrides.accept_unmodeled = true;
 

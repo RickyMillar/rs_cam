@@ -22,8 +22,7 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 UndoAction::PostChange { old, .. } => {
                     self.state.gui.post = old;
-                    let session_post =
-                        crate::state::runtime::GuiState::post_to_session(&self.state.gui.post);
+                    let session_post = self.state.gui.post.clone();
                     let command = Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(session_post),
                     });
@@ -85,8 +84,7 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 UndoAction::PostChange { new, .. } => {
                     self.state.gui.post = new;
-                    let session_post =
-                        crate::state::runtime::GuiState::post_to_session(&self.state.gui.post);
+                    let session_post = self.state.gui.post.clone();
                     let command = Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(session_post),
                     });

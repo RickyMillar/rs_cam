@@ -12,7 +12,7 @@ use rs_cam_core::feeds::FeedsResult;
 use rs_cam_core::maps::reach_map::ReachMap;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 
-use super::job::{PostConfig, PostFormat};
+use super::job::PostConfig;
 use super::toolpath::ToolpathId;
 
 // Re-export ComputeStatus from core (canonical definition).
@@ -331,37 +331,11 @@ impl GuiState {
         }
     }
 
-    /// Build a `PostConfig` (viz enum format) from the session's string-based config.
-    pub fn post_from_session(session_post: &rs_cam_core::session::ProjectPostConfig) -> PostConfig {
-        PostConfig {
-            // W9 / P-1: the open-coded match this replaces had no
-            // `"grblhal"` arm, so reloading a grblHAL project silently
-            // reset the Post panel's dropdown to GRBL. `from_token` is
-            // the tested resolver; an unknown token still falls back to
-            // GRBL rather than failing the load.
-            format: PostFormat::from_token(&session_post.format).unwrap_or(PostFormat::Grbl),
-            spindle_speed: session_post.spindle_speed,
-            safe_z: session_post.safe_z,
-            high_feedrate_mode: session_post.high_feedrate_mode,
-            high_feedrate: session_post.high_feedrate,
-            spindle_strategy: session_post.spindle_strategy,
-        }
-    }
-
-    /// Sync session post config from the viz-friendly PostConfig.
-    pub fn post_to_session(post: &PostConfig) -> rs_cam_core::session::ProjectPostConfig {
-        rs_cam_core::session::ProjectPostConfig {
-            // Same tokens as before, now from the single writer half of
-            // the resolver pair (`PostFormat::to_token`) so the spelling
-            // cannot drift from what `from_token` accepts.
-            format: post.format.to_token().to_owned(),
-            spindle_speed: post.spindle_speed,
-            safe_z: post.safe_z,
-            high_feedrate_mode: post.high_feedrate_mode,
-            high_feedrate: post.high_feedrate,
-            spindle_strategy: post.spindle_strategy,
-        }
-    }
+    // UI-07: `post_from_session` and `post_to_session` lived here. They
+    // copied six fields each way between `gcode::PostConfig` and
+    // `session::ProjectPostConfig`, and a field added to one side reached
+    // three of the four halves. The session holds `gcode::PostConfig` now,
+    // so `gui.post` is a CLONE of it and a new field needs no edit here.
 
     /// Mark the project as having unsaved changes.
     pub fn mark_edited(&mut self) {
@@ -388,11 +362,16 @@ impl Default for GuiState {
 mod tests {
     use super::*;
 
-    /// W9 / P-1. `post_from_session` used to open-code a token match
-    /// with no `"grblhal"` arm, so every project reload silently reset
-    /// the Post panel's dropdown from grblHAL to GRBL. Driven off
-    /// `PostFormat::ALL` so a fifth dialect cannot be added with a
-    /// writer arm and no reader arm.
+    use rs_cam_core::gcode::PostFormat;
+
+    /// W9 / P-1. The Post panel's dropdown used to reset from grblHAL to
+    /// GRBL on every reload, because one of two hand-written translations
+    /// had no `"grblhal"` arm.
+    ///
+    /// UI-07 deleted both translations: the session holds
+    /// `gcode::PostConfig` itself. The round trip that remains is the ONE
+    /// that can still lose a dialect — serialise the config and read it
+    /// back, which is what saving and loading a project does.
     #[test]
     fn every_post_format_survives_the_session_round_trip() {
         for &format in PostFormat::ALL {
@@ -400,36 +379,55 @@ mod tests {
                 format,
                 ..PostConfig::default()
             };
-            let session_post = GuiState::post_to_session(&post);
+            let json = serde_json::to_string(&post).expect("the post config serialises");
+            let back: PostConfig = serde_json::from_str(&json).expect("and reads back");
             assert_eq!(
-                GuiState::post_from_session(&session_post).format,
-                format,
-                "{format:?} did not survive post_to_session -> post_from_session \
-                 (token was {:?})",
-                session_post.format
+                back.format, format,
+                "{format:?} did not survive the project-file round trip (wrote {json})"
             );
         }
     }
 
-    /// The serialized spelling is part of the file format — pin it so
-    /// the P-1 fix cannot be "rename the token".
+    /// The serialized spelling is part of the file format — pin it so the
+    /// P-1 fix cannot be "rename the token".
+    ///
+    /// UI-07 made serde WRITE these same tokens, so the two halves the
+    /// pin covers are now one. A project written before UI-07 reads back
+    /// unchanged.
     #[test]
     fn the_written_post_tokens_are_the_shipped_spellings() {
         let tokens: Vec<&str> = PostFormat::ALL.iter().map(|f| f.to_token()).collect();
         assert_eq!(tokens, vec!["grbl", "grblhal", "linuxcnc", "mach3"]);
+
+        for (&format, token) in PostFormat::ALL.iter().zip(&tokens) {
+            let written = serde_json::to_string(&format).expect("the format serialises");
+            assert_eq!(
+                written,
+                format!("\"{token}\""),
+                "serde must write the token the project file already holds"
+            );
+        }
     }
 
-    /// An unrecognised token still loads as GRBL rather than failing
-    /// the project load.
+    /// The underscore spellings a pre-UI-07 typed surface could have
+    /// written still read back.
     #[test]
-    fn an_unknown_post_token_reads_back_as_grbl() {
-        let session_post = rs_cam_core::session::ProjectPostConfig {
-            format: "cobalt-cnc".to_owned(),
-            ..Default::default()
-        };
-        assert_eq!(
-            GuiState::post_from_session(&session_post).format,
-            PostFormat::Grbl
-        );
+    fn the_underscore_post_spellings_still_read_back() {
+        for (spelling, expected) in [
+            ("\"grbl_hal\"", PostFormat::GrblHal),
+            ("\"linux_cnc\"", PostFormat::LinuxCnc),
+        ] {
+            let back: PostFormat =
+                serde_json::from_str(spelling).expect("the alias spelling reads back");
+            assert_eq!(back, expected, "{spelling} must still load");
+        }
+    }
+
+    /// A project file with no post block at all loads as the default
+    /// rather than failing.
+    #[test]
+    fn an_absent_post_block_reads_back_as_the_default() {
+        let back: PostConfig = serde_json::from_str("{}").expect("an empty post block loads");
+        assert_eq!(back, PostConfig::default());
     }
 }

@@ -1517,7 +1517,7 @@ pub struct ImportMachineSettingsArgs {
 #[derive(Debug, Clone)]
 pub struct SetPostConfigArgs {
     /// The new post-processor configuration.
-    pub post: Box<super::ProjectPostConfig>,
+    pub post: Box<crate::gcode::PostConfig>,
 }
 
 /// The arguments of the `set_boundary_config` command.

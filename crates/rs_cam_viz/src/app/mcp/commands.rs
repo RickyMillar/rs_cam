@@ -57,7 +57,6 @@ use rs_cam_mcp::server::{
 
 use crate::app::RsCamApp;
 use crate::mcp_bridge::{CoreRequest, McpOutcome, mutation_error_json};
-use crate::state::runtime::GuiState;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
 use crate::ui_command::UiCommand;
@@ -462,7 +461,7 @@ impl RsCamApp {
                 // `FromRemainingStock` operation. The write is a command
                 // of its own now, and it runs only when the two blocks
                 // differ.
-                let session_post = GuiState::post_to_session(&self.controller.state().gui.post);
+                let session_post = self.controller.state().gui.post.clone();
                 before.display_name = Some(p.path.clone());
                 let save = Command::SaveProject(SaveProjectArgs {
                     path: PathBuf::from(p.path),

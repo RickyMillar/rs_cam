@@ -1028,7 +1028,7 @@ struct AdvisorContext {
     machine: crate::machine::MachineProfile,
     /// The post dials the candidate simulation reads: the default spindle
     /// speed and the rapid-feed pair.
-    post: super::ProjectPostConfig,
+    post: crate::gcode::PostConfig,
     /// The stock. The ranking reads its material and its workholding
     /// rigidity; the chipload envelope reads the material again.
     stock: crate::compute::StockConfig,
@@ -1774,7 +1774,7 @@ fn modulate_annotated_against_trace(
 /// swapped.
 struct SimRequestContext<'a> {
     machine: &'a crate::machine::MachineProfile,
-    post: &'a super::ProjectPostConfig,
+    post: &'a crate::gcode::PostConfig,
 }
 
 /// Build one [`SimulationRequest`] from an already-assembled `groups` +

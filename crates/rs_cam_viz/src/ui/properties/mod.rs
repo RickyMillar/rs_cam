@@ -229,7 +229,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // this reason into the setter — `set_post_config` clears the
             // simulation only for a field that reaches emitted motion,
             // so an unchanged write clears nothing now either.
-            let session_post = crate::state::runtime::GuiState::post_to_session(&state.gui.post);
+            let session_post = state.gui.post.clone();
             if *state.session.post_config() != session_post {
                 let command = rs_cam_core::session::Command::SetPostConfig(
                     rs_cam_core::session::SetPostConfigArgs {

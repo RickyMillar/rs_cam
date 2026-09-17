@@ -1407,7 +1407,7 @@ impl OperationConfig {
 }
 
 /// Resolve the spindle RPM for an operation, falling back to the project
-/// default (`PostConfig.spindle_speed` / `ProjectPostConfig.spindle_speed`)
+/// default (`gcode::PostConfig.spindle_speed`)
 /// when the operation has no override.
 ///
 /// This is the single source of truth for "what RPM should this toolpath

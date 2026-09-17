@@ -376,7 +376,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// (`ui/properties/mod.rs`), so no un-synced edit lives in the
     /// mirror across a command.
     pub(crate) fn refresh_post_mirror(&mut self) {
-        self.state.gui.post = GuiState::post_from_session(self.state.session.post_config());
+        self.state.gui.post = self.state.session.post_config().clone();
     }
 
     /// Write the project to `path`.
@@ -390,7 +390,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// (WP11b). The GUI post panel guards the same way
     /// (`ui/properties/mod.rs`).
     pub fn save_job_to_path(&mut self, path: &Path) -> Result<(), VizError> {
-        let session_post = GuiState::post_to_session(&self.state.gui.post);
+        let session_post = self.state.gui.post.clone();
         if *self.state.session.post_config() != session_post {
             let command = Command::SetPostConfig(SetPostConfigArgs {
                 post: Box::new(session_post),
@@ -430,7 +430,7 @@ impl<B: ComputeBackend> AppController<B> {
         let mut gui = GuiState::new();
         gui.file_path = Some(path.to_path_buf());
         gui.dirty = false;
-        gui.post = GuiState::post_from_session(session.post_config());
+        gui.post = session.post_config().clone();
 
         let loaded_at = Instant::now();
         // C10: the loader reports what it could not do. This function used

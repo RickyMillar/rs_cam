@@ -170,7 +170,7 @@ pub struct ProjectJobSection {
     #[serde(default)]
     pub stock: ProjectStockConfig,
     #[serde(default)]
-    pub post: ProjectPostConfig,
+    pub post: crate::gcode::PostConfig,
     #[serde(default)]
     pub machine: crate::machine::MachineProfile,
 }
@@ -240,50 +240,11 @@ fn default_workholding_rigidity() -> crate::feeds::WorkholdingRigidity {
     crate::feeds::WorkholdingRigidity::Medium
 }
 
-/// Post-processor configuration from the project file.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProjectPostConfig {
-    #[serde(default)]
-    pub format: String,
-    #[serde(default = "default_spindle_speed")]
-    pub spindle_speed: u32,
-    #[serde(default = "default_safe_z")]
-    pub safe_z: f64,
-    #[serde(default)]
-    pub high_feedrate_mode: bool,
-    #[serde(default = "default_high_feedrate")]
-    pub high_feedrate: f64,
-    /// Project-level spindle policy used by the Feeds & Speeds
-    /// suggest path. `MatchChart` (default) uses the vendor LUT row's
-    /// `rpm_nominal` verbatim — chart fidelity. `MaxSpeed` walks the
-    /// constant-chipload line up to the spindle ceiling, scaling feed
-    /// proportionally. See [`crate::feeds::SpindleStrategy`].
-    #[serde(default)]
-    pub spindle_strategy: crate::feeds::SpindleStrategy,
-}
-
-impl Default for ProjectPostConfig {
-    fn default() -> Self {
-        Self {
-            format: "grbl".to_owned(),
-            spindle_speed: 18000,
-            safe_z: 10.0,
-            high_feedrate_mode: false,
-            high_feedrate: 5000.0,
-            spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        }
-    }
-}
-
-fn default_spindle_speed() -> u32 {
-    18000
-}
-fn default_safe_z() -> f64 {
-    10.0
-}
-fn default_high_feedrate() -> f64 {
-    5000.0
-}
+// UI-07: `ProjectPostConfig` lived here — a second post config whose
+// `format` was a `String`, with a hand-written translation to and from the
+// GUI's `PostConfig` in each direction. The project file now holds
+// `crate::gcode::PostConfig` itself. The on-disk bytes are unchanged:
+// `PostFormat`'s serde spelling is the token the writer already wrote.
 
 /// Tool definition in the project file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
