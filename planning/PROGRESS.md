@@ -38,6 +38,19 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Design audit — 2026-09-17 (findings only; nothing landed)
+
+Twelve read-only agents audited the regrouped tree for design patterns and
+feature debt: `planning/design_audit_2026-09-17/` holds the brief, one file
+per folder group (135 findings, each with a `file:line` anchor, a proposal,
+the break it causes and the sentry that guards it) and `SYNTHESIS.md`: 20
+defects ranked first, eight cross-cutting themes, a 25-row programme in five
+waves, a not-now list and a verification list. The top defects: a failed
+holder-collision check reads as zero collisions; MCP export drops the
+machine-safety findings the GUI shows; `apply_tabs` strips move intent; an
+unknown `face_up` loads as Top; a Post-tab edit never marks the project
+dirty. No code changed. Read `SYNTHESIS.md` before you start a wave.
+
 ## Structure programme — 2026-09-17 (navigable repository; COMPLETE)
 
 The tree changed shape today. Read `planning/structure_2026-09-17/EXECUTION_SUMMARY.md`
