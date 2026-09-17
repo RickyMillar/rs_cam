@@ -932,7 +932,8 @@ impl Material {
     /// validated cutting-force model.
     ///
     /// `Some(value)` does not mean "cited". Three solid-wood species return
-    /// a folklore base named `KC_FOLKLORE_*` below. Read
+    /// a folklore base, named `KC_FOLKLORE_*` beside
+    /// [`Material::MILLING_KC_FACTOR`]. Read
     /// [`WoodSpecies::kc_provenance`] to tell a citation from a guess; the
     /// number alone cannot say.
     pub fn kc_n_per_mm2(&self) -> Option<f64> {
