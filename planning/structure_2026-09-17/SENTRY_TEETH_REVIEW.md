@@ -219,3 +219,7 @@ a comment then. The P4 edit repointed the shield faithfully. Consider setting
 - Every red run names the injected token, so no result comes from cross-talk.
 - HEAD moved `5067b5b5` → `8db15b75` during the run. That commit changes two
   `CLAUDE.md` files only, so the review holds.
+
+## Outcome (2026-09-17)
+
+All four fixes and the wp6b note landed in `7665b5fc`, each with a red proof. The wp6b ceiling could not be set to 0 (`absurd_extreme_comparisons` rejects a `usize` minimum comparison), so the allowance, its branch and its assertion were deleted; a `toolpath_configs_mut` call in `app/mcp/generation.rs` now lands in the offence list with its line.
