@@ -6,12 +6,10 @@ processing. The server lives here, not in `rs_cam_mcp`.
 ## Files
 
 - `../app.rs` — `RsCamApp` and the frame update loop.
-- `mcp.rs` + `mcp/` — the MCP pump (`handle_mcp_request`, `ui_query`,
-  export, notifications); children `commands.rs` (the core command route),
-  `project.rs` (project reads, `load_project`), `generation.rs` (add,
-  generate, optimize, feeds, multi-tool), `diagnostics.rs` (diagnostics,
-  narration, debug trace), `simulation.rs` (run, scrub, cut trace,
-  collisions), `view.rs` (reach map, screenshots, `set_ui_view`), `tests.rs`.
+- `mcp.rs` + `mcp/` — the MCP pump (`handle_mcp_request`, export,
+  notifications); children `commands.rs` (core command route), `project.rs`,
+  `generation.rs` (add, generate, optimize, feeds), `diagnostics.rs`,
+  `simulation.rs` (run, scrub, cut trace), `view.rs` (reach map, screenshots).
 - `export.rs` — the GUI export path.
 - `simulation.rs` — the per-frame simulation work.
 - `viewport.rs`, `gpu_upload.rs` — the viewport frame and the GPU upload pass.
@@ -28,6 +26,8 @@ processing. The server lives here, not in `rs_cam_mcp`.
   queue a second generation behind an unknown first one.
 - An MCP screenshot is visual evidence, not a replacement for a core test.
   Capture only after the frame has applied the requested view state.
+- `.mcp.json` runs `cargo run --release`. Build the release binary BEFORE an
+  MCP live test; a cold compile passes the 30 s connect timeout.
 
 ## Sentries
 
@@ -36,8 +36,3 @@ processing. The server lives here, not in `rs_cam_mcp`.
 - `cargo test -p rs_cam_viz -q --test mcp_escape_hatches`
 - `cargo test -p rs_cam_viz -q --test mcp_wire_surface_pin`
 - `cargo test -p rs_cam_viz -q --test export_parity_core_vs_gui_p0`
-
-## Do not
-
-- `.mcp.json` runs `cargo run --release`. Build the release binary BEFORE an
-  MCP live test; a cold compile passes the 30 s connect timeout.
