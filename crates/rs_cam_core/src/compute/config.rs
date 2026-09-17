@@ -2167,24 +2167,19 @@ impl DressupConfig {
         }
     }
 
-    /// Smart defaults based on the operation type. Uses `for_role` as a base
-    /// and overrides per-op where the role-level defaults don't fit.
+    /// Smart defaults based on the operation type: the role-level base,
+    /// then the registry's own per-op policy. No op is named here.
     pub fn for_op(op: super::catalog::OperationType) -> Self {
-        use super::catalog::OperationType;
         let mut cfg = Self::for_role(op.spec().ui_process_role);
-        // ProjectCurve traces 2D rings projected onto a surface. Ramp entries
-        // would cut a straight diagonal across the surface next to each ring
-        // start — and there can be hundreds of tiny rings. Use a direct plunge.
-        if op == OperationType::ProjectCurve {
-            cfg.entry_style = DressupEntryStyle::None;
-            cfg.lead_in_out = false;
-            // Link moves bridge separate path fragments at cutting depth.
-            // For project_curve, fragments can be distant (different rings,
-            // or gaps where the path leaves the mesh footprint), and bridging
-            // them at depth carves phantom lines across the stock. Always
-            // rapid-retract between fragments.
-            cfg.link_moves = false;
-        }
+        // CMP-26: the hand-written ProjectCurve strip that stood here was
+        // a no-op. `normalize_for_op` below reads
+        // `op.registry_entry().dressup_policy`, and ProjectCurve's row is
+        // `DressupPolicy::strip_all("Incompatible with Project Curve: each
+        // ring would get a phantom diagonal cut.")`, which sets exactly
+        // those three fields — with the user-facing reason the GUI greys
+        // the controls with. This was the last op-specific arm in a method
+        // whose doc says the decisions moved to the registry in Phase 1 T5.
+        //
         // Apply the same per-op constraints fresh creates would otherwise
         // only see on project-file load. Without this, an MCP/GUI fresh
         // toolpath would carry e.g. `link_moves = true` (from the new
@@ -2500,6 +2495,24 @@ mod tests {
             assert!(!cfg.link_moves, "{op:?}");
             // Idempotent.
             assert!(!cfg.normalize_for_op(op));
+        }
+
+        // CMP-26: `for_op` — not just `normalize_for_op` — must produce
+        // the strip from the REGISTRY alone. `for_op` used to hand-write
+        // the ProjectCurve strip four lines before calling
+        // `normalize_for_op`, with its own rationale comment beside the
+        // registry's own. Added BEFORE that block was deleted, so it
+        // pins the resulting config across the delete rather than after
+        // it.
+        for op in [
+            OperationType::ProjectCurve,
+            OperationType::DropCutter,
+            OperationType::UnifiedFinish,
+        ] {
+            let cfg = DressupConfig::for_op(op);
+            assert_eq!(cfg.entry_style, DressupEntryStyle::None, "{op:?}");
+            assert!(!cfg.lead_in_out, "{op:?}");
+            assert!(!cfg.link_moves, "{op:?}");
         }
 
         // Force-no-entry: entry cleared, lead/link untouched.
