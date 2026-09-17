@@ -42,6 +42,90 @@ pub enum ToolpathSemanticKind {
     Optimization,
 }
 
+impl ToolpathSemanticKind {
+    /// Every variant, in declaration order.
+    ///
+    /// A new variant MUST be added here as well as to [`Self::ordinal`].
+    /// The match in `ordinal` is exhaustive, so the compiler stops you there
+    /// first, and this list is what a consumer walks when it needs the whole
+    /// vocabulary. This is the contract
+    /// [`crate::trace::toolpath_spans::SpanKind::ALL`] and
+    /// [`crate::trace::toolpath_spans::RegionSpanRole::ALL`] already carry;
+    /// this enum was the one kind vocabulary in the folder without it, so a
+    /// reader outside the crate had to re-type the 26 variants by hand to
+    /// walk them.
+    ///
+    /// The wire key stays with `serde`'s `rename_all = "snake_case"`. This
+    /// list does not add a second key table.
+    pub const ALL: [Self; 26] = [
+        Self::Operation,
+        Self::DepthLevel,
+        Self::Region,
+        Self::Pass,
+        Self::Entry,
+        Self::SlotClearing,
+        Self::Cleanup,
+        Self::ForcedClear,
+        Self::Contour,
+        Self::Raster,
+        Self::Row,
+        Self::Slice,
+        Self::Hole,
+        Self::Cycle,
+        Self::Chain,
+        Self::Band,
+        Self::Ramp,
+        Self::Ring,
+        Self::Ray,
+        Self::Curve,
+        Self::Dressup,
+        Self::FinishPass,
+        Self::OffsetPass,
+        Self::Centerline,
+        Self::BoundaryClip,
+        Self::Optimization,
+    ];
+
+    /// The position of this kind in [`Self::ALL`].
+    ///
+    /// The match below has no wildcard arm. A new variant is a compile error
+    /// here, which is the proof that `ALL` names every variant.
+    ///
+    /// The receiver is `&self`, not `self`: this enum is not `Copy`, and the
+    /// crate clones it at two call sites outside this folder.
+    #[must_use]
+    pub const fn ordinal(&self) -> usize {
+        match self {
+            Self::Operation => 0,
+            Self::DepthLevel => 1,
+            Self::Region => 2,
+            Self::Pass => 3,
+            Self::Entry => 4,
+            Self::SlotClearing => 5,
+            Self::Cleanup => 6,
+            Self::ForcedClear => 7,
+            Self::Contour => 8,
+            Self::Raster => 9,
+            Self::Row => 10,
+            Self::Slice => 11,
+            Self::Hole => 12,
+            Self::Cycle => 13,
+            Self::Chain => 14,
+            Self::Band => 15,
+            Self::Ramp => 16,
+            Self::Ring => 17,
+            Self::Ray => 18,
+            Self::Curve => 19,
+            Self::Dressup => 20,
+            Self::FinishPass => 21,
+            Self::OffsetPass => 22,
+            Self::Centerline => 23,
+            Self::BoundaryClip => 24,
+            Self::Optimization => 25,
+        }
+    }
+}
+
 /// The typed vocabulary of [`ToolpathSemanticParams`] keys (C4).
 ///
 /// `ToolpathSemanticParams` is a `BTreeMap<String, Value>` bag, and PR-0
@@ -1295,6 +1379,27 @@ mod tests {
             Some(-1.5)
         );
         assert_eq!(params.get(SemanticKey::Pitch), None);
+    }
+
+    /// FLD-03. `ALL` must name every [`ToolpathSemanticKind`] variant, in
+    /// declaration order, so a consumer can walk the vocabulary instead of
+    /// re-typing 26 arms. The compiler proves the list is complete:
+    /// `ordinal`'s match has no wildcard, so a new variant stops the build
+    /// there. This test proves the other half — that the list and the
+    /// ordinals agree — which a reorder or a copy-paste in `ALL` breaks.
+    ///
+    /// Same contract as `SpanKind::ALL` and `RegionSpanRole::ALL`.
+    #[test]
+    fn all_names_every_semantic_kind_in_order() {
+        assert_eq!(ToolpathSemanticKind::ALL.len(), 26);
+        for (index, kind) in ToolpathSemanticKind::ALL.iter().enumerate() {
+            assert_eq!(
+                kind.ordinal(),
+                index,
+                "{kind:?} sits at {index} in ALL but reports ordinal {}",
+                kind.ordinal()
+            );
+        }
     }
 
     #[test]
