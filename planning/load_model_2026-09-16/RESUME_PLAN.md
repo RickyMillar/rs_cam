@@ -26,6 +26,8 @@ Shipped and verified:
 | `93dd145c` | **T-17 — the deflection integrator bends a flute-relieved section** |
 | `6d69c25a` | T-17 closed in the register |
 | `0a510215` | The fluted-section derivation the code cites |
+| `6a3ba42c` | The corridor fixture re-derived into the middle of its window |
+| `59822cab` | **T-4 — a refused deflection prediction is a type, not a zero** |
 
 T-17 verification: core lib 2503/0, sentry 5/5, `literature_matrix` 21/21,
 `literature_parity` 24/24, clippy clean, fmt clean.
@@ -96,7 +98,21 @@ arm. The file's own doc block (lines 12-23) says so.
 
 ---
 
-## 4. NEXT: T-4 — a refusal must not read as a measurement
+## 4. DONE 2026-09-18: T-4 — a refusal must not read as a measurement
+
+Shipped at `59822cab`. `Result<DeflectionPrediction, DeflectionUnmodeled>`,
+nine variants, one clause each, mapped onto `UnmodeledReason`. A V-bit
+returns `Ok` with `DeflectionCaveat::FluteReliefUnmodeled` (a floor, not a
+bound; `force_headroom` returns `None` for one). The back-off emits
+`DeflectionBackoffUnmodeled` / `DeflectionBackoffFigureIsAFloor`. The design
+missed one reachable zero (`tip_deflection_mm` returns 0.0 when the load
+point sits at or below the tip); `DegenerateCantilever` now guards it. The
+two panic arms added to `wanaka_suggest_integration` were argued from the
+fixture, not run — CI runs it; if it is red there, the fixture gained a tool
+or a material the model does not cover. Report: `T4_IMPLEMENTATION.md`.
+
+The section below is the design as it stood before the work, kept as the
+record.
 
 `predict_peak_deflection_um` has **nine** refusal exits and every one returns
 `predicted_um = 0.0`. A modelled zero is unreachable, so today every `0.0` is
