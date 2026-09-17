@@ -559,26 +559,12 @@ fn opening_heights_tab_does_not_pin_heights_or_mark_stale_g_heightstab() {
             defects.push(format!("the {tab:?} tab dirtied the project"));
         }
     }
-    // G-LINKFEEDOPT, found by this loop on 2026-09-17. `draw_linking_params`
-    // runs `cfg.feed_optimization = false` while DRAWING when
-    // `feed_optimization_unavailable_reason` applies, and the default is
-    // `true`, so opening the Linking tab on any non-fresh-stock-2D operation
-    // stales a generated toolpath and dirties the project — the same defect
-    // this test was written for on the Heights tab. The fix belongs in
-    // `ui/properties/linking_dressup.rs`, which another agent owns this
-    // wave; the exact edit is in the wave 3 reply. Delete this list with
-    // that write.
-    const KNOWN: &[&str] = &[
-        "the Linking tab marked the toolpath stale",
-        "the Linking tab dirtied the project",
-    ];
-    let unexpected: Vec<&String> = defects
-        .iter()
-        .filter(|defect| !KNOWN.contains(&defect.as_str()))
-        .collect();
+    // G-LINKFEEDOPT (2026-09-17): the Linking tab wrote
+    // `feed_optimization = false` while drawing; fixed in
+    // `ui/properties/linking_dressup.rs`, so this loop tolerates nothing.
     assert!(
-        unexpected.is_empty(),
-        "viewing a tab must commit nothing. Found: {unexpected:?}"
+        defects.is_empty(),
+        "viewing a tab must commit nothing. Found: {defects:?}"
     );
 }
 

@@ -457,12 +457,15 @@ pub(super) fn draw_linking_params(
         entry.stock_source,
     );
     if let Some(reason) = feed_opt_reason {
-        cfg.feed_optimization = false;
+        // G-LINKFEEDOPT: viewing a tab commits nothing. The disabled
+        // checkbox reads a local copy; `dressup_apply` already skips the
+        // pass when `feed_opt_stock` is `None`, so the stored flag is inert.
         // Why-disabled lives on hover only (density pass) — the greyed
         // checkbox is the signal; a permanent italic paragraph was noise.
+        let mut shown = false;
         ui.add_enabled(
             false,
-            egui::Checkbox::new(&mut cfg.feed_optimization, "Feed rate optimization"),
+            egui::Checkbox::new(&mut shown, "Feed rate optimization"),
         )
         .on_disabled_hover_text(reason);
     } else {
