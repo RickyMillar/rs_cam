@@ -28,7 +28,7 @@ disable-model-invocation: true
 | MCP param structs | `cargo test -p rs_cam_mcp -q` |
 | Single test | `cargo test <name> -- --nocapture` |
 
-Note: run the folder sentries and the focused crate tests locally; CI owns the FULL gate. Ask before a run over about three minutes. Through `scripts/cargo_lane.sh` on a shared machine.
+Note: run the folder sentries and the focused crate tests locally; CI owns the FULL gate. Ask before a run over about three minutes. On a shared machine, run cargo through `scripts/cargo_lane.sh`.
 
 Note: avoid workspace-wide `cargo test` from the repo root — it can loop / thrash on this repo. Run per-crate instead.
 

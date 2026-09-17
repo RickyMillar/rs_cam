@@ -34,7 +34,7 @@ part says what the file protects. Search by claim words, not by code.
   present before you assert its property, and do not match comments.
 - Inject the guarded defect once and confirm the test goes red before you
   trust it.
-- Allowed lints in a test module: `unwrap_used`, `expect_used`, `panic`,
-  `indexing_slicing`. `println!` stays denied without a local allowance.
+- The lint allowances for a test module are in `../CLAUDE.md`; this file
+  does not repeat them.
 - Tests that need the wanaka project run for minutes. Say so in the
   folder file that names them.

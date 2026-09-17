@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Run the full CI quality gate locally before committing
+description: Run the CI quality gate; the core suite needs the operator's go-ahead
 allowed-tools: Bash
 ---
 
