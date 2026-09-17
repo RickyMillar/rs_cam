@@ -171,6 +171,37 @@ W3   after W1 (progress) and W0a (edges); handoff slot with the other account
 W0 is one owner, three sequential commits. Nothing in W0 waits on a
 ruling except R2, which is one deletable `if` block in `state()`.
 
+## 2a. W0 landed (2026-09-18)
+
+Ten commits by one owner, `fbd1b526` to `92c25308`, plus the sentry fix
+`99ff5a52`:
+
+- W0a: `session::dependencies` (edges, state, primary_edges), the walker
+  reads the edges with a pure `walk_output_dependents` under the edit-side
+  door, D1 (`AdoptResult` drops Regions and PrevTool consumers), D3.
+  Sentry `dependency_edges_are_the_walker_dep1` (6 claims).
+- W0b: `session::generation_plan::plan(&session, Scope) -> Vec<Step>`,
+  no trailing full-simulation step (the GUI appends its own). The loader
+  derives `rest_analysis.enabled` from demand
+  (`ProjectLoadWarning::RestAnalysisNormalized`), a stated break. Sentry
+  `generation_plan_is_the_edge_walk_w0b` (6 claims).
+- W0c: `simulation_epoch` + `drop_simulation()` over all 19 clear sites,
+  `AdoptSimulationArgs.epoch`, `SessionError::StaleSimulation`; the viz
+  lane stamps `submitted_simulation_epoch` at submit. Sentry
+  `a_late_simulation_does_not_refill_the_core_d7` (4 claims).
+
+Green: core lib 2521/0, every affected core sentry, cli, mcp, fmt. Not
+run: viz lib tests and workspace clippy, both blocked by the peer's
+in-flight S4 (`sim_diagnostics.rs:1878` initializer, `tool_load/power.rs`
+lint). Re-run both when S4 lands.
+
+Decisions taken in W0 that later packages inherit: the plan emits a
+Generate step for a current op and the driver skips it; `Step::Simulate`
+carries the semantic `SetupId`, resolve to a position then cover
+`0..=position`; `Scope::Setup` is narrow (stall hazard on the variant
+doc); the RestDepth-pencil predicate has two copies, a third becomes one
+function; rule (c) over-drops on purpose.
+
 ## 3. Rulings the scans added
 
 Beside PLAN.md §8 R1 to R7:
