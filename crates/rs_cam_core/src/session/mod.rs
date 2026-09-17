@@ -2080,7 +2080,6 @@ mod tests {
             "feed_max_rate = 3000.0\n",
             "feed_ramp_rate = 200.0\n",
             "optimize_rapid_order = true\n",
-            "retract_strategy = \"full\"\n",
         );
         let project: ProjectFile = toml::from_str(toml_str).unwrap();
         let (session, warnings) =
