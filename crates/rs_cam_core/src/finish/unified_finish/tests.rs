@@ -302,6 +302,48 @@ fn region_kind_span_labels_round_trip() {
     assert_eq!(labels.len(), RegionKind::ALL.len());
 }
 
+/// FIN-13: a band becomes text in ONE place, and the band findings carry
+/// the enum rather than the text.
+///
+/// The finding types restated the producer's fields and took the band as a
+/// `&'static str`, so the enum existed on one side of the boundary and a
+/// token on the other. A typo in either table was unreachable from the
+/// other.
+#[test]
+fn a_band_renders_through_one_label_table() {
+    assert_eq!(FinishBand::ALL.len(), 3);
+
+    // One table. `RegionKind` renders a band by asking the band.
+    for band in FinishBand::ALL {
+        assert_eq!(
+            RegionKind::Band(band).band_label(),
+            band.label(),
+            "{band:?} renders two different tokens"
+        );
+        assert_eq!(
+            RegionKind::from_span_label(&format!("{} band", band.label())),
+            Some(RegionKind::Band(band)),
+            "{band:?} did not round-trip through its own label"
+        );
+    }
+
+    // Distinct labels: two bands that render alike make one unreachable.
+    let mut labels: Vec<&str> = FinishBand::ALL.iter().map(|b| b.label()).collect();
+    labels.sort_unstable();
+    labels.dedup();
+    assert_eq!(labels.len(), FinishBand::ALL.len(), "band labels collide");
+
+    // The tokens every surface printed before FIN-13.
+    assert_eq!(FinishBand::VerySteep.label(), "VerySteep");
+    assert_eq!(FinishBand::MidSteep.label(), "MidSteep");
+    assert_eq!(FinishBand::Shallow.label(), "Shallow");
+    assert_eq!(
+        crate::compute::config::HeightClip::BottomZ.label(),
+        "bottom_z"
+    );
+    assert_eq!(crate::compute::config::HeightClip::TopZ.label(), "top_z");
+}
+
 /// `v3_cascade_ab.rs::strategy_of_span` was a four-arm label -> strategy
 /// table. It is now `from_span_label(..).map(|k| k.strategy().label())`.
 /// This pins that the composition returns exactly what the hand-written

@@ -749,9 +749,9 @@ impl RegionKind {
     /// `"Crease"` for the trailing claims node, which has no band.
     pub fn band_label(self) -> &'static str {
         match self {
-            Self::Band(FinishBand::Shallow) => "Shallow",
-            Self::Band(FinishBand::MidSteep) => "MidSteep",
-            Self::Band(FinishBand::VerySteep) => "VerySteep",
+            // FIN-13: one definition of a band's token, in the enum that
+            // owns the band.
+            Self::Band(b) => b.label(),
             Self::Crease => "Crease",
         }
     }
@@ -932,117 +932,6 @@ pub struct ClaimsReport {
     pub envelope_rule_stepover_mm: f64,
 }
 
-/// Which resolved height clipped a band's Z range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HeightClip {
-    /// `ResolvedHeights::bottom_z` raised the ladder's floor.
-    BottomZ,
-    /// `ResolvedHeights::top_z` lowered the ladder's ceiling.
-    TopZ,
-}
-
-impl HeightClip {
-    /// Stable token used in findings, narration and diagnostics.
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::BottomZ => "bottom_z",
-            Self::TopZ => "top_z",
-        }
-    }
-}
-
-/// One planned band region whose cutting was entirely erased by height
-/// resolution (Wave D1, ledger task #15).
-///
-/// Recorded ONLY when the region emitted no cutting at all AND the resolved
-/// heights are what took the levels away — a partially clipped band that
-/// still cuts is not reported here, and a band that plans nothing on its own
-/// (no covered cells) is a decomposition outcome, not a height one.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DroppedBand {
-    pub band: FinishBand,
-    /// Index into the decomposition's `planned.regions`.
-    pub region_index: usize,
-    /// XY-projected area (mm²) of the planned band polygon —
-    /// [`UnifiedFinishReport::provenance`] describes it.
-    pub area_mm2: f64,
-    /// Z levels the band's OWN surface span would have laddered.
-    pub planned_levels: usize,
-    /// Z levels that survived height resolution.
-    pub resolved_levels: usize,
-    /// The resolved height (mm) that clipped it.
-    pub clip_z_mm: f64,
-    /// Which height that was.
-    pub clip: HeightClip,
-}
-
-/// What the resolved heights did to ONE band's Z ladder — the raw
-/// measurement both [`DroppedBand`] and [`ClippedBand`] are cut from.
-///
-/// C8 widened this from the Wave-D1 four-tuple to carry the Z BOUNDS as
-/// well as the level counts, because "requested vs delivered heights" is
-/// what an operator can act on: level counts say how much was lost, the
-/// bounds say where.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BandHeightClip {
-    /// Which resolved height bit.
-    pub clip: HeightClip,
-    /// Its value (mm) — the number in the operator's heights config.
-    pub clip_z_mm: f64,
-    /// Z levels the band's OWN surface span would have laddered.
-    pub planned_levels: usize,
-    /// Z levels that survived height resolution.
-    pub resolved_levels: usize,
-    /// Ceiling the band's own surface span asked for (mm).
-    pub requested_top_z_mm: f64,
-    /// Floor the band's own surface span asked for (mm).
-    pub requested_bottom_z_mm: f64,
-    /// Ceiling the resolved heights allowed (mm).
-    pub delivered_top_z_mm: f64,
-    /// Floor the resolved heights allowed (mm).
-    pub delivered_bottom_z_mm: f64,
-}
-
-impl BandHeightClip {
-    /// Vertical extent (mm) the clamps removed from this band's ladder.
-    #[must_use]
-    pub fn lost_height_mm(&self) -> f64 {
-        let requested = (self.requested_top_z_mm - self.requested_bottom_z_mm).max(0.0);
-        let delivered = (self.delivered_top_z_mm - self.delivered_bottom_z_mm).max(0.0);
-        (requested - delivered).max(0.0)
-    }
-}
-
-/// One planned band region whose Z ladder was SHORTENED by height
-/// resolution but which still emitted cutting (C8).
-///
-/// The complement of [`DroppedBand`], and the gap `ANTIPATTERNS_BACKLOG.md`
-/// P8 logged: "Partial height clipping is unreported (only total band
-/// collapse produces the D1 finding)." Wave D1 measured the clip on every
-/// band and then threw the measurement away unless the region emitted
-/// nothing at all — reasoning, correctly, that a total collapse must not be
-/// buried under partial ones. That is an argument about SEVERITY, not about
-/// whether to report: a band that machined the top 2 mm of a 12 mm wall and
-/// stopped is an unfinished feature, and it was silent.
-///
-/// So the two travel in separate collections with separate severities: a
-/// dropped band is a `Caution` ("this feature will be UNMACHINED"), a
-/// clipped band is `Info` ("this feature is PARTLY machined, here is what
-/// was left").
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ClippedBand {
-    pub band: FinishBand,
-    /// Index into the decomposition's `planned.regions`.
-    pub region_index: usize,
-    /// XY-projected area (mm²) of the planned band polygon —
-    /// [`UnifiedFinishReport::provenance`] describes it.
-    pub area_mm2: f64,
-    /// The clip itself: which height, its value, the level counts and the
-    /// requested-vs-delivered Z bounds.
-    pub clip: BandHeightClip,
-}
-
 /// Fold [`UnifiedFinishReport::clipped_bands`] into the single Copy finding
 /// [`crate::compute::config::ToolpathStats`] carries. `None` when no band
 /// was partially clipped.
@@ -1060,18 +949,11 @@ pub fn clipped_band_finding(
         .copied()
         .reduce(|a, b| if b.area_mm2 > a.area_mm2 { b } else { a })?;
     Some(crate::compute::config::ClippedBandFinding {
-        band_label: RegionKind::Band(worst.band).band_label(),
+        band: worst.band,
         region_count: report.clipped_bands.len(),
         area_mm2: report.clipped_bands.iter().map(|c| c.area_mm2).sum(),
-        clip_z_mm: worst.clip.clip_z_mm,
-        clip_label: worst.clip.clip.label(),
+        clip: worst.clip,
         bands_measured: report.height_clip_measured,
-        requested_top_z_mm: worst.clip.requested_top_z_mm,
-        requested_bottom_z_mm: worst.clip.requested_bottom_z_mm,
-        delivered_top_z_mm: worst.clip.delivered_top_z_mm,
-        delivered_bottom_z_mm: worst.clip.delivered_bottom_z_mm,
-        planned_levels: worst.clip.planned_levels,
-        resolved_levels: worst.clip.resolved_levels,
         max_lost_height_mm: report
             .clipped_bands
             .iter()
@@ -1098,11 +980,10 @@ pub fn dropped_band_finding(
         .copied()
         .reduce(|a, b| if b.area_mm2 > a.area_mm2 { b } else { a })?;
     Some(crate::compute::config::DroppedBandFinding {
-        band_label: RegionKind::Band(worst.band).band_label(),
+        band: worst.band,
         region_count: report.dropped_bands.len(),
         area_mm2: report.dropped_bands.iter().map(|d| d.area_mm2).sum(),
-        clip_z_mm: worst.clip_z_mm,
-        clip_label: worst.clip.label(),
+        clip: worst.clip,
         bands_measured: report.height_clip_measured,
         provenance: report.provenance,
     })
@@ -1163,15 +1044,17 @@ pub struct UnifiedFinishReport {
     /// estimator's formula and stated limitations.
     pub standing_mm2: f64,
     /// Wave D1: planned band regions whose cutting was entirely erased by
-    /// height resolution (see [`DroppedBand`]). Empty on a healthy run.
+    /// height resolution (see [`crate::compute::config::BandClipRecord`]).
+    /// Empty on a healthy run.
     /// Folded into the per-toolpath finding by [`dropped_band_finding`].
-    pub dropped_bands: Vec<DroppedBand>,
+    pub dropped_bands: Vec<crate::compute::config::BandClipRecord>,
     /// C8: planned band regions whose Z ladder was SHORTENED by height
-    /// resolution but which still cut (see [`ClippedBand`]). Empty on a
-    /// healthy run. Folded into the per-toolpath finding by
+    /// resolution but which still cut (see
+    /// [`crate::compute::config::BandClipRecord`]). Empty on a healthy run.
+    /// Folded into the per-toolpath finding by
     /// [`clipped_band_finding`]. Disjoint from [`Self::dropped_bands`] by
     /// construction — a region appears in exactly one of them, or neither.
-    pub clipped_bands: Vec<ClippedBand>,
+    pub clipped_bands: Vec<crate::compute::config::BandClipRecord>,
     /// FIN-14: which bands compared their own Z span against the resolved
     /// heights on this run.
     ///
@@ -1989,7 +1872,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // Wave D1: set by any band arm whose Z range the resolved heights
         // narrowed. Consulted AFTER generation, because a narrowed range is
         // only a FINDING when nothing came out of it.
-        let mut height_clip: Option<BandHeightClip> = None;
+        let mut height_clip: Option<crate::compute::config::BandHeightClip> = None;
         let (tp, anns) = match region.band {
             FinishBand::VerySteep => {
                 let Some((band_min_z, band_max_z)) = band_z_range(&surface, &covered, &region_set)
@@ -2026,14 +1909,14 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                     // did, the floor is the one an operator can act on
                     // (a raised `bottom_z` removes the DEEP levels).
                     let (clip, clip_z_mm) = if final_z > band_min_z {
-                        (HeightClip::BottomZ, bottom_z)
+                        (crate::compute::config::HeightClip::BottomZ, bottom_z)
                     } else {
-                        (HeightClip::TopZ, top_z)
+                        (crate::compute::config::HeightClip::TopZ, top_z)
                     };
                     // C8: the BOUNDS travel with the level counts. Counts say
                     // how much of the ladder was lost; bounds say where, which
                     // is what an operator can act on.
-                    height_clip = Some(BandHeightClip {
+                    height_clip = Some(crate::compute::config::BandHeightClip {
                         clip,
                         clip_z_mm,
                         planned_levels,
@@ -2431,15 +2314,14 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                     "unified_finish: band dropped entirely by height resolution — \
                      this feature will be UNMACHINED"
                 );
-                report.dropped_bands.push(DroppedBand {
-                    band: region.band,
-                    region_index,
-                    area_mm2,
-                    planned_levels: clip.planned_levels,
-                    resolved_levels: clip.resolved_levels,
-                    clip_z_mm: clip.clip_z_mm,
-                    clip: clip.clip,
-                });
+                report
+                    .dropped_bands
+                    .push(crate::compute::config::BandClipRecord {
+                        band: region.band,
+                        region_index,
+                        area_mm2,
+                        clip,
+                    });
             } else {
                 tracing::info!(
                     region_index,
@@ -2455,12 +2337,14 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                     "unified_finish: band Z ladder SHORTENED by height resolution — \
                      this feature is only partly machined"
                 );
-                report.clipped_bands.push(ClippedBand {
-                    band: region.band,
-                    region_index,
-                    area_mm2,
-                    clip,
-                });
+                report
+                    .clipped_bands
+                    .push(crate::compute::config::BandClipRecord {
+                        band: region.band,
+                        region_index,
+                        area_mm2,
+                        clip,
+                    });
             }
         }
 

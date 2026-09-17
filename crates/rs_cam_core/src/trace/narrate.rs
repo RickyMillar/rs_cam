@@ -1059,9 +1059,9 @@ fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'
                  Report-only — no gate consumes this.]\n",
                 area = f.area_mm2,
                 count = f.region_count,
-                band = f.band_label,
-                clip = f.clip_label,
-                clip_z = f.clip_z_mm,
+                band = f.band.label(),
+                clip = f.clip.clip.label(),
+                clip_z = f.clip.clip_z_mm,
                 coverage = f.bands_measured.describe(),
                 provenance = f.provenance.describe(),
             ));

@@ -235,14 +235,15 @@ fn auto_heights_drop_the_very_steep_band_and_every_surface_reports_it() {
         .expect("Auto heights collapse the VerySteep ladder — this MUST be measured");
     println!(
         "D1 measured: band={} regions={} area={:.2} mm² clipped at Z{:.3} ({})",
-        dropped.band_label,
+        dropped.band.label(),
         dropped.region_count,
         dropped.area_mm2,
-        dropped.clip_z_mm,
-        dropped.clip_label
+        dropped.clip.clip_z_mm,
+        dropped.clip.clip.label()
     );
     assert_eq!(
-        dropped.band_label, "VerySteep",
+        dropped.band.label(),
+        "VerySteep",
         "the 85° groove is the very-steep band"
     );
     assert!(dropped.region_count >= 1);
@@ -253,11 +254,11 @@ fn auto_heights_drop_the_very_steep_band_and_every_surface_reports_it() {
     );
     // Auto `bottom_z` resolves to `top_z - op_depth` = the stock top (0.0).
     assert!(
-        (dropped.clip_z_mm - 0.0).abs() < 1e-6,
+        (dropped.clip.clip_z_mm - 0.0).abs() < 1e-6,
         "the clipping height IS the resolved bottom_z: {}",
-        dropped.clip_z_mm
+        dropped.clip.clip_z_mm
     );
-    assert_eq!(dropped.clip_label, "bottom_z");
+    assert_eq!(dropped.clip.clip.label(), "bottom_z");
 
     // (b) Narration — the surface an agent reads.
     let narration = session.narrate_toolpath(0).expect("narrate");

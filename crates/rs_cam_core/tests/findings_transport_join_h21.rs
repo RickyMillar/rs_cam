@@ -40,12 +40,14 @@
 )]
 
 use rs_cam_core::compute::config::{
-    BoundaryClipDroppedFinding, BoundaryContainment, ClaimsReferenceFinding, ClippedBandFinding,
-    DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding, InertClaimsDialFinding,
-    MeasuredBands, TipFloatFinding, ToolpathStats, ZeroRemovalFinding,
+    BandHeightClip, BoundaryClipDroppedFinding, BoundaryContainment, ClaimsReferenceFinding,
+    ClippedBandFinding, DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding,
+    HeightClip, InertClaimsDialFinding, MeasuredBands, TipFloatFinding, ToolpathStats,
+    ZeroRemovalFinding,
 };
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
+use rs_cam_core::finish::finish_planner::FinishBand;
 use rs_cam_core::finish::pencil::PencilLinkReport;
 use rs_cam_core::finish::ramp_finish::RampReachClamp;
 use rs_cam_core::finish::unified_finish::{
@@ -87,11 +89,19 @@ fn every_finding_recorded() -> GenerationFindings {
         untouched_material_mm2: Some(12.0),
         reached_uncut_estimate_mm2: Some(13.0),
         dropped_band: Some(DroppedBandFinding {
-            band_label: "MidSteep",
+            band: FinishBand::MidSteep,
             region_count: 2,
             area_mm2: 14.0,
-            clip_z_mm: -1.5,
-            clip_label: "bottom_z",
+            clip: BandHeightClip {
+                clip: HeightClip::BottomZ,
+                clip_z_mm: -1.5,
+                planned_levels: 5,
+                resolved_levels: 0,
+                requested_top_z_mm: 0.0,
+                requested_bottom_z_mm: -2.5,
+                delivered_top_z_mm: -1.5,
+                delivered_bottom_z_mm: -1.5,
+            },
             bands_measured: MeasuredBands {
                 very_steep: true,
                 mid_steep: true,
@@ -100,17 +110,19 @@ fn every_finding_recorded() -> GenerationFindings {
             provenance: provenance(),
         }),
         clipped_band: Some(ClippedBandFinding {
-            band_label: "Shallow",
+            band: FinishBand::Shallow,
             region_count: 1,
             area_mm2: 15.0,
-            clip_z_mm: -2.5,
-            clip_label: "top_z",
-            requested_top_z_mm: 0.0,
-            requested_bottom_z_mm: -3.0,
-            delivered_top_z_mm: -0.5,
-            delivered_bottom_z_mm: -2.5,
-            planned_levels: 6,
-            resolved_levels: 4,
+            clip: BandHeightClip {
+                clip: HeightClip::TopZ,
+                clip_z_mm: -2.5,
+                planned_levels: 6,
+                resolved_levels: 4,
+                requested_top_z_mm: 0.0,
+                requested_bottom_z_mm: -3.0,
+                delivered_top_z_mm: -0.5,
+                delivered_bottom_z_mm: -2.5,
+            },
             max_lost_height_mm: 0.5,
             bands_measured: MeasuredBands {
                 very_steep: true,

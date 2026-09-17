@@ -686,10 +686,10 @@ fn unmachined_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
              feature. Band clip coverage: {coverage}. \
              [{provenance}. Report-only — no gate.]",
             area = f.area_mm2,
-            band = f.band_label,
+            band = f.band.label(),
             count = f.region_count,
-            clip = f.clip_label,
-            clip_z = f.clip_z_mm,
+            clip = f.clip.clip.label(),
+            clip_z = f.clip.clip_z_mm,
             coverage = f.bands_measured.describe(),
             provenance = f.provenance.describe(),
         ),

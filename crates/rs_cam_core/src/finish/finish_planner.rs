@@ -103,6 +103,28 @@ pub enum FinishBand {
     VerySteep,
 }
 
+impl FinishBand {
+    /// Every variant, in declaration order.
+    pub const ALL: [Self; 3] = [Self::Shallow, Self::MidSteep, Self::VerySteep];
+
+    /// Stable band token, used in findings, spans, narration and
+    /// diagnostics. Matches the `Debug` spelling, so every label a surface
+    /// printed before FIN-13 reads the same.
+    ///
+    /// FIN-13 made this the ONE place a band becomes text.
+    /// [`crate::finish::unified_finish::RegionKind::band_label`] delegates
+    /// here, and the two band findings carry the enum and call this only to
+    /// render.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Shallow => "Shallow",
+            Self::MidSteep => "MidSteep",
+            Self::VerySteep => "VerySteep",
+        }
+    }
+}
+
 /// Decomposition dials (design doc "Decisions" + risk R4). All new dials the
 /// unified op introduces live here; everything else inherits from the
 /// per-strategy params (one-new-dial rule).

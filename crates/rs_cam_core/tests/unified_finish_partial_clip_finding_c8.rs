@@ -167,48 +167,49 @@ fn a_partly_clipped_band_is_measured_and_reported_everywhere() {
         "C8 partial clip: band={} regions={} area={:.2} mm² clip={} @ {:.3} mm; \
          requested {:.3}..{:.3} -> delivered {:.3}..{:.3}; \
          levels {} -> {}; worst lost {:.3} mm",
-        clipped.band_label,
+        clipped.band.label(),
         clipped.region_count,
         clipped.area_mm2,
-        clipped.clip_label,
-        clipped.clip_z_mm,
-        clipped.requested_bottom_z_mm,
-        clipped.requested_top_z_mm,
-        clipped.delivered_bottom_z_mm,
-        clipped.delivered_top_z_mm,
-        clipped.planned_levels,
-        clipped.resolved_levels,
+        clipped.clip.clip.label(),
+        clipped.clip.clip_z_mm,
+        clipped.clip.requested_bottom_z_mm,
+        clipped.clip.requested_top_z_mm,
+        clipped.clip.delivered_bottom_z_mm,
+        clipped.clip.delivered_top_z_mm,
+        clipped.clip.planned_levels,
+        clipped.clip.resolved_levels,
         clipped.max_lost_height_mm,
     );
 
-    assert_eq!(clipped.band_label, "VerySteep");
+    assert_eq!(clipped.band.label(), "VerySteep");
     assert_eq!(
-        clipped.clip_label, "bottom_z",
+        clipped.clip.clip.label(),
+        "bottom_z",
         "the FLOOR is what bit — that is the dial an operator can raise"
     );
     assert!(
-        (clipped.clip_z_mm - (-4.0)).abs() < 1e-9,
+        (clipped.clip.clip_z_mm - (-4.0)).abs() < 1e-9,
         "the reported clip height must be the operator's own number: {}",
-        clipped.clip_z_mm
+        clipped.clip.clip_z_mm
     );
 
     // The whole point of the finding: requested vs delivered, not just a
     // level count.
     assert!(
-        clipped.resolved_levels < clipped.planned_levels,
+        clipped.clip.resolved_levels < clipped.clip.planned_levels,
         "a partial clip means FEWER levels laddered: {} vs {}",
-        clipped.resolved_levels,
-        clipped.planned_levels
+        clipped.clip.resolved_levels,
+        clipped.clip.planned_levels
     );
     assert!(
-        clipped.resolved_levels > 0,
+        clipped.clip.resolved_levels > 0,
         "…but not zero, which would be the Wave-D1 case"
     );
     assert!(
-        clipped.requested_bottom_z_mm < clipped.delivered_bottom_z_mm - 1e-9,
+        clipped.clip.requested_bottom_z_mm < clipped.clip.delivered_bottom_z_mm - 1e-9,
         "the delivered FLOOR must sit above the requested one: {} vs {}",
-        clipped.delivered_bottom_z_mm,
-        clipped.requested_bottom_z_mm
+        clipped.clip.delivered_bottom_z_mm,
+        clipped.clip.requested_bottom_z_mm
     );
     assert!(
         clipped.max_lost_height_mm > 1.0,

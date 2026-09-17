@@ -1270,6 +1270,94 @@ impl MeasuredBands {
     }
 }
 
+/// Which resolved height clipped a band's Z range.
+///
+/// FIN-13 moved this here from `finish::unified_finish`, with
+/// [`BandHeightClip`] and [`BandClipRecord`]: the finding vocabulary has one
+/// home, and the band token stops degrading to a `&'static str` on the way
+/// across.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeightClip {
+    /// `ResolvedHeights::bottom_z` raised the ladder's floor.
+    BottomZ,
+    /// `ResolvedHeights::top_z` lowered the ladder's ceiling.
+    TopZ,
+}
+
+impl HeightClip {
+    /// Stable token used in findings, narration and diagnostics.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::BottomZ => "bottom_z",
+            Self::TopZ => "top_z",
+        }
+    }
+}
+
+/// What the resolved heights did to ONE band's Z ladder — the raw
+/// measurement every band-clip report is cut from.
+///
+/// C8 widened this from the Wave-D1 four-tuple to carry the Z BOUNDS as
+/// well as the level counts, because "requested vs delivered heights" is
+/// what an operator can act on: level counts say how much was lost, the
+/// bounds say where.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BandHeightClip {
+    /// Which resolved height bit.
+    pub clip: HeightClip,
+    /// Its value (mm) — the number in the operator's heights config.
+    pub clip_z_mm: f64,
+    /// Z levels the band's OWN surface span would have laddered.
+    pub planned_levels: usize,
+    /// Z levels that survived height resolution.
+    pub resolved_levels: usize,
+    /// Ceiling the band's own surface span asked for (mm).
+    pub requested_top_z_mm: f64,
+    /// Floor the band's own surface span asked for (mm).
+    pub requested_bottom_z_mm: f64,
+    /// Ceiling the resolved heights allowed (mm).
+    pub delivered_top_z_mm: f64,
+    /// Floor the resolved heights allowed (mm).
+    pub delivered_bottom_z_mm: f64,
+}
+
+impl BandHeightClip {
+    /// Vertical extent (mm) the clamps removed from this band's ladder.
+    #[must_use]
+    pub fn lost_height_mm(&self) -> f64 {
+        let requested = (self.requested_top_z_mm - self.requested_bottom_z_mm).max(0.0);
+        let delivered = (self.delivered_top_z_mm - self.delivered_bottom_z_mm).max(0.0);
+        (requested - delivered).max(0.0)
+    }
+}
+
+/// ONE planned band region and what the resolved heights did to it.
+///
+/// FIN-13 merged the two per-region structs
+/// (`unified_finish::DroppedBand` and `unified_finish::ClippedBand`) into
+/// this one. They restated each other field for field, and the difference
+/// between them was never in the SHAPE: it is which collection the record
+/// lands in, which is decided by whether the region still cut.
+///
+/// `UnifiedFinishReport::dropped_bands` holds the regions that emitted no
+/// cutting at all; `clipped_bands` holds the regions that cut a shortened
+/// ladder. The two carry different severities and must not be merged into
+/// one list.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BandClipRecord {
+    /// Which band planned the region.
+    pub band: crate::finish::finish_planner::FinishBand,
+    /// Index into the decomposition's `planned.regions`.
+    pub region_index: usize,
+    /// XY-projected area (mm²) of the planned band polygon —
+    /// `UnifiedFinishReport::provenance` describes it.
+    pub area_mm2: f64,
+    /// The clip itself: which height, its value, the level counts and the
+    /// requested-versus-delivered Z bounds.
+    pub clip: BandHeightClip,
+}
+
 /// A finish band whose planned cutting was entirely removed by height
 /// resolution (Wave D1, ledger task #15).
 ///
@@ -1285,21 +1373,22 @@ impl MeasuredBands {
 /// change; this is the instrument that must exist first.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DroppedBandFinding {
-    /// Stable band token (`"VerySteep"`, `"MidSteep"`, `"Shallow"`) —
-    /// `crate::finish::unified_finish::RegionKind::band_label`. Names the band of the
-    /// LARGEST dropped region when several were dropped.
-    pub band_label: &'static str,
+    /// The band of the LARGEST dropped region when several were dropped.
+    ///
+    /// FIN-13 typed this field. It was a `&'static str` the producer
+    /// rendered before the finding crossed the boundary, so the enum was
+    /// available on one side and gone on the other. Call
+    /// [`crate::finish::finish_planner::FinishBand::label`] to render it.
+    pub band: crate::finish::finish_planner::FinishBand,
     /// How many planned regions were dropped, across every band.
     pub region_count: usize,
     /// Summed XY-projected area (mm²) of the dropped regions' band polygons.
     /// Read the domain off [`Self::provenance`] before comparing it to
     /// anything.
     pub area_mm2: f64,
-    /// The resolved height (mm, operation frame) that clipped the largest
-    /// dropped region.
-    pub clip_z_mm: f64,
-    /// Which resolved height it was: `"bottom_z"` or `"top_z"`.
-    pub clip_label: &'static str,
+    /// What the resolved heights did to the LARGEST dropped region: which
+    /// height bit, its value, the level counts and the bounds.
+    pub clip: BandHeightClip,
     /// FIN-14: which bands compared their Z span with the resolved heights
     /// on this run. A band outside the set was NOT measured, so this finding
     /// says nothing about it — see [`MeasuredBands`].
@@ -1355,29 +1444,23 @@ impl DroppedBandFinding {
 /// REPORTS, and FIN-14 widened what it ADMITS.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClippedBandFinding {
-    /// Stable band token — names the band of the LARGEST clipped region.
-    pub band_label: &'static str,
+    /// The band of the LARGEST clipped region.
+    ///
+    /// FIN-13 typed this field, for the reason
+    /// [`DroppedBandFinding::band`] gives.
+    pub band: crate::finish::finish_planner::FinishBand,
     /// How many planned regions were clipped, across every band.
     pub region_count: usize,
     /// Summed XY-projected area (mm²) of the clipped regions' band polygons.
     /// Read the domain off [`Self::provenance`] before comparing it.
     pub area_mm2: f64,
-    /// The resolved height (mm) that clipped the largest region.
-    pub clip_z_mm: f64,
-    /// Which resolved height it was: `"bottom_z"` or `"top_z"`.
-    pub clip_label: &'static str,
-    /// Ceiling (mm) the largest clipped band's own surface span asked for.
-    pub requested_top_z_mm: f64,
-    /// Floor (mm) it asked for.
-    pub requested_bottom_z_mm: f64,
-    /// Ceiling (mm) the resolved heights allowed.
-    pub delivered_top_z_mm: f64,
-    /// Floor (mm) they allowed.
-    pub delivered_bottom_z_mm: f64,
-    /// Z levels the largest clipped band would have laddered.
-    pub planned_levels: usize,
-    /// Z levels that survived.
-    pub resolved_levels: usize,
+    /// What the resolved heights did to the LARGEST clipped region: which
+    /// height bit, its value, the level counts and the requested-versus-
+    /// delivered bounds.
+    ///
+    /// FIN-13 folded eight restated fields into this one. They were a
+    /// [`BandHeightClip`] copied out member by member.
+    pub clip: BandHeightClip,
     /// Worst vertical extent (mm) removed from any one clipped band —
     /// requested height minus delivered height. This is the number that
     /// answers "how much of the wall is unfinished".
@@ -1430,16 +1513,16 @@ impl ClippedBandFinding {
              Band clip coverage: {coverage}. \
              [{provenance}. Report-only — no gate consumes this.]",
             area = self.area_mm2,
-            band = self.band_label,
+            band = self.band.label(),
             count = self.region_count,
-            clip = self.clip_label,
-            clip_z = self.clip_z_mm,
-            req_lo = self.requested_bottom_z_mm,
-            req_hi = self.requested_top_z_mm,
-            del_lo = self.delivered_bottom_z_mm,
-            del_hi = self.delivered_top_z_mm,
-            planned = self.planned_levels,
-            resolved = self.resolved_levels,
+            clip = self.clip.clip.label(),
+            clip_z = self.clip.clip_z_mm,
+            req_lo = self.clip.requested_bottom_z_mm,
+            req_hi = self.clip.requested_top_z_mm,
+            del_lo = self.clip.delivered_bottom_z_mm,
+            del_hi = self.clip.delivered_top_z_mm,
+            planned = self.clip.planned_levels,
+            resolved = self.clip.resolved_levels,
             lost = self.max_lost_height_mm,
             coverage = self.bands_measured.describe(),
             provenance = self.provenance.describe(),
