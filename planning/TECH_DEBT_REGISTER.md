@@ -27,6 +27,7 @@ need a register.
 | T-11 | Feed modulation multiplies mm by a fraction of a different quantity | **closed** `809d28b9` |
 | T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `ad2f749b` |
 | T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
+| T-14 | A drop-cutter finishing pass measures 42.5 mm of axial engagement | open — R1 made it load-bearing |
 
 ---
 
@@ -628,6 +629,60 @@ by `1/cos(β)` and hoping.
 **Found by:** withdrawing T-7, 2026-09-17. T-7 claimed a 49 % helix
 under-read that turned out to be about a different quantity. This is the
 residue that survived the test, and it is a quarter the size.
+
+---
+
+## T-14 — a finishing pass measures 42.5 mm of axial engagement
+
+Smoke case `AS014` is a `drop_cutter` 3D finishing pass. It reports
+`peak_axial_doc_mm = 42.465`. A drop cutter traces a surface; its axial
+engagement should be a fraction of a millimetre.
+
+**The reading is not new. It is not a regression.** The June 2026 baseline
+records 42.500 for the same case. It has been wrong for at least three months
+and nothing looked at it, because nothing depended on it.
+
+**R1 made it depend on it.** The two-term power model's edge term is
+proportional to `ap`, so the power now scales with this reading:
+
+| AS014 | June | September | |
+|---|---|---|---|
+| `peak_axial_doc_mm` | 42.500 | 42.465 | **unchanged** |
+| `power_peak_kw` | 0.0284 | 1.0065 | **35x**, `within` → `exceeds` |
+| `deflection_peak_mm` | 0.4426 | 0.0984 | 0.2x, `exceeds` → `within` |
+
+The depth did not move. The verdict did.
+
+R1's documented amplification at the reference fixture is 8.6x at `ap` 8.4 mm.
+AS014 shows 35x at a depth reading five times larger, which is what the model
+predicts: **the amplification scales with the depth reading, so a wrong depth
+now produces a proportionally wrong power.**
+
+**Why nothing catches it:** the depth reading is an input to three gates and
+the output of none. No sentry asserts that a finishing pass engages shallowly,
+because until R1 a bad axial reading changed the power bill only weakly.
+
+**Cost if left:** a smoke case reports `exceeds` on spindle power for a cut
+that almost certainly draws about 30 W. That is a false alarm on the surface
+the operator is meant to trust, and it is the first one this programme has
+produced.
+
+**What it is NOT:** it is not a reason to revisit R1. The power model is
+correct and is corroborated against two wood datasets. It is faithfully
+amplifying a bad input, which is what a correct model does.
+
+**Fix:** find why a drop cutter measures 42.5 mm. Candidates, none verified:
+the entry plunge counted as cutting engagement; the full stock height counted
+when the tool first meets the surface; or `axial_engagement_mm` measuring the
+flute contact envelope rather than the material actually removed. AS013
+(`adaptive3d`, 14.766 → 3.743) and AS015 (`scallop`, 3.488 → 6.753) moved
+between the two baselines while AS014 held, so whatever is wrong with AS014 is
+specific to it rather than a shared axial-measurement change.
+
+**Found by:** the structure session's re-cut baseline of 2026-09-17, which
+flagged AS014 for this session. Verified here by aligning both baselines on
+their headers — September added a `resolution_mm` column, so a positional
+comparison would have compared the wrong fields.
 
 ---
 
