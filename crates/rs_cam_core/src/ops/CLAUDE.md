@@ -24,8 +24,10 @@ module is reached through `compute::execute_operation_annotated`.
   direction from the order of a hole's Z pair.
 - The drill metrics live in `drill_metrics.rs` and reach the report as
   `drill_summaries`; the gates that read them live in `tool_load/`.
-- `depth.rs` has ONE ladder: equal passes, `total / ceil(total / per_pass)`.
-  CUT-15 deleted the unreachable `Constant` arm and the finish allowance.
+- `depth.rs` holds the crate's ONE Z-ladder, `z_ladder`, with two named arms
+  (CUT-14): `EvenRedistributed` for 2.5D (equal passes,
+  `total / ceil(total / per_pass)`, top excluded) and `ConstantStep` for
+  finishing (constant step from the top, top included). Build no third.
 
 ## Sentries
 

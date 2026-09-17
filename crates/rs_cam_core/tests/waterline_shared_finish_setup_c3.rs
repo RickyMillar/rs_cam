@@ -4,7 +4,7 @@
 //! `waterline.rs` and one inherited defect:
 //!
 //! 1. a private Z-ladder (`waterline_z_levels`) beside
-//!    [`rs_cam_core::finish::finish_setup::z_ladder`];
+//!    [`rs_cam_core::ops::depth::z_ladder`];
 //! 2. PR-8d's sub-quantum-segment defect, from the same
 //!    `contour_extract::weave_contours` source that produced it in
 //!    `steep_shallow.rs`, deliberately left in place there to keep that
@@ -213,8 +213,10 @@ fn the_floor_is_inert_where_nothing_was_degenerate() {
 // ── 2. One Z-ladder ──────────────────────────────────────────────────────
 
 /// `waterline_z_levels` is now a thin adapter over
-/// [`rs_cam_core::finish::finish_setup::z_ladder`]'s `snap_to_bottom = false` arm at
-/// waterline's own epsilon. Pinned across the boundary cases that made the
+/// [`rs_cam_core::ops::depth::z_ladder`]'s `ConstantStep` arm with
+/// `snap_to_bottom = false`, at waterline's own epsilon. CUT-14 moved that
+/// primitive from `finish/finish_setup.rs` into `ops/depth.rs`, beside the
+/// 2.5D ladder it used to sit apart from. Pinned across the boundary cases that made the
 /// two ladder policies worth keeping separate in the first place: exact
 /// multiples, a remainder, an inverted range and a zero range.
 #[test]
@@ -228,12 +230,14 @@ fn the_waterline_ladder_is_the_shared_ladder() {
         (5.0, 5.0, 1.0),
     ];
     for &(top, bottom, step) in CASES {
-        let shared = rs_cam_core::finish::finish_setup::z_ladder(
+        let shared = rs_cam_core::ops::depth::z_ladder(
             top,
             bottom,
             step,
-            rs_cam_core::ops::waterline::WATERLINE_LADDER_EPSILON,
-            false,
+            rs_cam_core::ops::depth::LadderMode::ConstantStep {
+                epsilon: rs_cam_core::ops::waterline::WATERLINE_LADDER_EPSILON,
+                snap_to_bottom: false,
+            },
         );
         let waterline = waterline_z_levels(top, bottom, step);
         assert_eq!(

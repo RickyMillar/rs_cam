@@ -204,13 +204,15 @@ fn generate_steep_passes_with_cancel(
 
     // `snap_to_bottom = false`: matches the prior inline loop exactly — the
     // ladder is not guaranteed to land exactly on `z_bottom` when the range
-    // isn't a whole multiple of `z_step` (see finish_setup::z_ladder docs).
-    let z_levels = crate::finish::finish_setup::z_ladder(
+    // isn't a whole multiple of `z_step` (see ops::depth::z_ladder docs).
+    let z_levels = crate::ops::depth::z_ladder(
         z_top,
         z_bottom,
         z_step,
-        crate::finish::finish_setup::Z_LADDER_DEFAULT_EPSILON,
-        false,
+        crate::ops::depth::LadderMode::ConstantStep {
+            epsilon: crate::ops::depth::Z_LADDER_DEFAULT_EPSILON,
+            snap_to_bottom: false,
+        },
     );
     for z in z_levels {
         check_cancel(cancel)?;

@@ -11,6 +11,94 @@
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::toolpath::Toolpath;
 
+/// Which of the two Z ladders this crate builds to walk.
+///
+/// CUT-14: one operator dial — the step down — had two implementations with
+/// different arithmetic and different float-noise conventions. They still do,
+/// because they cut different things, but they now sit on one primitive with
+/// their difference named instead of one living in `ops/` and the other in
+/// `finish/`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LadderMode {
+    /// The 2.5D clearing family. `n = ceil(total / step)` with a RELATIVE
+    /// epsilon ([`PASS_COUNT_EPS`]), then the depth is redistributed evenly:
+    /// level `i` is `top - (total / n) * i`. The step is a CEILING, not the
+    /// step actually taken, and `top` itself is NOT a level — the first
+    /// level is one pass below it. Multiplying by `i` rather than
+    /// accumulating keeps the last level exact.
+    EvenRedistributed,
+    /// The finishing family. Walk down from `top` in constant `step`
+    /// increments, `top` INCLUDED, accumulating `z -= step`. `epsilon` is
+    /// ABSOLUTE.
+    ConstantStep {
+        /// Inclusive-bounds tolerance at the bottom edge, in millimetres.
+        epsilon: f64,
+        /// How to treat the bottom edge when `(top - bottom)` is not a whole
+        /// multiple of `step`.
+        ///
+        /// - `false` (steep_shallow and waterline): keep stepping while
+        ///   `z >= bottom - epsilon`. The ladder is **not** guaranteed to
+        ///   include `bottom` exactly — the last level can land anywhere in
+        ///   `[bottom - epsilon, bottom + step)`.
+        /// - `true` (ramp_finish): keep stepping while `z > bottom + epsilon`,
+        ///   then push `bottom` as the final level. The ladder starts at
+        ///   `top` and ends exactly at `bottom`, and the last two levels are
+        ///   never closer than `epsilon` apart.
+        snap_to_bottom: bool,
+    },
+}
+
+/// Default inclusive-bounds epsilon for [`LadderMode::ConstantStep`],
+/// matching `steep_shallow.rs`'s prior fixed `0.01` literal. `ramp_finish.rs`
+/// instead derives its epsilon from the step size (`z_step * 0.5`) — pass
+/// that in explicitly rather than using this default.
+pub const Z_LADDER_DEFAULT_EPSILON: f64 = 0.01;
+
+/// Build a Z ladder from `top` down to `bottom`, in descending order.
+///
+/// The one ladder primitive. `mode` picks the arithmetic; read
+/// [`LadderMode`] before you pick, because the two arms disagree about
+/// whether `top` is a level and about whether `step` is the step taken.
+#[must_use]
+pub fn z_ladder(top: f64, bottom: f64, step: f64, mode: LadderMode) -> Vec<f64> {
+    match mode {
+        LadderMode::EvenRedistributed => {
+            let total = (top - bottom).max(0.0);
+            if total <= 0.0 || step <= 0.0 {
+                return Vec::new();
+            }
+            let Some(n) = pass_count(total, step) else {
+                return Vec::new();
+            };
+            if n == 0 {
+                return Vec::new();
+            }
+            let realised = total / n as f64;
+            (1..=n).map(|i| top - realised * i as f64).collect()
+        }
+        LadderMode::ConstantStep {
+            epsilon,
+            snap_to_bottom,
+        } => {
+            let mut levels = Vec::new();
+            let mut z = top;
+            if snap_to_bottom {
+                while z > bottom + epsilon {
+                    levels.push(z);
+                    z -= step;
+                }
+                levels.push(bottom);
+            } else {
+                while z >= bottom - epsilon {
+                    levels.push(z);
+                    z -= step;
+                }
+            }
+            levels
+        }
+    }
+}
+
 /// Parameters controlling depth stepping for multi-pass operations.
 ///
 /// # One distribution, no finish allowance (CUT-15, 2026-09-17)
@@ -149,18 +237,12 @@ impl DepthStepping {
     /// Each value is the Z height of that pass. The first pass is near
     /// start_z, the last is at final_z.
     pub fn roughing_levels(&self) -> Vec<f64> {
-        let rough_depth = self.total_depth();
-        if rough_depth <= 0.0 || self.max_step_down <= 0.0 {
-            return Vec::new();
-        }
-
-        let n = self.roughing_pass_count();
-        if n == 0 {
-            return Vec::new();
-        }
-
-        let step = rough_depth / n as f64;
-        (1..=n).map(|i| self.start_z - step * i as f64).collect()
+        z_ladder(
+            self.start_z,
+            self.final_z,
+            self.max_step_down,
+            LadderMode::EvenRedistributed,
+        )
     }
 
     /// Calculate all Z levels: roughing passes plus spring passes.
@@ -292,6 +374,176 @@ where
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    /// CUT-14 — the 2.5D ladder IS the `EvenRedistributed` arm of the one
+    /// primitive, across the boundary cases.
+    ///
+    /// `waterline_shared_finish_setup_c3` pins the finishing family against
+    /// the `ConstantStep` arm the same way. Before CUT-14 the 2.5D side had
+    /// no such pin, because its ladder lived in a different module from the
+    /// other one.
+    #[test]
+    fn the_roughing_ladder_is_the_even_redistributed_arm() {
+        const CASES: &[(f64, f64, f64)] = &[
+            (0.0, -12.0, 3.0),
+            (0.0, -12.0, 2.9),
+            (0.0, -10.0, 2.5),
+            (5.0, -0.79, 0.5),
+            (0.0, 0.0, 1.0),
+            (-1.0, 0.0, 1.0),
+            (0.0, -5.0, 0.0),
+        ];
+        for &(start_z, final_z, step) in CASES {
+            let stepping = DepthStepping::new(start_z, final_z, step);
+            let shared = z_ladder(start_z, final_z, step, LadderMode::EvenRedistributed);
+            assert_eq!(
+                stepping.roughing_levels(),
+                shared,
+                "the roughing ladder diverged from the shared one at \
+                 start_z={start_z} final_z={final_z} step={step}"
+            );
+        }
+    }
+
+    /// The two arms are not interchangeable, so a call site that picks the
+    /// wrong one is a real defect and not a style question. `top` is a level
+    /// in one arm and not in the other.
+    #[test]
+    fn the_two_ladder_arms_disagree() {
+        let even = z_ladder(0.0, -10.0, 3.0, LadderMode::EvenRedistributed);
+        let constant = z_ladder(
+            0.0,
+            -10.0,
+            3.0,
+            LadderMode::ConstantStep {
+                epsilon: Z_LADDER_DEFAULT_EPSILON,
+                snap_to_bottom: false,
+            },
+        );
+        assert_eq!(even, vec![-2.5, -5.0, -7.5, -10.0]);
+        assert_eq!(constant, vec![0.0, -3.0, -6.0, -9.0]);
+    }
+
+    // ── z_ladder: the ConstantStep arm ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn z_ladder_exact_multiple_hits_bottom_either_policy() {
+        let no_snap = z_ladder(
+            10.0,
+            0.0,
+            2.0,
+            LadderMode::ConstantStep {
+                epsilon: 0.01,
+                snap_to_bottom: false,
+            },
+        );
+        assert_eq!(no_snap, vec![10.0, 8.0, 6.0, 4.0, 2.0, 0.0]);
+
+        let snap = z_ladder(
+            10.0,
+            0.0,
+            2.0,
+            LadderMode::ConstantStep {
+                epsilon: 1.0,
+                snap_to_bottom: true,
+            },
+        );
+        assert_eq!(snap, vec![10.0, 8.0, 6.0, 4.0, 2.0, 0.0]);
+    }
+
+    #[test]
+    fn z_ladder_no_snap_may_stop_short_of_bottom() {
+        // steep_shallow's prior policy: no guarantee the ladder ever emits
+        // `bottom` exactly when the range isn't a whole multiple of `step`.
+        let levels = z_ladder(
+            10.0,
+            1.0,
+            2.0,
+            LadderMode::ConstantStep {
+                epsilon: 0.01,
+                snap_to_bottom: false,
+            },
+        );
+        assert_eq!(levels, vec![10.0, 8.0, 6.0, 4.0, 2.0]);
+    }
+
+    #[test]
+    fn z_ladder_snap_always_ends_exactly_on_bottom() {
+        // ramp_finish's prior policy: always append the exact bottom,
+        // skipping a would-be near-duplicate final step.
+        let levels = z_ladder(
+            10.0,
+            1.0,
+            2.0,
+            LadderMode::ConstantStep {
+                epsilon: 1.0,
+                snap_to_bottom: true,
+            },
+        );
+        assert_eq!(levels, vec![10.0, 8.0, 6.0, 4.0, 1.0]);
+    }
+
+    #[test]
+    fn z_ladder_no_snap_boundary_inclusive_at_bottom_minus_epsilon() {
+        // z == bottom - epsilon exactly must still be included (`>=`).
+        let levels = z_ladder(
+            4.0,
+            2.01,
+            2.0,
+            LadderMode::ConstantStep {
+                epsilon: 0.01,
+                snap_to_bottom: false,
+            },
+        );
+        assert_eq!(levels, vec![4.0, 2.0]);
+    }
+
+    #[test]
+    fn z_ladder_no_snap_boundary_exclusive_just_past_epsilon() {
+        // z just below `bottom - epsilon` must be excluded.
+        let levels = z_ladder(
+            4.0,
+            2.02,
+            2.0,
+            LadderMode::ConstantStep {
+                epsilon: 0.01,
+                snap_to_bottom: false,
+            },
+        );
+        assert_eq!(levels, vec![4.0]);
+    }
+
+    #[test]
+    fn z_ladder_snap_boundary_exclusive_at_bottom_plus_epsilon() {
+        // The natural next level (6.0) sits exactly at `bottom + epsilon`
+        // (4.0 + 2.0); the strict `>` must exclude it from the loop so it's
+        // superseded by the unconditional bottom push rather than appearing
+        // twice.
+        let levels = z_ladder(
+            8.0,
+            4.0,
+            2.0,
+            LadderMode::ConstantStep {
+                epsilon: 2.0,
+                snap_to_bottom: true,
+            },
+        );
+        assert_eq!(levels, vec![8.0, 4.0]);
+    }
+
+    #[test]
+    fn z_ladder_single_level_when_step_exceeds_range() {
+        let levels = z_ladder(
+            10.0,
+            9.5,
+            100.0,
+            LadderMode::ConstantStep {
+                epsilon: 0.01,
+                snap_to_bottom: false,
+            },
+        );
+        assert_eq!(levels, vec![10.0]);
+    }
     use crate::ops::pocket::{PocketParams, pocket_toolpath};
     use crate::ops::profile::{ProfileParams, ProfileSide, profile_toolpath};
     use crate::ops::zigzag::{ZigzagParams, zigzag_toolpath};

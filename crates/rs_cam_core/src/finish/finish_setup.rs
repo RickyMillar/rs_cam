@@ -636,52 +636,6 @@ pub fn slope_filter_active(slope_from: f64, slope_to: f64) -> bool {
     slope_from > SLOPE_FILTER_MIN_DEG || slope_to < SLOPE_FILTER_MAX_DEG
 }
 
-// ── Z ladder ──────────────────────────────────────────────────────────────
-
-/// Default inclusive-bounds epsilon for [`z_ladder`], matching
-/// `steep_shallow.rs`'s prior fixed `0.01` literal. `ramp_finish.rs` instead
-/// derives its epsilon from the step size (`z_step * 0.5`) — pass that in
-/// explicitly rather than using this default.
-pub const Z_LADDER_DEFAULT_EPSILON: f64 = 0.01;
-
-/// Step down from `top` to `bottom` in increments of `step`, returning the
-/// visited levels in descending order starting at `top`.
-///
-/// Two pre-existing call sites (`steep_shallow.rs` and `ramp_finish.rs`)
-/// diverged on how to treat the bottom edge when `(top - bottom)` isn't a
-/// whole multiple of `step`. Neither op's tests pin an exact level count at
-/// that boundary, but the two policies are genuinely different (not just a
-/// differing epsilon), so both are preserved here via `snap_to_bottom`
-/// rather than picked between:
-///
-/// - `snap_to_bottom = false` (steep_shallow's prior behavior): keep
-///   stepping while `z >= bottom - epsilon`. The ladder is **not**
-///   guaranteed to include `bottom` exactly — the last level can land
-///   anywhere in `[bottom - epsilon, bottom + step)`.
-/// - `snap_to_bottom = true` (ramp_finish's prior behavior): keep stepping
-///   while `z > bottom + epsilon`, then unconditionally push `bottom` as
-///   the final level. This guarantees the ladder starts at `top` and ends
-///   exactly at `bottom`, and that the last two levels are never closer
-///   than `epsilon` apart (a would-be near-duplicate final step is
-///   replaced outright by the exact bottom value).
-pub fn z_ladder(top: f64, bottom: f64, step: f64, epsilon: f64, snap_to_bottom: bool) -> Vec<f64> {
-    let mut levels = Vec::new();
-    let mut z = top;
-    if snap_to_bottom {
-        while z > bottom + epsilon {
-            levels.push(z);
-            z -= step;
-        }
-        levels.push(bottom);
-    } else {
-        while z >= bottom - epsilon {
-            levels.push(z);
-            z -= step;
-        }
-    }
-    levels
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
@@ -706,62 +660,5 @@ mod tests {
     #[test]
     fn slope_filter_active_just_past_max_sentinel() {
         assert!(slope_filter_active(SLOPE_FILTER_MIN_DEG, 89.98));
-    }
-
-    // ── z_ladder ─────────────────────────────────────────────────────────
-
-    #[test]
-    fn z_ladder_exact_multiple_hits_bottom_either_policy() {
-        let no_snap = z_ladder(10.0, 0.0, 2.0, 0.01, false);
-        assert_eq!(no_snap, vec![10.0, 8.0, 6.0, 4.0, 2.0, 0.0]);
-
-        let snap = z_ladder(10.0, 0.0, 2.0, 1.0, true);
-        assert_eq!(snap, vec![10.0, 8.0, 6.0, 4.0, 2.0, 0.0]);
-    }
-
-    #[test]
-    fn z_ladder_no_snap_may_stop_short_of_bottom() {
-        // steep_shallow's prior policy: no guarantee the ladder ever emits
-        // `bottom` exactly when the range isn't a whole multiple of `step`.
-        let levels = z_ladder(10.0, 1.0, 2.0, 0.01, false);
-        assert_eq!(levels, vec![10.0, 8.0, 6.0, 4.0, 2.0]);
-    }
-
-    #[test]
-    fn z_ladder_snap_always_ends_exactly_on_bottom() {
-        // ramp_finish's prior policy: always append the exact bottom,
-        // skipping a would-be near-duplicate final step.
-        let levels = z_ladder(10.0, 1.0, 2.0, 1.0, true);
-        assert_eq!(levels, vec![10.0, 8.0, 6.0, 4.0, 1.0]);
-    }
-
-    #[test]
-    fn z_ladder_no_snap_boundary_inclusive_at_bottom_minus_epsilon() {
-        // z == bottom - epsilon exactly must still be included (`>=`).
-        let levels = z_ladder(4.0, 2.01, 2.0, 0.01, false);
-        assert_eq!(levels, vec![4.0, 2.0]);
-    }
-
-    #[test]
-    fn z_ladder_no_snap_boundary_exclusive_just_past_epsilon() {
-        // z just below `bottom - epsilon` must be excluded.
-        let levels = z_ladder(4.0, 2.02, 2.0, 0.01, false);
-        assert_eq!(levels, vec![4.0]);
-    }
-
-    #[test]
-    fn z_ladder_snap_boundary_exclusive_at_bottom_plus_epsilon() {
-        // The natural next level (6.0) sits exactly at `bottom + epsilon`
-        // (4.0 + 2.0); the strict `>` must exclude it from the loop so it's
-        // superseded by the unconditional bottom push rather than appearing
-        // twice.
-        let levels = z_ladder(8.0, 4.0, 2.0, 2.0, true);
-        assert_eq!(levels, vec![8.0, 4.0]);
-    }
-
-    #[test]
-    fn z_ladder_single_level_when_step_exceeds_range() {
-        let levels = z_ladder(10.0, 9.5, 100.0, 0.01, false);
-        assert_eq!(levels, vec![10.0]);
     }
 }

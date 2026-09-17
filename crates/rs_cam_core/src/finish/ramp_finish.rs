@@ -604,8 +604,15 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     // exactly at `z_bottom` (needed so the final terrace's lower contour is
     // the true bottom, not an arbitrary short-of-bottom level); epsilon is
     // half a step, matching the original inline arithmetic exactly.
-    let z_levels =
-        crate::finish::finish_setup::z_ladder(z_top, z_bottom, z_step, z_step * 0.5, true);
+    let z_levels = crate::ops::depth::z_ladder(
+        z_top,
+        z_bottom,
+        z_step,
+        crate::ops::depth::LadderMode::ConstantStep {
+            epsilon: z_step * 0.5,
+            snap_to_bottom: true,
+        },
+    );
 
     if z_levels.len() < 2 {
         info!("Ramp finish: insufficient Z range for ramping");
