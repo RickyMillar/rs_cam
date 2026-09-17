@@ -7,8 +7,8 @@
 /target
 
 # Local Claude Code state. The project's CHECKED-IN customizations live
-# under `.claude/agents/` and `.claude/skills/` (see CLAUDE.md's "Agent
-# skills" table), so ignore the CONTENTS and re-include those two subtrees.
+# under `.claude/agents/` and `.claude/skills/`, so ignore the CONTENTS and
+# re-include those two subtrees.
 # A blanket `.claude/` cannot be negated — git will not re-include a file
 # whose parent directory is excluded — and it had already eaten
 # `agents/sim-diagnostics.md` and `skills/sim-analysis/`: both documented in

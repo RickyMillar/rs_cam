@@ -601,7 +601,7 @@ enables this path.
 | Import dispatch | `crates/rs_cam_viz/src/io/import.rs` |
 | Compute request | `crates/rs_cam_viz/src/compute/worker.rs` |
 | Boundary clipping | `crates/rs_cam_viz/src/compute/worker/execute/mod.rs` |
-| Project serialization | `crates/rs_cam_viz/src/io/project.rs` |
+| Project serialization | `crates/rs_cam_core/src/session/project_file.rs` (core owns the file; viz has no loader) |
 | Toolpath entry | `crates/rs_cam_viz/src/state/toolpath/entry.rs` |
 | Operation configs | `crates/rs_cam_viz/src/state/toolpath/configs.rs` |
 | ColoredMeshVertex (reuse) | `crates/rs_cam_viz/src/render/sim_render.rs` |

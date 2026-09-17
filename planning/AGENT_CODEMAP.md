@@ -89,8 +89,7 @@ Typical flow:
 |---|---|
 | `crates/rs_cam_core/src/session/mod.rs` | Session type and module facade. SocratiCode graph imports `compute.rs`, `mutation.rs`, `save.rs`. |
 | `crates/rs_cam_core/src/session/compute.rs` (+ `compute/` `params.rs`, `generation.rs`, `simulation.rs`, `diagnostics.rs`, `export.rs`, `tests.rs`) | High-level compute API. SocratiCode symbols include `set_toolpath_param`, `generate_toolpath`, `generate_all`, `run_simulation`, `collision_check`, `narrate_toolpath`, `diagnostics`, `export_gcode`, `tool_load_report`. |
-| `crates/rs_cam_core/src/session/execution.rs` | Execution/result types and session-side runtime state. |
-| `crates/rs_cam_core/src/session/loading.rs` | Project load/import paths. |
+| `crates/rs_cam_core/src/session/builder.rs` / `eval_context.rs` | Construction and the per-setup evaluation context. |
 | `crates/rs_cam_core/src/session/mutation.rs` | Session mutation methods and invalidation. |
 | `crates/rs_cam_core/src/session/save.rs` / `project_file.rs` | Project persistence. |
 
@@ -178,9 +177,9 @@ When GUI state adds fields, audit project IO, setup sheet, worker test initializ
 |---|---|
 | `crates/rs_cam_cli/src/main.rs` | CLI entrypoint. SocratiCode graph marks it as a high-level entry point. |
 | `crates/rs_cam_cli/src/job.rs` | TOML job execution flow. |
-| `crates/rs_cam_cli/src/helpers.rs` | CLI helper utilities. |
+| `crates/rs_cam_cli/src/run.rs` / `smoke.rs` / `sweep.rs` / `nc_replay.rs` | Run, smoke suite, parameter sweep and NC replay. |
 | `crates/rs_cam_mcp/src/server.rs` | MCP tool parameter types and schemas (no server loop). |
-| `crates/rs_cam_mcp/src/main.rs` | MCP server binary entrypoint. |
+| `crates/rs_cam_mcp/src/response.rs` | Shared response envelope types. There is no server binary in this crate. |
 
 Keep GUI embedded MCP and standalone MCP behavior aligned where tools overlap.
 

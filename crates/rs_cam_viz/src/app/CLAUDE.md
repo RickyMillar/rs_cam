@@ -26,8 +26,8 @@ processing. The server lives here, not in `rs_cam_mcp`.
   queue a second generation behind an unknown first one.
 - An MCP screenshot is visual evidence, not a replacement for a core test.
   Capture only after the frame has applied the requested view state.
-- `.mcp.json` runs `cargo run --release`. Build the release binary BEFORE an
-  MCP live test; a cold compile passes the 30 s connect timeout.
+- `.mcp.json` launches `target/release/rs_cam_gui --mcp` directly. Rebuild
+  the release binary BEFORE an MCP live test, or the server runs old code.
 
 ## Sentries
 

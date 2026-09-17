@@ -53,8 +53,9 @@ sentries and traps, which this file does not repeat.
   `indexing_slicing`; `println!` / `eprintln!` stay denied unless a test has
   a specific `print_stderr` allowance. Prefer a local allow with a `SAFETY:`
   comment over a file-wide production allow.
-- Tests live close to the code they protect. The heavy core binaries sit
-  behind `heavy-tests`. Run the smallest relevant sentry; each folder file
+- Tests live close to the code they protect; `tests/CLAUDE.md` explains the
+  integration-test naming and layout. The heavy core binaries sit behind
+  `heavy-tests`. Run the smallest relevant sentry; each folder file
   names the sentries for its own folder.
 - Current code and sentries outrank a historical description. Do not copy a
   retired measurement into a new product claim.

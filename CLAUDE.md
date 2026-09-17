@@ -58,10 +58,11 @@ folder's file map, invariants, sentries and traps.
 ## Codebase discovery
 
 This project is indexed by SocratiCode. Start exploration with broad
-`codebase_search`; use `rg` only for a known exact string/regex. Before a
-refactor, deletion or import-graph change, inspect impact with the graph /
-symbol tools. Read files only after search narrows the area. If search is
-empty, inspect index status rather than assuming the symbol is absent.
+`codebase_search` and the symbol tools. Before a refactor, deletion or
+import-graph change, measure the blast radius with `rg`; the graph and
+impact tools under-report callers. Read files only after search narrows the
+area. If search is empty, inspect index status rather than assuming the
+symbol is absent.
 
 ## Quality gates
 
@@ -71,12 +72,19 @@ workspace's denied clippy lints and `unsafe_code`.
 | Need | Command |
 |---|---|
 | Format | `cargo fmt --all -- --check` |
-| Focused crate tests | `cargo test -p <crate> -q` |
-| Core full gate | `cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q` |
+| One sentry | `cargo test -p <crate> -q --test <name>` |
+| Focused crate tests | `cargo test -p <crate> -q` (viz, cli, mcp; core `--lib`) |
 | Full lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings` |
+| Core full gate (CI) | `cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q` |
 
-Do not use workspace-wide `cargo test`; it can loop in this repository. Run the
-smallest relevant test first, then the appropriate gate before committing.
+Local loop: the folder sentries for the folders you touched, the focused
+crate tests, then clippy. CI runs the core full gate; do not run it locally
+without asking, and ask before any test run over about three minutes.
+Do not use workspace-wide `cargo test`; it can loop in this repository.
+
+On a shared machine run every cargo command through `scripts/cargo_lane.sh
+<cargo args>`. It serialises cargo jobs and waits for free memory; two
+concurrent builds have crashed the machine.
 
 Every production `allow(...)` carries a `// SAFETY:` line; the lint rules for
 test modules are in `crates/rs_cam_core/CLAUDE.md`.

@@ -1,0 +1,40 @@
+# `tests/` — the core integration tests and sentries
+
+About 330 flat files. Each file is one claim about the engine, with a name
+of the form `<claim>_<programme code>.rs`. The code (`f036c`, `m4`, `wp28`,
+`g_drillflip`) names the plan that pre-registered the claim; the claim
+part says what the file protects. Search by claim words, not by code.
+
+## Layout
+
+- `common/` — shared fixtures: meshes, chains, the reference plate, the
+  band map, the fingerprint helper, the offset lab.
+- `fixtures/` — the wanaka project, `terrain.stl`, the STEP samples, the
+  perf golden files. `perf_golden_*.json` are blessed outputs; re-bless
+  only with a measured cause.
+- `literature_matrix/` — the cited feeds cells and their invariants; the
+  `/refresh-lit-matrix` skill maintains `sources.toml`.
+- `ARCHIVED_HARNESSES.md` — two mega harnesses that left this directory.
+
+## How to run
+
+- One sentry: `cargo test -p rs_cam_core -q --test <name>`. Each folder
+  `CLAUDE.md` under `src/` names the sentries for that folder.
+- The twelve heaviest binaries sit behind `--features heavy-tests`; their
+  names and durations are in `Cargo.toml`. CI runs them. Locally, name one
+  binary and ask the operator first.
+- `#[ignore]` marks an instrument or an evidence run, not a broken test.
+  Run one by name with `-- --ignored`. Never use `--include-ignored`.
+- A `planning/…` path in a doc comment may no longer exist; the tag
+  `planning-pre-purge-2026-09-17` holds it.
+
+## Writing a sentry
+
+- A source-scanning test needs a non-vacuity anchor: assert the needle is
+  present before you assert its property, and do not match comments.
+- Inject the guarded defect once and confirm the test goes red before you
+  trust it.
+- Allowed lints in a test module: `unwrap_used`, `expect_used`, `panic`,
+  `indexing_slicing`. `println!` stays denied without a local allowance.
+- Tests that need the wanaka project run for minutes. Say so in the
+  folder file that names them.

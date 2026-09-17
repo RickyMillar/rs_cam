@@ -8,8 +8,12 @@ longer do:
 | `p2c_headless_ab_wanaka.rs` | `planning/archive/mega_harnesses_2026-08-05/p2c_headless_ab_wanaka.rs.archived` | reads the live, user-modified `planning/airrun_2026-06-01/wanaka.toml` at 15 sites; asserts a stale 2026-07-07 collision baseline; two probes have a filesystem test-ordering dependency |
 | `v3_cascade_ab.rs` | `planning/archive/mega_harnesses_2026-08-05/v3_cascade_ab.rs.archived` | hard-codes an absolute, machine-local path (`/home/ricky/Downloads/wanaka100/rivmap_export/terrain.stl`) that does not exist on any other checkout; campaign closed 2026-07-28 "NOT PROVABLE on this fixture" |
 
+**2026-09-17:** the structure purge deleted `planning/archive/`. Both files
+are now only at the tag:
+`git show planning-pre-purge-2026-09-17:<archived path>`.
+
 Both moves happened together as part of the same disposition pass. Neither
-file was deleted — each was renamed to `.rs.archived` (so it can no longer
+file was deleted at the time — each was renamed to `.rs.archived` (so it can no longer
 compile or be picked up as a cargo test target) and got a dated banner
 comment prepended recording exactly why it was archived, its stale
 constants (quoted verbatim, not transcribed), and what was extracted out of

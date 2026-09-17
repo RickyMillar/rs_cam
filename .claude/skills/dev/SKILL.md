@@ -28,9 +28,11 @@ disable-model-invocation: true
 | MCP param structs | `cargo test -p rs_cam_mcp -q` |
 | Single test | `cargo test <name> -- --nocapture` |
 
+Note: run the folder sentries and the focused crate tests locally; CI owns the FULL gate. Ask before a run over about three minutes. Through `scripts/cargo_lane.sh` on a shared machine.
+
 Note: avoid workspace-wide `cargo test` from the repo root — it can loop / thrash on this repo. Run per-crate instead.
 
-Note: the 12 heaviest core binaries sit behind the `heavy-tests` feature (75% of the serial suite, 2026-08-27 profile), so the dev-loop row does not compile or run them. Use the FULL gate row once per phase / before committing; one binary alone runs as `cargo test -p rs_cam_core --features heavy-tests --test <name>`. This is separate from `#[ignore]`, which stays what it has always been here — instruments and evidence runs you invoke by name.
+Note: the 12 heaviest core binaries sit behind the `heavy-tests` feature (75% of the serial suite, 2026-08-27 profile), so the dev-loop row does not compile or run them. CI runs the FULL gate row; locally it needs the operator's go-ahead (30+ min); one binary alone runs as `cargo test -p rs_cam_core --features heavy-tests --test <name>`. This is separate from `#[ignore]`, which stays what it has always been here — instruments and evidence runs you invoke by name.
 
 ## Quality
 

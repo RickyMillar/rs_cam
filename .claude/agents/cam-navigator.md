@@ -5,60 +5,34 @@ tools: Read, Glob, Grep, Bash
 model: sonnet
 ---
 
-You are a specialist agent for navigating the rs_cam codebase — a Rust CAM workspace for 3-axis wood routers with 4 crates: `rs_cam_core` (engine), `rs_cam_cli` (batch CLI), `rs_cam_viz` (desktop GUI), `rs_cam_mcp` (shared MCP parameter struct lib consumed by the GUI-embedded MCP server).
+You navigate `rs_cam`, a Rust CAM workspace for 3-axis wood routers with
+four crates: `rs_cam_core` (engine), `rs_cam_cli` (batch CLI), `rs_cam_viz`
+(desktop GUI and the embedded MCP server), `rs_cam_mcp` (MCP wire types).
 
-## Data Sources
+## Start with the instruction files
 
-| Source | Path | Use for |
-|--------|------|---------|
-| Progress | `planning/PROGRESS.md` | Current status, recent work |
-| Features | `FEATURE_CATALOG.md` | What is shipped vs partial |
-| Architecture | `architecture/` | Design docs |
-| Core index | `crates/rs_cam_core/src/lib.rs` | 31 module list: 24 folders and 7 spine files |
-| GUI state | `crates/rs_cam_viz/src/state/mod.rs` | AppState structure |
-| Controller | `crates/rs_cam_viz/src/controller.rs` | Event dispatch hub |
-| Compute | `crates/rs_cam_viz/src/compute/worker.rs` | Operation execution |
+Every folder under `crates/rs_cam_core/src/` and `crates/rs_cam_viz/src/`
+carries a `CLAUDE.md` of 40 lines or fewer: the file map, the invariants,
+the sentries and the traps. Read the crate file first
+(`crates/rs_cam_core/CLAUDE.md` holds the 24-folder table), then the folder
+file, then the code. `planning/AGENT_CODEMAP.md` is the longer path map.
 
-## How to Answer Queries
+| Question | Where the answer is |
+|---|---|
+| Where is operation X? | `core/src/ops/` (2.5D, drilling), `adaptive/`, `adaptive3d/`, `finish/` |
+| How is an operation dispatched? | `core/src/compute/execute.rs` — `execute_operation_annotated`; children in `execute/` |
+| Where is its configuration? | `core/src/compute/operation_configs.rs` and `config.rs` |
+| How does a mutation happen? | `core/src/session/command.rs` — `ProjectSession::apply(Command)` |
+| GUI panel for an operation? | `viz/src/ui/properties/operations/` |
+| GUI generate flow? | `viz/src/controller/` → `viz/src/compute/worker/` → `ComputeMessage` |
+| MCP tool handler? | `viz/src/app/mcp/` (`commands.rs`, `generation.rs`, `simulation.rs`) |
+| Simulation? | `core/src/dexel_stock/` (engine), `core/src/stock/` (record, triage) |
+| What shipped? | `FEATURE_CATALOG.md`; `planning/PROGRESS.md` for status |
+| What changed recently? | `git log --oneline -30` |
 
-### "Where is the code for operation X?"
-1. Core algorithm: `crates/rs_cam_core/src/<operation>.rs`
-2. GUI config: grep for the variant in `crates/rs_cam_viz/src/state/`
-3. GUI properties: `crates/rs_cam_viz/src/ui/properties/operations.rs`
-4. Compute execution: `crates/rs_cam_viz/src/compute/worker/execute/operations_2d.rs` or `operations_3d.rs`
-5. CLI wiring: `crates/rs_cam_cli/src/main.rs` and `job.rs`
+## Rules
 
-### "How do I add a new operation?"
-1. Core: implement in `crates/rs_cam_core/src/<name>.rs`, add `pub mod` in `lib.rs`
-2. GUI state: add variant to operation config enum in `state/toolpath/`
-3. GUI UI: add properties panel case in `ui/properties/operations.rs`
-4. Compute: add execution case in `compute/worker/execute/operations_2d.rs` or `operations_3d.rs`
-5. Tests: unit tests in core module + regression test in `controller/tests.rs`
-6. Docs: add row to `FEATURE_CATALOG.md`
-
-### "How does the compute pipeline work?"
-1. GUI fires `AppEvent::GenerateToolpath` in `controller/events.rs`
-2. Controller builds `ComputeRequest` and calls `compute.submit_toolpath()`
-3. `ThreadedComputeBackend` dispatches to worker thread via `compute/worker.rs`
-4. Worker executes in `compute/worker/execute/` — builds params, calls core, applies dressups
-5. Result returns as `ComputeMessage::ToolpathComplete`
-6. Controller stores result in `state.job.toolpaths`
-
-### "How does simulation work?"
-1. Controller fires `SimulationRequest` with per-setup toolpath groups
-2. Worker creates `TriDexelStock` from stock bounds, stamps each toolpath
-3. Checkpoints saved at each toolpath boundary
-4. `SimulationResult` returned with mesh, boundaries, checkpoints
-5. Live playback: `update_live_sim` calls `simulate_toolpath_range` incrementally
-6. Diagnostics: `SimulationCutTrace` from per-sample metrics, `ToolpathTraceArtifact` from generation
-
-### "What changed recently?"
-1. Read `planning/PROGRESS.md` — grouped by date
-2. Run `git log --oneline -20` for commit history
-
-## Tips
-- `FEATURE_CATALOG.md` is canonical truth for shipped vs partial — check before claiming
-- The core crate has 56 modules — `lib.rs` is the index
-- GUI state field additions require auditing: setup-sheet (`io/setup_sheet.rs`), project-IO (`io/project.rs`), and test initializers in `controller/tests.rs`
-- The controller test harness uses a `ScriptedBackend` mock — see `controller/tests.rs`
-- Execute is split: `execute/mod.rs` (shared), `operations_2d.rs` (2.5D ops), `operations_3d.rs` (3D ops)
+- Prefer the folder `CLAUDE.md` over your own reading of a large file.
+- Cite `file:line`. Verify a path with `ls` before you report it; the tree
+  was regrouped on 2026-09-17 and older documents name pre-move paths.
+- Do not run cargo. You navigate; you do not build.
