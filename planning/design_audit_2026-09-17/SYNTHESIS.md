@@ -744,3 +744,24 @@ spacing and column widths), `io/CLAUDE.md` lists two `step`-feature
 sentries the default build does not run, the UI-04 help ratchet at 127
 unwritten lines, `adaptive3d_emission_byte_parity.rs` lacks a programme
 suffix, and the corridor test's `LONG_AND_THIN` fixture (power session).
+
+## Live smoke — 2026-09-18 morning, release `b4be99e0`
+
+Through the MCP on the wanaka fixture: load (the CMP-27 pin-keying
+warnings show on load and in triage), simulate (the new
+`collision_checks_failed` key, holder check `null` on the 2D operations),
+generate Back Rough (3 356 moves), simulate again (verdict OK, 27 % air),
+generate Rivers from the simulated stock (2 090 moves). Screenshots of the
+Geometry, Linking and Feeds tabs after the kit moves look right; the
+Linking tab shows the disabled feed-optimisation checkbox and no retract
+strategy row, and viewing it left the toolpath fresh.
+
+Two observations, neither a regression of the night's work:
+- The prior-stock blocker message names the nearest generated upstream
+  operation ("ONE simulation is enough") while the phantom scan gates on
+  the FIRST enabled ungenerated operation in the setup (Back Rough here),
+  so the advice was wrong for this shape. Pre-existing (F.4); make
+  `prior_stock_blocker` read the same scan.
+- One generate request sat 137 s with the compute lane idle and no frame
+  painted, and started the moment frames resumed. Whether the window was
+  hidden is unknown; if it was visible, dispatch is frame-gated somewhere.
