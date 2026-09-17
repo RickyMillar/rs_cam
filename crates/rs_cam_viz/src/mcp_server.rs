@@ -1173,7 +1173,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_dressup_field",
-        description = "Update a single dressup field on a toolpath (partial patch). Accepts any field name from the DressupConfig schema."
+        description = "Update a single dressup field on a toolpath (partial patch). Accepts any field name from the DressupConfig schema. A value field is refused while its dressup is off — set the enable key (dogbone, lead_in_out, link_moves, arc_fitting, segment_merge) first."
     )]
     async fn set_dressup_field(
         &self,
