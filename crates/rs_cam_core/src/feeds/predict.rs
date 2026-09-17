@@ -32,7 +32,7 @@
 //! divergence made the Suggest back-off loop chase a phantom target and
 //! exhaust its iteration cap; delegating fixes both.)
 //!
-//! `core_diameter_mm` / `I_eff` are still computed and surfaced in the
+//! `bending_diameter_mm` / `I_eff` are still computed and surfaced in the
 //! [`DeflectionBreakdown`] as a representative-section *diagnostic*, but
 //! no longer drive the deflection magnitude. V-bit geometry still returns
 //! zero (the post-sim integrator handles those).
@@ -55,20 +55,77 @@ use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
-/// Flute-relief factor for end mills. Pre-2026-06-04 deflection
-/// audits (Wanaka Back Rough) consistently undershot post-sim by ~3×
-/// when the bending section was treated as solid `D`. The 0.7×
-/// reduction is the canonical handbook value for 2- to 3-flute
-/// end mills (Machinery's Handbook stiffness-correction notes; matches
-/// the FSWizard "effective root diameter" recommendation).
+/// The **equivalent diameter** of an end mill, as a fraction of its cutting
+/// diameter, by flute count.
 ///
-/// Cross-reference: the post-sim deflection integrator in
-/// [`crate::tool_load::deflection`] / `ToolDefinition::tip_deflection_mm`
-/// derives its own bending section independently. Drift between the
-/// two — and the +36% safe-side bias the predictor currently carries
-/// — is called out on
-/// [`crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM`].
-pub const ENDMILL_CORE_FRACTION: f64 = 0.7;
+/// ## Equivalent diameter, not core diameter
+///
+/// These are two different numbers and the literature conflates them:
+///
+/// | | Published range | What it is |
+/// |---|---|---|
+/// | Core diameter | 0.47 – 0.85 D | the geometric root between the flutes |
+/// | **Equivalent diameter** | 0.75 – 0.93 D | the solid shaft with the SAME bending compliance |
+///
+/// A cantilever model needs the second. **The flute-count effect reverses
+/// sign between them** — more flutes gives a LARGER core and a SMALLER
+/// equivalent diameter — so reaching for a core figure here gets the
+/// correction backwards. That is not hypothetical: it is the mistake this
+/// function was written to stop, made once during the work that produced it.
+///
+/// ## Source
+///
+/// Derived from Kivanc and Budak's published deflection tables (Sabanci MSc
+/// thesis 2004, Tables 3.1 and 3.2; the same work as IJMTM 44(11):1151-1161).
+/// The ratios repeat to four significant figures across 6, 10, 16 and 20 mm
+/// and across two materials, so they are scale-free in diameter.
+///
+/// Confidence is medium-high at three and four flutes. At two flutes it is
+/// **low-medium**: two of eight source rows give 0.920 rather than 0.889, and
+/// 0.889 is taken because it is the conservative end of that disagreement.
+///
+/// ## What the previous constant was
+///
+/// `ENDMILL_CORE_FRACTION = 0.7`, applied to every flute count, and cited to
+/// "Machinery's Handbook stiffness-correction notes" and FSWizard for 2- to
+/// 3-flute end mills. A literature search found **no source that gives 0.7 as
+/// a 2- to 3-flute core fraction**; published 2-flute cores run 0.54 to 0.60.
+/// The number was neither a core nor an equivalent diameter, and the citation
+/// did not support it. See `planning/load_model_2026-09-16/` T-16.
+///
+/// Against these figures, 0.7 over-stated deflection by 2.60x at two flutes,
+/// 2.08x at three and 1.30x at four. The old model was CONSERVATIVE, so this
+/// change loosens the predictor rather than tightening it.
+///
+/// ## The coupling to the back-off threshold
+///
+/// [`crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM`] records that this
+/// predictor "over-shoots post-sim by ~36 %" and treats that as safety margin.
+/// The four-flute over-read removed here is **+30 %**, so that bias was
+/// probably this defect rather than a property of the model. The back-off
+/// threshold is 200 µm, which matches the post-sim gate directly: a predictor
+/// that no longer over-shoots now backs off at the real bound instead of at
+/// about 147 µm of it. That is the behaviour the threshold was written for.
+///
+/// ## Outside the sourced range
+///
+/// Flute counts other than 2, 3 and 4 keep the historical 0.70. It is smaller
+/// than every sourced value, so it over-states deflection, so it stays on the
+/// safe side. It is a fallback and not a measurement, which is why it is not
+/// extrapolated from the trend.
+#[must_use]
+pub fn endmill_equivalent_diameter_fraction(flute_count: u32) -> f64 {
+    match flute_count {
+        2 => 0.889,
+        3 => 0.841,
+        4 => 0.748,
+        _ => ENDMILL_EQUIVALENT_FALLBACK,
+    }
+}
+
+/// The value used where the literature gives no figure. Conservative against
+/// every sourced flute count — see [`endmill_equivalent_diameter_fraction`].
+pub const ENDMILL_EQUIVALENT_FALLBACK: f64 = 0.7;
 
 /// Stickout fallback when [`ToolConfig::stickout`] is non-positive
 /// (zero or NaN). Returning 0 deflection on a misconfigured stickout
@@ -297,7 +354,7 @@ pub fn predict_peak_deflection_um(
     // factor to the *whole* stickout (including the stiff shank) and read
     // ~3× hotter than the gate, which is why the back-off loop chased a
     // phantom target and exhausted its iteration cap.
-    let d_core = core_diameter_mm(tool);
+    let d_core = bending_diameter_mm(tool);
     let i_eff_mm4 = if d_core.is_finite() && d_core > 0.0 {
         std::f64::consts::PI * d_core.powi(4) / 64.0
     } else {
@@ -378,9 +435,9 @@ pub fn predict_peak_deflection_um(
 /// Routes on [`CutterKind`] (Phase 3) — the bending-section model is a
 /// per-shape-class decision, so a 6th cutter shape fails to compile
 /// here instead of inheriting a wrong core silently.
-pub fn core_diameter_mm(tool: &ToolConfig) -> f64 {
+pub fn bending_diameter_mm(tool: &ToolConfig) -> f64 {
     match tool.tool_type.cutter_kind() {
-        CutterKind::Flat => ENDMILL_CORE_FRACTION * tool.diameter,
+        CutterKind::Flat => endmill_equivalent_diameter_fraction(tool.flute_count) * tool.diameter,
         CutterKind::Ball | CutterKind::Bull => tool.diameter,
         CutterKind::TaperedBall => {
             let shank = tool.shaft_diameter.max(tool.diameter);

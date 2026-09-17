@@ -41,7 +41,7 @@ use super::{SuggestContext, SuggestWarning};
 /// conservative. If
 /// [`crate::feeds::predict::predict_peak_deflection_um`]'s underlying
 /// constants (especially
-/// [`crate::feeds::predict::ENDMILL_CORE_FRACTION`] = 0.7) get tuned
+/// [`crate::feeds::predict::endmill_equivalent_diameter_fraction`]) get tuned
 /// closer to the post-sim integrator in
 /// [`crate::tool_load::deflection`] / `ToolDefinition::tip_deflection_mm`,
 /// this threshold needs re-evaluating — a predictor with smaller

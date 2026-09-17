@@ -29,7 +29,8 @@ need a register.
 | T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
 | T-14 | A drop-cutter finishing pass measures 42.5 mm of axial engagement | open — R1 made it load-bearing |
 | T-15 | Pass 9 can raise a feed the power ladder just clamped | open — reachable by hand TODAY |
-| T-16 | The deflection bending diameter cites a source that does not say it | open — comment is wrong today |
+| T-16 | The deflection bending diameter cites a source that does not say it | **closed** — diagnostic only; see T-17 |
+| T-17 | The deflection integrator gives a fluted end mill a solid cross-section | open — under-states deflection 1.6x to 3.2x |
 
 ---
 
@@ -844,6 +845,22 @@ is a decision for the operator, not for the engine.
 not say what it is cited for is a defect on its own, whatever happens to the
 number. That half can be corrected without touching behaviour.
 
+## CLOSED 2026-09-17 — and the loosening above does not happen
+
+The paragraphs above assume `bending_diameter_mm` sets the deflection
+magnitude. **It has not done so since 2026-06-17.** `feeds::predict` delegates
+the magnitude to the shared two-section integrator
+(`ToolDefinition::tip_deflection_mm`), and keeps the bending diameter only to
+fill `DeflectionBreakdown.i_eff_mm4`, which the rationale tree displays.
+
+So the shipped fix corrects a false citation and a displayed diagnostic. It
+moves no guard, loosens no bound and needs no operator ruling. The literature
+matrix and `literature_parity` confirm it: unchanged, 50 tests green.
+
+The medium-low confidence at 2 flutes therefore costs nothing here. It becomes
+load-bearing the moment T-17 is fixed, and the operator ruling deferred above
+belongs to T-17, not to this entry.
+
 ## What the search could not settle
 
 **No manufacturer publishes core diameter in any catalogue dimension table.**
@@ -855,6 +872,73 @@ counts — at 4 flutes the published core figures run 0.53 to 0.70, which is
 9.8x in stiffness. **There is no universal core constant to find.** Diameter
 does not matter, but stick-out ratio does: OSG raised one 3-flute core from
 0.38 D to 0.50 D purely because it is a long-flute tool.
+
+---
+
+## T-17 — the deflection integrator gives a fluted end mill a solid cross-section
+
+`crates/rs_cam_core/src/tool/mod.rs:699`. `ToolDefinition::tip_deflection_mm`
+integrates the cutter region section by section:
+
+```rust
+let d = self.cutter.lookup_diameter_at(axial_from_tip).max(D_FLOOR_MM);
+let i_mm4 = std::f64::consts::PI * d.powi(4) / 64.0;
+```
+
+For a flat end mill `lookup_diameter_at` returns the **full cutting
+diameter** (`tool/mod.rs:422`, the trait default). So the model bends a solid
+cylinder. A real end mill has flutes cut into it, and the flutes are where it
+bends.
+
+## The size of it
+
+`I` goes as the fourth power, so the error is the fourth power of the
+diameter ratio. The equivalent diameters are the ones T-16 sourced (Kivanc and
+Budak, Sabanci MSc thesis 2004, Tables 3.1 and 3.2):
+
+| Flutes | Section used | Section wanted | Deflection error |
+|---|---|---|---|
+| 2 | 1.000 D | 0.889 D | 1.60x too stiff |
+| 3 | 1.000 D | 0.841 D | 2.25x too stiff |
+| 4 | 1.000 D | 0.748 D | 3.19x too stiff |
+
+**The sign is the bad one.** The model under-states deflection, so every
+deflection guard fires later than it should.
+
+## Why no gate catches it
+
+`tip_deflection_mm` is self-consistent and its own unit tests
+(`tool/mod.rs:1205` onward) check ratios between materials and between
+stick-outs. Nothing compares the absolute number against a measured or
+published tool. The one place in the tree that DID carry a flute-relief term
+was the closed-form predictor, and 2026-06-17 retired it from the magnitude
+path. The term left the production model on that day and nothing recorded it.
+
+## Do not fix it in `lookup_diameter_at`
+
+That function has 14 other callers and they want the **engagement** diameter:
+the chipload LUT query, the stepover, the `doc/d` ratio, the vendor lookup.
+For those the full diameter is correct. Engagement diameter and bending
+diameter are two quantities, and this register already holds three defects of
+that same class (T-11, and the two in `CLEAR_WATER.md` section 3). The
+correction belongs inside the region-2 loop of `tip_deflection_mm`, where the
+quantity wanted is a bending section.
+
+## What it costs to leave, and what it costs to fix
+
+Leaving it: every deflection number in the product is 1.6x to 3.2x optimistic,
+and the axial envelope, the post-sim gate, the Suggest back-off and
+`feeds::efficiency` all read it.
+
+Fixing it: deflection rises by the same factors, so guards fire earlier and
+recipes get more timid. It also disturbs
+`DEFLECTION_BACKOFF_TARGET_UM`, whose recorded "+36 % over-shoot" margin was
+measured against the current too-stiff model. Both move in one change or
+neither does.
+
+**This needs an operator ruling before it ships**, for the reason T-16 gave:
+the 2-flute figure rests on medium-low confidence literature (0.889 against
+0.920, two of eight source rows disagreeing), and here it is load-bearing.
 
 ---
 
