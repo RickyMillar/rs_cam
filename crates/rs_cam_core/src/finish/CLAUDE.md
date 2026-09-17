@@ -28,6 +28,7 @@ Every 3D finishing strategy and the unified planner. The entry point is
   spine; see `../surface/CLAUDE.md`.
 - The iso-scallop `iso_field` dial is live; iso-scallop beats raster at a
   matched finish.
+- Never gate on an aggregate without rendering the surface.
 
 ## Sentries
 
@@ -35,7 +36,3 @@ Every 3D finishing strategy and the unified planner. The entry point is
 - `cargo test -p rs_cam_core -q --test classification_strategy_m3`
 - `cargo test -p rs_cam_core -q --test finish_planner_wanaka_decompose`
 - `cargo test -p rs_cam_core -q --test scallop_iso_field_config`
-
-## Do not
-
-- Never gate on an aggregate without rendering the surface.

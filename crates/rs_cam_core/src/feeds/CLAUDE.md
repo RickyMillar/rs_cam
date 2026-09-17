@@ -29,6 +29,7 @@ point is `feeds::suggest`.
   deliberate override and must stale the result.
 - A matched vendor band caps the rubbing floor. Without a matched row, a
   sub-2 mm diameter conclusion is provisional.
+- On an adaptive rough the simulated chipload outranks the Suggest verdict.
 
 ## Sentries
 
@@ -36,7 +37,3 @@ point is `feeds::suggest`.
 - `cargo test -p rs_cam_core -q --test wanaka_suggest_integration`
 - `cargo test -p rs_cam_core -q --test lookup_parity`
 - `cargo test -p rs_cam_core -q --test rubbing_floor_never_exceeds_band`
-
-## Do not
-
-- On an adaptive rough the simulated chipload outranks the Suggest verdict.
