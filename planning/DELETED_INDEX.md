@@ -17,9 +17,13 @@ prints any file at its pre-purge content. To list a directory as it was, use
 
 The keep/delete reasoning is `structure_2026-09-17/P1_MANIFEST.md`.
 
-History was **not** rewritten. The 948 MB blob stays in the object database;
-a `git filter-repo` pass is an operator decision for a moment when no session
-and no clone is live.
+History **was** rewritten later the same day (`git filter-repo`, operator
+ruling). Four files are gone from every commit and are **not retrievable at
+the tag or anywhere else**: `planning/airrun_2026-08-19/p2_a1_lakes_vbit_chk4.html`
+(904 MB), `fixtures/debug_adaptive/wanaka_3d.html` (38 MB), and the two
+`planning/data_ingest_2026-05-30/sweep_snapshot_*.tar.gz` (21 MB each). Every
+other deleted file is at the tag. Commit hashes changed; an old hash resolves
+through `structure_2026-09-17/commit_map_2026-09-17.tsv`.
 
 ---
 
@@ -46,7 +50,7 @@ and no clone is live.
 
 | Package | Files | What it decided | Why it went |
 |---|---|---|---|
-| `airrun_2026-08-19/` | 24 of 27 | The wanaka200 air run, the overnight tuning ladder and the phase-2 efficiency arms | The outcome is folded into `PROGRESS.md`. It carried `p2_a1_lakes_vbit_chk4.html` at 948 300 086 bytes — 79 % of the whole tracked planning tree. **Kept**: `wanaka200.toml`, `wanaka200_1_Setup_1.nc`, `wanaka200_2_Setup_2___front.nc`, which `rapid_replay_shipped_gcode_s1.rs` and `swept_wanaka_ab_s1.rs` read at run time |
+| `airrun_2026-08-19/` (`p2_a1_lakes_vbit_chk4.html` removed from history, not retrievable) | 24 of 27 | The wanaka200 air run, the overnight tuning ladder and the phase-2 efficiency arms | The outcome is folded into `PROGRESS.md`. It carried `p2_a1_lakes_vbit_chk4.html` at 948 300 086 bytes — 79 % of the whole tracked planning tree. **Kept**: `wanaka200.toml`, `wanaka200_1_Setup_1.nc`, `wanaka200_2_Setup_2___front.nc`, which `rapid_replay_shipped_gcode_s1.rs` and `swept_wanaka_ab_s1.rs` read at run time |
 | `airrun_2026-06-01/` | 10 of 11 | The first wanaka air run, its runbook and the marker-star test | The posted programs are superseded. **Kept**: `wanaka.toml`, which `p1_headless_ab_wanaka.rs` and `finish_planner_wanaka_decompose.rs` load |
 | `deep_doc_modulation_2026-09-08/` | 120 of 123 | That iso-scallop dominates raster at matched finish, that the single-pass Q3 R1.5 iso-scallop matches both pairs at the bar in 67 % of the time, and that the island tier loses because confinement is retract-count-bound | 120 PNG and SVG renders. The conclusions live in `STUDY.md`, which moved into this directory and which two open specs cite. **Kept**: the rasteriser and the two harness projects |
 
@@ -55,7 +59,7 @@ and no clone is live.
 | Package | Files | What it decided | Why it went |
 |---|---|---|---|
 | `probe_artifacts/` | 35 | Loose AgentSearch probe renders | No document and no test names them; the probe log they belong to is in this purge |
-| `data_ingest_2026-05-30/` tarballs | 2 | Two 22 MB parameter-sweep snapshots from the phase-E feeds ingest | The verdict JSON they summarise stays, and the LUT rows they produced are bundled. The other 25 files of the package are **kept** — `CREDITS.md` names them as the attribution for shipped feeds data |
+| `data_ingest_2026-05-30/` tarballs (removed from history, not retrievable) | 2 | Two 22 MB parameter-sweep snapshots from the phase-E feeds ingest | The verdict JSON they summarise stays, and the LUT rows they produced are bundled. The other 25 files of the package are **kept** — `CREDITS.md` names them as the attribution for shipped feeds data |
 
 ## Archive
 

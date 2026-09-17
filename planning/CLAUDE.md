@@ -26,7 +26,8 @@ It is not a single current specification.
 ## Deleted material
 
 The structure purge of 2026-09-17 removed 1010 files, `planning/archive/`
-included. Retrieve any of them:
+included. Retrieve any of them (except the four large blobs that
+`DELETED_INDEX.md` marks "removed from history"):
 
 ```
 git show planning-pre-purge-2026-09-17:<path>
