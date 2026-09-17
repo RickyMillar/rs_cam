@@ -5,11 +5,11 @@ The entry point is `ui::properties::mod`.
 
 ## Files
 
-- `mod.rs` — `draw`, `PanelEdit`, `ToolpathTab`, the snapshot API; beside it
-  `panel_apply.rs` (apply/flush, the command door), `model_sim_panels.rs`,
-  `machine_panel.rs`, `feeds_speeds.rs` (Feeds tab, LUT viewer),
-  `tab_badges.rs`, `linking_dressup.rs` (+ `dv` grid helpers), `tests.rs`,
-  `toolpath_panel.rs` (`draw_toolpath_panel`, one function).
+- `mod.rs` — `draw`, `PanelEdit`, `ToolpathTab`, the snapshot and inputs
+  builders; beside it `panel_apply.rs` (apply/flush, the command door),
+  `model_sim_panels.rs`, `machine_panel.rs`, `feeds_speeds.rs` (Feeds tab,
+  LUT viewer), `tab_badges.rs`, `linking_dressup.rs` (+ `dv` grid helpers),
+  `tests.rs`, `toolpath_panel.rs` (tab host + one function per tab).
 - `operations/` — one editor per operation family: 2D boundary, drilling,
   engraving, finishing, 3D surface, project curve; beside its `mod.rs`
   `shape_diagrams.rs` (`StepoverPattern`), `height_diagram.rs`, `validate.rs`.
@@ -18,13 +18,16 @@ The entry point is `ui::properties::mod`.
 
 ## Invariants
 
-- Every edit writes through the core command path. An inspector field is not
-  a place to hold a value.
+- Every edit writes through the core command path. An inspector field is
+  not a place to hold a value.
 - The inspector nests ONCE. A tab does not open a second scroll area.
+- The toolpath panel takes `ToolpathPanelSnapshot` (edits) and
+  `ToolpathPanelInputs` (reads). Add a field there, not a parameter.
 - The inspector width does not depend on the selected tab.
 - A panel door marks the project edited on success; `app.rs` guards on it.
-- A pinned Bottom Z note must say which operations honour it; the core answer
-  is `OperationType::honors_pinned_bottom_z()`.
+- A pinned Bottom Z note names the operations that honour it; the core
+  answer is `OperationType::honors_pinned_bottom_z()`.
+- Do not draw a raw egui widget where `ui/components/` has the renderer.
 
 ## Sentries
 
@@ -35,6 +38,3 @@ The entry point is `ui::properties::mod`.
 - `cargo test -p rs_cam_viz -q --test depth_beyond_stock_cautions_g_depthstock`
 - `cargo test -p rs_cam_viz -q --test a_post_edit_marks_the_project_dirty_ui08`
 
-## Do not
-
-- Do not draw a raw egui widget where `ui/components/` has the renderer.

@@ -138,8 +138,14 @@ fn stateful_gate_rows_merge_groups_by_exact_status_text() {
 /// so the assembly is the thing to pin: the snapshot reports the box of
 /// the model the STORED `tc.model_id` names, and it agrees with
 /// `ProjectSession::model_bbox`.
-#[test]
-fn the_panel_snapshot_carries_the_model_bbox() {
+/// One pocket over one flat STL model, with one end mill.
+///
+/// UI-01 gave this fixture a second reader, so it is a function rather than
+/// the body of one test.
+fn one_pocket_session() -> (
+    rs_cam_core::session::ProjectSession,
+    std::sync::Arc<rs_cam_core::mesh::TriangleMesh>,
+) {
     use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
     use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
     use std::sync::Arc;
@@ -192,8 +198,14 @@ fn the_panel_snapshot_carries_the_model_bbox() {
             },
         )
         .expect("the fixture toolpath is addable");
-    let session = builder.build();
+    (builder.build(), mesh)
+}
 
+/// Q1: the snapshot must carry the bounding box of the model the toolpath
+/// machines, because both of the panel's Suggest sites read it.
+#[test]
+fn the_panel_snapshot_carries_the_model_bbox() {
+    let (session, mesh) = one_pocket_session();
     let tc = &session.toolpath_configs()[0];
     let snapshot = super::toolpath_panel_snapshot(
         tc.id,
@@ -217,5 +229,64 @@ fn the_panel_snapshot_carries_the_model_bbox() {
         format!("{:?}", carried.min),
         format!("{:?}", mesh.bbox.min),
         "the bbox must be the model's own, not a placeholder"
+    );
+}
+
+/// UI-01: the panel's read side is ASSEMBLED, not passed in 21 pieces.
+///
+/// `draw_toolpath_panel` took 25 parameters; 21 of them were this struct.
+/// The risk the struct removes is a caller that builds the list by hand and
+/// substitutes an empty vector or a default for one entry — the panel still
+/// renders, and the wrong thing is silently missing. So this asserts that
+/// the builder fills the fields FROM THE SESSION, not that the struct exists.
+#[test]
+fn the_panel_inputs_carry_the_session_lists_ui01() {
+    let (session, _mesh) = one_pocket_session();
+    let tc = &session.toolpath_configs()[0];
+    let inputs = super::toolpath_panel_inputs(
+        tc.id,
+        &session,
+        &crate::state::runtime::GuiState::default(),
+        None,
+        Some(ToolpathTab::Heights),
+    );
+
+    assert_eq!(
+        inputs.tools.len(),
+        session.tools().len(),
+        "the tool dropdown must list the session's tools"
+    );
+    assert_eq!(
+        inputs.models.len(),
+        session.models().len(),
+        "the model dropdown must list the session's models"
+    );
+    assert_eq!(
+        inputs.tool_configs.len(),
+        session.tools().len(),
+        "the feeds card reads the tool configs, one per session tool"
+    );
+    assert_eq!(
+        format!("{:?}", inputs.material),
+        format!("{:?}", session.stock_config().material),
+        "the material must be the stock's own, not a default"
+    );
+    assert_eq!(
+        inputs.project_default_rpm,
+        session.post_config().spindle_speed,
+        "the project default rpm must come from the post config"
+    );
+    assert_eq!(
+        inputs.tab_override,
+        Some(ToolpathTab::Heights),
+        "the consumed MCP tab must reach the panel"
+    );
+    assert!(
+        inputs.height_ctx.is_some(),
+        "a toolpath with a model resolves a height context"
+    );
+    assert!(
+        inputs.boundary_source_candidates.is_empty(),
+        "one toolpath has no other toolpath to derive a rest boundary from"
     );
 }

@@ -432,134 +432,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     tc.feeds_provenance.clone(),
                 ));
             }
-            // Snapshot tool/model lists to avoid borrow conflict with toolpaths
-            let tools: Vec<_> = state
-                .session
-                .tools()
-                .iter()
-                .map(|t| (t.id, t.summary(), t.diameter))
-                .collect();
-            // NOT filtered by the owning setup's `model_ids` (empty =
-            // all). W9 / P-2 gave that field a home on `SetupData` and
-            // on the wire, so the operator's choice now survives a save
-            // — but this dropdown still lists every model. Stated
-            // rather than silently fixed: filtering here changes which
-            // models a toolpath can be reassigned to, which is a UI
-            // behaviour change P-2 was not scoped to make.
-            let models: Vec<_> = state
-                .session
-                .models()
-                .iter()
-                .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
-                .collect();
-            // Snapshot tool configs for feeds calculation
-            let tool_configs: Vec<_> = state
-                .session
-                .tools()
-                .iter()
-                .map(|t| (t.id, t.clone()))
-                .collect();
-            // Candidate source toolpaths for a `DerivedRestRegions` boundary
-            // (P2.2): every other toolpath in the session, plus whether its
-            // last cached result already has non-empty rest regions ready to
-            // use. Toolpaths without a ready result are still selectable —
-            // generation fails hard with a clear message if the source turns
-            // out to have no usable rest regions.
-            let boundary_source_candidates: Vec<BoundaryRestCandidate> = state
-                .session
-                .toolpath_configs()
-                .iter()
-                .filter(|tc| tc.id != id)
-                .map(|tc| {
-                    let cached = state
-                        .gui
-                        .toolpath_rt
-                        .get(&tc.id)
-                        .and_then(|rt| rt.result.as_ref());
-                    let cached_regions = cached.and_then(|r| r.annotated.rest_regions.clone());
-                    // LH-2: the source's OWN rest-grid footprint travels with
-                    // its regions, so the pathology share has an honest
-                    // denominator without new session plumbing.
-                    let footprint_area = rest_grid_footprint_area(
-                        cached.and_then(|r| r.annotated.rest_grid.as_deref()),
-                    );
-                    let ready = cached_regions
-                        .as_ref()
-                        .is_some_and(|regions| !regions.is_empty());
-                    (
-                        tc.id,
-                        tc.name.clone(),
-                        ready,
-                        cached_regions,
-                        footprint_area,
-                    )
-                })
-                .collect();
-
-            // Names of toolpaths that consume THIS toolpath's rest-depth
-            // analysis as their machining boundary (P2 pencil-panel
-            // consolidation, §2/§3): drives the Rest Analysis section's
-            // demand-driven auto-enable + "Producing rest regions for: ..."
-            // label instead of a plain checkbox.
-            let rest_region_consumer_names: Vec<String> = state
-                .session
-                .rest_region_consumers(id)
-                .into_iter()
-                .filter_map(|consumer_id| {
-                    state
-                        .session
-                        .find_toolpath_config_by_id(consumer_id)
-                        .map(|(_, tc)| tc.name.clone())
-                })
-                .collect();
-
-            let validation = ToolpathValidationContext::from_session(&state.session);
-            let material = state.session.stock_config().material.clone();
-            let machine = state.session.machine().clone();
-            let workholding = state.session.stock_config().workholding_rigidity;
-
-            // Check if the toolpath's model has enriched mesh (for face selection UI)
-            let model_for_panel = state
-                .session
-                .find_toolpath_config_by_id(id)
-                .and_then(|(_, tc)| state.session.models().iter().find(|m| m.id == tc.model_id));
-            let model_has_enriched = model_for_panel
-                .map(|m| m.enriched_mesh.is_some())
-                .unwrap_or(false);
-            // Defensive: if a STEP model loaded without BREP (e.g. older
-            // project file or future loader regression), surface a warning
-            // so the face picker isn't silently absent.
-            let model_is_step_missing_brep = model_for_panel
-                .map(|m| {
-                    m.kind == Some(rs_cam_core::compute::stock_config::ModelKind::Step)
-                        && m.enriched_mesh.is_none()
-                })
-                .unwrap_or(false);
-
-            // (Removed 2026-07-29, LH-2.) The rest-region pathology caption
-            // used to divide a rest-region area by the model's mesh XY
-            // BOUNDING RECTANGLE — a mask mismatch that under-reads every
-            // non-rectangular part by roughly its bbox fill ratio, so the
-            // "single giant region" warning fired late or never. The
-            // denominator is now each toolpath's own covered rest-grid
-            // footprint (`rest_grid_footprint_area`), measured on the same
-            // grid the regions came from. See `MEASUREMENT_DOMAINS.md` X-4.
-
-            // Snapshot the toolpath model's drill targets + layers (DXF point /
-            // circle-centre picking) for the drill-op panels.
-            let drill_layers: Vec<String> = model_for_panel
-                .map(|m| (*m.layers).clone())
-                .unwrap_or_default();
-            let drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget> = model_for_panel
-                .map(|m| (*m.drill_targets).clone())
-                .unwrap_or_default();
-
-            // Snapshot height context before mutable borrow. Use the shared
-            // helper so model_top/bottom_z are in the setup-local frame.
-            let height_ctx = state
-                .session
-                .find_toolpath_config_by_id(id)
-                .map(|(_, tc)| crate::state::job::height_context_from_session(&state.session, tc));
 
             // Snapshot heights and boundary for the two side effects
             // below. WP5 deleted the operation snapshot beside them: the
@@ -579,46 +451,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .find_toolpath_config_by_id(id)
                 .map(|(_, tc)| format!("{:?}", tc.boundary));
 
-            // Pre-compute stale-default defects for this TP so the panel
-            // can render the validator banner without needing a session
-            // reference. Defects are recomputed each frame, so a Fix
-            // click takes effect immediately on the next render.
-            let stale_default_defects = state
-                .session
-                .find_toolpath_config_by_id(id)
-                .map(|(_, tc)| {
-                    let tool =
-                        state.session.tools().iter().find(|t| {
-                            t.id == rs_cam_core::compute::tool_config::ToolId(tc.tool_id)
-                        });
-                    let stock_bottom_z = state.session.stock_config().origin_z;
-                    rs_cam_core::compute::validate::validate_one_toolpath(
-                        tc,
-                        tool,
-                        &state.session.stock_config().material,
-                        stock_bottom_z,
-                    )
-                })
-                .unwrap_or_default();
-
-            // Compute the load verdict for this TP so the params panel can
-            // surface chipload / power / deflection / drill-gate
-            // diagnostics in the unified ribbon rather than only in the
-            // separate tool-load surface.
-            let load_report = {
-                let sim_trace = state
-                    .simulation
-                    .results
-                    .as_ref()
-                    .and_then(|r| r.cut_trace.as_deref());
-                rs_cam_core::gcode::project_load_report(&state.session, sim_trace)
-            };
-            let load_verdict_for_tp = load_report
-                .per_toolpath
-                .iter()
-                .find(|v| v.toolpath_id == id)
-                .cloned();
-
             // One-shot tab override from the MCP set_ui_view tool. Consumed
             // only when the panel renders the override's TARGET toolpath —
             // a blind take() here used to fire on whatever toolpath rendered
@@ -637,54 +469,25 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 _ => None,
             };
 
-            // P5 — the reach map for THIS toolpath, if the overlay is holding
-            // one. An overlay pointed at another toolpath reads `Idle`: the
-            // sweep has not caught up yet, and showing the other toolpath's
-            // percentage here would be worse than showing none.
-            let reach_summary = {
-                let overlay = &state.gui.reach_overlay;
-                if overlay.toolpath == Some(id) {
-                    match &overlay.status {
-                        crate::state::runtime::ReachStatus::Idle => ReachPanelSummary::Idle,
-                        crate::state::runtime::ReachStatus::Computing => {
-                            ReachPanelSummary::Computing
-                        }
-                        crate::state::runtime::ReachStatus::Failed(message) => {
-                            ReachPanelSummary::Failed(message.clone())
-                        }
-                        crate::state::runtime::ReachStatus::Ready(map) => {
-                            if map.is_measured() {
-                                ReachPanelSummary::Measured {
-                                    unreachable_pct: map.unreachable_pct(),
-                                    max_gap_mm: map.max_gap_mm,
-                                    grid_note: map.grid_note(),
-                                    area_basis_note: map.area_basis_note(),
-                                    over_statement_note: map.over_statement_note(),
-                                    tolerance_below_floor: map.tolerance_below_floor(),
-                                }
-                            } else {
-                                ReachPanelSummary::NotMeasured
-                            }
-                        }
-                    }
-                } else {
-                    ReachPanelSummary::Idle
-                }
-            };
-            // F2.2 — the one freshness state, derived here where the
-            // session and the GUI store are both in hand. The panel takes a
-            // `ToolpathEntry`, a snapshot, and cannot derive it itself.
-            let freshness_for_tp = state
-                .session
-                .find_toolpath_config_by_id(id)
-                .and_then(|(index, _)| {
-                    crate::state::freshness::freshness_at(&state.session, &state.gui, index)
-                })
-                .unwrap_or(crate::state::freshness::FreshnessState::NoResult);
-
             // Copied out and written back so the panel's `&mut bool` cannot
             // collide with the session borrows in the same argument list.
             let mut show_reach_map = state.viewport.show_reach_map;
+
+            // UI-01: the panel's whole read side, assembled by one
+            // function. The 21 arguments it replaces were built here by
+            // hand, so a caller could substitute a default for one and
+            // still get a panel that rendered.
+            let inputs = toolpath_panel_inputs(
+                id,
+                &state.session,
+                &state.gui,
+                state
+                    .simulation
+                    .results
+                    .as_ref()
+                    .and_then(|r| r.cut_trace.as_deref()),
+                tab_override,
+            );
 
             // Build the temporary entry and its canonical session diagnostic
             // contexts together. Keeping them in one snapshot makes it
@@ -695,33 +498,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 // static diagnostic contexts and the model bbox travel as
                 // one value, so no caller can draw the entry while
                 // silently substituting a default for one of the others.
-                draw_toolpath_panel(
-                    ui,
-                    &mut snapshot,
-                    &tools,
-                    &models,
-                    &tool_configs,
-                    &boundary_source_candidates,
-                    &rest_region_consumer_names,
-                    &validation,
-                    &material,
-                    &machine,
-                    workholding,
-                    state.session.post_config().spindle_strategy,
-                    state.session.post_config().spindle_speed,
-                    model_has_enriched,
-                    model_is_step_missing_brep,
-                    height_ctx.as_ref(),
-                    &stale_default_defects,
-                    load_verdict_for_tp.as_ref(),
-                    tab_override,
-                    &drill_layers,
-                    &drill_targets,
-                    &mut show_reach_map,
-                    &reach_summary,
-                    &freshness_for_tp,
-                    events,
-                );
+                draw_toolpath_panel(ui, &mut snapshot, &inputs, &mut show_reach_map, events);
 
                 state.viewport.show_reach_map = show_reach_map;
 
@@ -955,6 +732,268 @@ pub fn toolpath_panel_snapshot(
         // toolpath machines.
         model_bbox: session.model_bbox(tc.model_id),
     })
+}
+
+/// Every read-only value the toolpath inspector draws from, assembled once.
+///
+/// UI-01: `draw_toolpath_panel` took 25 parameters, 21 of which were this
+/// read side. A caller that assembles that list by hand can pass a default
+/// for one and still get a panel that renders, so the list is a struct and
+/// one function builds it. [`ToolpathPanelSnapshot`] beside it carries the
+/// part the panel EDITS; this carries the part it only READS.
+pub(crate) struct ToolpathPanelInputs {
+    pub tools: Vec<(crate::state::job::ToolId, String, f64)>,
+    pub models: Vec<(crate::state::job::ModelId, String)>,
+    pub tool_configs: Vec<(crate::state::job::ToolId, crate::state::job::ToolConfig)>,
+    pub boundary_source_candidates: Vec<BoundaryRestCandidate>,
+    /// Names of toolpaths currently consuming THIS one's rest-depth analysis
+    /// as a `DerivedRestRegions` machining boundary (P2 pencil-panel
+    /// consolidation, §2) — empty when nothing depends on it yet.
+    pub rest_region_consumers: Vec<String>,
+    pub validation: ToolpathValidationContext,
+    pub material: rs_cam_core::material::Material,
+    pub machine: rs_cam_core::machine::MachineProfile,
+    pub workholding: rs_cam_core::feeds::WorkholdingRigidity,
+    pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    pub project_default_rpm: u32,
+    pub model_has_enriched: bool,
+    pub model_is_step_missing_brep: bool,
+    pub height_ctx: Option<crate::state::toolpath::HeightContext>,
+    pub stale_default_defects: Vec<rs_cam_core::compute::validate::StaleDefault>,
+    pub load_verdict: Option<rs_cam_core::tool_load::ToolpathLoadVerdict>,
+    pub tab_override: Option<ToolpathTab>,
+    pub drill_layers: Vec<String>,
+    pub drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget>,
+    /// What the panel prints beside the reach-map checkbox (P5).
+    pub reach: ReachPanelSummary,
+    /// F2.2 — the header prints this in place of the raw `ComputeStatus`,
+    /// which cannot say "generated, then edited".
+    pub freshness: crate::state::freshness::FreshnessState,
+}
+
+/// Assemble [`ToolpathPanelInputs`] from the session, the GUI store and the
+/// two values that live outside both.
+///
+/// `sim_cut_trace` is the accepted run's cut trace, which lives on
+/// `AppState::simulation`. `tab_override` is the one-shot MCP tab, which the
+/// caller CONSUMES (it clears `GuiState::pending_toolpath_tab`) before
+/// calling. Both are handed in so this function needs no `AppState`, which
+/// is what lets a sentry build it from a `ProjectSession` alone.
+pub(crate) fn toolpath_panel_inputs(
+    id: crate::state::toolpath::ToolpathId,
+    session: &rs_cam_core::session::ProjectSession,
+    gui: &crate::state::runtime::GuiState,
+    sim_cut_trace: Option<&rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
+    tab_override: Option<ToolpathTab>,
+) -> ToolpathPanelInputs {
+    // Snapshot tool/model lists to avoid borrow conflict with toolpaths
+    let tools: Vec<_> = session
+        .tools()
+        .iter()
+        .map(|t| (t.id, t.summary(), t.diameter))
+        .collect();
+    // NOT filtered by the owning setup's `model_ids` (empty =
+    // all). W9 / P-2 gave that field a home on `SetupData` and
+    // on the wire, so the operator's choice now survives a save
+    // — but this dropdown still lists every model. Stated
+    // rather than silently fixed: filtering here changes which
+    // models a toolpath can be reassigned to, which is a UI
+    // behaviour change P-2 was not scoped to make.
+    let models: Vec<_> = session
+        .models()
+        .iter()
+        .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
+        .collect();
+    // Snapshot tool configs for feeds calculation
+    let tool_configs: Vec<_> = session.tools().iter().map(|t| (t.id, t.clone())).collect();
+    // Candidate source toolpaths for a `DerivedRestRegions` boundary
+    // (P2.2): every other toolpath in the session, plus whether its
+    // last cached result already has non-empty rest regions ready to
+    // use. Toolpaths without a ready result are still selectable —
+    // generation fails hard with a clear message if the source turns
+    // out to have no usable rest regions.
+    let boundary_source_candidates: Vec<BoundaryRestCandidate> = session
+        .toolpath_configs()
+        .iter()
+        .filter(|tc| tc.id != id)
+        .map(|tc| {
+            let cached = gui
+                .toolpath_rt
+                .get(&tc.id)
+                .and_then(|rt| rt.result.as_ref());
+            let cached_regions = cached.and_then(|r| r.annotated.rest_regions.clone());
+            // LH-2: the source's OWN rest-grid footprint travels with
+            // its regions, so the pathology share has an honest
+            // denominator without new session plumbing.
+            let footprint_area =
+                rest_grid_footprint_area(cached.and_then(|r| r.annotated.rest_grid.as_deref()));
+            let ready = cached_regions
+                .as_ref()
+                .is_some_and(|regions| !regions.is_empty());
+            (
+                tc.id,
+                tc.name.clone(),
+                ready,
+                cached_regions,
+                footprint_area,
+            )
+        })
+        .collect();
+
+    // Names of toolpaths that consume THIS toolpath's rest-depth
+    // analysis as their machining boundary (P2 pencil-panel
+    // consolidation, §2/§3): drives the Rest Analysis section's
+    // demand-driven auto-enable + "Producing rest regions for: ..."
+    // label instead of a plain checkbox.
+    let rest_region_consumer_names: Vec<String> = session
+        .rest_region_consumers(id)
+        .into_iter()
+        .filter_map(|consumer_id| {
+            session
+                .find_toolpath_config_by_id(consumer_id)
+                .map(|(_, tc)| tc.name.clone())
+        })
+        .collect();
+
+    let validation = ToolpathValidationContext::from_session(session);
+    let material = session.stock_config().material.clone();
+    let machine = session.machine().clone();
+    let workholding = session.stock_config().workholding_rigidity;
+
+    // Check if the toolpath's model has enriched mesh (for face selection UI)
+    let model_for_panel = session
+        .find_toolpath_config_by_id(id)
+        .and_then(|(_, tc)| session.models().iter().find(|m| m.id == tc.model_id));
+    let model_has_enriched = model_for_panel
+        .map(|m| m.enriched_mesh.is_some())
+        .unwrap_or(false);
+    // Defensive: if a STEP model loaded without BREP (e.g. older
+    // project file or future loader regression), surface a warning
+    // so the face picker isn't silently absent.
+    let model_is_step_missing_brep = model_for_panel
+        .map(|m| {
+            m.kind == Some(rs_cam_core::compute::stock_config::ModelKind::Step)
+                && m.enriched_mesh.is_none()
+        })
+        .unwrap_or(false);
+
+    // (Removed 2026-07-29, LH-2.) The rest-region pathology caption
+    // used to divide a rest-region area by the model's mesh XY
+    // BOUNDING RECTANGLE — a mask mismatch that under-reads every
+    // non-rectangular part by roughly its bbox fill ratio, so the
+    // "single giant region" warning fired late or never. The
+    // denominator is now each toolpath's own covered rest-grid
+    // footprint (`rest_grid_footprint_area`), measured on the same
+    // grid the regions came from. See `MEASUREMENT_DOMAINS.md` X-4.
+
+    // Snapshot the toolpath model's drill targets + layers (DXF point /
+    // circle-centre picking) for the drill-op panels.
+    let drill_layers: Vec<String> = model_for_panel
+        .map(|m| (*m.layers).clone())
+        .unwrap_or_default();
+    let drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget> = model_for_panel
+        .map(|m| (*m.drill_targets).clone())
+        .unwrap_or_default();
+
+    // Snapshot height context before mutable borrow. Use the shared
+    // helper so model_top/bottom_z are in the setup-local frame.
+    let height_ctx = session
+        .find_toolpath_config_by_id(id)
+        .map(|(_, tc)| crate::state::job::height_context_from_session(session, tc));
+    // Pre-compute stale-default defects for this TP so the panel
+    // can render the validator banner without needing a session
+    // reference. Defects are recomputed each frame, so a Fix
+    // click takes effect immediately on the next render.
+    let stale_default_defects = session
+        .find_toolpath_config_by_id(id)
+        .map(|(_, tc)| {
+            let tool = session
+                .tools()
+                .iter()
+                .find(|t| t.id == rs_cam_core::compute::tool_config::ToolId(tc.tool_id));
+            let stock_bottom_z = session.stock_config().origin_z;
+            rs_cam_core::compute::validate::validate_one_toolpath(
+                tc,
+                tool,
+                &session.stock_config().material,
+                stock_bottom_z,
+            )
+        })
+        .unwrap_or_default();
+
+    // Compute the load verdict for this TP so the params panel can
+    // surface chipload / power / deflection / drill-gate
+    // diagnostics in the unified ribbon rather than only in the
+    // separate tool-load surface.
+    let load_report = rs_cam_core::gcode::project_load_report(session, sim_cut_trace);
+    let load_verdict_for_tp = load_report
+        .per_toolpath
+        .iter()
+        .find(|v| v.toolpath_id == id)
+        .cloned();
+
+    // P5 — the reach map for THIS toolpath, if the overlay is holding
+    // one. An overlay pointed at another toolpath reads `Idle`: the
+    // sweep has not caught up yet, and showing the other toolpath's
+    // percentage here would be worse than showing none.
+    let reach_summary = {
+        let overlay = &gui.reach_overlay;
+        if overlay.toolpath == Some(id) {
+            match &overlay.status {
+                crate::state::runtime::ReachStatus::Idle => ReachPanelSummary::Idle,
+                crate::state::runtime::ReachStatus::Computing => ReachPanelSummary::Computing,
+                crate::state::runtime::ReachStatus::Failed(message) => {
+                    ReachPanelSummary::Failed(message.clone())
+                }
+                crate::state::runtime::ReachStatus::Ready(map) => {
+                    if map.is_measured() {
+                        ReachPanelSummary::Measured {
+                            unreachable_pct: map.unreachable_pct(),
+                            max_gap_mm: map.max_gap_mm,
+                            grid_note: map.grid_note(),
+                            area_basis_note: map.area_basis_note(),
+                            over_statement_note: map.over_statement_note(),
+                            tolerance_below_floor: map.tolerance_below_floor(),
+                        }
+                    } else {
+                        ReachPanelSummary::NotMeasured
+                    }
+                }
+            }
+        } else {
+            ReachPanelSummary::Idle
+        }
+    };
+    // F2.2 — the one freshness state, derived here where the
+    // session and the GUI store are both in hand. The panel takes a
+    // `ToolpathEntry`, a snapshot, and cannot derive it itself.
+    let freshness_for_tp = session
+        .find_toolpath_config_by_id(id)
+        .and_then(|(index, _)| crate::state::freshness::freshness_at(session, gui, index))
+        .unwrap_or(crate::state::freshness::FreshnessState::NoResult);
+    ToolpathPanelInputs {
+        tools,
+        models,
+        tool_configs,
+        boundary_source_candidates,
+        rest_region_consumers: rest_region_consumer_names,
+        validation,
+        material,
+        machine,
+        workholding,
+        spindle_strategy: session.post_config().spindle_strategy,
+        project_default_rpm: session.post_config().spindle_speed,
+        model_has_enriched,
+        model_is_step_missing_brep,
+        height_ctx,
+        stale_default_defects,
+        load_verdict: load_verdict_for_tp,
+        tab_override,
+        drill_layers,
+        drill_targets,
+        reach: reach_summary,
+        freshness: freshness_for_tp,
+    }
 }
 
 /// Test-only entry projection used by the inspector write-back sentries.
