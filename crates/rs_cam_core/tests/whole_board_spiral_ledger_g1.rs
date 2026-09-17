@@ -40,7 +40,7 @@
 //! Run:
 //!
 //! ```text
-//! cargo test --release -p rs_cam_core --test whole_board_spiral_ledger_g1 \
+//! cargo test --release -p rs_cam_core --features research --test whole_board_spiral_ledger_g1 \
 //!   -- --ignored --nocapture
 //! ```
 

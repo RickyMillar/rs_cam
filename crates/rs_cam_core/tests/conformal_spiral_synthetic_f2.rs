@@ -321,7 +321,7 @@
 //!
 //! ```text
 //! THIN_ORGANIC_SVG_DIR=/home/ricky/Downloads/svg \
-//! cargo test -p rs_cam_core --test conformal_spiral_synthetic_f2 \
+//! cargo test -p rs_cam_core --features research --test conformal_spiral_synthetic_f2 \
 //!   terrain_small_conformal_spiral_f2 -- --ignored --nocapture
 //! ```
 

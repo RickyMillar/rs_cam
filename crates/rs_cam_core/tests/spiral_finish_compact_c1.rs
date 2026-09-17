@@ -33,7 +33,7 @@
 //! # Running it
 //!
 //! ```text
-//! cargo test --release -p rs_cam_core --test spiral_finish_compact_c1 -- --ignored --nocapture
+//! cargo test --release -p rs_cam_core --features research --test spiral_finish_compact_c1 -- --ignored --nocapture
 //! ```
 
 #![allow(

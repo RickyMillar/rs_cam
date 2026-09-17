@@ -115,7 +115,7 @@
 //! # Running it
 //!
 //! ```text
-//! cargo test -p rs_cam_core --test valley_branch_falsifier_h1 \
+//! cargo test -p rs_cam_core --features research --test valley_branch_falsifier_h1 \
 //!   wanaka_valley_branch_falsifier_h1 -- --ignored --nocapture
 //! ```
 //!

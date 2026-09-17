@@ -67,7 +67,7 @@
 //!
 //! ```text
 //! THIN_ORGANIC_SVG_DIR=/home/ricky/Downloads/svg \
-//! cargo test -p rs_cam_core --test direction_field_wanaka_f1 \
+//! cargo test -p rs_cam_core --features research --test direction_field_wanaka_f1 \
 //!   wanaka_direction_field_segmented_f1 -- --ignored --nocapture
 //! ```
 //!
@@ -137,7 +137,7 @@
 //!
 //! ```text
 //! THIN_ORGANIC_SVG_DIR=/home/ricky/Downloads/svg \
-//! cargo test -p rs_cam_core --test direction_field_wanaka_f1 \
+//! cargo test -p rs_cam_core --features research --test direction_field_wanaka_f1 \
 //!   wanaka_direction_field_f1 -- --ignored --nocapture
 //! ```
 

@@ -21,7 +21,7 @@ Fix: `cargo fmt` then review changes.
 This is the CI gate. Locally, run it only with the operator's go-ahead: the core line takes 30+ minutes. The usual local loop is the folder sentries, the focused crate tests and step 3.
 
 ```bash
-cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q
+cargo test -p rs_cam_core --features heavy-tests,research --no-fail-fast -- -q
 cargo test -p rs_cam_cli -q
 cargo test -p rs_cam_viz -q
 cargo test -p rs_cam_mcp -q

@@ -21,7 +21,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Test
-        run: cargo test -q --features rs_cam_core/heavy-tests
+        run: cargo test -q --features rs_cam_core/heavy-tests,rs_cam_core/research
 
       - name: Clippy
         # `research` gates the three finish research arms; without it they are
