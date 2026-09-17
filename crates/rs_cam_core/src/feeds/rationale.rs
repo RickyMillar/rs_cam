@@ -145,6 +145,10 @@ pub enum RationaleReason {
     /// entry reports a NON-change: `to_value` is `None`, because nothing
     /// was written.
     CutGeometryFieldNotHeld,
+    /// T-15 (2026-09-18): Suggest pass 10 re-evaluated the spindle power
+    /// ceiling at the geometry the operation ships, after pass 9 had
+    /// re-derived the feed, and lowered the feed onto that ceiling.
+    PowerCeilingAfterRescale,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -598,6 +602,45 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                     )
                 },
             )),
+        },
+        // T-15: produced by Suggest pass 10 since 2026-09-18.
+        SuggestWarning::PowerRecheckedAfterRescale {
+            rescaled_mm_per_min,
+            shipped_mm_per_min,
+            required_kw_at_rescaled,
+            available_kw,
+            fits_at_any_feed,
+        } => RationaleEntry {
+            param: RationaleParam::Feed,
+            reason: RationaleReason::PowerCeilingAfterRescale,
+            from_value: Some(*rescaled_mm_per_min),
+            to_value: Some(*shipped_mm_per_min),
+            headline: if *fits_at_any_feed {
+                format!(
+                    "Feed lowered to the spindle power ceiling ({rescaled_mm_per_min:.0} → \
+                     {shipped_mm_per_min:.0} mm/min)"
+                )
+            } else {
+                format!(
+                    "No feed fits the spindle at this cut ({rescaled_mm_per_min:.0} → \
+                     {shipped_mm_per_min:.0} mm/min)"
+                )
+            },
+            detail: Some(if *fits_at_any_feed {
+                format!(
+                    "Re-deriving the feed at the final depth and stepover asked for \
+                     {required_kw_at_rescaled:.3} kW against the {available_kw:.3} kW this \
+                     spindle has at the commanded speed. The feed now lands on that ceiling."
+                )
+            } else {
+                format!(
+                    "The cut draws {required_kw_at_rescaled:.3} kW against the \
+                     {available_kw:.3} kW this spindle has at the commanded speed, and the \
+                     part that does not scale with the feed is already over it. A thinner \
+                     chip cannot rescue the cut, so the feed went back to the value before \
+                     the re-derivation. Take less depth, less stepover or a lower speed."
+                )
+            }),
         },
     }
 }

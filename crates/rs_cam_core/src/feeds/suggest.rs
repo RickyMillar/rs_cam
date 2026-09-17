@@ -618,6 +618,47 @@ pub enum SuggestWarning {
         /// `band_capped_from`.
         band_capped_from: Option<f64>,
     },
+    /// T-15 (2026-09-18): Suggest pass 10 re-evaluated the spindle power
+    /// ceiling at the operating point the operation ships, after pass 9 had
+    /// re-derived the feed, and the feed did not fit.
+    ///
+    /// Calculator Step 6 checks the power ceiling at the geometry it was
+    /// handed. Pass 9 then re-multiplies the feed by the depth-tier factor at
+    /// the FINAL depth, and that factor RISES as the depth falls (1.00 / 0.75
+    /// / 0.50 / 0.45 at `ap/D` of 1 / 2 / 3). A clamp that lowers the depth
+    /// across a tier boundary therefore raises the feed by up to 2.22×, for a
+    /// depth loss that can be arbitrarily small. Nothing re-checked Step 6.
+    ///
+    /// Pass 10 re-evaluates the canonical model
+    /// ([`crate::tool_load::power::PowerTerms`]) at the final `ap`, `ae`, RPM
+    /// and feed, against the gate's ceiling `power_at_rpm(rpm) ×
+    /// safety_factor`, and lowers the feed onto that ceiling. The clamp is
+    /// feed-only and downward: the geometry is final by then.
+    ///
+    /// `fits_at_any_feed` is `false` when the feed-free EDGE term alone meets
+    /// or exceeds the ceiling. No feed rescues that cut — thinning the chip
+    /// leaves the ploughing power where it is — so the feed goes back to the
+    /// value pass 9 started from and the conflict is reported. Same
+    /// clamp-and-warn convention as calculator Step 6 rung 4 and the
+    /// rubbing floor at Step 9b.
+    ///
+    /// Sentry: `tests/a_rescaled_feed_stays_inside_the_power_ceiling_g_t15.rs`.
+    /// Register: `planning/TECH_DEBT_REGISTER.md` T-15.
+    PowerRecheckedAfterRescale {
+        /// `feed_rate` (mm/min) pass 9 wrote, before this pass.
+        rescaled_mm_per_min: f64,
+        /// `feed_rate` (mm/min) the operation ships after this pass.
+        shipped_mm_per_min: f64,
+        /// Predicted spindle power (kW) at `rescaled_mm_per_min` and the
+        /// final geometry. On the gate's COMMANDED axis, so it compares
+        /// directly with `available_kw`.
+        required_kw_at_rescaled: f64,
+        /// The gate's ceiling (kW): `power_at_rpm(rpm) × safety_factor`.
+        available_kw: f64,
+        /// `false` when the edge term alone is at or over the ceiling, so no
+        /// feed satisfies it.
+        fits_at_any_feed: bool,
+    },
     /// T-12 (2026-09-16): the calculator produced a cut-geometry value that
     /// this operation has no field to hold, so the value was NOT applied.
     ///

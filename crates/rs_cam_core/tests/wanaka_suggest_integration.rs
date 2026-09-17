@@ -833,6 +833,43 @@ fn wanaka_suggest_baseline() {
                      runs a V-bit.",
                     caveat.clause()
                 ),
+                // T-15 (2026-09-18): the forcing arm fired when Suggest pass
+                // 10 landed. The answer is a REFUSAL, and it is argued from
+                // the fixture rather than tolerated.
+                //
+                // Pass 10 runs on tp 4 and tp 10 — the two Adaptive3d roughs
+                // whose DPP the axial envelope clamps 9.0 → 4.2 mm, the same
+                // crossing pass 9 fires on above. It clamps only when the
+                // SHIPPED point draws more power than the calculator's point
+                // was checked at, and here it cannot:
+                //
+                //   P_ship / P_calc = depth_ratio × (1 + (tier_ratio − 1) ×
+                //                     shear_share)
+                //
+                // The crossing is 0.75 → 1.00, so `tier_ratio` is 1.333 and
+                // the bracket is at most 1.333. The depth ratio is
+                // 4.2 / 9.0 = 0.467. Even at a shear share of 1.0 the product
+                // is 0.62, so the load FALLS: the depth drop of 53 % dominates
+                // the feed rise of 33 %.
+                //
+                // If this fires, either the axial envelope now clamps to a
+                // depth close to the boundary it crosses, or the Wanaka
+                // machine profile lost power. Both are real findings about the
+                // fixture. Re-derive it rather than widening this arm.
+                SuggestWarning::PowerRecheckedAfterRescale {
+                    rescaled_mm_per_min,
+                    shipped_mm_per_min,
+                    required_kw_at_rescaled,
+                    available_kw,
+                    fits_at_any_feed,
+                } => panic!(
+                    "tp {id} ({name}): PowerRecheckedAfterRescale fired on Wanaka — pass 9 \
+                     wrote {rescaled_mm_per_min:.1} mm/min, which draws \
+                     {required_kw_at_rescaled:.3} kW against a {available_kw:.3} kW ceiling, \
+                     so pass 10 shipped {shipped_mm_per_min:.1} mm/min \
+                     (fits_at_any_feed {fits_at_any_feed}). The Wanaka tier crossing takes the \
+                     depth 9.0 → 4.2 mm against a 1.333x feed rise, so the load must FALL."
+                ),
             }
             // Print a one-line breadcrumb when the catch-all fires
             // anything unexpected via the explicit-arms form above.

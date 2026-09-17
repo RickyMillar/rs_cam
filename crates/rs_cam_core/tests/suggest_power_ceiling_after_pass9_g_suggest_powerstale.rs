@@ -84,6 +84,28 @@
 //! thing that fails if a future change makes pass 9 re-solve from
 //! something other than the clamped feed.
 //!
+//! ## T-15 (2026-09-18) — the verdict holds for THESE fixtures, and only them
+//!
+//! No arm here changed, and none needed to. The verdict above is a statement
+//! about the fixtures this file builds, and **not one of them crosses a depth
+//! tier boundary**. Every fixture asks for a full-width slot, so
+//! `SlottingDetected` caps the depth at 0.25 × D before Step 6 ever runs, and
+//! `depth_tier_multiplier` reads 1.00 on both sides of every clamp. Pass 9
+//! then short-circuits on an unchanged factor, which is why the sweep over 70
+//! requested depths found nothing: the requested depth is not the depth the
+//! calculator sizes the feed at.
+//!
+//! T-15 built the crossing case — a 2D `Adaptive` rough at 2.00417 × D that
+//! the rigidity clamp takes to exactly 2.0 × D, tier 0.50 → 0.75, feed × 1.5
+//! — and it reproduces: 110.67 % of the gate ceiling on a recipe Step 6 had
+//! clamped ONTO that ceiling. Pass 10 (`recheck_power_after_rescale`) now
+//! re-evaluates the ceiling at the shipped operating point. The fixture and
+//! the arithmetic are in
+//! `tests/a_rescaled_feed_stays_inside_the_power_ceiling_g_t15.rs`.
+//!
+//! The general rule the register draws from this stands: **a sweep that does
+//! not fire is evidence about the sweep.**
+//!
 //! NON-VACUITY IS LOAD-BEARING HERE. This project has already measured
 //! three gates returning `Within` on `sample_range 0..0` — a bar written
 //! as a verdict comparison is worthless until its population is checked.

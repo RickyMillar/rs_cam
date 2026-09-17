@@ -28,7 +28,7 @@ need a register.
 | T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `ad2f749b` |
 | T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
 | T-14 | A drop-cutter finishing pass measures 42.5 mm of axial engagement | open — R1 made it load-bearing |
-| T-15 | Pass 9 can raise a feed the power ladder just clamped | open — reachable by hand TODAY |
+| T-15 | Pass 9 can raise a feed the power ladder just clamped | **closed** — pass 10 `recheck_power_after_rescale` re-evaluates power at the shipped operating point; measured breach 110.67 % on a tier-crossing fixture, now clamped |
 | T-16 | The deflection bending diameter cites a source that does not say it | **closed** — its per-flute table is itself superseded, see T-17 |
 | T-17 | The deflection integrator gives a fluted end mill a solid cross-section | **closed** `93dd145c` — flat 0.80, every fluted shape; V-bit still open under T-4 |
 | T-18 | Three feed lifts cap against the gantry TRAVEL rate, not the cutting ceiling | **closed** `d47a04d8` — four sites read `commanded_cutting_feed_ceiling_mm_min()`; no preset number moved |
@@ -868,6 +868,62 @@ machines, tools or materials outside that sample.
 **Fix:** re-check the power ceiling after the rescale, or make the rescale
 refuse to raise a feed on a recipe whose `FeedsDerates::power_limit` is below
 1.0. The second is cheaper and is enough.
+
+## Implemented 2026-09-18 — pass 10, and why the cheaper fix was rejected
+
+`enforce_invariants` gained **pass 10**, `recheck_power_after_rescale`
+(`feeds/suggest/adaptive_entry.rs`). It runs at the end, and only when pass 9
+actually moved the feed, so an operation no pass touched keeps its feed
+byte-identical. It rebuilds `tool_load::power::PowerTerms` — the ONE power
+model, the same one `feeds::calculate` Step 6 and the post-simulation gate
+read — at the final `ap`, `ae`, RPM and feed, with `effective_diameter` taken
+at the FINAL depth. It compares against the gate's ceiling
+`power_at_rpm(rpm) × safety_factor`, the axis pass 9's feed already sits on,
+and it solves the fitting feed in closed form: required power is affine in the
+feed, so `PowerTerms::feed_for_kw` inverts it exactly.
+
+The clamp is feed-only and downward — the geometry is final by then. When the
+feed-free EDGE term alone is at or over the ceiling no feed fits, so the feed
+goes back to the value pass 9 started from and
+`SuggestWarning::PowerRecheckedAfterRescale` carries `fits_at_any_feed: false`.
+The warning renders through the rationale tree on `RationaleParam::Feed`.
+
+**The "cheaper and enough" fix above was rejected, and it is wrong.** Refusing
+the raise when `FeedsDerates::power_limit < 1.0` only covers a recipe Step 6
+already clamped. A recipe Step 6 never touched, at 85 % of the ceiling — under
+the 89.4 % p90 this entry re-measured after R1 — is lifted to 104 % by the
+same 1.5× tier ratio. `an_unclamped_recipe_is_not_lifted_over_the_ceiling`
+pins exactly that case. The defect is class 1, a value computed at one state
+and consumed at another, and only re-evaluation at the final state closes it.
+
+**The crossing case the three earlier fixtures missed, and its arithmetic.**
+A Ø12 two-flute end mill on a 2D `Adaptive` rough, `adaptive_doc_factor = 2.0`
+(the shipped `RigidityProfile::default()`), operator depth 24.05 mm
+(2.00417 × D). The rigidity clamp writes 24.000 mm, exactly 2.0 × D. The depth
+falls 0.208 % and the tier goes 0.50 → 0.75, so pass 9 raises the feed 1.5×.
+Power is affine, `P = shear·feed + edge`, and only the shear term carries the
+feed, so
+
+```text
+P_ship / P_calc = depth_ratio × (1 + (tier_ratio − 1) × shear_share)
+                = 0.997921 × (1 + 0.5 × 0.2180)
+                = 1.1067
+```
+
+Measured before the fix: **110.67 %** of the gate ceiling, on a recipe Step 6
+had clamped to exactly 100.0 %. The register's own "about 1.46×" is the
+pure-shear bound; the edge term carries no feed, so the real figure is lower
+and the fixture quotes the measured split.
+
+The three earlier fixtures missed it because they all ask for a full-width
+slot: `SlottingDetected` caps the depth at 0.25 × D before Step 6, every point
+sits inside the first tier, and the multiplier is 1.00 on both sides of every
+clamp.
+
+Sentry: `tests/a_rescaled_feed_stays_inside_the_power_ceiling_g_t15.rs`, five
+arms — the breach, the mechanism (non-vacuity), the byte-identical gate, the
+edge-over-budget refusal, and the un-clamped recipe. Report:
+`planning/load_model_2026-09-16/T15_IMPLEMENTATION.md`.
 
 ---
 

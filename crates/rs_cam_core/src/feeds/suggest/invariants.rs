@@ -14,7 +14,7 @@ use crate::material::Material;
 
 use super::adaptive_entry::{
     check_plunge_entry_stability, pick_adaptive3d_clearing_strategy, pick_adaptive3d_entry_style,
-    rescale_feed_to_final_geometry,
+    recheck_power_after_rescale, rescale_feed_to_final_geometry,
 };
 use super::axial_envelope::{pick_axial_envelope, recompute_chipload_bounds_for_dpp};
 use super::{SuggestContext, SuggestWarning};
@@ -180,17 +180,48 @@ pub(super) fn enforce_invariants(
     // feed the calculator produced. See the retirement note on
     // `feeds::predict` and `planning/review_2026-08-08/ARC_FIT_RATIO_EVIDENCE.md`.
     //
-    // Pass 9 runs LAST, and must: every pass above may still move the stepover
-    // or the DPP, and this one exists to reconcile the feed with wherever they
-    // finally land.
-    warnings.extend(rescale_feed_to_final_geometry(
+    // Pass 9 runs second to last, and must: every pass above may still move
+    // the stepover or the DPP, and this one exists to reconcile the feed with
+    // wherever they finally land.
+    let rescale_warnings = rescale_feed_to_final_geometry(
         operation,
         tool,
         machine,
         entry_stepover,
         entry_dpp,
         context,
-    ));
+    );
+    // Pass 10 (T-15) re-checks the spindle power ceiling at the geometry the
+    // operation ships, and it runs ONLY when pass 9 moved the feed.
+    //
+    // Pass 9 re-multiplies the feed by the depth-tier factor at the final
+    // depth, and that factor RISES as the depth falls, so a clamp that crosses
+    // a tier boundary downward makes pass 9 RAISE the feed. Calculator Step 6
+    // checked power at the calculator's geometry and nothing re-checked it
+    // here.
+    //
+    // The gate is the warning pass 9 files when it acts, which also carries
+    // the pre-rescale feed pass 10 falls back to. When pass 9 does nothing the
+    // feed is byte-identical and there is nothing new to check — the contract
+    // `suggest_feed_matches_final_geometry` pins.
+    let pre_rescale_feed = rescale_warnings.iter().find_map(|w| match w {
+        SuggestWarning::FeedRescaledToFinalGeometry {
+            requested_mm_per_min,
+            ..
+        } => Some(*requested_mm_per_min),
+        _ => None,
+    });
+    warnings.extend(rescale_warnings);
+    if let Some(pre_rescale_feed) = pre_rescale_feed {
+        warnings.extend(recheck_power_after_rescale(
+            operation,
+            tool,
+            machine,
+            material,
+            pre_rescale_feed,
+            context,
+        ));
+    }
     warnings
 }
 

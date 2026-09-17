@@ -11,6 +11,7 @@ use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole, ToolGeometryHint};
 use crate::machine::MachineProfile;
+use crate::material::Material;
 
 use super::invariants::clamp_plunge_to_feed;
 use super::{FeedRecalibrationCap, SuggestContext, SuggestScope, SuggestWarning};
@@ -319,17 +320,21 @@ fn geometry_feed_factor(
 ///   ones `apply_feeds_subset` wrote, so re-deriving unconditionally would
 ///   silently un-round every feed in the product for no physical reason.
 ///
-/// # What it deliberately does not re-check
+/// # What re-checks the power ceiling
 ///
-/// The **power ceiling** (calculator Step 6). Required power scales with both
-/// the feed and the cross-section, and the cross-section moves with `ae`/`ap`,
-/// so a rescale can in principle invalidate a power-limited feed. It is not
-/// re-checked here because `tests/power_ceiling_parity_f2.rs` measured the
-/// power branch never firing at all across three shipped presets × ten species
-/// × Ø3/Ø6/Ø12 — rigidity and the machine cutting ceiling bind first, peak
-/// utilisation 23.6 % — and the machine ceiling *is* enforced below. On a
-/// profile where power does bind this pass can over-feed; that wants its own
-/// instrument rather than an unmeasured clamp bolted on here.
+/// [`recheck_power_after_rescale`] — pass 10, T-15, 2026-09-18. Required power
+/// scales with both the feed and the cross-section, and the cross-section moves
+/// with `ae` / `ap`, so a rescale can invalidate a power-limited feed. Pass 10
+/// re-evaluates the canonical power model at the final operating point and
+/// lowers the feed onto the ceiling when the feed does not fit.
+///
+/// Until T-15 this pass skipped that check, and its doc gave a measurement as
+/// the reason: `tests/power_ceiling_parity_f2.rs` reported the power branch
+/// never firing at all, peak utilisation 23.6 %. That figure was taken before
+/// R1 rebuilt the power model about 8.6× higher. It is withdrawn as stale, not
+/// re-measured.
+///
+/// # What it deliberately does not re-check
 ///
 /// The **deflection budget** (retired pass 8 verified it after its lift). The
 /// closed-form predictor is feed-independent — force is `Kc × axial_doc ×
@@ -492,6 +497,202 @@ pub(super) fn rescale_feed_to_final_geometry(
     // plunge rate above the feed it was clamped to, so the invariant it exists
     // to hold has to be re-established here rather than left broken.
     warnings.extend(clamp_plunge_to_feed(operation));
+    warnings
+}
+
+/// Pass 10 (T-15, 2026-09-18): **re-check the spindle power ceiling at the
+/// operating point the operation ships.**
+///
+/// Calculator Step 6 sizes the power check at the `ap` / `ae` it was handed.
+/// Pass 9 above then re-multiplies the feed by `depth_tier_multiplier` at the
+/// FINAL depth, and that multiplier RISES as the depth falls — 1.00 / 0.75 /
+/// 0.50 / 0.45 at `ap/D` of 1 / 2 / 3. So a clamp that lowers the depth across
+/// a tier boundary makes pass 9 RAISE the feed, by up to 2.22×, for a depth
+/// loss that can be arbitrarily small. Until this pass nothing re-checked
+/// Step 6, and the shipped recipe could draw more power than the spindle has.
+///
+/// # When it runs
+///
+/// Only when pass 9 actually moved the feed — [`enforce_invariants`] gates on
+/// [`SuggestWarning::FeedRescaledToFinalGeometry`]. An operation no pass
+/// touched keeps its feed **byte-identical**, which is the same contract pass
+/// 9 holds and which `tests/suggest_feed_matches_final_geometry.rs` pins.
+///
+/// # What it evaluates
+///
+/// The ONE power model, [`crate::tool_load::power::PowerTerms`] — the same
+/// terms `feeds::calculate` assembles in `power_model_terms` and the same ones
+/// the post-simulation gate `tool_load::power::evaluate` reads. Suggest does
+/// not hold the calculator's `FeedsInput`, so the inputs are rebuilt from the
+/// operation and the tool rather than re-modelled:
+///
+/// - `ap` / `ae` — the operation's final depth and stepover, with the
+///   calculator's own values as the fallback for an operation that carries no
+///   such field (the same fallback pass 9 uses, and it cancels exactly).
+/// - `effective_d` — [`crate::feeds::effective_diameter`] at the FINAL depth,
+///   the chip-thinning contact circle Step 5 computes. It sets both the
+///   immersion angle ψ and the cutting velocity `Vc = π·D·n`.
+/// - ψ — [`crate::feeds::force::immersion_angle`], one immersion definition
+///   for the whole engine.
+/// - the shank — `tool.shank_diameter`, which is what `suggest_for_operation`
+///   already puts in `FeedsInput::shank_diameter`. It reaches
+///   `effective_diameter` on the tapered-ball arm only.
+///
+/// # The ceiling, and the axis
+///
+/// `machine.power_at_rpm(rpm) × machine.safety_factor` — what Step 6 names
+/// `gate_available_power` and what `tool_load::power::evaluate` compares
+/// against. Pass 9's feed is a COMMANDED feed (it derives from
+/// `calc.feed_rate_mm_min`, which Step 9 has already multiplied by
+/// `safety_factor`), so the comparison is direct and the factor must NOT be
+/// applied a second time. Step 6's own F-2 note records what a double derate
+/// costs: a measured further 25 % off a power-limited feed.
+///
+/// # The clamp
+///
+/// Feed-only and downward. The geometry is final here, and required power is
+/// affine in the feed — the shear term scales with it, the edge term does not
+/// — so [`crate::tool_load::power::PowerTerms::feed_for_kw`] solves the feed
+/// at which required equals the ceiling in closed form. No bisection is
+/// needed, and the solved feed is exact rather than converged.
+///
+/// When `feed_for_kw` returns `None` the feed-free edge term alone is at or
+/// over the ceiling and no feed fits. The feed then goes back to the value
+/// pass 9 started from — a value Step 6 validated at the calculator's geometry
+/// — and the warning carries `fits_at_any_feed: false`. Raising the feed on a
+/// cut the spindle cannot turn would trade one wrong number for another. The
+/// pass never ships a feed above a value some ceiling check has passed, so it
+/// takes the lower of the two when pass 9 moved the feed DOWN.
+///
+/// # What it does not do
+///
+/// It does not re-lift a clamped feed to the Step 9b rubbing floor. The power
+/// ceiling is a physical limit and the floor is an advisory band; Step 6
+/// rung 4 resolves the same conflict the same way, and both warnings stand so
+/// the operator sees that neither guarantee was met.
+///
+/// It abstains when the material publishes no `Kc`. There is no power model
+/// without one, and Step 6 did not check a ceiling either, so there is no
+/// ceiling here to re-check — fabricating one would be worse than the absence.
+///
+/// # The single guard
+///
+/// A further post-rescale ceiling re-check belongs HERE, beside this one, at
+/// the end of `enforce_invariants` where the last lift has run.
+pub(super) fn recheck_power_after_rescale(
+    operation: &mut OperationConfig,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pre_rescale_feed_mm_min: f64,
+    context: SuggestContext<'_>,
+) -> Vec<SuggestWarning> {
+    let mut warnings = Vec::new();
+    let usable = |v: f64| v.is_finite() && v > 0.0;
+
+    let Some(kc) = material.kc_n_per_mm2() else {
+        tracing::debug!(
+            reason = "no_kc",
+            "Suggest pass 10 abstains — the material publishes no Kc, so Step 6 \
+             applied no power ceiling and there is none to re-check"
+        );
+        return warnings;
+    };
+
+    let rescaled = operation.feed_rate();
+    if !usable(rescaled) {
+        return warnings;
+    }
+
+    // The same final-geometry reads pass 9 makes, for the same reason: an
+    // operation that exposes no stepover / DPP field cannot have gone stale on
+    // that axis, so it falls back to the calculator's own value.
+    let calc = context.calculator_operating_point;
+    let final_ae = operation
+        .stepover()
+        .filter(|v| usable(*v))
+        .or_else(|| calc.map(|c| c.radial_width_mm))
+        .filter(|v| usable(*v));
+    let final_ap = operation
+        .depth_per_pass()
+        .filter(|v| usable(*v))
+        .or_else(|| calc.map(|c| c.axial_depth_mm))
+        .filter(|v| usable(*v));
+    let (Some(final_ae), Some(final_ap)) = (final_ae, final_ap) else {
+        return warnings;
+    };
+
+    let rpm = operation
+        .spindle_rpm()
+        .map(f64::from)
+        .filter(|v| usable(*v))
+        .or_else(|| calc.map(|c| c.rpm).filter(|v| usable(*v)));
+    let Some(rpm) = rpm else {
+        return warnings;
+    };
+
+    let ceiling = machine.power_at_rpm(rpm) * machine.safety_factor;
+    if !usable(ceiling) {
+        return warnings;
+    }
+
+    let geom = build_cutter(tool).to_geometry_hint();
+    let shank = if usable(tool.shank_diameter) {
+        tool.shank_diameter
+    } else {
+        tool.diameter
+    };
+    let effective_d = crate::feeds::effective_diameter(geom, tool.diameter, shank, final_ap);
+    if !usable(effective_d) {
+        return warnings;
+    }
+    let terms =
+        crate::tool_load::power::PowerTerms::of(crate::tool_load::power::PowerModelInputs {
+            kc_n_per_mm2: kc,
+            cross_section_mm2: geom.mrr_cross_section_mm2(final_ap, final_ae),
+            axial_doc_mm: final_ap,
+            immersion_rad: crate::feeds::force::immersion_angle(final_ae, effective_d / 2.0),
+            engagement_diameter_mm: effective_d,
+            spindle_rpm: rpm,
+            flute_count: f64::from(tool.flute_count.max(1)),
+        });
+
+    let required = terms.kw_at_feed(rescaled);
+    if required <= ceiling {
+        return warnings;
+    }
+
+    let (shipped, fits_at_any_feed) = match terms.feed_for_kw(ceiling) {
+        // `feed_for_kw` answers on the same COMMANDED axis the feed sits on,
+        // so it is written straight back. It is below `rescaled` by
+        // construction: required is increasing in the feed and it is over the
+        // ceiling at `rescaled`.
+        Some(cap) if usable(cap) => (rescaled.min(cap), true),
+        _ => (rescaled.min(pre_rescale_feed_mm_min.max(0.0)), false),
+    };
+
+    tracing::debug!(
+        rescaled_mm_per_min = rescaled,
+        shipped_mm_per_min = shipped,
+        required_kw = required,
+        available_kw = ceiling,
+        fits_at_any_feed,
+        "Suggest pass 10 re-checked the power ceiling at the final geometry"
+    );
+    warnings.push(SuggestWarning::PowerRecheckedAfterRescale {
+        rescaled_mm_per_min: rescaled,
+        shipped_mm_per_min: shipped,
+        required_kw_at_rescaled: required,
+        available_kw: ceiling,
+        fits_at_any_feed,
+    });
+
+    if usable(shipped) && shipped < rescaled {
+        operation.set_feed_rate(shipped);
+        // Pass 9 re-established this invariant after IT moved the feed, for
+        // the same reason: a lower feed can leave the plunge rate above it.
+        warnings.extend(clamp_plunge_to_feed(operation));
+    }
     warnings
 }
 
