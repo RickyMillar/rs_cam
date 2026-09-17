@@ -339,3 +339,69 @@ depth 3.5x deeper than it will cut. It is the same shape as the stale-geometry
 defect that got the FEED pinned in 2026-08; power was never pinned with it.
 
 Nothing here needs new physics, a new chart, or a new panel.
+
+---
+
+# 10. Corrections to section 9, before anyone builds from it
+
+Two claims in the proposal above were checked and do not hold as written.
+
+## "Small" was wrong
+
+Adding a `CriterionKind` variant is compiler-guided, not cheap.
+`CriterionKind` has six variants and **56 references across the workspace**,
+nine of them in the GUI. Most are match arms that map a kind to a label or a
+unit. The compiler will find each one, which is the good news; roughly a dozen
+of them need a real decision rather than a mechanical addition.
+
+Worse for the advisory idea: **the advisory mechanism is chipload-specific.**
+`burn_advisory` is a field on `ChiploadVerdict::Within` with 62 references. It
+is not a general "this bound is too weak to gate on" facility. Making the depth
+cap advisory therefore means one of:
+
+- generalising the advisory concept across the verdict tier — large, and it
+  touches the type every gate returns; or
+- a second bespoke advisory for depth — duplication, in a repository that is
+  running a duplication sweep this week; or
+- not using the advisory mechanism at all.
+
+## "No new UI" was too clean
+
+No new components, no new panel, no new chart — that part holds. But the
+operator-visible surface does change: the badge strip goes from three rows to
+five, the `≈` mark disappears, and the Readiness "Tool load" row is replaced.
+That is a visible change, and the depth row is the most consequential thing on
+it, because it is a limit the operator has never seen.
+
+## A design question that must be settled first
+
+**Depth of cut may be a category error as a criterion.**
+
+Every existing criterion measures a load that EMERGES from the cut and may
+exceed a bound: chipload, power, deflection. Depth is different — it is a
+value the engine CHOOSES and then clamps. After Suggest runs, the shipped depth
+IS the cap, so the row would read exactly 100 % on every recipe and could only
+exceed through a manual override.
+
+A row pinned at 100 % forever tells the operator very little, and "you exceeded
+the limit we set for you" is a strange sentence.
+
+So the question is not "advisory or hard". It is whether depth belongs in the
+criterion tier at all, or whether what the operator needs is for the existing
+`RationaleReason::RigidityFactor` entry — which already fires — to be shown
+beside the limits on the same scale, without becoming a gate.
+
+The second reading is smaller, needs no new `CriterionKind`, and no advisory
+mechanism. It should be priced before the first is chosen.
+
+## Status of this document
+
+Sections 1 to 8 are a survey-backed UI plan and they stand.
+
+Section 9 is a direction, and its concept — consequence and confidence are
+separate axes, and the codebase already separates them — stands.
+
+**Neither is an implementation plan yet.** What is missing: the mechanism per
+step, the sentries each step needs, and the blast radius of a new
+`CriterionKind`. That is the next document, and it should be written after the
+category question above is settled.
