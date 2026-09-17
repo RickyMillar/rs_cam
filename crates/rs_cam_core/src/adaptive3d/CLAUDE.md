@@ -6,7 +6,10 @@ Constant-engagement clearing on a mesh surface. The entry point is
 ## Files
 
 - `mod.rs` — the public facade and `ClearingStrategy3d`.
-- `clearing.rs` — the Z-level clearing engine and its region detection.
+- `clearing.rs` — the Z-level clearing engine and its region detection. The
+  AgentSearch slice runs three stages (CUT-09): `detect_and_order_regions`,
+  `clear_one_region` per region over a `LevelEmission`, then
+  `coalesce_level_entries`. Put new per-region work in the middle stage.
 - `path.rs` — the loop over Z levels and the segment linking.
 - `search.rs` — the material-remaining query, the clear-path test and two
   3D path helpers. It holds no direction search and no entry-point finding;
