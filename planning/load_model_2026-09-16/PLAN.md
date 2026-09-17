@@ -405,3 +405,97 @@ separate axes, and the codebase already separates them — stands.
 step, the sentries each step needs, and the blast radius of a new
 `CriterionKind`. That is the next document, and it should be written after the
 category question above is settled.
+
+---
+
+# 11. The depth question, priced
+
+## The category question resolves, and it resolves by stage
+
+Section 10 asked whether depth is a category error as a criterion, because the
+engine chooses it and then clamps it. That is true **before a simulation** and
+false **after one**.
+
+`session::compute` derives the toolpath's axial figure as the MAXIMUM of
+per-sample `axial_engagement_mm` over cutting samples. Taking a maximum only
+makes sense because the samples vary — entry ramps, curved surfaces and arcs
+all cut shallower or deeper than the parameter says.
+
+So after a simulation, depth is a **measured, emergent quantity with a real
+population**, exactly like chipload and unlike a parameter. The row would not
+sit pinned at 100 %; it would show what the tool actually did.
+
+**That splits the answer cleanly:**
+
+| Stage | What depth is | What it should be |
+|---|---|---|
+| Before a simulation | a value the engine chose and clamped | a rationale entry — it already is one |
+| After a simulation | a measured load that varies per sample | a criterion, like the others |
+
+Neither reading is right everywhere. Each is right in one place.
+
+## Reading A — a criterion, post-simulation only
+
+**What it needs**
+
+- `CriterionKind::DepthOfCut`, with a label and a unit. 56 references
+  workspace-wide, 9 in the GUI; the compiler finds every one. Roughly a dozen
+  need a real decision.
+- A verdict type with `as_criterion_status`. The pattern is established —
+  `ChiploadVerdict` is the model, about 100 lines.
+- A producer reading `axial_engagement_mm` per sample against the cap.
+- `GatePopulation` so a verdict over zero cutting samples is distinguishable
+  from a clean one. Free: the evidence types already carry it.
+
+**The real cost is not the code. It is the gate.**
+
+`enforce_load_policy` refuses export on ANY exceeded criterion, with no
+per-criterion scoping. `0.20 × diameter` is 1.2 mm on a Ø6 tool. Plenty of
+people deliberately cut deeper, and their exports would start failing on a
+number with no published source.
+
+Avoiding that needs the advisory route, and the advisory mechanism is
+chipload-specific: `burn_advisory` is a field on `ChiploadVerdict::Within`
+with 62 references. Generalising it touches the type every gate returns.
+
+**Price:** medium-large, and it carries a live product risk.
+
+## Reading B — show the cap beside the limits, without a gate
+
+**What it needs**
+
+- The cap where the badge draws. Today it is computed in
+  `feeds::suggest::invariants` and the GUI has no rationale at the badge site.
+  The cap itself is trivial to recompute — `rigidity.doc_roughing_factor ×
+  tool.diameter` — but recomputing it in the GUI adds a third GUI-owned limit
+  to the two the survey already found, against this repository's own rule that
+  the GUI is not an alternate data model. So it belongs in core as a small
+  helper.
+- One extra row in the badge strip that is NOT a `CriterionStatus`.
+
+**The real cost is legibility.** A row that cannot gate, sitting beside four
+that can, with nothing saying which is which. That is the same defect class as
+the confidence badge: information the reader has to hold in their head.
+
+**Price:** small, with a presentation problem that has to be solved anyway.
+
+## Recommendation
+
+**Take Reading A, post-simulation only, and do NOT gate on it in the first
+cut.**
+
+The stage split makes this honest rather than a compromise. Before a
+simulation the depth cap is already reported as a rationale entry, and that is
+the correct surface for a value the engine chose. After a simulation the
+measured depth is a load like any other, and it belongs beside the others.
+
+On gating: ship the criterion with the depth bound marked as not-gating, by
+whichever of the three mechanisms is cheapest once someone opens the code.
+Blocking a working job on `0.20 × D` is not defensible while that number has
+no source. **The moment the machine is measured, the same row becomes a hard
+gate with no UI change** — which is the argument for the half-hour bench test
+in `WHERE_THIS_LANDS.md`, now with a concrete payoff attached.
+
+Reading B is the fallback if the gating problem turns out to be expensive to
+scope. It is worse, and it is worse in a way this programme has already
+rejected once.
