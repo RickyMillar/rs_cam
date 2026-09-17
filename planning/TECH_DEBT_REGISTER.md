@@ -28,7 +28,7 @@ need a register.
 | T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `ad2f749b` |
 | T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
 | T-14 | A drop-cutter finishing pass measures 42.5 mm of axial engagement | open — R1 made it load-bearing |
-| T-15 | Pass 9 can raise a feed the power ladder just clamped | open — latent, and rigidity is what hides it |
+| T-15 | Pass 9 can raise a feed the power ladder just clamped | open — reachable by hand TODAY |
 
 ---
 
@@ -734,15 +734,42 @@ at about 0.20, far below the first tier boundary at 1.0.** So the multiplier
 is 1.00 before and after every clamp, the depth-tier term never moves, and the
 hazard stays latent.
 
-**Rigidity is what hides this.** And this programme's plan is to replace the
-rigidity cap with a measured stiffness, which would let the depth rise past
-`ap / D = 1.0` on a rigid machine. **Fixing rigidity would make T-15 live.**
-The two must land together, or the power ladder's work gets undone by a pass
-that was told power never binds.
+**Correction, 2026-09-17, on operator challenge.** The paragraph above
+originally read "the hazard stays latent". That is too strong, and it repeats
+the exact error that made the 23.6 % stale.
 
-**Cost if left:** zero today, and a silent over-feed the moment the depth cap
-is loosened — on the one path the operator cannot see, because pass 9's
-rationale entry is declared but reports a rescale, not a power breach.
+Three preset machines, a handful of tools and one material is a sample. It is
+evidence about the space that was sampled and nothing more. Specifically:
+
+- **`depth_per_pass` is a user-editable field.** Nothing stops an operator
+  setting `ap / D` above 1.0 by hand on a tool that can take it. The rigidity
+  cap clamps a SUGGESTED depth; it does not bound what a person may type.
+- A custom `MachineProfile` may carry any `doc_roughing_factor`. The shipped
+  0.20 and 0.25 are two points, not a range.
+- Adaptive operations use `adaptive_doc_factor`, which ships at 1.5 to 2.0 —
+  an order of magnitude above the roughing factor, and already close to the
+  first tier boundary.
+
+**So the honest statement is: not observed on the presets sampled, and
+reachable by hand today.** It becomes far more likely if the rigidity cap is
+replaced with a measured stiffness, which is this programme's plan, so the two
+should still land together.
+
+**Cost if left:** a silent over-feed on a path the operator cannot see — pass
+9's rationale entry reports a rescale, not a power breach. The frequency is
+unknown, and "unknown" is the correct word rather than "zero".
+
+## The general rule this entry now carries
+
+**A sweep that does not fire is evidence about the sweep.** The 23.6 %
+justified two separate decisions for months, and it was a measurement over
+three presets, ten species and three diameters. It was honest, it was
+carefully recorded, and it stopped being true when one model changed
+underneath it.
+
+Any finding in this register that rests on "we measured and it did not fire"
+should state what was sampled, and should not be read as a statement about
+machines, tools or materials outside that sample.
 
 **Fix:** re-check the power ceiling after the rescale, or make the rescale
 refuse to raise a feed on a recipe whose `FeedsDerates::power_limit` is below
