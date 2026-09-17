@@ -38,6 +38,7 @@ is retrievable the same way.
 | [`roughing_strategy_ab_2026-09-07/`](roughing_strategy_ab_2026-09-07/) | Measured; an operator ruling on the bar is open |
 | [`arch_consolidation_2026-09-09/`](arch_consolidation_2026-09-09/) | Live tracker; five G- items open |
 | [`structure_2026-09-17/`](structure_2026-09-17/) | This programme |
+| [`gen_sim_rest_ux_2026-09-18/`](gen_sim_rest_ux_2026-09-18/) | Plan; seven rulings open (generate ↔ simulate ↔ rest, one path, one indicator) |
 
 ## Other packages held under this directory
 
