@@ -644,3 +644,30 @@ Follow-ups opened: a third point-to-segment copy in
 serde alias on `OperationDef` (no-legacy delete candidate); UI-08 may mark a
 loaded project dirty on its first Post-tab frame if a post config does not
 round-trip (G-DIRTYONLOAD); `material/` still has no `CLAUDE.md`.
+
+## Wave 2 outcome — 2026-09-17/18 night
+
+Four agents, 21 commits (`3a6d5968` .. `130045ac`) plus the LH-1 sentry
+repoint `5e10dc80`. Gate: `WAVE2_GATE.md`. No row skipped.
+
+Landed: CMP-14 + CMP-24 (three-state holder check, one index per model),
+CMP-15, CMP-08 + CMP-10 + CMP-09, CMP-27, CMP-01, CMP-26, CMP-16, CMP-22;
+EDG-06 (MCP export names its safety findings), SHL-01 (+ a second fix: the
+spindle-strategy path wrote the post mirror on a refused command), SHL-04,
+SHL-05; FIN-04 + FIN-09, FIN-11, FIN-15; FLD-04 + FLD-05 as a `test-support`
+feature (twelve doors, eight targets, the feature on every gate line).
+
+Lesson: two agents edited `catalog/registry.rs` at once and each swept the
+other's hunks; master was red for about an hour. From wave 3 the brief names
+one owner per file and forbids `cargo fmt` without a file list.
+
+Follow-ups opened: `Drill`/`AlignmentPinDrill` accept `plunge_rate` and
+carry no field (N5 census pins it); the GUI's MCP project JSON does not emit
+`collision_checks_failed`; a mesh-less toolpath skips the fixture half of the
+holder check; `HolderCollisionCheck` sits in `compute::collision_check` and
+`stock/sim_triage.rs` imports it (a new upward import; `stock::collision` is
+the better home); the collision lane has no revision check and never had one
+(`compute/CLAUDE.md`'s line is over-broad for it); EDG-06 split-setup
+findings do not name the file; `DeprecatedDialFinding` and its adapter have
+no producer; `ramp_finish_toolpath` is a sixth FIN-11-shape wrapper; the
+four caches' `reset_stats`/`cache_len`/`clear` are the same test-only shape.
