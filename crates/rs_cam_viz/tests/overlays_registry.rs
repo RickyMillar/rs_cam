@@ -779,16 +779,14 @@ fn the_moves_family_is_on_in_toolpaths_and_off_in_setup() {
 /// write and `apply_overlays`.
 #[test]
 fn a_selection_is_pumped_before_the_same_calls_overlays_map() {
-    let mcp = source("src/app/mcp.rs");
+    // P4 (2026-09-17) moved the handler into `app/mcp/view.rs`, where it is
+    // the last item, so the body runs to the end of that file.
+    let mcp = source("src/app/mcp/view.rs");
     let marker = "fn mcp_set_ui_view";
     let start = mcp
         .find(marker)
-        .unwrap_or_else(|| panic!("`{marker}` no longer exists in app/mcp.rs"));
+        .unwrap_or_else(|| panic!("`{marker}` no longer exists in app/mcp/view.rs"));
     let body = &mcp[start..];
-    let end = body
-        .find("\n    // ── Simulation scrubbing")
-        .unwrap_or(body.len());
-    let body = &body[..end];
 
     let select = body
         .find("selection = Selection::Toolpath(tp_id)")
@@ -904,6 +902,7 @@ fn every_reach_surface_quotes_the_shared_area_and_bias_notes() {
         ("ui/properties/", &inspector),
         ("overlays/panel.rs", &legend),
         ("app/mcp.rs", &source("src/app/mcp.rs")),
+        ("app/mcp/view.rs", &source("src/app/mcp/view.rs")),
     ] {
         for line in text.lines() {
             let trimmed = line.trim_start();

@@ -679,6 +679,7 @@ const MCP_SURFACE: &[&str] = &[
     "src/app/mcp/diagnostics.rs",
     "src/app/mcp/generation.rs",
     "src/app/mcp/simulation.rs",
+    "src/app/mcp/view.rs",
 ];
 
 /// The MCP route and the view route stamp through ONE helper.

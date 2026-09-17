@@ -324,13 +324,20 @@ fn ur5_has_no_isolate_routes() {
 /// one MCP behaviour change, and it is a doc note, not a code path here.
 #[test]
 fn mcp_screenshot_toolpath_does_not_read_the_draw_set() {
-    let mcp = strip_comments(&source("src/app/mcp.rs"));
+    // P4 (2026-09-17) moved the handler into `app/mcp/view.rs`. The next
+    // method there carries a visibility prefix, so the end marker reads
+    // both spellings: a bare `"\n    fn "` alone would run past it.
+    let mcp = strip_comments(&source("src/app/mcp/view.rs"));
     let marker = "fn mcp_screenshot_toolpath";
     let start = mcp
         .find(marker)
-        .unwrap_or_else(|| panic!("`{marker}` no longer exists in app/mcp.rs"));
+        .unwrap_or_else(|| panic!("`{marker}` no longer exists in app/mcp/view.rs"));
     let rest = &mcp[start..];
-    let end = rest.find("\n    fn ").unwrap_or(rest.len());
+    let end = ["\n    fn ", "\n    pub(super) fn ", "\n    pub(crate) fn "]
+        .iter()
+        .filter_map(|m| rest.find(m))
+        .min()
+        .unwrap_or(rest.len());
     let body = &rest[..end];
     assert!(
         body.len() > 200,
