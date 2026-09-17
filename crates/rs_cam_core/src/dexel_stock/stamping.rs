@@ -1893,6 +1893,264 @@ mod tests {
         (grid, out, stats)
     }
 
+    // ── STK-01: the cell-driver extraction net ──────────────────────────
+
+    /// One number that changes if any bit of the grid changes.
+    ///
+    /// Hashes the ray count, every segment's `enter`/`exit` bit pattern and
+    /// every `conservative_top` bit. Nothing is rounded and nothing is
+    /// tolerated.
+    fn grid_bit_hash(grid: &DexelGrid) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        grid.rays.len().hash(&mut h);
+        for ray in &grid.rays {
+            ray.len().hash(&mut h);
+            for seg in ray.iter() {
+                seg.enter.to_bits().hash(&mut h);
+                seg.exit.to_bits().hash(&mut h);
+            }
+        }
+        for top in &grid.conservative_top {
+            top.to_bits().hash(&mut h);
+        }
+        h.finish()
+    }
+
+    /// The stamp script every route replays, as `(start, end)` pairs in the
+    /// grid's own `(u, v, depth)` axes.
+    ///
+    /// It covers both halves of every kernel: swept segments (non-zero planar
+    /// length), pure plunges (the degenerate branch), a ramp whose tip varies
+    /// along the segment, overlapping passes over ground already cut, and a
+    /// pass through genuine air above the stock top.
+    type ScriptStep = ((f64, f64, f64), (f64, f64, f64));
+
+    fn cell_driver_script() -> Vec<ScriptStep> {
+        let mut script = Vec::new();
+        // A plunge into VIRGIN stock, before any ladder. On a flat end mill
+        // every later plunge lands on ground the ladder already cut to the
+        // same depth, so without this the point kernel removes nothing on
+        // that shape and its arithmetic is unpinned.
+        script.push(((27.0, 17.0, 8.0), (27.0, 17.0, 5.0)));
+        for depth in [6.0_f64, 4.0, 4.0] {
+            for line in 0..5 {
+                let y = 3.0 + 3.0 * line as f64;
+                for step in 0..8 {
+                    let x0 = 3.0 + 3.0 * step as f64;
+                    script.push(((x0, y, depth), (x0 + 3.0, y, depth)));
+                }
+            }
+            // A ramp: `segment_tip_low` rather than an endpoint decides.
+            script.push(((5.0, 15.0, depth + 1.5), (20.0, 15.0, depth)));
+            // A pure plunge: the degenerate branch.
+            script.push(((25.0, 10.0, depth + 1.5), (25.0, 10.0, depth)));
+            // Genuine air above the stock top: the whole-stamp early-out.
+            script.push(((4.0, 8.0, 8.5), (26.0, 8.0, 8.5)));
+            // A plunge through air: the degenerate branch's own early-out.
+            script.push(((15.0, 9.0, 9.5), (15.0, 9.0, 8.5)));
+        }
+        script
+    }
+
+    fn cell_driver_grid() -> DexelGrid {
+        DexelGrid::z_grid_from_bounds(
+            &BoundingBox3 {
+                min: P3::new(0.0, 0.0, 0.0),
+                max: P3::new(30.0, 20.0, 8.0),
+            },
+            0.25,
+        )
+    }
+
+    /// Replay the script through `stamp_segment_on_grid` — the whole-grid
+    /// kernel, and through its delegation the point kernel too.
+    fn replay_on_grid(cutter: &dyn MillingCutter, air_skip: bool) -> u64 {
+        let mut grid = cell_driver_grid();
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+        let radius = cutter.radius();
+        let mut mip = if air_skip {
+            Some(TileMaxTop::build(&grid))
+        } else {
+            None
+        };
+        for (s, e) in cell_driver_script() {
+            stamp_segment_on_grid(&mut grid, &lut, radius, s, e, true, mip.as_mut());
+        }
+        grid_bit_hash(&grid)
+    }
+
+    /// Replay the script through `stamp_segment_on_band` — the playback
+    /// kernel, both its degenerate and its swept loop.
+    fn replay_on_band(cutter: &dyn MillingCutter, air_skip: bool) -> u64 {
+        let mut grid = cell_driver_grid();
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+        let radius = cutter.radius();
+        let mut mip = if air_skip {
+            Some(TileMaxTop::build(&grid))
+        } else {
+            None
+        };
+        let fast = CoverageFastPath::new(lut.radius_sq(), grid.cell_size);
+        for (s, e) in cell_driver_script() {
+            if let Some(m) = mip.as_mut() {
+                m.refresh_if_due(&grid);
+            }
+            let Some((row_lo, row_hi)) =
+                crate::dexel_stock::band::stamp_row_span(&grid, radius, s, e)
+            else {
+                continue;
+            };
+            let mut reduced = PlaybackPartial::empty();
+            let view = mip.as_ref();
+            for mut band in grid.serial_bands(row_lo, row_hi) {
+                reduced.merge(&stamp_segment_on_band(
+                    &mut band, &lut, radius, s, e, true, view, fast,
+                ));
+            }
+            if let Some(m) = mip.as_mut() {
+                m.absorb_playback(&reduced);
+            }
+        }
+        grid_bit_hash(&grid)
+    }
+
+    /// Replay the script through `stamp_segment_with_metrics` — the metric
+    /// kernel, both its degenerate and its swept loop. The four published
+    /// numbers are folded into the hash beside the grid.
+    fn replay_with_metrics(cutter: &dyn MillingCutter, air_skip: bool) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut grid = cell_driver_grid();
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+        let radius = cutter.radius();
+        let mut mip = if air_skip {
+            Some(TileMaxTop::build(&grid))
+        } else {
+            None
+        };
+        let mut metrics = std::collections::hash_map::DefaultHasher::new();
+        for (s, e) in cell_driver_script() {
+            if let Some(m) = mip.as_mut() {
+                m.refresh_if_due(&grid);
+            }
+            let mut reduced = StampPartial::empty();
+            let view = mip.as_ref();
+            if let Some((row_lo, row_hi)) =
+                crate::dexel_stock::band::stamp_row_span(&grid, radius, s, e)
+            {
+                for mut band in grid.serial_bands(row_lo, row_hi) {
+                    reduced.merge(&stamp_segment_with_metrics(
+                        &mut band,
+                        &lut,
+                        radius,
+                        s,
+                        e,
+                        (s.0 + e.0) * 0.5,
+                        (s.1 + e.1) * 0.5,
+                        true,
+                        view,
+                    ));
+                }
+            }
+            if let Some(m) = mip.as_mut() {
+                m.absorb(&reduced);
+            }
+            let out = reduced.finish(cutter, true);
+            out.0.to_bits().hash(&mut metrics);
+            out.1.to_bits().hash(&mut metrics);
+            out.2.map(f64::to_bits).hash(&mut metrics);
+            out.3.to_bits().hash(&mut metrics);
+        }
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        grid_bit_hash(&grid).hash(&mut h);
+        metrics.finish().hash(&mut h);
+        h.finish()
+    }
+
+    /// Every `(label, hash)` the pin below compares against.
+    fn cell_driver_readings() -> Vec<(String, u64)> {
+        let cutters: [(&str, Box<dyn MillingCutter>); 3] = [
+            ("flat6", Box::new(FlatEndmill::new(6.0, 25.0))),
+            ("ball6", Box::new(BallEndmill::new(6.0, 25.0))),
+            ("vbit60", Box::new(VBitEndmill::new(6.0, 60.0, 20.0))),
+        ];
+        let mut out = Vec::new();
+        for (name, cutter) in &cutters {
+            for air_skip in [false, true] {
+                let mip = if air_skip { "mip" } else { "nomip" };
+                out.push((
+                    format!("{name}/{mip}/on_grid"),
+                    replay_on_grid(cutter.as_ref(), air_skip),
+                ));
+                out.push((
+                    format!("{name}/{mip}/on_band"),
+                    replay_on_band(cutter.as_ref(), air_skip),
+                ));
+                out.push((
+                    format!("{name}/{mip}/with_metrics"),
+                    replay_with_metrics(cutter.as_ref(), air_skip),
+                ));
+            }
+        }
+        out
+    }
+
+    /// **The STK-01 extraction net.** Every bit the six cell-scan loops write,
+    /// on three cutter shapes, with the S2 mip off and on, pinned to the
+    /// numbers the kernels produced BEFORE the driver was extracted.
+    ///
+    /// Read at commit `44646e6a`, the last commit before the extraction. The
+    /// four kernels are `pub(super)`, so the reading has to live here rather
+    /// than under `tests/`.
+    ///
+    /// This is not a tolerance check. The stamping kernel decides what
+    /// `StockSource::FromRemainingStock` generation reads, so a last-bit
+    /// difference in this grid changes emitted G-code downstream. If this test
+    /// goes red after a refactor that claims to change nothing, the refactor
+    /// changed something.
+    ///
+    /// Teeth: perturb any arithmetic inside any of the six loops and the row
+    /// for that kernel goes red with both numbers printed.
+    #[test]
+    fn the_six_cell_loops_write_the_bits_they_wrote_before_the_driver() {
+        const PINNED: [(&str, u64); 18] = [
+            ("flat6/nomip/on_grid", 192301201141602701),
+            ("flat6/nomip/on_band", 192301201141602701),
+            ("flat6/nomip/with_metrics", 13765166122266273719),
+            ("flat6/mip/on_grid", 192301201141602701),
+            ("flat6/mip/on_band", 192301201141602701),
+            ("flat6/mip/with_metrics", 13765166122266273719),
+            ("ball6/nomip/on_grid", 2877188092313091237),
+            ("ball6/nomip/on_band", 2877188092313091237),
+            ("ball6/nomip/with_metrics", 1294570243024499159),
+            ("ball6/mip/on_grid", 2877188092313091237),
+            ("ball6/mip/on_band", 2877188092313091237),
+            ("ball6/mip/with_metrics", 1294570243024499159),
+            ("vbit60/nomip/on_grid", 2591068941031782879),
+            ("vbit60/nomip/on_band", 2591068941031782879),
+            ("vbit60/nomip/with_metrics", 1310437466774715824),
+            ("vbit60/mip/on_grid", 2591068941031782879),
+            ("vbit60/mip/on_band", 2591068941031782879),
+            ("vbit60/mip/with_metrics", 1310437466774715824),
+        ];
+        let readings = cell_driver_readings();
+        assert_eq!(readings.len(), PINNED.len(), "reading count");
+        let mut wrong = Vec::new();
+        for (reading, pinned) in readings.iter().zip(PINNED.iter()) {
+            assert_eq!(reading.0, pinned.0, "reading order");
+            if reading.1 != pinned.1 {
+                wrong.push(format!("(\"{}\", {}),", reading.0, reading.1));
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "the stamping kernels write different bits than the pin. \
+             If the change was meant to be bit-neutral, it was not. \
+             Current readings:\n{}",
+            wrong.join("\n")
+        );
+    }
+
     fn assert_grids_bit_identical(a: &DexelGrid, b: &DexelGrid, what: &str) {
         assert_eq!(a.rays.len(), b.rays.len(), "{what}: ray count");
         for (i, (ra, rb)) in a.rays.iter().zip(b.rays.iter()).enumerate() {
