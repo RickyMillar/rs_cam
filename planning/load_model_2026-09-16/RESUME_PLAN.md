@@ -292,13 +292,16 @@ The operator's stated requirements, verbatim in effect:
   graphs behind a click-through modal. At the toolpath stage, where those
   metrics do not exist, show predictions.
 
-**Two rulings still needed from the operator before building:**
+**Both rulings taken by the operator on 2026-09-18:**
 
-1. Drop the `≈` confidence mark, or keep it?
-2. Reinstate the power bar on the Feeds card? It was removed on a 23.6 % peak
-   utilisation figure that is now stale — re-measured after R1: median 17.8 %,
-   p90 89.4 %, peak 100 %. The doc's own stated condition for reinstating is
-   met.
+1. **Drop the `≈` confidence mark from the face.** Every limit reads as a
+   plain 0-to-limit figure. The confidence tier and its source move into the
+   `(i)` hover with the rest of the provenance.
+2. **Reinstate the power bar on the Feeds card, as a 0-to-limit bar** in the
+   same idiom as the other limits: 0 to the gate's available power
+   (`power_at_rpm × safety_factor`), provenance in the hover. It was removed
+   on a 23.6 % peak-utilisation figure that is stale — re-measured after R1:
+   median 17.8 %, p90 89.4 %, peak 100 %.
 
 ---
 
