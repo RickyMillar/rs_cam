@@ -13,6 +13,8 @@ use crate::tool::MillingCutter;
 use crate::trace::semantic_trace::SemanticKey;
 use crate::trace::transform_provenance::ReconcileSet;
 
+use crate::toolpath::Toolpath;
+
 use super::drilling::drill_holes_for_config;
 use super::findings::record_derived_stepover;
 use super::finish_3d::adaptive3d_effective_stock_to_leave;
@@ -675,22 +677,19 @@ fn missing_polygons_error_for_2d_operation() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
 
-    let result = execute_operation(
-        &op,
-        None,
-        None,
-        None, // no polygons
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &[],
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-    );
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -708,22 +707,19 @@ fn missing_mesh_error_for_3d_operation() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
 
-    let result = execute_operation(
-        &op,
-        None, // no mesh
-        None,
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &[],
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-    );
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -742,22 +738,20 @@ fn invalid_tool_for_vcarve() {
     let cancel = AtomicBool::new(false);
     let polys = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
 
-    let result = execute_operation(
-        &op,
-        None,
-        None,
-        Some(&polys),
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &[],
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-    );
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        polygons: Some(&polys),
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -776,22 +770,19 @@ fn invalid_tool_for_scallop() {
     let cancel = AtomicBool::new(false);
 
     // Scallop requires a mesh, but the tool check happens before mesh access
-    let result = execute_operation(
-        &op,
-        None,
-        None,
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &[],
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-    );
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -809,22 +800,19 @@ fn face_produces_output() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
 
-    let result = execute_operation(
-        &op,
-        None,
-        None,
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &[],
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-    );
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_ok(), "Face should succeed, got: {result:?}");
     let tp = result.unwrap();
@@ -844,22 +832,19 @@ fn drill_produces_output() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
 
-    let result = execute_operation(
-        &op,
-        None,
-        None,
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &[],
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-    );
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_ok(), "Drill should succeed, got: {result:?}");
     let tp = result.unwrap();
@@ -906,25 +891,24 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
             None => None,
         };
 
-        let result = execute_operation_annotated(
-            &case.op,
-            mesh_and_index.map(|(mesh, _)| mesh),
-            mesh_and_index.map(|(_, index)| index),
+        let findings = std::cell::RefCell::new(GenerationFindings::default());
+        let ctx = ExecutionContext {
+            mesh: mesh_and_index.map(|(mesh, _)| mesh),
+            index: mesh_and_index.map(|(_, index)| index),
             polygons,
-            &tool_def,
-            &tool_cfg,
-            &heights,
-            &cutting_levels,
-            &bbox,
-            case.prev_tool_radius,
-            None,
-            None,
-            &cancel,
-            None,
-            None,
-            None,
-        )
-        .unwrap_or_else(|err| panic!("{} should generate: {err}", case.name));
+            prev_tool_radius: case.prev_tool_radius,
+            ..ExecutionContext::new(
+                &findings,
+                &tool_def,
+                &tool_cfg,
+                &heights,
+                &cutting_levels,
+                &bbox,
+                &cancel,
+            )
+        };
+        let result = execute_operation_annotated(&ctx, &case.op)
+            .unwrap_or_else(|err| panic!("{} should generate: {err}", case.name));
 
         assert!(result.spans_valid, "{} spans should be valid", case.name);
         assert!(
@@ -1262,24 +1246,22 @@ fn cancellable_families_honour_a_preset_cancel_flag() {
         let cutting_levels = op.cutting_levels(heights.top_z);
         let cancel = AtomicBool::new(true); // pre-set: cancel before any work
 
-        let result = execute_operation_annotated(
-            &op,
-            needs_mesh.then_some(&hemisphere_mesh),
-            needs_mesh.then_some(&hemisphere_index),
-            needs_polygons.then_some(standard_polygons.as_slice()),
-            &tool_def,
-            &tool_cfg,
-            &heights,
-            &cutting_levels,
-            &bbox,
-            None,
-            None,
-            None,
-            &cancel,
-            None,
-            None,
-            None,
-        );
+        let findings = std::cell::RefCell::new(GenerationFindings::default());
+        let ctx = ExecutionContext {
+            mesh: needs_mesh.then_some(&hemisphere_mesh),
+            index: needs_mesh.then_some(&hemisphere_index),
+            polygons: needs_polygons.then_some(standard_polygons.as_slice()),
+            ..ExecutionContext::new(
+                &findings,
+                &tool_def,
+                &tool_cfg,
+                &heights,
+                &cutting_levels,
+                &bbox,
+                &cancel,
+            )
+        };
+        let result = execute_operation_annotated(&ctx, &op);
 
         match result {
             Err(OperationError::Cancelled) => {}
@@ -1304,25 +1286,14 @@ fn trace_annotated_output_has_depth_and_region_spans() {
     let polys = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
     let levels = op.cutting_levels(heights.top_z);
 
-    let result = execute_operation_annotated(
-        &op,
-        None,
-        None,
-        Some(&polys),
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &levels,
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        None,
-        None,
-    )
-    .expect("trace should succeed");
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        polygons: Some(&polys),
+        ..ExecutionContext::new(
+            &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).expect("trace should succeed");
 
     assert!(result.spans_valid);
     assert!(
@@ -1352,25 +1323,19 @@ fn drill_annotated_output_has_hole_and_plunge_spans_without_depth_barriers() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
 
-    let result = execute_operation_annotated(
-        &op,
-        None,
-        None,
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &[],
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        None,
-        None,
-    )
-    .expect("drill should succeed");
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).expect("drill should succeed");
 
     assert!(result.spans_valid);
     // C4: role queries, not label parsing. A test that asserted on the
@@ -1413,25 +1378,15 @@ fn trace_semantic_trace_has_depth_and_chain_children() {
     let recorder = crate::trace::semantic_trace::ToolpathSemanticRecorder::new("Trace", "Trace");
     let ctx = recorder.root_context();
 
-    let _ = execute_operation_annotated(
-        &op,
-        None,
-        None,
-        Some(&polys),
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &levels,
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        Some(&ctx),
-        None,
-    )
-    .expect("trace should succeed");
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        polygons: Some(&polys),
+        semantic_ctx: Some(&ctx),
+        ..ExecutionContext::new(
+            &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
+        )
+    };
+    let _ = execute_operation_annotated(&ctx, &op).expect("trace should succeed");
     let semantic = recorder.finish();
 
     assert!(
@@ -1461,25 +1416,20 @@ fn drill_semantic_trace_has_hole_and_cycle_children() {
     let recorder = crate::trace::semantic_trace::ToolpathSemanticRecorder::new("Drill", "Drill");
     let ctx = recorder.root_context();
 
-    let _ = execute_operation_annotated(
-        &op,
-        None,
-        None,
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &[],
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        Some(&ctx),
-        None,
-    )
-    .expect("drill should succeed");
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        semantic_ctx: Some(&ctx),
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &bbox,
+            &cancel,
+        )
+    };
+    let _ = execute_operation_annotated(&ctx, &op).expect("drill should succeed");
     let semantic = recorder.finish();
 
     assert!(
@@ -1612,30 +1562,17 @@ fn rest_analysis_attaches_artifacts_for_non_pencil_op() {
         ..Default::default()
     };
 
-    let (result, _findings) = execute_operation_annotated_with_regions(
-        &op,
-        Some(&mesh),
-        Some(&index),
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &levels,
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        None,
-        None,
-        None,
-        Some(&rest_analysis),
-        None,
-        None,
-        &[],
-    )
-    .expect("scallop with rest_analysis enabled should succeed");
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        mesh: Some(&mesh),
+        index: Some(&index),
+        rest_analysis: Some(&rest_analysis),
+        ..ExecutionContext::new(
+            &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op)
+        .expect("scallop with rest_analysis enabled should succeed");
 
     assert!(
         result.rest_grid.is_some(),
@@ -1661,59 +1598,30 @@ fn rest_analysis_disabled_leaves_artifacts_none() {
     let levels = op.cutting_levels(heights.top_z);
     let rest_analysis = crate::compute::config::RestAnalysisConfig::default(); // disabled
 
-    let (result, _findings) = execute_operation_annotated_with_regions(
-        &op,
-        Some(&mesh),
-        Some(&index),
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &levels,
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        None,
-        None,
-        None,
-        Some(&rest_analysis),
-        None,
-        None,
-        &[],
-    )
-    .expect("scallop should succeed");
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        mesh: Some(&mesh),
+        index: Some(&index),
+        rest_analysis: Some(&rest_analysis),
+        ..ExecutionContext::new(
+            &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).expect("scallop should succeed");
 
     assert!(result.rest_grid.is_none());
     assert!(result.rest_regions.is_none());
 
     // `None` for the whole param is the same no-op.
-    let (result_none, _findings_none) = execute_operation_annotated_with_regions(
-        &op,
-        Some(&mesh),
-        Some(&index),
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &levels,
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        &[],
-    )
-    .expect("scallop should succeed");
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        mesh: Some(&mesh),
+        index: Some(&index),
+        ..ExecutionContext::new(
+            &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
+        )
+    };
+    let result_none = execute_operation_annotated(&ctx, &op).expect("scallop should succeed");
     assert!(result_none.rest_grid.is_none());
     assert!(result_none.rest_regions.is_none());
 }
@@ -1751,30 +1659,16 @@ fn pencil_rest_depth_precedence_skips_generic_pass() {
         ..Default::default()
     };
 
-    let (result, _findings) = execute_operation_annotated_with_regions(
-        &op,
-        Some(&mesh),
-        Some(&index),
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &levels,
-        &bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        None,
-        None,
-        None,
-        Some(&rest_analysis),
-        None,
-        None,
-        &[],
-    )
-    .expect("pencil rest_depth should succeed");
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        mesh: Some(&mesh),
+        index: Some(&index),
+        rest_analysis: Some(&rest_analysis),
+        ..ExecutionContext::new(
+            &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
+        )
+    };
+    let result = execute_operation_annotated(&ctx, &op).expect("pencil rest_depth should succeed");
 
     let grid = result
         .rest_grid

@@ -20,7 +20,6 @@ use crate::io::dxf_input::DrillTarget;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::tool::ToolDefinition;
-use crate::toolpath::Toolpath;
 use crate::trace::debug_trace::ToolpathDebugContext;
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
@@ -57,7 +56,7 @@ pub type GeneratedToolpath = AnnotatedToolpath;
 ///
 /// Carried on [`ExecutionContext::findings`] as a [`Cell`] so adapters can
 /// record without any signature change, and returned alongside the toolpath
-/// by [`execute_operation_annotated_with_regions`]. Deliberately NOT part of
+/// by [`execute_operation_annotated`]. Deliberately NOT part of
 /// `AnnotatedToolpath`: a diagnostic finding must not have to survive the
 /// dressup pipeline, where every carrier is one missed field-copy away from
 /// silently vanishing.
@@ -321,6 +320,61 @@ pub struct ExecutionContext<'a> {
     pub rest_analysis: Option<&'a crate::compute::config::RestAnalysisConfig>,
 }
 
+impl<'a> ExecutionContext<'a> {
+    /// The context with only what EVERY operation needs. Each optional
+    /// channel starts absent; a caller names the ones it has with
+    /// struct-update syntax:
+    ///
+    /// ```ignore
+    /// let ctx = ExecutionContext {
+    ///     polygons: Some(&polys),
+    ///     ..ExecutionContext::new(&findings, &tool_def, &tool_cfg,
+    ///                             &heights, &levels, &bbox, &cancel)
+    /// };
+    /// ```
+    ///
+    /// CMP-02: the dispatch entry used to take 20 positional arguments and
+    /// pack 21 of them into this struct as its first act, with two more
+    /// wrappers above it whose only job was to forward `None`. The context
+    /// IS the argument now, and this is the one constructor both the
+    /// session's generation path and the advisor's candidate probe build
+    /// from — so a caller cannot forget a field and cannot pass two in the
+    /// wrong order.
+    pub(crate) fn new(
+        findings: &'a std::cell::RefCell<GenerationFindings>,
+        tool_def: &'a ToolDefinition,
+        tool_cfg: &'a ToolConfig,
+        heights: &'a ResolvedHeights,
+        cutting_levels: &'a [f64],
+        stock_bbox: &'a BoundingBox3,
+        cancel: &'a AtomicBool,
+    ) -> Self {
+        Self {
+            findings,
+            mesh: None,
+            index: None,
+            polygons: None,
+            drill_targets: &[],
+            tool_def,
+            tool_cfg,
+            heights,
+            cutting_levels,
+            stock_bbox,
+            setup_transform: None,
+            prev_tool_radius: None,
+            reference_tool_cfg: None,
+            debug_ctx: None,
+            cancel,
+            initial_stock: None,
+            semantic_ctx: None,
+            boundary: None,
+            boundary_regions: None,
+            link_kinematics: None,
+            rest_analysis: None,
+        }
+    }
+}
+
 /// A family adapter: generate the toolpath (with spans + annotations)
 /// for one operation family. Registered on `OpRegistryEntry.generate`
 /// per family as the Phase-5 cutover proves each one; unmigrated
@@ -393,240 +447,39 @@ pub(crate) use finish_3d::{
 };
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
 
-/// Execute a single operation, producing a raw toolpath.
+/// THE dispatch: run one operation and produce its toolpath, spans and
+/// annotations.
 ///
-/// Dispatches to the correct core algorithm based on the [`OperationConfig`]
-/// variant. When `cutting_levels` is non-empty, depth-stepped operations use
-/// those levels directly; otherwise they build levels from the heights config.
+/// CMP-02: this took 20 positional arguments, each with its own paragraph
+/// of doc comment, and its first act was to pack 21 of them into
+/// [`ExecutionContext`]. Two wrappers sat above it whose only job was to
+/// forward `None` for the arguments a caller did not have. The context is
+/// the argument now and both wrappers are gone. Every channel that used to
+/// be an argument is a named field with its own doc on the struct —
+/// `boundary_regions` (P2.3), `rest_analysis` (P2.5),
+/// `link_kinematics` (P1 W4a), `setup_transform` (G-DRILLPICK-FRAME) and
+/// `drill_targets` (G-DRILLCENTROID) among them. `None` stays a
+/// byte-identical no-op for each.
 ///
-/// WP12 made this entry `pub(crate)`, which showed that every caller it has
-/// left is a test. No production path in this crate calls it. The entry
-/// stays, per §23 ruling 1, so the `dead_code` allow applies to the
-/// non-test build only. A production caller removes the need for it.
-#[allow(clippy::too_many_arguments)]
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn execute_operation(
-    op: &OperationConfig,
-    mesh: Option<&TriangleMesh>,
-    index: Option<&SpatialIndex>,
-    polygons: Option<&[Polygon2]>,
-    tool_def: &ToolDefinition,
-    tool_cfg: &ToolConfig,
-    heights: &ResolvedHeights,
-    cutting_levels: &[f64],
-    stock_bbox: &BoundingBox3,
-    prev_tool_radius: Option<f64>,
-    reference_tool_cfg: Option<ToolConfig>,
-    debug_ctx: Option<&ToolpathDebugContext>,
-    cancel: &AtomicBool,
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
-) -> Result<Toolpath, OperationError> {
-    execute_operation_annotated(
-        op,
-        mesh,
-        index,
-        polygons,
-        tool_def,
-        tool_cfg,
-        heights,
-        cutting_levels,
-        stock_bbox,
-        prev_tool_radius,
-        reference_tool_cfg,
-        debug_ctx,
-        cancel,
-        initial_stock,
-        None,
-        None,
-    )
-    .map(|at| at.toolpath)
-}
-
-/// Execute a single operation, producing a toolpath together with structural
-/// spans from the underlying algorithm (when available).
+/// Generation findings are not returned. They are written into
+/// `ctx.findings`, which the CALLER owns, so a caller that wants them reads
+/// its own `RefCell` after the call and a caller that does not want them
+/// declares nothing.
 ///
-/// This is the single source-of-truth dispatch; [`execute_operation`] delegates
-/// here and discards the spans for backwards compatibility.
-///
-/// Thin wrapper over [`execute_operation_annotated_with_regions`] with
-/// `boundary_regions = None`, for the one caller that does not participate
-/// in the P2.3 mesh-finish pre-clip: the strategy advisor's candidate probe
-/// in `session/compute.rs`.
-#[allow(clippy::too_many_arguments)]
+/// The two production callers are both in
+/// `crates/rs_cam_core/src/session/compute.rs`: `execute_generation` and
+/// the strategy advisor's candidate probe.
 pub(crate) fn execute_operation_annotated(
+    ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
-    mesh: Option<&TriangleMesh>,
-    index: Option<&SpatialIndex>,
-    polygons: Option<&[Polygon2]>,
-    tool_def: &ToolDefinition,
-    tool_cfg: &ToolConfig,
-    heights: &ResolvedHeights,
-    cutting_levels: &[f64],
-    stock_bbox: &BoundingBox3,
-    prev_tool_radius: Option<f64>,
-    reference_tool_cfg: Option<ToolConfig>,
-    debug_ctx: Option<&ToolpathDebugContext>,
-    cancel: &AtomicBool,
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
-    semantic_ctx: Option<&ToolpathSemanticContext>,
-    // `boundary`: effective machining boundary polygon (model silhouette inset
-    // by tool_radius for containment=Inside). When provided, AgentSearch /
-    // ContourParallel / Adaptive pre-clear cells outside this boundary in
-    // their internal stock so the bool-grid polygon at every z-level reflects
-    // the boundary. Without this, generation produces cuts across the full
-    // stock that the post-generation toolpath clip then converts to rapids —
-    // leaving stock unstamped and deeper z-levels biting through fresh
-    // material with full-depth axial DOC.
-    boundary: Option<&Polygon2>,
 ) -> Result<GeneratedToolpath, OperationError> {
-    // Thin wrapper: callers on this path have no diagnostics pipeline to
-    // feed, so the findings are dropped here rather than rippling a tuple
-    // through every test and CLI call site.
-    //
-    // A/M9: dropping them is now HONEST rather than lossy-silent. Stats
-    // built off this path leave `truncated_core_mm2` at `None` — "not
-    // measured" — instead of the `0.0` that used to read as "nothing
-    // standing". A caller that needs the finding must use
-    // `execute_operation_annotated_with_regions`, which the one production
-    // generation path (`session::execute_generation`) already does.
-    execute_operation_annotated_with_regions(
-        op,
-        mesh,
-        index,
-        polygons,
-        tool_def,
-        tool_cfg,
-        heights,
-        cutting_levels,
-        stock_bbox,
-        prev_tool_radius,
-        reference_tool_cfg,
-        debug_ctx,
-        cancel,
-        initial_stock,
-        semantic_ctx,
-        boundary,
-        None,
-        None,
-        None,
-        // `setup_transform`: this wrapper's callers (tests, the strategy
-        // advisor) hand in geometry they already resolved themselves and
-        // carry no setup, so there is nothing to declare. `None` means
-        // "world is the emission frame" — which is what a caller with no
-        // setup is asserting anyway.
-        None,
-        // `drill_targets`: the same callers resolve no model, so a `Drill`
-        // op on this path drills only what it carries in `selected_holes`.
-        &[],
-    )
-    .map(|(generated, _findings)| generated)
-}
-
-/// [`execute_operation_annotated`] plus `boundary_regions` (P2.3): the
-/// multi-region machining-boundary set the mesh-finish family (scallop /
-/// radial / spiral / steep-shallow / ramp / horizontal / waterline)
-/// pre-clips generation to. Session's `generate_toolpath` is the one caller
-/// that resolves a `DerivedRestRegions` boundary and has real regions to
-/// pass; every other caller passes `None` through [`execute_operation_annotated`]'s
-/// unchanged signature, which is a byte-identical no-op for those families
-/// (see each op's own `boundary_regions` doc comment).
-///
-/// Also carries `rest_analysis` (P2.5): when `Some` and `.enabled`, and the
-/// dispatched op didn't already attach its own rest artifacts (pencil's
-/// `RestDepth` detector arm does — see the precedence check right after
-/// dispatch below), this runs the same rest-depth detector generically
-/// against THIS toolpath's own tool as the fine cutter, attaching
-/// `rest_grid` / `rest_regions` to the result. `None` is a byte-identical
-/// no-op, same shape as `boundary_regions`.
-///
-/// Also carries `link_kinematics` (P1 W4a): the machine envelope the
-/// pencil family costs its surface-link-vs-retract emit decision
-/// against. `None` is a byte-identical no-op (legacy distance-only
-/// hookup decision); production builders that have a machine profile
-/// in scope (session's `generate_toolpath`) populate `Some`.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn execute_operation_annotated_with_regions(
-    op: &OperationConfig,
-    mesh: Option<&TriangleMesh>,
-    index: Option<&SpatialIndex>,
-    polygons: Option<&[Polygon2]>,
-    tool_def: &ToolDefinition,
-    tool_cfg: &ToolConfig,
-    heights: &ResolvedHeights,
-    cutting_levels: &[f64],
-    stock_bbox: &BoundingBox3,
-    prev_tool_radius: Option<f64>,
-    reference_tool_cfg: Option<ToolConfig>,
-    debug_ctx: Option<&ToolpathDebugContext>,
-    cancel: &AtomicBool,
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
-    semantic_ctx: Option<&ToolpathSemanticContext>,
-    boundary: Option<&Polygon2>,
-    boundary_regions: Option<&[Polygon2]>,
-    rest_analysis: Option<&crate::compute::config::RestAnalysisConfig>,
-    // P1 quantitative linker (W4a): the machine envelope the pencil
-    // family's emit-time surface-link-vs-retract decision costs
-    // candidates against. `None` is a byte-identical no-op — the
-    // legacy distance-only hookup decision.
-    link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
-    // G-DRILLPICK-FRAME: the setup's world→local transform, for the
-    // config-carried coordinates the driver's geometry pipeline never
-    // touches. `None` = identity setup = no-op. See
-    // [`ExecutionContext::setup_transform`].
-    setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
-    // G-DRILLCENTROID: the target model's drill targets (DXF points and
-    // circle/arc centres), the `Drill` family's hole source when nothing is
-    // picked. Config-carried picks and these share one frame. `&[]` for a
-    // caller with no model — a `Drill` op then refuses unless it carries an
-    // explicit pick.
-    drill_targets: &[DrillTarget],
-) -> Result<(GeneratedToolpath, GenerationFindings), OperationError> {
-    // Phase-5 (T11) family adapters: when the registry carries a
-    // GenerateFn for this op's family, dispatch through it. The
-    // exhaustive match below remains the fallback for unmigrated
-    // families AND the compile-time net (a new op variant fails to
-    // compile until it has an arm — migrated arms delegate to the SAME
-    // adapter fn the registry references, so the two paths cannot
-    // diverge).
-    //
-    // This function's own signature stays slice-based (`Option<&[Polygon2]>`)
-    // — its two callers in `session/compute.rs` already resolve a plain
-    // `Vec<Polygon2>`/slice via `RegionSet::processed` and pass it straight
-    // through, so changing this signature to `&RegionSet` would only add a
-    // wrap/unwrap at both call sites for no benefit. The borrow into
-    // `RegionSet` happens right here, where it's used.
-    let region_set = boundary_regions.map(RegionSet::from_slice);
-    let findings = std::cell::RefCell::new(GenerationFindings::default());
-    let ctx = ExecutionContext {
-        findings: &findings,
-        mesh,
-        index,
-        polygons,
-        drill_targets,
-        tool_def,
-        tool_cfg,
-        heights,
-        cutting_levels,
-        stock_bbox,
-        setup_transform,
-        prev_tool_radius,
-        reference_tool_cfg,
-        debug_ctx,
-        cancel,
-        initial_stock,
-        semantic_ctx,
-        boundary,
-        boundary_regions: region_set.as_ref(),
-        link_kinematics,
-        rest_analysis,
-    };
     // CMP-01: one dispatch, no fallback. The `else` branch here was a
     // 24-arm match kept as a compile net after the T11 cutover, and every
     // arm called the same adapter the registry row already holds. The net
     // is `OperationType::registry_entry`, which is exhaustive: a new
     // variant does not compile until it names a row, and a row cannot be
     // written without an adapter.
-    let mut generated = (op.op_type().registry_entry().generate)(&ctx, op)?;
+    let mut generated = (op.op_type().registry_entry().generate)(ctx, op)?;
 
     // P2.5: op-agnostic rest analysis. Precedence — an op that already
     // attached its own rest artifacts (pencil's `RestDepth` detector arm,
@@ -635,25 +488,25 @@ pub(crate) fn execute_operation_annotated_with_regions(
     // extraction, a richer job than the generic pass below needs to redo.
     // Only runs when a mesh (+ its spatial index) is present — 2D ops have
     // no terrain to rest-analyze.
-    if let Some(ra) = rest_analysis
+    if let Some(ra) = ctx.rest_analysis
         && ra.enabled
         && generated.rest_grid.is_none()
         && generated.rest_regions.is_none()
-        && let (Some(m), Some(idx)) = (mesh, index)
+        && let (Some(m), Some(idx)) = (ctx.mesh, ctx.index)
     {
         attach_generic_rest_analysis(
             &mut generated,
             m,
             idx,
-            tool_def,
+            ctx.tool_def,
             ctx.reference_tool_cfg.as_ref(),
-            initial_stock,
+            ctx.initial_stock,
             ra,
-            &findings,
+            ctx.findings,
         );
     }
 
-    Ok((generated, findings.into_inner()))
+    Ok(generated)
 }
 
 #[cfg(test)]

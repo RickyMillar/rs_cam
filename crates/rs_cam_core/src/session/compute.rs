@@ -884,11 +884,11 @@ pub fn execute_job(
 /// executor.
 ///
 /// WP11b, `IMPLEMENTATION_PLAN.md` §22 ruling 4. The loose entry
-/// `compute::execute::execute_operation_annotated_with_regions` takes 21
-/// arguments and builds nothing, so every caller of it assembles the inputs
-/// itself. This function takes the two bundles the submit step produced, and
-/// a caller outside this module can construct neither, so it cannot assemble
-/// a second answer.
+/// `compute::execute::execute_operation_annotated` used to take 20 positional
+/// arguments and build nothing, so every caller of it assembled the inputs
+/// itself. CMP-02 made `ExecutionContext` the argument; this function takes
+/// the two bundles the submit step produced, and a caller outside this module
+/// can construct neither, so it cannot assemble a second answer.
 ///
 /// `inputs` carries every per-generation input.
 /// [`ResolvedGenInputs::spatial_index`] is FORCED here, so this function
@@ -896,8 +896,8 @@ pub fn execute_job(
 /// machined-stock seed, the rest-analysis dials and the machine envelope.
 /// `observer` carries the trace contexts the generator records into.
 ///
-/// The loose entry stays, and WP12 made it `pub(crate)` (§23 ruling 1), so
-/// this function is the only door to it that a caller outside the crate can
+/// The entry stays, and WP12 made it `pub(crate)` (§23 ruling 1), so this
+/// function is the only door to it that a caller outside the crate can
 /// reach. One in-crate caller remains beside this one: the strategy
 /// advisor below. The four integration tests that called it moved in-crate.
 /// The sentry is `tests/loose_executor_is_crate_private_wp12.rs`.
@@ -913,34 +913,43 @@ pub fn execute_generation(
     ),
     crate::compute::execute::OperationError,
 > {
-    // P2.3: `_with_regions` threads `pre_boundary_regions` (resolved once,
-    // by the submit step, alongside `pre_boundary`) into the mesh-finish
-    // family's pre-clip via `ExecutionContext::boundary_regions`. Every
-    // other caller of the plain `execute_operation_annotated` still gets
-    // `None` through its unchanged signature.
-    crate::compute::execute::execute_operation_annotated_with_regions(
-        &inputs.operation,
-        inputs.mesh.as_deref(),
-        inputs.spatial_index(),
-        inputs.polygons.as_deref().map(|v| v.as_slice()),
-        &inputs.tool_def,
-        &inputs.tool,
-        &inputs.heights,
-        &inputs.cutting_levels,
-        &inputs.emission_stock_bbox,
-        inputs.prev_tool_radius,
-        inputs.reference_tool_cfg.clone(),
-        observer.debug_ctx(),
-        cancel,
-        context.generator_seed_stock(),
-        observer.semantic_ctx(),
-        inputs.pre_boundary.as_ref(),
-        inputs.pre_boundary_regions.as_deref(),
-        Some(&context.rest_analysis),
-        context.link_kinematics.clone(),
-        inputs.setup_transform.as_ref(),
-        &inputs.drill_targets,
-    )
+    // P2.3: `pre_boundary_regions` (resolved once, by the submit step,
+    // alongside `pre_boundary`) reaches the mesh-finish family's pre-clip
+    // through `ExecutionContext::boundary_regions`. The advisor's probe
+    // below leaves that field at its constructor default, `None`.
+    let seed_stock = context.generator_seed_stock();
+    let regions = inputs
+        .pre_boundary_regions
+        .as_deref()
+        .map(crate::geometry::region_set::RegionSet::from_slice);
+    let findings = std::cell::RefCell::new(crate::compute::execute::GenerationFindings::default());
+    let ctx = crate::compute::execute::ExecutionContext {
+        mesh: inputs.mesh.as_deref(),
+        index: inputs.spatial_index(),
+        polygons: inputs.polygons.as_deref().map(|v| v.as_slice()),
+        drill_targets: &inputs.drill_targets,
+        setup_transform: inputs.setup_transform.as_ref(),
+        prev_tool_radius: inputs.prev_tool_radius,
+        reference_tool_cfg: inputs.reference_tool_cfg.clone(),
+        debug_ctx: observer.debug_ctx(),
+        initial_stock: seed_stock,
+        semantic_ctx: observer.semantic_ctx(),
+        boundary: inputs.pre_boundary.as_ref(),
+        boundary_regions: regions.as_ref(),
+        link_kinematics: context.link_kinematics.clone(),
+        rest_analysis: Some(&context.rest_analysis),
+        ..crate::compute::execute::ExecutionContext::new(
+            &findings,
+            &inputs.tool_def,
+            &inputs.tool,
+            &inputs.heights,
+            &inputs.cutting_levels,
+            &inputs.emission_stock_bbox,
+            cancel,
+        )
+    };
+    let generated = crate::compute::execute::execute_operation_annotated(&ctx, &inputs.operation)?;
+    Ok((generated, findings.into_inner()))
 }
 
 /// Clearing strategies the advisor compares for a 3D roughing op — the two
@@ -1210,25 +1219,29 @@ pub fn execute_recommend_clearing_strategy(
         // so `execute_generation` cannot serve it, and the loose entry
         // stays `pub(crate)` for it. WP14a made the advisor a `Job` row and
         // the residual MOVED here, into a free function; it did not close.
-        let result = crate::compute::execute::execute_operation_annotated(
-            &op_loadlimited,
-            resolved.mesh.as_deref(),
-            resolved.spatial_index(),
-            resolved.polygons.as_deref().map(|v| v.as_slice()),
-            &resolved.tool_def,
-            &resolved.tool,
-            &resolved.heights,
-            &resolved.cutting_levels,
-            &resolved.emission_stock_bbox,
-            resolved.prev_tool_radius,
-            // Strategy-timing path plans clearing ops only, never pencil.
-            None,
-            None,
-            cancel,
-            None,
-            None,
-            resolved.pre_boundary.as_ref(),
-        );
+        let findings =
+            std::cell::RefCell::new(crate::compute::execute::GenerationFindings::default());
+        let ctx = crate::compute::execute::ExecutionContext {
+            mesh: resolved.mesh.as_deref(),
+            index: resolved.spatial_index(),
+            polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
+            prev_tool_radius: resolved.prev_tool_radius,
+            boundary: resolved.pre_boundary.as_ref(),
+            // Everything else stays at the constructor default. The probe
+            // records no trace, seeds no stock, resolves no reference tool
+            // (it plans clearing ops only, never pencil) and discards its
+            // findings — `findings` is the sink it throws away.
+            ..crate::compute::execute::ExecutionContext::new(
+                &findings,
+                &resolved.tool_def,
+                &resolved.tool,
+                &resolved.heights,
+                &resolved.cutting_levels,
+                &resolved.emission_stock_bbox,
+                cancel,
+            )
+        };
+        let result = crate::compute::execute::execute_operation_annotated(&ctx, &op_loadlimited);
         if let Ok(annotated) = result {
             let annotated_arc = Arc::new(annotated);
             // Compare OPTIMIZED candidates: simulate the path, run F-039

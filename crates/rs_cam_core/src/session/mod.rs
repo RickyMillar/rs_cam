@@ -1786,7 +1786,7 @@ impl ProjectSession {
     ///
     /// # Why this is not in `compute::execute`
     ///
-    /// `execute_operation_annotated_with_regions` is the narrower choke
+    /// `execute_operation_annotated` is the narrower choke
     /// point and would have covered both doors on its own — but it can only
     /// see the mesh of the model *this toolpath references*. The case the
     /// rule exists to serve is a mortise bounded by a DXF cut into an

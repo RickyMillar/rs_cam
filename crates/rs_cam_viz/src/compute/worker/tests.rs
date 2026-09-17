@@ -791,7 +791,7 @@ fn derived_rest_regions_boundary_clips_to_all_disjoint_regions() {
 }
 
 /// P2.4 regression: the GUI worker's `generate_via_core` bridge must thread
-/// `derived_rest_regions` into `execute_operation_annotated_with_regions`
+/// `derived_rest_regions` into `execute_operation_annotated`
 /// (not just the post-generation enforcement clip), the same way
 /// `ProjectSession::generate_toolpath` does on the core session path. Before
 /// this fix, `generate_via_core` always called the plain

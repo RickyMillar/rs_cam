@@ -34,7 +34,7 @@
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::ResolvedHeights;
 use crate::compute::cutter::build_cutter;
-use crate::compute::execute::execute_operation_annotated;
+use crate::compute::execute::{ExecutionContext, GenerationFindings, execute_operation_annotated};
 use crate::compute::operation_configs::UnifiedFinishConfig;
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::geo::BoundingBox3;
@@ -122,25 +122,23 @@ fn generate(tool_cfg: &ToolConfig) -> Generated {
     let op_ctx = op_scope.context();
 
     let cancel = AtomicBool::new(false);
-    let annotated = execute_operation_annotated(
-        &op,
-        Some(&mesh),
-        Some(&index),
-        None,
-        &tool_def,
-        tool_cfg,
-        &heights,
-        &[],
-        &stock_bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        Some(&op_ctx),
-        None,
-    )
-    .expect("UnifiedFinish must generate on the hemisphere fixture");
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        mesh: Some(&mesh),
+        index: Some(&index),
+        semantic_ctx: Some(&op_ctx),
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            tool_cfg,
+            &heights,
+            &[],
+            &stock_bbox,
+            &cancel,
+        )
+    };
+    let annotated = execute_operation_annotated(&ctx, &op)
+        .expect("UnifiedFinish must generate on the hemisphere fixture");
     op_scope.finish();
 
     let trace = recorder.finish();

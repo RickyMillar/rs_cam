@@ -1709,25 +1709,25 @@ fn advisor_modulates_candidate_feeds_before_timing() {
     // does (minus the Suggest load-limit — modulation rewrites whatever
     // feeds the planned path carries, so the commanded 2500 mm/min is a
     // fair starting point for the "did feeds change?" check).
-    let annotated = crate::compute::execute::execute_operation_annotated(
-        &resolved.operation,
-        resolved.mesh.as_deref(),
-        resolved.spatial_index(),
-        resolved.polygons.as_deref().map(|v| v.as_slice()),
-        &resolved.tool_def,
-        &resolved.tool,
-        &resolved.heights,
-        &resolved.cutting_levels,
-        &resolved.emission_stock_bbox,
-        resolved.prev_tool_radius,
-        None,
-        None,
-        &cancel,
-        None,
-        None,
-        resolved.pre_boundary.as_ref(),
-    )
-    .expect("plan the spiral candidate");
+    let findings = std::cell::RefCell::new(crate::compute::execute::GenerationFindings::default());
+    let ctx = crate::compute::execute::ExecutionContext {
+        mesh: resolved.mesh.as_deref(),
+        index: resolved.spatial_index(),
+        polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
+        prev_tool_radius: resolved.prev_tool_radius,
+        boundary: resolved.pre_boundary.as_ref(),
+        ..crate::compute::execute::ExecutionContext::new(
+            &findings,
+            &resolved.tool_def,
+            &resolved.tool,
+            &resolved.heights,
+            &resolved.cutting_levels,
+            &resolved.emission_stock_bbox,
+            &cancel,
+        )
+    };
+    let annotated = crate::compute::execute::execute_operation_annotated(&ctx, &resolved.operation)
+        .expect("plan the spiral candidate");
     let annotated_arc = Arc::new(annotated);
     let raw_feeds: Vec<Option<f64>> = annotated_arc
         .toolpath

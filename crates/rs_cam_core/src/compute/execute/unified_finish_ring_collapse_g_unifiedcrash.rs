@@ -37,7 +37,7 @@
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::ResolvedHeights;
 use crate::compute::cutter::build_cutter;
-use crate::compute::execute::execute_operation_annotated;
+use crate::compute::execute::{ExecutionContext, GenerationFindings, execute_operation_annotated};
 use crate::compute::operation_configs::UnifiedFinishConfig;
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::geo::BoundingBox3;
@@ -107,24 +107,21 @@ fn generate(
     };
 
     let cancel = AtomicBool::new(false);
-    execute_operation_annotated(
-        &op,
-        Some(&mesh),
-        Some(&index),
-        None,
-        &tool_def,
-        &tool_cfg,
-        &heights,
-        &[],
-        &stock_bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-        None,
-        None,
-    )
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        mesh: Some(&mesh),
+        index: Some(&index),
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &[],
+            &stock_bbox,
+            &cancel,
+        )
+    };
+    execute_operation_annotated(&ctx, &op)
 }
 
 /// The combination that died. The assertion is that the call RETURNS and

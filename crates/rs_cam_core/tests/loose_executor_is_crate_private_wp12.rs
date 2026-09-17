@@ -1,14 +1,19 @@
 //! WP12 sentry — the loose executor is crate-private, and nothing outside
 //! `crates/rs_cam_core/src/` names it.
 //!
-//! `compute/execute.rs` publishes three generation entries:
+//! `compute/execute.rs` published three generation entries:
 //! `execute_operation` (14 arguments), `execute_operation_annotated` (16)
-//! and `execute_operation_annotated_with_regions` (21). Each one takes the
-//! whole input list as loose arguments, so each one is a second input
+//! and `execute_operation_annotated_with_regions` (21). Each one took the
+//! whole input list as loose arguments, so each one was a second input
 //! assembly beside `session::compute::resolve_generation_inputs`. WP11b made
-//! `execute_generation` the narrow door over the resolved bundle. WP12 shuts
-//! the loose door: the three entries go `pub(crate)`, and the four
-//! integration tests that called them move in-crate.
+//! `execute_generation` the narrow door over the resolved bundle. WP12 shut
+//! the loose door: the three entries went `pub(crate)`, and the four
+//! integration tests that called them moved in-crate.
+//!
+//! CMP-02 (2026-09-18) went further: there is ONE entry now,
+//! `execute_operation_annotated`, and it takes `&ExecutionContext` rather
+//! than a positional list. The two forwarding wrappers are deleted. This
+//! sentry guards the same door, over one declaration instead of three.
 //!
 //! The plan's ruling is `IMPLEMENTATION_PLAN.md` §23 rulings 1, 2 and 5.
 //!
@@ -32,7 +37,7 @@
 //! # Red before the fix
 //!
 //! Arm (a) fails: four integration files call the loose entry. Arm (b)
-//! fails: all three declarations read `pub fn`.
+//! fails: the declaration reads `pub fn`.
 //!
 //! Arm (c) was VACUOUS and passed (tech-debt review H4). It skipped comment
 //! lines, so it could match nothing: the occurrence it was written for was a
@@ -54,7 +59,7 @@
 //!
 //! A source scan that reads no file passes and looks healthy. Each arm
 //! asserts that its population is not empty, and arm (b) asserts that it
-//! found all three declarations by name. Arm (c) asserts that every
+//! found every declaration by name. Arm (c) asserts that every
 //! allowlist entry still matches a line: an entry that no longer describes
 //! the tree is an allowance nothing checks.
 
@@ -70,13 +75,9 @@ use std::path::{Path, PathBuf};
 /// The token every generation entry's name starts with.
 const ENTRY: &str = "execute_operation";
 
-/// The three declarations, longest name first so that a prefix match cannot
-/// claim a longer sibling.
-const DECLARATIONS: &[&str] = &[
-    "execute_operation_annotated_with_regions",
-    "execute_operation_annotated",
-    "execute_operation",
-];
+/// The declarations, longest name first so that a prefix match cannot claim
+/// a longer sibling. CMP-02 left exactly one.
+const DECLARATIONS: &[&str] = &["execute_operation_annotated"];
 
 /// The two files that SCAN for the entry name instead of calling it. Both
 /// hold the name in a string literal, which is not a comment and not a call.
@@ -213,13 +214,13 @@ fn no_file_outside_core_src_names_the_loose_executor() {
 
 // ── (b) the declarations are crate-private ──────────────────────────
 
-/// Every `execute_operation*` declaration reads `pub(crate) fn`.
+/// The `execute_operation*` declaration reads `pub(crate) fn`.
 ///
 /// Arm (a) proves that nothing outside core names the entry today. This arm
 /// proves that the compiler holds the line tomorrow: a `pub fn` would let a
 /// new caller back in without any test going red.
 #[test]
-fn the_three_generation_entries_are_crate_private() {
+fn the_generation_entry_is_crate_private() {
     let core_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let path = core_src.join("compute").join("execute.rs");
     let text =
@@ -290,7 +291,12 @@ const ALLOWED_REFERENCES: &[AllowedReference] = &[
               than narrating with another tool's geometry",
     },
     AllowedReference {
-        path_marker: "ui/properties/mod.rs",
+        // A path FRAGMENT, not a file name: `81493c1a` split
+        // `ui/properties/mod.rs` and this line moved to its
+        // `toolpath_panel.rs` child, which left the arm red from
+        // 2026-09-17 until CMP-02 read it. The fragment is the directory
+        // now, so the next split inside it keeps the allowance.
+        path_marker: "ui/properties",
         line_marker: "one generation uses",
         why: "UX-R03-009 (G-BOUNDARYINHERIT): the boundary panel names the \
               stored source generation reads, because the core door clones \

@@ -41,7 +41,7 @@ use std::sync::atomic::AtomicBool;
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::ResolvedHeights;
 use crate::compute::cutter::build_cutter;
-use crate::compute::execute::execute_operation;
+use crate::compute::execute::{ExecutionContext, GenerationFindings, execute_operation_annotated};
 use crate::compute::operation_configs::PocketConfig;
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::geo::{BoundingBox3, P2, P3};
@@ -106,23 +106,23 @@ fn emitted_floor_z(h: &ResolvedHeights, cutting_levels: &[f64]) -> f64 {
     let polygons = square_40mm();
     let cancel = AtomicBool::new(false);
 
-    let tp = execute_operation(
-        &op,
-        None,
-        None,
-        Some(polygons.as_slice()),
-        &tool_def,
-        &tool_cfg,
-        h,
-        cutting_levels,
-        &stock_bbox(),
-        None,
-        None,
-        None,
-        &cancel,
-        None,
-    )
-    .expect("a 40 mm square pocket with a 6 mm end mill must generate");
+    let bbox = stock_bbox();
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        polygons: Some(polygons.as_slice()),
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            h,
+            cutting_levels,
+            &bbox,
+            &cancel,
+        )
+    };
+    let tp = execute_operation_annotated(&ctx, &op)
+        .map(|generated| generated.toolpath)
+        .expect("a 40 mm square pocket with a 6 mm end mill must generate");
 
     let floor = tp
         .moves

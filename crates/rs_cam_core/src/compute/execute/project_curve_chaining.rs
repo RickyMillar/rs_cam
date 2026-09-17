@@ -48,7 +48,9 @@
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{DressupConfig, ResolvedHeights};
 use crate::compute::cutter::build_cutter;
-use crate::compute::execute::{apply_dressups, execute_operation_annotated_with_regions};
+use crate::compute::execute::{
+    ExecutionContext, GenerationFindings, apply_dressups, execute_operation_annotated,
+};
 use crate::compute::operation_configs::{ProjectCurveConfig, ProjectCurveDirection};
 use crate::compute::stats::compute_retract_trips;
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -183,31 +185,26 @@ fn generate_with(
         max: P3::new(PLATE_X1, PLATE_Y1, 0.0),
     };
     let cancel = AtomicBool::new(false);
-    execute_operation_annotated_with_regions(
-        &OperationConfig::ProjectCurve(cfg),
-        Some(&mesh),
-        Some(&index),
-        Some(polys.as_slice()),
-        &tool_def,
-        &tool_cfg,
-        &h,
-        &[],
-        &stock_bbox,
-        None,
-        None,
-        None,
-        &cancel,
-        stock,
-        None,
-        None,
-        boundary_regions,
-        None,
-        None,
-        None,
-        &[],
-    )
-    .expect("project_curve generates on the flat-plate fixture")
-    .0
+    let regions = boundary_regions.map(RegionSet::from_slice);
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        mesh: Some(&mesh),
+        index: Some(&index),
+        polygons: Some(polys.as_slice()),
+        initial_stock: stock,
+        boundary_regions: regions.as_ref(),
+        ..ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &h,
+            &[],
+            &stock_bbox,
+            &cancel,
+        )
+    };
+    execute_operation_annotated(&ctx, &OperationConfig::ProjectCurve(cfg))
+        .expect("project_curve generates on the flat-plate fixture")
 }
 
 fn generate(chain_distance_mm: f64) -> AnnotatedToolpath {
