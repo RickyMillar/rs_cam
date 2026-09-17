@@ -1129,7 +1129,7 @@ impl ProjectSession {
                 cancel,
             )?;
             let map = resolved.map.as_ref();
-            let total = map.nx.saturating_mul(map.ny);
+            let total = map.grid.nx.saturating_mul(map.grid.ny);
             let mut complement = vec![true; total];
             for set in &resolved.islands.per_tier {
                 for (i, &owned) in set.owned_mask.iter().enumerate() {
@@ -1148,25 +1148,26 @@ impl ProjectSession {
             // mesh, so the territory lost is off-part; at `cell_mm >
             // margin_mm` the bite reaches at most one cell of real edge,
             // below the coarse tool's own cusp scale.
-            if map.nx > 0 && map.ny > 0 {
+            if map.grid.nx > 0 && map.grid.ny > 0 {
                 for (i, cell) in complement.iter_mut().enumerate() {
-                    let (r, c) = (i / map.nx, i % map.nx);
-                    if r == 0 || r == map.ny - 1 || c == 0 || c == map.nx - 1 {
+                    let (r, c) = (i / map.grid.nx, i % map.grid.nx);
+                    if r == 0 || r == map.grid.ny - 1 || c == 0 || c == map.grid.nx - 1 {
                         *cell = false;
                     }
                 }
             }
-            let grid = crate::geometry::grid2::Grid2::from_vec(map.nx, map.ny, complement)
-                .map_err(|e| {
-                    SessionError::OperationFailed(format!(
-                        "'{op_name}': complement mask shape mismatch — {e}"
-                    ))
-                })?;
+            let grid =
+                crate::geometry::grid2::Grid2::from_vec(map.grid.nx, map.grid.ny, complement)
+                    .map_err(|e| {
+                        SessionError::OperationFailed(format!(
+                            "'{op_name}': complement mask shape mismatch — {e}"
+                        ))
+                    })?;
             return Ok(crate::geometry::region_mask::region_polygons_from_mask(
                 &grid,
-                map.origin_x,
-                map.origin_y,
-                map.cell_mm,
+                map.grid.origin_x,
+                map.grid.origin_y,
+                map.grid.cell_mm,
                 0.0,
             ));
         }

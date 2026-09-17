@@ -199,7 +199,7 @@ fn a_flat_endmill_on_a_slope_is_reachable_too() {
         map.max_gap_mm,
         worst_cell(&map),
         map.discretisation_floor_mm,
-        map.cell_mm
+        map.grid.cell_mm
     );
 }
 
@@ -214,11 +214,11 @@ fn worst_cell(map: &rs_cam_core::maps::reach_map::ReachMap) -> String {
             best = (*gap, i);
         }
     }
-    let (row, col) = (best.1 / map.nx.max(1), best.1 % map.nx.max(1));
+    let (row, col) = (best.1 / map.grid.nx.max(1), best.1 % map.grid.nx.max(1));
     format!(
         "({:.2}, {:.2})",
-        map.origin_x + col as f64 * map.cell_mm,
-        map.origin_y + row as f64 * map.cell_mm
+        map.grid.origin_x + col as f64 * map.grid.cell_mm,
+        map.grid.origin_y + row as f64 * map.grid.cell_mm
     )
 }
 
@@ -566,7 +566,7 @@ fn cold_build_wall_clock_on_a_board_sized_terrain() {
          unreachable {:.2} %, max gap {:.4} mm; for_cutter on a tapered ball \
          {params_us:.1} us -> cell {taper_cell:.3} mm",
         mesh.faces.len(),
-        map.cell_mm,
+        map.grid.cell_mm,
         map.cells.len(),
         elapsed.as_secs_f64(),
         map.discretisation_floor_mm,
@@ -735,5 +735,55 @@ fn the_grid_note_says_the_bias_over_states_and_names_its_area_base() {
     assert!(
         note.contains(&map.over_statement_note()),
         "the grid note must quote the shared over-statement sentence"
+    );
+}
+
+// ── FLD-01: the grid keys stay where they were on the wire ──────────────
+
+/// FLD-01. `ReachMap` holds one [`GridSpec`] instead of five loose scalars,
+/// and `#[serde(flatten)]` keeps `nx`, `ny`, `origin_x`, `origin_y` and
+/// `cell_mm` at the TOP level of the JSON. No `grid` object appears, so the
+/// wire shape did not move when the representation did.
+///
+/// The flatten attribute is the whole decision this test guards. Without it
+/// the five keys drop into a nested object and every reader of a stored map
+/// breaks in silence.
+///
+/// # What this test does NOT assert
+///
+/// A full `to_string` / `from_str` round trip. It fails today, and it failed
+/// before FLD-01: `cell_floor_mm` is a `Vec<f32>` that carries `NaN` off the
+/// measured population, `serde_json` writes `NaN` as `null`, and reading
+/// `null` back into an `f32` is an error ("invalid type: null, expected
+/// f32"). [`ReachMap::cells`] takes the `Option<f32>` shape for exactly that
+/// reason; `cell_floor_mm` did not follow. That is a separate defect, in a
+/// separate field, and it is not FLD-01's to fix.
+///
+/// # Teeth
+///
+/// `#[serde(flatten)]` was deleted from the `grid` field, this test named the
+/// missing `nx` key and the extra `grid` object, and the attribute was
+/// restored.
+#[test]
+fn the_reach_map_json_keeps_the_five_grid_keys_at_the_top_level() {
+    let mesh = sloped_plane(20.0, 0.0);
+    let ball = BallEndmill::new(6.0, 25.0);
+    let map = reach_map_for_mesh(&mesh, &ball, 0.05, 1.0);
+
+    let value = serde_json::to_value(&map).expect("a reach map serialises");
+    let object = value.as_object().expect("a reach map is a JSON object");
+    for key in ["nx", "ny", "origin_x", "origin_y", "cell_mm"] {
+        assert!(
+            object.contains_key(key),
+            "`{key}` must stay at the top level of the reach-map JSON. \
+             `#[serde(flatten)]` on the `grid` field is what holds it there. \
+             I read these keys: {:?}",
+            object.keys().collect::<Vec<_>>()
+        );
+    }
+    assert!(
+        !object.contains_key("grid"),
+        "a `grid` object means the flatten attribute is gone and the wire \
+         shape moved"
     );
 }

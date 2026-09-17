@@ -1314,9 +1314,9 @@ fn render_tier_map_preview(
         "total_owned_area_mm2": preview.islands.total_owned_area_mm2(),
         "total_machining_area_mm2": preview.islands.total_machining_area_mm2(),
         "map": {
-            "cell_mm": preview.map.cell_mm,
-            "nx": preview.map.nx,
-            "ny": preview.map.ny,
+            "cell_mm": preview.map.grid.cell_mm,
+            "nx": preview.map.grid.nx,
+            "ny": preview.map.grid.ny,
             "tier_count": preview.map.tier_count,
             "unassigned_cells": preview.map.unassigned_cells(),
         },

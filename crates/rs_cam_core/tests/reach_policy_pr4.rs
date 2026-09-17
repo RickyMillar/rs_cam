@@ -285,8 +285,8 @@ fn routing_dials_do_not_move_the_envelope_derived_geometry() {
     let a = run(0);
     let b = run(64);
     assert_eq!(
-        (a.rest_grid.nx, a.rest_grid.ny),
-        (b.rest_grid.nx, b.rest_grid.ny),
+        (a.rest_grid.grid.nx, a.rest_grid.grid.ny),
+        (b.rest_grid.grid.nx, b.rest_grid.grid.ny),
         "grid extent moved with the routing dials"
     );
     assert_eq!(

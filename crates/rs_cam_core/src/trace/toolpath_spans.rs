@@ -567,8 +567,8 @@ impl AnnotatedToolpath {
 
         let rest_grid = rest_grid.clone().map(|mut grid| {
             let g = Arc::make_mut(&mut grid);
-            g.origin_x += shift.x;
-            g.origin_y += shift.y;
+            g.grid.origin_x += shift.x;
+            g.grid.origin_y += shift.y;
             for z in &mut g.surface_z {
                 *z += shift.z as f32;
             }
@@ -1536,6 +1536,7 @@ impl RemapIndex {
 mod tests {
     use super::*;
     use crate::geo::P3;
+    use crate::maps::grid::GridSpec;
     use crate::toolpath::Toolpath;
 
     fn toolpath_with_n_moves(n: usize) -> Toolpath {
@@ -1782,11 +1783,13 @@ mod tests {
         tp.feed_to(P3::new(1.0, 2.0, 3.0), 1000.0);
 
         let rest_grid = RestGrid {
-            nx: 2,
-            ny: 2,
-            origin_x: 10.0,
-            origin_y: 20.0,
-            cell_mm: 1.0,
+            grid: GridSpec {
+                nx: 2,
+                ny: 2,
+                origin_x: 10.0,
+                origin_y: 20.0,
+                cell_mm: 1.0,
+            },
             rest: vec![0.1, 0.2, 0.3, 0.4],
             surface_z: vec![5.0, f32::NAN, 7.0, 8.0],
             threshold: 0.05,
@@ -1826,8 +1829,8 @@ mod tests {
         let grid = shifted
             .rest_grid
             .expect("rest_grid should survive translation");
-        assert_eq!(grid.origin_x, 110.0);
-        assert_eq!(grid.origin_y, 220.0);
+        assert_eq!(grid.grid.origin_x, 110.0);
+        assert_eq!(grid.grid.origin_y, 220.0);
         assert_eq!(grid.surface_z[0], 15.0);
         assert!(grid.surface_z[1].is_nan(), "NaN cell must stay NaN");
         assert_eq!(grid.surface_z[2], 17.0);
@@ -1845,7 +1848,7 @@ mod tests {
 
         // Original untouched.
         assert_eq!(at.toolpath.moves[0].target, P3::new(1.0, 2.0, 3.0));
-        assert_eq!(at.rest_grid.as_ref().map(|g| g.origin_x), Some(10.0));
+        assert_eq!(at.rest_grid.as_ref().map(|g| g.grid.origin_x), Some(10.0));
         assert_eq!(
             at.rest_regions.as_ref().map(|r| r[0].exterior[0]),
             Some(crate::geo::P2::new(0.0, 0.0))

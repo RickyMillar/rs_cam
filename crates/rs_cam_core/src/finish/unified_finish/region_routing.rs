@@ -557,20 +557,21 @@ pub(super) fn band_z_range(
 /// arm fed the detector.
 #[cfg(test)]
 pub(super) fn rest_grid_index(grid: &RestGrid, x: f64, y: f64) -> Option<usize> {
-    if grid.nx == 0 || grid.ny == 0 || grid.cell_mm <= 0.0 {
+    let spec = grid.grid;
+    if spec.nx == 0 || spec.ny == 0 || spec.cell_mm <= 0.0 {
         return None;
     }
-    let col = ((x - grid.origin_x) / grid.cell_mm).round();
-    let row = ((y - grid.origin_y) / grid.cell_mm).round();
+    let col = ((x - spec.origin_x) / spec.cell_mm).round();
+    let row = ((y - spec.origin_y) / spec.cell_mm).round();
     if col < 0.0 || row < 0.0 {
         return None;
     }
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     let (col, row) = (col as usize, row as usize);
-    if col >= grid.nx || row >= grid.ny {
+    if col >= spec.nx || row >= spec.ny {
         return None;
     }
-    Some(row * grid.nx + col)
+    Some(spec.index_of(row, col))
 }
 
 /// Total length (mm) of `tp`'s `FinishingCut` moves — each move's

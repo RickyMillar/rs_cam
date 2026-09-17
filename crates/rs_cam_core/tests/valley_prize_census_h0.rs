@@ -1172,7 +1172,8 @@ fn machined_stock(
     );
 
     let tier_zero: Vec<bool> = tier_map.labels.iter().map(|&label| label == 0).collect();
-    let distance_to_tier_zero = distance_transform_2d(&tier_zero, tier_map.ny, tier_map.nx);
+    let distance_to_tier_zero =
+        distance_transform_2d(&tier_zero, tier_map.grid.ny, tier_map.grid.nx);
     let reach = OVERLAP_MM + coarse.cusp_radius_mm();
 
     let rows = stock.z_grid.rows;
@@ -1189,7 +1190,7 @@ fn machined_stock(
             };
             let mut top = rough_z + ROUGH_STOCK_TO_LEAVE_AXIAL_MM;
             let coarse_here = tier_map.nearest_cell(x, y).is_some_and(|(r, c)| {
-                distance_to_tier_zero[r * tier_map.nx + c] * tier_map.cell_mm <= reach
+                distance_to_tier_zero[r * tier_map.grid.nx + c] * tier_map.grid.cell_mm <= reach
             });
             if coarse_here && let Some(coarse_z) = nearest_contact_z(&coarse_grid, x, y, min_z) {
                 top = top.min(coarse_z);

@@ -123,9 +123,9 @@ impl RsCamApp {
                 "unresolved": map.unresolved_area_mm2,
             },
             "grid": {
-                "cell_mm": map.cell_mm,
-                "nx": map.nx,
-                "ny": map.ny,
+                "cell_mm": map.grid.cell_mm,
+                "nx": map.grid.nx,
+                "ny": map.grid.ny,
                 "cells": map.cells.len(),
                 "not_measured_cells": not_measured,
                 "cell_rule": "the TOOL's tip sphere and the model bbox, never the tolerance \

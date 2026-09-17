@@ -176,7 +176,7 @@ pub fn cached_reach_map(
     tracing::debug!(
         target: "rs_cam_core::maps::reach_map_cache",
         cells = built.cells.len(),
-        cell_mm = built.cell_mm,
+        cell_mm = built.grid.cell_mm,
         tolerance_mm = built.tolerance_mm,
         "reach map build"
     );

@@ -152,7 +152,10 @@ fn the_preview_reproduces_the_hand_run_tier_islands() {
     let cusp_radii = [coarse.cusp_radius_mm(), fine.cusp_radius_mm()];
     let islands = extract_tier_islands(&map, &island_params(), &cusp_radii).unwrap();
 
-    assert_eq!((preview.map.nx, preview.map.ny), (map.nx, map.ny));
+    assert_eq!(
+        (preview.map.grid.nx, preview.map.grid.ny),
+        (map.grid.nx, map.grid.ny)
+    );
     assert_eq!(preview.map.labels, map.labels, "same labels, cell for cell");
     assert_eq!(preview.map.tier_count, 2);
     assert_eq!(preview.map.treatment, ResidualTreatment::Raw);

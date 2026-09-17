@@ -165,8 +165,8 @@ fn a_different_cell_size_or_tolerance_misses() {
     let a = cached_tier_map(&mesh, &index, &ladder, &params(0.5), &never_cancel()).unwrap();
     let b = cached_tier_map(&mesh, &index, &ladder, &params(0.6), &never_cancel()).unwrap();
     assert!(!Arc::ptr_eq(&a, &b), "a cell-size change must miss");
-    assert_eq!(a.cell_mm, 0.5);
-    assert_eq!(b.cell_mm, 0.6);
+    assert_eq!(a.grid.cell_mm, 0.5);
+    assert_eq!(b.grid.cell_mm, 0.6);
 
     let mut looser = params(0.5);
     looser.tolerance_mm = 0.05;

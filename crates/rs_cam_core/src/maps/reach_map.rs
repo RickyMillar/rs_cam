@@ -352,8 +352,9 @@ impl std::fmt::Debug for ReachMapRequest {
 /// verdict.
 ///
 /// Row-major `r * nx + c`, cell centre at
-/// `(origin_x + c * cell_mm, origin_y + r * cell_mm)` — the same convention
-/// as [`crate::maps::tier_map::TierMap`] and [`crate::geometry::grid2::Grid2`].
+/// `(grid.x_of(c), grid.y_of(r))` — the same representation as
+/// [`crate::maps::tier_map::TierMap`] and
+/// [`crate::surface::rest_field::RestGrid`] (FLD-01).
 ///
 /// `None` in [`Self::cells`] means **not measured**, never zero: no surface
 /// under that XY, or no CL position within an envelope radius held the tool
@@ -362,11 +363,11 @@ impl std::fmt::Debug for ReachMapRequest {
 /// grid would not survive its own round trip.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReachMap {
-    pub nx: usize,
-    pub ny: usize,
-    pub origin_x: f64,
-    pub origin_y: f64,
-    pub cell_mm: f64,
+    /// The XY walk grid — the one origin/cell-size representation the
+    /// full-board maps share (FLD-01). `flatten` keeps the five keys where
+    /// they were on the wire.
+    #[serde(flatten)]
+    pub grid: GridSpec,
     /// Gap (mm) between the surface this cutter would leave and the true
     /// mesh. `None` = not measured.
     pub cells: Vec<Option<f32>>,
@@ -575,7 +576,7 @@ impl ReachMap {
     pub fn grid_note(&self) -> String {
         let mut note = format!(
             "cell {:.3} mm \u{00B7} floor {:.3} mm \u{00B7} tol {:.3} mm",
-            self.cell_mm, self.discretisation_floor_mm, self.tolerance_mm
+            self.grid.cell_mm, self.discretisation_floor_mm, self.tolerance_mm
         );
         note.push_str(&format!(" \u{00B7} {}", self.area_basis_note()));
         if self.tolerance_below_floor() {
@@ -591,13 +592,13 @@ impl ReachMap {
     /// grid.
     #[must_use]
     pub fn nearest_cell(&self, x: f64, y: f64) -> Option<(usize, usize)> {
-        let col = ((x - self.origin_x) / self.cell_mm).round();
-        let row = ((y - self.origin_y) / self.cell_mm).round();
+        let col = ((x - self.grid.origin_x) / self.grid.cell_mm).round();
+        let row = ((y - self.grid.origin_y) / self.grid.cell_mm).round();
         if !col.is_finite() || !row.is_finite() || col < 0.0 || row < 0.0 {
             return None;
         }
         let (col, row) = (col as usize, row as usize);
-        if col >= self.nx || row >= self.ny {
+        if col >= self.grid.nx || row >= self.grid.ny {
             return None;
         }
         Some((row, col))
@@ -607,7 +608,7 @@ impl ReachMap {
     #[must_use]
     pub fn gap_at(&self, x: f64, y: f64) -> Option<f32> {
         let (row, col) = self.nearest_cell(x, y)?;
-        self.cells.get(row * self.nx + col).copied().flatten()
+        self.cells.get(row * self.grid.nx + col).copied().flatten()
     }
 
     /// One gap per mesh vertex, for per-vertex colouring.
@@ -651,7 +652,7 @@ impl ReachMap {
             .iter()
             .map(|v| {
                 self.nearest_cell(v.x, v.y)
-                    .and_then(|(row, col)| self.cell_floor_mm.get(row * self.nx + col))
+                    .and_then(|(row, col)| self.cell_floor_mm.get(row * self.grid.nx + col))
                     .copied()
                     .unwrap_or(f32::NAN)
             })
@@ -1799,11 +1800,7 @@ pub fn compute_reach_map(
     );
 
     Ok(ReachMap {
-        nx: grid.nx,
-        ny: grid.ny,
-        origin_x: grid.origin_x,
-        origin_y: grid.origin_y,
-        cell_mm: grid.cell_mm,
+        grid,
         cells,
         tolerance_mm,
         unreachable_fraction,
@@ -1847,11 +1844,13 @@ pub fn reach_map_for_mesh(
     // SAFETY: `NeverCancel` never fires, so the walk cannot return
     // `Cancelled`; the fallback map is unreachable and carries no verdict.
     let fallback = ReachMap {
-        nx: 0,
-        ny: 0,
-        origin_x: 0.0,
-        origin_y: 0.0,
-        cell_mm,
+        grid: GridSpec {
+            nx: 0,
+            ny: 0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            cell_mm,
+        },
         cells: Vec::new(),
         tolerance_mm,
         unreachable_fraction: 0.0,

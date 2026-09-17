@@ -10,8 +10,14 @@
 //! The constructors stay local, because they are different rules: `tier_map`
 //! pads by the ladder's finest envelope, and `reach_map` coarsens the cell
 //! until the grid fits its cell budget.
+//!
+//! [`GridSpec`] is also the one representation the three full-board result
+//! types hold (FLD-01): `RestGrid`, `TierMap` and `ReachMap` each carry a
+//! `grid` field instead of a verbatim copy of the same five scalars.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -21,26 +27,55 @@ use crate::interrupt::check_cancel;
 use crate::interrupt::{CancelCheck, Cancelled};
 
 /// The grid a walk lays over the mesh bbox, row-major from `origin`.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct GridSpec {
-    pub(crate) nx: usize,
-    pub(crate) ny: usize,
-    pub(crate) origin_x: f64,
-    pub(crate) origin_y: f64,
-    pub(crate) cell_mm: f64,
+///
+/// This is the one origin/cell-size representation the full-board maps share.
+/// [`crate::surface::rest_field::RestGrid`],
+/// [`crate::maps::tier_map::TierMap`] and [`crate::maps::reach_map::ReachMap`]
+/// each hold one of these instead of a copy of the same five scalars (FLD-01).
+/// A reader names `map.grid.nx`, and the cell centre of `(row, col)` is
+/// `(grid.x_of(col), grid.y_of(row))`.
+///
+/// `SurfaceHeightmap`, `SlopeMap` and `DropCutterGrid` stay on their own
+/// layouts: they carry anisotropic steps or a rotated frame, which this
+/// isotropic, axis-aligned spec cannot state. See
+/// [`crate::geometry::grid2`]'s module doc.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct GridSpec {
+    /// Columns.
+    pub nx: usize,
+    /// Rows.
+    pub ny: usize,
+    /// World X of column 0's cell centre (mm).
+    pub origin_x: f64,
+    /// World Y of row 0's cell centre (mm).
+    pub origin_y: f64,
+    /// Cell pitch (mm), the same in X and Y.
+    pub cell_mm: f64,
 }
 
 impl GridSpec {
-    pub(crate) fn cell_count(&self) -> usize {
+    /// Cells in the whole grid.
+    #[must_use]
+    pub fn cell_count(&self) -> usize {
         self.nx * self.ny
     }
 
-    pub(crate) fn x_of(&self, col: usize) -> f64 {
+    /// World X (mm) of `col`'s cell centre.
+    #[must_use]
+    pub fn x_of(&self, col: usize) -> f64 {
         self.origin_x + col as f64 * self.cell_mm
     }
 
-    pub(crate) fn y_of(&self, row: usize) -> f64 {
+    /// World Y (mm) of `row`'s cell centre.
+    #[must_use]
+    pub fn y_of(&self, row: usize) -> f64 {
         self.origin_y + row as f64 * self.cell_mm
+    }
+
+    /// The row-major index of `(row, col)`. The caller checks the bounds.
+    #[must_use]
+    pub fn index_of(&self, row: usize, col: usize) -> usize {
+        row * self.nx + col
     }
 }
 

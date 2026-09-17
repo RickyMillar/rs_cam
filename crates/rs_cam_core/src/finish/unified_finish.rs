@@ -1720,9 +1720,10 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
             // (measured, run 5: Op B all-over again at 58.5 k s).
             // Reach-back over the mask edge is separately provided by
             // decompose's own `overlap_mm` dilation at extraction.
-            let dilate_mm = grid.cell_mm + cfg.rest_field_params.region_margin_mm;
-            let radius_cells = dilate_mm / grid.cell_mm.max(1e-9);
-            let dist = crate::geometry::grid_field::distance_transform_2d(&keep, grid.ny, grid.nx);
+            let spec = grid.grid;
+            let dilate_mm = spec.cell_mm + cfg.rest_field_params.region_margin_mm;
+            let radius_cells = dilate_mm / spec.cell_mm.max(1e-9);
+            let dist = crate::geometry::grid_field::distance_transform_2d(&keep, spec.ny, spec.nx);
             let keep_dilated: Vec<bool> = dist.iter().map(|&d| d <= radius_cells).collect();
             // Nearest-resample onto the classification grid and AND.
             for (i, cov) in covered.iter_mut().enumerate() {
@@ -1733,16 +1734,16 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 let col = i % cols;
                 let x = origin_x + col as f64 * cell;
                 let y = origin_y + row as f64 * cell;
-                let gc = ((x - grid.origin_x) / grid.cell_mm).round();
-                let gr = ((y - grid.origin_y) / grid.cell_mm).round();
+                let gc = ((x - spec.origin_x) / spec.cell_mm).round();
+                let gr = ((y - spec.origin_y) / spec.cell_mm).round();
                 let keep_here =
-                    if gc < 0.0 || gr < 0.0 || gc >= grid.nx as f64 || gr >= grid.ny as f64 {
+                    if gc < 0.0 || gr < 0.0 || gc >= spec.nx as f64 || gr >= spec.ny as f64 {
                         // Outside the detector's grid: no evidence — keep
                         // (untrusted keeps coverage).
                         true
                     } else {
                         #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                        let gi = gr as usize * grid.nx + gc as usize;
+                        let gi = spec.index_of(gr as usize, gc as usize);
                         keep_dilated.get(gi).copied().unwrap_or(true)
                     };
                 if !keep_here {

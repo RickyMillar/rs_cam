@@ -754,12 +754,12 @@ pub fn extract_tier_islands(
     params: &TierIslandParams,
     cusp_radii: &[f64],
 ) -> Result<TierIslands, TierIslandError> {
-    let total = map.nx.saturating_mul(map.ny);
-    if map.labels.len() != total || map.cell_mm <= 0.0 || !map.cell_mm.is_finite() {
+    let total = map.grid.nx.saturating_mul(map.grid.ny);
+    if map.labels.len() != total || map.grid.cell_mm <= 0.0 || !map.grid.cell_mm.is_finite() {
         return Err(TierIslandError::MalformedMap {
             expected_cells: total,
             labels: map.labels.len(),
-            cell_mm: map.cell_mm,
+            cell_mm: map.grid.cell_mm,
         });
     }
     if cusp_radii.len() != map.tier_count {
@@ -771,12 +771,12 @@ pub fn extract_tier_islands(
     if total == 0 || map.tier_count < 2 {
         return Ok(TierIslands {
             per_tier: Vec::new(),
-            cell_mm: map.cell_mm,
+            cell_mm: map.grid.cell_mm,
             tier_count: map.tier_count,
         });
     }
 
-    let (nx, ny, cell) = (map.nx, map.ny, map.cell_mm);
+    let (nx, ny, cell) = (map.grid.nx, map.grid.ny, map.grid.cell_mm);
     let cell_area = cell * cell;
 
     // ── Coverage, minus the grid-edge ring ──────────────────────────────
@@ -942,8 +942,8 @@ pub fn extract_tier_islands(
             };
             let base = region_polygons_from_mask_reported(
                 &grid,
-                map.origin_x,
-                map.origin_y,
+                map.grid.origin_x,
+                map.grid.origin_y,
                 cell,
                 0.0,
                 None,
@@ -959,8 +959,8 @@ pub fn extract_tier_islands(
             if params.overlap_mm > 0.0 {
                 let grown = region_polygons_from_mask_reported(
                     &grid,
-                    map.origin_x,
-                    map.origin_y,
+                    map.grid.origin_x,
+                    map.grid.origin_y,
                     cell,
                     params.overlap_mm,
                     Some(&covered),
@@ -1008,7 +1008,7 @@ pub fn extract_tier_islands(
 
     Ok(TierIslands {
         per_tier: sets,
-        cell_mm: map.cell_mm,
+        cell_mm: map.grid.cell_mm,
         tier_count: map.tier_count,
     })
 }
@@ -1096,15 +1096,15 @@ fn tier_svg_color(tier: u8) -> &'static str {
 pub fn tier_islands_to_svg(map: &TierMap, islands: &TierIslands) -> String {
     const EMPTY: &str = "<svg xmlns='http://www.w3.org/2000/svg'/>";
     let d = TIER_SVG_DECIMALS;
-    let cell = map.cell_mm;
-    if !cell.is_finite() || cell <= 0.0 || map.nx == 0 || map.ny == 0 {
+    let cell = map.grid.cell_mm;
+    if !cell.is_finite() || cell <= 0.0 || map.grid.nx == 0 || map.grid.ny == 0 {
         return String::from(EMPTY);
     }
     let half = cell * 0.5;
-    let minx = map.origin_x - half;
-    let miny = map.origin_y - half;
-    let w = map.nx as f64 * cell;
-    let h = map.ny as f64 * cell;
+    let minx = map.grid.origin_x - half;
+    let miny = map.grid.origin_y - half;
+    let w = map.grid.nx as f64 * cell;
+    let h = map.grid.ny as f64 * cell;
     if !minx.is_finite() || !miny.is_finite() || !w.is_finite() || !h.is_finite() {
         return String::from(EMPTY);
     }
@@ -1228,16 +1228,19 @@ fn tier_ring_svg_subpath(ring: &[P2], flip: f64, out: &mut String) {
 )]
 mod tests {
     use super::*;
+    use crate::maps::grid::GridSpec;
     use crate::maps::tier_map::ResidualTreatment;
 
     fn map_with(labels: Vec<u8>, nx: usize, ny: usize, tier_count: usize) -> TierMap {
         let len = labels.len();
         TierMap {
-            nx,
-            ny,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_mm: 0.5,
+            grid: GridSpec {
+                nx,
+                ny,
+                origin_x: 0.0,
+                origin_y: 0.0,
+                cell_mm: 0.5,
+            },
             labels,
             finest_z: vec![0.0f32; len],
             tier_count,
@@ -1313,7 +1316,7 @@ mod tests {
         ));
 
         let mut zero_cell = map_with(vec![0u8; 100], 10, 10, 2);
-        zero_cell.cell_mm = 0.0;
+        zero_cell.grid.cell_mm = 0.0;
         assert!(matches!(
             extract_tier_islands(&zero_cell, &TierIslandParams::default(), &[2.0, 1.0]),
             Err(TierIslandError::MalformedMap { .. })
@@ -1436,7 +1439,7 @@ mod tests {
         // And a `TierIslands` carrying no tier rows at all.
         let none = TierIslands {
             per_tier: Vec::new(),
-            cell_mm: map.cell_mm,
+            cell_mm: map.grid.cell_mm,
             tier_count: 2,
         };
         let svg = tier_islands_to_svg(&map, &none);
@@ -1452,7 +1455,7 @@ mod tests {
             tier_count: 2,
         };
         let mut zero_cell = map_with(vec![0u8; 400], 20, 20, 2);
-        zero_cell.cell_mm = 0.0;
+        zero_cell.grid.cell_mm = 0.0;
         assert_eq!(
             tier_islands_to_svg(&zero_cell, &islands),
             "<svg xmlns='http://www.w3.org/2000/svg'/>"

@@ -229,7 +229,7 @@ fn row(label: &str, map: &ReachMap) {
         "  {label:38} cell {:.3}  unreachable {:6.2} %  unresolved {:6.2} %  \
          max gap {:.4}  floor {:.4} (profile {:.4} / curvature p95 {:.4})  \
          measured {:.0}/{:.0} mm2",
-        map.cell_mm,
+        map.grid.cell_mm,
         map.unreachable_pct(),
         map.unresolved_pct(),
         map.max_gap_mm,

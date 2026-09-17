@@ -101,8 +101,8 @@ fn the_plane_is_claimed_by_the_coarsest_tier() {
     // one coarse envelope clear of the bowl: those two bands are the only
     // places the coarse tool is not resting on something it does not cover.
     let mut checked = 0usize;
-    for row in 0..map.ny {
-        for col in 0..map.nx {
+    for row in 0..map.grid.ny {
+        for col in 0..map.grid.nx {
             let (x, y) = map.cell_center(row, col).unwrap();
             if x.abs() > HALF_MM - 2.0 || y.abs() > HALF_MM - 2.0 {
                 continue;
@@ -137,8 +137,8 @@ fn the_bowl_floor_falls_to_the_finer_tier() {
     // And it is a region, not a single cell: every cell whose centre is well
     // inside the bowl is fine-tier too.
     let mut inner = 0usize;
-    for r in 0..map.ny {
-        for c in 0..map.nx {
+    for r in 0..map.grid.ny {
+        for c in 0..map.grid.nx {
             let (x, y) = map.cell_center(r, c).unwrap();
             if (x * x + y * y).sqrt() > BOWL_R_MM * 0.5 {
                 continue;
@@ -229,7 +229,7 @@ fn two_runs_produce_an_identical_map() {
     let a = compute_tier_map(&mesh, &index, &ladder, &params(), &never_cancel()).unwrap();
     let b = compute_tier_map(&mesh, &index, &ladder, &params(), &never_cancel()).unwrap();
 
-    assert_eq!((a.nx, a.ny), (b.nx, b.ny));
+    assert_eq!((a.grid.nx, a.grid.ny), (b.grid.nx, b.grid.ny));
     assert_eq!(a.labels, b.labels, "tier labels must be deterministic");
     // NaN != NaN, so compare the finest-drop plane bitwise rather than by
     // value — a determinism sentry that skips the sentinel cells is not one.

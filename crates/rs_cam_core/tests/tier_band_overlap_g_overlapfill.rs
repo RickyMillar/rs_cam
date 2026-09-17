@@ -40,6 +40,7 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::maps::grid::GridSpec;
 use rs_cam_core::maps::tier_islands::{
     BAND_RATIO_ADVISORY_BOUND, TierIslandParams, extract_tier_islands,
 };
@@ -92,11 +93,13 @@ fn ring_island_map(side_cells: usize, hole_cells: &[usize]) -> TierMap {
     );
 
     TierMap {
-        nx: NX,
-        ny: NY,
-        origin_x: 0.0,
-        origin_y: 0.0,
-        cell_mm: CELL,
+        grid: GridSpec {
+            nx: NX,
+            ny: NY,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            cell_mm: CELL,
+        },
         labels,
         finest_z: vec![-1.0f32; NX * NY],
         tier_count: 2,

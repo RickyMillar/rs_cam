@@ -17,6 +17,11 @@
 //! divergence (naming, anisotropic cell steps, empty-cell policy) that
 //! deserves its own look rather than a forced fit.
 //!
+//! [`Grid2`] holds the per-cell payload; [`crate::maps::grid::GridSpec`] holds
+//! the origin and the cell size of a full-board map (FLD-01). The two are
+//! complements, not rivals: `RestGrid`, `TierMap` and `ReachMap` each carry a
+//! `GridSpec` and keep their cells in plain vectors or in a `Grid2`.
+//!
 //! All accessors are bounds-checked through `Vec::get`/`get_mut` — there is no
 //! raw slice indexing anywhere in this module, so no `#[allow(clippy::indexing_slicing)]`
 //! is needed at all.

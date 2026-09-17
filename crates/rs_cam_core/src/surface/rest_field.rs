@@ -45,6 +45,7 @@ use crate::dexel_stock::TriDexelStock;
 use crate::geo::{P3, polyline_length};
 use crate::geometry::grid2::Grid2;
 use crate::geometry::region_mask::MAX_REST_REGIONS;
+use crate::maps::grid::GridSpec;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::surface::dropcutter::point_drop_cutter;
@@ -239,17 +240,15 @@ impl RestFieldReport {
 }
 
 /// The continuous rest-depth field on the XY sampling grid — the ground truth
-/// for the GUI heatmap overlay. Row-major `r*nx + c`; cell centre at
-/// `(origin_x + c*cell_mm, origin_y + r*cell_mm)`. Cells outside the trusted
-/// region (non-contact, or within the eroded boundary band) are `NaN` in both
-/// `rest` and `surface_z`.
+/// for the GUI heatmap overlay. The grid is a [`GridSpec`]: row-major
+/// `r*nx + c`, cell centre at `(grid.x_of(c), grid.y_of(r))`. Cells outside
+/// the trusted region (non-contact, or within the eroded boundary band) are
+/// `NaN` in both `rest` and `surface_z`.
 #[derive(Debug, Clone)]
 pub struct RestGrid {
-    pub nx: usize,
-    pub ny: usize,
-    pub origin_x: f64,
-    pub origin_y: f64,
-    pub cell_mm: f64,
+    /// The XY sampling grid — the one origin/cell-size representation the
+    /// full-board maps share (FLD-01).
+    pub grid: GridSpec,
     /// Per-cell rest depth (mm). `NaN` = untrusted / outside the part.
     pub rest: Vec<f32>,
     /// Per-cell surface Z (pencil drop, mm) for draping the overlay on the
@@ -286,7 +285,7 @@ impl RestGrid {
     /// than reporting a false pathology.
     #[must_use]
     pub fn covered_footprint_area_mm2(&self) -> f64 {
-        self.covered_cell_count() as f64 * self.cell_mm * self.cell_mm
+        self.covered_cell_count() as f64 * self.grid.cell_mm * self.grid.cell_mm
     }
 
     /// What [`Self::covered_footprint_area_mm2`] means (M1 §4.3): an
@@ -306,7 +305,7 @@ impl RestGrid {
             crate::measurement::MeasurementDomain::ProjectedXyArea,
             crate::measurement::MeasurementStage::RestFieldMask,
         )
-        .with_cell(self.cell_mm, crate::measurement::CellSource::Explicit)
+        .with_cell(self.grid.cell_mm, crate::measurement::CellSource::Explicit)
     }
 }
 
@@ -796,11 +795,13 @@ pub fn detect_rest_valleys(
         })
         .unzip();
     let rest_grid = RestGrid {
-        nx,
-        ny,
-        origin_x,
-        origin_y,
-        cell_mm: cell,
+        grid: GridSpec {
+            nx,
+            ny,
+            origin_x,
+            origin_y,
+            cell_mm: cell,
+        },
         rest: grid_rest,
         surface_z: grid_surface_z,
         threshold,
@@ -2216,11 +2217,13 @@ mod tests {
             }
         }
         RestGrid {
-            nx,
-            ny,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_mm: cell,
+            grid: GridSpec {
+                nx,
+                ny,
+                origin_x: 0.0,
+                origin_y: 0.0,
+                cell_mm: cell,
+            },
             rest: vec![f32::NAN; nx * ny],
             surface_z,
             threshold: 0.05,
@@ -2245,7 +2248,8 @@ mod tests {
         // The honest denominator: cells that carry a surface solution, times
         // cell² — same grid, same stage as the regions extracted from it.
         let footprint = grid.covered_footprint_area_mm2();
-        let bbox = (grid.nx as f64 * grid.cell_mm) * (grid.ny as f64 * grid.cell_mm);
+        let bbox =
+            (grid.grid.nx as f64 * grid.grid.cell_mm) * (grid.grid.ny as f64 * grid.grid.cell_mm);
         assert!((bbox - 400.0).abs() < 1e-9, "bbox rectangle is 20x20 mm");
         assert!(
             (footprint - 205.0).abs() < 1e-9,
@@ -2294,7 +2298,7 @@ mod tests {
 
         // No covered cells at all → no footprint, so no false pathology.
         let empty = RestGrid {
-            surface_z: vec![f32::NAN; grid.nx * grid.ny],
+            surface_z: vec![f32::NAN; grid.grid.nx * grid.grid.ny],
             ..grid
         };
         assert_eq!(empty.covered_cell_count(), 0);

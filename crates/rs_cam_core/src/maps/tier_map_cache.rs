@@ -215,7 +215,7 @@ pub fn cached_tier_map(
         target: "rs_cam_core::maps::tier_map_cache",
         tiers = built.tier_count,
         cells = built.labels.len(),
-        cell_mm = built.cell_mm,
+        cell_mm = built.grid.cell_mm,
         "tier map build"
     );
     put(mesh, key, Arc::clone(&built));

@@ -88,7 +88,7 @@ impl Spine {
 /// artifact, not drainage. Masking to the rest mask supplies the outlets the
 /// part geometry does not.
 fn flow_field_from_surface(grid: &RestGrid, rest_floor: Option<f64>) -> FlowField {
-    let n = grid.nx * grid.ny;
+    let n = grid.grid.nx * grid.grid.ny;
     let mut z = vec![0.0f64; n];
     let mut nodata = vec![false; n];
     for i in 0..n {
@@ -105,11 +105,11 @@ fn flow_field_from_surface(grid: &RestGrid, rest_floor: Option<f64>) -> FlowFiel
         }
     }
     FlowField {
-        nx: grid.nx,
-        ny: grid.ny,
-        ox: grid.origin_x,
-        oy: grid.origin_y,
-        cell: grid.cell_mm,
+        nx: grid.grid.nx,
+        ny: grid.grid.ny,
+        ox: grid.grid.origin_x,
+        oy: grid.grid.origin_y,
+        cell: grid.grid.cell_mm,
         z,
         nodata,
     }
@@ -128,7 +128,7 @@ fn extractor_b(grid: &RestGrid, trunk_area_mm2: f64, min_cut_length_mm: f64) -> 
     // A4: route inside the rest mask so each valley drains to its own rim.
     let field = flow_field_from_surface(grid, Some(lo_floor));
     let n = field.len();
-    let cell_area = grid.cell_mm * grid.cell_mm;
+    let cell_area = grid.grid.cell_mm * grid.grid.cell_mm;
 
     let raw_filled = priority_flood_epsilon(&field);
     let (filled, _flats, _fc, _mi) = resolve_flats(&field, &raw_filled);
@@ -244,8 +244,8 @@ fn median(mut v: Vec<f64>) -> f64 {
 /// neighbourhood a ball could nestle into). Fidelity = rest_at_point ÷ that
 /// max; 1.0 = the spine sits at the deepest reachable point.
 fn local_cross_section_max(grid: &RestGrid, cx: f64, cy: f64, radius_cells: i64) -> f64 {
-    let col = ((cx - grid.origin_x) / grid.cell_mm).round() as i64;
-    let row = ((cy - grid.origin_y) / grid.cell_mm).round() as i64;
+    let col = ((cx - grid.grid.origin_x) / grid.grid.cell_mm).round() as i64;
+    let row = ((cy - grid.grid.origin_y) / grid.grid.cell_mm).round() as i64;
     let mut m = 0.0f64;
     for dr in -radius_cells..=radius_cells {
         for dc in -radius_cells..=radius_cells {
@@ -253,10 +253,10 @@ fn local_cross_section_max(grid: &RestGrid, cx: f64, cy: f64, radius_cells: i64)
                 continue;
             }
             let (r, c) = (row + dr, col + dc);
-            if r < 0 || c < 0 || r >= grid.ny as i64 || c >= grid.nx as i64 {
+            if r < 0 || c < 0 || r >= grid.grid.ny as i64 || c >= grid.grid.nx as i64 {
                 continue;
             }
-            let v = grid.rest[(r as usize) * grid.nx + c as usize] as f64;
+            let v = grid.rest[(r as usize) * grid.grid.nx + c as usize] as f64;
             if v.is_finite() && v > m {
                 m = v;
             }
@@ -283,7 +283,7 @@ fn report_from_polylines(
         traced_len_mm / skeleton_len_mm
     };
     // M4: fidelity over a uniform sample of all spine points.
-    let radius_cells = ((pencil_diam_mm * 0.5) / grid.cell_mm).ceil().max(1.0) as i64;
+    let radius_cells = ((pencil_diam_mm * 0.5) / grid.grid.cell_mm).ceil().max(1.0) as i64;
     let mut fid: Vec<f64> = Vec::new();
     for (pl, ra) in polylines.iter().zip(rest_at.iter()) {
         for (p, &r) in pl.iter().zip(ra.iter()) {
@@ -338,12 +338,12 @@ fn report_extractor_a(
 }
 
 fn sample_rest(grid: &RestGrid, x: f64, y: f64) -> f64 {
-    let col = ((x - grid.origin_x) / grid.cell_mm).round() as i64;
-    let row = ((y - grid.origin_y) / grid.cell_mm).round() as i64;
-    if row < 0 || col < 0 || row >= grid.ny as i64 || col >= grid.nx as i64 {
+    let col = ((x - grid.grid.origin_x) / grid.grid.cell_mm).round() as i64;
+    let row = ((y - grid.grid.origin_y) / grid.grid.cell_mm).round() as i64;
+    if row < 0 || col < 0 || row >= grid.grid.ny as i64 || col >= grid.grid.nx as i64 {
         return 0.0;
     }
-    let v = grid.rest[(row as usize) * grid.nx + col as usize] as f64;
+    let v = grid.rest[(row as usize) * grid.grid.nx + col as usize] as f64;
     if v.is_finite() { v } else { 0.0 }
 }
 
@@ -356,22 +356,22 @@ fn footprint_overlap(
     half_width_mm: f64,
 ) -> (f64, f64) {
     let stamp = |rep: &ExtractorReport| -> Vec<bool> {
-        let mut m = vec![false; grid.nx * grid.ny];
-        let rc = (half_width_mm / grid.cell_mm).ceil().max(1.0) as i64;
+        let mut m = vec![false; grid.grid.nx * grid.grid.ny];
+        let rc = (half_width_mm / grid.grid.cell_mm).ceil().max(1.0) as i64;
         for pl in &rep.polylines {
             for p in pl {
-                let col = ((p.x - grid.origin_x) / grid.cell_mm).round() as i64;
-                let row = ((p.y - grid.origin_y) / grid.cell_mm).round() as i64;
+                let col = ((p.x - grid.grid.origin_x) / grid.grid.cell_mm).round() as i64;
+                let row = ((p.y - grid.grid.origin_y) / grid.grid.cell_mm).round() as i64;
                 for dr in -rc..=rc {
                     for dc in -rc..=rc {
                         if dr * dr + dc * dc > rc * rc {
                             continue;
                         }
                         let (r, c) = (row + dr, col + dc);
-                        if r < 0 || c < 0 || r >= grid.ny as i64 || c >= grid.nx as i64 {
+                        if r < 0 || c < 0 || r >= grid.grid.ny as i64 || c >= grid.grid.nx as i64 {
                             continue;
                         }
-                        m[(r as usize) * grid.nx + c as usize] = true;
+                        m[(r as usize) * grid.grid.nx + c as usize] = true;
                     }
                 }
             }
@@ -403,7 +403,7 @@ fn footprint_overlap(
 /// A hillshade of `surface_z` with A's spines (blue) and B's spines (red)
 /// overlaid. One PNG-free SVG so it needs no image crate.
 fn render_overlay(path: &Path, grid: &RestGrid, a: &ExtractorReport, b: &ExtractorReport) {
-    let (nx, ny) = (grid.nx, grid.ny);
+    let (nx, ny) = (grid.grid.nx, grid.grid.ny);
     let scale = (900.0 / nx.max(ny) as f64).max(1.0);
     let w = nx as f64 * scale;
     let h = ny as f64 * scale;
@@ -448,8 +448,8 @@ fn render_overlay(path: &Path, grid: &RestGrid, a: &ExtractorReport, b: &Extract
             }
             let mut d = String::from("M");
             for (k, p) in pl.iter().enumerate() {
-                let cx = (p.x - grid.origin_x) / grid.cell_mm * scale;
-                let cy = (ny as f64 - 1.0 - (p.y - grid.origin_y) / grid.cell_mm) * scale;
+                let cx = (p.x - grid.grid.origin_x) / grid.grid.cell_mm * scale;
+                let cy = (ny as f64 - 1.0 - (p.y - grid.grid.origin_y) / grid.grid.cell_mm) * scale;
                 let _ = write!(d, "{}{:.1} {:.1} ", if k == 0 { "" } else { "L" }, cx, cy);
             }
             let _ = writeln!(
@@ -534,7 +534,7 @@ fn flow_diag(grid: &RestGrid, trunk_area_mm2: f64) -> BDiag {
     let field = flow_field_from_surface(grid, Some(lo_floor));
     let raised_frac_masked = raised_fraction(&field);
     let n = field.len();
-    let cell_area = grid.cell_mm * grid.cell_mm;
+    let cell_area = grid.grid.cell_mm * grid.grid.cell_mm;
     let raw = priority_flood_epsilon(&field);
     let (filled, ..) = resolve_flats(&field, &raw);
     let receivers = d8_receivers(&field, &filled);
@@ -645,8 +645,8 @@ fn run_ab(fixture: &str, mesh: &TriangleMesh, cell_mm: f64, truth_xy: Option<&[(
     eprintln!("\n══════ {fixture}: pencil-spine A/B (cell {cell_mm} mm) ══════");
     eprintln!(
         "  rest grid {}x{}  threshold {:.3} mm  pencil TIP Ø{:.2} (shank Ø{:.2})  T_disc {:.2} mm²",
-        grid.nx,
-        grid.ny,
+        grid.grid.nx,
+        grid.grid.ny,
         grid.threshold,
         cut_diam,
         pencil.radius() * 2.0,

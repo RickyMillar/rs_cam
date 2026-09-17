@@ -5,8 +5,9 @@
 
 pub mod finish_surface_cache;
 pub mod geom_cache;
-// The walk grid `tier_map` and `reach_map` share; private to this folder.
-mod grid;
+// The walk grid the full-board maps share. `GridSpec` is public — the three
+// map result types hold one (FLD-01) — and `walk_rows` stays crate-private.
+pub mod grid;
 // The bounded mesh-identity memo the map caches share; private to this folder.
 mod memo;
 pub mod reach_map;

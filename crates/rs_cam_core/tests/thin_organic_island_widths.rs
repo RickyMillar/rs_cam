@@ -307,9 +307,9 @@ fn wanaka_tier_and_band_region_widths() {
     let map = compute_tier_map(&mesh, &index, &ladder, &params, &never_cancel).expect("tier map");
     println!(
         "tier map: {} x {} cells @ {:.2} mm, {} tiers, {:.1} s\n",
-        map.nx,
-        map.ny,
-        map.cell_mm,
+        map.grid.nx,
+        map.grid.ny,
+        map.grid.cell_mm,
         map.tier_count,
         t0.elapsed().as_secs_f64()
     );
@@ -322,7 +322,7 @@ fn wanaka_tier_and_band_region_widths() {
         ..TierIslandParams::default()
     };
     let islands = extract_tier_islands(&map, &island_params, &cusp_radii).expect("islands");
-    let cell_area = map.cell_mm * map.cell_mm;
+    let cell_area = map.grid.cell_mm * map.grid.cell_mm;
 
     // ── STAGE A: tier islands (the machining boundary handed to the op) ──
     println!("========== STAGE A — tier islands (planner output) ==========\n");
@@ -347,12 +347,15 @@ fn wanaka_tier_and_band_region_widths() {
             continue;
         }
         let complement: Vec<bool> = set.owned_mask.iter().map(|&v| !v).collect();
-        let dist = distance_transform_2d(&complement, map.ny, map.nx);
-        let mut rows: Vec<(f64, f64)> = components(&set.owned_mask, map.nx, map.ny)
+        let dist = distance_transform_2d(&complement, map.grid.ny, map.grid.nx);
+        let mut rows: Vec<(f64, f64)> = components(&set.owned_mask, map.grid.nx, map.grid.ny)
             .iter()
             .map(|comp| {
                 let max_d = comp.iter().fold(0.0_f64, |acc, &i| acc.max(dist[i]));
-                (2.0 * max_d * map.cell_mm, comp.len() as f64 * cell_area)
+                (
+                    2.0 * max_d * map.grid.cell_mm,
+                    comp.len() as f64 * cell_area,
+                )
             })
             .collect();
         report_widths("owned islands", &mut rows, stepover);
@@ -2431,7 +2434,7 @@ fn a3_machined_stock(
     // ops' boundaries are derived from.
     let map = input.tier_map;
     let tier_zero: Vec<bool> = map.labels.iter().map(|&label| label == 0).collect();
-    let distance_to_tier_zero = distance_transform_2d(&tier_zero, map.ny, map.nx);
+    let distance_to_tier_zero = distance_transform_2d(&tier_zero, map.grid.ny, map.grid.nx);
     let reach = coarse_sweep_reach_mm(input.coarse);
 
     let rows = stock.z_grid.rows;
@@ -2452,7 +2455,7 @@ fn a3_machined_stock(
             };
             let mut top = rough_z + ROUGH_STOCK_TO_LEAVE_AXIAL_MM;
             let coarse_here = map.nearest_cell(x, y).is_some_and(|(map_row, map_col)| {
-                distance_to_tier_zero[map_row * map.nx + map_col] * map.cell_mm <= reach
+                distance_to_tier_zero[map_row * map.grid.nx + map_col] * map.grid.cell_mm <= reach
             });
             if coarse_here && let Some(coarse_z) = nearest_contact_z(&coarse_grid, x, y, min_z) {
                 top = top.min(coarse_z);

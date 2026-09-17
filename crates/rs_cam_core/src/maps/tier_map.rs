@@ -467,16 +467,14 @@ impl Default for TierMapParams {
 
 /// Per-cell tier labels over a regular XY grid.
 ///
-/// Row-major `r * nx + c`, cell centre at
-/// `(origin_x + c * cell_mm, origin_y + r * cell_mm)` — the same convention as
-/// [`crate::surface::rest_field::RestGrid`] and [`crate::geometry::grid2::Grid2`].
+/// The grid is a [`GridSpec`]: row-major `r * nx + c`, cell centre at
+/// `(grid.x_of(c), grid.y_of(r))` — the same representation as
+/// [`crate::surface::rest_field::RestGrid`] and
+/// [`crate::maps::reach_map::ReachMap`] (FLD-01).
 #[derive(Debug, Clone)]
 pub struct TierMap {
-    pub nx: usize,
-    pub ny: usize,
-    pub origin_x: f64,
-    pub origin_y: f64,
-    pub cell_mm: f64,
+    /// The XY walk grid.
+    pub grid: GridSpec,
     /// Index into the ladder of the coarsest tool that holds this cell, or
     /// [`NO_TIER`] where no tool reaches (off the part / outside the mesh
     /// footprint).
@@ -502,21 +500,21 @@ impl TierMap {
     #[cfg(feature = "test-support")]
     #[must_use]
     pub fn label_at(&self, row: usize, col: usize) -> Option<u8> {
-        if row >= self.ny || col >= self.nx {
+        if row >= self.grid.ny || col >= self.grid.nx {
             return None;
         }
-        self.labels.get(row * self.nx + col).copied()
+        self.labels.get(self.grid.index_of(row, col)).copied()
     }
 
     /// World XY of the cell centre at `(row, col)`, or `None` off the grid.
     #[must_use]
     pub fn cell_center(&self, row: usize, col: usize) -> Option<(f64, f64)> {
-        if row >= self.ny || col >= self.nx {
+        if row >= self.grid.ny || col >= self.grid.nx {
             return None;
         }
         Some((
-            self.origin_x + col as f64 * self.cell_mm,
-            self.origin_y + row as f64 * self.cell_mm,
+            self.grid.origin_x + col as f64 * self.grid.cell_mm,
+            self.grid.origin_y + row as f64 * self.grid.cell_mm,
         ))
     }
 
@@ -524,13 +522,13 @@ impl TierMap {
     /// off the grid.
     #[must_use]
     pub fn nearest_cell(&self, x: f64, y: f64) -> Option<(usize, usize)> {
-        let col = ((x - self.origin_x) / self.cell_mm).round();
-        let row = ((y - self.origin_y) / self.cell_mm).round();
+        let col = ((x - self.grid.origin_x) / self.grid.cell_mm).round();
+        let row = ((y - self.grid.origin_y) / self.grid.cell_mm).round();
         if !col.is_finite() || !row.is_finite() || col < 0.0 || row < 0.0 {
             return None;
         }
         let (col, row) = (col as usize, row as usize);
-        if col >= self.nx || row >= self.ny {
+        if col >= self.grid.nx || row >= self.grid.ny {
             return None;
         }
         Some((row, col))
@@ -582,7 +580,7 @@ impl TierMap {
     #[must_use]
     pub fn tier_area_mm2(&self, k: usize) -> f64 {
         let cells = self.tier_cell_counts().get(k).copied().unwrap_or(0);
-        cells as f64 * self.cell_mm * self.cell_mm
+        cells as f64 * self.grid.cell_mm * self.grid.cell_mm
     }
 }
 
@@ -949,11 +947,7 @@ pub fn compute_tier_map(
     };
 
     Ok(TierMap {
-        nx: grid.nx,
-        ny: grid.ny,
-        origin_x: grid.origin_x,
-        origin_y: grid.origin_y,
-        cell_mm: grid.cell_mm,
+        grid,
         labels,
         finest_z,
         tier_count: ladder.len(),
@@ -1039,7 +1033,7 @@ mod tests {
         let map = compute_tier_map(&mesh, &index, &ladder, &params, &never_cancel()).unwrap();
 
         assert_eq!(map.tier_count, 2);
-        assert_eq!(map.labels.len(), map.nx * map.ny);
+        assert_eq!(map.labels.len(), map.grid.nx * map.grid.ny);
         assert_eq!(map.finest_z.len(), map.labels.len());
         assert_eq!(
             map.tier_cell_counts()[1],
@@ -1117,8 +1111,8 @@ mod tests {
         let cancel = never_cancel();
         let other = compute_tier_map(&mesh, &index, &ladder, &compensated, &cancel).unwrap();
         assert_eq!(other.treatment, ResidualTreatment::SlopeCompensated);
-        assert_eq!((other.nx, other.ny), (map.nx, map.ny));
-        assert!((other.origin_x - map.origin_x).abs() < 1e-12);
-        assert!((other.origin_y - map.origin_y).abs() < 1e-12);
+        assert_eq!((other.grid.nx, other.grid.ny), (map.grid.nx, map.grid.ny));
+        assert!((other.grid.origin_x - map.grid.origin_x).abs() < 1e-12);
+        assert!((other.grid.origin_y - map.grid.origin_y).abs() < 1e-12);
     }
 }

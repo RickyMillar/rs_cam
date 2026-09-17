@@ -372,11 +372,17 @@ fn the_preview_job_door_answers_as_the_session_method_does() {
         "the cusp radii must agree bit for bit"
     );
     assert_eq!(
-        job.map.cell_mm, oracle.map.cell_mm,
+        job.map.grid.cell_mm, oracle.map.grid.cell_mm,
         "the planning cell must agree"
     );
-    assert_eq!(job.map.nx, oracle.map.nx, "the grid width must agree");
-    assert_eq!(job.map.ny, oracle.map.ny, "the grid height must agree");
+    assert_eq!(
+        job.map.grid.nx, oracle.map.grid.nx,
+        "the grid width must agree"
+    );
+    assert_eq!(
+        job.map.grid.ny, oracle.map.grid.ny,
+        "the grid height must agree"
+    );
     assert_eq!(
         job.map.tier_count, oracle.map.tier_count,
         "the tier count must agree"

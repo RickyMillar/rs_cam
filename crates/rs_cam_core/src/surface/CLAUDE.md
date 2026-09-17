@@ -21,6 +21,9 @@ The two cutter walks and the derived surface fields. The entry point is
 - `flow_accum` traces surface drainage. That is a different curve family from
   a rest ridge. Keep the module; do not route pencil through it.
 - The valley-reach policy is canonical. Do not derive a second band width.
+- `RestGrid` states its grid once, as `grid.grid` — a `maps::grid::GridSpec`.
+  `SurfaceHeightmap` and `SlopeMap` keep their own `rows`/`cols`/`cell_size`
+  layout on purpose (anisotropic steps, rotated frame).
 - `GridZ::is_covered` is a test door behind the `test-support` feature. A
   product path reads a cell through `z_at`, and matches the variant.
 

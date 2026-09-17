@@ -1677,9 +1677,9 @@ fn pencil_rest_depth_precedence_skips_generic_pass() {
         .as_ref()
         .expect("pencil RestDepth detector should attach a rest_grid");
     assert!(
-        (grid.cell_mm - pencil_cell_mm).abs() < 1e-9,
+        (grid.grid.cell_mm - pencil_cell_mm).abs() < 1e-9,
         "generic rest_analysis pass must not overwrite pencil's own rest_grid \
          (got cell_mm={}, expected pencil's {pencil_cell_mm})",
-        grid.cell_mm
+        grid.grid.cell_mm
     );
 }

@@ -138,8 +138,8 @@ fn both_arms(mesh: &TriangleMesh) -> (TierMap, TierMap) {
 /// how many cells were checked so the caller can refuse a vacuous population.
 fn assert_interior_label(map: &TierMap, want: u8, what: &str) -> usize {
     let mut checked = 0usize;
-    for row in 0..map.ny {
-        for col in 0..map.nx {
+    for row in 0..map.grid.ny {
+        for col in 0..map.grid.nx {
             let (x, y) = map.cell_center(row, col).unwrap();
             if x.abs() > INTERIOR_MM || y.abs() > INTERIOR_MM {
                 continue;
@@ -236,8 +236,8 @@ fn the_bowl_floor_stays_fine_tier_under_compensation() {
         );
 
         let mut inner = 0usize;
-        for r in 0..map.ny {
-            for c in 0..map.nx {
+        for r in 0..map.grid.ny {
+            for c in 0..map.grid.nx {
                 let (x, y) = map.cell_center(r, c).unwrap();
                 if (x * x + y * y).sqrt() > BOWL_R_MM * 0.5 {
                     continue;
@@ -276,7 +276,10 @@ fn on_flat_ground_the_two_treatments_agree_bit_for_bit() {
     let _guard = walk_lock();
     let (raw, compensated) = both_arms(&make_test_flat(20.0));
 
-    assert_eq!((raw.nx, raw.ny), (compensated.nx, compensated.ny));
+    assert_eq!(
+        (raw.grid.nx, raw.grid.ny),
+        (compensated.grid.nx, compensated.grid.ny)
+    );
     assert_eq!(
         raw.labels, compensated.labels,
         "on θ = 0 the compensation must change no label at all"
@@ -337,8 +340,8 @@ fn above_the_cap_a_near_vertical_wall_is_not_handed_to_the_coarse_tool() {
     // Abstention is exact, not approximate: above the cap the compensated
     // walk compares the same number the raw one does, so the labels match
     // cell for cell across the interior.
-    for row in 0..raw.ny {
-        for col in 0..raw.nx {
+    for row in 0..raw.grid.ny {
+        for col in 0..raw.grid.nx {
             let (x, y) = raw.cell_center(row, col).unwrap();
             if x.abs() > INTERIOR_MM || y.abs() > INTERIOR_MM {
                 continue;

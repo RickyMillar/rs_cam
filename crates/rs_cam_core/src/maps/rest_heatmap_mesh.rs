@@ -64,10 +64,11 @@ const BELOW_THRESHOLD_COLOR: [f32; 3] = [0.35, 0.4, 0.45];
 /// Returns `None` when the grid is too small to form a quad, or has no
 /// trusted (non-NaN in both `rest` and `surface_z`) cells at all.
 pub fn rest_grid_to_heatmap_mesh(grid: &RestGrid) -> Option<StockMesh> {
-    if grid.nx < 2 || grid.ny < 2 {
+    let spec = grid.grid;
+    if spec.nx < 2 || spec.ny < 2 {
         return None;
     }
-    let cells = grid.nx * grid.ny;
+    let cells = spec.cell_count();
 
     let rest_at = |i: usize| -> Option<f32> { grid.rest.get(i).copied().filter(|v| v.is_finite()) };
     let z_at =
@@ -98,11 +99,11 @@ pub fn rest_grid_to_heatmap_mesh(grid: &RestGrid) -> Option<StockMesh> {
 
     let mut vertices = Vec::with_capacity(cells * 3);
     let mut colors = Vec::with_capacity(cells * 3);
-    for r in 0..grid.ny {
-        for c in 0..grid.nx {
-            let i = r * grid.nx + c;
-            let x = grid.origin_x + c as f64 * grid.cell_mm;
-            let y = grid.origin_y + r as f64 * grid.cell_mm;
+    for r in 0..spec.ny {
+        for c in 0..spec.nx {
+            let i = spec.index_of(r, c);
+            let x = spec.x_of(c);
+            let y = spec.y_of(r);
             let (rest_v, z_v) = match (rest_at(i), z_at(i)) {
                 (Some(rv), Some(zv)) => (rv, zv),
                 _ => (f32::NAN, 0.0),
@@ -117,12 +118,12 @@ pub fn rest_grid_to_heatmap_mesh(grid: &RestGrid) -> Option<StockMesh> {
         }
     }
 
-    let mut indices = Vec::with_capacity((grid.ny - 1) * (grid.nx - 1) * 6);
-    for r in 0..(grid.ny - 1) {
-        for c in 0..(grid.nx - 1) {
-            let tl_i = r * grid.nx + c;
+    let mut indices = Vec::with_capacity((spec.ny - 1) * (spec.nx - 1) * 6);
+    for r in 0..(spec.ny - 1) {
+        for c in 0..(spec.nx - 1) {
+            let tl_i = spec.index_of(r, c);
             let tr_i = tl_i + 1;
-            let bl_i = (r + 1) * grid.nx + c;
+            let bl_i = spec.index_of(r + 1, c);
             let br_i = bl_i + 1;
             if !valid(tl_i) || !valid(tr_i) || !valid(bl_i) || !valid(br_i) {
                 continue;
@@ -263,14 +264,14 @@ enum CellPaint {
 /// `per_tier` order (coarsest first) wins, deterministically.
 #[must_use]
 pub fn tier_map_to_heatmap_mesh(map: &TierMap, islands: &TierIslands) -> Option<StockMesh> {
-    if map.nx < 2 || map.ny < 2 {
+    if map.grid.nx < 2 || map.grid.ny < 2 {
         return None;
     }
-    let cells = map.nx.checked_mul(map.ny)?;
+    let cells = map.grid.nx.checked_mul(map.grid.ny)?;
     if map.labels.len() != cells
         || map.finest_z.len() != cells
-        || map.cell_mm <= 0.0
-        || !map.cell_mm.is_finite()
+        || map.grid.cell_mm <= 0.0
+        || !map.grid.cell_mm.is_finite()
     {
         return None;
     }
@@ -292,11 +293,11 @@ pub fn tier_map_to_heatmap_mesh(map: &TierMap, islands: &TierIslands) -> Option<
 
     let mut vertices = Vec::with_capacity(cells * 3);
     let mut colors = Vec::with_capacity(cells * 3);
-    for r in 0..map.ny {
-        for c in 0..map.nx {
-            let i = r * map.nx + c;
-            let x = map.origin_x + c as f64 * map.cell_mm;
-            let y = map.origin_y + r as f64 * map.cell_mm;
+    for r in 0..map.grid.ny {
+        for c in 0..map.grid.nx {
+            let i = r * map.grid.nx + c;
+            let x = map.grid.origin_x + c as f64 * map.grid.cell_mm;
+            let y = map.grid.origin_y + r as f64 * map.grid.cell_mm;
             vertices.push(x as f32);
             vertices.push(y as f32);
             vertices.push(z_at(i).unwrap_or(0.0) + TIER_PREVIEW_LIFT_MM);
@@ -307,12 +308,12 @@ pub fn tier_map_to_heatmap_mesh(map: &TierMap, islands: &TierIslands) -> Option<
         }
     }
 
-    let mut indices = Vec::with_capacity((map.ny - 1) * (map.nx - 1) * 6);
-    for r in 0..(map.ny - 1) {
-        for c in 0..(map.nx - 1) {
-            let tl_i = r * map.nx + c;
+    let mut indices = Vec::with_capacity((map.grid.ny - 1) * (map.grid.nx - 1) * 6);
+    for r in 0..(map.grid.ny - 1) {
+        for c in 0..(map.grid.nx - 1) {
+            let tl_i = r * map.grid.nx + c;
             let tr_i = tl_i + 1;
-            let bl_i = (r + 1) * map.nx + c;
+            let bl_i = (r + 1) * map.grid.nx + c;
             let br_i = bl_i + 1;
             if !valid(tl_i) || !valid(tr_i) || !valid(bl_i) || !valid(br_i) {
                 continue;
@@ -355,24 +356,26 @@ fn paint_cells(map: &TierMap, islands: &TierIslands, cells: usize) -> Vec<CellPa
         for polygon in set.machining.as_slice() {
             let [min_x, min_y, max_x, max_y] = polygon.bbox();
             let (Some(col_lo), Some(row_lo)) = (
-                cell_index_floor(min_x - map.origin_x, map.cell_mm),
-                cell_index_floor(min_y - map.origin_y, map.cell_mm),
+                cell_index_floor(min_x - map.grid.origin_x, map.grid.cell_mm),
+                cell_index_floor(min_y - map.grid.origin_y, map.grid.cell_mm),
             ) else {
                 continue;
             };
-            let col_hi = cell_index_ceil(max_x - map.origin_x, map.cell_mm).min(map.nx);
-            let row_hi = cell_index_ceil(max_y - map.origin_y, map.cell_mm).min(map.ny);
+            let col_hi =
+                cell_index_ceil(max_x - map.grid.origin_x, map.grid.cell_mm).min(map.grid.nx);
+            let row_hi =
+                cell_index_ceil(max_y - map.grid.origin_y, map.grid.cell_mm).min(map.grid.ny);
             for row in row_lo..row_hi {
                 for col in col_lo..col_hi {
-                    let i = row * map.nx + col;
+                    let i = row * map.grid.nx + col;
                     if paint.get(i).copied().unwrap_or(CellPaint::None) != CellPaint::None {
                         continue;
                     }
                     if map.labels.get(i).copied().unwrap_or(NO_TIER) == NO_TIER {
                         continue;
                     }
-                    let x = map.origin_x + col as f64 * map.cell_mm;
-                    let y = map.origin_y + row as f64 * map.cell_mm;
+                    let x = map.grid.origin_x + col as f64 * map.grid.cell_mm;
+                    let y = map.grid.origin_y + row as f64 * map.grid.cell_mm;
                     if polygon.contains_point(&P2::new(x, y))
                         && let Some(slot) = paint.get_mut(i)
                     {
@@ -412,6 +415,7 @@ fn cell_index_ceil(offset_mm: f64, cell_mm: f64) -> usize {
 )]
 mod tests {
     use super::*;
+    use crate::maps::grid::GridSpec;
 
     fn make_grid(
         nx: usize,
@@ -421,11 +425,13 @@ mod tests {
         threshold: f64,
     ) -> RestGrid {
         RestGrid {
-            nx,
-            ny,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_mm: 1.0,
+            grid: GridSpec {
+                nx,
+                ny,
+                origin_x: 0.0,
+                origin_y: 0.0,
+                cell_mm: 1.0,
+            },
             rest,
             surface_z,
             threshold,
@@ -532,11 +538,13 @@ mod tests {
 
     fn preview_map(labels: Vec<u8>, tier_count: usize) -> TierMap {
         TierMap {
-            nx: PREVIEW_NX,
-            ny: PREVIEW_NY,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            cell_mm: 1.0,
+            grid: GridSpec {
+                nx: PREVIEW_NX,
+                ny: PREVIEW_NY,
+                origin_x: 0.0,
+                origin_y: 0.0,
+                cell_mm: 1.0,
+            },
             labels,
             finest_z: vec![-4.0f32; PREVIEW_CELLS],
             tier_count,

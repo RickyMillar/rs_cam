@@ -25,6 +25,7 @@
 #![allow(clippy::indexing_slicing)]
 
 use rs_cam_core::geo::P2;
+use rs_cam_core::maps::grid::GridSpec;
 use rs_cam_core::maps::tier_islands::{
     CAP_CLOSE_RAISE_FACTOR, MAX_CLOSE_RAISES, TierIslandParams, extract_tier_islands,
 };
@@ -39,11 +40,13 @@ use rs_cam_core::polygon::Polygon2;
 /// non-`NaN` wherever the label is not [`NO_TIER`].
 fn flat_map(nx: usize, ny: usize, cell_mm: f64, tier_count: usize, base: u8) -> TierMap {
     TierMap {
-        nx,
-        ny,
-        origin_x: 0.0,
-        origin_y: 0.0,
-        cell_mm,
+        grid: GridSpec {
+            nx,
+            ny,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            cell_mm,
+        },
         labels: vec![base; nx * ny],
         finest_z: vec![0.0f32; nx * ny],
         tier_count,
@@ -54,10 +57,10 @@ fn flat_map(nx: usize, ny: usize, cell_mm: f64, tier_count: usize, base: u8) -> 
 
 /// Paint a `w`×`h` cell block of `tier` with its top-left at `(r0, c0)`.
 fn paint(map: &mut TierMap, r0: usize, c0: usize, w: usize, h: usize, tier: u8) {
-    let nx = map.nx;
+    let nx = map.grid.nx;
     for r in r0..(r0 + h) {
         for c in c0..(c0 + w) {
-            if r < map.ny && c < nx {
+            if r < map.grid.ny && c < nx {
                 map.labels[r * nx + c] = tier;
             }
         }
@@ -67,10 +70,10 @@ fn paint(map: &mut TierMap, r0: usize, c0: usize, w: usize, h: usize, tier: u8) 
 /// Ring the grid with [`NO_TIER`] so no island can touch the grid edge —
 /// exactly what `TierMapParams::margin_mm` guarantees on a real map.
 fn ring_uncovered(map: &mut TierMap, width: usize) {
-    let nx = map.nx;
-    for r in 0..map.ny {
+    let nx = map.grid.nx;
+    for r in 0..map.grid.ny {
         for c in 0..nx {
-            if r < width || c < width || r + width >= map.ny || c + width >= nx {
+            if r < width || c < width || r + width >= map.grid.ny || c + width >= nx {
                 map.labels[r * nx + c] = NO_TIER;
             }
         }
@@ -92,7 +95,7 @@ fn owned_points(map: &TierMap, mask: &[bool]) -> Vec<P2> {
         if !on {
             continue;
         }
-        let (r, c) = (i / map.nx, i % map.nx);
+        let (r, c) = (i / map.grid.nx, i % map.grid.nx);
         if let Some((x, y)) = map.cell_center(r, c) {
             out.push(P2::new(x, y));
         }
@@ -541,7 +544,7 @@ fn the_overlap_band_stays_on_the_part() {
         if cov {
             continue;
         }
-        let (r, c) = (i / map.nx, i % map.nx);
+        let (r, c) = (i / map.grid.nx, i % map.grid.nx);
         if let Some((x, y)) = map.cell_center(r, c) {
             assert!(
                 !in_any(set.machining.as_slice(), &P2::new(x, y)),
@@ -570,7 +573,7 @@ fn ownership_partitions_pre_overlap_with_the_finer_tier_winning() {
 
     let islands = extract_tier_islands(&map, &neutral(0.0), &[3.0, 1.5, 1.0]).unwrap();
 
-    let total = map.nx * map.ny;
+    let total = map.grid.nx * map.grid.ny;
     let mut seen = vec![0u8; total];
     for set in &islands.per_tier {
         assert_eq!(
