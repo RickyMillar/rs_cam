@@ -26,6 +26,178 @@ fn operation_catalog_is_exhaustive_and_consistent() {
     }
 }
 
+/// CMP-10: every field of an operation's config is either a published
+/// `ParamDef` or a named exemption with a reason.
+///
+/// Nothing compared the two tables before this. The gap ran both ways:
+/// a new struct field was simply invisible to MCP, and
+/// `params_value_including_nulls` inserts a JSON null for any `ParamDef`
+/// name, so a def naming a field that no longer exists would publish a
+/// null for ever. CMP-09 found two live instances by hand;
+/// `DropCutterConfig::scallop_height` — a dial the GUI could turn and an
+/// agent could not — is now published, and the other is recorded below.
+///
+/// # Why the field list comes from the SOURCE
+///
+/// The obvious instrument is the serialised default config. It does not
+/// work, and the way it fails is the reason CMP-09 went unseen: almost
+/// every unexposed field is an `Option` with
+/// `skip_serializing_if = "Option::is_none"`, so a default config does
+/// not serialise it at all. `scallop_height` is exactly that shape. An
+/// instrument built on the default's key set reports a clean sweep over
+/// an empty population.
+///
+/// So this reads `operation_configs.rs` and takes each config struct's
+/// own `pub` field list. The field counts below are the non-vacuity
+/// anchor: the parser must find all 24 structs and a field total in the
+/// right order of magnitude, or it is measuring nothing.
+#[test]
+fn param_defs_cover_every_config_field() {
+    /// One entry per field that exists and is deliberately NOT settable
+    /// through `set_toolpath_param`. Every entry carries its reason.
+    /// Adding a row here is a decision; the absence of a row is a defect.
+    const UNEXPOSED: &[(&str, &str)] = &[
+        (
+            "selected_holes",
+            "driver-set: the DXF/model drill picker writes the picked target list, on \
+             DrillConfig and AlignmentPinDrillConfig alike",
+        ),
+        (
+            "selected_layers",
+            "driver-set: the layer-select route writes this beside the picked list",
+        ),
+        (
+            "setup_z_flipped",
+            "driver-set: the setup transform stamps this, not the operator",
+        ),
+    ];
+
+    const CONFIG_SRC: &str = include_str!("../operation_configs.rs");
+
+    /// Every `pub` field of one config struct, read from the source.
+    fn fields_of(struct_name: &str) -> Vec<&'static str> {
+        let head = format!("pub struct {struct_name} {{");
+        let at = CONFIG_SRC
+            .find(&head)
+            .unwrap_or_else(|| panic!("`{head}` is not in operation_configs.rs"));
+        let body_start = at + head.len();
+        // Every struct in this file closes with a `}` in column 0.
+        let body_len = CONFIG_SRC[body_start..]
+            .find("\n}")
+            .unwrap_or_else(|| panic!("`{struct_name}` has no closing brace"));
+        CONFIG_SRC[body_start..body_start + body_len]
+            .lines()
+            .filter_map(|line| {
+                let t = line.trim_start();
+                let rest = t.strip_prefix("pub ")?;
+                let colon = rest.find(':')?;
+                let name = &rest[..colon];
+                name.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    .then_some(name)
+            })
+            .collect()
+    }
+
+    let mut unexposed_seen: Vec<&str> = Vec::new();
+    let mut field_total = 0;
+    let mut def_total = 0;
+
+    for &op_type in OperationType::ALL {
+        let struct_name = format!("{}Config", op_type.name());
+        let fields = fields_of(&struct_name);
+        assert!(
+            !fields.is_empty(),
+            "{struct_name}: the parser found no fields — it is measuring nothing"
+        );
+        field_total += fields.len();
+
+        let published = OperationConfig::param_names_for_type(op_type);
+        def_total += op_type.registry_entry().param_defs.len();
+
+        for field in &fields {
+            if published.contains(field) {
+                continue;
+            }
+            assert!(
+                UNEXPOSED.iter().any(|(name, _)| name == field),
+                "{op_type:?}: `{struct_name}::{field}` is in no `param_defs` array, so no \
+                 agent can set it and `get_operation_schema` does not mention it. Publish \
+                 it as a `ParamDef`, or add it to this test's UNEXPOSED list with the \
+                 reason it is driver-set."
+            );
+            unexposed_seen.push(field);
+        }
+
+        // The other direction, as far as it can honestly go: a def must
+        // name a field of the struct it describes.
+        for def in op_type.registry_entry().param_defs {
+            assert!(
+                fields.contains(&def.name),
+                "{op_type:?}: `param_defs` publishes `{}`, and `{struct_name}` has no field \
+                 of that name. The schema advertises a dial that writes nothing, and \
+                 `params_value_including_nulls` publishes a null for it for ever.",
+                def.name
+            );
+        }
+    }
+
+    // Non-vacuity anchors. The audit of 2026-09-17 counted 243 defs
+    // against 250 fields; these bars are deliberately loose, because the
+    // claim is "the parser read the real tables", not a pinned census.
+    assert!(
+        field_total > 200,
+        "the parser found only {field_total} config fields over 24 structs"
+    );
+    assert!(
+        def_total > 200,
+        "the registry holds only {def_total} param defs over 24 operations"
+    );
+
+    // Non-vacuity on the allow-list itself: an entry nobody hits is a
+    // stale exemption, and a stale exemption hides the next real one.
+    for (name, _) in UNEXPOSED {
+        assert!(
+            unexposed_seen.contains(name),
+            "the UNEXPOSED entry `{name}` matches no config field any more. Delete the row."
+        );
+    }
+}
+
+/// CMP-08: every alias the registry publishes names a real def on the
+/// same operation, and no alias collides with a published name.
+#[test]
+fn every_alias_names_a_field_of_its_own_operation() {
+    let mut aliases_seen = 0;
+    for &op_type in OperationType::ALL {
+        let entry = op_type.registry_entry();
+        for def in entry.param_defs {
+            for alias in def.aliases {
+                aliases_seen += 1;
+                assert!(
+                    entry.param_defs.iter().all(|other| other.name != *alias),
+                    "{op_type:?}: `{alias}` is both an alias of `{}` and a param name of                      its own. One name, one field.",
+                    def.name
+                );
+            }
+        }
+        for name in OperationConfig::param_names_for_type(op_type) {
+            assert!(
+                OperationConfig::new_default(op_type)
+                    .param_type_name(name)
+                    .is_some(),
+                "{op_type:?}: the published name `{name}` resolves to no def"
+            );
+        }
+    }
+    // The three the finding names: Waterline and RampFinish alias
+    // `depth_per_pass`, Pencil aliases `stepover`.
+    assert_eq!(
+        aliases_seen, 3,
+        "the alias population moved. Three alias setters exist in          `session/compute/params.rs`; each one needs its registry row."
+    );
+}
+
 /// Phase 5 (T11): GenerateFn migration is a per-family DECISION,
 /// not drift. Each op is either migrated (registry adapter — the
 /// match arm delegates to the same fn) or fallback (exhaustive

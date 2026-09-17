@@ -37,12 +37,14 @@
 //!    provenance record does not move.
 //! 3. The three ALIAS setters keep working. `stepover` on Pencil writes
 //!    `offset_stepover`, `depth_per_pass` on Waterline writes `z_step`,
-//!    and `depth_per_pass` on RampFinish writes `max_stepdown`. The
-//!    registry publishes none of those three names, so the named arm is
-//!    their only route. A fix that deletes the arms breaks them.
+//!    and `depth_per_pass` on RampFinish writes `max_stepdown`. The named
+//!    arm is their only route. A fix that deletes the arms breaks them.
+//!    Since CMP-08 the registry publishes all three names as `ParamDef`
+//!    aliases, so assertion 1's two populations read the registry alone.
 //! 4. Positive control: Pocket accepts `stepover` and stamps `Manual`.
 //! 5. The five numeric named arms and the generic arm call one shared
 //!    range helper, read from the source text.
+//! 6. Every name the setter accepts is published (CMP-08).
 //!
 //! ## Why assertion 5 asserts wiring and not a refusal
 //!
@@ -94,20 +96,22 @@ const EXPECTED_DEPTH_PER_PASS_REJECTS: usize = 14;
 
 /// `stepover` reaches a field on this operation.
 ///
-/// The registry's `param_defs` is the record for every operation except
-/// Pencil, whose named arm writes `offset_stepover` — a field the
-/// registry does not publish under this name.
+/// The registry's `param_defs` is now the record for EVERY operation.
+/// This used to carry `|| op == OperationType::Pencil`, because Pencil's
+/// named arm wrote `offset_stepover` under a name the registry did not
+/// publish. CMP-08 publishes it as a `ParamDef` alias, so the hand-written
+/// escape is gone and this predicate derives.
 fn accepts_stepover(op: OperationType) -> bool {
-    OperationConfig::param_names_for_type(op).contains(&"stepover") || op == OperationType::Pencil
+    OperationConfig::param_names_for_type(op).contains(&"stepover")
 }
 
 /// `depth_per_pass` reaches a field on this operation.
 ///
 /// Waterline writes `z_step` and RampFinish writes `max_stepdown`. Both
-/// are alias-only, like Pencil above.
+/// were alias-only escapes here, like Pencil above, and both are registry
+/// aliases since CMP-08.
 fn accepts_depth_per_pass(op: OperationType) -> bool {
     OperationConfig::param_names_for_type(op).contains(&"depth_per_pass")
-        || matches!(op, OperationType::Waterline | OperationType::RampFinish)
 }
 
 // ── fixtures ─────────────────────────────────────────────────────
@@ -336,8 +340,106 @@ fn alias_writes_through(
     );
 }
 
+/// Assertion 6 (CMP-08). Every name this setter accepts appears in the
+/// list its own refusal message prints.
+///
+/// The defect: `set_toolpath_param(…, "depth_per_pass", …)` succeeded on
+/// Waterline while `get_operation_schema("waterline")` listed `z_step`
+/// and not `depth_per_pass`, and the refusal for a genuinely unknown name
+/// printed that same wrong list. Wrong in both directions, on three
+/// operations. `debug_enabled` was a fourth accepted name in no schema at
+/// all; it is published under `toolpath_params`, because it writes
+/// toolpath state and not the operation.
+///
+/// Driven off `OperationType::ALL` and the five generic names, so it
+/// cannot go stale against a new operation.
+#[test]
+fn every_name_the_setter_accepts_is_published() {
+    const GENERIC: &[&str] = &[
+        "feed_rate",
+        "plunge_rate",
+        "stepover",
+        "depth_per_pass",
+        "spindle_rpm",
+    ];
+
+    let mut accepted = 0;
+    let mut gaps: Vec<String> = Vec::new();
+    for (index, op) in OperationType::ALL.iter().enumerate() {
+        let published = OperationConfig::param_names_for_type(*op);
+        for name in GENERIC {
+            // A fresh session per case: an accepted write mutates, and a
+            // later case must not read the earlier one's state.
+            let mut session = all_ops_session();
+            let outcome = session.apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                index,
+                param: (*name).to_owned(),
+                value: json!(0.5),
+            }));
+            if outcome.is_err() {
+                continue;
+            }
+            accepted += 1;
+            if !published.contains(name) {
+                gaps.push(format!("{}:{name}", op.name()));
+                continue;
+            }
+            assert!(
+                published.contains(name),
+                "{op:?} accepts `{name}` and the registry does not publish it.                  `get_operation_schema` omits it, and the refusal message for an                  unknown name prints a valid set that is missing a valid name."
+            );
+        }
+    }
+    assert!(
+        accepted > 24,
+        "only {accepted} accepted writes over 24 operations — the sweep is near-vacuous"
+    );
+
+    // The residue, named rather than hidden. Both are a DIFFERENT defect
+    // from CMP-08: the two drill families carry no `plunge_rate` field at
+    // all, `OperationParams::set_plunge_rate` returns `()` and its default
+    // body discards the value, so the arm reports success, stamps manual
+    // provenance and stales the result chain — this file's assertion 2,
+    // for a third name. `set_stepover` and `set_depth_per_pass` return
+    // `bool` and are refused; `set_feed_rate` and `set_plunge_rate` do not
+    // and cannot be. Closing it means changing the trait, which is one
+    // row further than CMP-08 reaches.
+    const ACCEPTED_AND_UNPUBLISHED: &[&str] =
+        &["Drill:plunge_rate", "AlignmentPinDrill:plunge_rate"];
+    assert_eq!(
+        gaps, ACCEPTED_AND_UNPUBLISHED,
+        "the accepted-but-unpublished population moved. A new entry is a name the setter \
+         takes and the schema omits — publish it, or refuse it."
+    );
+
+    // `debug_enabled` is accepted on every operation and is not an
+    // operation parameter. It must be published somewhere, and the
+    // somewhere must not be `params`.
+    let mut session = all_ops_session();
+    session
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "debug_enabled".to_owned(),
+            value: json!(true),
+        }))
+        .expect("`debug_enabled` is accepted on every operation");
+    let schema = OperationConfig::schema_for_type(OperationType::ALL[0]);
+    assert!(
+        schema
+            .toolpath_params
+            .iter()
+            .any(|p| p.name == "debug_enabled"),
+        "`debug_enabled` is accepted and published nowhere"
+    );
+    assert!(
+        !schema.params.iter().any(|p| p.name == "debug_enabled"),
+        "`debug_enabled` writes toolpath state, not the operation config; it must not          appear among the operation's own parameters"
+    );
+}
+
 /// Assertion 3. The named arms are the only route to these three
-/// fields, because the registry publishes none of the three names.
+/// fields; since CMP-08 the registry publishes all three names as
+/// `ParamDef` aliases of the field each one writes.
 #[test]
 fn the_alias_setters_still_write_through_the_named_arms() {
     alias_writes_through(

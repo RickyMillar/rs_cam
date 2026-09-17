@@ -44,10 +44,17 @@ fn unknown_param_error(
     operation: &crate::compute::catalog::OperationConfig,
     param: &str,
 ) -> SessionError {
+    // CMP-08: `param_names` now carries the three aliases this module's
+    // named arms write, and the toolpath-level names follow it. Before
+    // that the list was wrong in both directions for Waterline, RampFinish
+    // and Pencil — it omitted a name this setter accepts, so the message
+    // told the caller a name was invalid while the setter took it.
     SessionError::InvalidParam(format!(
-        "unknown parameter '{param}' for {} operation. Valid parameters: {}",
+        "unknown parameter '{param}' for {} operation. Valid parameters: {}. \
+         Toolpath parameters: {}",
         operation.label(),
-        operation.param_names().join(", ")
+        operation.param_names().join(", "),
+        crate::compute::catalog::OperationConfig::toolpath_param_names().join(", ")
     ))
 }
 
@@ -228,9 +235,10 @@ impl ProjectSession {
                 // setters this arm is the only route to: Waterline maps
                 // `depth_per_pass` onto `z_step`, RampFinish onto
                 // `max_stepdown`, and Pencil maps `stepover` onto
-                // `offset_stepover`. The registry publishes none of
-                // those names, so each returns `true` here and is
-                // unaffected by the refusal.
+                // `offset_stepover`. Since CMP-08 the registry PUBLISHES
+                // those three names, as `ParamDef::aliases` on the field
+                // each one writes, so the schema and the refusal message
+                // agree with this arm.
                 if !tc.operation.set_depth_per_pass(v) {
                     return Err(unknown_param_error(&tc.operation, param));
                 }
@@ -278,6 +286,9 @@ impl ProjectSession {
                     crate::feeds::ValueProvenance::manual(),
                 );
             }
+            // Not an operation parameter: it writes `ToolpathConfig`
+            // state, so no `param_defs` array holds it. The published
+            // schema lists it under `toolpath_params` (CMP-08).
             "debug_enabled" => {
                 let v = match &value {
                     serde_json::Value::Bool(b) => *b,

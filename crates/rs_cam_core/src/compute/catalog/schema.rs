@@ -38,6 +38,11 @@ pub struct OperationParamSchema {
     pub default: serde_json::Value,
     pub range: Option<serde_json::Value>,
     pub description: Option<String>,
+    /// Other names the setter accepts for this same field (CMP-08).
+    /// Usually empty. An alias writes the field this row names; it is not
+    /// a second dial.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,8 +56,25 @@ pub struct OperationSchema {
     pub operation_type: String,
     pub label: String,
     pub params: Vec<OperationParamSchema>,
+    /// Names `set_toolpath_param` accepts that are NOT operation
+    /// parameters — they write toolpath state instead of the operation
+    /// config, so no `param_defs` array holds them (CMP-08).
+    ///
+    /// The same for every operation. Published here rather than mixed
+    /// into [`Self::params`], because a caller reading `params` is
+    /// reading the operation's own dials and `debug_enabled` is not one.
+    pub toolpath_params: Vec<OperationParamSchema>,
     pub tool_constraints: ToolConstraints,
 }
+
+/// The settable names that are not operation parameters (CMP-08).
+///
+/// `debug_enabled` writes `ToolpathConfig::debug_options`, not the
+/// operation config, so the generic serde arm of `set_toolpath_param`
+/// never sees it and no `param_defs` array can hold it. Before this row
+/// it was a fourth accepted name that the published schema did not
+/// mention at all.
+pub const TOOLPATH_PARAM_DEFS: &[ParamDef] = &[ParamDef::required("debug_enabled", "bool")];
 
 /// The numeric domain a settable parameter is declared to accept.
 ///
@@ -182,6 +204,21 @@ pub struct ParamDef {
     /// Declared numeric domain, or `None` for "no domain stated" — see
     /// [`ParamRange`], which spells out why those are different claims.
     pub range: Option<ParamRange>,
+    /// Other names `set_toolpath_param` accepts for this same field.
+    ///
+    /// CMP-08: three alias setters existed in
+    /// `session/compute/params.rs` and the registry published none of
+    /// them — Waterline maps `depth_per_pass` onto `z_step`, RampFinish
+    /// onto `max_stepdown`, and Pencil maps `stepover` onto
+    /// `offset_stepover`. So `get_operation_schema` was wrong in both
+    /// directions for those three ops: it omitted a name the setter
+    /// takes, and the refusal message for a genuinely unknown name
+    /// listed a valid set that did not include it.
+    ///
+    /// An alias is a second NAME, never a second field. It is published
+    /// beside its def and it never becomes a key of its own in
+    /// `params_value_including_nulls` or `param_schema_hints`.
+    pub aliases: &'static [&'static str],
 }
 
 impl ParamDef {
@@ -192,6 +229,7 @@ impl ParamDef {
             optional: false,
             description: None,
             range: None,
+            aliases: &[],
         }
     }
 
@@ -208,6 +246,7 @@ impl ParamDef {
             optional: false,
             description: Some(description),
             range: Some(range),
+            aliases: &[],
         }
     }
 
@@ -218,6 +257,7 @@ impl ParamDef {
             optional: true,
             description: None,
             range: None,
+            aliases: &[],
         }
     }
 
@@ -232,6 +272,7 @@ impl ParamDef {
             optional: true,
             description: Some(description),
             range: None,
+            aliases: &[],
         }
     }
 
@@ -251,7 +292,15 @@ impl ParamDef {
             optional: false,
             description: Some(description),
             range: None,
+            aliases: &[],
         }
+    }
+
+    /// The same def, plus the other names `set_toolpath_param` accepts
+    /// for this field. See [`Self::aliases`] for why a registry row and
+    /// not a hidden match arm.
+    pub(super) const fn with_aliases(self, aliases: &'static [&'static str]) -> Self {
+        Self { aliases, ..self }
     }
 }
 

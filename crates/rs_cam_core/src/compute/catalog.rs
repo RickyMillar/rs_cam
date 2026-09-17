@@ -16,7 +16,7 @@ mod schema;
 
 pub use schema::{
     DressupPolicy, EntryStylePolicy, OpRegistryEntry, OperationParamSchema, OperationSchema,
-    ParamDef, ParamHint, ParamRange, ToolConstraints, ToolConstraintsDef,
+    ParamDef, ParamHint, ParamRange, TOOLPATH_PARAM_DEFS, ToolConstraints, ToolConstraintsDef,
 };
 
 use registry::{
@@ -1157,11 +1157,10 @@ impl OperationConfig {
     }
 
     /// Return the schema type string for one settable parameter, if known.
+    ///
+    /// An alias resolves to the def it names (CMP-08).
     pub fn param_type_name(&self, param: &str) -> Option<&'static str> {
-        param_defs_for_type(self.op_type())
-            .iter()
-            .find(|def| def.name == param)
-            .map(|def| def.type_name)
+        param_def_for_type(self.op_type(), param).map(|def| def.type_name)
     }
 
     /// Return the declared numeric domain for one settable parameter, if
@@ -1175,10 +1174,7 @@ impl OperationConfig {
     /// Type-level sibling of [`Self::param_range`], for callers holding an
     /// [`OperationType`] rather than a config.
     pub fn param_range_for_type(op_type: OperationType, param: &str) -> Option<ParamRange> {
-        param_defs_for_type(op_type)
-            .iter()
-            .find(|def| def.name == param)
-            .and_then(|def| def.range)
+        param_def_for_type(op_type, param).and_then(|def| def.range)
     }
 
     /// Schema-backed settable param names for this operation.
@@ -1187,11 +1183,23 @@ impl OperationConfig {
     }
 
     /// Schema-backed settable param names for an operation type.
+    ///
+    /// Every def's own name, then every alias it declares (CMP-08). The
+    /// refusal message of `set_toolpath_param` prints this list, so a
+    /// name the setter accepts and this list omits is a lie told to the
+    /// caller that just got refused.
     pub fn param_names_for_type(op_type: OperationType) -> Vec<&'static str> {
         param_defs_for_type(op_type)
             .iter()
-            .map(|def| def.name)
+            .flat_map(|def| std::iter::once(def.name).chain(def.aliases.iter().copied()))
             .collect()
+    }
+
+    /// The names `set_toolpath_param` accepts that are not operation
+    /// parameters. The same for every operation — see
+    /// [`crate::compute::catalog::TOOLPATH_PARAM_DEFS`].
+    pub fn toolpath_param_names() -> Vec<&'static str> {
+        TOOLPATH_PARAM_DEFS.iter().map(|def| def.name).collect()
     }
 
     /// Full operation schema for clients that need to discover params
@@ -1211,15 +1219,36 @@ impl OperationConfig {
                     .unwrap_or(serde_json::Value::Null),
                 range: def.range.map(ParamRange::to_json),
                 description: def.description.map(str::to_owned),
+                aliases: def.aliases.iter().map(|a| (*a).to_owned()).collect(),
             })
             .collect();
         OperationSchema {
             operation_type: op_type.kind_str().to_owned(),
             label: op_type.label().to_owned(),
             params,
+            toolpath_params: TOOLPATH_PARAM_DEFS
+                .iter()
+                .map(|def| OperationParamSchema {
+                    name: def.name.to_owned(),
+                    type_name: def.type_name.to_owned(),
+                    optional: def.optional,
+                    default: serde_json::Value::Null,
+                    range: def.range.map(ParamRange::to_json),
+                    description: def.description.map(str::to_owned),
+                    aliases: Vec::new(),
+                })
+                .collect(),
             tool_constraints: tool_constraints_for_type(op_type),
         }
     }
+}
+
+/// The def one settable NAME resolves to — its own name, or an alias it
+/// declares (CMP-08).
+fn param_def_for_type(op_type: OperationType, param: &str) -> Option<&'static ParamDef> {
+    param_defs_for_type(op_type)
+        .iter()
+        .find(|def| def.name == param || def.aliases.contains(&param))
 }
 
 fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
