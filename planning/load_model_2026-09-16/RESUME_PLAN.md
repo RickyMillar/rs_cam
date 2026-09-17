@@ -317,7 +317,7 @@ The operator's stated requirements, verbatim in effect:
 
 ## 8. Still open, lower priority
 
-- **T-15** — IN PROGRESS 2026-09-18 (agent `t15-power-recheck`). Design
+- **T-15** — DONE 2026-09-18 (see the commit table). Design
   decided: pass 10 `recheck_power_after_rescale` at the END of
   `enforce_invariants`, gated on pass 9 having acted (so the untouched path
   stays byte-identical); it evaluates required power at the FINAL operating
@@ -330,7 +330,12 @@ The operator's stated requirements, verbatim in effect:
   lifted to 135 % by the same tier-boundary mechanism (ap/D 2.05 → 2.00
   gives ×1.5 feed for −2.4 % depth, about ×1.46 power). Pass 9's 23.6 %
   justification is withdrawn as stale (pre-R1), the same figure that removed
-  the power bar. Sentry is red-first on a tier-crossing fixture.
+  the power bar. Sentry red-first on a tier-crossing fixture: a 2D Adaptive
+  rough at 2.00417 D that the rigidity clamp takes to 2.0 D; predicted
+  breach `0.997921 × (1 + 0.5 × 0.2180) = 1.1067`, measured 110.67 %. The
+  earlier fixtures missed it because a full-width slot trips
+  `SlottingDetected`, which caps the depth at 0.25 D before Step 6. Wanaka
+  3/3 with the new panic arm. Report: `T15_IMPLEMENTATION.md`.
 - **T-14** — a drop-cutter finishing pass measures 42.5 mm of axial
   engagement. The power ladder made it load-bearing.
 - **T-2, T-3, T-5** — guard and structure debt, no physics.
