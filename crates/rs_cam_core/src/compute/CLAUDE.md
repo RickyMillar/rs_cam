@@ -21,9 +21,12 @@ orchestration. The entry is `compute::execute_operation_annotated`.
 
 ## Invariants
 
-- A rest chain needs simulated upstream stock. The core builder and the GUI
-  builder share a phantom prior-stock rule for the first pending rest
-  operation. Keep that parity when you change the admission logic.
+- One simulation request, two builders: `ProjectSession::run_simulation` and
+  the GUI controller. Four decisions are SHARED functions in `simulate.rs`,
+  not parity to keep by hand — `PhantomPriorStockScan` (a rest chain needs
+  simulated upstream stock), `group_stock_cut_direction`,
+  `entry_tool_fields` and `entry_metrics_not_applicable`. Put a fifth there
+  rather than in one builder.
 - A new operation needs a catalogue row and a config variant. The row's
   `generate` field IS the dispatch; `execute.rs` has no second arm to add.
 
