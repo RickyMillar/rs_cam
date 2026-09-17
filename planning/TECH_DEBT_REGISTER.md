@@ -22,7 +22,7 @@ need a register.
 | T-6 | Two implementations of one physical model | closed |
 | T-7 | Two definitions of "teeth in cut", differing by helix wrap | **withdrawn** — the premise fails |
 | T-8 | The power derate thins the chip, and only half the power responds | **closed** `a7c17be7` |
-| T-9 | A feed clamped onto a ceiling ships one rounding step above it | open |
+| T-9 | A feed clamped onto a ceiling ships one rounding step above it | **closed** `6a9330dc` — the feed and the plunge floor; the pill fallback too; the export validator gets the travel rate |
 | T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating |
 | T-11 | Feed modulation multiplies mm by a fraction of a different quantity | **closed** `809d28b9` |
 | T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `ad2f749b` |
@@ -31,7 +31,7 @@ need a register.
 | T-15 | Pass 9 can raise a feed the power ladder just clamped | open — reachable by hand TODAY |
 | T-16 | The deflection bending diameter cites a source that does not say it | **closed** — its per-flute table is itself superseded, see T-17 |
 | T-17 | The deflection integrator gives a fluted end mill a solid cross-section | **closed** `93dd145c` — flat 0.80, every fluted shape; V-bit still open under T-4 |
-| T-18 | Three feed lifts cap against the gantry TRAVEL rate, not the cutting ceiling | open — latent on shipped presets only |
+| T-18 | Three feed lifts cap against the gantry TRAVEL rate, not the cutting ceiling | **closed** `d47a04d8` — four sites read `commanded_cutting_feed_ceiling_mm_min()`; no preset number moved |
 
 ---
 
@@ -398,9 +398,59 @@ rounding applies to any clamp the calculator lands on exactly, and the next
 limit to become binding will meet it too.
 
 **Fix:** round the commanded feed DOWN when the recommendation was clamped
-by a ceiling, or re-check the limits after quantisation. Not done here
-because it moves recommended feeds by up to 1 mm/min across the whole
-matrix, for a defect worth 0.013 %.
+by a ceiling, or re-check the limits after quantisation.
+
+## T-9 — closed 2026-09-18 at `6a9330dc`
+
+The first option was taken. The apply path receives only a `FeedsResult`, so
+a re-check would need the gate's available power and the machine ceiling
+threaded in and the Step 6 arithmetic duplicated outside `calculate`. The
+round-down needs nothing new, and `floor(x) <= x <= ceiling` holds without a
+condition.
+
+**What changed**
+
+1. `crates/rs_cam_core/src/feeds/suggest.rs` gains
+   `round_suggestion_value_down(value, step)` —
+   `(value / step).floor() * step`, the same `step <= 0.0` guard as its
+   nearest twin. Both doc comments now say which to call: a value bound
+   ABOVE by a clamp rounds down, a value with no upper bound rounds nearest.
+   `round_suggestion_value` is unchanged.
+2. `crates/rs_cam_core/src/feeds/suggest/apply.rs` calls the down helper for
+   the FEED and the PLUNGE. The stepover and the depth keep the nearest
+   rounding: their clamps sit in `enforce_invariants`, which runs BELOW that
+   point and moves geometry downward, so neither is bound from above there.
+   The depth is then snapped to the reachable staircase, which dominates a
+   0.0005 mm rounding step.
+3. `crates/rs_cam_viz/src/io/export.rs` `machine_safety_pass` now passes
+   `Some(session.machine().max_feed_mm_min)` — the gantry TRAVEL rate, not
+   the cutting ceiling. The validator checks every `F` word and
+   `replace_rapids_with_feed` rewrites rapids at the travel rate, so the
+   cutting ceiling would raise a finding on every rewritten rapid. All four
+   callers hold the session. `min_z` stays `None`.
+
+**Measured, before and after.** The sentry sweeps every shipped preset x
+every shipped species through the public apply door. The worst case on the
+old code was Generic Wood Router / Walnut: the calculator returned
+2562.504018155792 mm/min with every ceiling satisfied and the funnel shipped
+2563 mm/min, **+0.4959818442080177 mm/min above it**. After the change no
+swept pair ships above its calculator value.
+
+**The mirror hazard did not fire.** The same rounding acts on a feed the
+rubbing floor RAISED, and there it rounds away from the floor.
+`rubbing_floor_never_exceeds_band` passes 2/2 and the core lib suite passes
+2520/2520, so no shipped fixture sits within 1 mm/min of its floor.
+
+**Sentry:**
+`crates/rs_cam_core/tests/a_clamped_feed_ships_at_or_below_its_ceiling_g_feeddown.rs`
+— three arms: the helper floors and leaves a whole value alone, the sweep
+never ships above the calculator feed, and the nearest helper still rounds up
+so the two are distinct.
+
+**Not done, and deliberately.** Site 2 of the survey,
+`crates/rs_cam_viz/src/ui/properties/pills.rs:191`, carries the same defect
+in the GUI fallback branch and was out of this session's file scope. It needs
+the same helper.
 
 ---
 
@@ -1078,12 +1128,44 @@ an explicit `max_cutting_feed_mm_min` well below travel, or a vendor row with
 a higher floor, all move the lift toward the cap. The code would then cap a
 cutting feed against a traverse rate.
 
-## The fix
+## The fix — implemented 2026-09-18
 
-Replace all three with `machine.cutting_feed_ceiling_mm_min()`. Decide
-deliberately whether the safety factor applies — Step 7 does NOT apply it to
-the ceiling, and the three lift sites DO apply it to travel, so the two paths
-disagree on that too. Pick one and state why.
+Status: **closed** at `d47a04d8` (2026-09-18).
+
+The safety factor applies. The code names two axes (`feeds/mod.rs`, the F-2
+block): the RAW axis is the feed before Step 9, the COMMANDED axis is the feed
+after it. Step 7 caps the RAW feed at the ceiling with no factor, Step 9 then
+multiplies by `safety_factor`, so the calculator's output invariant is
+`commanded_feed <= cutting_feed_ceiling_mm_min() * safety_factor`. Every lift
+runs after Step 9, so every lift works on the COMMANDED axis. The `*
+safety_factor` was the right shape all along; the base quantity was the wrong
+one.
+
+`MachineProfile::commanded_cutting_feed_ceiling_mm_min()`
+(`machine/mod.rs`) states that right-hand side once. Four sites read it:
+
+| Site | Before | After |
+|---|---|---|
+| `feeds/mod.rs` Step 9b, rubbing-floor lift | `max_feed_mm_min * safety_factor` | `commanded_cutting_feed_ceiling_mm_min()` |
+| `feeds/mod.rs` Step 9c, drill envelope clamp | `max_feed_mm_min * safety_factor` | `commanded_cutting_feed_ceiling_mm_min()` |
+| `feeds/suggest/adaptive_entry.rs`, pass 9 floor lift | `max_feed_mm_min * safety_factor` | `commanded_cutting_feed_ceiling_mm_min()` |
+| `feeds/suggest/adaptive_entry.rs`, "Step 7 re-applied" | `cutting_feed_ceiling_mm_min()` (RAW) | `commanded_cutting_feed_ceiling_mm_min()` |
+
+The fourth site was the same mismatch in the other direction: `rescaled`
+derives from the calculator's post-Step-9 feed, so it sits on the COMMANDED
+axis, and the RAW cap let it exceed the highest feed the calculator itself can
+emit. No existing test pinned the RAW cap there.
+
+No shipped preset number moves. All three presets carry a travel rate under
+`DEFAULT_CUTTING_FEED_CAP_MM_MIN`, so the ceiling equals the travel rate and
+the two expressions are numerically equal.
+
+Sentry: `tests/a_feed_lift_caps_at_the_cutting_ceiling_g_t18.rs`. Its fixture
+is a profile with travel 10 000 mm/min, an explicit cutting ceiling of 500
+mm/min and `safety_factor` 0.8, so the two caps are 400 and 8 000 mm/min. Red
+on the parent: 750, 600 and 800 mm/min at the three lifts. Green after: 400 at
+all three. A fourth test pins the preset equality, so the sentry also proves
+the change is silent on shipped presets.
 
 ## Relation to T-15
 

@@ -28,6 +28,8 @@ Shipped and verified:
 | `0a510215` | The fluted-section derivation the code cites |
 | `6a3ba42c` | The corridor fixture re-derived into the middle of its window |
 | `59822cab` | **T-4 — a refused deflection prediction is a type, not a zero** |
+| `d47a04d8` | **T-18 — every post-Step-9 feed lift caps on the COMMANDED cutting ceiling** |
+| `6a9330dc` | **T-9 — a clamped feed ships at or below its ceiling; the export validator gets the travel rate** |
 
 T-17 verification: core lib 2503/0, sentry 5/5, `literature_matrix` 21/21,
 `literature_parity` 24/24, clippy clean, fmt clean.
@@ -108,8 +110,8 @@ bound; `force_headroom` returns `None` for one). The back-off emits
 missed one reachable zero (`tip_deflection_mm` returns 0.0 when the load
 point sits at or below the tip); `DegenerateCantilever` now guards it. The
 two panic arms added to `wanaka_suggest_integration` were argued from the
-fixture, not run — CI runs it; if it is red there, the fixture gained a tool
-or a material the model does not cover. Report: `T4_IMPLEMENTATION.md`.
+fixture first, then run locally on 2026-09-18 with T-4, T-18 and T-9 all in
+the tree: 3/3 green, neither arm fired. Report: `T4_IMPLEMENTATION.md`.
 
 The section below is the design as it stood before the work, kept as the
 record.
@@ -161,7 +163,26 @@ non-vacuity anchor. Read `crates/rs_cam_core/tests/CLAUDE.md` first.
 
 ---
 
-## 5. THEN: T-18 — a feed lift caps against the travel rate
+## 5. DONE 2026-09-18: T-18 — a feed lift caps against the travel rate
+
+Shipped at `d47a04d8`. `MachineProfile::commanded_cutting_feed_ceiling_mm_min()`
+states the invariant; four sites read it (the fourth, `adaptive_entry.rs`
+"Step 7 re-applied", had the mismatch in the other direction and no test
+pinned it). Red-first sentry: 750 / 600 / 800 mm/min against a 400 cap on
+the parent; 400 after. No preset number moved. Report: `T18_IMPLEMENTATION.md`.
+
+**On the single-guard question (T-15's structure), from the T-18 report:** a
+guard that re-checks every ceiling after the LAST lift is the better
+structure, and T-18 did not build it. It would sit twice — at the end of
+`feeds::calculate` after Step 9c, and at the end of `enforce_invariants`
+after pass 9 — because Suggest moves the feed outside the calculator. It
+needs every ceiling re-evaluated at the FINAL operating point (cheap for the
+machine ceiling, expensive for power: the open `G-SUGGEST-POWERSTALE` row),
+and one rule for an up-pushing floor against a down-pushing ceiling that
+does not delete a warning an earlier step filed. That is T-15's work. T-18
+gives it a helper to call rather than an expression to re-derive.
+
+The section below is the design as it stood before the work.
 
 Full entry in `TECH_DEBT_REGISTER.md`. Three sites cap a feed lift at
 `machine.max_feed_mm_min * safety_factor` — the gantry TRAVEL rate — while
@@ -209,7 +230,25 @@ rather than three patches plus a fourth for T-15.
 
 ---
 
-## 6. THEN: T-9 — small, take it while the file is open
+## 6. DONE 2026-09-18: T-9 — small, taken while the file was open
+
+Shipped at `6a9330dc`. `round_suggestion_value_down` floors the feed and the
+plunge in `apply`; the pill fallback takes a per-field quantiser; the
+export machine-safety pass receives the travel rate. Two tests that encoded
+the old half-step were re-derived (one-sided, one full step), and two
+pinned shipped feeds in `arc_fit_disposition_a5` moved with their cause
+(881 → 880, 638 → 637). The `explore.rs` doc comments are corrected.
+Verified under the tree with T-4 and T-18: all twelve apply-door
+integration targets green including Wanaka; CLI, MCP and viz lib green.
+Report: `T9_IMPLEMENTATION.md`.
+
+**A lesson for the next task that moves a shipped number:** `--lib` does not
+reach a core integration target. Two reds were found by other agents, not by
+the allowed runs. Before committing a change that moves shipped feeds,
+`rg -l` the door symbols across `crates/rs_cam_core/tests/` and run every
+target the list names (ask first for Wanaka).
+
+The section below is the design as it stood before the work.
 
 `feeds/suggest/apply.rs:79` rounds the feed to the NEAREST whole mm/min after
 every clamp has bound it. Worst case **+0.5 mm/min**, against ADVISORY

@@ -33,8 +33,8 @@ point is `feeds::suggest`.
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test lut_resolver_census_a6`
-- `cargo test -p rs_cam_core -q --test wanaka_suggest_integration` — a long
-  simulation (minutes): ask the operator before you run it; not routine.
-- `cargo test -p rs_cam_core -q --test lookup_parity`
-- `cargo test -p rs_cam_core -q --test rubbing_floor_never_exceeds_band`
+Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_a6`,
+`lookup_parity`, `rubbing_floor_never_exceeds_band`, `a_refused_deflection_is_not_a_zero_g_t4`
+(a deflection refusal is an `Err`, never `0.0`), `a_feed_lift_caps_at_the_cutting_ceiling_g_t18`
+(a post-Step-9 lift caps on the COMMANDED ceiling), `a_clamped_feed_ships_at_or_below_its_ceiling_g_feeddown`
+(the feed quantisation rounds DOWN). `wanaka_suggest_integration` is a long simulation (minutes): ask first.
