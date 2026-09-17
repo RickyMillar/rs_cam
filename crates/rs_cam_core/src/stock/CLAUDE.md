@@ -11,7 +11,8 @@ that reads it. The entry point for an operator answer is
   accumulation, trace assembly, reporting and the summaries.
 - `sim_triage.rs` — one typed answer to "what should I act on?".
 - `sim_measurability.rs` — can this run measure the metric you will gate on?
-- `collision.rs` — holder and shank collision detection.
+- `collision.rs` — holder and shank collision detection, and the three-state
+  `HolderCollisionCheck` the triage reads.
 - `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction.
 - `radial_profile.rs` — the precomputed radial profile lookup table.
 

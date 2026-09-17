@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicBool;
 use tracing::instrument;
 
 use crate::compute::collision_check::{
-    CollisionCheckRequest, CollisionCheckResult, HolderCollisionCheck, run_collision_check,
+    CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolId;
@@ -18,6 +18,7 @@ use crate::session::{
     ProjectDiagnostics, ProjectEvidence, ProjectSession, SessionError, ToolpathDiagnostic, Verdict,
     VerdictEvidence, VerdictKind, VerdictSeverity,
 };
+use crate::stock::collision::HolderCollisionCheck;
 
 /// Outcome of scanning every toolpath's air-cut percentage against its
 /// op-kind's high-water threshold.

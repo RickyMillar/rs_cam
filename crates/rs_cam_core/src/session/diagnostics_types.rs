@@ -185,7 +185,7 @@ pub struct ProjectEvidence<'a> {
     /// toolpath that is absent from a non-empty list.
     ///
     /// CMP-14: the element carries three states, not a count. A check
-    /// that failed reads [`crate::compute::collision_check::HolderCollisionCheck::Failed`],
+    /// that failed reads [`crate::stock::collision::HolderCollisionCheck::Failed`],
     /// which is not the same claim as `Measured(0)`.
     ///
     /// Evidence is an INPUT here on purpose: `diagnostics_with_evidence`
@@ -195,10 +195,7 @@ pub struct ProjectEvidence<'a> {
     /// project that recomputed every toolpath's collision sweep at
     /// frame rate (the 2026-06-11 setup-tab lag). Batch callers that
     /// want the sweep use [`crate::session::ProjectSession::holder_collision_counts`].
-    pub holder_collisions: Vec<(
-        ToolpathId,
-        crate::compute::collision_check::HolderCollisionCheck,
-    )>,
+    pub holder_collisions: Vec<(ToolpathId, crate::stock::collision::HolderCollisionCheck)>,
     /// Simulation cell size (mm) the trace was captured at, when known.
     ///
     /// Read only by [`crate::stock::sim_measurability`], and only to enrich the
@@ -231,10 +228,7 @@ impl<'a> ProjectEvidence<'a> {
     /// input rather than computed internally).
     pub fn from_simulation_with_holder_collisions(
         sim: &'a SimulationResult,
-        holder_collisions: Vec<(
-            ToolpathId,
-            crate::compute::collision_check::HolderCollisionCheck,
-        )>,
+        holder_collisions: Vec<(ToolpathId, crate::stock::collision::HolderCollisionCheck)>,
     ) -> Self {
         Self {
             holder_collisions,

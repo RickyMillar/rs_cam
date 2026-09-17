@@ -877,7 +877,7 @@ fn diagnostics_with_evidence_consumes_holder_counts_instead_of_computing() {
     let evidence = ProjectEvidence {
         holder_collisions: vec![(
             tp0_id,
-            crate::compute::collision_check::HolderCollisionCheck::Measured(3),
+            crate::stock::collision::HolderCollisionCheck::Measured(3),
         )],
         ..ProjectEvidence::default()
     };

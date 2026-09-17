@@ -285,9 +285,9 @@ impl SimulationState {
         &self,
     ) -> Vec<(
         ToolpathId,
-        rs_cam_core::compute::collision_check::HolderCollisionCheck,
+        rs_cam_core::stock::collision::HolderCollisionCheck,
     )> {
-        use rs_cam_core::compute::collision_check::HolderCollisionCheck;
+        use rs_cam_core::stock::collision::HolderCollisionCheck;
         let mut counts: Vec<(ToolpathId, usize)> = Vec::new();
         if let Some(report) = self.checks.collision_report.as_ref() {
             for collision in &report.collisions {

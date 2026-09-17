@@ -48,10 +48,10 @@ use common::session::{mesh_model, pinned_heights, stock_under, toolpath_config};
 use common::tools::ball_tool_config;
 
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::collision_check::HolderCollisionCheck;
 use rs_cam_core::compute::operation_configs::DropCutterConfig;
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::session::{ProjectEvidence, ProjectSession, ProjectSessionBuilder, VerdictKind};
+use rs_cam_core::stock::collision::HolderCollisionCheck;
 
 const HALF: f64 = 20.0;
 const DEPTH: f64 = 10.0;

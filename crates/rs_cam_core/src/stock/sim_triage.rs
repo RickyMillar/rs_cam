@@ -45,14 +45,13 @@
 //! that says which population it counts. Nothing is hidden; it is demoted to
 //! a footer and labelled.
 
-use crate::compute::collision_check::HolderCollisionCheck;
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
     Severity, Source, ids,
 };
 use crate::ids::ToolpathId;
 use crate::machine::kinematic_utilization::ToolpathKinematicUtilization;
-use crate::stock::collision::RapidCollision;
+use crate::stock::collision::{HolderCollisionCheck, RapidCollision};
 use crate::stock::sim_measurability::MeasurabilityReport;
 use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::trace::toolpath_spans::{RegionSpanRole, SpanId};

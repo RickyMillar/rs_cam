@@ -162,6 +162,57 @@ impl CollisionReport {
     }
 }
 
+/// What a holder/shank collision check knows about one toolpath.
+///
+/// Three states, because a check that FAILED is not a check that found
+/// nothing. `holder_collision_counts` used to answer `0` for all three,
+/// so every consumer read a failure as a clean bill of health on the one
+/// question that wrecks a machine (CMP-14). Commit `70a3db27` fixed the
+/// same shape in the CLI on the audit day; this is the core twin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HolderCollisionCheck {
+    /// The toolpath binds no mesh — a 2D operation. The check does not
+    /// apply. [`Self::count`] reports `Some(0)`, which is the CLI's rule
+    /// (`SessionError::MissingGeometry` is the expected 2D case there):
+    /// with no model there is no model geometry to collide with, so the
+    /// count is a true zero rather than a withheld one.
+    NotApplicable,
+    /// The check ran and could not finish — a cancellation, or a toolpath
+    /// whose tool the project no longer defines. The count is UNKNOWN.
+    /// It must never read as zero.
+    Failed,
+    /// The check ran to the end. `Measured(0)` is measured and clear.
+    Measured(usize),
+}
+
+impl HolderCollisionCheck {
+    /// The count a consumer may publish. `None` means the check failed,
+    /// so no count exists. Read [`Self::NotApplicable`] for why a
+    /// not-applicable check reports `Some(0)`.
+    pub fn count(self) -> Option<usize> {
+        match self {
+            Self::NotApplicable => Some(0),
+            Self::Failed => None,
+            Self::Measured(n) => Some(n),
+        }
+    }
+
+    /// Collisions this check actually found. A failed check found none,
+    /// because it found nothing at all — use [`Self::failed`] to report
+    /// the absence.
+    pub fn collisions(self) -> usize {
+        match self {
+            Self::Measured(n) => n,
+            Self::NotApplicable | Self::Failed => 0,
+        }
+    }
+
+    /// Did the check run and fail?
+    pub fn failed(self) -> bool {
+        matches!(self, Self::Failed)
+    }
+}
+
 /// Check a toolpath for holder/shank collisions against the mesh.
 ///
 /// For each cutting move, checks whether the shank or holder cylinder
