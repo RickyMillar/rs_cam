@@ -119,6 +119,10 @@ pub enum ProjectLoadWarning {
         /// One `dial: before to after` phrase per rewritten value.
         changes: Vec<String>,
     },
+    /// A toolpath's rest-analysis flag did not match the demand the
+    /// project declares, so the loader rewrote it. `enabled` is the value
+    /// the loader wrote.
+    RestAnalysisNormalized { toolpath: String, enabled: bool },
 }
 
 impl ProjectLoadWarning {
@@ -149,6 +153,18 @@ impl ProjectLoadWarning {
             Self::MissingModelReference { toolpath, model_id } => format!(
                 "Toolpath '{toolpath}' references missing model id {model_id} and needs reassignment."
             ),
+            Self::RestAnalysisNormalized { toolpath, enabled } => {
+                let state = if *enabled { "on" } else { "off" };
+                let because = if *enabled {
+                    "another toolpath uses its rest regions as a machining boundary"
+                } else {
+                    "no toolpath uses its rest regions as a machining boundary"
+                };
+                format!(
+                    "Toolpath '{toolpath}' had its rest analysis switched {state}: {because}. \
+                     Save the project to keep the change."
+                )
+            }
             Self::DressupsNormalized {
                 toolpath,
                 op,
@@ -1185,7 +1201,7 @@ pub(super) fn build_session_from_project(
     // `machine_ref` link. A file that still carries the key loads, and
     // the reader ignores it.
 
-    Ok(super::ProjectSession {
+    let mut session = super::ProjectSession {
         name: project.job.name.clone(),
         stock,
         post: project.job.post,
@@ -1202,7 +1218,70 @@ pub(super) fn build_session_from_project(
         next_tool_id,
         next_setup_id,
         next_model_id,
-    })
+    };
+    normalise_rest_analysis_demand(&mut session, warnings);
+    Ok(session)
+}
+
+/// Make the rest-analysis flag say what the project actually demands.
+///
+/// The analysis is demand-driven: a toolpath runs its rest-depth pass
+/// because another toolpath consumes the regions as a machining boundary.
+/// `auto_enable_rest_analysis_for_source` keeps that true for every EDIT,
+/// and nothing ran it on LOAD, so the loader copied the stored flag
+/// verbatim. A file saved before the hook shipped therefore carried both
+/// errors: a producer switched on with no consumer, which pays for a rest
+/// field solve at every generation that nothing reads, and a producer
+/// switched off with a consumer, which refuses the consumer's boundary.
+///
+/// The rule is one line: a toolpath's rest analysis is on when at least
+/// one enabled `DerivedRestRegions` boundary names it.
+///
+/// A pencil operation with the `RestDepth` detector is the one exception.
+/// It attaches its own regions, so its flag answers a different question
+/// and the loader leaves it as the file stored it. That is the exception
+/// the producer hook already makes.
+///
+/// No legacy shim: the operator ruling of 2026-09-16 takes the break. A
+/// file loads, the loader corrects it, and the warning tells the operator
+/// to save.
+fn normalise_rest_analysis_demand(
+    session: &mut super::ProjectSession,
+    warnings: &mut Vec<ProjectLoadWarning>,
+) {
+    let wanted: Vec<(usize, bool)> = session
+        .toolpath_configs
+        .iter()
+        .enumerate()
+        .filter(|(_, tc)| {
+            !matches!(&tc.operation, OperationConfig::Pencil(cfg)
+                if cfg.detector == crate::finish::pencil::PencilDetector::RestDepth)
+        })
+        .map(|(index, tc)| (index, !session.rest_region_consumers(tc.id).is_empty()))
+        .filter(|(index, demand)| {
+            session
+                .toolpath_configs
+                .get(*index)
+                .is_some_and(|tc| tc.rest_analysis.enabled != *demand)
+        })
+        .collect();
+
+    for (index, demand) in wanted {
+        let Some(tc) = session.toolpath_configs.get_mut(index) else {
+            continue;
+        };
+        tc.rest_analysis.enabled = demand;
+        let toolpath = tc.name.clone();
+        tracing::info!(
+            toolpath = %toolpath,
+            enabled = demand,
+            "Normalized the rest-analysis demand on load"
+        );
+        warnings.push(ProjectLoadWarning::RestAnalysisNormalized {
+            toolpath,
+            enabled: demand,
+        });
+    }
 }
 
 #[cfg(test)]

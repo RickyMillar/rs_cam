@@ -16,6 +16,15 @@
 //! their sentry. This file restores it against the ONE remaining schema,
 //! `rs_cam_core::session::project_file`.
 //!
+//! # One field is derived, not carried
+//!
+//! `rest_analysis.enabled` is the exception, since W0b. The loader
+//! re-derives it from the demand: a toolpath's rest analysis is on when at
+//! least one enabled `DerivedRestRegions` boundary names it. So the flag
+//! does NOT survive a round trip that contradicts the demand, and this
+//! file asserts both directions of that rule. Every other dial of the
+//! block still round-trips.
+//!
 //! # How the session is built
 //!
 //! Through `ProjectSession::apply(Command)` alone. Every field below has a
@@ -339,8 +348,24 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     );
     assert!(!finish.boundary_inherit);
 
-    // Rest analysis.
-    assert_eq!(finish.rest_analysis, finish_rest_analysis(reference_id));
+    // Rest analysis. Every DIAL survives the round trip. The `enabled`
+    // flag does not, and must not: W0b made the loader re-derive it from
+    // the demand the project declares, so a producer with no
+    // `DerivedRestRegions` consumer loads switched off. Index 1 is the
+    // CONSUMER here, so nothing consumes its own regions.
+    assert_eq!(
+        finish.rest_analysis,
+        RestAnalysisConfig {
+            enabled: false,
+            ..finish_rest_analysis(reference_id)
+        }
+    );
+    // The other side of the same rule: index 0 IS consumed, so the loader
+    // switches it on whatever the file stored.
+    assert!(
+        loaded.toolpath_configs()[0].rest_analysis.enabled,
+        "the loader switches on the producer a boundary consumes"
+    );
 
     // Output and stock fields.
     assert_eq!(finish.coolant, CoolantMode::Mist);
