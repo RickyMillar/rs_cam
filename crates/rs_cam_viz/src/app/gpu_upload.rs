@@ -267,8 +267,12 @@ impl RsCamApp {
             selected_faces: selected_faces.clone(),
             hovered_face,
         };
-        let rebuild_meshes = resources.mesh_upload_key.as_ref() != Some(&mesh_key);
-        let rebuild_enriched = resources.enriched_upload_key.as_ref() != Some(&enriched_key);
+        // SHL-05: one keyed compare-then-rebuild guard, shared with the
+        // rest-heatmap, tier-preview and reach-overlay slots below.
+        let rebuild_meshes =
+            upload_cache::refresh_key(&mut resources.mesh_upload_key, Some(mesh_key));
+        let rebuild_enriched =
+            upload_cache::refresh_key(&mut resources.enriched_upload_key, Some(enriched_key));
         if rebuild_enriched {
             resources.enriched_mesh_data_list.clear();
             resources.upload_stats.enriched_builds += 1;
@@ -277,8 +281,6 @@ impl RsCamApp {
             resources.mesh_data_list.clear();
             resources.upload_stats.mesh_builds += 1;
         }
-        resources.mesh_upload_key = Some(mesh_key);
-        resources.enriched_upload_key = Some(enriched_key);
 
         for model in self.controller.state().session.models() {
             // If model has enriched mesh (STEP), use face-colored rendering
@@ -812,6 +814,13 @@ impl RsCamApp {
         // comparison against the marker set the current buffer was built
         // from. Collisions only move when a simulation runs, so every other
         // upload pass now skips this entirely.
+        //
+        // SHL-05: this slot keeps its own compare rather than taking
+        // `upload_cache::refresh_key`. The helper adopts an OWNED key, so
+        // routing this site through it would copy the position vector on
+        // every pass, including the fresh one — and the fresh pass is the
+        // one the keys exist to make free. The compare below reads the
+        // stored positions against a borrowed slice and allocates nothing.
         let positions_now = self.controller.collision_positions();
         let collisions_fresh = match (&resources.collision_upload_key, positions_now.is_empty()) {
             // Nothing uploaded and nothing to upload.
@@ -1239,9 +1248,8 @@ impl RsCamApp {
         } else {
             None
         };
-        if resources.rest_heatmap_upload_key != rest_key {
+        if upload_cache::refresh_key(&mut resources.rest_heatmap_upload_key, rest_key) {
             resources.upload_stats.rest_heatmap_builds += 1;
-            resources.rest_heatmap_upload_key = rest_key;
             let rest_grid = if let Selection::Toolpath(tp_id) = self.controller.state().selection {
                 let state = self.controller.state();
                 state
@@ -1302,8 +1310,7 @@ impl RsCamApp {
                 generation: planner.preview_generation,
                 shift: shift_arr,
             });
-        if resources.tier_preview_upload_key != tier_key {
-            resources.tier_preview_upload_key = tier_key;
+        if upload_cache::refresh_key(&mut resources.tier_preview_upload_key, tier_key) {
             resources.tier_preview_data = self
                 .controller
                 .state()
@@ -1372,8 +1379,7 @@ impl RsCamApp {
                     mesh: upload_cache::ArcId::new(mesh),
                     frame: frame_key,
                 });
-        if resources.reach_overlay_upload_key != reach_key {
-            resources.reach_overlay_upload_key = reach_key;
+        if upload_cache::refresh_key(&mut resources.reach_overlay_upload_key, reach_key) {
             resources.reach_overlay_data = reach_source.and_then(|(mesh, colors)| {
                 let displayed = if use_local_frame {
                     // SAFETY: use_local_frame is true iff active_setup_ref.is_some().

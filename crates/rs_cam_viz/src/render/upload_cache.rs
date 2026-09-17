@@ -261,6 +261,28 @@ pub struct AdvanceSource {
     pub edit_counter: u64,
 }
 
+/// Compare a cache slot against the key this pass needs, adopt the new
+/// key, and answer whether the resource must be rebuilt (SHL-05).
+///
+/// This is the compare-then-rebuild guard every keyed resource runs.
+/// `app/gpu_upload.rs` wrote it by hand once per resource, so each copy
+/// carried its own chance to compare the wrong slot, to forget the
+/// assignment, or to invert the test. `wanted` is `None` when the pass
+/// does not draw that resource — the slot then clears, and a later pass
+/// that wants the resource back reads a miss.
+///
+/// The collision markers and the per-toolpath buffers keep their own
+/// shapes: the collision slot compares a borrowed position slice without
+/// allocating, and the toolpath buffers are a map keyed by toolpath id,
+/// not one slot.
+pub fn refresh_key<K: PartialEq>(slot: &mut Option<K>, wanted: Option<K>) -> bool {
+    if *slot == wanted {
+        return false;
+    }
+    *slot = wanted;
+    true
+}
+
 /// Running counts of what the upload pass actually rebuilt.
 ///
 /// The instrument the review asked for: upload cost is not visible to
@@ -548,5 +570,41 @@ mod tests {
         assert_eq!(delta.toolpath_builds, 0);
         assert_eq!(delta.enriched_builds, 0);
         assert_eq!(delta.toolpath_reuses, 8);
+    }
+
+    /// SHL-05 — the one guard every keyed slot runs.
+    ///
+    /// Four claims: an unchanged key rebuilds nothing; a changed key
+    /// rebuilds and is adopted, so the NEXT pass sees a hit; a resource
+    /// the pass stops drawing clears its slot; and a slot that was empty
+    /// and stays empty rebuilds nothing.
+    #[test]
+    fn refresh_key_rebuilds_only_when_the_key_moves() {
+        let mut slot: Option<u32> = None;
+
+        assert!(!refresh_key(&mut slot, None), "empty to empty is a hit");
+        assert_eq!(slot, None);
+
+        assert!(refresh_key(&mut slot, Some(7)), "first key is a miss");
+        assert_eq!(
+            slot,
+            Some(7),
+            "the key must be adopted, or every pass misses"
+        );
+
+        assert!(!refresh_key(&mut slot, Some(7)), "the same key is a hit");
+        assert_eq!(slot, Some(7));
+
+        assert!(refresh_key(&mut slot, Some(8)), "a moved key is a miss");
+        assert_eq!(slot, Some(8));
+
+        assert!(
+            refresh_key(&mut slot, None),
+            "dropping the resource is a miss"
+        );
+        assert_eq!(
+            slot, None,
+            "the slot must clear, or the stale key reads as a hit"
+        );
     }
 }

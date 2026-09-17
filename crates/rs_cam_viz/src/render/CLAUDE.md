@@ -20,7 +20,8 @@ Every viewport pipeline. The entry point is `render::mod`, called from
 - A colour belongs in `colors.rs`. Do not write a literal colour in a
   pipeline.
 - Every upload goes through `upload_cache.rs`, so that an unchanged buffer is
-  not re-uploaded each frame.
+  not re-uploaded each frame. `refresh_key` is the compare-then-rebuild
+  guard; do not hand-roll a second one.
 - Check a buffer against the device limit before you create it.
 
 ## Sentries
