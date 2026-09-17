@@ -2478,11 +2478,6 @@ mod tests {
         }
     }
 
-    /// Phase 1 T5: normalize_for_op applies the registry policy with the
-    /// pre-registry semantics — strip-all clears entry+lead+link;
-    /// force-no-entry clears entry ONLY; prefer-helix upgrades Ramp and
-    /// leaves Helix/None alone; unrestricted ops pass through untouched.
-    #[test]
     /// CMP-16: the config's rest defaults ARE the detector's, not a copy
     /// of them.
     ///
@@ -2515,6 +2510,10 @@ mod tests {
         assert_eq!(cfg.num_offset_passes, None);
     }
 
+    /// Phase 1 T5: normalize_for_op applies the registry policy with the
+    /// pre-registry semantics — strip-all clears entry+lead+link;
+    /// force-no-entry clears entry ONLY; prefer-helix upgrades Ramp and
+    /// leaves Helix/None alone; unrestricted ops pass through untouched.
     #[test]
     fn normalize_for_op_applies_registry_policy() {
         use super::super::catalog::OperationType;

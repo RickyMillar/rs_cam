@@ -794,7 +794,9 @@ impl ProjectSession {
                     .find(|(id, _)| *id == tc.id)
                     .map(|(_, check)| *check);
                 let holder_collision_count = holder_check.and_then(HolderCollisionCheck::count);
-                total_collision_count += holder_collision_count.unwrap_or(0);
+                if let Some(count) = holder_collision_count {
+                    total_collision_count += count;
+                }
                 if holder_check.is_some_and(HolderCollisionCheck::failed) {
                     collision_checks_failed += 1;
                     failed_checks_by_tp.push((tc.id, tc.name.clone()));
