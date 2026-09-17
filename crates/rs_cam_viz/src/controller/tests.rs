@@ -549,7 +549,10 @@ fn opening_heights_tab_does_not_pin_heights_or_mark_stale_g_heightstab() {
         if after != before {
             defects.push(format!("the {tab:?} tab rewrote the stored heights"));
         }
-        if controller.state.gui.toolpath_rt[&tp_id].stale_since.is_some() {
+        if controller.state.gui.toolpath_rt[&tp_id]
+            .stale_since
+            .is_some()
+        {
             defects.push(format!("the {tab:?} tab marked the toolpath stale"));
         }
         if controller.state.gui.dirty {
