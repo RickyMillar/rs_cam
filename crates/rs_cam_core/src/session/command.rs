@@ -861,6 +861,13 @@ pub struct SetToolpathParamArgs {
 /// toolpath carries now and refuses a mismatch with
 /// [`SessionError::StaleCompletion`], inserting nothing.
 ///
+/// The command STALES the adopted toolpath's Regions and PrevTool
+/// consumers (D1). A source that regenerates without an input edit still
+/// publishes a different answer, and a consumer that resolved its boundary
+/// against the old rest regions describes a region set that no longer
+/// exists. It stales no `FromRemainingStock` consumer: recording an answer
+/// removes no material. It keeps the simulation.
+///
 /// `result` is boxed. A [`ToolpathComputeResult`] carries the whole
 /// annotated toolpath, its statistics and two optional traces, which is
 /// hundreds of bytes beside the other rows' arguments.
@@ -2213,7 +2220,27 @@ impl ProjectSession {
                     });
                 }
                 self.try_with_effects(Some(index), move |session| {
-                    session.insert_result(index, *result)
+                    session.insert_result(index, *result)?;
+                    // D1. The source's OUTPUT moved: its rest regions may
+                    // have appeared, changed or vanished, and a Rest
+                    // consumer's predecessor now carries a different
+                    // answer. Rules (b) and (c) only.
+                    //
+                    // `chain_seeds` is EMPTY: recording an answer removes
+                    // no material, so rule (a) must not fire. Seeding it
+                    // would drop every downstream `FromRemainingStock` op
+                    // on every adopt, which refuses round 1 of a Generate
+                    // All ladder with `StaleCompletion`.
+                    //
+                    // The call is `walk_output_dependents`, not the edit
+                    // door: an adopt must NOT clear the simulation, or it
+                    // destroys the `prior_stocks` snapshot the next op in
+                    // the ladder reads.
+                    let _ = session.walk_output_dependents(
+                        std::collections::BTreeSet::from([index]),
+                        std::collections::BTreeSet::new(),
+                    );
+                    Ok(())
                 })
             }
             Command::AdoptSimulation(args) => {

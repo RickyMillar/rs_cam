@@ -15,6 +15,7 @@ mod builder;
 mod command;
 mod compute;
 mod cycle_time;
+pub mod dependencies;
 mod diagnostics_types;
 mod eval_context;
 pub mod multitool;
@@ -55,6 +56,7 @@ pub use cycle_time::{CycleTime, CycleTimeBasis, toolpath_cycle_time};
 // so they sit in their own module and reach every caller through this
 // one re-export. The path `crate::session::ProjectDiagnostics` does not
 // move.
+pub use dependencies::{Edge, EdgeKind, EdgeState};
 pub use diagnostics_types::{
     ProjectDiagnostics, ProjectEvidence, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind,
     VerdictSeverity,

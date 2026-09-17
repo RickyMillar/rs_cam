@@ -154,6 +154,7 @@ const CRATE_PRIVATE_HELPERS: &[&str] = &[
     "start_generate_toolpath",
     "toolpath_configs_mut",
     "try_with_effects",
+    "walk_output_dependents",
     "with_effects",
 ];
 

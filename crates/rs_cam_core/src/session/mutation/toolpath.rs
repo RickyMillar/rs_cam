@@ -4,14 +4,15 @@
 //! Split out of `session/mutation.rs` by P4. Every method here is an
 //! inherent method on [`ProjectSession`], so its path does not change.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use tracing::instrument;
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::{BoundarySource, DressupConfig};
+use crate::compute::config::DressupConfig;
 use crate::compute::tool_config::ToolId;
 use crate::geometry::enriched_mesh::FaceGroupId;
+use crate::session::dependencies::EdgeKind;
 use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
 
 impl ProjectSession {
@@ -285,11 +286,17 @@ impl ProjectSession {
     /// per-seed loop would walk the chain once per seed and reach the same
     /// answer more slowly.
     ///
-    /// `dirty` seeds every index whose cached result is already invalid.
-    /// `chain_dirty` names the subset whose contribution to the setup's
-    /// material-removal sequence changed; it must hold only ENABLED seeds,
-    /// because a disabled op removes no material and only its
-    /// `DerivedRestRegions` consumers go stale.
+    /// `seeds` names every index whose cached result is already invalid.
+    /// `chain_seeds` names the subset whose contribution to the setup's
+    /// material-removal sequence changed. A DISABLED seed belongs in that
+    /// subset: `set_toolpath_enabled` writes `enabled = false` and THEN
+    /// seeds this walker, and switching an op off moves the material above
+    /// its successors exactly as switching it on does. Four callers pass
+    /// the flag unfiltered, and two sentries pin that drop.
+    ///
+    /// This door is the EDIT side: it clears the simulation, which an edit
+    /// owes and a completion does not. A caller that records an answer
+    /// calls [`Self::walk_output_dependents`] instead.
     ///
     /// Returns `(dirty, dropped)` with the contract
     /// [`Self::invalidate_output_dependents`] states: `dropped` excludes
@@ -299,12 +306,42 @@ impl ProjectSession {
         seeds: BTreeSet<usize>,
         chain_seeds: BTreeSet<usize>,
     ) -> (BTreeSet<usize>, BTreeSet<usize>) {
+        self.simulation = None;
+        self.walk_output_dependents(seeds, chain_seeds)
+    }
+
+    /// Propagate an invalidation along the dependency edges, and touch no
+    /// simulation.
+    ///
+    /// The pure half of [`Self::invalidate_output_dependents_of_set`].
+    /// `Command::AdoptResult` calls THIS door: an adopt that cleared the
+    /// simulation would destroy the `prior_stocks` snapshot the next
+    /// operation in a Generate All ladder reads, and would report
+    /// `simulation_cleared` on every completion.
+    ///
+    /// The rules are [`crate::session::dependencies::edges`], and nothing
+    /// else. There are three:
+    ///
+    /// - (a) a Stock edge hits when its source is in `chain_dirty`: the
+    ///   material above the consumer moved.
+    /// - (b) a Regions edge hits when its source is in `dirty`: the
+    ///   source's rest regions may have appeared, moved or vanished.
+    /// - (c) a PrevTool edge hits when its source is in `dirty`, so a Rest
+    ///   consumer drops when its predecessor's result drops.
+    ///
+    /// The edges are derived ONCE, before the loop. They come from configs,
+    /// and the loop changes only results and revisions, so no edge appears
+    /// or vanishes inside it.
+    pub(crate) fn walk_output_dependents(
+        &mut self,
+        seeds: BTreeSet<usize>,
+        chain_seeds: BTreeSet<usize>,
+    ) -> (BTreeSet<usize>, BTreeSet<usize>) {
         debug_assert!(
             chain_seeds.is_subset(&seeds),
             "a chain seed names a stock contribution that moved, so it is \
              also a dirty seed"
         );
-        self.simulation = None;
 
         // Indices whose cached result is now invalid.
         let mut dirty: BTreeSet<usize> = seeds;
@@ -315,47 +352,42 @@ impl ProjectSession {
         // its regenerated output may cut differently.
         let mut chain_dirty: BTreeSet<usize> = chain_seeds;
 
+        // The rules, derived once. `index_of` and `edges` are owned, so the
+        // `&mut self` drops below do not conflict with them.
+        let edges = crate::session::dependencies::edges(&*self);
+        let index_of: HashMap<crate::ids::ToolpathId, usize> = self
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .map(|(i, tc)| (tc.id, i))
+            .collect();
+
         loop {
-            let mut newly: Vec<usize> = Vec::new();
-
-            // (a) same-setup plan-order downstream FromRemainingStock ops.
-            for setup in &self.setups {
-                let mut upstream_changed = false;
-                for &tp_idx in &setup.toolpath_indices {
-                    if chain_dirty.contains(&tp_idx) {
-                        upstream_changed = true;
-                        continue;
-                    }
-                    if upstream_changed
-                        && !dirty.contains(&tp_idx)
-                        && self.toolpath_configs.get(tp_idx).is_some_and(|tc| {
-                            tc.enabled
-                                && matches!(
-                                    tc.stock_source,
-                                    crate::session::StockSource::FromRemainingStock
-                                )
-                        })
-                    {
-                        newly.push(tp_idx);
-                    }
-                }
-            }
-
-            // (b) DerivedRestRegions consumers of any dirty toolpath.
             let dirty_ids: BTreeSet<crate::ids::ToolpathId> = dirty
                 .iter()
                 .filter_map(|&i| self.toolpath_configs.get(i).map(|tc| tc.id))
                 .collect();
-            for (tp_idx, tc) in self.toolpath_configs.iter().enumerate() {
-                if dirty.contains(&tp_idx) || !tc.boundary.enabled {
+            let chain_ids: BTreeSet<crate::ids::ToolpathId> = chain_dirty
+                .iter()
+                .filter_map(|&i| self.toolpath_configs.get(i).map(|tc| tc.id))
+                .collect();
+
+            let mut newly: Vec<usize> = Vec::new();
+            for edge in &edges {
+                let Some(src_id) = edge.on else { continue };
+                let hit = match edge.kind {
+                    // (a) the material above the consumer moved.
+                    EdgeKind::Stock => chain_ids.contains(&src_id),
+                    // (b) and (c) the source's OUTPUT moved.
+                    EdgeKind::Regions | EdgeKind::PrevTool => dirty_ids.contains(&src_id),
+                };
+                let Some(&idx) = index_of.get(&edge.from) else {
+                    continue;
+                };
+                if !hit || dirty.contains(&idx) || newly.contains(&idx) {
                     continue;
                 }
-                if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
-                    &tc.boundary.source
-                    && dirty_ids.contains(source_toolpath_id)
-                {
-                    newly.push(tp_idx);
-                }
+                newly.push(idx);
             }
 
             if newly.is_empty() {
