@@ -1283,6 +1283,11 @@ pub enum VerdictKind {
     PlungeStress,
     AirCut,
     GeneratedEmpty,
+    /// The stock's alignment pins do not key the flip a setup is
+    /// programmed for (CMP-27). A statement about REGISTRATION, not about
+    /// a toolpath: a pin pair that is invariant under the wrong symmetry
+    /// seats in both orientations and both look right.
+    AlignmentPinsUnkeyed,
     /// A gate declined to produce a verdict because the metric it reads is
     /// not measurable on this trace. Checkpoint D Q2, 2026-08-04 — see
     /// [`crate::stock::sim_measurability`]. This is **not** a warning about the
@@ -1300,6 +1305,7 @@ impl VerdictKind {
             Self::PlungeStress => "plunge_stress",
             Self::AirCut => "air_cut",
             Self::GeneratedEmpty => "generated_empty",
+            Self::AlignmentPinsUnkeyed => "alignment_pins_unkeyed",
             Self::MeasurabilityAbstained => "measurability_abstained",
         }
     }

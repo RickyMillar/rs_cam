@@ -78,6 +78,9 @@ fn id_and_category_for(kind: VerdictKind) -> (&'static str, Category) {
         VerdictKind::PlungeStress => (ids::PROJECT_PLUNGE_STRESS, Category::Safety),
         VerdictKind::AirCut => (ids::PROJECT_AIR_CUT_HIGH, Category::Efficiency),
         VerdictKind::GeneratedEmpty => (ids::PROJECT_GENERATED_EMPTY, Category::State),
+        VerdictKind::AlignmentPinsUnkeyed => {
+            (ids::PROJECT_ALIGNMENT_PINS_UNKEYED, Category::Safety)
+        }
         VerdictKind::MeasurabilityAbstained => {
             (ids::PROJECT_MEASURABILITY_ABSTAINED, Category::State)
         }

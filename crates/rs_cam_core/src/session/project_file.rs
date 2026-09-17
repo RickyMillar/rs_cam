@@ -95,6 +95,20 @@ pub enum ProjectLoadWarning {
     MissingToolReference { toolpath: String, tool_id: usize },
     /// A toolpath names a model id no `[[models]]` section defines.
     MissingModelReference { toolpath: String, model_id: usize },
+    /// The stock's alignment pins do not key the flip a setup is
+    /// programmed for.
+    ///
+    /// CMP-27: `StockConfig::validate_pins_for_flip`'s own doc says "Call
+    /// this on load and publish `PinFlipReport::warnings`", and only the
+    /// GUI load path did. The CLI's headless load and MCP `load_project`
+    /// heard nothing. The consequence is registration: a pin pair that is
+    /// invariant under the wrong symmetry seats in the flipped
+    /// orientation and in the un-flipped one, and both look right.
+    ///
+    /// `detail` is the report's own sentence, verbatim, so the GUI — which
+    /// runs the same check on its own load path and dedupes by exact
+    /// message — collapses the pair instead of printing it twice.
+    AlignmentPinsUnkeyed { detail: String },
     /// A toolpath carried a dressup value its operation does not allow.
     /// The loader rewrote the value. The file still holds the old one
     /// until the operator saves the project again.
@@ -125,6 +139,9 @@ impl ProjectLoadWarning {
                 "Setup '{setup}' has unknown Z rotation '{token}' — defaulted to 0 degrees. \
                  Valid values are 0, 90, 180 and 270."
             ),
+            // Verbatim: the report wrote the sentence, and re-wording it
+            // here is how one fact came to be worded two ways before C10.
+            Self::AlignmentPinsUnkeyed { detail } => detail.clone(),
             Self::MissingToolReference { toolpath, tool_id } => format!(
                 "Toolpath '{toolpath}' references missing tool id {tool_id} and needs reassignment."
             ),
@@ -1166,6 +1183,23 @@ pub(super) fn build_session_from_project(
                 toolpath: tc.name.clone(),
                 model_id: tc.model_id,
             });
+        }
+    }
+
+    // CMP-27: the pin-keying judgement, on the CORE load path. It ran on
+    // the GUI's load path only, so a headless load and MCP `load_project`
+    // heard nothing about a pin pair that cannot register the flip it is
+    // for. Deduped by exact message: a `Top` setup contributes only the
+    // bounds line, and a project with several setups would repeat it.
+    {
+        let mut seen = std::collections::HashSet::new();
+        for setup in &setups {
+            for detail in stock.validate_pins_for_flip(setup.face_up).warnings() {
+                if seen.insert(detail.clone()) {
+                    tracing::warn!("{detail}");
+                    warnings.push(ProjectLoadWarning::AlignmentPinsUnkeyed { detail });
+                }
+            }
         }
     }
 

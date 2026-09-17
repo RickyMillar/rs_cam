@@ -45,6 +45,11 @@ pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision";
 pub const PROJECT_PLUNGE_STRESS: &str = "project.plunge_stress";
 pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high";
 pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
+/// The stock's alignment pins do not key the flip a setup is programmed
+/// for (CMP-27). The judgement lives in
+/// [`crate::compute::stock_config::validate_pins_for_flip`]; this is the
+/// id it reaches every surface under.
+pub const PROJECT_ALIGNMENT_PINS_UNKEYED: &str = "project.alignment_pins_unkeyed";
 /// A gate declined to produce a verdict because the metric it reads is not
 /// measurable on this trace (Checkpoint D Q2 — [`crate::stock::sim_measurability`]).
 /// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
@@ -298,6 +303,7 @@ pub const ALL: &[&str] = &[
     PROJECT_PLUNGE_STRESS,
     PROJECT_AIR_CUT_HIGH,
     PROJECT_GENERATED_EMPTY,
+    PROJECT_ALIGNMENT_PINS_UNKEYED,
     PROJECT_MEASURABILITY_ABSTAINED,
     PROJECT_CROSSES_STANDING_MATERIAL,
     PROJECT_ENTRY_LOAD,

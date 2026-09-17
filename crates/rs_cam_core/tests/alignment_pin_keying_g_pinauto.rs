@@ -406,3 +406,183 @@ fn an_empty_pin_set_reports_nothing() {
     assert!(!report.keyed());
     assert!(report.warnings().is_empty());
 }
+
+// ── CMP-27: the judgement must reach every surface, not just the GUI ────
+
+/// A project with centre-symmetric pins — the live wanaka defect —
+/// written as the loader reads it.
+const PROJECT_WITH_UNKEYED_PINS: &str = r#"format_version = 3
+
+[job]
+name = "CMP-27 unkeyed pins"
+
+[job.stock]
+x = 140.0
+y = 150.0
+z = 25.0
+origin_x = 0.0
+origin_y = 0.0
+origin_z = -25.0
+auto_from_model = false
+
+[[job.stock.alignment_pins]]
+x = 2.5
+y = 2.5
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 137.5
+y = 147.5
+diameter = 6.0
+
+[[setups]]
+id = 0
+name = "Back"
+face_up = "bottom"
+"#;
+
+/// CMP-27, the load half. `validate_pins_for_flip`'s own doc says "Call
+/// this on load and publish `PinFlipReport::warnings`", and three
+/// production call sites did — all three in `rs_cam_viz`. The core load
+/// path never called it, so the CLI's headless load and MCP
+/// `load_project` heard nothing.
+///
+/// The consequence is registration: a pin pair invariant under the wrong
+/// symmetry seats in the flipped orientation and in the un-flipped one,
+/// and both look right.
+#[test]
+fn a_loaded_project_warns_about_pins_that_do_not_key_g_pinauto() {
+    let dir = std::env::temp_dir().join(format!("rs_cam_cmp27_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let path = dir.join("unkeyed_pins.toml");
+    std::fs::write(&path, PROJECT_WITH_UNKEYED_PINS).expect("write project");
+
+    let (session, warnings) = rs_cam_core::session::ProjectSession::load_with_warnings(&path)
+        .expect("the project loads; an unkeyed pin pair is a warning, not a refusal");
+
+    let messages: Vec<String> = warnings
+        .iter()
+        .map(rs_cam_core::session::ProjectLoadWarning::message)
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.contains("do not survive the flip")),
+        "the core loader took an unkeyed pin pair in silence. Warnings were: {messages:?}"
+    );
+
+    // The message is the report's own sentence, verbatim. The GUI runs the
+    // same check on its own load path and dedupes by exact message, so a
+    // re-worded copy here would print the fact twice.
+    let report = session
+        .stock_config()
+        .validate_pins_for_flip(session.list_setups()[0].face_up);
+    for line in report.warnings() {
+        assert!(
+            messages.contains(&line),
+            "the loader re-worded `{line}`. Warnings were: {messages:?}"
+        );
+    }
+}
+
+/// CMP-27, the diagnostics half. The same judgement is a `Diagnostic`, so
+/// `get_project_diagnostics` answers it for MCP and the CLI, and
+/// `add_alignment_pin` / `remove_alignment_pin` get a current answer
+/// rather than one frozen at load time.
+#[test]
+fn project_diagnostics_publish_the_pin_keying_verdict_g_pinauto() {
+    let mut stock = StockConfig {
+        x: W,
+        y: D,
+        z: 25.0,
+        origin_z: -25.0,
+        auto_from_model: false,
+        ..StockConfig::default()
+    };
+    stock.alignment_pins = vec![
+        AlignmentPin::new(2.5, 2.5, PIN_D),
+        AlignmentPin::new(137.5, 147.5, PIN_D),
+    ];
+
+    let mut session = rs_cam_core::session::ProjectSessionBuilder::new()
+        .stock(stock)
+        .build();
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSetupFace(
+            rs_cam_core::session::SetSetupFaceArgs {
+                setup_index: 0,
+                face_up: FaceUp::Bottom,
+            },
+        ))
+        .expect("the default setup takes a face");
+
+    let diag = session.diagnostics();
+    let pin_verdicts: Vec<&str> = diag
+        .verdicts
+        .iter()
+        .filter(|v| v.kind == rs_cam_core::session::VerdictKind::AlignmentPinsUnkeyed)
+        .map(|v| v.headline.as_str())
+        .collect();
+    assert!(
+        !pin_verdicts.is_empty(),
+        "no pin-keying verdict; the verdicts were {:?}",
+        diag.verdicts.iter().map(|v| v.kind).collect::<Vec<_>>()
+    );
+    // The live wanaka pair says two things: the bodies hang off the blank,
+    // and the pattern is invariant under R180 rather than the flip. Both
+    // are the report's own sentences, carried verbatim.
+    assert!(
+        pin_verdicts.iter().any(|h| h.contains("not wholly inside")),
+        "{pin_verdicts:?}"
+    );
+    assert!(
+        pin_verdicts
+            .iter()
+            .any(|h| h.contains("do not survive the flip")),
+        "{pin_verdicts:?}"
+    );
+
+    let unified = session.diagnose_project();
+    assert!(
+        unified.iter().any(|d| d.id.as_str()
+            == rs_cam_core::diagnostics::ids::PROJECT_ALIGNMENT_PINS_UNKEYED),
+        "the verdict did not reach the unified diagnostic model, which is what \
+         MCP `get_project_diagnostics` reads"
+    );
+}
+
+/// The control. Pins that DO key the flip raise nothing, on either half.
+#[test]
+fn keyed_pins_raise_no_diagnostic_g_pinauto() {
+    let pins = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).expect("placement");
+    let mut stock = StockConfig {
+        x: W,
+        y: D,
+        z: 25.0,
+        origin_z: -25.0,
+        auto_from_model: false,
+        ..StockConfig::default()
+    };
+    stock.alignment_pins = pins.to_vec();
+
+    let mut session = rs_cam_core::session::ProjectSessionBuilder::new()
+        .stock(stock)
+        .build();
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSetupFace(
+            rs_cam_core::session::SetSetupFaceArgs {
+                setup_index: 0,
+                face_up: FaceUp::Bottom,
+            },
+        ))
+        .expect("the default setup takes a face");
+
+    assert!(
+        !session
+            .diagnostics()
+            .verdicts
+            .iter()
+            .any(|v| v.kind == rs_cam_core::session::VerdictKind::AlignmentPinsUnkeyed),
+        "a keyed pin pair must raise nothing, or the verdict is noise"
+    );
+}

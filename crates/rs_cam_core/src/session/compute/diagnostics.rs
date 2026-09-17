@@ -941,6 +941,47 @@ impl ProjectSession {
             });
         }
 
+        // Important: the alignment pins cannot register the flip a setup
+        // is programmed for (CMP-27).
+        //
+        // The judgement is `StockConfig::validate_pins_for_flip`, whose
+        // own doc asks callers to run it on load and publish its
+        // warnings. Three production call sites did, all in viz, so the
+        // CLI's headless load and MCP `load_project` heard nothing and
+        // `add_alignment_pin` applied a pin with no check at all. Raised
+        // here, every surface that reads diagnostics gets the same
+        // answer, and it stays current as pins are added and removed
+        // rather than being frozen at load time.
+        //
+        // Deduped by headline: a `Top` setup contributes only the bounds
+        // line, and a project with several setups repeats it.
+        {
+            let mut seen = std::collections::HashSet::new();
+            for setup in &self.setups {
+                for detail in self.stock.validate_pins_for_flip(setup.face_up).warnings() {
+                    if !seen.insert(detail.clone()) {
+                        continue;
+                    }
+                    verdicts.push(Verdict {
+                        severity: VerdictSeverity::Important,
+                        kind: VerdictKind::AlignmentPinsUnkeyed,
+                        headline: detail,
+                        offender_toolpath_ids: Vec::new(),
+                        fix_hint: "Re-place the pins so the pair is asymmetric under the \
+                                   mirror the flip is NOT, or let the stock panel place \
+                                   them. A pair that seats in both orientations registers \
+                                   neither."
+                            .to_owned(),
+                        evidence: VerdictEvidence {
+                            move_index: None,
+                            z_value: None,
+                            count: None,
+                        },
+                    });
+                }
+            }
+        }
+
         // Critical: a holder/shank check that could not answer. The
         // absence is the finding — CMP-14's whole point is that it must
         // not be reported as a clean toolpath.
