@@ -370,6 +370,25 @@ where
         .any(|(p, q)| (p - q).abs() > eps)
 }
 
+/// Compute the minimum Euclidean distance from a point to a line segment in
+/// 3D.
+///
+/// The 3D form of [`point_to_segment_distance`]: the same clamped projection
+/// `t = dot(ap, ab) / dot(ab, ab)`, held to `[0, 1]`. `metrology/spacing.rs`
+/// kept a private copy of this until EDG-04; `geo` is the crate's spine for
+/// a geometric primitive, so the copy is gone and the caller reads this one.
+#[must_use]
+pub fn point_to_segment_distance_3d(p: P3, a: P3, b: P3) -> f64 {
+    let ab = b - a;
+    let len2 = ab.dot(&ab);
+    if len2 <= 1e-18 {
+        return (p - a).norm();
+    }
+    let t = ((p - a).dot(&ab) / len2).clamp(0.0, 1.0);
+    let q = P3::new(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
+    (p - q).norm()
+}
+
 /// Compute the minimum Euclidean distance from a point to a line segment.
 pub fn point_to_segment_distance(p: &P2, a: &P2, b: &P2) -> f64 {
     let ab_x = b.x - a.x;

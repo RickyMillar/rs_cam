@@ -359,9 +359,11 @@ fn assert_all_shallow(report: &UnifiedFinishReport, label: &str) {
 
 // ---- Measurement ------------------------------------------------------------
 
-// PROMOTED (Track M, 2026-09-02): `SpacingSample`, the spacing
-// measurement and `dist_point_segment` live in
-// `rs_cam_core::metrology::spacing`, extracted verbatim from this file.
+// PROMOTED (Track M, 2026-09-02): `SpacingSample` and the spacing
+// measurement live in `rs_cam_core::metrology::spacing`, extracted
+// verbatim from this file. EDG-04 moved the point-segment distance on to
+// `rs_cam_core::geo::point_to_segment_distance_3d`, the crate's spine for
+// a geometric primitive.
 // The fixture's ANALYTIC closed forms stay here and ride in as
 // `ContactMaps`, so the ruler still carries no estimator.
 fn measure(toolpath: &Toolpath, fixture: &Fixture, stepover_mm: f64) -> SpacingMeasurement {

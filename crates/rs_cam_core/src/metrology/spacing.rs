@@ -20,7 +20,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::geo::P3;
+use crate::geo::{P3, point_to_segment_distance_3d};
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// One achieved-spacing sample: a contact point on pass `i` and its minimum
@@ -63,19 +63,6 @@ pub struct ContactMaps<'a> {
     pub total_slope_deg: &'a dyn Fn(f64, f64) -> f64,
     /// Cross-pass slope (degrees) at a contact XY.
     pub cross_slope_deg: &'a dyn Fn(f64, f64) -> f64,
-}
-
-/// Minimum distance from `p` to segment `ab`.
-#[must_use]
-pub fn dist_point_segment(p: P3, a: P3, b: P3) -> f64 {
-    let ab = b - a;
-    let len2 = ab.dot(&ab);
-    if len2 <= 1e-18 {
-        return (p - a).norm();
-    }
-    let t = ((p - a).dot(&ab) / len2).clamp(0.0, 1.0);
-    let q = P3::new(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
-    (p - q).norm()
 }
 
 /// Measure the achieved surface spacing of an emitted 0-degree raster
@@ -156,7 +143,7 @@ pub fn measure_raster_spacing(
                 if (x_b - x_a).abs() > 1.5 * stepover_mm {
                     continue; // clipped gap: not a cut segment
                 }
-                best = best.min(dist_point_segment(contact, a, b));
+                best = best.min(point_to_segment_distance_3d(contact, a, b));
             }
             if let (1, Some(&(_, only))) = (next_contacts.len(), next_contacts.first()) {
                 best = best.min((contact - only).norm());
@@ -350,20 +337,21 @@ pub fn path_structure(toolpath: &Toolpath, ring_starts: &[usize], bucket_mm: f64
     clippy::indexing_slicing
 )]
 mod tests {
-    use super::{dist_point_segment, quantile};
+    use super::{point_to_segment_distance_3d, quantile};
     use crate::geo::P3;
 
     /// New pin (the promoted helpers had none): the point-segment distance
     /// clamps to the segment ends and the quantile estimator is the
-    /// round-index one Checkpoint B uses.
+    /// round-index one Checkpoint B uses. EDG-04 moved the distance helper
+    /// to `geo`; this case follows it, because the ruler reads it.
     #[test]
-    fn dist_point_segment_clamps_and_quantile_rounds() {
+    fn point_to_segment_distance_3d_clamps_and_quantile_rounds() {
         let a = P3::new(0.0, 0.0, 0.0);
         let b = P3::new(10.0, 0.0, 0.0);
-        assert!((dist_point_segment(P3::new(5.0, 3.0, 0.0), a, b) - 3.0).abs() < 1e-12);
-        assert!((dist_point_segment(P3::new(-4.0, 3.0, 0.0), a, b) - 5.0).abs() < 1e-12);
+        assert!((point_to_segment_distance_3d(P3::new(5.0, 3.0, 0.0), a, b) - 3.0).abs() < 1e-12);
+        assert!((point_to_segment_distance_3d(P3::new(-4.0, 3.0, 0.0), a, b) - 5.0).abs() < 1e-12);
         // Degenerate segment falls back to point distance.
-        assert!((dist_point_segment(P3::new(0.0, 2.0, 0.0), a, a) - 2.0).abs() < 1e-12);
+        assert!((point_to_segment_distance_3d(P3::new(0.0, 2.0, 0.0), a, a) - 2.0).abs() < 1e-12);
 
         let sorted = [1.0, 2.0, 3.0, 4.0, 5.0];
         assert!((quantile(&sorted, 0.5) - 3.0).abs() < 1e-12);

@@ -21,6 +21,9 @@ The shared instruments that measure a finished surface. The entry point is
   its own docstring a lie.
 - A candidate cost must use the production relink kernel, never a private
   copy.
+- A geometric primitive belongs to `geo.rs`. A ruler calls it; it does not
+  keep its own copy. Point-segment distance is
+  `geo::point_to_segment_distance_3d`.
 
 ## Sentries
 
