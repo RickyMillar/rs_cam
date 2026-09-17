@@ -1,4 +1,6 @@
-use rs_cam_core::export::gcode_validator::{MachineSafety, Severity, validate_machine_safety};
+use rs_cam_core::export::gcode_validator::{
+    Finding, MachineSafety, Severity, validate_machine_safety,
+};
 use rs_cam_core::gcode::{
     GcodePhase, GcodeSetupPhase, PhaseTool, ToolLoadExportPolicy, WizardOverlay,
     export_gcode_multi_setup_with_overlay_checked, export_gcode_phases_with_overlay_checked,
@@ -6,13 +8,29 @@ use rs_cam_core::gcode::{
 };
 use rs_cam_core::session::ProjectSession;
 
-/// Run the machine-safety pass over freshly emitted G-code and log any
-/// findings (non-blocking). Uses the post's safe-Z as the clearance
-/// plane; the depth-floor and feed-cap checks stay off until the machine
-/// profile is plumbed through (turning them on without correct limits
-/// would risk false positives). Runs before any high-feedrate rapid→feed
-/// rewrite so the rapid structure is still intact to check.
-fn log_machine_safety(gcode: &str, safe_z: f64) {
+/// A finished G-code export and what the machine-safety pass found in it.
+///
+/// EDG-06: the pass already ran on every export, and only the server log
+/// read it. A caller that reports to an operator or to an agent reads
+/// `machine_safety` here instead.
+pub struct ExportedGcode {
+    /// The emitted program, after any high-feedrate rapid→feed rewrite.
+    pub gcode: String,
+    /// What the machine-safety pass found, in emission order. Empty is a
+    /// clean pass.
+    pub machine_safety: Vec<Finding>,
+}
+
+/// Run the machine-safety pass over freshly emitted G-code. Log the
+/// findings (non-blocking) and return them.
+///
+/// Uses the post's safe-Z as the clearance plane; the depth-floor and
+/// feed-cap checks stay off until the machine profile is plumbed through
+/// (turning them on without correct limits would risk false positives).
+/// Runs before any high-feedrate rapid→feed rewrite so the rapid
+/// structure is still intact to check. A caller must therefore keep the
+/// findings this returns; the rewritten program has no G0 left to check.
+fn machine_safety_pass(gcode: &str, safe_z: f64) -> Vec<Finding> {
     let findings = validate_machine_safety(
         gcode,
         MachineSafety {
@@ -22,7 +40,7 @@ fn log_machine_safety(gcode: &str, safe_z: f64) {
         },
     );
     if findings.is_empty() {
-        return;
+        return findings;
     }
     let errors = findings
         .iter()
@@ -35,6 +53,70 @@ fn log_machine_safety(gcode: &str, safe_z: f64) {
         findings.first().map(|f| f.line).unwrap_or(0),
         findings.first().map(|f| f.message.as_str()).unwrap_or(""),
     );
+    findings
+}
+
+/// How many findings a text report names one by one. The rest reach the
+/// reader as a count.
+const MACHINE_SAFETY_REPORT_LINES: usize = 5;
+
+/// Render the machine-safety findings for a caller that reports text.
+///
+/// `None` is a clean pass, so a clean export's message stays exactly what
+/// it was. An `Error`-severity finding is a confirmed safety or
+/// correctness issue (`Severity::Error`'s own definition), so the first
+/// line says that plainly rather than leaving the reader to weigh a
+/// count.
+pub fn machine_safety_report(findings: &[Finding]) -> Option<String> {
+    if findings.is_empty() {
+        return None;
+    }
+    let errors = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Error)
+        .count();
+    let mut report = if errors > 0 {
+        format!(
+            "MACHINE-SAFETY ERROR: {errors} of {} findings are errors. \
+             Do not run this program until you fix them.",
+            findings.len()
+        )
+    } else {
+        format!(
+            "Machine-safety warnings: {} findings, none at error severity.",
+            findings.len()
+        )
+    };
+    for finding in findings.iter().take(MACHINE_SAFETY_REPORT_LINES) {
+        let label = match finding.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+            Severity::Info => "info",
+        };
+        report.push_str(&format!(
+            "\n  [{label}] line {}: {}",
+            finding.line, finding.message
+        ));
+    }
+    if findings.len() > MACHINE_SAFETY_REPORT_LINES {
+        report.push_str(&format!(
+            "\n  ... and {} more.",
+            findings.len() - MACHINE_SAFETY_REPORT_LINES
+        ));
+    }
+    Some(report)
+}
+
+/// The success text an export surface reports: what it wrote, then what
+/// the machine-safety pass found (EDG-06).
+///
+/// A clean pass returns `header` unchanged, so a clean export reads
+/// exactly as it did before this row.
+pub fn export_success_text(header: String, findings: &[Finding]) -> String {
+    match machine_safety_report(findings) {
+        Some(report) => format!("{header}\n{report}"),
+        None => header,
+    }
 }
 
 use crate::state::freshness::{FreshnessState, freshness_at};
@@ -389,6 +471,25 @@ pub fn export_gcode_from_session_with_policy(
     policy: ToolLoadExportPolicy,
     stale: StaleResultPolicy,
 ) -> Result<String, crate::error::VizError> {
+    export_gcode_from_session_reporting(session, gui, sim, policy, stale).map(|e| e.gcode)
+}
+
+/// The same export as [`export_gcode_from_session_with_policy`], and it
+/// also hands back what the machine-safety pass found (EDG-06).
+///
+/// Two doors, because the two callers ask different questions. A caller
+/// that only writes a file takes the door above. A caller that reports
+/// to an operator or to an agent takes this one, and must not re-run
+/// `validate_machine_safety` on the returned text: the pass runs before
+/// the high-feedrate rapid→feed rewrite, so a re-run on the returned
+/// program can miss every rapid finding.
+pub fn export_gcode_from_session_reporting(
+    session: &ProjectSession,
+    gui: &GuiState,
+    sim: &SimulationState,
+    policy: ToolLoadExportPolicy,
+    stale: StaleResultPolicy,
+) -> Result<ExportedGcode, crate::error::VizError> {
     let post = gui.post.format.definition();
 
     let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len(), stale)?;
@@ -415,13 +516,16 @@ pub fn export_gcode_from_session_with_policy(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    log_machine_safety(&gcode, gui.post.safe_z);
+    let machine_safety = machine_safety_pass(&gcode, gui.post.safe_z);
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
     }
 
-    Ok(gcode)
+    Ok(ExportedGcode {
+        gcode,
+        machine_safety,
+    })
 }
 
 /// Export all setups as a single G-code file with M0 pauses (session-based).
@@ -484,7 +588,8 @@ pub fn export_combined_gcode_from_session(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    log_machine_safety(&gcode, gui.post.safe_z);
+    // No reporting caller on this door yet: the pass logs, as it always did.
+    machine_safety_pass(&gcode, gui.post.safe_z);
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -546,7 +651,8 @@ pub fn export_single_toolpath_from_session(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    log_machine_safety(&gcode, gui.post.safe_z);
+    // No reporting caller on this door yet: the pass logs, as it always did.
+    machine_safety_pass(&gcode, gui.post.safe_z);
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -583,6 +689,22 @@ pub fn export_setup_gcode_from_session_with_policy(
     policy: ToolLoadExportPolicy,
     stale: StaleResultPolicy,
 ) -> Result<String, crate::error::VizError> {
+    export_setup_gcode_from_session_reporting(session, gui, sim, setup_id, policy, stale)
+        .map(|e| e.gcode)
+}
+
+/// The same per-setup export, and it also hands back what the
+/// machine-safety pass found (EDG-06). The split-setups MCP route takes
+/// this door; see [`export_gcode_from_session_reporting`] for why the
+/// findings travel with the text instead of being recomputed.
+pub fn export_setup_gcode_from_session_reporting(
+    session: &ProjectSession,
+    gui: &GuiState,
+    sim: &SimulationState,
+    setup_id: crate::state::job::SetupId,
+    policy: ToolLoadExportPolicy,
+    stale: StaleResultPolicy,
+) -> Result<ExportedGcode, crate::error::VizError> {
     let setup = session
         .list_setups()
         .iter()
@@ -616,11 +738,14 @@ pub fn export_setup_gcode_from_session_with_policy(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    log_machine_safety(&gcode, gui.post.safe_z);
+    let machine_safety = machine_safety_pass(&gcode, gui.post.safe_z);
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
     }
 
-    Ok(gcode)
+    Ok(ExportedGcode {
+        gcode,
+        machine_safety,
+    })
 }

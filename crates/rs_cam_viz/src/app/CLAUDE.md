@@ -22,6 +22,8 @@ processing. The server lives here, not in `rs_cam_mcp`.
   rebinding uses its own endpoint, not a generic parameter setter.
 - Export refuses missing or stale enabled geometry, and an unsafe or
   unmodelled load verdict, unless the caller accepts the override.
+- An MCP export reports the machine-safety findings beside the path it
+  wrote. Take `io::export`'s reporting door; do not re-run the validator.
 - Use `generation_status` and `cancel_generation` for a long job. Do not
   queue a second generation behind an unknown first one.
 - An MCP screenshot is visual evidence, not a replacement for a core test.

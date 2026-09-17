@@ -890,21 +890,29 @@ impl super::RsCamApp {
                 let post = state.gui.post.format.definition();
                 let total = setups.len();
                 let mut written: Vec<String> = Vec::new();
+                // EDG-06: one findings list over every per-setup file, so
+                // the reply names an error-severity finding in file 2 as
+                // plainly as one in file 1.
+                let mut machine_safety: Vec<rs_cam_core::export::gcode_validator::Finding> =
+                    Vec::new();
                 for (i, (id, name)) in setups.iter().enumerate() {
-                    let gcode = match crate::io::export::export_setup_gcode_from_session_with_policy(
-                        &state.session,
-                        &state.gui,
-                        &state.simulation,
-                        crate::state::job::SetupId(*id),
-                        rs_cam_core::gcode::ToolLoadExportPolicy {
-                            accept_unmodeled: accept_unmodeled_tool_load,
-                            accept_exceeded: accept_exceeded_tool_load,
-                        },
-                        stale,
-                    ) {
-                        Ok(g) => g,
-                        Err(e) => return text(format!("Export failed (setup '{name}'): {e}")),
-                    };
+                    let exported =
+                        match crate::io::export::export_setup_gcode_from_session_reporting(
+                            &state.session,
+                            &state.gui,
+                            &state.simulation,
+                            crate::state::job::SetupId(*id),
+                            rs_cam_core::gcode::ToolLoadExportPolicy {
+                                accept_unmodeled: accept_unmodeled_tool_load,
+                                accept_exceeded: accept_exceeded_tool_load,
+                            },
+                            stale,
+                        ) {
+                            Ok(e) => e,
+                            Err(e) => return text(format!("Export failed (setup '{name}'): {e}")),
+                        };
+                    let gcode = exported.gcode;
+                    machine_safety.extend(exported.machine_safety);
                     // G-EXPORT-DATUM + Z-datum (2026-09-07): name the
                     // datum. X0 Y0 is the stock's min corner in EVERY file
                     // (the export re-expresses every setup in the
@@ -958,25 +966,36 @@ impl super::RsCamApp {
                     }
                     written.push(out_path.display().to_string());
                 }
-                return text(format!(
-                    "Exported {total} per-setup G-code files:\n{}",
-                    written.join("\n")
+                return text(crate::io::export::export_success_text(
+                    format!(
+                        "Exported {total} per-setup G-code files:\n{}",
+                        written.join("\n")
+                    ),
+                    &machine_safety,
                 ));
             }
         }
 
-        let gcode = match crate::io::export::export_gcode_from_session_with_policy(
+        // EDG-06: take the reporting door. The machine-safety pass ran on
+        // every export before this row and only the server log read it, so
+        // an export that tripped `Severity::Error` — a rapid below the
+        // clearance plane, a Z below the program floor — read to the
+        // calling agent exactly like a clean one.
+        let exported = match crate::io::export::export_gcode_from_session_reporting(
             &state.session,
             &state.gui,
             &state.simulation,
             policy,
             stale,
         ) {
-            Ok(g) => g,
+            Ok(e) => e,
             Err(e) => return text(format!("Export failed: {e}")),
         };
-        match std::fs::write(Path::new(path), &gcode) {
-            Ok(()) => text(format!("G-code exported to {path}")),
+        match std::fs::write(Path::new(path), &exported.gcode) {
+            Ok(()) => text(crate::io::export::export_success_text(
+                format!("G-code exported to {path}"),
+                &exported.machine_safety,
+            )),
             Err(e) => text(format!("Export failed: {e}")),
         }
     }
