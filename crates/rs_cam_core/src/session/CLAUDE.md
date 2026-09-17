@@ -6,6 +6,8 @@ The single entry point for project state and compute. The mutation door is
 ## Files
 
 - `mod.rs` — the `ProjectSession` type and the facade.
+- `diagnostics_types.rs` — the diagnostic result types. Keep the `mod.rs`
+  re-export; it is the path every caller names.
 - `command.rs` — the command registry and the one door that applies a
   command and returns `Effects`.
 - `mutation.rs` and `mutation/` — the CRUD methods: entities, project-wide
@@ -14,19 +16,17 @@ The single entry point for project state and compute. The mutation door is
   and parameter mutation.
 - `builder.rs`, `project_file.rs`, `save.rs` — construction, the project file.
 - `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs` — the
-  per-setup context, cycle time and its basis, the per-tool reach
-  resolution, the multi-tool planner action.
+  per-setup context, cycle time and its basis, reach, the planner action.
 
 ## Invariants
 
-- A command returns `Effects`. `Effects.stale` is the authoritative stale set
-  for every caller.
+- A command returns `Effects`. `Effects.stale` is the stale set.
 - A parameter, tool, model, stock or setup edit invalidates the affected
-  cached result chain. Do not preserve an old result under new inputs.
+  cached result chain, to fixpoint. One walker answers:
+  `invalidate_output_dependents_of_set`.
 - There are no public `*_mut` escape hatches. `setups_mut` is `#[cfg(test)]`
   and `pub(crate)`; keep it that way.
-- Read `ProjectSession::simulation_triage` before a raw issue count. The raw
-  issue stream is deliberately noisy.
+- Read `ProjectSession::simulation_triage`, not a raw issue count.
 
 ## Sentries
 
