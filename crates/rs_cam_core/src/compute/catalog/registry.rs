@@ -16,25 +16,39 @@ use super::{
 };
 
 const FACE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64"),
-    ParamDef::required("depth", "f64"),
-    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
+    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
+    ParamDef::required("depth_per_pass", "f64").with_help(
+        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
+         for large.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("stock_offset", "f64"),
+    ParamDef::required("stock_offset", "f64")
+        .with_help("Extra distance beyond stock boundary to ensure full coverage."),
     ParamDef::required("direction", "enum:one_way|zigzag"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const POCKET_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64"),
-    ParamDef::required("depth", "f64"),
-    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
+    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
+    ParamDef::required("depth_per_pass", "f64").with_help(
+        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
+         for large.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("climb", "bool"),
     ParamDef::required("pattern", "enum:contour|zigzag"),
-    ParamDef::required("angle", "f64"),
+    ParamDef::required("angle", "f64")
+        .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
     ParamDef::required("finishing_passes", "usize"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
@@ -45,28 +59,43 @@ const PROFILE_PARAMS: &[ParamDef] = &[
     // `project_curve` with `side: center` (labelled "On Line") and `trace`
     // with `compensation: none`, whose tool centre follows the path exactly.
     ParamDef::required("side", "enum:inside|outside"),
-    ParamDef::required("depth", "f64"),
-    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
+    ParamDef::required("depth_per_pass", "f64").with_help(
+        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
+         for large.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("climb", "bool"),
     ParamDef::required("tab_count", "usize"),
-    ParamDef::required("tab_width", "f64"),
-    ParamDef::required("tab_height", "f64"),
+    ParamDef::required("tab_width", "f64")
+        .with_help("Width of holding tabs that keep the part attached to stock."),
+    ParamDef::required("tab_height", "f64")
+        .with_help("Height of holding tabs from the floor of the cut."),
     ParamDef::required("finishing_passes", "usize"),
     ParamDef::required("compensation", "enum:in_computer|in_control"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const ADAPTIVE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64"),
-    ParamDef::required("depth", "f64"),
-    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
+    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
+    ParamDef::required("depth_per_pass", "f64").with_help(
+        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
+         for large.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("tolerance", "f64").with_help(
+        "Geometric tolerance for path approximation. Smaller = more accurate, \
+         slower.",
+    ),
     ParamDef::required("slot_clearing", "bool"),
-    ParamDef::required("min_cutting_radius", "f64"),
+    ParamDef::required("min_cutting_radius", "f64")
+        .with_help("Blend sharp corners with arcs of at least this radius."),
     ParamDef::optional("spindle_rpm", "option<u32>"),
     ParamDef::required(
         "cleanup_strategy",
@@ -80,11 +109,18 @@ const ADAPTIVE_PARAMS: &[ParamDef] = &[
 ];
 
 const VCARVE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("max_depth", "f64"),
-    ParamDef::required("stepover", "f64"),
+    ParamDef::required("max_depth", "f64")
+        .with_help("Maximum V-carve plunge depth. Limits how deep the V-bit goes."),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("tolerance", "f64").with_help(
+        "Geometric tolerance for path approximation. Smaller = more accurate, \
+         slower.",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
@@ -94,41 +130,69 @@ const REST_PARAMS: &[ParamDef] = &[
         "option<usize>",
         "Index of the prior (typically larger) tool used to define rest geometry",
     ),
-    ParamDef::required("stepover", "f64"),
-    ParamDef::required("depth", "f64"),
-    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
+    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
+    ParamDef::required("depth_per_pass", "f64").with_help(
+        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
+         for large.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("angle", "f64"),
+    ParamDef::required("angle", "f64")
+        .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const INLAY_PARAMS: &[ParamDef] = &[
-    ParamDef::required("pocket_depth", "f64"),
-    ParamDef::required("glue_gap", "f64"),
-    ParamDef::required("flat_depth", "f64"),
-    ParamDef::required("boundary_offset", "f64"),
-    ParamDef::required("stepover", "f64"),
-    ParamDef::required("flat_tool_radius", "f64"),
+    ParamDef::required("pocket_depth", "f64")
+        .with_help("Depth of the inlay pocket measured from stock surface."),
+    ParamDef::required("glue_gap", "f64")
+        .with_help("Gap between male/female inlay pieces for glue. 0.05-0.15mm."),
+    ParamDef::required("flat_depth", "f64")
+        .with_help("Depth for flat-bottom clearing in the inlay pocket. 0 = V-only."),
+    ParamDef::required("boundary_offset", "f64")
+        .with_help("Offset from the design boundary for the inlay cut. Adjusts fit."),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
+    ParamDef::required("flat_tool_radius", "f64")
+        .with_help("Radius of the flat endmill used to clear the pocket floor."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("tolerance", "f64").with_help(
+        "Geometric tolerance for path approximation. Smaller = more accurate, \
+         slower.",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const ZIGZAG_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64"),
-    ParamDef::required("depth", "f64"),
-    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
+    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
+    ParamDef::required("depth_per_pass", "f64").with_help(
+        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
+         for large.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("angle", "f64"),
+    ParamDef::required("angle", "f64")
+        .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const TRACE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("depth", "f64"),
-    ParamDef::required("depth_per_pass", "f64"),
+    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
+    ParamDef::required("depth_per_pass", "f64").with_help(
+        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
+         for large.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     // G-SCHEMAENUM: the variant is `none`, not `center`.
@@ -137,7 +201,7 @@ const TRACE_PARAMS: &[ParamDef] = &[
 ];
 
 const DRILL_PARAMS: &[ParamDef] = &[
-    ParamDef::required("depth", "f64"),
+    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
     ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
     ParamDef::required_ranged(
         "peck_depth",
@@ -157,20 +221,36 @@ const DRILL_PARAMS: &[ParamDef] = &[
 ];
 
 const CHAMFER_PARAMS: &[ParamDef] = &[
-    ParamDef::required("chamfer_width", "f64"),
-    ParamDef::required("tip_offset", "f64"),
+    ParamDef::required("chamfer_width", "f64").with_help(
+        "Width of the chamfer on the face (mm). Depth computed from tool \
+         angle.",
+    ),
+    ParamDef::required("tip_offset", "f64").with_help(
+        "Distance from V-bit tip to prevent wear. Increases cut depth \
+         slightly.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const DROP_CUTTER_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64"),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("min_z", "f64"),
-    ParamDef::required("slope_from", "f64"),
-    ParamDef::required("slope_to", "f64"),
+    ParamDef::required("min_z", "f64")
+        .with_help("Lowest Z the tool will descend to during drop-cutter."),
+    ParamDef::required("slope_from", "f64").with_help(
+        "Minimum surface slope (degrees) to machine. Faces shallower than \
+         this are skipped.",
+    ),
+    ParamDef::required("slope_to", "f64").with_help(
+        "Maximum surface slope (degrees) to machine. Steeper faces are \
+         skipped.",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
     // CMP-09: the Suggest pipeline reads this and the GUI has a dedicated
     // route to it (`set_drop_cutter_scallop_height`), so an operator could
@@ -188,18 +268,38 @@ const DROP_CUTTER_PARAMS: &[ParamDef] = &[
 ];
 
 const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64"),
-    ParamDef::required("depth_per_pass", "f64"),
-    ParamDef::required("stock_to_leave_axial", "f64"),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
+    ParamDef::required("depth_per_pass", "f64").with_help(
+        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
+         for large.",
+    ),
+    ParamDef::required("stock_to_leave_axial", "f64").with_help(
+        "Finishing allowance kept on the surface for a later pass. Applied as \
+         a vertical offset: on a wall sloped at angle A, what remains \
+         measured normal to the surface is this value x cos(A).",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("tolerance", "f64"),
-    ParamDef::required("min_cutting_radius", "f64"),
+    ParamDef::required("tolerance", "f64").with_help(
+        "Geometric tolerance for path approximation. Smaller = more accurate, \
+         slower.",
+    ),
+    ParamDef::required("min_cutting_radius", "f64")
+        .with_help("Blend sharp corners with arcs of at least this radius."),
     ParamDef::required("entry_style", "enum:plunge|helix|ramp"),
-    ParamDef::required("ramp_angle_deg", "f64"),
-    ParamDef::required("helix_radius_factor", "f64"),
-    ParamDef::required("helix_pitch", "f64"),
-    ParamDef::required("fine_stepdown", "f64"),
+    ParamDef::required("ramp_angle_deg", "f64").with_help(
+        "Ramp entry angle from horizontal (degrees), for the Ramp entry \
+         style.",
+    ),
+    ParamDef::required("helix_radius_factor", "f64")
+        .with_help("Helix entry radius as a multiple of the tool diameter."),
+    ParamDef::required("helix_pitch", "f64")
+        .with_help("Vertical drop per revolution of the helical entry move."),
+    ParamDef::required("fine_stepdown", "f64")
+        .with_help("Optional finer Z step for final passes. 0 = disabled."),
     ParamDef::required("detect_flat_areas", "bool"),
     ParamDef::required("region_ordering", "enum:global|by_area"),
     ParamDef::required(
@@ -228,8 +328,10 @@ const WATERLINE_PARAMS: &[ParamDef] = &[
     // CMP-08: `depth_per_pass` is the alias `set_toolpath_param`'s named
     // arm writes onto this field. It is published here, so the schema and
     // the refusal message agree with the setter.
-    ParamDef::required("z_step", "f64").with_aliases(&["depth_per_pass"]),
-    ParamDef::required("sampling", "f64"),
+    ParamDef::required("z_step", "f64")
+        .with_aliases(&["depth_per_pass"])
+        .with_help("Vertical distance between waterline Z levels."),
+    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("continuous", "bool"),
@@ -239,25 +341,44 @@ const WATERLINE_PARAMS: &[ParamDef] = &[
 ];
 
 const PENCIL_PARAMS: &[ParamDef] = &[
-    ParamDef::required("bitangency_angle", "f64"),
-    ParamDef::required("min_cut_length", "f64"),
-    ParamDef::required("hookup_distance", "f64"),
+    ParamDef::required("bitangency_angle", "f64")
+        .with_help("Minimum dihedral angle to detect concave edges. 140-170 deg typical."),
+    ParamDef::required("min_cut_length", "f64")
+        .with_help("Minimum polyline length to include as a pencil pass."),
+    ParamDef::required("hookup_distance", "f64")
+        .with_help("Max gap between pencil segments to connect into one pass."),
     ParamDef::required("num_offset_passes", "usize"),
     // CMP-08: `stepover` is the alias the named arm writes onto this
     // field. Pencil has no `stepover` field of its own.
-    ParamDef::required("offset_stepover", "f64").with_aliases(&["stepover"]),
-    ParamDef::required("sampling", "f64"),
+    ParamDef::required("offset_stepover", "f64")
+        .with_aliases(&["stepover"])
+        .with_help("Lateral step between offset cleanup passes around pencil traces."),
+    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("stock_to_leave", "f64"),
-    ParamDef::required("min_valley_depth", "f64"),
+    ParamDef::required("stock_to_leave", "f64").with_help(
+        "Finishing allowance kept on the surface for a later pass. Applied as \
+         a vertical offset: on a wall sloped at angle A, what remains \
+         measured normal to the surface is this value x cos(A).",
+    ),
+    ParamDef::required("min_valley_depth", "f64").with_help(
+        "Keep only valleys this much deeper than the reference finish tool \
+         reaches. 0 = trace every detected valley.",
+    ),
     ParamDef::required("bisector_strength", "f64"),
-    ParamDef::required("reference_tool_diameter", "f64"),
+    ParamDef::required("reference_tool_diameter", "f64").with_help(
+        "Nominal reference-tool diameter the rest gate measures against. \
+         Applies only when no library tool is chosen.",
+    ),
     // G-SCHEMAENUM / FIN-09: the field is `PencilDetector`, not a string.
     ParamDef::required("detector", "enum:dihedral|curvature|rest_depth"),
-    ParamDef::required("valley_saliency", "f64"),
+    ParamDef::required("valley_saliency", "f64").with_help(
+        "Smallest concave curvature (1/mm) a valley must reach. Low traces \
+         every seam; high keeps only deep sharp valleys.",
+    ),
     ParamDef::required("curvature_smoothing", "usize"),
-    ParamDef::required("rest_cell_mm", "f64"),
+    ParamDef::required("rest_cell_mm", "f64")
+        .with_help("XY grid resolution of the rest field the rest-depth detector reads."),
     ParamDef::optional_desc(
         "reference_tool_id",
         "option<usize>",
@@ -275,17 +396,31 @@ const PENCIL_PARAMS: &[ParamDef] = &[
 ];
 
 const SCALLOP_PARAMS: &[ParamDef] = &[
-    ParamDef::required("scallop_height", "f64"),
-    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("scallop_height", "f64")
+        .with_help("Target cusp height between passes. 0.05-0.2mm for finishing."),
+    ParamDef::required("tolerance", "f64").with_help(
+        "Geometric tolerance for path approximation. Smaller = more accurate, \
+         slower.",
+    ),
     // G-SCHEMAENUM: was `x|y`, a raster-axis dial `ScallopConfig` does not
     // have. `ScallopDirection` is outside-in or inside-out.
     ParamDef::required("direction", "enum:outside_in|inside_out"),
     ParamDef::required("continuous", "bool"),
-    ParamDef::required("slope_from", "f64"),
-    ParamDef::required("slope_to", "f64"),
+    ParamDef::required("slope_from", "f64").with_help(
+        "Minimum surface slope (degrees) to machine. Faces shallower than \
+         this are skipped.",
+    ),
+    ParamDef::required("slope_to", "f64").with_help(
+        "Maximum surface slope (degrees) to machine. Steeper faces are \
+         skipped.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::required("stock_to_leave", "f64").with_help(
+        "Finishing allowance kept on the surface for a later pass. Applied as \
+         a vertical offset: on a wall sloped at angle A, what remains \
+         measured normal to the surface is this value x cos(A).",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
     // A/M7: the ring-to-ring stay-down relink cap. Ships ON at 3.0 mm since
     // wave 12 — see `default_scallop_intra_pass_hookup_mm` for the A/B and
@@ -296,14 +431,23 @@ const SCALLOP_PARAMS: &[ParamDef] = &[
 ];
 
 const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
-    ParamDef::required("steep_threshold_deg", "f64"),
-    ParamDef::required("waterline_threshold_deg", "f64"),
-    ParamDef::required("overlap_mm", "f64"),
-    ParamDef::required("scallop_height", "f64"),
-    ParamDef::required("tolerance", "f64"),
-    ParamDef::required("raster_stepover", "f64"),
-    ParamDef::required("z_step", "f64"),
-    ParamDef::required("sampling", "f64"),
+    ParamDef::required("steep_threshold_deg", "f64")
+        .with_help("Slope entering the mid-steep scallop band (deg). Below this: raster."),
+    ParamDef::required("waterline_threshold_deg", "f64").with_help(
+        "Slope entering the very-steep waterline band (deg). Above this: \
+         waterline.",
+    ),
+    ParamDef::required("overlap_mm", "f64").with_help("Overlap between steep and shallow regions."),
+    ParamDef::required("scallop_height", "f64")
+        .with_help("Target cusp height between passes. 0.05-0.2mm for finishing."),
+    ParamDef::required("tolerance", "f64").with_help(
+        "Geometric tolerance for path approximation. Smaller = more accurate, \
+         slower.",
+    ),
+    ParamDef::required("raster_stepover", "f64")
+        .with_help("Distance between raster passes in the shallow band."),
+    ParamDef::required("z_step", "f64").with_help("Vertical distance between waterline Z levels."),
+    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
     ParamDef::required_desc(
         "stock_to_leave",
         "f64",
@@ -319,7 +463,10 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     // v3 S1/S2 claims pipeline: serde-defaulted for project-file back-compat
     // (older files omit them), always serialized.
     ParamDef::required("pencil_claims", "bool"),
-    ParamDef::required("min_rest_depth_mm", "f64"),
+    ParamDef::required("min_rest_depth_mm", "f64").with_help(
+        "Smallest rest depth a claimed region must reach before the pencil \
+         pass cuts it.",
+    ),
     // Which reference the crease/rest detector runs against
     // (`unified_finish::ClaimsReference` doc). A/M6 widened it to three
     // values: `auto` DERIVES the answer from whether a machined prior stock
@@ -399,43 +546,77 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
 ];
 
 const STEEP_SHALLOW_PARAMS: &[ParamDef] = &[
-    ParamDef::required("threshold_angle", "f64"),
-    ParamDef::required("overlap_distance", "f64"),
-    ParamDef::required("wall_clearance", "f64"),
+    ParamDef::required("threshold_angle", "f64")
+        .with_help("Angle dividing steep (waterline) from shallow (raster) regions."),
+    ParamDef::required("overlap_distance", "f64")
+        .with_help("Overlap between steep and shallow regions."),
+    ParamDef::required("wall_clearance", "f64").with_help("Extra clearance from vertical walls."),
     ParamDef::required("steep_first", "bool"),
-    ParamDef::required("stepover", "f64"),
-    ParamDef::required("z_step", "f64"),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
+    ParamDef::required("z_step", "f64").with_help("Vertical distance between waterline Z levels."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("sampling", "f64"),
-    ParamDef::required("stock_to_leave", "f64"),
-    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
+    ParamDef::required("stock_to_leave", "f64").with_help(
+        "Finishing allowance kept on the surface for a later pass. Applied as \
+         a vertical offset: on a wall sloped at angle A, what remains \
+         measured normal to the surface is this value x cos(A).",
+    ),
+    ParamDef::required("tolerance", "f64").with_help(
+        "Geometric tolerance for path approximation. Smaller = more accurate, \
+         slower.",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const RAMP_FINISH_PARAMS: &[ParamDef] = &[
     // CMP-08: the `depth_per_pass` alias, as on Waterline's `z_step`.
-    ParamDef::required("max_stepdown", "f64").with_aliases(&["depth_per_pass"]),
-    ParamDef::required("slope_from", "f64"),
-    ParamDef::required("slope_to", "f64"),
+    ParamDef::required("max_stepdown", "f64")
+        .with_aliases(&["depth_per_pass"])
+        .with_help("Maximum Z step between ramp passes."),
+    ParamDef::required("slope_from", "f64").with_help(
+        "Minimum surface slope (degrees) to machine. Faces shallower than \
+         this are skipped.",
+    ),
+    ParamDef::required("slope_to", "f64").with_help(
+        "Maximum surface slope (degrees) to machine. Steeper faces are \
+         skipped.",
+    ),
     ParamDef::required("direction", "enum:climb|conventional"),
     ParamDef::required("order_bottom_up", "bool"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("sampling", "f64"),
-    ParamDef::required("stock_to_leave", "f64"),
-    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
+    ParamDef::required("stock_to_leave", "f64").with_help(
+        "Finishing allowance kept on the surface for a later pass. Applied as \
+         a vertical offset: on a wall sloped at angle A, what remains \
+         measured normal to the surface is this value x cos(A).",
+    ),
+    ParamDef::required("tolerance", "f64").with_help(
+        "Geometric tolerance for path approximation. Smaller = more accurate, \
+         slower.",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const SPIRAL_FINISH_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64"),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
     // G-SCHEMAENUM: was `outward|inward`; `SpiralDirection` spells the same
     // two directions `inside_out` and `outside_in`.
     ParamDef::required("direction", "enum:inside_out|outside_in"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::required("stock_to_leave", "f64").with_help(
+        "Finishing allowance kept on the surface for a later pass. Applied as \
+         a vertical offset: on a wall sloped at angle A, what remains \
+         measured normal to the surface is this value x cos(A).",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
@@ -462,22 +643,35 @@ const RADIAL_FINISH_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::required("stock_to_leave", "f64").with_help(
+        "Finishing allowance kept on the surface for a later pass. Applied as \
+         a vertical offset: on a wall sloped at angle A, what remains \
+         measured normal to the surface is this value x cos(A).",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const HORIZONTAL_FINISH_PARAMS: &[ParamDef] = &[
-    ParamDef::required("angle_threshold", "f64"),
-    ParamDef::required("stepover", "f64"),
+    ParamDef::required("angle_threshold", "f64")
+        .with_help("Max slope angle (degrees) to consider a surface flat/horizontal."),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
+         finishing.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
-    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::required("stock_to_leave", "f64").with_help(
+        "Finishing allowance kept on the surface for a later pass. Applied as \
+         a vertical offset: on a wall sloped at angle A, what remains \
+         measured normal to the surface is this value x cos(A).",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
 const PROJECT_CURVE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("depth", "f64"),
-    ParamDef::required("point_spacing", "f64"),
+    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
+    ParamDef::required("point_spacing", "f64")
+        .with_help("Distance between sample points along curves. Smaller = smoother."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::optional("surface_model_id", "option<usize>"),
@@ -501,7 +695,8 @@ const PROJECT_CURVE_PARAMS: &[ParamDef] = &[
 
 const ALIGNMENT_PIN_DRILL_PARAMS: &[ParamDef] = &[
     ParamDef::required("holes", "array<[f64;2]>"),
-    ParamDef::required("spoilboard_penetration", "f64"),
+    ParamDef::required("spoilboard_penetration", "f64")
+        .with_help("How far the drill penetrates into the spoilboard below the stock."),
     ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
     ParamDef::required_ranged(
         "peck_depth",

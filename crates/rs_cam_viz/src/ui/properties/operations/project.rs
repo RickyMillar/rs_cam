@@ -3,8 +3,9 @@ use super::super::pills::PillSuggestions;
 use crate::state::job::ModelId;
 use crate::state::toolpath::{ProjectCurveConfig, ProjectCurveDirection, ProjectCurveSide};
 
-use super::super::dv;
+use super::super::{dv, p};
 use crate::ui::components::UiExt as _;
+use rs_cam_core::compute::catalog::OperationType;
 
 pub(in crate::ui::properties) fn draw_project_curve_params(
     ui: &mut egui::Ui,
@@ -88,10 +89,21 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
     });
 
     ui.param_grid("proj_p", |ui| {
-        dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, -20.0..=20.0);
         dv(
             ui,
-            "Point Spacing:",
+            p(OperationType::ProjectCurve, "depth", "Depth:"),
+            &mut cfg.depth,
+            " mm",
+            0.1,
+            -20.0..=20.0,
+        );
+        dv(
+            ui,
+            p(
+                OperationType::ProjectCurve,
+                "point_spacing",
+                "Point Spacing:",
+            ),
             &mut cfg.point_spacing,
             " mm",
             0.1,
@@ -102,7 +114,11 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
         // where every `dv` row's tooltip lives) says so.
         dv(
             ui,
-            "Chain Distance:",
+            p(
+                OperationType::ProjectCurve,
+                "chain_distance_mm",
+                "Chain Distance:",
+            ),
             &mut cfg.chain_distance_mm,
             " mm",
             0.1,

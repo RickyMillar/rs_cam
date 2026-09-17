@@ -5,8 +5,9 @@ use crate::state::toolpath::{
     SpiralFinishConfig,
 };
 
-use super::super::{dv, dv_pill};
+use super::super::{dv, dv_pill, p};
 use crate::ui::components::UiExt as _;
+use rs_cam_core::compute::catalog::OperationType;
 
 pub(in crate::ui::properties) fn draw_ramp_finish_params(
     ui: &mut egui::Ui,
@@ -18,7 +19,7 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
     ui.param_grid("rf_p", |ui| {
         dv(
             ui,
-            "Max Stepdown:",
+            p(OperationType::RampFinish, "max_stepdown", "Max Stepdown:"),
             &mut cfg.max_stepdown,
             " mm",
             0.1,
@@ -26,13 +27,20 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
         );
         dv(
             ui,
-            "Slope From:",
+            p(OperationType::RampFinish, "slope_from", "Slope From:"),
             &mut cfg.slope_from,
             " deg",
             1.0,
             0.0..=90.0,
         );
-        dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
+        dv(
+            ui,
+            p(OperationType::RampFinish, "slope_to", "Slope To:"),
+            &mut cfg.slope_to,
+            " deg",
+            1.0,
+            0.0..=90.0,
+        );
         ui.label("Direction:");
         egui::ComboBox::from_id_salt("rf_dir")
             .selected_text(match cfg.direction {
@@ -53,10 +61,21 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
         ui.label("Bottom Up:");
         ui.checkbox(&mut cfg.order_bottom_up, "");
         ui.end_row();
-        dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
         dv(
             ui,
-            "Stock to Leave:",
+            p(OperationType::RampFinish, "sampling", "Sampling:"),
+            &mut cfg.sampling,
+            " mm",
+            0.1,
+            0.1..=5.0,
+        );
+        dv(
+            ui,
+            p(
+                OperationType::RampFinish,
+                "stock_to_leave",
+                "Stock to Leave:",
+            ),
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
@@ -64,7 +83,7 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
         );
         dv(
             ui,
-            "Tolerance:",
+            p(OperationType::RampFinish, "tolerance", "Tolerance:"),
             &mut cfg.tolerance,
             " mm",
             0.01,
@@ -82,7 +101,7 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
     ui.param_grid("spiral_p", |ui| {
         dv_pill(
             ui,
-            "Stepover:",
+            p(OperationType::SpiralFinish, "stepover", "Stepover:"),
             &mut cfg.stepover,
             " mm",
             0.1,
@@ -102,7 +121,11 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
         ui.end_row();
         dv(
             ui,
-            "Stock to Leave:",
+            p(
+                OperationType::SpiralFinish,
+                "stock_to_leave",
+                "Stock to Leave:",
+            ),
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
@@ -121,7 +144,7 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
     ui.param_grid("radial_p", |ui| {
         dv(
             ui,
-            "Angular Step:",
+            p(OperationType::RadialFinish, "angular_step", "Angular Step:"),
             &mut cfg.angular_step,
             " deg",
             1.0,
@@ -129,7 +152,11 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
         );
         dv(
             ui,
-            "Point Spacing:",
+            p(
+                OperationType::RadialFinish,
+                "point_spacing",
+                "Point Spacing:",
+            ),
             &mut cfg.point_spacing,
             " mm",
             0.1,
@@ -137,7 +164,11 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
         );
         dv(
             ui,
-            "Stock to Leave:",
+            p(
+                OperationType::RadialFinish,
+                "stock_to_leave",
+                "Stock to Leave:",
+            ),
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
@@ -155,7 +186,11 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
     ui.param_grid("horiz_p", |ui| {
         dv(
             ui,
-            "Angle Threshold:",
+            p(
+                OperationType::HorizontalFinish,
+                "angle_threshold",
+                "Angle Threshold:",
+            ),
             &mut cfg.angle_threshold,
             " deg",
             1.0,
@@ -163,7 +198,7 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
         );
         dv_pill(
             ui,
-            "Stepover:",
+            p(OperationType::HorizontalFinish, "stepover", "Stepover:"),
             &mut cfg.stepover,
             " mm",
             0.1,
@@ -172,7 +207,11 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
         );
         dv(
             ui,
-            "Stock to Leave:",
+            p(
+                OperationType::HorizontalFinish,
+                "stock_to_leave",
+                "Stock to Leave:",
+            ),
             &mut cfg.stock_to_leave,
             " mm",
             0.05,

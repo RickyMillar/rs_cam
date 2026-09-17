@@ -4,9 +4,10 @@ use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 
-use super::super::{depth_caution_row, dv, dv_pill};
+use super::super::{depth_caution_row, dv, dv_pill, p};
 use super::DepthBeyondStock;
 use crate::ui::components::UiExt as _;
+use rs_cam_core::compute::catalog::OperationType;
 
 /// Match tolerance for comparing a picked hole to a target position (mm).
 ///
@@ -157,20 +158,28 @@ fn draw_drill_cycle_combo(ui: &mut egui::Ui, id_salt: &str, cycle: &mut DrillCyc
 /// The feed-rate and retract rows both drill editors carry.
 fn draw_drill_feed_rows(
     ui: &mut egui::Ui,
+    op: OperationType,
     feed_rate: &mut f64,
     retract_z: &mut f64,
     feed_sugg: Option<super::super::pills::PillSuggestion<'_>>,
 ) {
     dv_pill(
         ui,
-        "Feed Rate:",
+        p(op, "feed_rate", "Feed Rate:"),
         feed_rate,
         " mm/min",
         10.0,
         1.0..=5000.0,
         feed_sugg,
     );
-    dv(ui, "Retract (R):", retract_z, " mm", 0.5, 0.5..=50.0);
+    dv(
+        ui,
+        p(op, "retract_z", "Retract (R):"),
+        retract_z,
+        " mm",
+        0.5,
+        0.5..=50.0,
+    );
 }
 
 /// The rows a cycle adds: peck depth, dwell time and chip-break retract.
@@ -182,23 +191,45 @@ fn draw_drill_feed_rows(
 /// between the two editors' conditional rows.
 fn draw_drill_cycle_rows(
     ui: &mut egui::Ui,
+    op: OperationType,
     cycle: DrillCycleType,
     peck_depth: &mut f64,
     dwell_time: Option<&mut f64>,
     retract_amount: Option<&mut f64>,
 ) {
     if matches!(cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak) {
-        dv(ui, "Peck Depth:", peck_depth, " mm", 0.5, 0.5..=50.0);
+        dv(
+            ui,
+            p(op, "peck_depth", "Peck Depth:"),
+            peck_depth,
+            " mm",
+            0.5,
+            0.5..=50.0,
+        );
     }
     if let Some(dwell_time) = dwell_time
         && cycle == DrillCycleType::Dwell
     {
-        dv(ui, "Dwell Time:", dwell_time, " s", 0.1, 0.1..=10.0);
+        dv(
+            ui,
+            p(op, "dwell_time", "Dwell Time:"),
+            dwell_time,
+            " s",
+            0.1,
+            0.1..=10.0,
+        );
     }
     if let Some(retract_amount) = retract_amount
         && cycle == DrillCycleType::ChipBreak
     {
-        dv(ui, "Retract Amt:", retract_amount, " mm", 0.1, 0.1..=5.0);
+        dv(
+            ui,
+            p(op, "retract_amount", "Retract Amt:"),
+            retract_amount,
+            " mm",
+            0.1,
+            0.1..=5.0,
+        );
     }
 }
 
@@ -217,11 +248,25 @@ pub(in crate::ui::properties) fn draw_drill_params(
     let feed_sugg = pills.map(PillSuggestions::feed_rate);
     ui.param_grid("drill_p", |ui| {
         draw_drill_cycle_combo(ui, "drill_cycle", &mut cfg.cycle);
-        dv(ui, "Depth:", &mut cfg.depth, " mm", 0.5, 0.5..=100.0);
+        dv(
+            ui,
+            p(OperationType::Drill, "depth", "Depth:"),
+            &mut cfg.depth,
+            " mm",
+            0.5,
+            0.5..=100.0,
+        );
         depth_caution_row(ui, depth_caution);
-        draw_drill_feed_rows(ui, &mut cfg.feed_rate, &mut cfg.retract_z, feed_sugg);
+        draw_drill_feed_rows(
+            ui,
+            OperationType::Drill,
+            &mut cfg.feed_rate,
+            &mut cfg.retract_z,
+            feed_sugg,
+        );
         draw_drill_cycle_rows(
             ui,
+            OperationType::Drill,
             cfg.cycle,
             &mut cfg.peck_depth,
             Some(&mut cfg.dwell_time),
@@ -254,15 +299,32 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
     ui.param_grid("pin_drill_p", |ui| {
         dv(
             ui,
-            "Spoilboard:",
+            p(
+                OperationType::AlignmentPinDrill,
+                "spoilboard_penetration",
+                "Spoilboard:",
+            ),
             &mut cfg.spoilboard_penetration,
             " mm",
             0.5,
             0.5..=20.0,
         );
         draw_drill_cycle_combo(ui, "pin_drill_cycle", &mut cfg.cycle);
-        draw_drill_feed_rows(ui, &mut cfg.feed_rate, &mut cfg.retract_z, feed_sugg);
-        draw_drill_cycle_rows(ui, cfg.cycle, &mut cfg.peck_depth, None, None);
+        draw_drill_feed_rows(
+            ui,
+            OperationType::AlignmentPinDrill,
+            &mut cfg.feed_rate,
+            &mut cfg.retract_z,
+            feed_sugg,
+        );
+        draw_drill_cycle_rows(
+            ui,
+            OperationType::AlignmentPinDrill,
+            cfg.cycle,
+            &mut cfg.peck_depth,
+            None,
+            None,
+        );
     });
     draw_drill_target_selector(
         ui,

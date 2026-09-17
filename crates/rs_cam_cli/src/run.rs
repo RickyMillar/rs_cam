@@ -253,7 +253,7 @@ fn print_params(op_type: OperationType) {
             def.name,
             def.type_name,
             if def.optional { "yes" } else { "no" },
-            def.description.unwrap_or("")
+            def.help.unwrap_or("")
         );
     }
 }

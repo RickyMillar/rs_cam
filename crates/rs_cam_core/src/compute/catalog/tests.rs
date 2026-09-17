@@ -760,3 +760,73 @@ fn depthless_finishing_ops_resolve_to_none() {
         assert_eq!(op.default_depth_for_heights(), 0.0);
     }
 }
+
+// ── UI-04: every dial the GUI keys on states its help ────────────────────
+//
+// The GUI tooltip used to be a 60-arm match on the visible LABEL string
+// (`viz/ui/properties/linking_dressup.rs::tooltip_for`). `"Stepover:"`
+// reached its help only because two spellings agreed by hand, so re-wording
+// a label dropped the tooltip and nothing failed. The key is now
+// `(OperationType, param name)` and the text is `ParamDef::help`, which is
+// also what `operation_schema` serves an agent as `description`.
+//
+// This arm is a RATCHET, not a ban. 127 of the 244 rows state no help yet,
+// and writing those needs the person who knows each dial — the same sweep
+// `SYNTHESIS.md` deferred for CMP-05's ranges. The number below only ever
+// goes down.
+
+/// How many `ParamDef` rows may still state no help.
+///
+/// | Package | Budget | Note |
+/// |---|---|---|
+/// | UI-04 | 127 | measured after the 60 GUI tooltips moved onto their rows |
+const HELPLESS_PARAM_BUDGET: usize = 127;
+
+#[test]
+fn param_def_help_only_ever_grows_ui04() {
+    let mut helpless = Vec::new();
+    let mut total = 0usize;
+    for &op in OperationType::ALL {
+        for def in op.registry_entry().param_defs {
+            total += 1;
+            match def.help {
+                Some(text) => assert!(
+                    !text.trim().is_empty(),
+                    "{op:?}.{} states an EMPTY help string. An empty string is \
+                     not an abstention; write the line or leave the field None.",
+                    def.name
+                ),
+                None => helpless.push(format!("{op:?}.{}", def.name)),
+            }
+        }
+    }
+    assert!(total > 200, "the registry shrank to {total} params");
+    assert!(
+        helpless.len() <= HELPLESS_PARAM_BUDGET,
+        "{} ParamDef rows state no help, over the budget of \
+         {HELPLESS_PARAM_BUDGET}. Lower the budget in the package that \
+         writes the lines; never raise it. First few: {:?}",
+        helpless.len(),
+        helpless.iter().take(8).collect::<Vec<_>>()
+    );
+}
+
+/// The GUI resolves its tooltip through this exact path, so a parameter
+/// name that no row carries returns `None` rather than panicking. The viz
+/// sentry `the_help_key_is_the_registry_param_name_ui04` holds the GUI's
+/// keys against this table.
+#[test]
+fn a_param_name_resolves_to_at_most_one_row_ui04() {
+    for &op in OperationType::ALL {
+        let defs = op.registry_entry().param_defs;
+        for def in defs {
+            let hits = defs.iter().filter(|d| d.name == def.name).count();
+            assert_eq!(
+                hits, 1,
+                "{op:?} lists `{}` {hits} times. A duplicated name makes the \
+                 help lookup pick an arbitrary row.",
+                def.name
+            );
+        }
+    }
+}

@@ -1211,7 +1211,7 @@ impl OperationConfig {
                     .cloned()
                     .unwrap_or(serde_json::Value::Null),
                 range: def.range.map(ParamRange::to_json),
-                description: def.description.map(str::to_owned),
+                description: def.help.map(str::to_owned),
                 aliases: def.aliases.iter().map(|a| (*a).to_owned()).collect(),
             })
             .collect();
@@ -1227,7 +1227,7 @@ impl OperationConfig {
                     optional: def.optional,
                     default: serde_json::Value::Null,
                     range: def.range.map(ParamRange::to_json),
-                    description: def.description.map(str::to_owned),
+                    description: def.help.map(str::to_owned),
                     aliases: Vec::new(),
                 })
                 .collect(),

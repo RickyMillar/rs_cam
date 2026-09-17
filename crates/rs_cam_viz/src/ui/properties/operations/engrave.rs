@@ -2,9 +2,10 @@ use super::super::pills::PillSuggestions;
 
 use crate::state::toolpath::{ChamferConfig, TraceCompensation, TraceConfig};
 
-use super::super::{depth_caution_row, dv};
+use super::super::{depth_caution_row, dv, p};
 use super::DepthBeyondStock;
 use crate::ui::components::UiExt as _;
+use rs_cam_core::compute::catalog::OperationType;
 
 pub(in crate::ui::properties) fn draw_trace_params(
     ui: &mut egui::Ui,
@@ -29,11 +30,18 @@ pub(in crate::ui::properties) fn draw_trace_params(
                 ui.selectable_value(&mut cfg.compensation, TraceCompensation::Right, "Right");
             });
         ui.end_row();
-        dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, 0.1..=50.0);
+        dv(
+            ui,
+            p(OperationType::Trace, "depth", "Depth:"),
+            &mut cfg.depth,
+            " mm",
+            0.1,
+            0.1..=50.0,
+        );
         depth_caution_row(ui, depth_caution);
         dv(
             ui,
-            "Depth/Pass:",
+            p(OperationType::Trace, "depth_per_pass", "Depth/Pass:"),
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
@@ -53,7 +61,7 @@ pub(in crate::ui::properties) fn draw_chamfer_params(
     ui.param_grid("chamfer_p", |ui| {
         dv(
             ui,
-            "Chamfer Width:",
+            p(OperationType::Chamfer, "chamfer_width", "Chamfer Width:"),
             &mut cfg.chamfer_width,
             " mm",
             0.1,
@@ -62,7 +70,7 @@ pub(in crate::ui::properties) fn draw_chamfer_params(
         depth_caution_row(ui, depth_caution);
         dv(
             ui,
-            "Tip Offset:",
+            p(OperationType::Chamfer, "tip_offset", "Tip Offset:"),
             &mut cfg.tip_offset,
             " mm",
             0.01,

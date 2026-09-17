@@ -11,22 +11,82 @@ use crate::state::toolpath::{DressupConfig, DressupEntryStyle, HeightContext, To
 use crate::ui::automation;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
+use rs_cam_core::compute::catalog::OperationType;
 
 // --- Parameter grid helpers ---
 
+/// One parameter row's identity: which operation owns it, the registry name
+/// the help text is keyed on, and the label the operator reads.
+///
+/// UI-04: the three used to be one string. The label WAS the key, so
+/// re-wording it dropped the tooltip in silence. Holding them together
+/// means a row states its key beside the words it shows.
+#[derive(Clone, Copy)]
+pub(super) struct Param {
+    pub op: OperationType,
+    pub name: &'static str,
+    pub label: &'static str,
+}
+
+/// Name one parameter row. The short form the editors call.
+pub(super) const fn p(op: OperationType, name: &'static str, label: &'static str) -> Param {
+    Param { op, name, label }
+}
+
 pub(super) fn dv(
     ui: &mut egui::Ui,
-    label: &str,
+    param: Param,
     val: &mut f64,
     suffix: &str,
     speed: f64,
     range: std::ops::RangeInclusive<f64>,
 ) {
     // Delegates to the shared `ValueRow` component (the one labelled-input row).
-    let out = ValueRow::new(label, val, suffix, speed, range)
-        .tooltip(tooltip_for(label))
+    let out = ValueRow::new(param.label, val, suffix, speed, range)
+        .tooltip(help_for(param.op, param.name))
         .show(ui);
-    record_stock_to_leave(ui, label, &out);
+    record_stock_to_leave(ui, param.name, &out);
+}
+
+/// The help line for one operation parameter, from the core registry.
+///
+/// UI-04: the key is the registry parameter NAME, not the visible label. The
+/// old `tooltip_for` matched 60 arms against
+/// `label.trim().trim_end_matches(':')`, so `"Stepover:"` reached its help
+/// only because two spellings agreed by hand, and a label re-word dropped the
+/// tooltip in silence. `help_for` cannot miss for a name the registry states.
+pub(super) fn help_for(op: OperationType, param: &'static str) -> Option<&'static str> {
+    op.registry_entry()
+        .param_defs
+        .iter()
+        .find(|d| d.name == param)
+        .and_then(|d| d.help)
+}
+
+/// The help line for one dressup field, from `DressupConfig::FIELD_DEFS`.
+///
+/// A dressup dial is not an operation parameter, so it reads the table CMP-17
+/// made the one place the dressup vocabulary is written down.
+pub(super) fn dressup_help(field: &'static str) -> Option<&'static str> {
+    rs_cam_core::compute::config::DressupConfig::FIELD_DEFS
+        .iter()
+        .find(|d| d.name == field)
+        .map(|d| d.description)
+}
+
+/// [`dv`] for a dressup dial, keyed on the published dressup field name.
+pub(super) fn dv_dressup(
+    ui: &mut egui::Ui,
+    field: &'static str,
+    label: &str,
+    val: &mut f64,
+    suffix: &str,
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+) {
+    ValueRow::new(label, val, suffix, speed, range)
+        .tooltip(dressup_help(field))
+        .show(ui);
 }
 
 /// G-DEPTHSTOCK (UX-R03-007): the caution row under a 2.5D depth field.
@@ -84,12 +144,18 @@ pub(super) fn through_cut_row(ui: &mut egui::Ui, through_cut: Option<&operations
 }
 
 /// The "Stock to Leave" UI-automation hook, shared by `dv`/`dv_pill`.
+///
+/// UI-04: the test keyed on the visible label, so re-wording the label broke
+/// the hook with nothing failing. It now reads the registry parameter name.
+/// Adaptive3d spells its field `stock_to_leave_axial` and every other op
+/// spells it `stock_to_leave`; both carry the hook, exactly as the label
+/// match did.
 fn record_stock_to_leave(
     ui: &mut egui::Ui,
-    label: &str,
+    param: &'static str,
     out: &crate::ui::components::ValueRowOutcome,
 ) {
-    if label.trim().trim_end_matches(':') == "Stock to Leave" {
+    if param.starts_with("stock_to_leave") {
         automation::record(
             ui,
             "properties_stock_to_leave",
@@ -125,14 +191,15 @@ fn record_stock_to_leave(
 /// stamp the recommendation's provenance on the entry.
 pub(super) fn dv_pill(
     ui: &mut egui::Ui,
-    label: &str,
+    param: Param,
     val: &mut f64,
     suffix: &str,
     speed: f64,
     range: std::ops::RangeInclusive<f64>,
     suggestion: Option<pills::PillSuggestion<'_>>,
 ) -> bool {
-    let mut row = ValueRow::new(label, val, suffix, speed, range).tooltip(tooltip_for(label));
+    let mut row = ValueRow::new(param.label, val, suffix, speed, range)
+        .tooltip(help_for(param.op, param.name));
     let mut click = None;
     if let Some(pill) = suggestion {
         let (s, c) = pill.into_parts();
@@ -140,111 +207,13 @@ pub(super) fn dv_pill(
         click = Some(c);
     }
     let out = row.show(ui);
-    record_stock_to_leave(ui, label, &out);
+    record_stock_to_leave(ui, param.name, &out);
     if out.suggested
         && let Some(c) = &click
     {
         c.record();
     }
     out.suggested
-}
-
-fn tooltip_for(label: &str) -> Option<&'static str> {
-    Some(match label.trim().trim_end_matches(':') {
-        "Stepover" => {
-            "Distance between passes. 40-60% of diameter for roughing, 10-20% for finishing."
-        }
-        "Depth" => "Total cut depth from stock surface.",
-        "Depth/Pass" | "Depth per Pass" => {
-            "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter for large."
-        }
-        "Feed Rate" => {
-            "Cutting speed (mm/min). Wood: 500-2000 for small tools, 1500-4000 for large."
-        }
-        "Plunge Rate" => "Vertical feed speed (mm/min). Typically 30-50% of feed rate.",
-        "Tolerance" => {
-            "Geometric tolerance for path approximation. Smaller = more accurate, slower."
-        }
-        "Min Cut Radius" | "Min Cutting Radius" => {
-            "Blend sharp corners with arcs of at least this radius."
-        }
-        "Stock Top Z" => "Z height of the stock material top surface.",
-        "Scallop Height" => "Target cusp height between passes. 0.05-0.2mm for finishing.",
-        "Threshold Angle" => "Angle dividing steep (waterline) from shallow (raster) regions.",
-        "Steep Threshold" => "Slope entering the mid-steep scallop band (deg). Below this: raster.",
-        "Waterline Threshold" => {
-            "Slope entering the very-steep waterline band (deg). Above this: waterline."
-        }
-        "Raster Stepover" => "Distance between raster passes in the shallow band.",
-        "Max Stepdown" => "Maximum Z step between ramp passes.",
-        "Z Step" => "Vertical distance between waterline Z levels.",
-        "Sampling" => "XY grid resolution for push-cutter sampling.",
-        "Bitangency Angle" => {
-            "Minimum dihedral angle to detect concave edges. 140-170 deg typical."
-        }
-        "Min Cut Length" => "Minimum polyline length to include as a pencil pass.",
-        "Hookup Distance" => "Max gap between pencil segments to connect into one pass.",
-        "Max Depth" => "Maximum V-carve plunge depth. Limits how deep the V-bit goes.",
-        "Glue Gap" => "Gap between male/female inlay pieces for glue. 0.05-0.15mm.",
-        "Overlap" | "Overlap Distance" => "Overlap between steep and shallow regions.",
-        "Wall Clearance" => "Extra clearance from vertical walls.",
-        "Max Distance" => "Max XY distance to keep tool down instead of retracting.",
-        "Max Angle" => "Maximum ramp angle from horizontal for entry moves.",
-        "Min Z" => "Lowest Z the tool will descend to during drop-cutter.",
-        "Angle" => "Zigzag/raster angle in degrees. 0 = along X axis.",
-        "Fine Stepdown" => "Optional finer Z step for final passes. 0 = disabled.",
-        "Stock Offset" => "Extra distance beyond stock boundary to ensure full coverage.",
-        "Chamfer Width" => "Width of the chamfer on the face (mm). Depth computed from tool angle.",
-        "Tip Offset" => "Distance from V-bit tip to prevent wear. Increases cut depth slightly.",
-        "Peck Depth" => "Incremental depth per peck for chip evacuation.",
-        "Dwell Time" => "Pause at bottom of drill hole (seconds).",
-        "Retract Amt" => "Small retract distance for chip breaking between pecks.",
-        "Retract (R)" => {
-            "R-plane for this drill cycle: rapid down to here, then feed into material."
-        }
-        "Angular Step" => "Degrees between radial spokes. Smaller = more passes, finer finish.",
-        "Point Spacing" => "Distance between sample points along curves. Smaller = smoother.",
-        "Chain Distance" => {
-            "Max gap between two projected chains to join with one clearance-height link \
-             instead of retracting to safe Z and re-plunging. 0 = off. A cap, not a target: \
-             each link is gouge-checked against the surface, kept inside the machining \
-             boundary, lifted clear of standing stock, and dropped back to a retract when \
-             that clearance reaches safe Z."
-        }
-        "Angle Threshold" => "Max slope angle (degrees) to consider a surface flat/horizontal.",
-        // F3 / D-16.2: one label, shared by every finish op that exposes the
-        // dial — so the caveat here is the repo-wide one (a vertical offset,
-        // not a surface-normal one), not a per-op note. The "ignored on the
-        // shallow band" caveat this dial USED to deserve is gone: since
-        // 2026-08-06 all three UnifiedFinish bands honour it.
-        "Stock to Leave" => {
-            "Finishing allowance kept on the surface for a later pass. Applied as a vertical \
-             offset: on a wall sloped at angle A, what remains measured normal to the surface \
-             is this value x cos(A)."
-        }
-        "Slope From" => {
-            "Minimum surface slope (degrees) to machine. Faces shallower than this are skipped."
-        }
-        "Pocket Depth" => "Depth of the inlay pocket measured from stock surface.",
-        "Flat Depth" => "Depth for flat-bottom clearing in the inlay pocket. 0 = V-only.",
-        "Boundary Offset" => "Offset from the design boundary for the inlay cut. Adjusts fit.",
-        "Flat Tool Radius" => "Radius of the flat endmill used to clear the pocket floor.",
-        "Spoilboard" => "How far the drill penetrates into the spoilboard below the stock.",
-        "Width" => "Width of holding tabs that keep the part attached to stock.",
-        "Height" => "Height of holding tabs from the floor of the cut.",
-        "Offset Stepover" => "Lateral step between offset cleanup passes around pencil traces.",
-        "Pitch" => "Vertical drop per revolution of the helical entry move.",
-        "Radius" => "Radius of the helical or arc entry/exit move.",
-        "Max Rate" => "Maximum allowable feed rate during optimized sections.",
-        "Ramp Rate" => "How quickly feed rate ramps up toward max (mm/min per mm of engagement).",
-        "Slope To" => "Maximum surface slope (degrees) to machine. Steeper faces are skipped.",
-        "Finishing Passes" => "Spring passes at final depth for dimensional accuracy.",
-        "Offset Passes" => "Number of parallel offset passes around pencil traces.",
-        "Count" => "Number of holding tabs placed around the profile perimeter.",
-        "Continuous" => "Connect passes into a single continuous toolpath without retract.",
-        "Direction" => "Cutting direction for this operation.",
-        _ => return None,
-    })
 }
 
 // ── Dressup configuration ────────────────────────────────────────────────
@@ -338,8 +307,9 @@ pub(super) fn draw_linking_params(
     match cfg.entry_style {
         DressupEntryStyle::Ramp => {
             ui.param_grid("ramp_p", |ui| {
-                dv(
+                dv_dressup(
                     ui,
+                    "ramp_angle",
                     "  Max Angle:",
                     &mut cfg.ramp_angle,
                     " deg",
@@ -350,15 +320,24 @@ pub(super) fn draw_linking_params(
         }
         DressupEntryStyle::Helix => {
             ui.param_grid("helix_p", |ui| {
-                dv(
+                dv_dressup(
                     ui,
+                    "helix_radius",
                     "  Radius:",
                     &mut cfg.helix_radius,
                     " mm",
                     0.1,
                     0.5..=20.0,
                 );
-                dv(ui, "  Pitch:", &mut cfg.helix_pitch, " mm", 0.1, 0.2..=10.0);
+                dv_dressup(
+                    ui,
+                    "helix_pitch",
+                    "  Pitch:",
+                    &mut cfg.helix_pitch,
+                    " mm",
+                    0.1,
+                    0.2..=10.0,
+                );
             });
         }
         DressupEntryStyle::None => {}
@@ -380,8 +359,9 @@ pub(super) fn draw_linking_params(
     });
     if cfg.lead_in_out && op_incompatible_msg.is_none() {
         ui.param_grid("lead_p", |ui| {
-            dv(
+            dv_dressup(
                 ui,
+                "lead_radius",
                 "  Radius:",
                 &mut cfg.lead_radius,
                 " mm",
@@ -407,16 +387,18 @@ pub(super) fn draw_linking_params(
     });
     if cfg.link_moves && op_incompatible_msg.is_none() {
         ui.param_grid("link_p", |ui| {
-            dv(
+            dv_dressup(
                 ui,
+                "link_max_distance",
                 "  Max Distance:",
                 &mut cfg.link_max_distance,
                 " mm",
                 0.5,
                 1.0..=50.0,
             );
-            dv(
+            dv_dressup(
                 ui,
+                "link_feed_rate",
                 "  Feed Rate:",
                 &mut cfg.link_feed_rate,
                 " mm/min",
@@ -448,16 +430,18 @@ pub(super) fn draw_linking_params(
     }
     if cfg.feed_optimization && feed_opt_reason.is_none() {
         ui.param_grid("fopt_p", |ui| {
-            dv(
+            dv_dressup(
                 ui,
+                "feed_max_rate",
                 "  Max Rate:",
                 &mut cfg.feed_max_rate,
                 " mm/min",
                 50.0,
                 500.0..=20000.0,
             );
-            dv(
+            dv_dressup(
                 ui,
+                "feed_ramp_rate",
                 "  Ramp Rate:",
                 &mut cfg.feed_ramp_rate,
                 " mm/min/mm",
@@ -482,8 +466,9 @@ pub(super) fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
         .on_hover_text("Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file size, improves surface finish, and produces smoother machine motion. Safe for all operations.");
     if cfg.arc_fitting {
         ui.param_grid("arc_p", |ui| {
-            dv(
+            dv_dressup(
                 ui,
+                "arc_tolerance",
                 "  Tolerance:",
                 &mut cfg.arc_tolerance,
                 " mm",
@@ -497,8 +482,9 @@ pub(super) fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
         .on_hover_text("Add circular overcuts at inside corners so parts fit together. Essential for joints, inlays, and press-fit assemblies. Not needed for open pockets or 3D surfaces.");
     if cfg.dogbone {
         ui.param_grid("dog_p", |ui| {
-            dv(
+            dv_dressup(
                 ui,
+                "dogbone_angle",
                 "  Max Angle:",
                 &mut cfg.dogbone_angle,
                 " deg",

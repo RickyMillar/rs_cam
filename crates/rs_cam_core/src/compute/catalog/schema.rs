@@ -200,7 +200,16 @@ pub struct ParamDef {
     pub name: &'static str,
     pub type_name: &'static str,
     pub optional: bool,
-    pub description: Option<&'static str>,
+    /// One line saying what this dial does, for BOTH readers.
+    ///
+    /// UI-04: this is the single help text. The GUI tooltip used to be a
+    /// 60-arm match on the visible LABEL string in
+    /// `viz/ui/properties/linking_dressup.rs`, so `"Stepover:"` reached its
+    /// help only because two spellings happened to agree by hand, and a
+    /// label rename dropped the tooltip in silence. The GUI now keys on
+    /// `(OperationType, param name)` and reads this field, which is the same
+    /// text `operation_schema` serves an agent as `description`.
+    pub help: Option<&'static str>,
     /// Declared numeric domain, or `None` for "no domain stated" — see
     /// [`ParamRange`], which spells out why those are different claims.
     pub range: Option<ParamRange>,
@@ -227,7 +236,7 @@ impl ParamDef {
             name,
             type_name,
             optional: false,
-            description: None,
+            help: None,
             range: None,
             aliases: &[],
         }
@@ -238,13 +247,13 @@ impl ParamDef {
         name: &'static str,
         type_name: &'static str,
         range: ParamRange,
-        description: &'static str,
+        help: &'static str,
     ) -> Self {
         Self {
             name,
             type_name,
             optional: false,
-            description: Some(description),
+            help: Some(help),
             range: Some(range),
             aliases: &[],
         }
@@ -255,7 +264,7 @@ impl ParamDef {
             name,
             type_name,
             optional: true,
-            description: None,
+            help: None,
             range: None,
             aliases: &[],
         }
@@ -264,13 +273,13 @@ impl ParamDef {
     pub(super) const fn optional_desc(
         name: &'static str,
         type_name: &'static str,
-        description: &'static str,
+        help: &'static str,
     ) -> Self {
         Self {
             name,
             type_name,
             optional: true,
-            description: Some(description),
+            help: Some(help),
             range: None,
             aliases: &[],
         }
@@ -284,13 +293,13 @@ impl ParamDef {
     pub(super) const fn required_desc(
         name: &'static str,
         type_name: &'static str,
-        description: &'static str,
+        help: &'static str,
     ) -> Self {
         Self {
             name,
             type_name,
             optional: false,
-            description: Some(description),
+            help: Some(help),
             range: None,
             aliases: &[],
         }
@@ -301,6 +310,18 @@ impl ParamDef {
     /// not a hidden match arm.
     pub(super) const fn with_aliases(self, aliases: &'static [&'static str]) -> Self {
         Self { aliases, ..self }
+    }
+
+    /// The same def, plus the one line that says what the dial does.
+    ///
+    /// UI-04 wrote the GUI's 60 tooltip texts onto the rows they belong to
+    /// through this builder, so the constructor list above did not have to
+    /// grow a fourth variant for every combination.
+    pub(super) const fn with_help(self, help: &'static str) -> Self {
+        Self {
+            help: Some(help),
+            ..self
+        }
     }
 }
 

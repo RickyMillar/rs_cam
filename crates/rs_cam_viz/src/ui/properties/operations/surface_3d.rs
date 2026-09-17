@@ -10,8 +10,9 @@ use crate::state::toolpath::{
     UnifiedFinishConfig, WaterlineConfig,
 };
 
-use super::super::{dv, dv_pill};
+use super::super::{dv, dv_pill, p};
 use crate::ui::components::UiExt as _;
+use rs_cam_core::compute::catalog::OperationType;
 
 /// Fallback tool radius (1/8" endmill) when the active tool's radius is
 /// unavailable or non-physical — keeps the load↔stepover bridge finite.
@@ -26,23 +27,37 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
     ui.param_grid("dc_p", |ui| {
         dv_pill(
             ui,
-            "Stepover:",
+            p(OperationType::DropCutter, "stepover", "Stepover:"),
             &mut cfg.stepover,
             " mm",
             0.1,
             0.05..=50.0,
             stepover_sugg,
         );
-        dv(ui, "Min Z:", &mut cfg.min_z, " mm", 0.5, -500.0..=0.0);
         dv(
             ui,
-            "Slope From:",
+            p(OperationType::DropCutter, "min_z", "Min Z:"),
+            &mut cfg.min_z,
+            " mm",
+            0.5,
+            -500.0..=0.0,
+        );
+        dv(
+            ui,
+            p(OperationType::DropCutter, "slope_from", "Slope From:"),
             &mut cfg.slope_from,
             " deg",
             1.0,
             0.0..=90.0,
         );
-        dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
+        dv(
+            ui,
+            p(OperationType::DropCutter, "slope_to", "Slope To:"),
+            &mut cfg.slope_to,
+            " deg",
+            1.0,
+            0.0..=90.0,
+        );
     });
 }
 
@@ -67,7 +82,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         } else {
             dv_pill(
                 ui,
-                "Stepover:",
+                p(OperationType::Adaptive3d, "stepover", "Stepover:"),
                 &mut cfg.stepover,
                 " mm",
                 0.1,
@@ -77,7 +92,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         }
         dv_pill(
             ui,
-            "Depth/Pass:",
+            p(OperationType::Adaptive3d, "depth_per_pass", "Depth/Pass:"),
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
@@ -86,7 +101,11 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         );
         dv(
             ui,
-            "Stock to Leave:",
+            p(
+                OperationType::Adaptive3d,
+                "stock_to_leave_axial",
+                "Stock to Leave:",
+            ),
             &mut cfg.stock_to_leave_axial,
             " mm",
             0.05,
@@ -94,7 +113,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         );
         dv(
             ui,
-            "Tolerance:",
+            p(OperationType::Adaptive3d, "tolerance", "Tolerance:"),
             &mut cfg.tolerance,
             " mm",
             0.01,
@@ -102,7 +121,11 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         );
         dv(
             ui,
-            "Min Cut Radius:",
+            p(
+                OperationType::Adaptive3d,
+                "min_cutting_radius",
+                "Min Cut Radius:",
+            ),
             &mut cfg.min_cutting_radius,
             " mm",
             0.1,
@@ -127,7 +150,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             Adaptive3dEntryStyle::Ramp => {
                 dv(
                     ui,
-                    "Ramp Angle:",
+                    p(OperationType::Adaptive3d, "ramp_angle_deg", "Ramp Angle:"),
                     &mut cfg.ramp_angle_deg,
                     " deg",
                     0.5,
@@ -137,7 +160,11 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             Adaptive3dEntryStyle::Helix => {
                 dv(
                     ui,
-                    "Helix Radius:",
+                    p(
+                        OperationType::Adaptive3d,
+                        "helix_radius_factor",
+                        "Helix Radius:",
+                    ),
                     &mut cfg.helix_radius_factor,
                     " × D",
                     0.05,
@@ -145,7 +172,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 );
                 dv(
                     ui,
-                    "Helix Pitch:",
+                    p(OperationType::Adaptive3d, "helix_pitch", "Helix Pitch:"),
                     &mut cfg.helix_pitch,
                     " mm",
                     0.1,
@@ -155,7 +182,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         }
         dv(
             ui,
-            "Fine Stepdown:",
+            p(OperationType::Adaptive3d, "fine_stepdown", "Fine Stepdown:"),
             &mut cfg.fine_stepdown,
             " mm",
             0.1,
@@ -317,8 +344,22 @@ pub(in crate::ui::properties) fn draw_waterline_params(
     // (axial_depth_mm) is calibrated for clearing DOC, not contour Z-step.
     // Leave Z Step alone; feed/plunge live on the Feeds tab (W3.2).
     ui.param_grid("wl_p", |ui| {
-        dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
-        dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+        dv(
+            ui,
+            p(OperationType::Waterline, "z_step", "Z Step:"),
+            &mut cfg.z_step,
+            " mm",
+            0.1,
+            0.05..=20.0,
+        );
+        dv(
+            ui,
+            p(OperationType::Waterline, "sampling", "Sampling:"),
+            &mut cfg.sampling,
+            " mm",
+            0.1,
+            0.1..=5.0,
+        );
         ui.label("Continuous:");
         ui.checkbox(&mut cfg.continuous, "");
         ui.end_row();
@@ -397,7 +438,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             // widget with the field it wrote.
             dv(
                 ui,
-                "Rest Cell:",
+                p(OperationType::Pencil, "rest_cell_mm", "Rest Cell:"),
                 &mut cfg.rest_cell_mm,
                 " mm",
                 0.05,
@@ -410,7 +451,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             // low traces every seam, high keeps only deep sharp valleys.
             dv(
                 ui,
-                "Valley Saliency:",
+                p(OperationType::Pencil, "valley_saliency", "Valley Saliency:"),
                 &mut cfg.valley_saliency,
                 " 1/mm",
                 0.01,
@@ -427,7 +468,11 @@ pub(in crate::ui::properties) fn draw_pencil_params(
         } else {
             dv(
                 ui,
-                "Bitangency Angle:",
+                p(
+                    OperationType::Pencil,
+                    "bitangency_angle",
+                    "Bitangency Angle:",
+                ),
                 &mut cfg.bitangency_angle,
                 " deg",
                 1.0,
@@ -436,7 +481,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
         }
         dv(
             ui,
-            "Min Cut Length:",
+            p(OperationType::Pencil, "min_cut_length", "Min Cut Length:"),
             &mut cfg.min_cut_length,
             " mm",
             0.5,
@@ -444,7 +489,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
         );
         dv(
             ui,
-            "Hookup Distance:",
+            p(OperationType::Pencil, "hookup_distance", "Hookup Distance:"),
             &mut cfg.hookup_distance,
             " mm",
             0.5,
@@ -460,20 +505,31 @@ pub(in crate::ui::properties) fn draw_pencil_params(
         ui.end_row();
         dv(
             ui,
-            "Offset Stepover:",
+            p(OperationType::Pencil, "offset_stepover", "Offset Stepover:"),
             &mut cfg.offset_stepover,
             " mm",
             0.1,
             0.05..=10.0,
         );
-        dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+        dv(
+            ui,
+            p(OperationType::Pencil, "sampling", "Sampling:"),
+            &mut cfg.sampling,
+            " mm",
+            0.1,
+            0.1..=5.0,
+        );
         // Reference-tool rest gate: keep only valleys the pencil tool (the
         // op's own tool) reaches more than this deeper than the bigger
         // reference finish tool. 0 = off (trace every detected valley); raise
         // to skip shallow/already-reachable seams.
         dv(
             ui,
-            "Min Valley Depth:",
+            p(
+                OperationType::Pencil,
+                "min_valley_depth",
+                "Min Valley Depth:",
+            ),
             &mut cfg.min_valley_depth,
             " mm",
             0.05,
@@ -565,7 +621,11 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             if cfg.reference_tool_id.is_none() {
                 dv(
                     ui,
-                    "Reference Tool Ø:",
+                    p(
+                        OperationType::Pencil,
+                        "reference_tool_diameter",
+                        "Reference Tool Ø:",
+                    ),
                     &mut cfg.reference_tool_diameter,
                     " mm",
                     0.5,
@@ -575,7 +635,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
         }
         dv(
             ui,
-            "Stock to Leave:",
+            p(OperationType::Pencil, "stock_to_leave", "Stock to Leave:"),
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
@@ -595,7 +655,7 @@ pub(in crate::ui::properties) fn draw_scallop_params(
     ui.param_grid("sc_p", |ui| {
         dv(
             ui,
-            "Scallop Height:",
+            p(OperationType::Scallop, "scallop_height", "Scallop Height:"),
             &mut cfg.scallop_height,
             " mm",
             0.01,
@@ -603,7 +663,7 @@ pub(in crate::ui::properties) fn draw_scallop_params(
         );
         dv(
             ui,
-            "Tolerance:",
+            p(OperationType::Scallop, "tolerance", "Tolerance:"),
             &mut cfg.tolerance,
             " mm",
             0.01,
@@ -642,16 +702,23 @@ pub(in crate::ui::properties) fn draw_scallop_params(
         ui.end_row();
         dv(
             ui,
-            "Slope From:",
+            p(OperationType::Scallop, "slope_from", "Slope From:"),
             &mut cfg.slope_from,
             " deg",
             1.0,
             0.0..=90.0,
         );
-        dv(ui, "Slope To:", &mut cfg.slope_to, " deg", 1.0, 0.0..=90.0);
         dv(
             ui,
-            "Stock to Leave:",
+            p(OperationType::Scallop, "slope_to", "Slope To:"),
+            &mut cfg.slope_to,
+            " deg",
+            1.0,
+            0.0..=90.0,
+        );
+        dv(
+            ui,
+            p(OperationType::Scallop, "stock_to_leave", "Stock to Leave:"),
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
@@ -751,7 +818,11 @@ fn draw_unified_finish_claims(
 
         dv(
             ui,
-            "Min Rest Depth:",
+            p(
+                OperationType::UnifiedFinish,
+                "min_rest_depth_mm",
+                "Min Rest Depth:",
+            ),
             &mut cfg.min_rest_depth_mm,
             " mm",
             0.005,
@@ -846,7 +917,11 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
     ui.param_grid("uf_p", |ui| {
         dv(
             ui,
-            "Steep Threshold:",
+            p(
+                OperationType::UnifiedFinish,
+                "steep_threshold_deg",
+                "Steep Threshold:",
+            ),
             &mut cfg.steep_threshold_deg,
             " deg",
             1.0,
@@ -854,7 +929,11 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
         );
         dv(
             ui,
-            "Waterline Threshold:",
+            p(
+                OperationType::UnifiedFinish,
+                "waterline_threshold_deg",
+                "Waterline Threshold:",
+            ),
             &mut cfg.waterline_threshold_deg,
             " deg",
             1.0,
@@ -863,10 +942,21 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             // 90 would otherwise invert against the 89° upper bound).
             (cfg.steep_threshold_deg + 5.0).min(89.0)..=89.0,
         );
-        dv(ui, "Overlap:", &mut cfg.overlap_mm, " mm", 0.1, 0.0..=10.0);
         dv(
             ui,
-            "Scallop Height:",
+            p(OperationType::UnifiedFinish, "overlap_mm", "Overlap:"),
+            &mut cfg.overlap_mm,
+            " mm",
+            0.1,
+            0.0..=10.0,
+        );
+        dv(
+            ui,
+            p(
+                OperationType::UnifiedFinish,
+                "scallop_height",
+                "Scallop Height:",
+            ),
             &mut cfg.scallop_height,
             " mm",
             0.01,
@@ -874,7 +964,7 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
         );
         dv(
             ui,
-            "Tolerance:",
+            p(OperationType::UnifiedFinish, "tolerance", "Tolerance:"),
             &mut cfg.tolerance,
             " mm",
             0.01,
@@ -882,17 +972,39 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
         );
         dv(
             ui,
-            "Raster Stepover:",
+            p(
+                OperationType::UnifiedFinish,
+                "raster_stepover",
+                "Raster Stepover:",
+            ),
             &mut cfg.raster_stepover,
             " mm",
             0.1,
             0.05..=50.0,
         );
-        dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
-        dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
         dv(
             ui,
-            "Stock to Leave:",
+            p(OperationType::UnifiedFinish, "z_step", "Z Step:"),
+            &mut cfg.z_step,
+            " mm",
+            0.1,
+            0.05..=20.0,
+        );
+        dv(
+            ui,
+            p(OperationType::UnifiedFinish, "sampling", "Sampling:"),
+            &mut cfg.sampling,
+            " mm",
+            0.1,
+            0.1..=5.0,
+        );
+        dv(
+            ui,
+            p(
+                OperationType::UnifiedFinish,
+                "stock_to_leave",
+                "Stock to Leave:",
+            ),
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
@@ -934,7 +1046,11 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
     ui.param_grid("ss_p", |ui| {
         dv(
             ui,
-            "Threshold Angle:",
+            p(
+                OperationType::SteepShallow,
+                "threshold_angle",
+                "Threshold Angle:",
+            ),
             &mut cfg.threshold_angle,
             " deg",
             1.0,
@@ -942,7 +1058,7 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
         );
         dv(
             ui,
-            "Overlap:",
+            p(OperationType::SteepShallow, "overlap_distance", "Overlap:"),
             &mut cfg.overlap_distance,
             " mm",
             0.1,
@@ -950,7 +1066,11 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
         );
         dv(
             ui,
-            "Wall Clearance:",
+            p(
+                OperationType::SteepShallow,
+                "wall_clearance",
+                "Wall Clearance:",
+            ),
             &mut cfg.wall_clearance,
             " mm",
             0.1,
@@ -961,18 +1081,36 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
         ui.end_row();
         dv_pill(
             ui,
-            "Stepover:",
+            p(OperationType::SteepShallow, "stepover", "Stepover:"),
             &mut cfg.stepover,
             " mm",
             0.1,
             0.05..=50.0,
             stepover_sugg,
         );
-        dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
-        dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
         dv(
             ui,
-            "Stock to Leave:",
+            p(OperationType::SteepShallow, "z_step", "Z Step:"),
+            &mut cfg.z_step,
+            " mm",
+            0.1,
+            0.05..=20.0,
+        );
+        dv(
+            ui,
+            p(OperationType::SteepShallow, "sampling", "Sampling:"),
+            &mut cfg.sampling,
+            " mm",
+            0.1,
+            0.1..=5.0,
+        );
+        dv(
+            ui,
+            p(
+                OperationType::SteepShallow,
+                "stock_to_leave",
+                "Stock to Leave:",
+            ),
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
@@ -980,7 +1118,7 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
         );
         dv(
             ui,
-            "Tolerance:",
+            p(OperationType::SteepShallow, "tolerance", "Tolerance:"),
             &mut cfg.tolerance,
             " mm",
             0.01,
