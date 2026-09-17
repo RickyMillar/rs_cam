@@ -18,6 +18,7 @@ mod cycle_time;
 pub mod dependencies;
 mod diagnostics_types;
 mod eval_context;
+pub mod generation_plan;
 pub mod multitool;
 mod mutation;
 pub mod project_file;
