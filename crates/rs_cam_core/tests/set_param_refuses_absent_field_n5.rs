@@ -79,7 +79,10 @@ use rs_cam_core::session::{Command, ProjectSession, ProjectSessionBuilder, SetTo
 use serde_json::json;
 
 /// The source of `set_toolpath_param`, read for assertion 5.
-const SESSION_COMPUTE_SRC: &str = include_str!("../src/session/compute.rs");
+///
+/// P4 moved `set_toolpath_param_impl` out of `session/compute.rs` into the
+/// `params` child. The needle is the method, so this path follows it.
+const SESSION_COMPUTE_SRC: &str = include_str!("../src/session/compute/params.rs");
 
 /// Operations whose config has no `stepover` field.
 const EXPECTED_STEPOVER_REJECTS: usize = 11;
@@ -401,7 +404,7 @@ fn pocket_still_takes_a_stepover_and_stamps_manual_provenance() {
 fn every_numeric_named_arm_calls_the_shared_range_helper() {
     const HELPER: &str = "check_param_range(";
     // Each named arm, and the marker that starts the next one. Every
-    // marker appears once in `session/compute.rs`, in this order.
+    // marker appears once in `session/compute/params.rs`, in this order.
     let arms = [
         ("\"feed_rate\" =>", "\"plunge_rate\" =>"),
         ("\"plunge_rate\" =>", "\"stepover\" =>"),
@@ -415,7 +418,7 @@ fn every_numeric_named_arm_calls_the_shared_range_helper() {
     for (start, end) in arms {
         let from = SESSION_COMPUTE_SRC
             .find(start)
-            .unwrap_or_else(|| panic!("arm marker {start} is not in session/compute.rs"));
+            .unwrap_or_else(|| panic!("arm marker {start} is not in session/compute/params.rs"));
         let len = SESSION_COMPUTE_SRC[from..]
             .find(end)
             .unwrap_or_else(|| panic!("arm end marker {end} is not after {start}"));
