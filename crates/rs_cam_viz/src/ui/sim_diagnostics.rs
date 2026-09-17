@@ -1886,6 +1886,11 @@ mod tests {
             population: None,
             display_peak: None,
             unit: "mm/tooth",
+            // S4: an `Unmodeled` gate judged nothing, so it states no
+            // bound and no source. V2 is the step that makes the badge
+            // read these instead of the caps built above.
+            bound: None,
+            bound_source: None,
             exceeded: None,
         };
         let tooltip = verdict_tooltip(&status, None, false);

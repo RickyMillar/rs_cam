@@ -472,6 +472,7 @@ fn power_to_diagnostic(tp_id: ToolpathId, v: &PowerVerdict) -> Option<Diagnostic
             available_kw,
             evidence,
             confidence,
+            ..
         } => Some(Diagnostic {
             id: DiagnosticId::from(ids::LOAD_POWER_EXCEEDS),
             scope: Scope::Toolpath { id: tp_id },

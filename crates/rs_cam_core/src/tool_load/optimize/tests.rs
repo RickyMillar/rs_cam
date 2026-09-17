@@ -83,6 +83,7 @@ fn within_power_verdict() -> PowerVerdict {
         evidence: SampleEvidence::empty(),
         confidence: Confidence::Validated,
         entry_spike: None,
+        bound_source: None,
     }
 }
 
@@ -471,6 +472,7 @@ fn exceeds_power_verdict() -> ToolpathLoadVerdict {
         available_kw: 0.71,
         evidence: SampleEvidence::at(0),
         confidence: Confidence::Validated,
+        bound_source: None,
     };
     v
 }

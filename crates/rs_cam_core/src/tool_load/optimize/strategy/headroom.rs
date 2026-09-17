@@ -239,6 +239,7 @@ mod tests {
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
             entry_spike: None,
+            bound_source: None,
         }
     }
 

@@ -385,6 +385,69 @@ impl ToolpathLoadVerdict {
             .filter_map(|s| s.exceeded)
             .collect()
     }
+
+    /// **The criterion tier as OWNED rows**, one per
+    /// [`Self::criteria`] entry, in the same order.
+    ///
+    /// S4 (2026-09-18). [`CriterionStatus`] borrows the verdict it came
+    /// from, so it cannot serialize, and S1 measured the consequence:
+    /// `mcp_get_tool_load_report` serialises the typed verdict struct,
+    /// so the criterion list — and with it every bound and every
+    /// provenance — never reaches an MCP client. This is the shape that
+    /// does. It copies; it derives nothing.
+    pub fn criterion_rows(&self) -> Vec<CriterionRow> {
+        self.criteria()
+            .iter()
+            .map(CriterionRow::from_status)
+            .collect()
+    }
+}
+
+/// **The owned form of [`CriterionStatus`], for the wire.**
+///
+/// Field for field the same row, with the borrows copied out:
+/// `unit` becomes a `String`, and `confidence` and `sample_range` are
+/// left off because no wire consumer reads them from this shape today
+/// — the typed verdicts beside it already carry both.
+///
+/// Built only by [`ToolpathLoadVerdict::criterion_rows`], so the owned
+/// row cannot drift from the borrowed one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+// `ExceededCriterion` holds `&'static str` fields, so its own
+// `Deserialize` impl only exists for a `'static` input. Stating the
+// bound here keeps the error at this line rather than at every call
+// site: a reader deserializing a row needs a `&'static str` of JSON.
+#[serde(bound(deserialize = "'de: 'static"))]
+pub struct CriterionRow {
+    pub kind: CriterionKind,
+    pub state: LoadState,
+    /// The bound `display_peak` was judged against, in `unit`.
+    pub bound: Option<f64>,
+    pub bound_source: Option<BoundSource>,
+    pub unit: String,
+    pub display_peak: Option<f64>,
+    /// **X-VAC** — `None` means "not stated", never "zero".
+    pub population: Option<GatePopulation>,
+    pub unmodeled_reason: Option<UnmodeledReason>,
+    pub exceeded: Option<ExceededCriterion>,
+}
+
+impl CriterionRow {
+    /// Copy a borrowed row into an owned one.
+    #[must_use]
+    pub fn from_status(status: &CriterionStatus<'_>) -> Self {
+        Self {
+            kind: status.kind,
+            state: status.state,
+            bound: status.bound,
+            bound_source: status.bound_source.clone(),
+            unit: status.unit.to_owned(),
+            display_peak: status.display_peak,
+            population: status.population,
+            unmodeled_reason: status.unmodeled_reason.cloned(),
+            exceeded: status.exceeded.clone(),
+        }
+    }
 }
 
 /// Project-level report: one verdict per toolpath.
@@ -605,6 +668,11 @@ fn gantry_push_criterion(plunge_only: bool) -> CriterionStatus<'static> {
         population: None,
         display_peak: None,
         unit: CriterionKind::GantryPush.unit(),
+        // S4: no machine-side thrust rating exists, so there is no
+        // bound and no source. A bound on a row nothing judged would be
+        // the same defect the row was added to remove.
+        bound: None,
+        bound_source: None,
         exceeded: None,
     }
 }
@@ -684,6 +752,145 @@ impl CriterionKind {
     }
 }
 
+/// **Where a criterion's bound came from, typed.**
+///
+/// A hover, a refusal line or a CLI row FORMATS this. It never retypes
+/// the number. `REVIEW_DESIGN.md` §6.3 measured the reason: doc
+/// comments under `crates/` cite 231 `planning/…` paths and 117 of them
+/// resolve to nothing, and the same rot has already hit two
+/// hard-coded provenance strings in this file — the correction on
+/// [`BindingConstraint::ChiploadMin`] and the H4 finding on
+/// [`ChipBoundsSource::row_id`]. A typed value cannot drift from the
+/// constant it names, because it carries the constant.
+///
+/// [`Self::gates_export`] lives here, on the SOURCE, and not on
+/// [`CriterionKind`]. The reason a bound may not refuse an export is
+/// the bound's provenance, not the quantity it measures. The day a
+/// rule of thumb is measured, its variant is replaced by a measured
+/// one and the row starts gating with no change to any renderer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum BoundSource {
+    /// The power gate's ceiling: `MachineProfile::power_at_rpm(rpm)`
+    /// times `MachineProfile::safety_factor`, at the sample the
+    /// verdict's `available_kw` describes.
+    MachinePowerCurve { rpm: f64, safety_factor: f64 },
+    /// The matched vendor chip band.
+    ///
+    /// `floor_mm_per_tooth` is an `Option` because
+    /// [`ChipBounds::min_mm_per_tooth`] is one: some LUT rows ship only
+    /// an upper bound, and a fabricated `0.0` floor would be an absence
+    /// rendered as a reading. The floor travels with the band because
+    /// a burn reading sits BELOW its bound, not above it, and the badge
+    /// needs the floor to word that case.
+    VendorChipBand {
+        floor_mm_per_tooth: Option<f64>,
+        ceiling_mm_per_tooth: f64,
+        source: ChipBoundsSource,
+    },
+    /// [`crate::tool_load::deflection::EXCEEDS_BOUND_MM`] — the tip
+    /// displacement budget the deflection gate judges against. A fixed
+    /// finish-quality figure in MILLIMETRES.
+    DeflectionBudget,
+    /// `RigidityProfile::doc_roughing_factor` (or `adaptive_doc_factor`)
+    /// times the tool diameter. A rule of thumb with no published
+    /// source, so it does not gate ([`Self::gates_export`]). S3 is its
+    /// first producer; nothing in this crate emits it today.
+    RigidityRuleOfThumb { factor: f64, diameter_mm: f64 },
+    /// The drill gates' own envelopes. All three are material-derived:
+    /// `chip_welding_threshold`, `per_peck_max_depth_to_diameter` and
+    /// the plunge-feed envelope.
+    DrillEnvelope,
+}
+
+impl BoundSource {
+    /// **The setting an operator changes to move this row**, one of
+    /// `"machine"`, `"tool"`, `"material"` or `"vendor row"`.
+    ///
+    /// The operator's rule 3, and the durable half of provenance
+    /// (`REVIEW_DESIGN.md` §6.3): a setting is a live symbol a reader
+    /// can find, where a cited document is not.
+    #[must_use]
+    pub fn setting(&self) -> &'static str {
+        match self {
+            // The power curve and the safety factor are both
+            // `MachineProfile` fields.
+            BoundSource::MachinePowerCurve { .. } => "machine",
+            BoundSource::VendorChipBand { .. } => "vendor row",
+            // The budget is a fixed constant, so no setting moves the
+            // BOUND. The tool moves the reading under it: stickout,
+            // diameter and the flute profile are the whole cantilever
+            // the gate integrates.
+            BoundSource::DeflectionBudget => "tool",
+            // `RigidityProfile` is a `MachineProfile` field. The
+            // diameter is the tool's, but the factor is the machine's,
+            // and the factor is what makes this bound a rule of thumb.
+            BoundSource::RigidityRuleOfThumb { .. } => "machine",
+            BoundSource::DrillEnvelope => "material",
+        }
+    }
+
+    /// **One clause, formatted from the values this variant carries.**
+    /// Never a literal number: every figure below comes from the value
+    /// it describes, at render time.
+    ///
+    /// The clause states the PROVENANCE. For the bound itself, beside
+    /// its unit, use [`CriterionStatus::bound_clause`], which formats
+    /// the bound and then appends this.
+    #[must_use]
+    pub fn clause(&self) -> String {
+        match self {
+            BoundSource::MachinePowerCurve { rpm, safety_factor } => format!(
+                "the machine power curve at {rpm:.0} rpm, times the {safety_factor:.2} safety factor"
+            ),
+            BoundSource::VendorChipBand {
+                floor_mm_per_tooth,
+                ceiling_mm_per_tooth,
+                source,
+            } => match floor_mm_per_tooth {
+                Some(floor) => format!(
+                    "the vendor chip band {floor:.4} to {ceiling_mm_per_tooth:.4} mm/tooth ({})",
+                    source.row_id()
+                ),
+                None => format!(
+                    "the vendor chip band, ceiling {ceiling_mm_per_tooth:.4} mm/tooth, \
+                     no published floor ({})",
+                    source.row_id()
+                ),
+            },
+            BoundSource::DeflectionBudget => format!(
+                "the tip deflection budget of {:.3} mm",
+                crate::tool_load::deflection::EXCEEDS_BOUND_MM
+            ),
+            BoundSource::RigidityRuleOfThumb {
+                factor,
+                diameter_mm,
+            } => format!(
+                "the machine rigidity factor {factor:.2} times the tool diameter \
+                 {diameter_mm:.2} mm, which is {:.2} mm; a rule of thumb with no \
+                 published source",
+                factor * diameter_mm
+            ),
+            BoundSource::DrillEnvelope => {
+                "the material's drilling envelope for this cycle".to_owned()
+            }
+        }
+    }
+
+    /// **Whether an exceedance of this bound may refuse a g-code
+    /// export.** False only for [`BoundSource::RigidityRuleOfThumb`]
+    /// today.
+    ///
+    /// The export gate reads this through
+    /// [`CriterionStatus::refuses_export`]. A row with NO source still
+    /// refuses: every shipped gate carries one, so an absent source is
+    /// a gate that forgot, and that must fail safe.
+    #[must_use]
+    pub fn gates_export(&self) -> bool {
+        !matches!(self, BoundSource::RigidityRuleOfThumb { .. })
+    }
+}
+
 /// Generic per-criterion summary used by UI / export / timeline. A
 /// typed verdict produces one of these via `as_criterion_status`,
 /// hiding its internals from consumers that just want
@@ -705,6 +912,20 @@ pub struct CriterionStatus<'a> {
     pub population: Option<GatePopulation>,
     pub display_peak: Option<f64>,
     pub unit: &'static str,
+    /// **The bound `display_peak` was judged against, in `unit`.**
+    /// `None` when the criterion is unmodelled, or when no bound
+    /// exists at all (the gantry-push row).
+    ///
+    /// S4 (2026-09-18). Before this field the GUI built two of the
+    /// three caps it drew against, and one of them was an L over D
+    /// ratio of 4.0 set beside a gate that judges millimetres against
+    /// `deflection::EXCEEDS_BOUND_MM` — defect class 2, a quantity
+    /// divided by a fraction of a DIFFERENT quantity. Every bound now
+    /// comes from the gate that judged it.
+    pub bound: Option<f64>,
+    /// **Where `bound` came from, typed.** `None` exactly when `bound`
+    /// is `None`. A renderer FORMATS this; it never retypes a number.
+    pub bound_source: Option<BoundSource>,
     /// `Some` iff `state == Exceeds` — the typed exceedance label for
     /// this gate, set by each verdict's `as_criterion_status`. The
     /// gating tier (`exceeded_criteria`, `enforce_load_policy`, the
@@ -764,6 +985,46 @@ impl CriterionStatus<'_> {
         self.population
             .map(GatePopulation::vacuity_clause)
             .unwrap_or_default()
+    }
+
+    /// **The one operator-facing bound clause**, shared by every
+    /// renderer so the wording cannot drift between GUI, CLI, MCP and
+    /// narration. Empty when the row states no bound.
+    ///
+    /// The bound is formatted from [`Self::bound`] and the provenance
+    /// from [`BoundSource::clause`], both at render time. No number in
+    /// this string is typed.
+    #[must_use]
+    pub fn bound_clause(&self) -> String {
+        let Some(bound) = self.bound else {
+            return String::new();
+        };
+        let unit = self.unit;
+        match &self.bound_source {
+            Some(source) => format!("limit {bound:.4} {unit}, from {}", source.clause()),
+            None => format!("limit {bound:.4} {unit}"),
+        }
+    }
+
+    /// **True when this row exceeded a bound that may refuse a g-code
+    /// export.** S4 (2026-09-18).
+    ///
+    /// The decision keys on the bound's PROVENANCE, never on the
+    /// quantity: see [`BoundSource::gates_export`]. A row with no
+    /// source still refuses, because every shipped gate carries one and
+    /// an absence must fail safe.
+    ///
+    /// The export gate reads this through
+    /// [`crate::gcode::refusing_exceedances`]. A row this predicate
+    /// rejects is still REPORTED — it is not refused, and it is not
+    /// hidden.
+    #[must_use]
+    pub fn refuses_export(&self) -> bool {
+        self.state == LoadState::Exceeds
+            && self
+                .bound_source
+                .as_ref()
+                .is_none_or(BoundSource::gates_export)
     }
 }
 
@@ -1237,7 +1498,12 @@ impl ChiploadVerdict {
     }
 
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
-        let (state, peak, range, population, exceeded) = match self {
+        // S4: `bounds` is the band the gate compared against, carried
+        // on the metric that decided the verdict. The row reads against
+        // its CEILING — the breakage side a percentage is drawn of —
+        // and the floor travels in the source, because a burn reading
+        // sits below its bound rather than above it.
+        let (state, peak, range, population, exceeded, bounds) = match self {
             ChiploadVerdict::Within {
                 approach_to_max, ..
             } => (
@@ -1246,6 +1512,7 @@ impl ChiploadVerdict {
                 option_range(&approach_to_max.evidence.sample_range),
                 approach_to_max.evidence.population,
                 None,
+                Some(&approach_to_max.bounds),
             ),
             ChiploadVerdict::Exceeds {
                 triggering, side, ..
@@ -1258,8 +1525,11 @@ impl ChiploadVerdict {
                     ChipSide::Low => ExceededCriterion::chipload_burn(),
                     ChipSide::High => ExceededCriterion::chipload_breakage(),
                 }),
+                Some(&triggering.bounds),
             ),
-            ChiploadVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None),
+            ChiploadVerdict::Unmodeled { .. } => {
+                (LoadState::Unmodeled, None, None, None, None, None)
+            }
         };
         CriterionStatus {
             kind: CriterionKind::Chipload,
@@ -1270,6 +1540,12 @@ impl ChiploadVerdict {
             population,
             display_peak: peak,
             unit: CriterionKind::Chipload.unit(),
+            bound: bounds.map(|b| b.max_mm_per_tooth),
+            bound_source: bounds.map(|b| BoundSource::VendorChipBand {
+                floor_mm_per_tooth: b.min_mm_per_tooth,
+                ceiling_mm_per_tooth: b.max_mm_per_tooth,
+                source: b.source,
+            }),
             exceeded,
         }
     }
@@ -1289,12 +1565,32 @@ pub enum PowerVerdict {
         /// `available_kw` but was excluded from the gate trip.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         entry_spike: Option<EntrySpike>,
+        /// **S4 — where `available_kw` came from.** The two inputs the
+        /// gate multiplied: the sample's spindle speed and the
+        /// profile's safety factor.
+        ///
+        /// This is the one gate whose provenance is not already on the
+        /// verdict. The band, the deflection budget and the drill
+        /// envelopes each ride on a field the verdict already carries;
+        /// `available_kw` is a product, and the factors are gone by the
+        /// time a consumer reads it.
+        ///
+        /// `Option` and `#[serde(default)]` so an older serialized
+        /// verdict still deserializes. `None` reads as "not stated" and
+        /// fails safe at the export gate
+        /// ([`CriterionStatus::refuses_export`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bound_source: Option<BoundSource>,
     },
     Exceeds {
         peak_kw: f64,
         available_kw: f64,
         evidence: SampleEvidence,
         confidence: Confidence,
+        /// **S4 — where `available_kw` came from.** See
+        /// [`PowerVerdict::Within::bound_source`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bound_source: Option<BoundSource>,
     },
     Unmodeled {
         reason: UnmodeledReason,
@@ -1335,24 +1631,41 @@ impl PowerVerdict {
     }
 
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
-        let (state, peak, range, population) = match self {
+        // S4: the bound is `available_kw`, the ceiling this gate judged
+        // against, and `bound_source` carries the two inputs that built
+        // it. The GUI used to build its own from `max_power_kw ×
+        // safety_factor`, which is the ceiling at the RATED speed, not
+        // at the speed the toolpath runs.
+        let (state, peak, range, population, bound, source) = match self {
             PowerVerdict::Within {
-                peak_kw, evidence, ..
+                peak_kw,
+                available_kw,
+                evidence,
+                bound_source,
+                ..
             } => (
                 LoadState::Within,
                 Some(*peak_kw),
                 option_range(&evidence.sample_range),
                 evidence.population,
+                Some(*available_kw),
+                bound_source.clone(),
             ),
             PowerVerdict::Exceeds {
-                peak_kw, evidence, ..
+                peak_kw,
+                available_kw,
+                evidence,
+                bound_source,
+                ..
             } => (
                 LoadState::Exceeds,
                 Some(*peak_kw),
                 option_range(&evidence.sample_range),
                 evidence.population,
+                Some(*available_kw),
+                bound_source.clone(),
             ),
-            PowerVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None),
+            PowerVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None, None),
         };
         CriterionStatus {
             kind: CriterionKind::Power,
@@ -1363,6 +1676,8 @@ impl PowerVerdict {
             population,
             display_peak: peak,
             unit: CriterionKind::Power.unit(),
+            bound,
+            bound_source: source,
             exceeded: (state == LoadState::Exceeds).then(ExceededCriterion::power),
         }
     }
@@ -1440,24 +1755,37 @@ impl DeflectionVerdict {
     }
 
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
-        let (state, peak, range, population) = match self {
+        // S4: the bound is `bounds.exceeds_mm`, which the gate sets
+        // from `deflection::EXCEEDS_BOUND_MM`. It is MILLIMETRES. The
+        // GUI drew this row against `DEFLECTION_SAFE_LD_RATIO = 4.0`,
+        // an L over D ratio, which is a different quantity with a
+        // similar magnitude — defect class 2 (`RESUME_PLAN` §9).
+        let (state, peak, range, population, bound) = match self {
             DeflectionVerdict::Within {
-                peak_mm, evidence, ..
+                peak_mm,
+                bounds,
+                evidence,
+                ..
             } => (
                 LoadState::Within,
                 Some(*peak_mm),
                 option_range(&evidence.sample_range),
                 evidence.population,
+                Some(bounds.exceeds_mm),
             ),
             DeflectionVerdict::Exceeds {
-                peak_mm, evidence, ..
+                peak_mm,
+                bounds,
+                evidence,
+                ..
             } => (
                 LoadState::Exceeds,
                 Some(*peak_mm),
                 option_range(&evidence.sample_range),
                 evidence.population,
+                Some(bounds.exceeds_mm),
             ),
-            DeflectionVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None),
+            DeflectionVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None),
         };
         CriterionStatus {
             kind: CriterionKind::Deflection,
@@ -1468,6 +1796,8 @@ impl DeflectionVerdict {
             population,
             display_peak: peak,
             unit: CriterionKind::Deflection.unit(),
+            bound,
+            bound_source: bound.map(|_| BoundSource::DeflectionBudget),
             exceeded: (state == LoadState::Exceeds).then(ExceededCriterion::deflection),
         }
     }
@@ -2155,6 +2485,7 @@ mod tests {
             evidence: SampleEvidence::at(2),
             confidence: Confidence::Approximate("isotropic Kc".to_owned()),
             entry_spike: None,
+            bound_source: None,
         };
         match &v {
             PowerVerdict::Within { available_kw, .. } => {
@@ -2177,6 +2508,7 @@ mod tests {
             available_kw: 0.5,
             evidence: SampleEvidence::at(0),
             confidence: Confidence::Validated,
+            bound_source: None,
         };
         let json = serde_json::to_string(&v).expect("ser");
         let back: PowerVerdict = serde_json::from_str(&json).expect("de");
@@ -2218,6 +2550,7 @@ mod tests {
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
             entry_spike: None,
+            bound_source: None,
         };
         let s = v.as_criterion_status();
         assert!(s.sample_range.is_none());
@@ -2275,6 +2608,7 @@ mod tests {
                     evidence: SampleEvidence::at(2),
                     confidence: Confidence::Approximate("isotropic Kc".to_owned()),
                     entry_spike: None,
+                    bound_source: None,
                 },
                 deflection: DeflectionVerdict::Within {
                     peak_mm: 0.080,
@@ -2422,6 +2756,7 @@ mod tests {
                 available_kw: 1.5,
                 evidence: SampleEvidence::at(4),
                 confidence: Confidence::Validated,
+                bound_source: None,
             },
             deflection: DeflectionVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,

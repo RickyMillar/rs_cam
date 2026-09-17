@@ -661,31 +661,132 @@ pub fn project_load_report(
     crate::tool_load::ToolLoadReport { per_toolpath }
 }
 
+/// **The exceeded criteria that may refuse a g-code export.** S4
+/// (2026-09-18).
+///
+/// Pure, and public, so the rule is testable on hand-built rows. The
+/// decision keys on the bound's PROVENANCE
+/// ([`crate::tool_load::verdict::BoundSource::gates_export`]), never on
+/// the quantity: the reason `0.20 × D` may not refuse a job is that no
+/// publication states it, not that it measures a depth.
+///
+/// A row with NO source still refuses. Every shipped gate carries one,
+/// so an absent source is a gate that forgot, and an absence must fail
+/// safe.
+#[must_use]
+pub fn refusing_exceedances<'a>(
+    criteria: &'a [crate::tool_load::verdict::CriterionStatus<'a>],
+) -> Vec<&'a crate::tool_load::verdict::CriterionStatus<'a>> {
+    criteria
+        .iter()
+        .filter(|status| status.refuses_export())
+        .collect()
+}
+
+/// **The whole exceedance half of the export policy, pure.** S4
+/// (2026-09-18).
+///
+/// `Err` refuses the export and names what refused. `Ok(Some(note))`
+/// exports and hands the caller a line to log: one or more criteria
+/// exceeded a bound that may not gate, and the operator must still see
+/// them. `Ok(None)` means nothing exceeded.
+///
+/// When BOTH kinds are present the refusal names both, so an operator
+/// reads the whole picture instead of the refusing half.
+///
+/// [`enforce_load_policy`] delegates to this. It is separate because
+/// [`crate::tool_load::verdict::BoundSource::RigidityRuleOfThumb`] has
+/// no producer until S3 lands the depth-of-cut gate, so the weak arm is
+/// not reachable from a report built by the shipped gates, and a rule
+/// that cannot be tested on the day it is written is a rule nobody
+/// checks.
+pub fn enforce_exceedance_policy(
+    per_toolpath: &[(
+        crate::ids::ToolpathId,
+        Vec<crate::tool_load::verdict::CriterionStatus<'_>>,
+    )],
+    accept_exceeded: bool,
+) -> Result<Option<String>, ExportError> {
+    use crate::tool_load::verdict::LoadState;
+
+    let mut refusing_lines: Vec<String> = Vec::new();
+    let mut advisory_lines: Vec<String> = Vec::new();
+    for (id, criteria) in per_toolpath {
+        let refusing = refusing_exceedances(criteria);
+        if !refusing.is_empty() {
+            let reason_list: Vec<String> = refusing
+                .iter()
+                .map(|status| match &status.exceeded {
+                    Some(ec) => format!("{}={}", ec.label, ec.reason_label),
+                    None => status.kind.label().to_owned(),
+                })
+                .collect();
+            refusing_lines.push(format!("  toolpath {id}: {}", reason_list.join(", ")));
+        }
+        for status in criteria
+            .iter()
+            .filter(|s| s.state == LoadState::Exceeds && !s.refuses_export())
+        {
+            // Every number here is formatted from the value it
+            // describes. Nothing is typed into the string.
+            let peak = status
+                .display_peak
+                .map_or_else(|| "not stated".to_owned(), |p| format!("{p:.4}"));
+            advisory_lines.push(format!(
+                "  toolpath {id}: {}, peak {peak} {}, {}",
+                status.kind.label(),
+                status.unit,
+                status.bound_clause()
+            ));
+        }
+    }
+
+    let advisory_block = if advisory_lines.is_empty() {
+        String::new()
+    } else {
+        let mut block = String::from(
+            "Exceeded without refusing the export, because the bound does not gate one:\n",
+        );
+        for line in &advisory_lines {
+            let _ = writeln!(block, "{line}");
+        }
+        block
+    };
+
+    if !accept_exceeded && !refusing_lines.is_empty() {
+        let mut msg = String::from("G-code export refused: tool load exceeded on toolpath(s):\n");
+        for line in &refusing_lines {
+            let _ = writeln!(msg, "{line}");
+        }
+        msg.push_str(&advisory_block);
+        msg.push_str(
+            "Pass `accept_exceeded=true` to override (this is a known-dangerous override).",
+        );
+        return Err(ExportError::new(msg));
+    }
+    Ok((!advisory_block.is_empty()).then(|| advisory_block.trim_end().to_owned()))
+}
+
 /// Enforce a `ToolLoadExportPolicy` against a report. Returns a structured
 /// error message naming each offending toolpath and criterion so the user
 /// (or UI) sees exactly what to override.
+///
+/// S4 (2026-09-18): the `Ok` arm carries a note when a criterion
+/// exceeded a bound that may not refuse an export. The caller logs it;
+/// the export goes ahead. See [`enforce_exceedance_policy`].
 pub fn enforce_load_policy(
     report: &crate::tool_load::ToolLoadReport,
     policy: &ToolLoadExportPolicy,
-) -> Result<(), ExportError> {
-    if !policy.accept_exceeded {
-        let exceeded = report.exceeded_criteria();
-        if !exceeded.is_empty() {
-            let mut msg =
-                String::from("G-code export refused: tool load exceeded on toolpath(s):\n");
-            for (id, crits) in &exceeded {
-                let reason_list: Vec<String> = crits
-                    .iter()
-                    .map(|ec| format!("{}={}", ec.label, ec.reason_label))
-                    .collect();
-                let _ = writeln!(msg, "  toolpath {id}: {}", reason_list.join(", "));
-            }
-            msg.push_str(
-                "Pass `accept_exceeded=true` to override (this is a known-dangerous override).",
-            );
-            return Err(ExportError::new(msg));
-        }
-    }
+) -> Result<Option<String>, ExportError> {
+    let per_toolpath: Vec<(
+        crate::ids::ToolpathId,
+        Vec<crate::tool_load::verdict::CriterionStatus<'_>>,
+    )> = report
+        .per_toolpath
+        .iter()
+        .map(|v| (v.toolpath_id, v.criteria()))
+        .collect();
+    let note = enforce_exceedance_policy(&per_toolpath, policy.accept_exceeded)?;
     if !policy.accept_unmodeled && report.any_unmodeled() {
         // Distinguish "stale simulation" (re-sim required) from
         // "never simulated / no LUT data" — they're different user
@@ -740,7 +841,7 @@ pub fn enforce_load_policy(
         }
         return Err(ExportError::new(msg));
     }
-    Ok(())
+    Ok(note)
 }
 
 /// Emit checked G-code from pre-built phases.
@@ -783,7 +884,7 @@ pub fn export_gcode_phases_with_overlay_checked(
     overlay: &WizardOverlay,
 ) -> Result<String, ExportError> {
     refuse_inch_units(post, overlay)?;
-    enforce_load_policy(report, &policy)?;
+    let _note = enforce_load_policy(report, &policy)?;
     Ok(emit_gcode_phased_with_overlay(phases, post, overlay))
 }
 
@@ -874,7 +975,7 @@ pub fn export_gcode_multi_setup_with_overlay_checked(
     overlay: &WizardOverlay,
 ) -> Result<String, ExportError> {
     refuse_inch_units(post, overlay)?;
-    enforce_load_policy(report, &policy)?;
+    let _note = enforce_load_policy(report, &policy)?;
     Ok(emit_gcode_multi_setup_with_overlay(
         setups, post, safe_z, overlay,
     ))
@@ -2322,6 +2423,7 @@ mod tests {
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Approximate("isotropic Kc only".into()),
                 entry_spike: None,
+                bound_source: None,
             },
             deflection_within(3.5),
         );
@@ -2364,6 +2466,7 @@ mod tests {
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
             entry_spike: None,
+            bound_source: None,
         }
     }
 

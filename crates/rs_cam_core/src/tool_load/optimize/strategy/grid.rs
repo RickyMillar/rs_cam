@@ -201,6 +201,7 @@ mod tests {
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Validated,
                 entry_spike: None,
+                bound_source: None,
             },
             deflection: DeflectionVerdict::Within {
                 peak_mm: 0.0,

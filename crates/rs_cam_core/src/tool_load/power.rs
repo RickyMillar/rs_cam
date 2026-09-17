@@ -348,6 +348,11 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // (which often falls through with `peak_power == 0.0` on light cuts)
     // still has a usable headroom number to surface.
     let mut last_available_kw: f64 = 0.0;
+    // S4: the rpm that built `last_available_kw` / `peak_available_at_peak`.
+    // `available_kw` is a product, so the factors have to be carried out
+    // with it or the row cannot state where its ceiling came from.
+    let mut last_rpm: f64 = 0.0;
+    let mut peak_rpm_at_peak: f64 = 0.0;
     // D7 — span-aware entry filter. Configured Entry transients
     // (Adaptive3D plunge / helix / ramp, dressup lead-ins) bypass the
     // trip decision and surface separately as `entry_spike` on the
@@ -462,11 +467,13 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
 
         contributing += 1;
         last_available_kw = avail;
+        last_rpm = f64::from(s.spindle_rpm);
 
         if p_kw > peak_power {
             peak_power = p_kw;
             peak_idx = Some(i);
             peak_available_at_peak = avail;
+            peak_rpm_at_peak = f64::from(s.spindle_rpm);
         }
     }
 
@@ -520,6 +527,20 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     } else {
         last_available_kw
     };
+    // S4: the provenance of `available_kw`, from the same sample that
+    // set it. `None` when no sample set one, so the row states no
+    // source rather than one built from a zero rpm.
+    let bound_rpm = if peak_available_at_peak > 0.0 {
+        peak_rpm_at_peak
+    } else {
+        last_rpm
+    };
+    let bound_source = (available_kw > 0.0 && bound_rpm > 0.0).then_some(
+        super::verdict::BoundSource::MachinePowerCurve {
+            rpm: bound_rpm,
+            safety_factor: machine.safety_factor,
+        },
+    );
 
     // Layer 1 tolerance band: widen the peak-vs-available trigger by
     // `power_breach`. Default is 0 (preserves the strict machine-ceiling
@@ -545,6 +566,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             available_kw,
             evidence,
             confidence,
+            bound_source,
         };
     }
     // D7 entry-spike advisory: surface a configured-entry sample whose
@@ -577,6 +599,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         evidence,
         confidence,
         entry_spike,
+        bound_source,
     }
 }
 

@@ -233,6 +233,7 @@ mod tests {
             available_kw: 0.5,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
+            bound_source: None,
         }
     }
 
@@ -357,6 +358,7 @@ mod tests {
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
             entry_spike: None,
+            bound_source: None,
         };
         assert!(r.target(&within, &space, &view, &ctx).solution().is_none());
 

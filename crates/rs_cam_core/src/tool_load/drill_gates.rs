@@ -316,6 +316,22 @@ impl DrillGateOutcome {
         }
     }
 
+    /// **The bound this outcome was judged against.** S4
+    /// (2026-09-18) — the same `threshold` the two arms already carry,
+    /// named once so a consumer does not have to know which arm it is
+    /// looking at.
+    ///
+    /// Read the arm's own doc before wording it: on `Within` this is
+    /// the NEARER envelope bound, and on chip welding it is the
+    /// advisory boundary `0.75 × t`, not `t`.
+    #[must_use]
+    pub fn bound(&self) -> f64 {
+        match self {
+            DrillGateOutcome::Within { threshold, .. }
+            | DrillGateOutcome::Exceeds { threshold, .. } => *threshold,
+        }
+    }
+
     /// Adapt to the generic criterion summary so drill gates join
     /// `ToolpathLoadVerdict::criteria()` — and with it export gating
     /// (F1.7, 2026-06-10; pre-fix a Critical drill exceedance did not
@@ -369,6 +385,10 @@ impl DrillGateOutcome {
             population,
             display_peak: Some(self.observed()),
             unit: kind.unit(),
+            // S4: the bound is the one this outcome already carries,
+            // and all three drill envelopes are material-derived.
+            bound: Some(self.bound()),
+            bound_source: Some(crate::tool_load::verdict::BoundSource::DrillEnvelope),
             exceeded,
         }
     }

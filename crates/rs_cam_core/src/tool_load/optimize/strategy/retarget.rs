@@ -286,6 +286,7 @@ mod tests {
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
             entry_spike: None,
+            bound_source: None,
         }
     }
 
@@ -296,6 +297,7 @@ mod tests {
             available_kw: 1.0,
             evidence: SampleEvidence::at(0),
             confidence: Confidence::Validated,
+            bound_source: None,
         }
     }
 
