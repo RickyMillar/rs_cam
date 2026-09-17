@@ -30,7 +30,7 @@ need a register.
 | T-14 | A drop-cutter finishing pass measures 42.5 mm of axial engagement | open — R1 made it load-bearing |
 | T-15 | Pass 9 can raise a feed the power ladder just clamped | open — reachable by hand TODAY |
 | T-16 | The deflection bending diameter cites a source that does not say it | **closed** — its per-flute table is itself superseded, see T-17 |
-| T-17 | The deflection integrator gives a fluted end mill a solid cross-section | open — under-states deflection 1.6x to 3.2x |
+| T-17 | The deflection integrator gives a fluted end mill a solid cross-section | **closed** `93dd145c` — flat 0.80, every fluted shape; V-bit still open under T-4 |
 | T-18 | Three feed lifts cap against the gantry TRAVEL rate, not the cutting ceiling | open — latent on shipped presets only |
 
 ---
