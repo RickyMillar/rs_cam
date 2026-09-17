@@ -637,7 +637,10 @@ impl ToolDefinition {
     /// Models the tool as a stepped cantilever clamped at `x = 0` (the
     /// collet face) and free at `x = stickout` (the tip). The cutting
     /// region uses the per-cutter `lookup_diameter_at(axial_from_tip)`
-    /// profile; above the flutes the cross-section is the uniform
+    /// profile, scaled to an EQUIVALENT BENDING diameter — a straight-walled
+    /// end mill bends on its flute-relieved section, not on the width it
+    /// cuts, so the flute-count fraction applies there and nowhere else.
+    /// Above the flutes the cross-section is the uniform
     /// `shank_diameter`. Numerical integration via 64 mid-point segments
     /// along the bending region `[0, load_position]`; the section above
     /// the load (including the rigid cantilever extension to the tip)
@@ -689,14 +692,48 @@ impl ToolDefinition {
         // Region 2: cutter, x ∈ [shank_top, load_pos].
         if load_pos > shank_top {
             const N_CUTTER: usize = 64;
+            // `lookup_diameter_at` returns the ENGAGEMENT diameter — how wide
+            // the cutter cuts. A bending model needs the EQUIVALENT diameter:
+            // the solid shaft of the same compliance. The flutes remove
+            // material from the section, so for a straight-walled end mill
+            // the two differ by the flute-count fraction (Kivanc and Budak,
+            // Sabanci MSc thesis 2004, Tables 3.1 and 3.2). `I` goes with the
+            // 4th power, so omitting it over-stated stiffness by 1.60x at two
+            // flutes, 2.00x at three and 3.19x at four — and it under-stated
+            // deflection, which is the unsafe direction. See T-17.
+            //
+            // Every fluted shape takes it. The relief is a property of the
+            // CROSS-SECTION, so it does not care what the end of the tool
+            // looks like: a bull nose has the identical section above its
+            // corner radius, a ball nose's ball region carries under 1 % of
+            // the compliance at L/D >= 3, and the fraction is dimensionless
+            // so it applies at a tapered ball's local diameter. All three are
+            // derived in FLUTE_SECTION_MATH.md section 5.
+            //
+            // A V-bit is the exception, and it is NOT a safe one. Its flute
+            // is not an end-mill flute and no source gives a figure, so it
+            // stays at 1.0 — a solid cone. That UNDER-states its deflection
+            // by (1/f_V)^4 for an unknown f_V. The constant is left absent
+            // rather than invented; T-4 carries the work to make the absence
+            // visible instead of silent.
+            //
+            // The match is exhaustive, so a 6th shape fails to compile here
+            // instead of inheriting a wrong section in silence.
+            let bending_fraction = match self.cutter.geometry_hint().cutter_kind() {
+                crate::feeds::CutterKind::Flat
+                | crate::feeds::CutterKind::Ball
+                | crate::feeds::CutterKind::Bull
+                | crate::feeds::CutterKind::TaperedBall => {
+                    crate::feeds::predict::ENDMILL_EQUIVALENT_DIAMETER_FRACTION
+                }
+                crate::feeds::CutterKind::VBit => 1.0,
+            };
             let span = load_pos - shank_top;
             let dx = span / N_CUTTER as f64;
             for i in 0..N_CUTTER {
                 let x = shank_top + (i as f64 + 0.5) * dx;
                 let axial_from_tip = l - x;
-                let d = self
-                    .cutter
-                    .lookup_diameter_at(axial_from_tip)
+                let d = (bending_fraction * self.cutter.lookup_diameter_at(axial_from_tip))
                     .max(D_FLOOR_MM);
                 let i_mm4 = std::f64::consts::PI * d.powi(4) / 64.0;
                 let arm = load_pos - x;
@@ -1193,13 +1230,23 @@ mod tests {
         // cutting_length covers stickout). Closed-form for a cantilever
         // with point load at distance `a` from clamp, deflection at tip
         // x = L:  δ = F·a²·(3L − a) / (6·E·I)
+        //
+        // This test owns the NUMERICS — it proves the 64-segment mid-point
+        // integration reproduces the analytic cantilever. It does not own the
+        // section. The integrator bends an end mill on its EQUIVALENT
+        // diameter (T-17), so the hand calculation must use the same section,
+        // or the two sides describe different beams and the test stops
+        // measuring the integrator. The VALUE of the fraction belongs to
+        // `tests/the_bending_diameter_knows_the_flute_count_g_bendeq.rs`; this
+        // test reads it from the same function so the two cannot drift.
         let cutter = Box::new(FlatEndmill::new(6.0, 60.0));
         let td = ToolDefinition::new(cutter, 6.0, 100.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
         let force = 270.0;
         let axial_doc = 6.0;
         let l = 45.0;
         let a = l - axial_doc * 0.5;
-        let i = std::f64::consts::PI * 6.0_f64.powi(4) / 64.0;
+        let d_bend = crate::feeds::predict::ENDMILL_EQUIVALENT_DIAMETER_FRACTION * 6.0;
+        let i = std::f64::consts::PI * d_bend.powi(4) / 64.0;
         let e = 600_000.0;
         let expected = force * a * a * (3.0 * l - a) / (6.0 * e * i);
         let got = td.tip_deflection_mm(force, axial_doc, e);
@@ -1249,9 +1296,14 @@ mod tests {
         // (1) hand force from the published wood equation.
         let h = fz; // sin(π/2) = 1
         let force_hand = ap * (49.95 * h + 5.30);
-        // (2) hand beam from the textbook cantilever formula.
+        // (2) hand beam from the textbook cantilever formula. The section is
+        // the EQUIVALENT bending diameter, not the cutting diameter: an end
+        // mill bends on its flute-relieved section (T-17). The published
+        // FORMULA is what this test pins; the section fraction is a separate
+        // published input, read from one place so the two cannot drift.
         let a = l - ap / 2.0;
-        let i = std::f64::consts::PI * d.powi(4) / 64.0;
+        let d_bend = crate::feeds::predict::ENDMILL_EQUIVALENT_DIAMETER_FRACTION * d;
+        let i = std::f64::consts::PI * d_bend.powi(4) / 64.0;
         let delta_hand_mm = force_hand * a * a * (3.0 * l - a) / (6.0 * e * i);
 
         // Production path (force model + integrated beam, the real code).
@@ -1273,12 +1325,21 @@ mod tests {
         // Cutter diameter 6 mm, cutting_length 20 mm; shank 12 mm;
         // stickout 40 mm; load at axial_doc/2 = 5 from tip → a = 35.
         // Hand-derivation in the G13 plan: δ_tip = (F/E) × 41.917 mm³.
+        //
+        // T-17 re-derived that constant. The shank half of the integral does
+        // not change; only the cutter region takes the equivalent bending
+        // section (0.80 × 6 = 4.8 mm), so the constant rises by 1.9121 rather
+        // than by the 2.4414 a uniform tool would take. The re-derivation
+        // reproduces the ORIGINAL 41.917 to 0.003 % when it is run with the
+        // solid 6 mm section, which is what makes it a check on the change
+        // and not a fit to the new output.
+        //   δ_tip = (F/E) × 80.149 mm³
         let cutter = Box::new(FlatEndmill::new(6.0, 20.0));
         let td = ToolDefinition::new(cutter, 12.0, 30.0, 25.0, 40.0, 2, ToolMaterial::Carbide);
         let force = 270.0;
         let axial_doc = 10.0;
         let e = 600_000.0;
-        let expected = force * 41.917 / e;
+        let expected = force * 80.149 / e;
         let got = td.tip_deflection_mm(force, axial_doc, e);
         let rel_err = (got - expected).abs() / expected;
         assert!(
@@ -1296,10 +1357,20 @@ mod tests {
         //  - all-tip   (uniform 2 mm cantilever) — most-flexible bound
         // because the real profile transitions from 2 mm at the tip to
         // 6 mm at the top of the cutting region.
+        //
+        // The two bounds MUST carry the same cutting length (35 mm) as the
+        // subject. They used to be built with 100 mm, which is longer than
+        // the 45 mm stickout, so the whole beam counted as cutter region
+        // while the real tool kept 10 mm of unrelieved shank. That was
+        // invisible while the bending fraction was 1.0 and became wrong the
+        // moment it was not: the bounds scaled by 2.441 and the subject by
+        // 1.731, and the "stiffest" bound stopped being stiffest. Keep the
+        // three geometries identical apart from the cutter profile, which is
+        // the only thing this test is about.
         let tapered = Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 35.0));
         let td_real = ToolDefinition::new(tapered, 6.0, 30.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
         let td_shank = ToolDefinition::new(
-            Box::new(FlatEndmill::new(6.0, 100.0)),
+            Box::new(FlatEndmill::new(6.0, 35.0)),
             6.0,
             30.0,
             25.0,
@@ -1308,7 +1379,7 @@ mod tests {
             ToolMaterial::Carbide,
         );
         let td_tip = ToolDefinition::new(
-            Box::new(FlatEndmill::new(2.0, 100.0)),
+            Box::new(FlatEndmill::new(2.0, 35.0)),
             2.0,
             30.0,
             25.0,

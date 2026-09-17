@@ -55,8 +55,8 @@ use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
-/// The **equivalent diameter** of an end mill, as a fraction of its cutting
-/// diameter, by flute count.
+/// The **equivalent bending diameter** of a fluted cutter, as a fraction of
+/// its cutting diameter.
 ///
 /// ## Equivalent diameter, not core diameter
 ///
@@ -67,65 +67,57 @@ use crate::material::Material;
 /// | Core diameter | 0.47 – 0.85 D | the geometric root between the flutes |
 /// | **Equivalent diameter** | 0.75 – 0.93 D | the solid shaft with the SAME bending compliance |
 ///
-/// A cantilever model needs the second. **The flute-count effect reverses
-/// sign between them** — more flutes gives a LARGER core and a SMALLER
-/// equivalent diameter — so reaching for a core figure here gets the
-/// correction backwards. That is not hypothetical: it is the mistake this
-/// function was written to stop, made once during the work that produced it.
+/// A cantilever model needs the second. Reaching for a core figure here gets
+/// the magnitude wrong; that mistake was made once during the work that
+/// produced this constant.
 ///
 /// ## Source
 ///
-/// Derived from Kivanc and Budak's published deflection tables (Sabanci MSc
-/// thesis 2004, Tables 3.1 and 3.2; the same work as IJMTM 44(11):1151-1161).
-/// The ratios repeat to four significant figures across 6, 10, 16 and 20 mm
-/// and across two materials, so they are scale-free in diameter.
+/// Kops and Vo, *Determination of the Equivalent Diameter of an End Mill
+/// Based on its Compliance*, Annals of the CIRP 39(1):93-96 (1990). They
+/// report about **0.80 D** for both two- and four-flute tools, obtained from
+/// COMPLIANCE — which is exactly the quantity a cantilever model needs.
 ///
-/// Confidence is medium-high at three and four flutes. At two flutes it is
-/// **low-medium**: two of eight source rows give 0.920 rather than 0.889, and
-/// 0.889 is taken because it is the conservative end of that disagreement.
+/// Corroborated two ways, both in
+/// `planning/load_model_2026-09-16/FLUTE_SECTION_MATH.md`:
 ///
-/// ## What the previous constant was
+/// - The inscribed-square bound. Flutes cut to the centre on both axes give
+///   `m4 = 4/(3·pi) = 0.4244`, so `f = 0.807` — a geometric worst case that
+///   the general section formula reproduces exactly.
+/// - The section derivation. For any star-shaped section the
+///   revolution-averaged `(d_eq/D)^4` is the circumferential mean of
+///   `(rho/R)^4`. A real end-mill family has a core that RISES with flute
+///   count and a land fraction that RISES with flute count, and those two
+///   trends very nearly cancel — which is why a flat value is what a
+///   compliance measurement finds.
 ///
-/// `ENDMILL_CORE_FRACTION = 0.7`, applied to every flute count, and cited to
-/// "Machinery's Handbook stiffness-correction notes" and FSWizard for 2- to
-/// 3-flute end mills. A literature search found **no source that gives 0.7 as
-/// a 2- to 3-flute core fraction**; published 2-flute cores run 0.54 to 0.60.
-/// The number was neither a core nor an equivalent diameter, and the citation
-/// did not support it. See `planning/load_model_2026-09-16/` T-16.
+/// ## Why there is no flute-count term
 ///
-/// Against these figures, 0.7 over-stated deflection by 2.60x at two flutes,
-/// 2.08x at three and 1.30x at four. The old model was CONSERVATIVE, so this
-/// change loosens the predictor rather than tightening it.
+/// There was one: 2 -> 0.889, 3 -> 0.841, 4 -> 0.748, from Kivanc and Budak
+/// (Sabanci MSc thesis 2004, Tables 3.1/3.2). The derivation reproduces those
+/// three numbers, but **only** under the same "one flute shape, copied N
+/// times" family the thesis models. Real end mills are not made that way, and
+/// under a realistic family the trend REVERSES. The N-trend is an artefact of
+/// that model, not a property of end mills, so it is not encoded here.
 ///
-/// ## The coupling to the back-off threshold
+/// The two-flute figure had a second defect. A two-flute section is the only
+/// one that is NOT isotropic: for three or more flutes the deviatoric part of
+/// the inertia tensor vanishes by symmetry, but two flutes leave principal
+/// values differing by 2.4x to 2.7x. The published 0.889 is the ARITHMETIC
+/// mean of those two. A rotating tool under a fixed-direction load averages
+/// COMPLIANCE, so the correct statistic is the harmonic mean, which gives
+/// 0.84 — and 0.889 therefore under-predicts revolution-averaged deflection
+/// by 20 % to 26 %.
 ///
-/// [`crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM`] records that this
-/// predictor "over-shoots post-sim by ~36 %" and treats that as safety margin.
-/// The four-flute over-read removed here is **+30 %**, so that bias was
-/// probably this defect rather than a property of the model. The back-off
-/// threshold is 200 µm, which matches the post-sim gate directly: a predictor
-/// that no longer over-shoots now backs off at the real bound instead of at
-/// about 147 µm of it. That is the behaviour the threshold was written for.
+/// ## Which shapes this applies to
 ///
-/// ## Outside the sourced range
-///
-/// Flute counts other than 2, 3 and 4 keep the historical 0.70. It is smaller
-/// than every sourced value, so it over-states deflection, so it stays on the
-/// safe side. It is a fallback and not a measurement, which is why it is not
-/// extrapolated from the trend.
-#[must_use]
-pub fn endmill_equivalent_diameter_fraction(flute_count: u32) -> f64 {
-    match flute_count {
-        2 => 0.889,
-        3 => 0.841,
-        4 => 0.748,
-        _ => ENDMILL_EQUIVALENT_FALLBACK,
-    }
-}
-
-/// The value used where the literature gives no figure. Conservative against
-/// every sourced flute count — see [`endmill_equivalent_diameter_fraction`].
-pub const ENDMILL_EQUIVALENT_FALLBACK: f64 = 0.7;
+/// Every fluted cutter except a V-bit. Derived in FLUTE_SECTION_MATH.md
+/// section 5: a bull nose has an identical section above its corner radius; a
+/// ball nose's ball region carries under 1 % of the compliance at L/D >= 3; a
+/// tapered ball takes it at each local diameter. A V-bit's flute is not an
+/// end-mill flute, no source gives a figure, and it stays unmodelled — see
+/// [`bending_diameter_mm`], which marks that gap as non-conservative.
+pub const ENDMILL_EQUIVALENT_DIAMETER_FRACTION: f64 = 0.80;
 
 /// Stickout fallback when [`ToolConfig::stickout`] is non-positive
 /// (zero or NaN). Returning 0 deflection on a misconfigured stickout
@@ -420,32 +412,45 @@ pub fn predict_peak_deflection_um(
 
 /// Effective bending-section diameter for the closed-form cantilever.
 ///
-/// - End mill: `0.7 · D` — flute relief reduces the bending section
-///   well below nominal outer diameter (Machinery's Handbook stiffness
-///   notes, FSWizard effective root diameter).
-/// - Ball nose: `D` — the ball/shank junction is the limiting section;
-///   the flute relief above the ball is short relative to total stickout.
-/// - Bull nose: `D` — same as ball, the corner radius leaves a near-solid
-///   shaft above.
-/// - Tapered ball nose: mean of tip and shank, weighted toward the
-///   shank (the cone-shoulder section dominates bending stiffness above
-///   the tip). Floor at 0.5 mm to keep `1/d⁴` finite.
-/// - V-bit: returns 0 (caller refuses earlier).
+/// Every fluted shape takes [`ENDMILL_EQUIVALENT_DIAMETER_FRACTION`]. The
+/// flute relief is a property of the CROSS-SECTION, so it does not care what
+/// the end of the tool looks like. Derived per shape in
+/// `planning/load_model_2026-09-16/FLUTE_SECTION_MATH.md` section 5:
+///
+/// - End mill: the section the fraction was measured on.
+/// - Bull nose: identical section above the corner radius. The corner
+///   contributes under 1e-4 of the compliance.
+/// - Ball nose: the ball region carries under 1 % of the compliance at
+///   L/D >= 3, so the fluted shaft above it sets the bending.
+/// - Tapered ball nose: the fraction is dimensionless, so it applies at each
+///   local diameter. Exact for a proportional grind and conservative for a
+///   constant-depth grind. The tip/shank weighting below is unchanged; only
+///   the section fraction is new.
+/// - V-bit: returns 0. The caller refuses earlier.
+///
+/// **The V-bit gap is non-conservative.** A V-bit's flute is not an end-mill
+/// flute, and no source gives an equivalent diameter for one. Treating it as
+/// solid under-states deflection by `(1/f_V)^4` for an unknown `f_V`. It is
+/// left unmodelled rather than guessed, because a fabricated constant in a
+/// safety guard is worse than an absent one — but "unmodelled" must reach the
+/// operator rather than read as a clean zero. See T-4.
 ///
 /// Routes on [`CutterKind`] (Phase 3) — the bending-section model is a
 /// per-shape-class decision, so a 6th cutter shape fails to compile
-/// here instead of inheriting a wrong core silently.
+/// here instead of inheriting a wrong section silently.
 pub fn bending_diameter_mm(tool: &ToolConfig) -> f64 {
     match tool.tool_type.cutter_kind() {
-        CutterKind::Flat => endmill_equivalent_diameter_fraction(tool.flute_count) * tool.diameter,
-        CutterKind::Ball | CutterKind::Bull => tool.diameter,
+        CutterKind::Flat | CutterKind::Ball | CutterKind::Bull => {
+            ENDMILL_EQUIVALENT_DIAMETER_FRACTION * tool.diameter
+        }
         CutterKind::TaperedBall => {
             let shank = tool.shaft_diameter.max(tool.diameter);
             // Weight 60% shank / 40% tip: the bending stiffness
             // integral above the ball junction is dominated by the
             // larger cone-shoulder section.
-            (PREDICTOR_TAPERED_BALL_SHANK_WEIGHT * shank
-                + PREDICTOR_TAPERED_BALL_TIP_WEIGHT * tool.diameter)
+            (ENDMILL_EQUIVALENT_DIAMETER_FRACTION
+                * (PREDICTOR_TAPERED_BALL_SHANK_WEIGHT * shank
+                    + PREDICTOR_TAPERED_BALL_TIP_WEIGHT * tool.diameter))
                 .max(0.5)
         }
         CutterKind::VBit => 0.0,
@@ -850,8 +855,20 @@ mod tests {
         // Use DPP=2 mm to keep `a ≈ L` so the formula is dominated by
         // the L³ term and the (3L−a) factor doesn't drift more than a
         // few percent between the two cases.
-        let short = carbide_endmill(6.0, 25.0, 20.0);
-        let long = carbide_endmill(6.0, 50.0, 45.0);
+        //
+        // `cutting_length == stickout` on BOTH tools, so the beam really is
+        // uniform and the cubic law is the thing under test. They used to be
+        // 20 mm and 45 mm against stickouts of 25 mm and 50 mm, which left a
+        // fixed 5 mm of stiff shank on each. That was 21 % of the short tool
+        // and 10 % of the long one, so the long tool was proportionally
+        // softer and the ratio ran high. It stayed inside the +-20 % window
+        // only while the cutter section equalled the shank section; T-17 made
+        // the cutter softer and the asymmetry surfaced at 9.79x.
+        //
+        // Uniform, the hand value is a²(3L−a) short-to-long:
+        // 24²(75−24) = 29 376 against 49²(150−49) = 242 501, ratio 8.26.
+        let short = carbide_endmill(6.0, 25.0, 25.0);
+        let long = carbide_endmill(6.0, 50.0, 50.0);
         // Pocket op so the predictor path doesn't apply the Adaptive
         // WOC fallback (we pass an explicit stepover anyway).
         let op = OperationConfig::Pocket(PocketConfig {

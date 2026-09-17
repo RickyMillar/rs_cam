@@ -32,21 +32,23 @@ use super::{SuggestContext, SuggestWarning};
 /// J-1); the headroom constant was deleted alongside it.
 ///
 /// 200 µm matches the post-sim `tool_load::deflection` critical
-/// threshold directly. The predictor over-shoots post-sim by ~36% on
-/// the Wanaka Back Rough motivating case (487 µm predicted vs 358 µm
-/// observed), so this is already conservative — backing off against
-/// 80% of 200 µm would trigger too aggressively.
+/// threshold directly. That is the whole justification, and it stands on
+/// its own.
 ///
-/// Drift caveat: the +36% safe-side bias is what keeps the back-off
-/// conservative. If
-/// [`crate::feeds::predict::predict_peak_deflection_um`]'s underlying
-/// constants (especially
-/// [`crate::feeds::predict::endmill_equivalent_diameter_fraction`]) get tuned
-/// closer to the post-sim integrator in
-/// [`crate::tool_load::deflection`] / `ToolDefinition::tip_deflection_mm`,
-/// this threshold needs re-evaluating — a predictor with smaller
-/// systematic over-shoot would push the operating point closer to the
-/// real 200 µm boundary.
+/// It used to carry a second one: "the predictor over-shoots post-sim by
+/// ~36% (487 µm predicted vs 358 µm observed), so this is already
+/// conservative". **That margin no longer exists and the claim is
+/// withdrawn.** It was measured on 2026-06-07 (`ba01f7a8`) against the
+/// bespoke single-section predictor that `3b0dc487` deleted on
+/// 2026-06-17. Since that commit the predictor and the post-sim gate call
+/// ONE beam — `ToolDefinition::tip_deflection_mm` — so no beam-level
+/// over-shoot is left to lean on.
+///
+/// A divergence does remain, but it is a different quantity: the
+/// predictor forecasts the engagement, and the gate measures it. Nobody
+/// has measured that residual. Do not treat this threshold as carrying a
+/// hidden safety margin. If a margin is wanted here, state it and source
+/// it; do not inherit one from a retired model.
 pub(super) const DEFLECTION_BACKOFF_TARGET_UM: f64 = 200.0;
 
 /// v1.1 combined-Suggest step 2: minimum DPP the deflection back-off

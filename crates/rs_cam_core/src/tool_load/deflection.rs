@@ -571,7 +571,15 @@ mod tests {
     /// feed-down (feed-blind) and kept reading Exceeds.
     #[test]
     fn gate_honors_optimizer_feed_down_into_within() {
-        let tool = carbide_flat(3.0, 45.0); // L/D 15, uniform 3 mm beam
+        // L/D 12, uniform 3 mm beam. It was 45 mm (L/D 15) until T-17.
+        // At 45 mm the corrected section makes this cut UNRESCUABLE by feed:
+        // compliance 0.0303 mm/N gives the 200 µm budget only 6.6 N, while
+        // the edge term alone — which carries no feed — is about 8.7 N at
+        // ap 1.5. The affine inverse then returns a negative feed, which is
+        // the honest answer and not a solvable feed-down. This test is about
+        // the gate HONOURING a feed-down, so it needs a fixture where one
+        // exists. The `EdgeForceOverBudget` case belongs in its own test.
+        let tool = carbide_flat(3.0, 36.0);
         let mat = Material::SolidWood {
             species: WoodSpecies::HardMaple,
         };
@@ -744,9 +752,15 @@ mod tests {
                 peak_mm, evidence, ..
             } => {
                 let um = peak_mm * 1000.0;
+                // T-17 raised this from ~17 µm to ~42 µm: the equivalent
+                // bending section is 0.80 D, so a uniform tool is 1/0.8⁴ =
+                // 2.441x more compliant. The CLAIM is unchanged and still
+                // holds — 42 µm is well inside the 50 µm `Validated` bound
+                // and a quarter of the 200 µm `Exceeds` bound, so this cut
+                // is still deflection-safe. Only the magnitude moved.
                 assert!(
-                    (8.0..=40.0).contains(&um),
-                    "stubby roughing endmill full-slot is deflection-safe (~17 µm) under the feed-aware force model; got {um:.1} µm"
+                    (20.0..=60.0).contains(&um),
+                    "stubby roughing endmill full-slot is deflection-safe (~42 µm) under the feed-aware force model; got {um:.1} µm"
                 );
                 assert_eq!(
                     evidence.locality.as_deref(),

@@ -2008,10 +2008,15 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
         tool.diameter = 6.0;
         tool.cutting_length = 25.0;
-        // δ ∝ stickout³ — this is the value that landed the pre-fix
-        // prediction in the (190, 200) µm window. Retune if the force
-        // physics shifts; the setup guard below asserts the window.
-        tool.stickout = 100.0;
+        // δ ∝ stickout³ — this is the value that lands the prediction in the
+        // (190, 200) µm window. Retune if the force physics shifts; the setup
+        // guard below asserts the window.
+        //
+        // Retuned 100.0 → 99.0 for T-17. The equivalent bending section made
+        // this 2-flute tool 1.60× more compliant, so 100.0 mm read 200.7 µm
+        // and broke the upper edge of the window. The window is the fixture's
+        // premise, not the claim under test.
+        tool.stickout = 99.0;
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;

@@ -29,7 +29,7 @@ need a register.
 | T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
 | T-14 | A drop-cutter finishing pass measures 42.5 mm of axial engagement | open — R1 made it load-bearing |
 | T-15 | Pass 9 can raise a feed the power ladder just clamped | open — reachable by hand TODAY |
-| T-16 | The deflection bending diameter cites a source that does not say it | **closed** — diagnostic only; see T-17 |
+| T-16 | The deflection bending diameter cites a source that does not say it | **closed** — its per-flute table is itself superseded, see T-17 |
 | T-17 | The deflection integrator gives a fluted end mill a solid cross-section | open — under-states deflection 1.6x to 3.2x |
 | T-18 | Three feed lifts cap against the gantry TRAVEL rate, not the cutting ceiling | open — latent on shipped presets only |
 
@@ -873,6 +873,44 @@ counts — at 4 flutes the published core figures run 0.53 to 0.70, which is
 9.8x in stiffness. **There is no universal core constant to find.** Diameter
 does not matter, but stick-out ratio does: OSG raised one 3-flute core from
 0.38 D to 0.50 D purely because it is a long-flute tool.
+
+---
+
+## T-16 postscript — the replacement table did not survive either
+
+T-16 replaced an unsourced 0.7 with a per-flute table from Kivanc and Budak
+(2 -> 0.889, 3 -> 0.841, 4 -> 0.748). A first-principles derivation of the
+fluted section, run on 2026-09-17
+(`planning/load_model_2026-09-16/FLUTE_SECTION_MATH.md`), then removed the
+table as well. Two independent reasons:
+
+1. **The flute-count trend is an artefact.** The derivation reproduces the
+   three values only under the "one flute shape, copied N times" family the
+   thesis models. A real end mill has a core that RISES with flute count and a
+   land fraction that RISES with it, and both push the fraction UP. Under a
+   realistic family the trend REVERSES.
+2. **The two-flute value is the wrong statistic.** A two-flute section is the
+   only non-isotropic one: for N >= 3 the deviatoric part of the inertia
+   tensor vanishes by symmetry, but two flutes leave principal values
+   differing by 2.4x to 2.7x. The published 0.889 is their ARITHMETIC mean. A
+   rotating tool under a fixed-direction load averages COMPLIANCE, so the
+   correct statistic is the harmonic mean, about 0.84. Using 0.889
+   under-predicts revolution-averaged deflection by 20 % to 26 %.
+
+The operator ruling of 2026-09-17 took a single flute-count-independent
+fraction of **0.80 D**, from Kops and Vo, Annals of the CIRP 39(1):93-96
+(1990), who measured it from compliance. It is corroborated by the
+inscribed-square bound (0.807, which the general section formula reproduces
+exactly) and explained by the derivation: the two real trends nearly cancel,
+which is why a compliance measurement finds a flat value.
+
+**The lesson is not about deflection.** T-16 shipped a sentry whose direction
+arm asserted that the fraction FALLS with flute count. That arm was written to
+stop someone swapping in core diameters, which rise with flute count — and it
+would have done that. It also encoded a law that does not survive contact with
+the geometry. A guard against one error became an assertion of another. Prefer
+a guard that pins a SOURCE and forbids an unsourced refinement, over one that
+pins a trend.
 
 ---
 
