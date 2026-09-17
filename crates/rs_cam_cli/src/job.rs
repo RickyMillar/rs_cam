@@ -1126,8 +1126,7 @@ fn execute_op_via_session(
         }
     }
     if op.dogbone.unwrap_or(false) {
-        dressups.dogbone = true;
-        dressups.dogbone_angle = 170.0;
+        dressups.dogbone = Some(rs_cam_core::compute::config::DogboneParams { angle: 170.0 });
     }
 
     let debug_options = ToolpathDebugOptions {

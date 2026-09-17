@@ -182,7 +182,10 @@ fn freshness_state_g_freshness_every_inspector_input_stales() {
         (
             "dressup",
             Box::new(|e: &mut crate::state::toolpath::ToolpathEntry| {
-                e.dressups.arc_fitting = !e.dressups.arc_fitting;
+                e.dressups.arc_fitting = e
+                    .dressups
+                    .arc_fitting
+                    .xor(Some(crate::state::toolpath::ArcFitParams::default()));
             }),
         ),
         (

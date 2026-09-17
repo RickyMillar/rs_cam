@@ -79,7 +79,8 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{
-    BoundaryConfig, DressupConfig, HeightMode, HeightsConfig, RestAnalysisConfig, StockSource,
+    ArcFitParams, BoundaryConfig, DressupConfig, HeightMode, HeightsConfig, LeadParams,
+    LinkDressupParams, RestAnalysisConfig, SegmentMergeParams, StockSource,
 };
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
@@ -140,10 +141,10 @@ impl DressupProfile {
     fn build(self, op: OperationType) -> DressupConfig {
         let mut cfg = DressupConfig::for_op(op);
         if self == Self::Maximised {
-            cfg.lead_in_out = true;
-            cfg.link_moves = true;
-            cfg.arc_fitting = true;
-            cfg.segment_merge = true;
+            cfg.lead_in_out = Some(LeadParams::default());
+            cfg.link_moves = Some(LinkDressupParams::default());
+            cfg.arc_fitting = Some(ArcFitParams::default());
+            cfg.segment_merge = Some(SegmentMergeParams::default());
             cfg.feed_optimization = true;
             cfg.optimize_rapid_order = true;
             // The registry, not this test, decides what is legal per op.

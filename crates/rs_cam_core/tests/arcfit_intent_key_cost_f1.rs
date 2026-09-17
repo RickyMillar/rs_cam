@@ -41,7 +41,10 @@
 
 use rs_cam_core::{
     compute::catalog::{OperationType, UiProcessRole},
-    compute::config::{DressupConfig, DressupEntryStyle},
+    compute::config::{
+        ArcFitParams, DogboneParams, DressupConfig, DressupEntryStyle, LeadParams,
+        LinkDressupParams, SegmentMergeParams,
+    },
     compute::execute::apply_dressups,
     geo::P3,
     toolpath::{Move, MoveIntent, MoveType, Toolpath},
@@ -125,16 +128,17 @@ fn full_dressups() -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
         ramp_angle: 15.0,
-        dogbone: true,
-        dogbone_angle: 90.0,
-        lead_in_out: true,
-        lead_radius: 1.5,
-        link_moves: true,
-        link_max_distance: 50.0,
-        arc_fitting: true,
-        arc_tolerance: 0.05,
-        segment_merge: true,
-        segment_merge_tolerance: 0.02,
+        dogbone: Some(DogboneParams { angle: 90.0 }),
+        lead_in_out: Some(LeadParams {
+            radius: 1.5,
+            ..LeadParams::default()
+        }),
+        link_moves: Some(LinkDressupParams {
+            max_distance: 50.0,
+            ..LinkDressupParams::default()
+        }),
+        arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),
+        segment_merge: Some(SegmentMergeParams { tolerance: 0.02 }),
         optimize_rapid_order: true,
         ..DressupConfig::default()
     }
@@ -263,8 +267,8 @@ fn run(
 ) {
     // Chain with arcfit + merge OFF = exactly the toolpath handed to fit_arcs.
     let pre_cfg = DressupConfig {
-        arc_fitting: false,
-        segment_merge: false,
+        arc_fitting: None,
+        segment_merge: None,
         ..cfg.clone()
     };
     let pre = apply_dressups(

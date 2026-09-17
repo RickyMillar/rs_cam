@@ -113,9 +113,9 @@ fn generated_profile(face_up: FaceUp, side: ProfileSide) -> ProjectSession {
 
     let mut cfg = toolpath_config("Profile", op, tool_id, model_id);
     cfg.dressups.entry_style = DressupEntryStyle::None;
-    cfg.dressups.lead_in_out = false;
-    cfg.dressups.arc_fitting = false;
-    cfg.dressups.segment_merge = false;
+    cfg.dressups.lead_in_out = None;
+    cfg.dressups.arc_fitting = None;
+    cfg.dressups.segment_merge = None;
 
     // `new_empty` already made the identity setup at index 0; a flip needs its
     // own setup, and the toolpath has to be routed onto it.

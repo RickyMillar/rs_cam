@@ -639,8 +639,8 @@ pub fn apply_dressups(
     }
 
     // 2. Dogbones
-    if cfg.dogbone {
-        let angle = cfg.dogbone_angle;
+    if let Some(dogbone) = cfg.dogbone {
+        let angle = dogbone.angle;
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -655,10 +655,10 @@ pub fn apply_dressups(
     }
 
     // 3. Lead in/out
-    if cfg.lead_in_out {
-        let radius = cfg.lead_radius;
-        let li_feed = cfg.lead_in_feed_rate;
-        let lo_feed = cfg.lead_out_feed_rate;
+    if let Some(lead) = cfg.lead_in_out {
+        let radius = lead.radius;
+        let li_feed = lead.in_feed_rate;
+        let lo_feed = lead.out_feed_rate;
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -692,9 +692,12 @@ pub fn apply_dressups(
     }
 
     // 4. Link moves
-    if cfg.link_moves && transform_capabilities.allows_link_moves() {
-        let max_dist = cfg.link_max_distance;
-        let link_feed = cfg.link_feed_rate;
+    if let Some(link) = cfg
+        .link_moves
+        .filter(|_| transform_capabilities.allows_link_moves())
+    {
+        let max_dist = link.max_distance;
+        let link_feed = link.feed_rate;
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -720,8 +723,8 @@ pub fn apply_dressups(
     }
 
     // 5. Arc fitting
-    if cfg.arc_fitting {
-        let tolerance = cfg.arc_tolerance;
+    if let Some(arc) = cfg.arc_fitting {
+        let tolerance = arc.tolerance;
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -738,8 +741,8 @@ pub fn apply_dressups(
     // 5b. Segment merge (accel-friendly) — collapse dense same-feed linear cut
     // runs so a low-acceleration controller can ramp to feed. Runs after
     // arc-fitting (curves are already G2/G3; this cleans up residual linears).
-    if cfg.segment_merge {
-        let merge_tol = cfg.segment_merge_tolerance;
+    if let Some(merge) = cfg.segment_merge {
+        let merge_tol = merge.tolerance;
         current = apply_dressup_traced(
             current,
             debug_ctx,

@@ -158,8 +158,8 @@ fn corrugated_session(hookup_mm: f64) -> ProjectSession {
 /// geometry switched off, so a position comparison means what it says.
 fn dressups_without_relabelling() -> DressupConfig {
     DressupConfig {
-        arc_fitting: false,
-        lead_in_out: false,
+        arc_fitting: None,
+        lead_in_out: None,
         ..DressupConfig::for_op(OperationType::Scallop)
     }
 }
@@ -316,7 +316,7 @@ fn the_relink_removes_no_cut_position_and_the_labels_are_honest() {
     let unfitted = corrugated_session_with(
         0.0,
         Some(DressupConfig {
-            arc_fitting: false,
+            arc_fitting: None,
             ..DressupConfig::for_op(OperationType::Scallop)
         }),
     );

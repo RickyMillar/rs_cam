@@ -20,7 +20,8 @@ pub use configs::{
 };
 pub use entry::{ToolpathEntry, ToolpathEntryInit, ToolpathResult};
 pub use support::{
-    AwaitingPriorStock, BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus,
-    DressupConfig, DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig,
-    ReferenceOffset, ResolvedHeights, RestAnalysisConfig, StockSource, ToolpathId, ToolpathStats,
+    ArcFitParams, AwaitingPriorStock, BoundaryConfig, BoundaryContainment, BoundarySource,
+    ComputeStatus, DogboneParams, DressupConfig, DressupEntryStyle, HeightContext, HeightMode,
+    HeightReference, HeightsConfig, LeadParams, LinkDressupParams, ReferenceOffset,
+    ResolvedHeights, RestAnalysisConfig, StockSource, ToolpathId, ToolpathStats,
 };

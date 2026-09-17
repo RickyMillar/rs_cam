@@ -7,7 +7,10 @@
 use super::feeds_speeds::draw_entry_preview_diagram;
 use super::operations::{draw_dogbone_diagram, draw_lead_in_out_diagram};
 use super::{operations, pills};
-use crate::state::toolpath::{DressupConfig, DressupEntryStyle, HeightContext, ToolpathEntry};
+use crate::state::toolpath::{
+    ArcFitParams, DogboneParams, DressupConfig, DressupEntryStyle, HeightContext, LeadParams,
+    LinkDressupParams, ToolpathEntry,
+};
 use crate::ui::automation;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
@@ -225,16 +228,16 @@ pub(super) fn dressup_active_count(cfg: &DressupConfig) -> (usize, usize) {
     if !matches!(cfg.entry_style, DressupEntryStyle::None) {
         active += 1;
     }
-    if cfg.lead_in_out {
+    if cfg.lead_in_out.is_some() {
         active += 1;
     }
-    if cfg.dogbone {
+    if cfg.dogbone.is_some() {
         active += 1;
     }
-    if cfg.arc_fitting {
+    if cfg.arc_fitting.is_some() {
         active += 1;
     }
-    if cfg.link_moves {
+    if cfg.link_moves.is_some() {
         active += 1;
     }
     if cfg.feed_optimization {
@@ -350,26 +353,35 @@ pub(super) fn draw_linking_params(
     }
 
     ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
+        // CUT-13: the parameters live inside the `Option`. The checkbox reads
+        // a local bool and puts the module defaults back on a fresh enable.
+        let mut on = cfg.lead_in_out.is_some();
         let resp = ui
-            .checkbox(&mut cfg.lead_in_out, "Lead-in / lead-out")
+            .checkbox(&mut on, "Lead-in / lead-out")
             .on_hover_text("Add smooth arc transitions at cut start and end. Prevents tool marks at entry/exit points. Best for finishing and profile cuts.");
+        if resp.changed() {
+            cfg.lead_in_out = on.then(LeadParams::default);
+        }
         if let Some(msg) = op_incompatible_msg {
             resp.on_hover_text(msg);
         }
     });
-    if cfg.lead_in_out && op_incompatible_msg.is_none() {
+    if op_incompatible_msg.is_none()
+        && let Some(lead) = cfg.lead_in_out.as_mut()
+    {
         ui.param_grid("lead_p", |ui| {
             dv_dressup(
                 ui,
                 "lead_radius",
                 "  Radius:",
-                &mut cfg.lead_radius,
+                &mut lead.radius,
                 " mm",
                 0.1,
                 0.5..=20.0,
             );
         });
-        draw_lead_in_out_diagram(ui, cfg.lead_radius);
+        let radius = lead.radius;
+        draw_lead_in_out_diagram(ui, radius);
     }
 
     ui.add_space(6.0);
@@ -378,20 +390,26 @@ pub(super) fn draw_linking_params(
     crate::ui::components::SectionHeader::new("Optimization").show(ui);
 
     ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
+        let mut on = cfg.link_moves.is_some();
         let resp = ui
-            .checkbox(&mut cfg.link_moves, "Link moves (keep tool down)")
+            .checkbox(&mut on, "Link moves (keep tool down)")
             .on_hover_text("Replace short retract-rapid-plunge sequences with slow linear feeds. Major time saver for operations with many small regions. Keeps the tool in the material instead of retracting.");
+        if resp.changed() {
+            cfg.link_moves = on.then(LinkDressupParams::default);
+        }
         if let Some(msg) = op_incompatible_msg {
             resp.on_hover_text(msg);
         }
     });
-    if cfg.link_moves && op_incompatible_msg.is_none() {
+    if op_incompatible_msg.is_none()
+        && let Some(link) = cfg.link_moves.as_mut()
+    {
         ui.param_grid("link_p", |ui| {
             dv_dressup(
                 ui,
                 "link_max_distance",
                 "  Max Distance:",
-                &mut cfg.link_max_distance,
+                &mut link.max_distance,
                 " mm",
                 0.5,
                 1.0..=50.0,
@@ -400,7 +418,7 @@ pub(super) fn draw_linking_params(
                 ui,
                 "link_feed_rate",
                 "  Feed Rate:",
-                &mut cfg.link_feed_rate,
+                &mut link.feed_rate,
                 " mm/min",
                 10.0,
                 50.0..=5000.0,
@@ -462,15 +480,21 @@ pub(super) fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
     // ── Path Quality ──────────────────────────────────────────
     crate::ui::components::SectionHeader::new("Path Quality").show(ui);
 
-    ui.checkbox(&mut cfg.arc_fitting, "Arc fitting (G2/G3)")
-        .on_hover_text("Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file size, improves surface finish, and produces smoother machine motion. Safe for all operations.");
-    if cfg.arc_fitting {
+    let mut arc_on = cfg.arc_fitting.is_some();
+    if ui
+        .checkbox(&mut arc_on, "Arc fitting (G2/G3)")
+        .on_hover_text("Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file size, improves surface finish, and produces smoother machine motion. Safe for all operations.")
+        .changed()
+    {
+        cfg.arc_fitting = arc_on.then(ArcFitParams::default);
+    }
+    if let Some(arc) = cfg.arc_fitting.as_mut() {
         ui.param_grid("arc_p", |ui| {
             dv_dressup(
                 ui,
                 "arc_tolerance",
                 "  Tolerance:",
-                &mut cfg.arc_tolerance,
+                &mut arc.tolerance,
                 " mm",
                 0.01,
                 0.01..=0.5,
@@ -478,20 +502,27 @@ pub(super) fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
         });
     }
 
-    ui.checkbox(&mut cfg.dogbone, "Dogbone overcuts")
-        .on_hover_text("Add circular overcuts at inside corners so parts fit together. Essential for joints, inlays, and press-fit assemblies. Not needed for open pockets or 3D surfaces.");
-    if cfg.dogbone {
+    let mut dogbone_on = cfg.dogbone.is_some();
+    if ui
+        .checkbox(&mut dogbone_on, "Dogbone overcuts")
+        .on_hover_text("Add circular overcuts at inside corners so parts fit together. Essential for joints, inlays, and press-fit assemblies. Not needed for open pockets or 3D surfaces.")
+        .changed()
+    {
+        cfg.dogbone = dogbone_on.then(DogboneParams::default);
+    }
+    if let Some(dogbone) = cfg.dogbone.as_mut() {
         ui.param_grid("dog_p", |ui| {
             dv_dressup(
                 ui,
                 "dogbone_angle",
                 "  Max Angle:",
-                &mut cfg.dogbone_angle,
+                &mut dogbone.angle,
                 " deg",
                 1.0,
                 45.0..=135.0,
             );
         });
-        draw_dogbone_diagram(ui, cfg.dogbone_angle);
+        let angle = dogbone.angle;
+        draw_dogbone_diagram(ui, angle);
     }
 }

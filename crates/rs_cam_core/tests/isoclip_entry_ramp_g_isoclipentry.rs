@@ -486,10 +486,10 @@ fn dressed_entry(stock: &TriDexelStock, carry_rest_stock: bool) -> Toolpath {
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
         ramp_angle: 3.0,
-        arc_fitting: false,
-        segment_merge: false,
-        link_moves: false,
-        lead_in_out: false,
+        arc_fitting: None,
+        segment_merge: None,
+        link_moves: None,
+        lead_in_out: None,
         optimize_rapid_order: false,
         feed_optimization: false,
         ..DressupConfig::default()
@@ -616,10 +616,10 @@ fn dressed_entry_wide(stock: &TriDexelStock) -> Toolpath {
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
         ramp_angle: 3.0,
-        arc_fitting: false,
-        segment_merge: false,
-        link_moves: false,
-        lead_in_out: false,
+        arc_fitting: None,
+        segment_merge: None,
+        link_moves: None,
+        lead_in_out: None,
         optimize_rapid_order: false,
         feed_optimization: false,
         ..DressupConfig::default()

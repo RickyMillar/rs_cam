@@ -204,21 +204,36 @@ fn set_dressup_invalidates_result_and_sim() {
 /// used that object as its key list and refused both as unknown; the two
 /// feeds were unreachable over MCP and the CLI. The field table is the key
 /// list now.
+///
+/// CUT-13 added the second half: a value field lives inside its dressup's
+/// `Option`, so the setter refuses it while the dressup is off and names the
+/// enable key. Turning the dressup on first is the whole change.
 #[test]
 fn an_optional_dressup_field_is_settable_on_a_fresh_config() {
     let mut s = make_session();
     let _ = s.add_tool(make_tool());
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
-    assert!(s.toolpath_configs()[0].dressups.lead_in_feed_rate.is_none());
+    assert!(s.toolpath_configs()[0].dressups.lead_in_out.is_none());
 
+    let err = s
+        .set_dressup_field(0, "lead_in_feed_rate", serde_json::json!(450.0))
+        .expect_err("a value field of a dressup that is off must be refused");
+    assert!(err.to_string().contains("lead_in_out"), "{err}");
+
+    let _ = s
+        .set_dressup_field(0, "lead_in_out", serde_json::json!(true))
+        .expect("the enable key is settable");
     for key in ["lead_in_feed_rate", "lead_out_feed_rate"] {
         let _effects = s
             .set_dressup_field(0, key, serde_json::json!(450.0))
-            .unwrap_or_else(|e| panic!("{key} must be settable on a fresh config: {e}"));
+            .unwrap_or_else(|e| panic!("{key} must be settable once the dressup is on: {e}"));
     }
-    let d = &s.toolpath_configs()[0].dressups;
-    assert_eq!(d.lead_in_feed_rate, Some(450.0));
-    assert_eq!(d.lead_out_feed_rate, Some(450.0));
+    let lead = s.toolpath_configs()[0]
+        .dressups
+        .lead_in_out
+        .expect("lead-in/out is on");
+    assert_eq!(lead.in_feed_rate, Some(450.0));
+    assert_eq!(lead.out_feed_rate, Some(450.0));
 
     let err = s
         .set_dressup_field(0, "no_such_dressup_field", serde_json::json!(1))

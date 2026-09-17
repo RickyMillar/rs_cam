@@ -167,9 +167,9 @@ fn two_setup_session() -> ProjectSession {
         let mut tc = toolpath_config(name, op, tool_id, model_id);
         tc.dressups.entry_style = DressupEntryStyle::None;
         tc.dressups.optimize_rapid_order = false;
-        tc.dressups.link_moves = false;
-        tc.dressups.arc_fitting = false;
-        tc.dressups.segment_merge = false;
+        tc.dressups.link_moves = None;
+        tc.dressups.arc_fitting = None;
+        tc.dressups.segment_merge = None;
         let _ = session
             .apply(Command::AddToolpath(AddToolpathArgs {
                 setup_index: setup,

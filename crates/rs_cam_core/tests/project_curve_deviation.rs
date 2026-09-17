@@ -27,7 +27,9 @@ use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 
 use rs_cam_core::compute::catalog::OperationType;
-use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
+use rs_cam_core::compute::config::{
+    DressupConfig, DressupEntryStyle, LeadParams, LinkDressupParams,
+};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::boundary::{
@@ -398,8 +400,10 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     // renders. Link moves bridge fragments at cutting depth, which is
     // exactly the "phantom straight line across the stock" the user sees.
     let mut with_links = DressupConfig::default();
-    with_links.link_moves = true;
-    with_links.link_max_distance = 10.0;
+    with_links.link_moves = Some(LinkDressupParams {
+        max_distance: 10.0,
+        ..LinkDressupParams::default()
+    });
     let tp_with_links = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {
@@ -451,8 +455,10 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let mut finish_defaults = DressupConfig::default();
     finish_defaults.entry_style = DressupEntryStyle::Ramp;
     finish_defaults.ramp_angle = 3.0;
-    finish_defaults.lead_in_out = true;
-    finish_defaults.lead_radius = 2.0;
+    finish_defaults.lead_in_out = Some(LeadParams {
+        radius: 2.0,
+        ..LeadParams::default()
+    });
     let tp_finish = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {

@@ -623,7 +623,7 @@ mod tests {
     fn the_fixture_turns_every_dressup_off() {
         let dressups = no_dressups();
         assert!(!dressups.feed_optimization);
-        assert!(!dressups.link_moves);
+        assert!(dressups.link_moves.is_none());
         assert!(!dressups.optimize_rapid_order);
     }
 

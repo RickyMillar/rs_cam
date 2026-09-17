@@ -42,8 +42,9 @@ use std::path::PathBuf;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{
-    BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig, DressupEntryStyle,
-    HeightMode, HeightsConfig, RestAnalysisConfig, StockSource,
+    BoundaryConfig, BoundaryContainment, BoundarySource, DogboneParams, DressupConfig,
+    DressupEntryStyle, HeightMode, HeightsConfig, RestAnalysisConfig, SegmentMergeParams,
+    StockSource,
 };
 use rs_cam_core::compute::operation_configs::Adaptive3dConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -113,9 +114,9 @@ fn finish_dressups() -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
         ramp_angle: 12.0,
-        dogbone: true,
+        dogbone: Some(DogboneParams::default()),
         feed_optimization: true,
-        segment_merge: true,
+        segment_merge: Some(SegmentMergeParams::default()),
         ..DressupConfig::default()
     }
 }
@@ -307,9 +308,12 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     let expected_dressups = finish_dressups();
     assert_eq!(finish.dressups.entry_style, expected_dressups.entry_style);
     assert!((finish.dressups.ramp_angle - expected_dressups.ramp_angle).abs() < 1e-9);
-    assert!(finish.dressups.dogbone);
+    assert_eq!(finish.dressups.dogbone, expected_dressups.dogbone);
     assert!(finish.dressups.feed_optimization);
-    assert!(finish.dressups.segment_merge);
+    assert_eq!(
+        finish.dressups.segment_merge,
+        expected_dressups.segment_merge
+    );
 
     // Heights.
     assert!(matches!(

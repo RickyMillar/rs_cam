@@ -110,7 +110,7 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::HeightMode;
 use rs_cam_core::compute::config::{
-    BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
+    ArcFitParams, BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
 use rs_cam_core::compute::operation_configs::{
     DropCutterConfig, PocketConfig, PocketPattern, ProfileConfig, WaterlineConfig, ZigzagConfig,
@@ -492,11 +492,11 @@ fn fixture_session_3d() -> ProjectSession {
     });
 
     let mut dc = toolpath_config("DropCutter", drop_cutter, tool_id, model_id);
-    dc.dressups.arc_fitting = true;
+    dc.dressups.arc_fitting = Some(ArcFitParams::default());
     let _ = builder.add_toolpath(0, dc).expect("add drop cutter");
 
     let mut wl = toolpath_config("Waterline", waterline, tool_id, model_id);
-    wl.dressups.arc_fitting = true;
+    wl.dressups.arc_fitting = Some(ArcFitParams::default());
     wl.heights = HeightsConfig {
         top_z: HeightMode::Manual(HEMI_RADIUS_MM),
         bottom_z: HeightMode::Manual(0.0),

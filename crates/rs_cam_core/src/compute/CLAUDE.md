@@ -29,6 +29,9 @@ orchestration. The entry is `compute::execute_operation_annotated`.
   rather than in one builder.
 - A new operation needs a catalogue row and a config variant. The row's
   `generate` field IS the dispatch; `execute.rs` has no second arm to add.
+- A dressup's parameters live INSIDE its `Option` on `DressupConfig`
+  (CUT-13). Add no value field beside an enable bool. `DressupConfigWire`
+  holds the flat wire keys; the project file and MCP read that, not the type.
 
 ## Sentries
 

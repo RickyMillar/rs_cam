@@ -29,7 +29,7 @@ mod common;
 
 use common::meshes::height_field;
 use rs_cam_core::compute::catalog::OperationType;
-use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
+use rs_cam_core::compute::config::{ArcFitParams, DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::dressup::entry_audit::{buried_fed_chords, is_entry_intent};
 use rs_cam_core::dressup::without_provenance;
@@ -99,7 +99,7 @@ fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle) -> Dressed {
         helix_pitch: 1.0,
         // Finish-role default: arc fitting on. The sentry audits the
         // FINAL dressed path, so post-entry transforms must run.
-        arc_fitting: true,
+        arc_fitting: Some(ArcFitParams::default()),
         ..DressupConfig::default()
     };
     let probe = EntrySurfaceProbe {
@@ -219,7 +219,7 @@ fn unclipped_ramp_keeps_two_legs() {
         ramp_angle: 3.0,
         // Bare entry transform: this test pins the emitted leg count,
         // and arc fitting may legally merge or split moves.
-        arc_fitting: false,
+        arc_fitting: None,
         ..DressupConfig::default()
     };
     let probe = EntrySurfaceProbe {

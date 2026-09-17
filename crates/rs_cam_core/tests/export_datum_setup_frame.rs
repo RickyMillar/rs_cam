@@ -137,7 +137,7 @@ fn trace_op() -> OperationConfig {
 /// emits 25..55 and flipped 15..45, an exact mirror about `STOCK_Y`.
 fn trace_toolpath(name: &str, tool_id: usize, model_id: usize) -> ToolpathConfig {
     let mut tc = toolpath_config(name, trace_op(), tool_id, model_id);
-    tc.dressups.lead_in_out = false;
+    tc.dressups.lead_in_out = None;
     tc
 }
 

@@ -2095,8 +2095,8 @@ mod tests {
             dressups.entry_style,
             crate::compute::config::DressupEntryStyle::None
         );
-        assert!(!dressups.lead_in_out);
-        assert!(!dressups.link_moves);
+        assert!(dressups.lead_in_out.is_none());
+        assert!(dressups.link_moves.is_none());
 
         let reported = warnings
             .iter()

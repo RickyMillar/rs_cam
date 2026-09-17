@@ -100,7 +100,7 @@ pub(super) fn retract_z(req: &ComputeRequest) -> f64 {
 /// and `DressupConfig::default()` turns three of them on.
 pub(super) fn no_dressups() -> DressupConfig {
     DressupConfig {
-        link_moves: false,
+        link_moves: None,
         feed_optimization: false,
         optimize_rapid_order: false,
         ..DressupConfig::default()

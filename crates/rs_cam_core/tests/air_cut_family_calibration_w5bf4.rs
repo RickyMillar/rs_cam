@@ -67,7 +67,8 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{
-    BoundaryConfig, DressupConfig, HeightMode, HeightsConfig, RestAnalysisConfig, StockSource,
+    ArcFitParams, BoundaryConfig, DressupConfig, HeightMode, HeightsConfig, RestAnalysisConfig,
+    StockSource,
 };
 use rs_cam_core::compute::operation_configs::{
     AdaptiveConfig, ChamferConfig, DropCutterConfig, FaceConfig, HorizontalFinishConfig,
@@ -373,7 +374,7 @@ fn hemi_session(op: OperationConfig, tool_kind: ToolType, tool_diameter: f64) ->
         ..HeightsConfig::default()
     };
     let mut tp = toolpath_config(&name, op, tool_id, model_id, heights);
-    tp.dressups.arc_fitting = true;
+    tp.dressups.arc_fitting = Some(ArcFitParams::default());
     let _ = builder.add_toolpath(0, tp).expect("add toolpath");
     builder.build()
 }

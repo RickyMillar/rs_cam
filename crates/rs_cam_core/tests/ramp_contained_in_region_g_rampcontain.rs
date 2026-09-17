@@ -315,8 +315,8 @@ fn the_ramp_rides_the_operations_own_cut() {
     // runs the shipped chain; this one pins the mechanism.
     let shipped = DressupConfig::for_op(OperationType::Pocket);
     let (_session, tp) = generate(DressupConfig {
-        arc_fitting: false,
-        segment_merge: false,
+        arc_fitting: None,
+        segment_merge: None,
         optimize_rapid_order: false,
         ..shipped
     });

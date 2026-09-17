@@ -1057,8 +1057,8 @@ impl RsCamApp {
                             ramp_angle_deg: tc.dressups.ramp_angle,
                             helix_radius: tc.dressups.helix_radius,
                             helix_pitch: tc.dressups.helix_pitch,
-                            lead_in_out: tc.dressups.lead_in_out,
-                            lead_radius: tc.dressups.lead_radius,
+                            lead_in_out: tc.dressups.lead_in_out.is_some(),
+                            lead_radius: tc.dressups.lead_in_out.map_or(0.0, |l| l.radius),
                             // Heights resolve in the emission frame; shift
                             // alongside the toolpath the preview rides on.
                             feed_z: resolved.feed_z + display_shift.z,

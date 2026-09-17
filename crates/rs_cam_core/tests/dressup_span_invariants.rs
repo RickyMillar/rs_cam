@@ -29,7 +29,10 @@
 
 use rs_cam_core::{
     compute::catalog::OperationType,
-    compute::config::{DressupConfig, DressupEntryStyle},
+    compute::config::{
+        ArcFitParams, DogboneParams, DressupConfig, DressupEntryStyle, LeadParams,
+        LinkDressupParams, SegmentMergeParams,
+    },
     compute::execute::{DRESSUP_PIPELINE, apply_dressups},
     geo::P3,
     toolpath::Toolpath,
@@ -73,26 +76,28 @@ fn dressup_combos() -> Vec<(&'static str, DressupConfig)> {
         (
             "link_moves",
             DressupConfig {
-                link_moves: true,
-                link_max_distance: 50.0,
+                link_moves: Some(LinkDressupParams {
+                    max_distance: 50.0,
+                    ..LinkDressupParams::default()
+                }),
                 ..DressupConfig::default()
             },
         ),
         (
             "arc_fitting",
             DressupConfig {
-                arc_fitting: true,
-                arc_tolerance: 0.05,
+                arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),
                 ..DressupConfig::default()
             },
         ),
         (
             "link_and_arc",
             DressupConfig {
-                link_moves: true,
-                link_max_distance: 50.0,
-                arc_fitting: true,
-                arc_tolerance: 0.05,
+                link_moves: Some(LinkDressupParams {
+                    max_distance: 50.0,
+                    ..LinkDressupParams::default()
+                }),
+                arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),
                 ..DressupConfig::default()
             },
         ),
@@ -106,10 +111,11 @@ fn dressup_combos() -> Vec<(&'static str, DressupConfig)> {
         (
             "everything",
             DressupConfig {
-                link_moves: true,
-                link_max_distance: 50.0,
-                arc_fitting: true,
-                arc_tolerance: 0.05,
+                link_moves: Some(LinkDressupParams {
+                    max_distance: 50.0,
+                    ..LinkDressupParams::default()
+                }),
+                arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),
                 optimize_rapid_order: true,
                 ..DressupConfig::default()
             },
@@ -222,8 +228,10 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
     let cap = OperationType::Adaptive3d.transform_capabilities();
     let input = synthetic_three_pass();
     let cfg = DressupConfig {
-        link_moves: true,
-        link_max_distance: 100.0,
+        link_moves: Some(LinkDressupParams {
+            max_distance: 100.0,
+            ..LinkDressupParams::default()
+        }),
         ..DressupConfig::default()
     };
     let output = apply_dressups(
@@ -280,10 +288,11 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
     let mut input = synthetic_three_pass();
     input.spans_valid = false;
     let cfg = DressupConfig {
-        link_moves: true,
-        link_max_distance: 100.0,
-        arc_fitting: true,
-        arc_tolerance: 0.05,
+        link_moves: Some(LinkDressupParams {
+            max_distance: 100.0,
+            ..LinkDressupParams::default()
+        }),
+        arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),
         ..DressupConfig::default()
     };
     let output = apply_dressups(
@@ -371,15 +380,17 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
         ramp_angle: 5.0,
-        dogbone: true,
-        dogbone_angle: 90.0,
-        lead_in_out: true,
-        lead_radius: 1.0,
-        link_moves: true,
-        link_max_distance: 50.0,
-        arc_fitting: true,
-        arc_tolerance: 0.05,
-        segment_merge: true,
+        dogbone: Some(DogboneParams { angle: 90.0 }),
+        lead_in_out: Some(LeadParams {
+            radius: 1.0,
+            ..LeadParams::default()
+        }),
+        link_moves: Some(LinkDressupParams {
+            max_distance: 50.0,
+            ..LinkDressupParams::default()
+        }),
+        arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),
+        segment_merge: Some(SegmentMergeParams::default()),
         optimize_rapid_order: true,
         ..DressupConfig::default()
     };

@@ -135,9 +135,9 @@ fn drill_session(op: OperationConfig) -> ProjectSession {
     // and the descent.
     tc.dressups.entry_style = DressupEntryStyle::None;
     tc.dressups.optimize_rapid_order = false;
-    tc.dressups.link_moves = false;
-    tc.dressups.arc_fitting = false;
-    tc.dressups.segment_merge = false;
+    tc.dressups.link_moves = None;
+    tc.dressups.arc_fitting = None;
+    tc.dressups.segment_merge = None;
     let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
     builder.build()
 }

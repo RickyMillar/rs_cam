@@ -3,7 +3,9 @@ use crate::compute::worker::test_fixture::{
     RequestSpec, board, request as build_request, stock_between,
 };
 use crate::compute::{ComputeBackend, ComputeLane, ComputeMessage, LaneState};
-use crate::state::toolpath::{DressupConfig, OperationConfig, OperationType};
+use crate::state::toolpath::{
+    ArcFitParams, DressupConfig, LeadParams, LinkDressupParams, OperationConfig, OperationType,
+};
 use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::simulate::{SimGroupEntry, SimToolpathEntry};
 use rs_cam_core::geo::{BoundingBox3, P3};
@@ -564,7 +566,7 @@ fn debug_enabled_compute_attaches_trace_and_keeps_geometry_stable() {
 fn debug_trace_records_arc_fit_and_feed_optimization_phases() {
     let mut spec = pocket_spec(77).with_debug_trace();
     spec.name = "Dressup phases".to_owned();
-    spec.dressups.arc_fitting = true;
+    spec.dressups.arc_fitting = Some(ArcFitParams::default());
     spec.dressups.feed_optimization = true;
     let request = build_request(spec);
 
@@ -695,9 +697,9 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
     spec.stock = board(10.0, 15.0);
     spec.polygons = Some(vec![Polygon2::rectangle(-20.0, -20.0, 20.0, 20.0)]);
     spec.dressups.entry_style = crate::state::toolpath::DressupEntryStyle::Helix;
-    spec.dressups.lead_in_out = true;
-    spec.dressups.link_moves = true;
-    spec.dressups.arc_fitting = true;
+    spec.dressups.lead_in_out = Some(LeadParams::default());
+    spec.dressups.link_moves = Some(LinkDressupParams::default());
+    spec.dressups.arc_fitting = Some(ArcFitParams::default());
     spec.dressups.optimize_rapid_order = true;
     let request = build_request(spec);
 
@@ -2342,10 +2344,11 @@ fn worker_reconciles_semantic_links_with_debug_options_disabled() {
         // link bridges, ramp entries. Without these the reconcile is
         // vacuous.
         spec.dressups.optimize_rapid_order = true;
-        spec.dressups.link_moves = true;
-        spec.dressups.link_max_distance = 50.0;
-        spec.dressups.arc_fitting = true;
-        spec.dressups.arc_tolerance = 0.05;
+        spec.dressups.link_moves = Some(LinkDressupParams {
+            max_distance: 50.0,
+            ..LinkDressupParams::default()
+        });
+        spec.dressups.arc_fitting = Some(ArcFitParams { tolerance: 0.05 });
         spec.dressups.entry_style = crate::state::toolpath::DressupEntryStyle::Ramp;
         spec.debug_options.enabled = debug;
         build_request(spec)

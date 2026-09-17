@@ -756,16 +756,21 @@ fn dressup_changes(before: &DressupConfig, after: &DressupConfig) -> Vec<String>
             before.entry_style, after.entry_style
         ));
     }
-    if before.lead_in_out != after.lead_in_out {
+    // CUT-13: the dressup is an `Option` now. The operator-facing line keeps
+    // its "true to false" wording, which is what the enable key still says in
+    // the project file.
+    if before.lead_in_out.is_some() != after.lead_in_out.is_some() {
         changes.push(format!(
             "lead_in_out {} to {}",
-            before.lead_in_out, after.lead_in_out
+            before.lead_in_out.is_some(),
+            after.lead_in_out.is_some()
         ));
     }
-    if before.link_moves != after.link_moves {
+    if before.link_moves.is_some() != after.link_moves.is_some() {
         changes.push(format!(
             "link_moves {} to {}",
-            before.link_moves, after.link_moves
+            before.link_moves.is_some(),
+            after.link_moves.is_some()
         ));
     }
     if changes.is_empty() {

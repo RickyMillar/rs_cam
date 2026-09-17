@@ -566,48 +566,136 @@ fn default_segment_merge_tolerance() -> f64 {
     0.3
 }
 
-/// Configurable dressups applied after toolpath generation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DressupConfig {
-    pub entry_style: DressupEntryStyle,
-    pub ramp_angle: f64,
-    pub helix_radius: f64,
-    pub helix_pitch: f64,
-    pub dogbone: bool,
-    pub dogbone_angle: f64,
-    pub lead_in_out: bool,
-    pub lead_radius: f64,
+/// The dogbone dressup's parameters. `None` on [`DressupConfig`] means the
+/// dressup is off (CUT-13).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct DogboneParams {
+    /// Corner angle (degrees) at or below which a dogbone is cut.
+    pub angle: f64,
+}
+
+impl Default for DogboneParams {
+    fn default() -> Self {
+        Self { angle: 90.0 }
+    }
+}
+
+/// The lead-in / lead-out dressup's parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LeadParams {
+    /// Lead arc radius (mm).
+    pub radius: f64,
     /// F-040: Lead-in feed rate (mm/min). When `Some`, lead-in arc moves
     /// emitted by `apply_lead_in_out` use this rate (typically slower than
     /// cutting feed for a softer entry / cleaner dwell mark). When `None`,
     /// lead-in inherits the operation's primary `feed_rate` (pre-F-040
     /// behaviour). Default `None`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead_in_feed_rate: Option<f64>,
+    pub in_feed_rate: Option<f64>,
     /// F-040: Lead-out feed rate (mm/min). Same fallback semantics —
     /// typically faster than cutting feed (chip-clear on exit). Default `None`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead_out_feed_rate: Option<f64>,
-    pub link_moves: bool,
-    pub link_max_distance: f64,
-    pub link_feed_rate: f64,
-    pub arc_fitting: bool,
-    pub arc_tolerance: f64,
-    /// Phase 1 (accel-friendly toolpaths): merge dense runs of consecutive
-    /// same-feed linear cut moves whose interior points lie within
-    /// `segment_merge_tolerance` of the retained chord, so a low-acceleration
-    /// controller can ramp to the commanded feed instead of stalling on
-    /// sub-millimetre segments. Runs after arc-fitting. Default on for
-    /// roughing; `#[serde(default)]` keeps older project files loadable.
-    #[serde(default)]
-    pub segment_merge: bool,
-    /// Deviation budget (mm) for `segment_merge`. Sits between the generation
-    /// tolerance and stock-to-leave (roughing leaves ≥0.5 mm). Default 0.3.
-    #[serde(default = "default_segment_merge_tolerance")]
-    pub segment_merge_tolerance: f64,
+    pub out_feed_rate: Option<f64>,
+}
+
+impl Default for LeadParams {
+    fn default() -> Self {
+        Self {
+            radius: 2.0,
+            in_feed_rate: None,
+            out_feed_rate: None,
+        }
+    }
+}
+
+/// The link-moves dressup's parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LinkDressupParams {
+    /// Longest gap (mm) the tool may stay down across.
+    pub max_distance: f64,
+    /// Feed rate (mm/min) of a link move.
+    pub feed_rate: f64,
+}
+
+impl Default for LinkDressupParams {
+    fn default() -> Self {
+        Self {
+            max_distance: 10.0,
+            feed_rate: 500.0,
+        }
+    }
+}
+
+/// The arc-fitting dressup's parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ArcFitParams {
+    /// Deviation budget (mm) between the fitted arc and the linear run.
+    pub tolerance: f64,
+}
+
+impl Default for ArcFitParams {
+    fn default() -> Self {
+        Self { tolerance: 0.05 }
+    }
+}
+
+/// The segment-merge dressup's parameters.
+///
+/// Phase 1 (accel-friendly toolpaths): merge dense runs of consecutive
+/// same-feed linear cut moves whose interior points lie within `tolerance`
+/// of the retained chord, so a low-acceleration controller can ramp to the
+/// commanded feed instead of stalling on sub-millimetre segments. Runs after
+/// arc-fitting.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SegmentMergeParams {
+    /// Deviation budget (mm). Sits between the generation tolerance and
+    /// stock-to-leave (roughing leaves >= 0.5 mm). Default 0.3.
+    pub tolerance: f64,
+}
+
+impl Default for SegmentMergeParams {
+    fn default() -> Self {
+        Self {
+            tolerance: default_segment_merge_tolerance(),
+        }
+    }
+}
+
+/// Configurable dressups applied after toolpath generation.
+///
+/// CUT-13: five dressups carry their parameters inside an `Option` instead
+/// of pairing an enable `bool` with a value field that means nothing while
+/// the bool is false. "arc_fitting = false with arc_tolerance = 0.05" is no
+/// longer representable.
+///
+/// The wire form is unchanged. [`DressupConfigWire`] below carries the flat
+/// bool-plus-value key layout every project file, every MCP
+/// `set_dressup_field` key and the wire snapshot already use, and
+/// `#[serde(from, into)]` converts between the two. Nothing outside this
+/// file sees the wire struct.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "DressupConfigWire", into = "DressupConfigWire")]
+pub struct DressupConfig {
+    pub entry_style: DressupEntryStyle,
+    pub ramp_angle: f64,
+    pub helix_radius: f64,
+    pub helix_pitch: f64,
+    /// `Some` when the dogbone dressup runs.
+    pub dogbone: Option<DogboneParams>,
+    /// `Some` when the lead-in / lead-out dressup runs.
+    pub lead_in_out: Option<LeadParams>,
+    /// `Some` when the link-moves dressup runs.
+    pub link_moves: Option<LinkDressupParams>,
+    /// `Some` when the arc-fitting dressup runs.
+    pub arc_fitting: Option<ArcFitParams>,
+    /// `Some` when the segment-merge dressup runs.
+    pub segment_merge: Option<SegmentMergeParams>,
+    /// Feed-rate optimisation. This one keeps the flat bool-plus-value
+    /// shape: its only reader outside `compute/` is a fixture in
+    /// `tool_load/`, which another session owns. See the commit body.
     pub feed_optimization: bool,
     pub feed_max_rate: f64,
     pub feed_ramp_rate: f64,
+    /// Rapid-order optimisation. A bool with no value field of its own, so
+    /// there is no pair to fold.
     pub optimize_rapid_order: bool,
     /// When the air-cut filter may replace a run of in-air cutting with a
     /// retract bridge (`planning/unified_v3_design.md` §10).
@@ -618,8 +706,112 @@ pub struct DressupConfig {
     /// most of them — the unified rest-clearer's 1 634 emitted fragments
     /// became 15 373 after filtering, and the added bridges account for
     /// almost all of its 539 m of rapid travel.
-    #[serde(default)]
     pub air_bridge_policy: crate::dressup::AirBridgePolicy,
+}
+
+/// The serialized shape of [`DressupConfig`]: one enable `bool` beside each
+/// value field, exactly as every project file and every MCP dressup key
+/// already spell it.
+///
+/// This struct exists so CUT-13 can fix the in-memory type without moving a
+/// single wire key. Read `DressupConfig`; nothing else should name this.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DressupConfigWire {
+    entry_style: DressupEntryStyle,
+    ramp_angle: f64,
+    helix_radius: f64,
+    helix_pitch: f64,
+    dogbone: bool,
+    dogbone_angle: f64,
+    lead_in_out: bool,
+    lead_radius: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lead_in_feed_rate: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lead_out_feed_rate: Option<f64>,
+    link_moves: bool,
+    link_max_distance: f64,
+    link_feed_rate: f64,
+    arc_fitting: bool,
+    arc_tolerance: f64,
+    #[serde(default)]
+    segment_merge: bool,
+    #[serde(default = "default_segment_merge_tolerance")]
+    segment_merge_tolerance: f64,
+    feed_optimization: bool,
+    feed_max_rate: f64,
+    feed_ramp_rate: f64,
+    optimize_rapid_order: bool,
+    #[serde(default)]
+    air_bridge_policy: crate::dressup::AirBridgePolicy,
+}
+
+impl From<DressupConfigWire> for DressupConfig {
+    fn from(w: DressupConfigWire) -> Self {
+        Self {
+            entry_style: w.entry_style,
+            ramp_angle: w.ramp_angle,
+            helix_radius: w.helix_radius,
+            helix_pitch: w.helix_pitch,
+            dogbone: w.dogbone.then_some(DogboneParams {
+                angle: w.dogbone_angle,
+            }),
+            lead_in_out: w.lead_in_out.then_some(LeadParams {
+                radius: w.lead_radius,
+                in_feed_rate: w.lead_in_feed_rate,
+                out_feed_rate: w.lead_out_feed_rate,
+            }),
+            link_moves: w.link_moves.then_some(LinkDressupParams {
+                max_distance: w.link_max_distance,
+                feed_rate: w.link_feed_rate,
+            }),
+            arc_fitting: w.arc_fitting.then_some(ArcFitParams {
+                tolerance: w.arc_tolerance,
+            }),
+            segment_merge: w.segment_merge.then_some(SegmentMergeParams {
+                tolerance: w.segment_merge_tolerance,
+            }),
+            feed_optimization: w.feed_optimization,
+            feed_max_rate: w.feed_max_rate,
+            feed_ramp_rate: w.feed_ramp_rate,
+            optimize_rapid_order: w.optimize_rapid_order,
+            air_bridge_policy: w.air_bridge_policy,
+        }
+    }
+}
+
+impl From<DressupConfig> for DressupConfigWire {
+    fn from(c: DressupConfig) -> Self {
+        let dogbone = c.dogbone.unwrap_or_default();
+        let lead = c.lead_in_out.unwrap_or_default();
+        let link = c.link_moves.unwrap_or_default();
+        let arc = c.arc_fitting.unwrap_or_default();
+        let merge = c.segment_merge.unwrap_or_default();
+        Self {
+            entry_style: c.entry_style,
+            ramp_angle: c.ramp_angle,
+            helix_radius: c.helix_radius,
+            helix_pitch: c.helix_pitch,
+            dogbone: c.dogbone.is_some(),
+            dogbone_angle: dogbone.angle,
+            lead_in_out: c.lead_in_out.is_some(),
+            lead_radius: lead.radius,
+            lead_in_feed_rate: lead.in_feed_rate,
+            lead_out_feed_rate: lead.out_feed_rate,
+            link_moves: c.link_moves.is_some(),
+            link_max_distance: link.max_distance,
+            link_feed_rate: link.feed_rate,
+            arc_fitting: c.arc_fitting.is_some(),
+            arc_tolerance: arc.tolerance,
+            segment_merge: c.segment_merge.is_some(),
+            segment_merge_tolerance: merge.tolerance,
+            feed_optimization: c.feed_optimization,
+            feed_max_rate: c.feed_max_rate,
+            feed_ramp_rate: c.feed_ramp_rate,
+            optimize_rapid_order: c.optimize_rapid_order,
+            air_bridge_policy: c.air_bridge_policy,
+        }
+    }
 }
 
 /// One published dressup field: the wire name and what the field does.
@@ -752,19 +944,11 @@ impl Default for DressupConfig {
             ramp_angle: 3.0,
             helix_radius: 2.0,
             helix_pitch: 1.0,
-            dogbone: false,
-            dogbone_angle: 90.0,
-            lead_in_out: false,
-            lead_radius: 2.0,
-            lead_in_feed_rate: None,
-            lead_out_feed_rate: None,
-            link_moves: true,
-            link_max_distance: 10.0,
-            link_feed_rate: 500.0,
-            arc_fitting: false,
-            arc_tolerance: 0.05,
-            segment_merge: false,
-            segment_merge_tolerance: 0.3,
+            dogbone: None,
+            lead_in_out: None,
+            link_moves: Some(LinkDressupParams::default()),
+            arc_fitting: None,
+            segment_merge: None,
             feed_optimization: true,
             feed_max_rate: 3000.0,
             feed_ramp_rate: 200.0,
@@ -775,6 +959,39 @@ impl Default for DressupConfig {
 }
 
 impl DressupConfig {
+    /// The enable key that owns a value key, for the five dressups whose
+    /// parameters CUT-13 moved inside an `Option`.
+    ///
+    /// `set_dressup_field` uses this to refuse a value patch whose dressup is
+    /// off: with `Option<Params>` that value has nowhere to live, so writing
+    /// it would be a set the caller never gets back.
+    #[must_use]
+    pub fn owner_of_value_field(key: &str) -> Option<&'static str> {
+        match key {
+            "dogbone_angle" => Some("dogbone"),
+            "lead_radius" | "lead_in_feed_rate" | "lead_out_feed_rate" => Some("lead_in_out"),
+            "link_max_distance" | "link_feed_rate" => Some("link_moves"),
+            "arc_tolerance" => Some("arc_fitting"),
+            "segment_merge_tolerance" => Some("segment_merge"),
+            _ => None,
+        }
+    }
+
+    /// Whether the named dressup is on. Only the five keys
+    /// [`Self::owner_of_value_field`] returns are answered; anything else
+    /// reads `false`.
+    #[must_use]
+    pub fn is_dressup_enabled(&self, key: &str) -> bool {
+        match key {
+            "dogbone" => self.dogbone.is_some(),
+            "lead_in_out" => self.lead_in_out.is_some(),
+            "link_moves" => self.link_moves.is_some(),
+            "arc_fitting" => self.arc_fitting.is_some(),
+            "segment_merge" => self.segment_merge.is_some(),
+            _ => false,
+        }
+    }
+
     /// Smart defaults based on operation process role.
     pub fn for_role(role: super::catalog::UiProcessRole) -> Self {
         use super::catalog::UiProcessRole;
@@ -787,26 +1004,26 @@ impl DressupConfig {
             // Helix and strips back to None for Drill/Trace.
             UiProcessRole::Roughing => Self {
                 entry_style: DressupEntryStyle::Ramp,
-                arc_fitting: true,
-                // Phase 1: roughing leaves ≥0.5 mm stock, so a 0.3 mm merge
+                arc_fitting: Some(ArcFitParams::default()),
+                // Phase 1: roughing leaves >= 0.5 mm stock, so a 0.3 mm merge
                 // deviation never touches the finish surface — pure win for
                 // controller tracking. Finish/SemiFinish stay off (surface
                 // fidelity).
-                segment_merge: true,
-                link_moves: true,
+                segment_merge: Some(SegmentMergeParams::default()),
+                link_moves: Some(LinkDressupParams::default()),
                 optimize_rapid_order: true,
                 ..base
             },
             UiProcessRole::SemiFinish => Self {
                 entry_style: DressupEntryStyle::Ramp,
-                arc_fitting: true,
+                arc_fitting: Some(ArcFitParams::default()),
                 optimize_rapid_order: true,
                 ..base
             },
             UiProcessRole::Finish => Self {
                 entry_style: DressupEntryStyle::Ramp,
-                lead_in_out: true,
-                arc_fitting: true,
+                lead_in_out: Some(LeadParams::default()),
+                arc_fitting: Some(ArcFitParams::default()),
                 optimize_rapid_order: true,
                 ..base
             },
@@ -856,12 +1073,12 @@ impl DressupConfig {
                 self.entry_style = DressupEntryStyle::None;
                 changed = true;
             }
-            if self.lead_in_out {
-                self.lead_in_out = false;
+            if self.lead_in_out.is_some() {
+                self.lead_in_out = None;
                 changed = true;
             }
-            if self.link_moves {
-                self.link_moves = false;
+            if self.link_moves.is_some() {
+                self.link_moves = None;
                 changed = true;
             }
         }
@@ -894,6 +1111,89 @@ impl DressupConfig {
 mod tests {
     use super::*;
 
+    /// CUT-13 — the wire form carries every dressup value field.
+    ///
+    /// The in-memory type keeps each dressup's parameters inside an `Option`;
+    /// the serialized form keeps the flat enable-bool-beside-value-field
+    /// layout every project file and every MCP `set_dressup_field` key uses.
+    /// `DressupConfigWire` is the only thing between them, and a value it
+    /// forgets is a dial an operator sets and never gets back.
+    ///
+    /// This test sets a NON-DEFAULT value on all five folded dressups, so a
+    /// conversion that substitutes the module default fails here. The
+    /// round-trip sentries alone cannot see that: their fixtures carry the
+    /// defaults.
+    #[test]
+    fn the_wire_form_carries_every_dressup_value_field() {
+        let cfg = DressupConfig {
+            dogbone: Some(DogboneParams { angle: 111.0 }),
+            lead_in_out: Some(LeadParams {
+                radius: 3.5,
+                in_feed_rate: Some(321.0),
+                out_feed_rate: Some(654.0),
+            }),
+            link_moves: Some(LinkDressupParams {
+                max_distance: 17.0,
+                feed_rate: 432.0,
+            }),
+            arc_fitting: Some(ArcFitParams { tolerance: 0.017 }),
+            segment_merge: Some(SegmentMergeParams { tolerance: 0.19 }),
+            ..DressupConfig::default()
+        };
+        let json = serde_json::to_value(&cfg).unwrap();
+        // The flat keys are what a project file and an MCP client write.
+        for (key, want) in [
+            ("dogbone_angle", 111.0),
+            ("lead_radius", 3.5),
+            ("lead_in_feed_rate", 321.0),
+            ("lead_out_feed_rate", 654.0),
+            ("link_max_distance", 17.0),
+            ("link_feed_rate", 432.0),
+            ("arc_tolerance", 0.017),
+            ("segment_merge_tolerance", 0.19),
+        ] {
+            let got = json[key].as_f64().unwrap_or_else(|| {
+                panic!("the wire form must carry '{key}'");
+            });
+            assert!((got - want).abs() < 1e-12, "{key}: {got} is not {want}");
+        }
+        for key in [
+            "dogbone",
+            "lead_in_out",
+            "link_moves",
+            "arc_fitting",
+            "segment_merge",
+        ] {
+            assert_eq!(json[key], serde_json::json!(true), "{key} must read on");
+        }
+
+        let back: DressupConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(back.dogbone, cfg.dogbone);
+        assert_eq!(back.lead_in_out, cfg.lead_in_out);
+        assert_eq!(back.link_moves, cfg.link_moves);
+        assert_eq!(back.arc_fitting, cfg.arc_fitting);
+        assert_eq!(back.segment_merge, cfg.segment_merge);
+    }
+
+    /// A dressup that is off still writes its flat keys, with the module
+    /// default beside a `false`. That is what every project file written
+    /// before CUT-13 holds, so the reader must keep producing it.
+    #[test]
+    fn a_dressup_that_is_off_still_writes_its_flat_keys() {
+        let json = serde_json::to_value(DressupConfig::default()).unwrap();
+        assert_eq!(json["arc_fitting"], serde_json::json!(false));
+        assert!((json["arc_tolerance"].as_f64().unwrap() - 0.05).abs() < 1e-12);
+        assert_eq!(json["dogbone"], serde_json::json!(false));
+        assert!((json["dogbone_angle"].as_f64().unwrap() - 90.0).abs() < 1e-12);
+
+        // And a file that carries a value beside a `false` loads with the
+        // dressup off; the orphan value is what CUT-13 stopped representing.
+        let mut obj = json;
+        obj["arc_tolerance"] = serde_json::json!(0.3);
+        let cfg: DressupConfig = serde_json::from_value(obj).unwrap();
+        assert!(cfg.arc_fitting.is_none());
+    }
+
     /// CMP-17 — the published dressup table names every `DressupConfig` field.
     ///
     /// The names are read from a serialized instance, not from a hand-written
@@ -909,8 +1209,11 @@ mod tests {
     #[test]
     fn dressup_field_names_are_published() {
         let full = DressupConfig {
-            lead_in_feed_rate: Some(300.0),
-            lead_out_feed_rate: Some(900.0),
+            lead_in_out: Some(LeadParams {
+                radius: 2.0,
+                in_feed_rate: Some(300.0),
+                out_feed_rate: Some(900.0),
+            }),
             ..DressupConfig::default()
         };
         let value = serde_json::to_value(&full).unwrap();
@@ -1198,8 +1501,8 @@ mod tests {
 
         let dirty = || DressupConfig {
             entry_style: DressupEntryStyle::Ramp,
-            lead_in_out: true,
-            link_moves: true,
+            lead_in_out: Some(LeadParams::default()),
+            link_moves: Some(LinkDressupParams::default()),
             ..DressupConfig::default()
         };
 
@@ -1212,8 +1515,8 @@ mod tests {
             let mut cfg = dirty();
             assert!(cfg.normalize_for_op(op));
             assert_eq!(cfg.entry_style, DressupEntryStyle::None, "{op:?}");
-            assert!(!cfg.lead_in_out, "{op:?}");
-            assert!(!cfg.link_moves, "{op:?}");
+            assert!(cfg.lead_in_out.is_none(), "{op:?}");
+            assert!(cfg.link_moves.is_none(), "{op:?}");
             // Idempotent.
             assert!(!cfg.normalize_for_op(op));
         }
@@ -1232,8 +1535,8 @@ mod tests {
         ] {
             let cfg = DressupConfig::for_op(op);
             assert_eq!(cfg.entry_style, DressupEntryStyle::None, "{op:?}");
-            assert!(!cfg.lead_in_out, "{op:?}");
-            assert!(!cfg.link_moves, "{op:?}");
+            assert!(cfg.lead_in_out.is_none(), "{op:?}");
+            assert!(cfg.link_moves.is_none(), "{op:?}");
         }
 
         // Force-no-entry: entry cleared, lead/link untouched.
@@ -1245,8 +1548,11 @@ mod tests {
             let mut cfg = dirty();
             assert!(cfg.normalize_for_op(op));
             assert_eq!(cfg.entry_style, DressupEntryStyle::None, "{op:?}");
-            assert!(cfg.lead_in_out, "{op:?}: lead-in/out must survive");
-            assert!(cfg.link_moves, "{op:?}: link moves must survive");
+            assert!(
+                cfg.lead_in_out.is_some(),
+                "{op:?}: lead-in/out must survive"
+            );
+            assert!(cfg.link_moves.is_some(), "{op:?}: link moves must survive");
         }
 
         // Prefer-helix: Ramp upgrades, Helix and None pass through.
@@ -1261,6 +1567,6 @@ mod tests {
         let mut cfg = dirty();
         assert!(!cfg.normalize_for_op(OperationType::Pocket));
         assert_eq!(cfg.entry_style, DressupEntryStyle::Ramp);
-        assert!(cfg.lead_in_out && cfg.link_moves);
+        assert!(cfg.lead_in_out.is_some() && cfg.link_moves.is_some());
     }
 }

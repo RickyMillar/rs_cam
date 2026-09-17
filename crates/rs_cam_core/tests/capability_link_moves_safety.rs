@@ -74,7 +74,7 @@
 
 use rs_cam_core::{
     compute::catalog::{OperationConfig, OperationTransformCapabilities, OperationType},
-    compute::config::DressupConfig,
+    compute::config::{DressupConfig, LinkDressupParams},
     compute::execute::apply_dressups,
     compute::operation_configs::ScallopConfig,
     dexel_stock::{StockCutDirection, TriDexelStock},
@@ -172,7 +172,7 @@ fn hemisphere_mesh() -> (TriangleMesh, SpatialIndex) {
 /// `Default` would no longer be a "no-TSP" baseline).
 fn dressup_no_links() -> DressupConfig {
     DressupConfig {
-        link_moves: false,
+        link_moves: None,
         optimize_rapid_order: false,
         ..DressupConfig::default()
     }
@@ -192,8 +192,10 @@ fn dressup_no_links() -> DressupConfig {
 /// the reorder.
 fn dressup_with_links(link_max_distance: f64) -> DressupConfig {
     DressupConfig {
-        link_moves: true,
-        link_max_distance,
+        link_moves: Some(LinkDressupParams {
+            max_distance: link_max_distance,
+            ..LinkDressupParams::default()
+        }),
         optimize_rapid_order: false,
         ..DressupConfig::default()
     }
@@ -871,7 +873,7 @@ fn horizontal_finish_capability_blocks_cross_z_tsp_reorder() {
     // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
-        link_moves: false,
+        link_moves: None,
         ..DressupConfig::default()
     };
     let optimized = dressup(raw, &cfg, OperationType::HorizontalFinish, 6.35);
@@ -924,7 +926,7 @@ fn drill_capability_allows_tsp_reorder_reduces_rapid() {
     // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
-        link_moves: false,
+        link_moves: None,
         ..DressupConfig::default()
     };
     let optimized = dressup(raw, &cfg, OperationType::Drill, 6.35);
@@ -972,7 +974,7 @@ fn alignment_pin_drill_capability_allows_tsp_reorder_reduces_rapid() {
     // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
-        link_moves: false,
+        link_moves: None,
         ..DressupConfig::default()
     };
     let optimized = dressup(raw, &cfg, OperationType::AlignmentPinDrill, 6.35);
@@ -1117,7 +1119,7 @@ fn project_curve_capability_allows_tsp_reorder_reduces_rapid_and_is_material_neu
     // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
-        link_moves: false,
+        link_moves: None,
         ..DressupConfig::default()
     };
     let optimized = dressup(raw, &cfg, OperationType::ProjectCurve, 2.0);
@@ -1315,7 +1317,7 @@ fn scallop_discrete_reorder_preserves_cuts_and_link_moves_are_now_safe() {
     // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
-        link_moves: false,
+        link_moves: None,
         ..DressupConfig::default()
     };
     let optimized = dressup_with_caps(raw, &cfg, caps, 3.0);
@@ -1459,7 +1461,7 @@ fn scallop_discrete_reorder_preserves_cuts_and_link_moves_are_now_safe() {
         raw_for_links,
         &DressupConfig {
             optimize_rapid_order: false,
-            link_moves: true,
+            link_moves: Some(LinkDressupParams::default()),
             ..DressupConfig::default()
         },
         permissive_link_caps,
@@ -1526,7 +1528,7 @@ fn scallop_continuous_capability_still_blocks_reorder() {
     // link_moves constant; vary ONLY optimize_rapid_order.
     let cfg = DressupConfig {
         optimize_rapid_order: true,
-        link_moves: false,
+        link_moves: None,
         ..DressupConfig::default()
     };
     let optimized = dressup_with_caps(raw, &cfg, caps, 3.0);
@@ -1736,7 +1738,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
     let baseline = dressed(&dressup_no_links());
     let optimized = dressed(&DressupConfig {
         optimize_rapid_order: true,
-        link_moves: false,
+        link_moves: None,
         ..DressupConfig::default()
     });
 
@@ -1954,7 +1956,7 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
     let baseline = dressed(&dressup_no_links());
     let optimized = dressed(&DressupConfig {
         optimize_rapid_order: true,
-        link_moves: false,
+        link_moves: None,
         ..DressupConfig::default()
     });
 
@@ -2060,7 +2062,7 @@ fn drop_cutter_capability_reorder_is_material_neutral() {
         raw,
         &DressupConfig {
             optimize_rapid_order: true,
-            link_moves: false,
+            link_moves: None,
             ..DressupConfig::default()
         },
         OperationType::DropCutter,

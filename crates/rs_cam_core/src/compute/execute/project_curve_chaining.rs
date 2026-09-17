@@ -773,10 +773,10 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
 
     let dressups = DressupConfig {
         optimize_rapid_order: true,
-        arc_fitting: false,
-        lead_in_out: false,
-        link_moves: false,
-        segment_merge: false,
+        arc_fitting: None,
+        lead_in_out: None,
+        link_moves: None,
+        segment_merge: None,
         feed_optimization: false,
         ..DressupConfig::for_op(OperationType::ProjectCurve)
     };

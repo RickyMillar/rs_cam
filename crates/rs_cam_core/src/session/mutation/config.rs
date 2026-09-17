@@ -84,6 +84,19 @@ impl ProjectSession {
                         "unknown dressup field '{key}'"
                     )));
                 }
+                // CUT-13: a value field now lives inside its dressup's
+                // `Option`. Patching one while the dressup is off used to
+                // write a number nothing read; it would now be dropped by
+                // the round trip instead. Refuse and name the enable key,
+                // so the caller learns the order rather than losing a set.
+                if let Some(owner) = DressupConfig::owner_of_value_field(key)
+                    && !tc.dressups.is_dressup_enabled(owner)
+                {
+                    return Err(SessionError::InvalidParam(format!(
+                        "dressup field '{key}' belongs to '{owner}', which is off; \
+                         enable '{owner}' first"
+                    )));
+                }
                 // Roadmap E.6.b — symmetric coercion mirroring
                 // `set_toolpath_param`'s wildcard: 0/1 -> bool when the
                 // existing field is a boolean, and numeric-string ->

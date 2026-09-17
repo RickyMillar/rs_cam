@@ -56,7 +56,7 @@
 mod common;
 
 use rs_cam_core::compute::catalog::OperationType;
-use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
+use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle, LeadParams};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::dressup::apply_lead_in_out;
@@ -316,11 +316,13 @@ fn c_no_rapid_crosses_the_rest_stock() {
     let radius = cutter.envelope_radius_mm();
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::None,
-        lead_in_out: true,
-        lead_radius: LEAD_RADIUS_MM,
-        link_moves: false,
-        arc_fitting: false,
-        segment_merge: false,
+        lead_in_out: Some(LeadParams {
+            radius: LEAD_RADIUS_MM,
+            ..LeadParams::default()
+        }),
+        link_moves: None,
+        arc_fitting: None,
+        segment_merge: None,
         optimize_rapid_order: false,
         feed_optimization: false,
         ..DressupConfig::default()
