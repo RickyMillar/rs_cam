@@ -64,6 +64,7 @@ use rs_cam_core::compute::operation_configs::{
     AlignmentPinDrillConfig, DrillConfig, DrillCycleType,
 };
 use rs_cam_core::compute::stock_config::{AlignmentPin, StockConfig};
+use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::dressup::{EntryStyle, apply_entry};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::polygon::Polygon2;
@@ -265,7 +266,7 @@ fn the_ramp_transform_itself_is_alive() {
     // ramping were simply broken. `apply_entry` — the transform the drill
     // arms are protected from — still reshapes an ordinary milling plunge
     // into a ramp, so a zero above is a strip and not a dead dressup.
-    let out = apply_entry(
+    let out = without_provenance(apply_entry(
         one_plunge_toolpath(),
         EntryStyle::Ramp { max_angle_deg: 3.0 },
         300.0,
@@ -277,7 +278,7 @@ fn the_ramp_transform_itself_is_alive() {
         // fold degrades to a plunge. This fixture's following cut is 40 mm,
         // so the ramp folds along it and the arm still measures a live ramp.
         3.0,
-    );
+    ));
     assert!(
         out.toolpath
             .moves

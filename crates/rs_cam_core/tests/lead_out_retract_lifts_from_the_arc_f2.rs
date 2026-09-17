@@ -45,7 +45,8 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::dressup::apply_lead_in_out_with_feeds;
+use rs_cam_core::dressup::apply_lead_in_out;
+use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -91,7 +92,14 @@ fn the_closing_retract_lifts_from_the_lead_out_endpoint_not_the_cut_endpoint() {
     let input = pass_with_a_vertical_closing_retract();
     let cut_end = P3::new(5.0, 0.0, CUT_Z);
 
-    let out = apply_lead_in_out_with_feeds(input, LEAD_RADIUS_MM, None, None);
+    let out = without_provenance(apply_lead_in_out(
+        input,
+        LEAD_RADIUS_MM,
+        None,
+        None,
+        None,
+        None,
+    ));
     let tp = &out.toolpath;
 
     // Non-vacuity 1: a lead-out arc was actually inserted. Without it the
@@ -170,7 +178,14 @@ fn a_rapid_heading_elsewhere_is_left_alone() {
     // A genuine traverse to the next pass's start, not a lift-in-place.
     let elsewhere = P3::new(-40.0, 25.0, SAFE_Z);
     tp.rapid_to_with_intent(elsewhere, MoveIntent::Linking);
-    let out = apply_lead_in_out_with_feeds(AnnotatedToolpath::new(tp), LEAD_RADIUS_MM, None, None);
+    let out = without_provenance(apply_lead_in_out(
+        AnnotatedToolpath::new(tp),
+        LEAD_RADIUS_MM,
+        None,
+        None,
+        None,
+        None,
+    ));
 
     let (_, retract) = last_rapid(&out.toolpath);
     assert!(

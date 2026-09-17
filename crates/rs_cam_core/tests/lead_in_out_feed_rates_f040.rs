@@ -17,7 +17,8 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::dressup::apply_lead_in_out_with_feeds;
+use rs_cam_core::dressup::apply_lead_in_out;
+use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -50,7 +51,8 @@ fn lead_in_geometry_is_pre_position_then_pure_z_plunge_then_arc() {
     let plunge_feed = 300.0;
     let tp = minimal_profile_toolpath(cut_feed, plunge_feed);
     let annotated = AnnotatedToolpath::new(tp);
-    let result = apply_lead_in_out_with_feeds(annotated, 2.0, None, None).toolpath;
+    let result =
+        without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None)).toolpath;
 
     // The first lead-in move should be a Rapid (pre-position over lead_start).
     let lead_in_idx = result
@@ -130,7 +132,15 @@ fn lead_in_feed_rate_applied_when_set() {
     let li_feed = 500.0;
     let tp = minimal_profile_toolpath(cut_feed, 300.0);
     let annotated = AnnotatedToolpath::new(tp);
-    let result = apply_lead_in_out_with_feeds(annotated, 2.0, Some(li_feed), None).toolpath;
+    let result = without_provenance(apply_lead_in_out(
+        annotated,
+        2.0,
+        Some(li_feed),
+        None,
+        None,
+        None,
+    ))
+    .toolpath;
 
     // F-040a: LeadIn-tagged set includes both the pre-position Rapid and
     // the tangent-arc Linear moves. Verify the Linear arc moves carry the
@@ -183,7 +193,8 @@ fn lead_in_falls_back_to_pre_f040_feed_when_none() {
     let plunge_feed = 300.0;
     let tp = minimal_profile_toolpath(cut_feed, plunge_feed);
     let annotated = AnnotatedToolpath::new(tp);
-    let result = apply_lead_in_out_with_feeds(annotated, 2.0, None, None).toolpath;
+    let result =
+        without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None)).toolpath;
 
     // F-040a: LeadIn set includes both the pre-position Rapid and the
     // tangent-arc Linear moves. With `None` default, the Linear arc moves
@@ -215,7 +226,15 @@ fn lead_out_feed_rate_applied_when_set() {
     let lo_feed = 4500.0;
     let tp = minimal_profile_toolpath(cut_feed, 300.0);
     let annotated = AnnotatedToolpath::new(tp);
-    let result = apply_lead_in_out_with_feeds(annotated, 2.0, None, Some(lo_feed)).toolpath;
+    let result = without_provenance(apply_lead_in_out(
+        annotated,
+        2.0,
+        None,
+        Some(lo_feed),
+        None,
+        None,
+    ))
+    .toolpath;
 
     let lead_out_moves: Vec<_> = result
         .moves
@@ -250,8 +269,15 @@ fn modulation_skips_lead_in_lead_out_moves() {
     let lo_feed = 4500.0;
     let tp = minimal_profile_toolpath(cut_feed, 300.0);
     let annotated = AnnotatedToolpath::new(tp);
-    let mut tp =
-        apply_lead_in_out_with_feeds(annotated, 2.0, Some(li_feed), Some(lo_feed)).toolpath;
+    let mut tp = without_provenance(apply_lead_in_out(
+        annotated,
+        2.0,
+        Some(li_feed),
+        Some(lo_feed),
+        None,
+        None,
+    ))
+    .toolpath;
 
     // Capture lead-in / lead-out feeds before modulation.
     let pre_lead_in_feeds: Vec<f64> = tp

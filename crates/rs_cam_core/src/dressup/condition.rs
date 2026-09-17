@@ -30,7 +30,7 @@
 use crate::geo::P3;
 use crate::toolpath::{MoveType, Toolpath, simplify_path_3d_keep_mask};
 use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap};
-use crate::trace::transform_provenance::{ReconcileSet, Transformed};
+use crate::trace::transform_provenance::Transformed;
 use std::collections::BTreeSet;
 use std::ops::Range;
 
@@ -44,19 +44,11 @@ pub(crate) const FEED_EPS: f64 = 1e-6;
 /// removal keeps the path within `tolerance` (mm) of the retained chord.
 ///
 /// `tolerance <= 0` (or a degenerate toolpath) is a no-op passthrough.
-pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> AnnotatedToolpath {
-    merge_linear_runs_with_provenance(annotated, tolerance)
-        .reconcile(&mut ReconcileSet::empty())
-        .into_inner()
-}
-
-/// [`merge_linear_runs`] under the C1 provenance contract — hands back the
-/// N-to-M collapse so channels other than the spans can follow it.
+///
+/// Hands back the N-to-M collapse under the C1 provenance contract, so
+/// channels other than the spans can follow it.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn merge_linear_runs_with_provenance(
-    annotated: AnnotatedToolpath,
-    tolerance: f64,
-) -> Transformed {
+pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transformed {
     // Barriers we must not merge across — same set arc-fit honours. A barrier
     // at index `b` sits before `moves[b]`; a run that included `b` would erase
     // the boundary between `b-1` and `b`.
@@ -209,6 +201,7 @@ pub fn merge_linear_runs_with_provenance(
 )]
 mod tests {
     use super::*;
+    use crate::dressup::without_provenance;
     use crate::toolpath::Toolpath;
     use crate::trace::toolpath_spans::{Span, SpanKind};
 
@@ -232,7 +225,7 @@ mod tests {
             tp.feed_to(P3::new(x, y, 0.0), 1000.0);
         }
         let before = cut_move_count(&tp);
-        let out = merge_linear_runs(AnnotatedToolpath::new(tp), 0.05);
+        let out = without_provenance(merge_linear_runs(AnnotatedToolpath::new(tp), 0.05));
         let after = cut_move_count(&out.toolpath);
         assert!(before == 10);
         assert!(after < before, "expected merge, got {after} (was {before})");
@@ -250,7 +243,7 @@ mod tests {
         tp.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
         tp.feed_to(P3::new(10.0, 10.0, 0.0), 1000.0); // sharp 90° corner
         tp.feed_to(P3::new(20.0, 10.0, 0.0), 1000.0);
-        let out = merge_linear_runs(AnnotatedToolpath::new(tp), 0.1);
+        let out = without_provenance(merge_linear_runs(AnnotatedToolpath::new(tp), 0.1));
         // The corner vertex (10,10) must remain.
         assert!(
             out.toolpath
@@ -270,7 +263,7 @@ mod tests {
             tp.feed_to(P3::new(k as f64, 0.0, 0.0), 1000.0);
         }
         let n_in = tp.moves.len();
-        let out = merge_linear_runs(AnnotatedToolpath::new(tp), 0.0);
+        let out = without_provenance(merge_linear_runs(AnnotatedToolpath::new(tp), 0.0));
         assert_eq!(out.toolpath.moves.len(), n_in);
     }
 
@@ -283,7 +276,7 @@ mod tests {
         tp.feed_to(P3::new(2.0, 0.0, 0.0), 1000.0);
         tp.feed_to(P3::new(3.0, 0.0, 0.0), 500.0); // feed change — must survive
         tp.feed_to(P3::new(4.0, 0.0, 0.0), 500.0);
-        let out = merge_linear_runs(AnnotatedToolpath::new(tp), 0.1);
+        let out = without_provenance(merge_linear_runs(AnnotatedToolpath::new(tp), 0.1));
         // The two feeds form separate runs and are never merged together: a
         // 1000-feed cut move and a 500-feed cut move both survive (within each
         // run, collinear interior points may collapse — e.g. x=3 folds into
@@ -341,7 +334,7 @@ mod tests {
             tp.feed_to_with_intent(P3::new(k as f64, 0.0, 0.0), 1000.0, MoveIntent::Linking);
         }
 
-        let out = merge_linear_runs(AnnotatedToolpath::new(tp), 0.1);
+        let out = without_provenance(merge_linear_runs(AnnotatedToolpath::new(tp), 0.1));
 
         // Each half still collapses fully — the added term costs nothing on a
         // run it should have kept — so exactly two cut moves survive.
@@ -380,7 +373,10 @@ mod tests {
         }
         let n_in = tp.moves.len();
         let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
-        let out = merge_linear_runs(AnnotatedToolpath::with_spans(tp, spans), 0.05);
+        let out = without_provenance(merge_linear_runs(
+            AnnotatedToolpath::with_spans(tp, spans),
+            0.05,
+        ));
         let op = out
             .spans
             .iter()
@@ -406,7 +402,10 @@ mod tests {
             Span::new(0, n_in, SpanKind::Operation),
             Span::boundary(mid, SpanKind::RapidOrderBarrier),
         ];
-        let out = merge_linear_runs(AnnotatedToolpath::with_spans(tp, spans), 0.1);
+        let out = without_provenance(merge_linear_runs(
+            AnnotatedToolpath::with_spans(tp, spans),
+            0.1,
+        ));
         let barriers: Vec<&Span> = out
             .spans
             .iter()

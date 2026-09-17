@@ -15,6 +15,7 @@ use std::path::Path;
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::arcfit::fit_arcs;
+use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::finish::steep_shallow::dilate_grid;
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::arc_util::linearize_arc;
@@ -358,13 +359,13 @@ fn bench_arc_fitting(c: &mut Criterion) {
         let tp = make_linear_toolpath(n);
         group.bench_function(BenchmarkId::new("fit_arcs", n), |b| {
             b.iter(|| {
-                black_box(fit_arcs(
+                black_box(without_provenance(fit_arcs(
                     rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp.clone()),
                     0.01,
                     // No specific tool modelled in this bench; disable the
                     // F.10 radius cap so we only measure fit performance.
                     f64::INFINITY,
-                ))
+                )))
             })
         });
     }

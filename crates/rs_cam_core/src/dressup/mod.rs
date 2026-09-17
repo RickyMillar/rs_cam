@@ -59,6 +59,23 @@ const XY_STATIONARY_EPS_MM: f64 = 0.01;
 /// away is heading somewhere on purpose and must not be rewritten.
 const LEAD_OUT_RETRACT_EPS_MM: f64 = 0.01;
 
+/// Reconcile a dressup result against no provenance channel, and hand back
+/// the toolpath alone.
+///
+/// The one door for a caller that holds no [`ReconcileSet`]: the unit tests,
+/// the integration tests and the benches. Production code runs every dressup
+/// through `compute::execute::apply_dressups`, which owns the real channel
+/// set and reconciles each step itself.
+///
+/// Until CUT-02 each dressup shipped its own `pub` wrapper that did exactly
+/// this, and only a test ever called one. Nine wrappers became one helper.
+/// Do not add a tenth.
+pub fn without_provenance(transformed: Transformed) -> AnnotatedToolpath {
+    transformed
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+}
+
 // ---------------------------------------------------------------------------
 // Ramp / Helix entry
 // ---------------------------------------------------------------------------
@@ -160,22 +177,11 @@ pub struct EntrySafety<'a> {
 /// `safety` carries the stock-top rapid guard (UX-dial-in B1) and the
 /// optional drop-cutter surface probe (G-RAMPTERRAIN) — see
 /// [`EntrySafety`].
-pub fn apply_entry(
-    annotated: AnnotatedToolpath,
-    style: EntryStyle,
-    plunge_rate: f64,
-    safety: EntrySafety<'_>,
-    tool_radius_mm: f64,
-) -> AnnotatedToolpath {
-    apply_entry_with_provenance(annotated, style, plunge_rate, safety, tool_radius_mm)
-        .reconcile(&mut ReconcileSet::empty())
-        .into_inner()
-}
-
-/// [`apply_entry`] under the C1 provenance contract — hands back the 1→K
-/// plunge expansion so channels other than the spans can follow it.
+///
+/// Hands back the 1→K plunge expansion under the C1 provenance contract,
+/// so channels other than the spans can follow it.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn apply_entry_with_provenance(
+pub fn apply_entry(
     annotated: AnnotatedToolpath,
     style: EntryStyle,
     plunge_rate: f64,
@@ -1024,12 +1030,11 @@ fn lift_arc_points(probe: &EntrySurfaceProbe<'_>, arc_pts: &mut [P3]) -> bool {
 /// moves are emitted *after* the original cut endpoint: the old cut-end move
 /// remaps to the union of itself plus the appended arcs, with the suffix
 /// tagged [`SpanKind::LeadOut`].
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn apply_lead_in_out(annotated: AnnotatedToolpath, radius: f64) -> AnnotatedToolpath {
-    apply_lead_in_out_with_feeds(annotated, radius, None, None)
-}
-
-/// F-040: lead-in / lead-out with optional override feed rates.
+///
+/// Hands back the arc insertions under the C1 provenance contract, so
+/// channels other than the spans can follow them.
+///
+/// # Feed overrides (F-040)
 ///
 /// `lead_in_feed_rate` — when `Some`, lead-in arc moves use this feed
 /// (typically slower than cutting feed for a softer entry). When `None`,
@@ -1041,27 +1046,6 @@ pub fn apply_lead_in_out(annotated: AnnotatedToolpath, radius: f64) -> Annotated
 /// Lead-in moves are tagged [`MoveIntent::LeadIn`] and lead-out moves
 /// [`MoveIntent::LeadOut`] so the F-039 modulator (and future analyses)
 /// can treat them as user-tuned rather than modulating them.
-pub fn apply_lead_in_out_with_feeds(
-    annotated: AnnotatedToolpath,
-    radius: f64,
-    lead_in_feed_rate: Option<f64>,
-    lead_out_feed_rate: Option<f64>,
-) -> AnnotatedToolpath {
-    apply_lead_in_out_with_provenance(
-        annotated,
-        radius,
-        lead_in_feed_rate,
-        lead_out_feed_rate,
-        None,
-        None,
-    )
-    .reconcile(&mut ReconcileSet::empty())
-    .into_inner()
-}
-
-/// [`apply_lead_in_out_with_feeds`] under the C1 provenance contract —
-/// hands back the arc insertions so channels other than the spans can
-/// follow them.
 ///
 /// `surface` (G-RAMPTERRAIN S2): with a probe, the lead plunge target
 /// and every lead arc sample lift to `max(cut_z, floor)` — the lead
@@ -1094,13 +1078,12 @@ pub fn apply_lead_in_out_with_feeds(
 /// about the MODEL, which on a rest-driven pass sits BELOW the material
 /// — the same lesson G-ISOCLIPENTRY records.
 ///
-/// `None` means the caller holds no retract plane (the two convenience
-/// wrappers, and tests that build a synthetic toolpath): the inherited
-/// height stands, which is what this dressup always did. The one
-/// production caller, `compute::execute::apply_dressups`, passes its own
-/// `safe_z`.
+/// `None` means the caller holds no retract plane (the tests that build a
+/// synthetic toolpath): the inherited height stands, which is what this
+/// dressup always did. The one production caller,
+/// `compute::execute::apply_dressups`, passes its own `safe_z`.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn apply_lead_in_out_with_provenance(
+pub fn apply_lead_in_out(
     annotated: AnnotatedToolpath,
     radius: f64,
     lead_in_feed_rate: Option<f64>,
@@ -1458,20 +1441,11 @@ pub fn apply_lead_in_out_with_provenance(
 /// The corner move at old index `i` remaps to the union of itself plus the
 /// (overcut, return) pair appended after it. Each inserted overcut+return
 /// pair is tagged with [`SpanKind::DressupArtifact`] (label `"dogbone"`).
-pub fn apply_dogbones(
-    annotated: AnnotatedToolpath,
-    tool_radius: f64,
-    max_angle_deg: f64,
-) -> AnnotatedToolpath {
-    apply_dogbones_with_provenance(annotated, tool_radius, max_angle_deg)
-        .reconcile(&mut ReconcileSet::empty())
-        .into_inner()
-}
-
-/// [`apply_dogbones`] under the C1 provenance contract — hands back the
-/// overcut insertions so channels other than the spans can follow them.
+///
+/// Hands back the overcut insertions under the C1 provenance contract, so
+/// channels other than the spans can follow them.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn apply_dogbones_with_provenance(
+pub fn apply_dogbones(
     annotated: AnnotatedToolpath,
     tool_radius: f64,
     max_angle_deg: f64,
@@ -1648,23 +1622,11 @@ pub struct LinkMoveParams {
 ///
 /// Spans on the input are remapped through the transform, and a `LinkBridge`
 /// span is appended for each inserted bridge. `spans_valid` is preserved.
-pub fn apply_link_moves(
-    annotated: AnnotatedToolpath,
-    params: &LinkMoveParams,
-) -> AnnotatedToolpath {
-    apply_link_moves_with_provenance(annotated, params)
-        .reconcile(&mut ReconcileSet::empty())
-        .into_inner()
-}
-
-/// [`apply_link_moves`] under the C1 provenance contract — hands back the
-/// retract-triple → bridge collapse so channels other than the spans can
-/// follow it.
+///
+/// Hands back the retract-triple → bridge collapse under the C1 provenance
+/// contract, so channels other than the spans can follow it.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn apply_link_moves_with_provenance(
-    annotated: AnnotatedToolpath,
-    params: &LinkMoveParams,
-) -> Transformed {
+pub fn apply_link_moves(annotated: AnnotatedToolpath, params: &LinkMoveParams) -> Transformed {
     // Barriers we must not collapse across. A barrier at index `b` sits before
     // moves[b]; collapsing the window (i, i+1, i+2) into one bridge erases the
     // gap between i and i+3 — so any barrier at i+1 or i+2 must block the link.
@@ -2005,26 +1967,14 @@ pub enum AirBridgePolicy {
 /// retract/rapid/plunge that bridges across a dropped run is tagged with
 /// [`SpanKind::LinkBridge`] (these inserts serve the same role as link
 /// bridges and should not block downstream link/TSP passes).
-pub fn filter_air_cuts(
-    annotated: AnnotatedToolpath,
-    prior_stock: &TriDexelStock,
-    cutter: &dyn crate::tool::MillingCutter,
-    safe_z: f64,
-    tolerance: f64,
-    policy: AirBridgePolicy,
-) -> AnnotatedToolpath {
-    filter_air_cuts_with_provenance(annotated, prior_stock, cutter, safe_z, tolerance, policy)
-        .reconcile(&mut ReconcileSet::empty())
-        .into_inner()
-}
-
-/// [`filter_air_cuts`] under the C1 provenance contract.
+///
+/// # Provenance
 ///
 /// This is the one dressup that DELETES moves, so its provenance is the one
 /// that makes channels unlink — see
 /// [`crate::trace::semantic_trace::ToolpathSemanticItem::move_end`].
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn filter_air_cuts_with_provenance(
+pub fn filter_air_cuts(
     annotated: AnnotatedToolpath,
     prior_stock: &TriDexelStock,
     cutter: &dyn crate::tool::MillingCutter,

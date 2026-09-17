@@ -42,6 +42,7 @@
 #[path = "common/fingerprint.rs"]
 mod fingerprint;
 
+use rs_cam_core::dressup::without_provenance;
 use std::time::Instant;
 
 use rs_cam_core::finish::surface_link::{RelinkParams, relink_fragments};
@@ -158,12 +159,14 @@ fn g5_tsp_rapid_order_scaling() {
         let _ = rs_cam_core::dressup::tsp::optimize_rapid_order(
             AnnotatedToolpath::new(tp.clone()),
             5.0,
+            None,
         );
         let t0 = Instant::now();
-        let out = rs_cam_core::dressup::tsp::optimize_rapid_order(
+        let out = without_provenance(rs_cam_core::dressup::tsp::optimize_rapid_order(
             AnnotatedToolpath::new(tp.clone()),
             5.0,
-        );
+            None,
+        ));
         let dt = t0.elapsed().as_secs_f64();
         assert!(
             out.toolpath.moves.len() > n,

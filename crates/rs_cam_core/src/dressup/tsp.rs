@@ -8,7 +8,7 @@ use std::ops::Range;
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveIntent, MoveType, Toolpath};
 use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap, RemapIndex, Span, SpanKind};
-use crate::trace::transform_provenance::{ReconcileSet, Transformed};
+use crate::trace::transform_provenance::Transformed;
 
 /// Z tolerance for deciding whether a rapid reaches the group-framing
 /// ceiling. Both sides of that comparison are heights derived from the
@@ -186,17 +186,9 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 /// 3. Build a `MoveRemap` describing where each old move ended up.
 /// 4. Remap input spans through the permutation; drop any non-`Operation`
 ///    span that fragmented across barriers / segments (F2.2).
-// SAFETY: all indexing in this function is bounded by `n` (segment count)
-// and group_bounds, both built locally.
-pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> AnnotatedToolpath {
-    optimize_rapid_order_with_provenance(annotated, safe_z, None)
-        .reconcile(&mut ReconcileSet::empty())
-        .into_inner()
-}
-
-/// [`optimize_rapid_order`] under the C1 provenance contract: hands back the
-/// permutation so every index-carrying channel beside the spans can follow
-/// the moves.
+///
+/// Hands back the permutation under the C1 provenance contract, so every
+/// index-carrying channel beside the spans can follow the moves.
 ///
 /// The provenance is [`MoveProvenance::Permutation`], not `Remap` — the
 /// difference is not bookkeeping. A reorder can interleave foreign moves
@@ -206,7 +198,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
 // SAFETY: all indexing in this function is bounded by `n` (segment count)
 // and group_bounds, both built locally.
 #[allow(clippy::indexing_slicing)]
-pub fn optimize_rapid_order_with_provenance(
+pub fn optimize_rapid_order(
     annotated: AnnotatedToolpath,
     safe_z: f64,
     internal_link_ceiling_z: Option<f64>,
@@ -663,6 +655,7 @@ fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize, moves: &[Move]) 
 )]
 mod tests {
     use super::*;
+    use crate::dressup::without_provenance;
     use crate::toolpath::MoveType;
     use crate::trace::toolpath_spans::{Span, SpanKind};
 
@@ -692,7 +685,12 @@ mod tests {
     }
 
     fn opt_unannotated(tp: &Toolpath, safe_z: f64) -> Toolpath {
-        optimize_rapid_order(AnnotatedToolpath::new(tp.clone()), safe_z).toolpath
+        without_provenance(optimize_rapid_order(
+            AnnotatedToolpath::new(tp.clone()),
+            safe_z,
+            None,
+        ))
+        .toolpath
     }
 
     #[test]
@@ -809,7 +807,7 @@ mod tests {
                 Span::new(group_2_start, n, SpanKind::DepthPass),
             ],
         );
-        let barriered = optimize_rapid_order(annotated, safe_z).toolpath;
+        let barriered = without_provenance(optimize_rapid_order(annotated, safe_z, None)).toolpath;
 
         let global_cut_z: Vec<f64> = global
             .moves
@@ -1005,7 +1003,7 @@ mod tests {
                 Span::new(group_2_start, n, SpanKind::DepthPass),
             ],
         );
-        let result = optimize_rapid_order(annotated, safe_z);
+        let result = without_provenance(optimize_rapid_order(annotated, safe_z, None));
 
         let cut_z: Vec<f64> = result
             .toolpath
@@ -1040,7 +1038,7 @@ mod tests {
         let annotated =
             AnnotatedToolpath::with_spans(tp, vec![Span::new(0, n, SpanKind::Operation)]);
 
-        let result = optimize_rapid_order(annotated, safe_z);
+        let result = without_provenance(optimize_rapid_order(annotated, safe_z, None));
 
         let op = result
             .spans
@@ -1104,7 +1102,7 @@ mod tests {
             tp.clone(),
             vec![Span::new(0, seg2_start, SpanKind::Region).with_label("seg0+seg1")],
         );
-        let result = optimize_rapid_order(annotated, safe_z);
+        let result = without_provenance(optimize_rapid_order(annotated, safe_z, None));
 
         let cut_x: Vec<f64> = result
             .toolpath

@@ -48,8 +48,9 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::{
-    dressup::apply_lead_in_out_with_feeds,
+    dressup::apply_lead_in_out,
     dressup::arcfit::fit_arcs,
     geo::P3,
     toolpath::{Move, MoveIntent, MoveType, Toolpath},
@@ -118,7 +119,7 @@ fn f1_sentry_each_intent_block_fits_its_own_arc() {
     assert_eq!(count_intent(&tp, MoveIntent::LeadOut), 6);
     assert_eq!(count_intent(&tp, MoveIntent::LeadIn), 6);
 
-    let out = fit_arcs(AnnotatedToolpath::new(tp), TOL, TOOL_R).toolpath;
+    let out = without_provenance(fit_arcs(AnnotatedToolpath::new(tp), TOL, TOOL_R)).toolpath;
 
     let arcs: Vec<&Move> = out.moves.iter().filter(|m| is_arc(m)).collect();
     assert_eq!(
@@ -195,7 +196,7 @@ fn f1_control_a_feed_change_already_splits_the_run() {
         tp.feed_to_with_intent(pt(k), 1800.0, MoveIntent::LeadOut);
     }
 
-    let out = fit_arcs(AnnotatedToolpath::new(tp), TOL, TOOL_R).toolpath;
+    let out = without_provenance(fit_arcs(AnnotatedToolpath::new(tp), TOL, TOOL_R)).toolpath;
 
     let arcs: Vec<&Move> = out.moves.iter().filter(|m| is_arc(m)).collect();
     assert_eq!(
@@ -266,7 +267,14 @@ fn f1_sentry_lead_out_is_not_swallowed_by_the_finishing_arc() {
 
     // Step 3 of the dressup chain. `lead_radius == r` and both feed
     // overrides `None` — the shipped defaults.
-    let led = apply_lead_in_out_with_feeds(AnnotatedToolpath::new(tp), r, None, None);
+    let led = without_provenance(apply_lead_in_out(
+        AnnotatedToolpath::new(tp),
+        r,
+        None,
+        None,
+        None,
+        None,
+    ));
     let lead_outs = count_intent(&led.toolpath, MoveIntent::LeadOut);
     assert_eq!(
         lead_outs, 8,
@@ -285,7 +293,7 @@ fn f1_sentry_lead_out_is_not_swallowed_by_the_finishing_arc() {
     let true_cut_end = pt(18);
 
     // Step 5 of the dressup chain.
-    let out = fit_arcs(led, TOL, TOOL_R).toolpath;
+    let out = without_provenance(fit_arcs(led, TOL, TOOL_R)).toolpath;
 
     // No move labelled `FinishingCut` may land on a LEAD-OUT source point.
     // The `is_arc` filter is deliberately absent: a residual linear carrying
@@ -371,12 +379,12 @@ fn f1_sentry_span_and_intent_agree_on_the_fitted_arcs() {
     let n = tp.moves.len();
     let annotated = AnnotatedToolpath::with_spans(tp, vec![Span::new(0, n, SpanKind::Operation)]);
 
-    let led = apply_lead_in_out_with_feeds(annotated, r, None, None);
+    let led = without_provenance(apply_lead_in_out(annotated, r, None, None, None, None));
     assert!(
         led.spans.iter().any(|s| s.kind == SpanKind::LeadOut),
         "fixture precondition: apply_lead_in_out must push a LeadOut span"
     );
-    let out = fit_arcs(led, TOL, TOOL_R);
+    let out = without_provenance(fit_arcs(led, TOL, TOOL_R));
     out.check_invariants()
         .expect("post-arc spans still pass invariants");
 
@@ -447,7 +455,7 @@ fn f1_sentry_no_arc_straddles_a_region_boundary() {
         ],
     );
 
-    let out = fit_arcs(annotated, TOL, TOOL_R);
+    let out = without_provenance(fit_arcs(annotated, TOL, TOOL_R));
     out.check_invariants()
         .expect("post-arc spans still pass invariants");
 

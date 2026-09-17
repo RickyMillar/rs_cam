@@ -32,6 +32,7 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::dressup::entry_audit::{buried_fed_chords, is_entry_intent};
+use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::dressup::{EntrySurfaceProbe, OffMeshEntry};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -276,7 +277,7 @@ fn unclipped_ramp_keeps_two_legs() {
 ///   still carry `LeadIn` moves (S2-green).
 #[test]
 fn lead_in_arcs_never_cut_below_surface() {
-    use rs_cam_core::dressup::apply_lead_in_out_with_provenance;
+    use rs_cam_core::dressup::apply_lead_in_out;
     use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
     let mesh = ridge_mesh();
@@ -306,7 +307,7 @@ fn lead_in_arcs_never_cut_below_surface() {
     };
 
     // S2-red: the probe-less path buries a lead sample.
-    let legacy = apply_lead_in_out_with_provenance(
+    let legacy = apply_lead_in_out(
         AnnotatedToolpath::new(tp.clone()),
         2.0,
         None,
@@ -330,7 +331,7 @@ fn lead_in_arcs_never_cut_below_surface() {
     );
 
     // S2-green: the probed path lifts the lead to the surface.
-    let probed = apply_lead_in_out_with_provenance(
+    let probed = apply_lead_in_out(
         AnnotatedToolpath::new(tp),
         2.0,
         None,
@@ -406,7 +407,7 @@ fn refit_arcs_reject_z_bumps_but_keep_real_arcs() {
     // level-endpoint window forms, and the sub-arcs it accepts are
     // z-faithful. Measured while building this fixture.)
     let spike_frac = 0.5;
-    let spike = fit_arcs(
+    let spike = without_provenance(fit_arcs(
         AnnotatedToolpath::new(arc_run(&|f| {
             if (f - spike_frac).abs() < 1e-9 {
                 0.5
@@ -416,7 +417,7 @@ fn refit_arcs_reject_z_bumps_but_keep_real_arcs() {
         })),
         tolerance,
         3.0,
-    );
+    ));
     // Fidelity, not arc count: the knoll point must survive in the
     // output path. Linearize arcs and measure the output's maximum z
     // anywhere near the spike's XY.
@@ -450,18 +451,22 @@ fn refit_arcs_reject_z_bumps_but_keep_real_arcs() {
     );
 
     // Parity: a genuinely planar run still fits.
-    let planar = fit_arcs(AnnotatedToolpath::new(arc_run(&|_| 0.0)), tolerance, 3.0);
+    let planar = without_provenance(fit_arcs(
+        AnnotatedToolpath::new(arc_run(&|_| 0.0)),
+        tolerance,
+        3.0,
+    ));
     assert!(
         arcs_in(&planar.toolpath) > 0,
         "a planar circular run must still collapse into an arc"
     );
 
     // Parity: a genuine helix (z linear with swept angle) still fits.
-    let helix = fit_arcs(
+    let helix = without_provenance(fit_arcs(
         AnnotatedToolpath::new(arc_run(&|f| -2.0 * f)),
         tolerance,
         3.0,
-    );
+    ));
     assert!(
         arcs_in(&helix.toolpath) > 0,
         "a true helical run must still collapse into an arc"

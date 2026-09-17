@@ -32,6 +32,7 @@ use rs_cam_core::adaptive::{
 };
 use rs_cam_core::dressup::arcfit::fit_arcs;
 use rs_cam_core::dressup::condition::merge_linear_runs;
+use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::gcode::{emit_gcode, post};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::polygon::Polygon2;
@@ -214,7 +215,7 @@ fn validate_gcode(gcode: &str) -> Report {
 
 fn run_case(name: &str, poly: &Polygon2) -> Report {
     let tp = adaptive_toolpath(poly, &spiral_params());
-    let fitted = fit_arcs(AnnotatedToolpath::new(tp), ARC_TOL, R);
+    let fitted = without_provenance(fit_arcs(AnnotatedToolpath::new(tp), ARC_TOL, R));
     let gcode = emit_gcode(&fitted.toolpath, post::grbl(), 18000);
     let rep = validate_gcode(&gcode);
 
@@ -383,11 +384,11 @@ fn phase1_merge_cuts_subramp_and_stays_grbl_valid() {
     const MERGE_TOL: f64 = 0.3; // DressupConfig roughing default
     for (name, poly) in &cases {
         let tp = adaptive_toolpath(poly, &spiral_params());
-        let fitted = fit_arcs(AnnotatedToolpath::new(tp), ARC_TOL, R);
+        let fitted = without_provenance(fit_arcs(AnnotatedToolpath::new(tp), ARC_TOL, R));
 
         let base_rep = validate_gcode(&emit_gcode(&fitted.toolpath, post::grbl(), 18000));
 
-        let merged = merge_linear_runs(fitted, MERGE_TOL);
+        let merged = without_provenance(merge_linear_runs(fitted, MERGE_TOL));
         merged
             .check_invariants()
             .expect("post-merge spans pass invariants");

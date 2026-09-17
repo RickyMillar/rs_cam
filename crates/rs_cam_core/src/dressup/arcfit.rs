@@ -25,7 +25,7 @@ use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::trace::narrate::LARGE_ARC_RADIUS_MULTIPLIER;
 use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
-use crate::trace::transform_provenance::{ReconcileSet, Transformed};
+use crate::trace::transform_provenance::Transformed;
 
 /// Fit arcs to a toolpath, replacing linear segments with G2/G3 where possible.
 ///
@@ -59,24 +59,11 @@ use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 /// than inherited from whichever move happened to come first. `MoveIntent`
 /// equality is STRICT — `Unknown` is not a wildcard and breaks against every
 /// tagged intent (ruled at Checkpoint F1 Q3).
-pub fn fit_arcs(
-    annotated: AnnotatedToolpath,
-    tolerance: f64,
-    tool_radius: f64,
-) -> AnnotatedToolpath {
-    fit_arcs_with_provenance(annotated, tolerance, tool_radius)
-        .reconcile(&mut ReconcileSet::empty())
-        .into_inner()
-}
-
-/// [`fit_arcs`] under the C1 provenance contract — hands back the N-to-1
-/// collapse so channels other than the spans can follow it.
+///
+/// Hands back the N-to-1 collapse under the C1 provenance contract, so
+/// channels other than the spans can follow it.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-pub fn fit_arcs_with_provenance(
-    annotated: AnnotatedToolpath,
-    tolerance: f64,
-    tool_radius: f64,
-) -> Transformed {
+pub fn fit_arcs(annotated: AnnotatedToolpath, tolerance: f64, tool_radius: f64) -> Transformed {
     // Barriers we must not collapse across. A barrier at index `b` sits before
     // moves[b]; we treat it as cutting the arc-eligible run so any candidate
     // window [start, end) must satisfy: no barrier in (start, end) — i.e. a
@@ -666,6 +653,7 @@ fn circle_from_3_points(
 )]
 mod tests {
     use super::*;
+    use crate::dressup::without_provenance;
 
     fn make_circle_points(cx: f64, cy: f64, r: f64, n: usize, z: f64, ccw: bool) -> Vec<P3> {
         (0..=n)
@@ -861,7 +849,8 @@ mod tests {
 
         // tool_radius = INFINITY: tests check structural behavior independent
         // of the F.10 large-radius cap.
-        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01, f64::INFINITY).toolpath;
+        let result =
+            without_provenance(fit_arcs(AnnotatedToolpath::new(tp), 0.01, f64::INFINITY)).toolpath;
         assert_eq!(result.moves.len(), 2);
         assert_eq!(result.moves[0].move_type, MoveType::Rapid);
         assert_eq!(result.moves[1].move_type, MoveType::Rapid);
@@ -879,7 +868,12 @@ mod tests {
         }
         tp.rapid_to(P3::new(pts[0].x, pts[0].y, 10.0));
 
-        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.1, f64::INFINITY).toolpath;
+        let result = without_provenance(fit_arcs(
+            AnnotatedToolpath::new(tp.clone()),
+            0.1,
+            f64::INFINITY,
+        ))
+        .toolpath;
 
         // Should have fewer moves (arcs replace multiple linears)
         assert!(
@@ -912,7 +906,8 @@ mod tests {
         tp.feed_to(P3::new(20.0, 0.0, 0.0), 1000.0);
         tp.feed_to(P3::new(30.0, 0.0, 0.0), 1000.0);
 
-        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01, f64::INFINITY).toolpath;
+        let result =
+            without_provenance(fit_arcs(AnnotatedToolpath::new(tp), 0.01, f64::INFINITY)).toolpath;
 
         // Straight line segments should pass through unchanged
         let arc_count = result
@@ -937,7 +932,12 @@ mod tests {
         tp.feed_to(P3::new(-10.0, 0.0, 0.0), 1000.0);
         tp.feed_to(P3::new(0.0, -10.0, 5.0), 1000.0); // Z jump
 
-        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.01, f64::INFINITY).toolpath;
+        let result = without_provenance(fit_arcs(
+            AnnotatedToolpath::new(tp.clone()),
+            0.01,
+            f64::INFINITY,
+        ))
+        .toolpath;
         // First 2 linears at Z=0 can be arc-fit, but the Z=5 one breaks the arc.
         // So we get: rapid + arc + linear = 3 moves (fewer than 4)
         assert!(
@@ -1032,7 +1032,8 @@ mod tests {
     #[test]
     fn test_fit_arcs_empty() {
         let tp = Toolpath::new();
-        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.01, f64::INFINITY).toolpath;
+        let result =
+            without_provenance(fit_arcs(AnnotatedToolpath::new(tp), 0.01, f64::INFINITY)).toolpath;
         assert!(result.moves.is_empty());
     }
 
@@ -1072,7 +1073,7 @@ mod tests {
 
         // Without the barrier check, arc-fit could try to span the whole run.
         // With the barrier, no arc may span the boundary.
-        let result = fit_arcs(annotated, 0.1, f64::INFINITY);
+        let result = without_provenance(fit_arcs(annotated, 0.1, f64::INFINITY));
 
         // Build a remap from old indices to the new arc/move via GeometryRefit
         // span coverage in the new toolpath. Any arc that COVERS a barrier in
@@ -1127,7 +1128,7 @@ mod tests {
         let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
         let annotated = AnnotatedToolpath::with_spans(tp.clone(), spans);
 
-        let result = fit_arcs(annotated, 0.1, f64::INFINITY);
+        let result = without_provenance(fit_arcs(annotated, 0.1, f64::INFINITY));
         let n_out = result.toolpath.moves.len();
         assert!(n_out < n_in, "arc-fit should fire");
 
@@ -1179,7 +1180,7 @@ mod tests {
         let garbage = vec![Span::new(0, 1, SpanKind::Operation)];
         annotated.spans = garbage.clone();
 
-        let result = fit_arcs(annotated, 0.1, f64::INFINITY);
+        let result = without_provenance(fit_arcs(annotated, 0.1, f64::INFINITY));
 
         assert!(result.toolpath.moves.len() < n_in, "arc-fit fires");
         assert!(!result.spans_valid, "invalid stays invalid");
@@ -1233,7 +1234,12 @@ mod tests {
         for k in 1..=n {
             tp.feed_to(pt(k), 500.0);
         }
-        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.05, f64::INFINITY).toolpath;
+        let result = without_provenance(fit_arcs(
+            AnnotatedToolpath::new(tp.clone()),
+            0.05,
+            f64::INFINITY,
+        ))
+        .toolpath;
         let arc_count = result
             .moves
             .iter()
@@ -1296,7 +1302,8 @@ mod tests {
         }
         tp.feed_to(P3::new(cx, cy, z_top - dz), 300.0); // return to center
         let n_in = tp.moves.len();
-        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.05, f64::INFINITY).toolpath;
+        let result =
+            without_provenance(fit_arcs(AnnotatedToolpath::new(tp), 0.05, f64::INFINITY)).toolpath;
         let arc_count = result
             .moves
             .iter()
@@ -1338,7 +1345,8 @@ mod tests {
             let z = if k % 2 == 0 { -2.0 } else { 0.0 };
             tp.feed_to(pt(k, z), 500.0);
         }
-        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.05, f64::INFINITY).toolpath;
+        let result =
+            without_provenance(fit_arcs(AnnotatedToolpath::new(tp), 0.05, f64::INFINITY)).toolpath;
         let arc_count = result
             .moves
             .iter()

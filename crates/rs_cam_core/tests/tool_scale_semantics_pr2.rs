@@ -33,6 +33,7 @@
 
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::dressup::arcfit::fit_arcs;
+use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::finish::finish_setup::{
     build_classification_surface_with_cancel, build_finish_surface_with_cancel,
     build_finish_surface_with_cell_size_and_cancel,
@@ -471,7 +472,7 @@ fn large_arc_threshold_is_envelope_relative_on_both_sides() {
         for p in &pts[1..] {
             tp.feed_to(*p, 1000.0);
         }
-        let out = fit_arcs(AnnotatedToolpath::new(tp), 0.01, fitter_bound);
+        let out = without_provenance(fit_arcs(AnnotatedToolpath::new(tp), 0.01, fitter_bound));
         let arcs = out
             .toolpath
             .moves

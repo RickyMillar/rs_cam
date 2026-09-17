@@ -56,6 +56,7 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 mod support;
+use rs_cam_core::dressup::without_provenance;
 use support::rolling_field;
 
 // ── Shared fixtures ─────────────────────────────────────────────────────
@@ -829,7 +830,12 @@ fn bench_gen_rapid_order(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("nn_seed", n), |b| {
             b.iter(|| {
                 let annotated = AnnotatedToolpath::new(tp.clone());
-                black_box(optimize_rapid_order(annotated, 5.0).toolpath.moves.len())
+                black_box(
+                    without_provenance(optimize_rapid_order(annotated, 5.0, None))
+                        .toolpath
+                        .moves
+                        .len(),
+                )
             })
         });
     }

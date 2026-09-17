@@ -31,7 +31,7 @@ fn simple_plunge_toolpath() -> Toolpath {
 #[test]
 fn test_ramp_entry_replaces_plunge() {
     let tp = simple_plunge_toolpath();
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         EntryStyle::Ramp { max_angle_deg: 3.0 },
         500.0,
@@ -39,7 +39,7 @@ fn test_ramp_entry_replaces_plunge() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
 
     // The ramp body itself (MoveIntent::EntryRamp) must not be a
@@ -74,7 +74,7 @@ fn test_ramp_entry_replaces_plunge() {
 #[test]
 fn test_ramp_entry_reaches_target_z() {
     let tp = simple_plunge_toolpath();
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         EntryStyle::Ramp { max_angle_deg: 5.0 },
         500.0,
@@ -82,7 +82,7 @@ fn test_ramp_entry_reaches_target_z() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
 
     // Should still reach the cutting depth
@@ -96,7 +96,7 @@ fn test_ramp_entry_reaches_target_z() {
 #[test]
 fn test_ramp_preserves_cutting_moves() {
     let tp = simple_plunge_toolpath();
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         EntryStyle::Ramp { max_angle_deg: 3.0 },
         500.0,
@@ -104,7 +104,7 @@ fn test_ramp_preserves_cutting_moves() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
 
     // The cutting moves at -3.0 should still be present
@@ -123,7 +123,7 @@ fn test_ramp_preserves_cutting_moves() {
 #[test]
 fn test_helix_entry_replaces_plunge() {
     let tp = simple_plunge_toolpath();
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         EntryStyle::Helix {
             radius: 2.0,
@@ -134,7 +134,7 @@ fn test_helix_entry_replaces_plunge() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
 
     // Should have many intermediate moves (helix steps)
@@ -149,7 +149,7 @@ fn test_helix_entry_replaces_plunge() {
 #[test]
 fn test_helix_entry_reaches_target_z() {
     let tp = simple_plunge_toolpath();
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         EntryStyle::Helix {
             radius: 2.0,
@@ -160,7 +160,7 @@ fn test_helix_entry_reaches_target_z() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
 
     let has_cut_depth = result.moves.iter().any(|m| (m.target.z - -3.0).abs() < 0.1);
@@ -170,7 +170,7 @@ fn test_helix_entry_reaches_target_z() {
 #[test]
 fn test_helix_moves_are_circular() {
     let tp = simple_plunge_toolpath();
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         EntryStyle::Helix {
             radius: 3.0,
@@ -181,7 +181,7 @@ fn test_helix_moves_are_circular() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
 
     // Helix moves should be within radius of center (10, 10)
@@ -445,7 +445,15 @@ fn test_tabs_have_sharp_transitions() {
 #[test]
 fn test_lead_in_adds_arc_moves() {
     let tp = simple_plunge_toolpath();
-    let result = apply_lead_in_out(AnnotatedToolpath::new(tp.clone()), 2.0).toolpath;
+    let result = without_provenance(apply_lead_in_out(
+        AnnotatedToolpath::new(tp.clone()),
+        2.0,
+        None,
+        None,
+        None,
+        None,
+    ))
+    .toolpath;
 
     // Should have more moves than original (arc segments added)
     assert!(
@@ -459,7 +467,15 @@ fn test_lead_in_adds_arc_moves() {
 #[test]
 fn test_lead_in_reaches_cut_point() {
     let tp = simple_plunge_toolpath();
-    let result = apply_lead_in_out(AnnotatedToolpath::new(tp.clone()), 2.0).toolpath;
+    let result = without_provenance(apply_lead_in_out(
+        AnnotatedToolpath::new(tp.clone()),
+        2.0,
+        None,
+        None,
+        None,
+        None,
+    ))
+    .toolpath;
 
     // The cut moves at x=50, y=10, z=-3 should still be reachable
     let has_first_cut = result.moves.iter().any(|m| {
@@ -476,7 +492,15 @@ fn test_lead_in_reaches_cut_point() {
 #[test]
 fn test_lead_in_preserves_rapids() {
     let tp = simple_plunge_toolpath();
-    let result = apply_lead_in_out(AnnotatedToolpath::new(tp.clone()), 2.0).toolpath;
+    let result = without_provenance(apply_lead_in_out(
+        AnnotatedToolpath::new(tp.clone()),
+        2.0,
+        None,
+        None,
+        None,
+        None,
+    ))
+    .toolpath;
 
     // Should still have a rapid move
     let has_rapid = result.moves.iter().any(|m| m.move_type == MoveType::Rapid);
@@ -501,7 +525,12 @@ fn square_profile_toolpath() -> Toolpath {
 #[test]
 fn test_dogbone_adds_overcuts() {
     let tp = square_profile_toolpath();
-    let result = apply_dogbones(AnnotatedToolpath::new(tp.clone()), 3.0, 170.0).toolpath;
+    let result = without_provenance(apply_dogbones(
+        AnnotatedToolpath::new(tp.clone()),
+        3.0,
+        170.0,
+    ))
+    .toolpath;
 
     // Should have more moves than original (overcut + return at each corner)
     assert!(
@@ -516,7 +545,12 @@ fn test_dogbone_adds_overcuts() {
 fn test_dogbone_overcut_distance() {
     let tp = square_profile_toolpath();
     let tool_radius = 3.0;
-    let result = apply_dogbones(AnnotatedToolpath::new(tp.clone()), tool_radius, 170.0).toolpath;
+    let result = without_provenance(apply_dogbones(
+        AnnotatedToolpath::new(tp.clone()),
+        tool_radius,
+        170.0,
+    ))
+    .toolpath;
 
     // Find overcut moves (moves that go away from the path)
     // At corner (50, 0): the overcut should be ~tool_radius from the corner
@@ -555,7 +589,12 @@ fn test_dogbone_preserves_straight_segments() {
     tp.feed_to(P3::new(100.0, 0.0, -3.0), 1000.0);
     tp.rapid_to(P3::new(100.0, 0.0, 10.0));
 
-    let result = apply_dogbones(AnnotatedToolpath::new(tp.clone()), 3.0, 170.0).toolpath;
+    let result = without_provenance(apply_dogbones(
+        AnnotatedToolpath::new(tp.clone()),
+        3.0,
+        170.0,
+    ))
+    .toolpath;
     assert_eq!(
         result.moves.len(),
         tp.moves.len(),
@@ -574,7 +613,12 @@ fn test_dogbone_respects_angle_threshold() {
     tp.feed_to(P3::new(100.0, 5.0, -3.0), 1000.0);
     tp.rapid_to(P3::new(100.0, 5.0, 10.0));
 
-    let result = apply_dogbones(AnnotatedToolpath::new(tp.clone()), 3.0, 100.0).toolpath; // threshold 100°
+    let result = without_provenance(apply_dogbones(
+        AnnotatedToolpath::new(tp.clone()),
+        3.0,
+        100.0,
+    ))
+    .toolpath; // threshold 100°
     assert_eq!(
         result.moves.len(),
         tp.moves.len(),
@@ -747,7 +791,11 @@ fn test_link_basic() {
     // 2mm gap between passes — should be linked
     let tp = two_pass_toolpath(2.0);
     let params = default_link_params();
-    let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
+    let result = without_provenance(apply_link_moves(
+        AnnotatedToolpath::new(tp.clone()),
+        &params,
+    ))
+    .toolpath;
 
     // Should have fewer moves (retract+rapid+plunge replaced with feed)
     assert!(
@@ -771,7 +819,11 @@ fn test_link_too_far() {
     // 25mm gap — exceeds max_link_distance of 18mm
     let tp = two_pass_toolpath(25.0);
     let params = default_link_params();
-    let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
+    let result = without_provenance(apply_link_moves(
+        AnnotatedToolpath::new(tp.clone()),
+        &params,
+    ))
+    .toolpath;
 
     // Should be unchanged (gap too large)
     assert_eq!(
@@ -792,7 +844,11 @@ fn test_link_first_entry_preserved() {
     tp.rapid_to(P3::new(20.0, 0.0, 10.0));
 
     let params = default_link_params();
-    let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
+    let result = without_provenance(apply_link_moves(
+        AnnotatedToolpath::new(tp.clone()),
+        &params,
+    ))
+    .toolpath;
 
     // First entry should not be linked — all moves preserved
     assert_eq!(
@@ -819,7 +875,11 @@ fn test_link_different_z_preserved() {
     tp.rapid_to(P3::new(40.0, 0.0, 10.0));
 
     let params = default_link_params();
-    let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
+    let result = without_provenance(apply_link_moves(
+        AnnotatedToolpath::new(tp.clone()),
+        &params,
+    ))
+    .toolpath;
 
     // Different Z levels — should not be linked
     assert_eq!(
@@ -840,7 +900,11 @@ fn test_link_reduces_rapid_distance() {
     // radius the mechanism is allowed to bridge).
     let tp = two_pass_toolpath(4.0);
     let params = default_link_params();
-    let result = apply_link_moves(AnnotatedToolpath::new(tp.clone()), &params).toolpath;
+    let result = without_provenance(apply_link_moves(
+        AnnotatedToolpath::new(tp.clone()),
+        &params,
+    ))
+    .toolpath;
 
     let orig_rapid = tp.total_rapid_distance();
     let linked_rapid = result.total_rapid_distance();
@@ -879,7 +943,7 @@ fn test_link_honors_depth_pass_barrier() {
     ];
     let annotated = AnnotatedToolpath::with_spans(tp.clone(), spans);
     let params = default_link_params();
-    let result = apply_link_moves(annotated, &params);
+    let result = without_provenance(apply_link_moves(annotated, &params));
 
     assert_eq!(
         result.toolpath.moves.len(),
@@ -907,7 +971,7 @@ fn test_link_remaps_spans_and_tags_bridge() {
     let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
     let annotated = AnnotatedToolpath::with_spans(tp.clone(), spans);
     let params = default_link_params();
-    let result = apply_link_moves(annotated, &params);
+    let result = without_provenance(apply_link_moves(annotated, &params));
 
     let n_out = result.toolpath.moves.len();
     assert!(n_out < n_in, "link should have fired");
@@ -943,7 +1007,7 @@ fn test_link_preserves_invalid_spans_flag() {
     annotated.spans_valid = false;
     annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)]; // garbage
     let params = default_link_params();
-    let result = apply_link_moves(annotated, &params);
+    let result = without_provenance(apply_link_moves(annotated, &params));
 
     assert!(result.toolpath.moves.len() < tp.moves.len(), "link fires");
     assert!(!result.spans_valid, "invalid stays invalid");
@@ -1038,14 +1102,14 @@ fn air_cut_spanning_an_island_is_not_air() {
     tp.rapid_to(P3::new(90.0, 50.0, 10.0));
 
     let stock = island_stock();
-    let result = filter_air_cuts(
+    let result = without_provenance(filter_air_cuts(
         AnnotatedToolpath::new(tp.clone()),
         &stock,
         &probe_cutter(),
         10.0,
         0.1,
         AirBridgePolicy::Always,
-    )
+    ))
     .toolpath;
 
     let crossing_survives = result.moves.iter().any(|m| {
@@ -1078,14 +1142,14 @@ fn filter_air_cuts_removes_air_moves() {
     tp.rapid_to(P3::new(90.0, 50.0, 10.0)); // retract
 
     let stock = half_cleared_stock();
-    let result = filter_air_cuts(
+    let result = without_provenance(filter_air_cuts(
         AnnotatedToolpath::new(tp.clone()),
         &stock,
         &probe_cutter(),
         10.0,
         0.1,
         AirBridgePolicy::Always,
-    )
+    ))
     .toolpath;
 
     // The moves at x=60 and x=90 should have been removed (both endpoints in air).
@@ -1131,14 +1195,14 @@ fn filter_air_cuts_preserves_cutting_moves() {
     tp.rapid_to(P3::new(30.0, 50.0, 10.0));
 
     let stock = half_cleared_stock();
-    let result = filter_air_cuts(
+    let result = without_provenance(filter_air_cuts(
         AnnotatedToolpath::new(tp.clone()),
         &stock,
         &probe_cutter(),
         10.0,
         0.1,
         AirBridgePolicy::Always,
-    )
+    ))
     .toolpath;
 
     // All cutting moves are in the left half (x < 50) where material exists
@@ -1158,7 +1222,7 @@ fn ramp_entry_zero_angle_falls_back() {
     tp.rapid_to(P3::new(0.0, 0.0, 10.0));
     tp.feed_to(P3::new(0.0, 0.0, 0.0), 100.0);
     let style = EntryStyle::Ramp { max_angle_deg: 0.0 };
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         style,
         50.0,
@@ -1166,7 +1230,7 @@ fn ramp_entry_zero_angle_falls_back() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
     // Should not contain NaN or infinity
     for m in &result.moves {
@@ -1184,7 +1248,7 @@ fn ramp_entry_90deg_angle_falls_back() {
     let style = EntryStyle::Ramp {
         max_angle_deg: 90.0,
     };
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         style,
         50.0,
@@ -1192,7 +1256,7 @@ fn ramp_entry_90deg_angle_falls_back() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
     for m in &result.moves {
         assert!(m.target.x.is_finite(), "NaN in ramp with 90° angle");
@@ -1209,7 +1273,7 @@ fn helix_entry_zero_radius_falls_back() {
         radius: 0.0,
         pitch: 2.0,
     };
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         style,
         50.0,
@@ -1217,7 +1281,7 @@ fn helix_entry_zero_radius_falls_back() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
     for m in &result.moves {
         assert!(m.target.x.is_finite(), "NaN in helix with 0 radius");
@@ -1234,7 +1298,7 @@ fn helix_entry_negative_radius_falls_back() {
         radius: -1.0,
         pitch: 2.0,
     };
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
         style,
         50.0,
@@ -1242,7 +1306,7 @@ fn helix_entry_negative_radius_falls_back() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    )
+    ))
     .toolpath;
     for m in &result.moves {
         assert!(m.target.x.is_finite(), "NaN in helix with negative radius");
@@ -1259,14 +1323,14 @@ fn filter_air_cuts_conservative_partial() {
     tp.rapid_to(P3::new(30.0, 50.0, 10.0));
 
     let stock = half_cleared_stock();
-    let result = filter_air_cuts(
+    let result = without_provenance(filter_air_cuts(
         AnnotatedToolpath::new(tp.clone()),
         &stock,
         &probe_cutter(),
         10.0,
         0.1,
         AirBridgePolicy::Always,
-    )
+    ))
     .toolpath;
 
     // The move from x=70 to x=30 has source in air but target in material.
@@ -1292,7 +1356,7 @@ fn apply_entry_remaps_spans_through_transform() {
         Span::new(0, 2, SpanKind::DepthPass),
     ];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         annotated,
         EntryStyle::Ramp { max_angle_deg: 3.0 },
         500.0,
@@ -1300,7 +1364,7 @@ fn apply_entry_remaps_spans_through_transform() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    );
+    ));
     result
         .check_invariants()
         .expect("post-entry spans pass invariants");
@@ -1321,7 +1385,7 @@ fn apply_entry_tags_new_moves_with_correct_kind() {
     let n_in = tp.moves.len();
     let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         annotated,
         EntryStyle::Ramp { max_angle_deg: 3.0 },
         500.0,
@@ -1329,7 +1393,7 @@ fn apply_entry_tags_new_moves_with_correct_kind() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    );
+    ));
     let entries: Vec<&Span> = result
         .spans
         .iter()
@@ -1351,7 +1415,7 @@ fn apply_entry_preserves_invalid_flag() {
     let mut annotated = AnnotatedToolpath::new(tp.clone());
     annotated.spans_valid = false;
     annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)]; // garbage
-    let result = apply_entry(
+    let result = without_provenance(apply_entry(
         annotated,
         EntryStyle::Ramp { max_angle_deg: 3.0 },
         500.0,
@@ -1359,7 +1423,7 @@ fn apply_entry_preserves_invalid_flag() {
         // G-RAMPCONTAIN: the tool radius. It only sets the floor under
         // which a ramp fold degrades to a plunge.
         3.0,
-    );
+    ));
     assert!(!result.spans_valid);
     // Garbage span returned untouched.
     assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
@@ -1376,7 +1440,7 @@ fn apply_dogbones_remaps_spans_through_transform() {
         Span::new(0, 3, SpanKind::DepthPass),
     ];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
-    let result = apply_dogbones(annotated, 3.0, 170.0);
+    let result = without_provenance(apply_dogbones(annotated, 3.0, 170.0));
     result
         .check_invariants()
         .expect("post-dogbone spans pass invariants");
@@ -1397,7 +1461,7 @@ fn apply_dogbones_tags_new_moves_with_correct_kind() {
     let n_in = tp.moves.len();
     let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
-    let result = apply_dogbones(annotated, 3.0, 170.0);
+    let result = without_provenance(apply_dogbones(annotated, 3.0, 170.0));
     let dogbones: Vec<&Span> = result
         .spans
         .iter()
@@ -1419,7 +1483,7 @@ fn apply_dogbones_preserves_invalid_flag() {
     let mut annotated = AnnotatedToolpath::new(tp);
     annotated.spans_valid = false;
     annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
-    let result = apply_dogbones(annotated, 3.0, 170.0);
+    let result = without_provenance(apply_dogbones(annotated, 3.0, 170.0));
     assert!(!result.spans_valid);
     assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
 }
@@ -1435,7 +1499,7 @@ fn apply_lead_in_out_remaps_spans_through_transform() {
         Span::new(0, 2, SpanKind::DepthPass),
     ];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
-    let result = apply_lead_in_out(annotated, 2.0);
+    let result = without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None));
     result
         .check_invariants()
         .expect("post-lead spans pass invariants");
@@ -1456,7 +1520,7 @@ fn apply_lead_in_out_tags_new_moves_with_correct_kind() {
     let n_in = tp.moves.len();
     let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
-    let result = apply_lead_in_out(annotated, 2.0);
+    let result = without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None));
     let entries: Vec<&Span> = result
         .spans
         .iter()
@@ -1483,7 +1547,7 @@ fn apply_lead_in_out_preserves_invalid_flag() {
     let mut annotated = AnnotatedToolpath::new(tp);
     annotated.spans_valid = false;
     annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
-    let result = apply_lead_in_out(annotated, 2.0);
+    let result = without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None));
     assert!(!result.spans_valid);
     assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
 }
@@ -1531,23 +1595,23 @@ fn air_bridge_policy_vetoes_bridges_longer_than_the_air_they_skip() {
     }
     tp.rapid_to(P3::new(50.0, 10.0, 10.0));
 
-    let always = filter_air_cuts(
+    let always = without_provenance(filter_air_cuts(
         AnnotatedToolpath::new(tp.clone()),
         &carved,
         &probe,
         10.0,
         0.1,
         AirBridgePolicy::Always,
-    )
+    ))
     .toolpath;
-    let costed = filter_air_cuts(
+    let costed = without_provenance(filter_air_cuts(
         AnnotatedToolpath::new(tp.clone()),
         &carved,
         &probe,
         10.0,
         0.1,
         AirBridgePolicy::ShorterThanAirPath,
-    )
+    ))
     .toolpath;
 
     let rapid = |t: &Toolpath| t.total_rapid_distance();
@@ -1602,14 +1666,14 @@ fn filter_air_cuts_remaps_spans_through_transform() {
     ];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
     let stock = half_cleared_stock();
-    let result = filter_air_cuts(
+    let result = without_provenance(filter_air_cuts(
         annotated,
         &stock,
         &probe_cutter(),
         10.0,
         0.1,
         AirBridgePolicy::Always,
-    );
+    ));
     result
         .check_invariants()
         .expect("post-filter spans pass invariants");
@@ -1637,14 +1701,14 @@ fn filter_air_cuts_tags_new_moves_with_correct_kind() {
     let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
     let stock = half_cleared_stock();
-    let result = filter_air_cuts(
+    let result = without_provenance(filter_air_cuts(
         annotated,
         &stock,
         &probe_cutter(),
         10.0,
         0.1,
         AirBridgePolicy::Always,
-    );
+    ));
     let bridges: Vec<&Span> = result
         .spans
         .iter()
@@ -1673,14 +1737,14 @@ fn filter_air_cuts_preserves_invalid_flag() {
     annotated.spans_valid = false;
     annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
     let stock = half_cleared_stock();
-    let result = filter_air_cuts(
+    let result = without_provenance(filter_air_cuts(
         annotated,
         &stock,
         &probe_cutter(),
         10.0,
         0.1,
         AirBridgePolicy::Always,
-    );
+    ));
     assert!(!result.spans_valid);
     assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
 }

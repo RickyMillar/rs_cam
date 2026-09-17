@@ -277,7 +277,7 @@ fn apply_dressup_traced(
 /// channels passes [`ReconcileSet::empty`] and says so.
 /// The height below which THIS operation's rapids are its own internal
 /// linking rather than group framing — the per-op value C1 threads into
-/// [`crate::dressup::tsp::optimize_rapid_order_with_provenance`], where it stops
+/// [`crate::dressup::tsp::optimize_rapid_order`], where it stops
 /// the reorder from taking a canned cycle apart.
 ///
 /// Returns `None` for every family whose rapids already live at `safe_z`,
@@ -360,8 +360,7 @@ pub fn apply_dressups(
     channels: &mut ReconcileSet<'_>,
 ) -> AnnotatedToolpath {
     use crate::dressup::{
-        EntryStyle, LinkMoveParams, apply_dogbones_with_provenance, apply_entry_with_provenance,
-        apply_link_moves_with_provenance,
+        EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_link_moves,
     };
 
     // Capability gate: barriered TSP only fires when the input has barriers.
@@ -392,9 +391,7 @@ pub fn apply_dressups(
                 scope.set_param(SemanticKey::SafeZ, safe_z);
                 scope.set_param(SemanticKey::BarrierCount, barrier_count);
             },
-            |at| {
-                crate::dressup::tsp::optimize_rapid_order_with_provenance(at, safe_z, link_ceiling)
-            },
+            |at| crate::dressup::tsp::optimize_rapid_order(at, safe_z, link_ceiling),
         );
     }
 
@@ -482,7 +479,7 @@ pub fn apply_dressups(
                     scope.set_param(SemanticKey::MaxAngleDeg, ramp_angle);
                 },
                 |at| {
-                    apply_entry_with_provenance(
+                    apply_entry(
                         at,
                         EntryStyle::Ramp {
                             max_angle_deg: ramp_angle,
@@ -514,7 +511,7 @@ pub fn apply_dressups(
                     scope.set_param(SemanticKey::Pitch, helix_pitch);
                 },
                 |at| {
-                    apply_entry_with_provenance(
+                    apply_entry(
                         at,
                         EntryStyle::Helix {
                             radius: helix_radius,
@@ -547,7 +544,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param(SemanticKey::AngleDeg, angle);
             },
-            |at| apply_dogbones_with_provenance(at, tool_radius, angle),
+            |at| apply_dogbones(at, tool_radius, angle),
         );
     }
 
@@ -577,7 +574,7 @@ pub fn apply_dressups(
                 }
             },
             |at| {
-                crate::dressup::apply_lead_in_out_with_provenance(
+                crate::dressup::apply_lead_in_out(
                     at,
                     radius,
                     li_feed,
@@ -613,7 +610,7 @@ pub fn apply_dressups(
                 scope.set_param(SemanticKey::LinkFeedRate, link_feed);
             },
             |at| {
-                apply_link_moves_with_provenance(
+                apply_link_moves(
                     at,
                     &LinkMoveParams {
                         max_link_distance: max_dist,
@@ -643,7 +640,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, tolerance);
             },
-            |at| crate::dressup::arcfit::fit_arcs_with_provenance(at, tolerance, tool_radius),
+            |at| crate::dressup::arcfit::fit_arcs(at, tolerance, tool_radius),
         );
     }
 
@@ -666,7 +663,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, merge_tol);
             },
-            |at| crate::dressup::condition::merge_linear_runs_with_provenance(at, merge_tol),
+            |at| crate::dressup::condition::merge_linear_runs(at, merge_tol),
         );
     }
 
@@ -690,9 +687,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
-            |at| {
-                crate::dressup::tsp::optimize_rapid_order_with_provenance(at, safe_z, link_ceiling)
-            },
+            |at| crate::dressup::tsp::optimize_rapid_order(at, safe_z, link_ceiling),
         );
     }
 
@@ -718,14 +713,7 @@ pub fn apply_dressups(
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
             |at| {
-                crate::dressup::filter_air_cuts_with_provenance(
-                    at,
-                    stock,
-                    cut,
-                    safe_z,
-                    0.1,
-                    cfg.air_bridge_policy,
-                )
+                crate::dressup::filter_air_cuts(at, stock, cut, safe_z, 0.1, cfg.air_bridge_policy)
             },
         );
     } else if prior_stock.is_some() {

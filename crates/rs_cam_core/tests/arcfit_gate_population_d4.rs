@@ -76,6 +76,7 @@ use std::f64::consts::TAU;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::apply_dogbones;
 use rs_cam_core::dressup::arcfit::fit_arcs;
+use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::stock::simulation_cut::SimulationCutSample;
@@ -159,7 +160,7 @@ fn square_profile_with_dogbones() -> AnnotatedToolpath {
     }
     let n = tp.moves.len();
     let annotated = AnnotatedToolpath::with_spans(tp, vec![Span::new(0, n, SpanKind::Operation)]);
-    apply_dogbones(annotated, TOOL_RADIUS_MM, 170.0)
+    without_provenance(apply_dogbones(annotated, TOOL_RADIUS_MM, 170.0))
 }
 
 fn simulate(annotated: &AnnotatedToolpath) -> Vec<SimulationCutSample> {
@@ -255,7 +256,11 @@ fn count_arcs(tp: &Toolpath) -> usize {
 #[test]
 fn fitted_arcs_stay_in_the_gate_population() {
     let unfitted = circular_finishing_pass();
-    let fitted = fit_arcs(circular_finishing_pass(), ARC_TOLERANCE_MM, TOOL_RADIUS_MM);
+    let fitted = without_provenance(fit_arcs(
+        circular_finishing_pass(),
+        ARC_TOLERANCE_MM,
+        TOOL_RADIUS_MM,
+    ));
 
     // Non-vacuity 1: the "on" arm must actually contain fitted arcs. Without
     // this the bar would pass on any fixture arc-fit declined to touch.
@@ -382,7 +387,11 @@ fn dogbone_bridge_samples_stay_out_of_the_gate_population() {
 /// narration selects is one the summary also sees.
 #[test]
 fn the_two_published_peaks_agree_on_an_arc_fitted_op() {
-    let fitted = fit_arcs(circular_finishing_pass(), ARC_TOLERANCE_MM, TOOL_RADIUS_MM);
+    let fitted = without_provenance(fit_arcs(
+        circular_finishing_pass(),
+        ARC_TOLERANCE_MM,
+        TOOL_RADIUS_MM,
+    ));
     assert!(count_arcs(&fitted.toolpath) > 0, "fixture must fit arcs");
     let samples = simulate(&fitted);
 
@@ -458,7 +467,11 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
     use rs_cam_core::tool::ToolDefinition;
     use rs_cam_core::tool_load::{ToleranceBands, ToolpathLoadContext, evaluate_toolpath};
 
-    let fitted = fit_arcs(circular_finishing_pass(), ARC_TOLERANCE_MM, TOOL_RADIUS_MM);
+    let fitted = without_provenance(fit_arcs(
+        circular_finishing_pass(),
+        ARC_TOLERANCE_MM,
+        TOOL_RADIUS_MM,
+    ));
     assert!(count_arcs(&fitted.toolpath) > 0, "fixture must fit arcs");
     let samples = simulate(&fitted);
 
