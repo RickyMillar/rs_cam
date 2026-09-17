@@ -50,8 +50,8 @@ pub(crate) fn generate_adaptive3d(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive3d, "generate_adaptive3d");
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "Adaptive3D")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
 
     let entry_style = match cfg.entry_style {
         crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {
@@ -212,8 +212,8 @@ pub(crate) fn generate_pencil(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Pencil, "generate_pencil");
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "Pencil")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(
         OpMotion {
             feed_rate: op.feed_rate(),
@@ -294,8 +294,8 @@ pub(crate) fn generate_unified_finish(
             "Unified Finish requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
         ));
     }
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "UnifiedFinish")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -591,8 +591,8 @@ pub(crate) fn generate_steep_shallow(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SteepShallow, "generate_steep_shallow");
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "SteepShallow")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -626,8 +626,8 @@ pub(crate) fn generate_ramp_finish(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, RampFinish, "generate_ramp_finish");
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "RampFinish")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -671,8 +671,8 @@ pub(crate) fn generate_spiral_finish(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "SpiralFinish")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -731,8 +731,8 @@ pub(crate) fn generate_radial_finish(
             )));
         }
     }
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "RadialFinish")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -761,8 +761,8 @@ pub(crate) fn generate_horizontal_finish(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, HorizontalFinish, "generate_horizontal_finish");
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "HorizontalFinish")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),

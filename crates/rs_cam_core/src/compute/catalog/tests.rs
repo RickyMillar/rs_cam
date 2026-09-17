@@ -325,6 +325,34 @@ fn drill_kinematics_set_is_pinned() {
     );
 }
 
+/// CMP-04: `cutting_levels` decides per operation, and the decision
+/// agrees with the operation's own declared depth semantics.
+///
+/// The exhaustiveness half is the compiler's: the match named every
+/// variant when the `_ => vec![]` wildcard went, so a 25th operation does
+/// not compile until it decides. This test carries the consistency half —
+/// an operation produces depth-stepped levels EXACTLY when it declares an
+/// explicit total depth AND a per-pass step. An op that declares both and
+/// returns no levels would cut at one Z and look generated, which is the
+/// silent failure the wildcard used to allow.
+#[test]
+fn cutting_levels_is_exhaustive_per_op() {
+    for &op_type in OperationType::ALL {
+        let config = OperationConfig::new_default(op_type);
+        let params = config.as_params();
+        let steps_down = matches!(params.depth_semantics(), DepthSemantics::Explicit(_))
+            && params.depth_per_pass().is_some();
+        let levels = config.cutting_levels(0.0);
+        assert_eq!(
+            !levels.is_empty(),
+            steps_down,
+            "{op_type:?}: cutting_levels returned {} level(s) but its declared \
+             depth semantics say steps_down = {steps_down}",
+            levels.len()
+        );
+    }
+}
+
 /// Parity freeze (architectural refactor §7.2): `ALL` is exactly the
 /// disjoint union of `ALL_2D`, `ALL_3D`, and the NAMED system-only
 /// set. A new op added to `ALL` without being placed in a menu

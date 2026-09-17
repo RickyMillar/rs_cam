@@ -31,7 +31,7 @@ pub(crate) fn generate_inlay(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Inlay, "generate_inlay");
-    let polys = require_polygons(ctx.polygons)?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
     let ha = vbit_half_angle(ctx.tool_cfg, "Inlay")?;
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
@@ -80,7 +80,7 @@ pub(crate) fn generate_vcarve(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, VCarve, "generate_vcarve");
-    let polys = require_polygons(ctx.polygons)?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
     let ha = vbit_half_angle(ctx.tool_cfg, "VCarve")?;
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
@@ -125,7 +125,7 @@ pub(crate) fn generate_chamfer(
         return Err(OperationError::Cancelled);
     }
     let cfg = config_guard!(op, Chamfer, "generate_chamfer");
-    let polys = require_polygons(ctx.polygons)?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
     let ha = vbit_half_angle(ctx.tool_cfg, "Chamfer")?;
     let safe_z = ctx.heights.retract_z;
     let mut combined = Toolpath::new();
@@ -174,9 +174,9 @@ pub(crate) fn generate_project_curve(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, ProjectCurve, "generate_project_curve");
-    let polys = require_polygons(ctx.polygons)?;
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "ProjectCurve")?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let cutter = build_cutter(ctx.tool_cfg);
     let direction = match cfg.direction {
         crate::compute::operation_configs::ProjectCurveDirection::FromAbove => {

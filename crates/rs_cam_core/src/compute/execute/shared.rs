@@ -48,16 +48,24 @@ pub(super) fn generated_with_drill_spans(toolpath: Toolpath) -> GeneratedToolpat
     generated_with_spans(toolpath, spans)
 }
 
-pub(super) fn require_polygons(
-    polygons: Option<&[Polygon2]>,
-) -> Result<&[Polygon2], OperationError> {
+/// CMP-13: the refusal names the operation, as [`require_index`] already
+/// did. The instance is not lost — `session/compute.rs` wraps the error
+/// beside the toolpath — but the KIND was, and a reader of the message
+/// could not tell which of the 24 operations refused.
+pub(super) fn require_polygons<'a>(
+    polygons: Option<&'a [Polygon2]>,
+    op_name: &str,
+) -> Result<&'a [Polygon2], OperationError> {
     polygons
         .filter(|p| !p.is_empty())
-        .ok_or_else(|| OperationError::MissingGeometry("Operation requires 2D geometry".into()))
+        .ok_or_else(|| OperationError::MissingGeometry(format!("{op_name} requires 2D geometry")))
 }
 
-pub(super) fn require_mesh(mesh: Option<&TriangleMesh>) -> Result<&TriangleMesh, OperationError> {
-    mesh.ok_or_else(|| OperationError::MissingGeometry("Operation requires a 3D mesh".into()))
+pub(super) fn require_mesh<'a>(
+    mesh: Option<&'a TriangleMesh>,
+    op_name: &str,
+) -> Result<&'a TriangleMesh, OperationError> {
+    mesh.ok_or_else(|| OperationError::MissingGeometry(format!("{op_name} requires a 3D mesh")))
 }
 
 /// R2.4: the spatial-index guard duplicated identically across every
@@ -66,6 +74,10 @@ pub(super) fn require_mesh(mesh: Option<&TriangleMesh>) -> Result<&TriangleMesh,
 /// DropCutter, Waterline) — same refusal shape as [`require_mesh`] /
 /// [`require_polygons`], parameterized on the operation name for the
 /// error message.
+///
+/// Every call site passes `op.op_type().name()`. It used to pass a hand
+/// written literal per adapter, and those had already drifted from the
+/// variant spelling ("Adaptive3D" against `Adaptive3d`).
 pub(super) fn require_index<'a>(
     index: Option<&'a SpatialIndex>,
     op_name: &str,

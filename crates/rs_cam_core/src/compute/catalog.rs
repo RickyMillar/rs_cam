@@ -162,36 +162,41 @@ impl OperationTransformCapabilities {
 //
 // Category tokens are `OpCategory` variant names: `Menu2d` / `Menu3d` /
 // `SystemOnly`. A typo'd token fails with E0599 pointing at the row.
+//
+// The fourth column is the snake_case kind token. It is BOTH the serde
+// representation (`#[serde(rename_all = "snake_case")]` produces it) and
+// [`OperationType::kind_str`], which is generated from it.
+// `operation_type_serde_repr_pinned` guards that the two still agree.
 macro_rules! for_each_op {
     ($m:ident) => {
         $m! {
-            //  variant            config type                category
-            (Face,               FaceConfig,                Menu2d),
-            (Pocket,             PocketConfig,              Menu2d),
-            (Profile,            ProfileConfig,             Menu2d),
-            (Adaptive,           AdaptiveConfig,            Menu2d),
-            (VCarve,             VCarveConfig,              Menu2d),
-            (Rest,               RestConfig,                Menu2d),
-            (Inlay,              InlayConfig,               Menu2d),
-            (Zigzag,             ZigzagConfig,              Menu2d),
-            (Trace,              TraceConfig,               Menu2d),
-            (Drill,              DrillConfig,               Menu2d),
-            (Chamfer,            ChamferConfig,             Menu2d),
-            (DropCutter,         DropCutterConfig,          Menu3d),
-            (Adaptive3d,         Adaptive3dConfig,          Menu3d),
-            (Waterline,          WaterlineConfig,           Menu3d),
-            (Pencil,             PencilConfig,              Menu3d),
-            (Scallop,            ScallopConfig,             Menu3d),
-            (UnifiedFinish,      UnifiedFinishConfig,       Menu3d),
-            (SteepShallow,       SteepShallowConfig,        Menu3d),
-            (RampFinish,         RampFinishConfig,          Menu3d),
-            (SpiralFinish,       SpiralFinishConfig,        Menu3d),
-            (RadialFinish,       RadialFinishConfig,        Menu3d),
-            (HorizontalFinish,   HorizontalFinishConfig,    Menu3d),
-            (ProjectCurve,       ProjectCurveConfig,        Menu3d),
+            //  variant            config type                category     serde/kind token
+            (Face,               FaceConfig,                Menu2d,      "face"),
+            (Pocket,             PocketConfig,              Menu2d,      "pocket"),
+            (Profile,            ProfileConfig,             Menu2d,      "profile"),
+            (Adaptive,           AdaptiveConfig,            Menu2d,      "adaptive"),
+            (VCarve,             VCarveConfig,              Menu2d,      "v_carve"),
+            (Rest,               RestConfig,                Menu2d,      "rest"),
+            (Inlay,              InlayConfig,               Menu2d,      "inlay"),
+            (Zigzag,             ZigzagConfig,              Menu2d,      "zigzag"),
+            (Trace,              TraceConfig,               Menu2d,      "trace"),
+            (Drill,              DrillConfig,               Menu2d,      "drill"),
+            (Chamfer,            ChamferConfig,             Menu2d,      "chamfer"),
+            (DropCutter,         DropCutterConfig,          Menu3d,      "drop_cutter"),
+            (Adaptive3d,         Adaptive3dConfig,          Menu3d,      "adaptive3d"),
+            (Waterline,          WaterlineConfig,           Menu3d,      "waterline"),
+            (Pencil,             PencilConfig,              Menu3d,      "pencil"),
+            (Scallop,            ScallopConfig,             Menu3d,      "scallop"),
+            (UnifiedFinish,      UnifiedFinishConfig,       Menu3d,      "unified_finish"),
+            (SteepShallow,       SteepShallowConfig,        Menu3d,      "steep_shallow"),
+            (RampFinish,         RampFinishConfig,          Menu3d,      "ramp_finish"),
+            (SpiralFinish,       SpiralFinishConfig,        Menu3d,      "spiral_finish"),
+            (RadialFinish,       RadialFinishConfig,        Menu3d,      "radial_finish"),
+            (HorizontalFinish,   HorizontalFinishConfig,    Menu3d,      "horizontal_finish"),
+            (ProjectCurve,       ProjectCurveConfig,        Menu3d,      "project_curve"),
             // Auto-generated drilling operation for stock alignment pin
             // holes — in `ALL`, in neither user menu.
-            (AlignmentPinDrill,  AlignmentPinDrillConfig,   SystemOnly),
+            (AlignmentPinDrill,  AlignmentPinDrillConfig,   SystemOnly,  "alignment_pin_drill"),
         }
     };
 }
@@ -208,7 +213,7 @@ pub enum OpCategory {
 }
 
 macro_rules! define_operation_type {
-    ($( ($variant:ident, $config:ident, $cat:ident) ),+ $(,)?) => {
+    ($( ($variant:ident, $config:ident, $cat:ident, $kind:literal) ),+ $(,)?) => {
         /// Operation type for creating new toolpaths.
         ///
         /// GENERATED from the `for_each_op!` list — edit the list, not
@@ -242,13 +247,28 @@ macro_rules! define_operation_type {
                     $(OperationType::$variant => stringify!($variant),)+
                 }
             }
+
+            /// Stable snake_case identifier for serialized / diagnostic
+            /// use. GENERATED from the X-macro's fourth column, which is
+            /// also what `#[serde(rename_all = "snake_case")]` emits for
+            /// the variant — `operation_type_serde_repr_pinned` is the
+            /// guard that the two stay one token.
+            ///
+            /// Unlike [`Self::label`] (human-facing UI text) this is
+            /// suitable for JSON wire formats and for consumers that
+            /// branch on op kind without parsing the prose label.
+            pub const fn kind_str(self) -> &'static str {
+                match self {
+                    $(OperationType::$variant => $kind,)+
+                }
+            }
         }
     };
 }
 for_each_op!(define_operation_type);
 
 macro_rules! define_operation_config_dispatch {
-    ($( ($variant:ident, $config:ident, $cat:ident) ),+ $(,)?) => {
+    ($( ($variant:ident, $config:ident, $cat:ident, $kind:literal) ),+ $(,)?) => {
         /// Per-variant dispatch surfaces. GENERATED from `for_each_op!`
         /// — edit the list, not this block.
         impl OperationConfig {
@@ -425,39 +445,6 @@ impl OperationType {
             self,
             Self::DropCutter | Self::SteepShallow | Self::SpiralFinish | Self::HorizontalFinish
         )
-    }
-
-    /// Stable snake_case identifier for serialized / diagnostic use. Unlike
-    /// [`Self::label`] (which is for human-facing UI text), this is suitable
-    /// for JSON wire formats and for consumers that need to branch on op
-    /// kind without parsing the prose label.
-    pub fn kind_str(self) -> &'static str {
-        match self {
-            Self::Face => "face",
-            Self::Pocket => "pocket",
-            Self::Profile => "profile",
-            Self::Adaptive => "adaptive",
-            Self::VCarve => "v_carve",
-            Self::Rest => "rest",
-            Self::Inlay => "inlay",
-            Self::Zigzag => "zigzag",
-            Self::Trace => "trace",
-            Self::Drill => "drill",
-            Self::Chamfer => "chamfer",
-            Self::DropCutter => "drop_cutter",
-            Self::Adaptive3d => "adaptive3d",
-            Self::Waterline => "waterline",
-            Self::Pencil => "pencil",
-            Self::Scallop => "scallop",
-            Self::UnifiedFinish => "unified_finish",
-            Self::SteepShallow => "steep_shallow",
-            Self::RampFinish => "ramp_finish",
-            Self::SpiralFinish => "spiral_finish",
-            Self::RadialFinish => "radial_finish",
-            Self::HorizontalFinish => "horizontal_finish",
-            Self::ProjectCurve => "project_curve",
-            Self::AlignmentPinDrill => "alignment_pin_drill",
-        }
     }
 
     /// True for op kinds whose kinematics are Z-only (peck-plunge drilling).
@@ -1352,10 +1339,17 @@ impl OperationConfig {
 impl OperationConfig {
     /// Pre-compute Z levels for depth stepping (top -> bottom).
     ///
-    /// Returns an empty `Vec` for operations that don't use standard depth
-    /// stepping (3D ops, VCarve, Chamfer, Inlay, Drill).
+    /// Every variant is named — no wildcard arm. An operation that does not
+    /// step down uniformly says so in the last arm, which is a recorded
+    /// decision and not a fallback: a new 2.5D operation fails to compile
+    /// until it decides, instead of silently generating at one Z level.
     pub fn cutting_levels(&self, top_z: f64) -> Vec<f64> {
         use crate::ops::depth::DepthStepping;
+        // The four uniform steppers had byte-identical arms. One closure
+        // now holds the construction; the arms hold only the two fields.
+        let uniform = |depth: f64, step: f64| {
+            DepthStepping::new(top_z, top_z - depth.abs(), step).all_levels()
+        };
         match self {
             Self::Pocket(cfg) => DepthStepping {
                 start_z: top_z,
@@ -1371,28 +1365,37 @@ impl OperationConfig {
                 finishing_passes: cfg.finishing_passes,
             }
             .all_levels(),
-            Self::Adaptive(cfg) => {
-                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
-            }
-            Self::Zigzag(cfg) => {
-                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
-            }
-            Self::Rest(cfg) => {
-                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
-            }
-            Self::Trace(cfg) => {
-                DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass).all_levels()
-            }
+            Self::Adaptive(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
+            Self::Zigzag(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
+            Self::Rest(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
+            Self::Trace(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
             Self::Face(cfg) => {
                 if cfg.depth <= 0.0 {
                     vec![top_z]
                 } else {
-                    DepthStepping::new(top_z, top_z - cfg.depth.abs(), cfg.depth_per_pass)
-                        .all_levels()
+                    uniform(cfg.depth, cfg.depth_per_pass)
                 }
             }
-            // 3D ops, VCarve, Chamfer, Inlay, Drill, AlignmentPinDrill — no standard depth stepping
-            _ => vec![],
+            // No standard depth stepping. The 3D ops drive their own Z
+            // ladder from the surface; VCarve, Chamfer and Inlay derive Z
+            // from the cutter geometry; the two drilling ops are Z-only.
+            Self::VCarve(_)
+            | Self::Inlay(_)
+            | Self::Drill(_)
+            | Self::Chamfer(_)
+            | Self::DropCutter(_)
+            | Self::Adaptive3d(_)
+            | Self::Waterline(_)
+            | Self::Pencil(_)
+            | Self::Scallop(_)
+            | Self::UnifiedFinish(_)
+            | Self::SteepShallow(_)
+            | Self::RampFinish(_)
+            | Self::SpiralFinish(_)
+            | Self::RadialFinish(_)
+            | Self::HorizontalFinish(_)
+            | Self::ProjectCurve(_)
+            | Self::AlignmentPinDrill(_) => vec![],
         }
     }
 }

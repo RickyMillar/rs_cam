@@ -181,8 +181,8 @@ pub(crate) fn generate_scallop(
             "Scallop requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
         ));
     }
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "Scallop")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(
         OpMotion {
             feed_rate: op.feed_rate(),
@@ -265,8 +265,8 @@ pub(crate) fn generate_drop_cutter(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, DropCutter, "generate_drop_cutter");
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "DropCutter")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     // Floor the drop-cutter min_z to the mesh bottom. A 3D finish
     // should only tip-track the mesh surface — anything lower is either
     // a non-contact clamp or the tool's taper forcing the tip below
@@ -414,8 +414,8 @@ pub(crate) fn generate_waterline(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Waterline, "generate_waterline");
-    let m = require_mesh(ctx.mesh)?;
-    let idx = require_index(ctx.index, "Waterline")?;
+    let m = require_mesh(ctx.mesh, op.op_type().name())?;
+    let idx = require_index(ctx.index, op.op_type().name())?;
     let params = crate::ops::waterline::WaterlineParams {
         sampling: cfg.sampling,
         feed_rate: op.feed_rate(),

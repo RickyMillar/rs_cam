@@ -30,7 +30,7 @@ pub(crate) fn generate_rest(
     if ctx.cancel.load(Ordering::SeqCst) {
         return Err(OperationError::Cancelled);
     }
-    let polys = require_polygons(ctx.polygons)?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
     let ptr = ctx
         .prev_tool_radius
         .ok_or_else(|| OperationError::Other("Previous tool not set for rest machining".into()))?;
@@ -96,7 +96,7 @@ pub(crate) fn generate_zigzag(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Zigzag, "generate_zigzag");
-    let polys = require_polygons(ctx.polygons)?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
@@ -165,7 +165,7 @@ pub(crate) fn generate_trace(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Trace, "generate_trace");
-    let polys = require_polygons(ctx.polygons)?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
@@ -230,7 +230,7 @@ pub(crate) fn generate_profile(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Profile, "generate_profile");
-    let polys = require_polygons(ctx.polygons)?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let final_z = levels
         .last()
@@ -316,7 +316,7 @@ pub(crate) fn generate_pocket(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Pocket, "generate_pocket");
-    let polys = require_polygons(ctx.polygons)?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
@@ -465,7 +465,7 @@ pub(crate) fn generate_adaptive(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive, "generate_adaptive");
-    let polys = require_polygons(ctx.polygons)?;
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let safe_z = ctx.heights.retract_z;
