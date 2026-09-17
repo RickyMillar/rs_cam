@@ -1115,7 +1115,11 @@ fn only_three_consumers_can_see_the_generation_resolution() {
         consumers,
         vec![
             "finish/ramp_finish.rs".to_owned(),
-            "finish/scallop.rs".to_owned(),
+            // P4 split `finish/scallop.rs` into a folder. The module is
+            // still ONE consumer: `research.rs` holds the production door
+            // and `tests.rs` holds the module's own test-side calls.
+            "finish/scallop/research.rs".to_owned(),
+            "finish/scallop/tests.rs".to_owned(),
             "finish/steep_shallow.rs".to_owned()
         ],
         "the set of generation-surface consumers changed — UnifiedFinish's \
