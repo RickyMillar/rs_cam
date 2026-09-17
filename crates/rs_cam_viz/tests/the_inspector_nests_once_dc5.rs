@@ -54,18 +54,51 @@ use rs_cam_viz::ui::tokens;
 /// The panel width the app gives the inspector (`app.rs`, `default_size`).
 const PANEL_WIDTH: f32 = 280.0;
 
-/// The inspector's source. One file holds the whole toolpath panel.
-fn inspector_path() -> PathBuf {
+/// The inspector's source folder.
+///
+/// # Why a folder and not one file
+///
+/// P4 (2026-09-17) split `properties/mod.rs` into `mod.rs` plus seven panel
+/// children beside it. The panel the scans below read is spread over those
+/// files, so the reader is the folder. `operations/` is a sub-folder and is
+/// NOT read: it carries its own sentries.
+fn inspector_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src")
         .join("ui")
         .join("properties")
-        .join("mod.rs")
 }
 
+/// Every `.rs` file directly in that folder, concatenated in file-name order.
+///
+/// The order matters to `the_hints_block_renders_below_the_tab_strip_dc5`,
+/// which compares byte offsets. It reads the CALL sites, all of which sit in
+/// `toolpath_panel.rs`; that name sorts last, after the `tab_badges.rs`
+/// DEFINITIONS its `rfind` must not pick. A new child whose name sorts after
+/// `toolpath_panel.rs` and repeats one of those markers would break that arm,
+/// and the arm says so when it fails.
 fn inspector_src() -> String {
-    let path = inspector_path();
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+    let dir = inspector_dir();
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "rs"))
+        .collect();
+    paths.sort();
+    assert!(
+        !paths.is_empty(),
+        "no source under {}; the scans below would read nothing",
+        dir.display()
+    );
+    let mut out = String::new();
+    for path in paths {
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        out.push_str(&text);
+        out.push('\n');
+    }
+    out
 }
 
 /// Every `ToolpathTab` label, read out of the inspector's own `label()`
