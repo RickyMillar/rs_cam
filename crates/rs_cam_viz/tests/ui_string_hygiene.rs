@@ -80,6 +80,7 @@ fn scanned_paths() -> Vec<PathBuf> {
     collect_rs(&manifest.join("src/ui"), &mut out);
     for extra in [
         "src/app/mcp.rs",
+        "src/app/mcp/diagnostics.rs",
         "src/mcp_server.rs",
         "../rs_cam_mcp/src/server.rs",
     ] {

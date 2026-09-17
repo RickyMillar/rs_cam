@@ -669,6 +669,13 @@ fn every_justified_discard_still_names_a_real_site() {
 
 // ── arm (c2) — one stale helper, not two (H3) ────────────────────────
 
+/// Every file of the MCP surface but `commands.rs`, which the positive
+/// half of the test below reads on its own.
+///
+/// P4 split `app/mcp.rs` into `app/mcp/*.rs`. The negative property is
+/// about the whole surface, so a new child joins this list.
+const MCP_SURFACE: &[&str] = &["src/app/mcp.rs", "src/app/mcp/diagnostics.rs"];
+
 /// The MCP route and the view route stamp through ONE helper.
 ///
 /// `mcp_stamp_stale` skipped an index whose runtime row was absent,
@@ -679,12 +686,16 @@ fn every_justified_discard_still_names_a_real_site() {
 /// `self.controller.state()`.
 #[test]
 fn one_helper_stamps_stale_on_both_routes_h3() {
-    let mcp = strip_comments(&read(&viz_root().join("src/app/mcp.rs")));
+    let mcp = MCP_SURFACE
+        .iter()
+        .map(|p| strip_comments(&read(&viz_root().join(p))))
+        .collect::<Vec<_>>()
+        .join("\n");
     let commands = strip_comments(&read(&viz_root().join("src/app/mcp/commands.rs")));
 
     assert!(
         !mcp.contains("mcp_stamp_stale"),
-        "H3: `app/mcp.rs` still declares or calls `mcp_stamp_stale`. \
+        "H3: the MCP surface still declares or calls `mcp_stamp_stale`. \
          One helper stamps `stale_since`, and it is \
          `crate::state::stale::stamp_stale`."
     );
@@ -702,7 +713,7 @@ fn one_helper_stamps_stale_on_both_routes_h3() {
     // cannot come back on this surface without failing here.
     assert!(
         !mcp.contains("stamp_stale"),
-        "H3/WP28: `app/mcp.rs` stamps staleness of its own. Every write \
+        "H3/WP28: the MCP surface stamps staleness of its own. Every write \
          on this surface runs a command, and the command route stamps \
          `Effects::stale` through `crate::state::stale::stamp_stale`. A \
          stamp here is a second site by construction."

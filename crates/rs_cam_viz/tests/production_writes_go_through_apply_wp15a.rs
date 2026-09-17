@@ -103,6 +103,7 @@ const CLI_COMPUTE_DOOR_ROWS: &[CommandId] = &[CommandId::GenerateToolpath];
 const MCP_SOURCES: &[&str] = &[
     "src/app/mcp.rs",
     "src/app/mcp/commands.rs",
+    "src/app/mcp/diagnostics.rs",
     "src/mcp_bridge.rs",
     "src/mcp_server.rs",
     "src/controller/tests.rs",
