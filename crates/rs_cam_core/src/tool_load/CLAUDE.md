@@ -31,8 +31,9 @@ Independent gates over a simulated cut. The entry point is
 ## Sentries
 Run one with `cargo test -p rs_cam_core -q --test <name>`: `gate_population_vacuity_xvac`,
 `chipload_boundary_g_chip_ulp`, `predicted_feed_gates_f035`, `drill_evidence_wording_d3`,
-`an_absent_limit_is_visibly_absent_g_gantry` (the gantry-push row is `Unmodeled`, never a reading, and
-never a prompt).
+`an_absent_limit_is_visibly_absent_g_gantry` (the gantry-push row is `Unmodeled`, never a reading, never
+a prompt), `a_criterion_carries_its_own_bound_g_s4bound` and `a_weak_bound_cannot_refuse_an_export_g_s4weak`
+(every row states its bound and its `BoundSource`; only a sourced bound may refuse an export).
 
 ## Do not
 
