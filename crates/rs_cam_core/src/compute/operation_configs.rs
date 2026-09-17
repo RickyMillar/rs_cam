@@ -832,11 +832,16 @@ pub struct PencilConfig {
     /// so older project files load.
     #[serde(default = "crate::finish::pencil::reference_tool_diameter_default")]
     pub reference_tool_diameter: f64,
-    /// Valley-detection algorithm: `"dihedral"` (mesh crease detection, default)
-    /// or `"curvature"` (curvature crest lines, best for noisy organic relief).
-    /// `#[serde(default)]` so older project files load.
-    #[serde(default = "crate::finish::pencil::detector_string_default")]
-    pub detector: String,
+    /// Valley-detection algorithm: `dihedral` (mesh crease detection, the
+    /// default), `curvature` (curvature crest lines, best for noisy organic
+    /// relief) or `rest_depth` (the dual-tool rest field).
+    ///
+    /// FIN-09 typed this field. It was a `String` parsed by a fallback map,
+    /// so a project file that said `rest-depth` ran the dihedral detector and
+    /// reported nothing. An unknown token now refuses the load and names the
+    /// key. `#[serde(default)]` so a project file that omits it loads.
+    #[serde(default)]
+    pub detector: crate::finish::pencil::PencilDetector,
     /// Minimum concave curvature |κ₂| (1/mm) a valley must reach for the
     /// `curvature` detector to trace it — the valley significance dial. Low →
     /// every concave seam; high → only deep sharp valleys. `#[serde(default)]`.
@@ -851,24 +856,6 @@ pub struct PencilConfig {
     /// = finer regions, more drops. `#[serde(default)]` so older files load.
     #[serde(default = "crate::finish::pencil::rest_cell_default")]
     pub rest_cell_mm: f64,
-    /// **RETIRED (PR-5, H2.2) — deserialized, saved, and NOT READ.**
-    ///
-    /// It used to be the `rest_depth` routing threshold: a rest region routed
-    /// to a pencil centreline when its half-width was
-    /// `≤ route_width_factor × pencil_radius`. The pencil/clearing decision
-    /// is now the COVERAGE criterion — the reachable band against the fan the
-    /// operation can actually emit — because the old rule was fed the SAME
-    /// scalar as the offset-pass fit equation, so fixing one broke the other
-    /// (`CHECKPOINT_A_EVIDENCE.md` §8.3).
-    ///
-    /// Kept as a field on purpose: removing it would break every saved
-    /// project for a dial that was never load-bearing. A project that carries
-    /// a NON-DEFAULT value raises
-    /// [`crate::compute::config::DeprecatedDialFinding`] →
-    /// `diagnostics::ids::CONFIG_DEPRECATED_DIAL`, so the operator is told
-    /// once rather than left with a dial that quietly does nothing.
-    #[serde(default = "crate::finish::pencil::route_width_factor_default")]
-    pub route_width_factor: f64,
     /// R1: optional library tool id whose *real* cutter geometry defines the
     /// rest reference (all three detectors). `None` = legacy nominal-diameter
     /// behaviour via `reference_tool_diameter`. Mirrors `RestConfig.prev_tool_id`
@@ -923,11 +910,10 @@ impl Default for PencilConfig {
             min_valley_depth: crate::finish::pencil::reach_gap_threshold(),
             bisector_strength: crate::finish::pencil::bisector_strength_default(),
             reference_tool_diameter: crate::finish::pencil::reference_tool_diameter_default(),
-            detector: crate::finish::pencil::detector_string_default(),
+            detector: crate::finish::pencil::PencilDetector::default(),
             valley_saliency: crate::finish::pencil::valley_saliency_default(),
             curvature_smoothing: crate::finish::pencil::curvature_smoothing_default(),
             rest_cell_mm: crate::finish::pencil::rest_cell_default(),
-            route_width_factor: crate::finish::pencil::route_width_factor_default(),
             reference_tool_id: None,
             // One cap for both tiers — the shipped emission. See the field.
             link_hop_distance_mm: None,

@@ -292,9 +292,8 @@ pub(super) fn rest_depth_arm(
         min_valley_depth: params.min_valley_depth,
         // Coverage routing (PR-5): the detector routes against the fan this
         // arm is about to emit, so it is handed the SAME two numbers
-        // `centerline_cut_paths` gets below. `route_width_factor` is no
-        // longer read — it is deprecated and reported, see
-        // `PencilParams::route_width_factor`.
+        // `centerline_cut_paths` gets below. The old `route_width_factor`
+        // threshold is deleted (FIN-04).
         offset_stepover_mm: params.offset_stepover,
         num_offset_passes_cap: params.num_offset_passes,
         min_cut_length: params.min_cut_length,

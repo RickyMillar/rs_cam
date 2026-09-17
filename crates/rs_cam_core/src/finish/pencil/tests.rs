@@ -393,8 +393,9 @@ fn render_pencil_real_mesh() {
     params.reference_tool_diameter = env_f64("RS_CAM_PENCIL_REFD", params.reference_tool_diameter);
     // Detector selection + curvature tuning (RS_CAM_PENCIL_DETECTOR=curvature).
     params.detector = match std::env::var("RS_CAM_PENCIL_DETECTOR").ok().as_deref() {
-        Some(s) => PencilDetector::parse(s),
-        None => PencilDetector::Dihedral,
+        Some("curvature") => PencilDetector::Curvature,
+        Some("rest_depth") => PencilDetector::RestDepth,
+        _ => PencilDetector::Dihedral,
     };
     params.valley_saliency = env_f64("RS_CAM_PENCIL_SAL", params.valley_saliency);
     params.curvature_smoothing =
@@ -1131,4 +1132,54 @@ fn link_lift_refuses_when_the_clearance_reaches_safe_z() {
         "a fed link at retract height is strictly worse than the rapid it \
          would replace"
     );
+}
+
+/// FIN-09 sentry: the detector is a typed dial, so an unknown token refuses
+/// the load and names the key.
+///
+/// Before FIN-09 the field was a `String` that `PencilDetector::parse`
+/// mapped with a `_ => Dihedral` arm. A project file that said `rest-depth`
+/// ran the dihedral detector and reported nothing — the operator got a
+/// pencil pass that was silently the wrong strategy. The three canonical
+/// tokens still load.
+#[test]
+// SAFETY: a test that asserts on a serde refusal; a panic IS the failure
+// report. The file already allows `unwrap_used` and `panic` for the same
+// reason.
+#[allow(clippy::expect_used)]
+fn an_unknown_detector_token_refuses_the_load() {
+    use crate::compute::operation_configs::PencilConfig;
+
+    let base = toml::to_string(&PencilConfig::default()).expect("the default config serialises");
+    assert!(
+        base.contains("detector = \"dihedral\""),
+        "the canonical token is the snake-case variant name: {base}"
+    );
+    let with_detector = |token: &str| {
+        base.replace(
+            "detector = \"dihedral\"",
+            &format!("detector = \"{token}\""),
+        )
+    };
+
+    for (token, want) in [
+        ("dihedral", PencilDetector::Dihedral),
+        ("curvature", PencilDetector::Curvature),
+        ("rest_depth", PencilDetector::RestDepth),
+    ] {
+        let cfg: PencilConfig = toml::from_str(&with_detector(token))
+            .unwrap_or_else(|e| panic!("`{token}` must load: {e}"));
+        assert_eq!(cfg.detector, want, "`{token}` must load as {want:?}");
+    }
+
+    // The four aliases `parse` used to accept, plus a typo.
+    for token in ["rest-depth", "restdepth", "rest", "crest", "ridgevalley"] {
+        let err = toml::from_str::<PencilConfig>(&with_detector(token))
+            .expect_err("an unknown detector token must refuse the load");
+        let text = err.to_string();
+        assert!(
+            text.contains("detector"),
+            "the refusal must name the key: {text}"
+        );
+    }
 }

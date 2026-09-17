@@ -54,7 +54,12 @@ use detectors::{curvature_arm, dihedral_arm, rest_depth_arm};
 use emission::emit_paths_with_entry_stock_reported;
 
 /// Which valley-detection front-end the pencil generator uses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// The project-file and MCP token is the snake-case variant name:
+/// `dihedral`, `curvature`, `rest_depth`. An unknown token refuses the load
+/// and names the key, as every other typed operation dial does (FIN-09).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PencilDetector {
     /// Mesh-dihedral crease detection (Ohtake-Belyaev-Seidel-style discrete
     /// curvature creases). Robust on clean CAD-style meshes with sharp internal
@@ -78,27 +83,6 @@ pub enum PencilDetector {
     /// detection. Routes narrow regions to pencil centrelines and wide regions to
     /// clearing. The aligned detector — recommended on relief.
     RestDepth,
-}
-
-impl PencilDetector {
-    /// Parse from a lowercase config string; unknown values fall back to the
-    /// default (Dihedral) so older project files keep loading.
-    pub fn parse(s: &str) -> Self {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "curvature" | "crest" | "ridgevalley" | "ridge_valley" => PencilDetector::Curvature,
-            "rest_depth" | "restdepth" | "rest" => PencilDetector::RestDepth,
-            _ => PencilDetector::Dihedral,
-        }
-    }
-
-    /// Canonical lowercase token for serialisation.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            PencilDetector::Dihedral => "dihedral",
-            PencilDetector::Curvature => "curvature",
-            PencilDetector::RestDepth => "rest_depth",
-        }
-    }
 }
 
 /// Parameters for pencil finishing.
@@ -173,14 +157,6 @@ pub struct PencilParams {
     /// XY grid cell size (mm) for the `RestDepth` detector's rest field. Smaller
     /// = finer regions and more drops. Default 0.5 (see [`rest_cell_default`]).
     pub rest_cell_mm: f64,
-    /// **RETIRED (PR-5, H2.2) — carried, reported, and NOT READ.**
-    ///
-    /// The `RestDepth` pencil/clearing decision is now the coverage criterion
-    /// in [`crate::surface::reach`]. See
-    /// [`crate::compute::operation_configs::PencilConfig::route_width_factor`]
-    /// for why the field still exists and how a non-default value is
-    /// surfaced. Default 2.0 (see [`route_width_factor_default`]).
-    pub route_width_factor: f64,
     /// R1: a real reference tool (from the library) whose *true* cutter geometry
     /// defines the rest reference, shared by all three detectors. `Some`
     /// overrides the nominal `reference_tool_diameter` ball — a flat end mill,
@@ -234,8 +210,8 @@ pub struct PencilParams {
 /// Sensible test/prototyping defaults, sourced from the field-level
 /// `*_default()` fns documented above where one exists (`min_valley_depth`,
 /// `bisector_strength`, `reference_tool_diameter`, `detector`,
-/// `valley_saliency`, `curvature_smoothing`, `rest_cell_mm`,
-/// `route_width_factor`) and from the doc comments' stated defaults or the
+/// `valley_saliency`, `curvature_smoothing`, `rest_cell_mm`) and from the
+/// doc comments' stated defaults or the
 /// most common test literal otherwise. Production callers (`execute.rs`)
 /// build every field explicitly from `PencilConfig`, so this exists purely
 /// to collapse test literal blocks via `..Default::default()` — it's never
@@ -260,7 +236,6 @@ impl Default for PencilParams {
             valley_saliency: valley_saliency_default(),
             curvature_smoothing: curvature_smoothing_default(),
             rest_cell_mm: rest_cell_default(),
-            route_width_factor: route_width_factor_default(),
             reference_cutter: None,
             link_kinematics: None,
             // "Same cap as `hookup_distance`" — byte-identical.
@@ -390,18 +365,6 @@ pub(crate) fn curvature_smoothing_default() -> usize {
 /// on the 200 mm wanaka mesh (release: ~2 s) with fine enough regions.
 pub(crate) fn rest_cell_default() -> f64 {
     0.5
-}
-
-/// Default rest-region routing threshold: a region whose half-width exceeds
-/// `2.0 × routing radius` (one pencil diameter) routes to clearing rather than a
-/// single pencil centreline.
-pub(crate) fn route_width_factor_default() -> f64 {
-    2.0
-}
-
-/// Default detector token for project-file serde (the historical crease detector).
-pub(crate) fn detector_string_default() -> String {
-    PencilDetector::Dihedral.as_str().to_owned()
 }
 
 /// Keep only chains that sit in genuine rest material (see

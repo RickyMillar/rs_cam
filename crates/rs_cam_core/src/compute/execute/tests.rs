@@ -1734,7 +1734,7 @@ fn pencil_rest_depth_precedence_skips_generic_pass() {
     let pencil_cell_mm = 2.0;
     let generic_cell_mm = 9.75; // deliberately distinct sentinel
     let op = OperationConfig::Pencil(PencilConfig {
-        detector: "rest_depth".to_owned(),
+        detector: crate::finish::pencil::PencilDetector::RestDepth,
         rest_cell_mm: pencil_cell_mm,
         ..PencilConfig::default()
     });

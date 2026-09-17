@@ -360,7 +360,7 @@ fn set_boundary_derived_rest_regions_skips_rest_depth_pencil_source() {
 
     let source_tc = ToolpathConfig {
         operation: OperationConfig::Pencil(PencilConfig {
-            detector: "rest_depth".to_owned(),
+            detector: crate::finish::pencil::PencilDetector::RestDepth,
             ..PencilConfig::default()
         }),
         ..make_tc(tool_id, 0)

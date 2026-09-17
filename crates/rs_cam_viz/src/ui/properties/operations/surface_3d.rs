@@ -1,4 +1,5 @@
 use super::super::pills::PillSuggestions;
+use rs_cam_core::finish::pencil::PencilDetector;
 use rs_cam_core::ops::adaptive_shared::{
     radial_woc_fraction_from_leading_arc, target_engagement_fraction,
 };
@@ -368,13 +369,11 @@ pub(in crate::ui::properties) fn draw_pencil_params(
     // Pencil's offset_stepover is a parallel-pass spacing, not the same
     // shape as a clearing radial WOC; leave it alone. Feed/plunge live on
     // the Feeds tab (W3.2).
-    let curvature = cfg.detector.trim().eq_ignore_ascii_case("curvature");
-    let rest_depth = {
-        let d = cfg.detector.trim();
-        d.eq_ignore_ascii_case("rest_depth")
-            || d.eq_ignore_ascii_case("restdepth")
-            || d.eq_ignore_ascii_case("rest")
-    };
+    // FIN-09: the config field is `PencilDetector`, so the panel compares
+    // variants. The old string compares accepted four aliases the generator
+    // never honoured.
+    let curvature = cfg.detector == PencilDetector::Curvature;
+    let rest_depth = cfg.detector == PencilDetector::RestDepth;
     egui::Grid::new("pen_p")
         .num_columns(2)
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
@@ -399,26 +398,26 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                         .selectable_label(rest_depth, "Rest depth (recommended)")
                         .clicked()
                     {
-                        cfg.detector = "rest_depth".to_owned();
+                        cfg.detector = PencilDetector::RestDepth;
                     }
                     if ui
                         .selectable_label(!curvature && !rest_depth, "Dihedral (crease)")
                         .clicked()
                     {
-                        cfg.detector = "dihedral".to_owned();
+                        cfg.detector = PencilDetector::Dihedral;
                     }
                     if ui
                         .selectable_label(curvature, "Curvature (crest)")
                         .clicked()
                     {
-                        cfg.detector = "curvature".to_owned();
+                        cfg.detector = PencilDetector::Curvature;
                     }
                 });
             ui.end_row();
             if rest_depth {
-                // Rest-depth dials. Rest Cell is the XY grid resolution; Route
-                // Width × sets how wide a rest region may be before it routes to
-                // clearing instead of a single pencil centreline (× pencil radius).
+                // Rest-depth dial. Rest Cell is the XY grid resolution of the
+                // rest field. FIN-04 deleted the retired "Route Width x"
+                // widget with the field it wrote.
                 dv(
                     ui,
                     "Rest Cell:",
@@ -426,20 +425,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                     " mm",
                     0.05,
                     0.1..=2.0,
-                );
-                // PR-5: RETIRED. The pencil/clearing decision is now the
-                // coverage criterion (reachable band vs the fan the op can
-                // emit), so nothing reads this. Still shown, still saved, so
-                // an operator who set it can see the value they set and the
-                // notice that explains it — hiding the widget would leave a
-                // live number in the project file with no way to see it.
-                dv(
-                    ui,
-                    "Route Width × (retired):",
-                    &mut cfg.route_width_factor,
-                    "",
-                    0.1,
-                    0.5..=10.0,
                 );
                 ui.end_row();
             } else if curvature {

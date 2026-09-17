@@ -180,7 +180,7 @@ fn mesh_model(mesh: TriangleMesh, name: &str) -> LoadedModel {
 /// probes drove, and the one production recommends on relief.
 fn pencil_op() -> OperationConfig {
     OperationConfig::Pencil(PencilConfig {
-        detector: "rest_depth".to_owned(),
+        detector: rs_cam_core::finish::pencil::PencilDetector::RestDepth,
         rest_cell_mm: 0.2,
         min_valley_depth: 0.05,
         min_cut_length: 2.0,
@@ -205,7 +205,7 @@ fn pencil_op() -> OperationConfig {
 /// keeps a live subject; the operation keeps the fix.
 fn dihedral_pencil_op() -> OperationConfig {
     OperationConfig::Pencil(PencilConfig {
-        detector: "dihedral".to_owned(),
+        detector: rs_cam_core::finish::pencil::PencilDetector::Dihedral,
         // The bisector shift is `radius * (n1+n2)/(1+n1.n2)`, which on a Ø3
         // ball at a floor/wall junction walks the trace ~1.5 mm sideways —
         // clean out of a 1.2 mm-wide groove and onto the flat top, where

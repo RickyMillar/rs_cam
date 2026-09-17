@@ -11,10 +11,9 @@ use crate::tool::MillingCutter;
 
 use super::dressup_apply::SHALLOW_SLOPE_DERATE_BASIS;
 use super::findings::{
-    record_claims_reference, record_clipped_band, record_deprecated_dial, record_derived_stepover,
-    record_dropped_band, record_inert_claims_dial, record_monotone_cells, record_pencil_link,
-    record_ramp_reach_clamp, record_relink_totals, record_tip_float, record_truncated_core,
-    record_zero_removal,
+    record_claims_reference, record_clipped_band, record_derived_stepover, record_dropped_band,
+    record_inert_claims_dial, record_monotone_cells, record_pencil_link, record_ramp_reach_clamp,
+    record_relink_totals, record_tip_float, record_truncated_core, record_zero_removal,
 };
 use super::shared::{
     generated_with_cut_run_spans, generated_with_spans, require_index, require_mesh,
@@ -230,11 +229,10 @@ pub(crate) fn generate_pencil(
         min_valley_depth: cfg.min_valley_depth,
         bisector_strength: cfg.bisector_strength,
         reference_tool_diameter: cfg.reference_tool_diameter,
-        detector: crate::finish::pencil::PencilDetector::parse(&cfg.detector),
+        detector: cfg.detector,
         valley_saliency: cfg.valley_saliency,
         curvature_smoothing: cfg.curvature_smoothing,
         rest_cell_mm: cfg.rest_cell_mm,
-        route_width_factor: cfg.route_width_factor,
         // R1: real reference tool geometry when the op names one; else None →
         // the pencil detectors fall back to the nominal `reference_tool_diameter`.
         reference_cutter: ctx
@@ -252,21 +250,6 @@ pub(crate) fn generate_pencil(
         // `planning/linking_2026-09-09/SPEC.md` §8).
         link_hop_distance_mm: cfg.link_hop_distance_mm,
     };
-    // PR-5: `route_width_factor` is still deserialized so every saved
-    // project loads unchanged, but the pencil/clearing decision is now the
-    // coverage criterion and nothing reads it. An operator who tuned it is
-    // told once, here, rather than left with a dial that quietly does
-    // nothing.
-    record_deprecated_dial(
-        ctx.findings,
-        crate::compute::config::DeprecatedDialFinding {
-            dial: "route_width_factor",
-            value: cfg.route_width_factor,
-            default_value: crate::finish::pencil::route_width_factor_default(),
-            replaced_by: "the coverage criterion (reachable band vs \
-                          num_offset_passes x offset_stepover)",
-        },
-    );
     let mut rest_grid_out: Option<crate::surface::rest_field::RestGrid> = None;
     let mut rest_regions_out: Option<Vec<Polygon2>> = None;
     let mut tip_float_out: Option<crate::compute::config::TipFloatFinding> = None;
@@ -416,9 +399,9 @@ pub(crate) fn generate_unified_finish(
         );
         // Detector tuning mirrors `attach_generic_rest_analysis`: use the
         // configured `rest_analysis` cell/depth/margin when present, else
-        // the detector's own defaults. `route_width_factor`/
-        // `min_cut_length` have no `RestAnalysisConfig` equivalent yet, so
-        // they always fall back to `RestFieldParams::default()`.
+        // the detector's own defaults. `min_cut_length` has no
+        // `RestAnalysisConfig` equivalent yet, so it always falls back to
+        // `RestFieldParams::default()`.
         // `routing_radius_mm` is set by `unified_finish_toolpath_with_cancel`
         // itself (the op's own cutter), so leaving the default here is a
         // no-op either way.

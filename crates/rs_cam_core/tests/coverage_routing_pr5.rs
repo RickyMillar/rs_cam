@@ -4,9 +4,9 @@
 //! The analytic gate lives in `checkpoint_a_valley_matrix.rs` (the shipped
 //! policy scored by the Checkpoint A truth) and the rest-field plumbing in
 //! `reach_policy_pr4.rs`. This file covers what PR-5 specifically changed:
-//! the fan `crease_paths::centerline_cut_paths` emits, the routing verdict
-//! `detect_rest_valleys` reaches, and the deprecation notice a project that
-//! still sets `route_width_factor` gets.
+//! the fan `crease_paths::centerline_cut_paths` emits and the routing verdict
+//! `detect_rest_valleys` reaches. The retired `route_width_factor` dial and
+//! its deprecation notice were deleted by FIN-04 (2026-09-17).
 //!
 //! Basis: `planning/review_2026-07-29/CHECKPOINT_A_EVIDENCE.md` §8.3/§8.4
 //! (approved 2026-07-29), `TECH_DEBT_RESEARCH_AND_FIX_PLAN.md` §H2.2.
@@ -19,29 +19,13 @@
     clippy::print_stdout
 )]
 
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-
-use rs_cam_core::compute::StockConfig;
-use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::{
-    BoundaryConfig, DressupConfig, HeightMode, HeightsConfig, StockSource,
-};
-use rs_cam_core::compute::config::{DeprecatedDialFinding, ToolpathStats};
-use rs_cam_core::compute::operation_configs::PencilConfig;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::finish::pencil::{
     PencilDetector, PencilParams, PencilRuntimeEvent, pencil_toolpath_structured_annotated,
 };
-use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
-use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
-use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn wanaka_taper() -> TaperedBallEndmill {
     TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
@@ -459,159 +443,4 @@ fn a_pass_is_truncated_where_the_valley_pinches_not_dropped_wholesale() {
         "every declared pass ran full length on a groove that tapers 5× — the \
          per-sample truncation is not reaching the emission"
     );
-}
-
-// ── The retired dial ─────────────────────────────────────────────────────
-
-fn mesh_model(mesh: TriangleMesh) -> LoadedModel {
-    LoadedModel {
-        id: 0,
-        name: "groove".to_owned(),
-        mesh: Some(Arc::new(mesh)),
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from("synthetic://groove.stl"),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    }
-}
-
-fn pencil_toolpath(cfg: PencilConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
-    let op = OperationConfig::Pencil(cfg);
-    let op_type = op.op_type();
-    ToolpathConfig {
-        id: ToolpathId(0),
-        name: "Pencil".to_owned(),
-        enabled: true,
-        operation: op,
-        dressups: DressupConfig::for_op(op_type),
-        heights: HeightsConfig {
-            top_z: HeightMode::Manual(0.0),
-            bottom_z: HeightMode::Manual(-4.0),
-            ..HeightsConfig::default()
-        },
-        tool_id,
-        model_id,
-        pre_gcode: None,
-        post_gcode: None,
-        boundary: BoundaryConfig::default(),
-        boundary_inherit: true,
-        stock_source: StockSource::default(),
-        coolant: CoolantMode::Off,
-        face_selection: None,
-        debug_options: ToolpathDebugOptions::default(),
-        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
-        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
-        planner_origin: None,
-    }
-}
-
-fn generate_pencil_through_session(route_width_factor: f64) -> ToolpathStats {
-    let mut builder = ProjectSessionBuilder::new();
-    builder = builder.stock(StockConfig {
-        x: 40.0,
-        y: 24.0,
-        z: 4.0,
-        origin_x: -20.0,
-        origin_y: -12.0,
-        origin_z: -4.0,
-        auto_from_model: false,
-        ..StockConfig::default()
-    });
-    let tool_idx = builder.add_tool(ToolConfig {
-        diameter: 1.0,
-        taper_half_angle: 7.0,
-        shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
-    });
-    let tool_id = builder.tools()[tool_idx].id.0;
-    let model_id = builder.add_model(mesh_model(grooved_block(2.5, 70.0, 1.2, 1.0)));
-    let cfg = PencilConfig {
-        detector: "rest_depth".to_owned(),
-        rest_cell_mm: 0.4,
-        num_offset_passes: 2,
-        offset_stepover: 0.5,
-        reference_tool_diameter: 12.0,
-        route_width_factor,
-        ..PencilConfig::default()
-    };
-    let _ = builder
-        .add_toolpath(0, pencil_toolpath(cfg, tool_id, model_id))
-        .expect("add pencil toolpath");
-    let mut session = builder.build();
-    let cancel = AtomicBool::new(false);
-    session
-        .generate_toolpath(0, &cancel)
-        .expect("pencil must generate on the grooved block");
-    session
-        .get_result(0)
-        .expect("generated toolpath must carry a result")
-        .stats
-        .clone()
-}
-
-/// A project that still sets the retired `route_width_factor` gets a
-/// user-visible notice; a project at the default gets silence.
-///
-/// This is the pattern Wave D established and the reason it exists: a dial
-/// that silently stops doing anything is indistinguishable, from the
-/// operator's chair, from a dial that works. Refusing to load the project
-/// would be worse — the field is deserialized, saved, and simply not read.
-#[test]
-fn a_retired_dial_set_by_the_project_raises_a_visible_finding() {
-    // `route_width_factor_default()` is crate-private; the shipped default is
-    // 2.0 and `PencilConfig::default()` is the public statement of it.
-    let default = PencilConfig::default().route_width_factor;
-    let at_default = generate_pencil_through_session(default);
-    assert!(
-        at_default.deprecated_dial.is_none(),
-        "an untouched dial must not raise a notice: {:?}",
-        at_default.deprecated_dial
-    );
-
-    let tuned = generate_pencil_through_session(default + 3.0);
-    let f = tuned
-        .deprecated_dial
-        .as_deref()
-        .copied()
-        .expect("a project carrying a non-default retired dial must be told");
-    println!("finding: {f:?}");
-    assert_eq!(f.dial, "route_width_factor");
-    assert!((f.value - (default + 3.0)).abs() < 1e-9);
-    assert!((f.default_value - default).abs() < 1e-9);
-
-    // ...and it reaches the diagnostics list an operator actually reads.
-    let diags = rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        ToolpathId(0),
-        &tuned,
-    );
-    let hit = diags
-        .iter()
-        .find(|d| d.id.as_str() == rs_cam_core::diagnostics::ids::CONFIG_DEPRECATED_DIAL)
-        .expect("the finding must surface as a diagnostic, not just a struct field");
-    println!("diagnostic: {}", hit.message);
-    assert!(hit.message.contains("route_width_factor"));
-    assert!(
-        hit.message.contains("NO LONGER"),
-        "the message must say the dial is not read: {}",
-        hit.message
-    );
-}
-
-/// The recorder's no-op rule, isolated: a finding whose value IS the default
-/// carries no information and must never be raised. Pinned here because the
-/// end-to-end test above can only observe the absence, not the reason.
-#[test]
-fn a_default_valued_finding_is_not_a_finding() {
-    let f = DeprecatedDialFinding {
-        dial: "route_width_factor",
-        value: 2.0,
-        default_value: 2.0,
-        replaced_by: "the coverage criterion",
-    };
-    assert!((f.value - f.default_value).abs() <= 1e-9);
 }

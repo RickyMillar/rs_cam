@@ -235,8 +235,7 @@ impl ProjectSession {
             return None;
         }
         if let OperationConfig::Pencil(cfg) = &tc.operation
-            && crate::finish::pencil::PencilDetector::parse(&cfg.detector)
-                == crate::finish::pencil::PencilDetector::RestDepth
+            && cfg.detector == crate::finish::pencil::PencilDetector::RestDepth
         {
             return None;
         }

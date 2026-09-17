@@ -91,24 +91,9 @@ pub(super) fn record_tip_float(
     findings.tip_float = Some(merged);
 }
 
-/// Record that a loaded project still sets a RETIRED dial (PR-5).
-///
-/// A no-op at the default: an operator who never touched the dial has
-/// nothing to be told, and a notice on every toolpath is a notice nobody
-/// reads.
-pub(super) fn record_deprecated_dial(
-    cell: &std::cell::RefCell<GenerationFindings>,
-    finding: crate::compute::config::DeprecatedDialFinding,
-) {
-    if (finding.value - finding.default_value).abs() <= 1e-9 {
-        return;
-    }
-    cell.borrow_mut().deprecated_dial = Some(finding);
-}
-
 /// Record what the ramp-finish reach clamp did (PR-8b).
 ///
-/// Like [`record_tip_float`] and unlike [`record_deprecated_dial`], this
+/// Like [`record_tip_float`], and unlike a defect recorder, this
 /// records a MEASUREMENT, not only a defect: an inert clamp is the honest
 /// "a descent ran and every commanded depth was holdable", and it is what
 /// stops a later reader from reading silence as clean. The diagnostic
@@ -135,8 +120,8 @@ pub(super) fn record_claims_reference(
 
 /// F4: record that a non-default rest-claims dial steered nothing.
 ///
-/// A no-op at the defaults, on the same rule [`record_deprecated_dial`]
-/// follows: an operator who never touched these has nothing to be told, and a
+/// A no-op at the defaults: an operator who never touched these has
+/// nothing to be told, and a
 /// notice on every unified-finish toolpath is a notice nobody reads. The C2
 /// keeper — `min_rest_depth_mm = 0.02`, `claims_reference = auto`,
 /// `territory_clip = false` — is silent by that rule, and must stay silent.
@@ -358,7 +343,7 @@ pub(super) fn record_zero_removal(
 /// Record an offset stepover an operation derived from the reach policy
 /// (PR-6a, H2.3).
 ///
-/// Unlike [`record_deprecated_dial`] this is NOT suppressed at the
+/// Unlike a defect recorder this is NOT suppressed at the
 /// no-change case here — the finding carries both numbers and the reader
 /// decides. The diagnostic adapter is what stays quiet when the policy and
 /// the retired envelope rule agree (every plain ball), so a test can still
