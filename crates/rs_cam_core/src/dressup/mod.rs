@@ -752,7 +752,22 @@ pub struct Tab {
 ///
 /// Tab positions are interpolated along cutting segments, so tabs appear
 /// at the correct location even when move endpoints are sparse.
+///
+/// # Move intent (CUT-08)
+///
+/// Every rewritten segment keeps the [`MoveIntent`] of the move it replaces,
+/// so a tabbed profile stays visible to each intent-keyed reader — the
+/// spacing instrument (`metrology/spacing.rs`) skips a move that is not
+/// `FinishingCut`. The two fed descents back to `cut_depth` after a tab are
+/// [`MoveIntent::EntryPlunge`]: they enter material vertically, which is what
+/// that tag means everywhere else in the crate.
+///
+/// The fed lift onto a tab keeps the cut intent. It removes material, and a
+/// `Retract`-tagged feed is forbidden — see
+/// `tests/retract_intent_move_type_census_w6.rs`.
 pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath {
+    use crate::toolpath::MoveIntent;
+
     if tabs.is_empty() {
         return toolpath;
     }
@@ -867,17 +882,26 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
                     if !in_tab {
                         // Entered tab zone before this segment
                         if let Some(last) = result.moves.last() {
-                            result.feed_to(P3::new(last.target.x, last.target.y, tab_z), feed_rate);
+                            result.feed_to_with_intent(
+                                P3::new(last.target.x, last.target.y, tab_z),
+                                feed_rate,
+                                m.intent,
+                            );
                         }
                         in_tab = true;
                     }
-                    result.feed_to(P3::new(curr_target.x, curr_target.y, tab_z), feed_rate);
+                    result.feed_to_with_intent(
+                        P3::new(curr_target.x, curr_target.y, tab_z),
+                        feed_rate,
+                        m.intent,
+                    );
                 } else {
                     if in_tab {
                         if let Some(last) = result.moves.last() {
-                            result.feed_to(
+                            result.feed_to_with_intent(
                                 P3::new(last.target.x, last.target.y, cut_depth),
                                 feed_rate,
+                                MoveIntent::EntryPlunge,
                             );
                         }
                         in_tab = false;
@@ -896,18 +920,34 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
                     if *is_entry {
                         // Emit segment up to tab entry at cut_depth
                         if !in_tab {
-                            result.feed_to(P3::new(split_x, split_y, cut_depth), feed_rate);
+                            result.feed_to_with_intent(
+                                P3::new(split_x, split_y, cut_depth),
+                                feed_rate,
+                                m.intent,
+                            );
                         }
                         // Step up
                         let tab_z = tab_z_at_dist(*event_dist + 0.01).unwrap_or(cut_depth + 2.0);
-                        result.feed_to(P3::new(split_x, split_y, tab_z), feed_rate);
+                        result.feed_to_with_intent(
+                            P3::new(split_x, split_y, tab_z),
+                            feed_rate,
+                            m.intent,
+                        );
                         in_tab = true;
                     } else {
                         // Emit segment up to tab exit at tab height
                         let tab_z = tab_z_at_dist(last_dist + 0.01).unwrap_or(cut_depth + 2.0);
-                        result.feed_to(P3::new(split_x, split_y, tab_z), feed_rate);
+                        result.feed_to_with_intent(
+                            P3::new(split_x, split_y, tab_z),
+                            feed_rate,
+                            m.intent,
+                        );
                         // Step down
-                        result.feed_to(P3::new(split_x, split_y, cut_depth), feed_rate);
+                        result.feed_to_with_intent(
+                            P3::new(split_x, split_y, cut_depth),
+                            feed_rate,
+                            MoveIntent::EntryPlunge,
+                        );
                         in_tab = false;
                     }
                     last_dist = *event_dist;
@@ -916,9 +956,17 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
                 // Emit remainder of segment after last event
                 if in_tab {
                     let tab_z = tab_z_at_dist(last_dist + 0.01).unwrap_or(cut_depth + 2.0);
-                    result.feed_to(P3::new(curr_target.x, curr_target.y, tab_z), feed_rate);
+                    result.feed_to_with_intent(
+                        P3::new(curr_target.x, curr_target.y, tab_z),
+                        feed_rate,
+                        m.intent,
+                    );
                 } else {
-                    result.feed_to(P3::new(curr_target.x, curr_target.y, cut_depth), feed_rate);
+                    result.feed_to_with_intent(
+                        P3::new(curr_target.x, curr_target.y, cut_depth),
+                        feed_rate,
+                        m.intent,
+                    );
                 }
             }
         } else {

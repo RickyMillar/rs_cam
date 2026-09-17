@@ -10,6 +10,7 @@
 )]
 
 use super::*;
+use crate::toolpath::MoveIntent;
 
 fn simple_plunge_toolpath() -> Toolpath {
     let mut tp = Toolpath::new();
@@ -594,6 +595,120 @@ fn test_tabs_add_transition_moves() {
         result.moves.len(),
         tp.moves.len()
     );
+}
+
+/// A tagged profile, the shape `ops/profile.rs` emits: every move carries a
+/// real [`MoveIntent`], and none is `Unknown`.
+fn tagged_profile_toolpath_for_tabs() -> Toolpath {
+    let mut tp = Toolpath::new();
+    tp.rapid_to_with_intent(P3::new(0.0, 0.0, 10.0), MoveIntent::Retract);
+    tp.feed_to_with_intent(P3::new(0.0, 0.0, -5.0), 500.0, MoveIntent::EntryPlunge);
+    tp.feed_to_with_intent(P3::new(100.0, 0.0, -5.0), 1000.0, MoveIntent::FinishingCut);
+    tp.feed_to_with_intent(
+        P3::new(100.0, 100.0, -5.0),
+        1000.0,
+        MoveIntent::FinishingCut,
+    );
+    tp.feed_to_with_intent(P3::new(0.0, 100.0, -5.0), 1000.0, MoveIntent::FinishingCut);
+    tp.feed_to_with_intent(P3::new(0.0, 0.0, -5.0), 1000.0, MoveIntent::FinishingCut);
+    tp.rapid_to_with_intent(P3::new(0.0, 0.0, 10.0), MoveIntent::Retract);
+    tp
+}
+
+/// CUT-08 sentry: `apply_tabs` carries the move intent it replaces, and the
+/// fed descents back to depth are plunges.
+///
+/// Before the fix every rewritten segment came out `MoveIntent::Unknown`,
+/// because `apply_tabs` emitted through `Toolpath::feed_to`. A tabbed
+/// finishing profile then left `metrology/spacing.rs`, which reads only
+/// `FinishingCut`, and two fed vertical descents shipped untagged.
+///
+/// The step-up onto a tab keeps the CUT intent, not `Retract`: it removes
+/// material, and `tests/retract_intent_move_type_census_w6.rs` forbids a
+/// `Retract`-tagged `Linear` feed.
+///
+/// Two tab sets, because `apply_tabs` has two arms. `even_tabs` crosses a
+/// zone boundary inside a segment (the split arm). The single wide tab
+/// starts and ends exactly on a corner of the 100 mm square, so its segment
+/// holds no boundary event (the whole-segment arm).
+#[test]
+fn apply_tabs_carries_the_move_intent_cut08() {
+    // The whole-segment arm: one tab over the third side of the square.
+    let wide_tab = vec![Tab {
+        position: 250.0 / 400.0,
+        width: 100.0,
+        height: 3.0,
+    }];
+    for tabs in [even_tabs(4, 5.0, 3.0), wide_tab] {
+        let tp = tagged_profile_toolpath_for_tabs();
+        assert!(
+            tp.moves.iter().all(|m| m.intent != MoveIntent::Unknown),
+            "fixture precondition: the input carries no Unknown intent"
+        );
+
+        let result = apply_tabs(tp, &tabs, -5.0);
+
+        let unknown = result
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::Unknown)
+            .count();
+        assert_eq!(
+            unknown, 0,
+            "apply_tabs emitted {unknown} moves with MoveIntent::Unknown"
+        );
+
+        let mut descents = 0_usize;
+        let mut ascents = 0_usize;
+        for i in 1..result.moves.len() {
+            let mv = &result.moves[i];
+            if !matches!(mv.move_type, MoveType::Linear { .. }) {
+                continue;
+            }
+            let prev = &result.moves[i - 1].target;
+            let curr = &mv.target;
+            let sdx = curr.x - prev.x;
+            let sdy = curr.y - prev.y;
+            let dxy = (sdx * sdx + sdy * sdy).sqrt();
+            let dz = curr.z - prev.z;
+            if dxy >= 0.01 || curr.z >= 0.0 {
+                continue;
+            }
+            if dz < -0.5 {
+                descents += 1;
+                assert_eq!(
+                    mv.intent,
+                    MoveIntent::EntryPlunge,
+                    "a fed descent back to depth at move {i} must be an EntryPlunge"
+                );
+            } else if dz > 0.5 {
+                ascents += 1;
+                assert_eq!(
+                    mv.intent,
+                    MoveIntent::FinishingCut,
+                    "the fed lift onto a tab at move {i} must keep the cut intent"
+                );
+            }
+        }
+        assert!(
+            descents >= 1,
+            "fixture precondition: the arm must emit a fed descent"
+        );
+        assert!(
+            ascents >= 1,
+            "fixture precondition: the arm must emit a fed lift"
+        );
+
+        // The horizontal cuts keep the finishing tag the spacing instrument
+        // reads.
+        assert!(
+            result
+                .moves
+                .iter()
+                .any(|m| m.intent == MoveIntent::FinishingCut),
+            "the finishing tag must survive the rewrite"
+        );
+    }
 }
 
 // --- Link-vs-retract tests ---
