@@ -2510,3 +2510,58 @@ fn resubmitting_the_active_toolpath_reports_a_supersede() {
             if matches!(result.toolpath_id, ToolpathId(92)))
     });
 }
+
+/// CONTRACT — SHL-06. One dequeue prologue serves all five lanes, and the
+/// job it marks running is stated by the caller, not left to a copy.
+///
+/// The five `spawn_*_lane` loops held a ~20-line copy of this block each.
+/// Three `LaneInner` fields arrived over the programme's life
+/// (`active_toolpath_id`, `active_cancel`, `current_phase`) and each had
+/// to be written five times by hand. The job and reach lanes leave
+/// `active_toolpath_id` unset, and the job lane explained that in prose —
+/// so the deviation was a fact an engineer had to notice while reading
+/// five near-identical functions. It is a parameter now.
+#[test]
+fn the_lane_prologue_records_what_the_caller_states_shl06() {
+    use crate::compute::worker::{LaneQueue, RunningJob};
+
+    let lane: std::sync::Arc<LaneQueue<u32>> = LaneQueue::new(ComputeLane::Job);
+
+    // A lane that runs work FOR a toolpath without generating it.
+    lane.inner
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .queue
+        .push_back(7);
+    let taken = lane.dequeue_running(|request| RunningJob::labelled(format!("job {request}")));
+    assert_eq!(taken, Some(7), "the prologue hands the request back");
+    let snapshot = lane.snapshot();
+    assert_eq!(snapshot.state, LaneState::Running);
+    assert_eq!(snapshot.current_job.as_deref(), Some("job 7"));
+    assert_eq!(
+        snapshot.active_toolpath_id, None,
+        "a lane that does not GENERATE must report no active toolpath: MCP \
+         `generation_status` reads this field as the op being generated"
+    );
+    assert_eq!(snapshot.active_toolpath_index, None);
+    assert!(snapshot.started_at.is_some(), "the lane is timing the job");
+
+    // The toolpath lane's shape: the same prologue, one more statement.
+    lane.inner
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .queue
+        .push_back(9);
+    let taken = lane.dequeue_running(|request| {
+        RunningJob::labelled(format!("generate {request}")).generating(ToolpathId(3), 2)
+    });
+    assert_eq!(taken, Some(9));
+    let snapshot = lane.snapshot();
+    assert_eq!(snapshot.current_job.as_deref(), Some("generate 9"));
+    assert_eq!(
+        snapshot.active_toolpath_id,
+        Some(3),
+        "`generating` is the one door that names the op"
+    );
+    assert_eq!(snapshot.active_toolpath_index, Some(2));
+}

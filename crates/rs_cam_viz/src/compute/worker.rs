@@ -347,6 +347,69 @@ impl<Request> LaneInner<Request> {
             active_cancel: None,
         }
     }
+
+    /// Forget the job that just finished. The lane runs nothing.
+    fn go_idle(&mut self) {
+        self.state = LaneState::Idle;
+        self.current_job = None;
+        self.current_phase = None;
+        self.started_at = None;
+        self.active_toolpath_id = None;
+        self.active_toolpath_index = None;
+        self.active_cancel = None;
+    }
+}
+
+/// What a lane records about the request it has just taken off its queue.
+///
+/// **SHL-06.** The five `spawn_*_lane` loops each wrote these fields
+/// inline, a ~20-line block repeated verbatim, and the two lanes that
+/// leave `active_toolpath_id` unset explained the omission in prose. It is
+/// a field now, so every lane states its answer.
+struct RunningJob {
+    /// The label the status bar and MCP `generation_status` show.
+    label: String,
+    /// The toolpath being GENERATED.
+    ///
+    /// Only the toolpath lane answers `Some`. The job and reach lanes run
+    /// work FOR a toolpath without generating it, and MCP
+    /// `generation_status` reads this field as the op being generated, so
+    /// an id here would report a generation that is not running. Those
+    /// lanes carry the id in their label instead.
+    active_toolpath_id: Option<ToolpathId>,
+    /// The 0-based plan position of that toolpath, so `generation_status`
+    /// names the op by the index every other MCP call uses.
+    active_toolpath_index: Option<usize>,
+    /// The cancel flag of THIS job (§22 ruling 3).
+    ///
+    /// `None` on a lane whose requests carry no per-job flag; a cancel
+    /// there sets the lane flag alone.
+    active_cancel: Option<Arc<AtomicBool>>,
+}
+
+impl RunningJob {
+    /// A job the status surfaces know by its label alone.
+    fn labelled(label: String) -> Self {
+        Self {
+            label,
+            active_toolpath_id: None,
+            active_toolpath_index: None,
+            active_cancel: None,
+        }
+    }
+
+    /// Name the toolpath this job GENERATES. The toolpath lane alone.
+    fn generating(mut self, id: ToolpathId, index: usize) -> Self {
+        self.active_toolpath_id = Some(id);
+        self.active_toolpath_index = Some(index);
+        self
+    }
+
+    /// Name the flag a cancel of this job must set.
+    fn cancelled_by(mut self, cancel: Arc<AtomicBool>) -> Self {
+        self.active_cancel = Some(cancel);
+        self
+    }
 }
 
 struct LaneQueue<Request> {
@@ -358,6 +421,41 @@ struct LaneQueue<Request> {
 }
 
 impl<Request> LaneQueue<Request> {
+    /// Wait for a request, take it, and mark the lane running.
+    ///
+    /// `None` means the lane is shutting down and the thread must return.
+    ///
+    /// **SHL-06.** This is the one dequeue prologue. Every `spawn_*_lane`
+    /// held its own copy, so a fix or a new `LaneInner` field had to be
+    /// applied five times by hand — `active_toolpath_id`, `active_cancel`
+    /// and `current_phase` each arrived that way.
+    fn dequeue_running(&self, describe: impl FnOnce(&Request) -> RunningJob) -> Option<Request> {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        while inner.queue.is_empty() {
+            if self.shutdown.load(Ordering::SeqCst) {
+                return None;
+            }
+            inner.go_idle();
+            inner = self.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
+        }
+        if self.shutdown.load(Ordering::SeqCst) {
+            return None;
+        }
+        // SAFETY: the loop above returns only with a non-empty queue.
+        #[allow(clippy::expect_used)]
+        let request = inner.queue.pop_front().expect("queue checked");
+        let running = describe(&request);
+        self.cancel.store(false, Ordering::SeqCst);
+        inner.state = LaneState::Running;
+        inner.current_job = Some(running.label);
+        inner.current_phase = None;
+        inner.started_at = Some(Instant::now());
+        inner.active_toolpath_id = running.active_toolpath_id;
+        inner.active_toolpath_index = running.active_toolpath_index;
+        inner.active_cancel = running.active_cancel;
+        Some(request)
+    }
+
     fn new(lane: ComputeLane) -> Arc<Self> {
         Arc::new(Self {
             lane,
@@ -838,37 +936,12 @@ fn spawn_toolpath_lane(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
-            let request = {
-                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
-                while inner.queue.is_empty() {
-                    if lane.shutdown.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    inner.state = LaneState::Idle;
-                    inner.current_job = None;
-                    inner.current_phase = None;
-                    inner.started_at = None;
-                    inner.active_toolpath_id = None;
-                    inner.active_toolpath_index = None;
-                    inner.active_cancel = None;
-                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
-                }
-                if lane.shutdown.load(Ordering::SeqCst) {
-                    return;
-                }
-                // SAFETY: loop condition guarantees queue is non-empty
-                #[allow(clippy::expect_used)]
-                let request = inner.queue.pop_front().expect("queue checked");
-                lane.cancel.store(false, Ordering::SeqCst);
-                inner.state = LaneState::Running;
-                inner.current_job = Some(toolpath_job_label(&request));
-                inner.current_phase = None;
-                inner.started_at = Some(Instant::now());
-                inner.active_toolpath_id = Some(request.viz.toolpath_id);
-                inner.active_toolpath_index = Some(request.handle.index);
-                // The flag a cancel of THIS job must set.
-                inner.active_cancel = Some(Arc::clone(&request.viz.cancel));
-                request
+            let Some(request) = lane.dequeue_running(|request| {
+                RunningJob::labelled(toolpath_job_label(request))
+                    .generating(request.viz.toolpath_id, request.handle.index)
+                    .cancelled_by(Arc::clone(&request.viz.cancel))
+            }) else {
+                return;
             };
 
             if lane.shutdown.load(Ordering::SeqCst) {
@@ -962,33 +1035,10 @@ fn spawn_analysis_lane(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
-            let request = {
-                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
-                while inner.queue.is_empty() {
-                    if lane.shutdown.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    inner.state = LaneState::Idle;
-                    inner.current_job = None;
-                    inner.current_phase = None;
-                    inner.started_at = None;
-                    inner.active_toolpath_id = None;
-                    inner.active_toolpath_index = None;
-                    inner.active_cancel = None;
-                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
-                }
-                if lane.shutdown.load(Ordering::SeqCst) {
-                    return;
-                }
-                // SAFETY: loop condition guarantees queue is non-empty
-                #[allow(clippy::expect_used)]
-                let request = inner.queue.pop_front().expect("queue checked");
-                lane.cancel.store(false, Ordering::SeqCst);
-                inner.state = LaneState::Running;
-                inner.current_job = Some(analysis_job_label(&request));
-                inner.current_phase = None;
-                inner.started_at = Some(Instant::now());
-                request
+            let Some(request) =
+                lane.dequeue_running(|request| RunningJob::labelled(analysis_job_label(request)))
+            else {
+                return;
             };
 
             if lane.shutdown.load(Ordering::SeqCst) {
@@ -1088,33 +1138,10 @@ fn spawn_optimize_lane(
 
     std::thread::spawn(move || {
         loop {
-            let request = {
-                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
-                while inner.queue.is_empty() {
-                    if lane.shutdown.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    inner.state = LaneState::Idle;
-                    inner.current_job = None;
-                    inner.current_phase = None;
-                    inner.started_at = None;
-                    inner.active_toolpath_id = None;
-                    inner.active_toolpath_index = None;
-                    inner.active_cancel = None;
-                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
-                }
-                if lane.shutdown.load(Ordering::SeqCst) {
-                    return;
-                }
-                // SAFETY: loop condition guarantees queue is non-empty
-                #[allow(clippy::expect_used)]
-                let request = inner.queue.pop_front().expect("queue checked");
-                lane.cancel.store(false, Ordering::SeqCst);
-                inner.state = LaneState::Running;
-                inner.current_job = Some(optimize_job_label(&request));
-                inner.current_phase = None;
-                inner.started_at = Some(Instant::now());
-                request
+            let Some(request) =
+                lane.dequeue_running(|request| RunningJob::labelled(optimize_job_label(request)))
+            else {
+                return;
             };
 
             if lane.shutdown.load(Ordering::SeqCst) {
@@ -1182,37 +1209,12 @@ fn spawn_job_lane(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
-            let mut request = {
-                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
-                while inner.queue.is_empty() {
-                    if lane.shutdown.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    inner.state = LaneState::Idle;
-                    inner.current_job = None;
-                    inner.current_phase = None;
-                    inner.started_at = None;
-                    inner.active_toolpath_id = None;
-                    inner.active_toolpath_index = None;
-                    inner.active_cancel = None;
-                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
-                }
-                if lane.shutdown.load(Ordering::SeqCst) {
-                    return;
-                }
-                // SAFETY: loop condition guarantees queue is non-empty
-                #[allow(clippy::expect_used)]
-                let request = inner.queue.pop_front().expect("queue checked");
-                lane.cancel.store(false, Ordering::SeqCst);
-                inner.state = LaneState::Running;
-                inner.current_job = Some(job_label(&request));
-                inner.current_phase = None;
-                inner.started_at = Some(Instant::now());
-                // `active_toolpath_id` is deliberately NOT set, for the
-                // reason `ComputeLane::Reach` states: MCP `generation_status`
-                // reads it as the op being GENERATED.
-                inner.active_cancel = Some(Arc::clone(&request.cancel));
-                request
+            // `generating` is NOT called: a job runs work FOR a toolpath
+            // without generating it. See `RunningJob::active_toolpath_id`.
+            let Some(mut request) = lane.dequeue_running(|request| {
+                RunningJob::labelled(job_label(request)).cancelled_by(Arc::clone(&request.cancel))
+            }) else {
+                return;
             };
 
             if lane.shutdown.load(Ordering::SeqCst) {
@@ -1314,38 +1316,10 @@ fn spawn_reach_lane(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
-            let request = {
-                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
-                while inner.queue.is_empty() {
-                    if lane.shutdown.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    inner.state = LaneState::Idle;
-                    inner.current_job = None;
-                    inner.current_phase = None;
-                    inner.started_at = None;
-                    inner.active_toolpath_id = None;
-                    inner.active_toolpath_index = None;
-                    inner.active_cancel = None;
-                    inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
-                }
-                if lane.shutdown.load(Ordering::SeqCst) {
-                    return;
-                }
-                // SAFETY: loop condition guarantees queue is non-empty
-                #[allow(clippy::expect_used)]
-                let request = inner.queue.pop_front().expect("queue checked");
-                lane.cancel.store(false, Ordering::SeqCst);
-                inner.state = LaneState::Running;
-                inner.current_job = Some(reach_job_label(&request));
-                inner.current_phase = None;
-                inner.started_at = Some(Instant::now());
-                // `active_toolpath_id` is deliberately NOT set. Its doc on
-                // `LaneSnapshot` says it is `None` on every lane but the
-                // toolpath one, and MCP `generation_status` reads it as the
-                // op being GENERATED. The reach job's own label carries the
-                // id for anyone reading the status bar.
-                request
+            let Some(request) =
+                lane.dequeue_running(|request| RunningJob::labelled(reach_job_label(request)))
+            else {
+                return;
             };
 
             if lane.shutdown.load(Ordering::SeqCst) {
