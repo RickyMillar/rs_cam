@@ -1,8 +1,7 @@
 # `maps/` — grid-walk maps and their bounded caches
 
-One grid walk over the model bounding box, labelled per cell. The entry
-points are `maps::tier_map::compute_tier_map` and
-`maps::reach_map::compute_reach_map`.
+One grid walk over the model bounding box, labelled per cell. The entry points
+are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 
 ## Files
 
@@ -24,14 +23,16 @@ points are `maps::tier_map::compute_tier_map` and
 - `stock_to_leave` is an intentional offset. It is never a reach tolerance.
 - A cache key must carry the mesh identity and the tool shape key. A stale
   key returns a map for another model.
+- `reach_map_for_mesh` and the four `stats()` are `test-support` doors.
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test reach_map_p5`
-- `cargo test -p rs_cam_core -q --test reach_map_residual_p5_1`
-- `cargo test -p rs_cam_core -q --test tier_map_walk_t1`
-- `cargo test -p rs_cam_core -q --test tier_map_slope_t2`
+- `cargo test -p rs_cam_core --features test-support -q --test reach_map_p5`
+- `... --features test-support -q --test reach_map_residual_p5_1`
+- `... --features test-support -q --test tier_map_walk_t1`
+- `... --features test-support -q --test tier_map_slope_t2`
 - `cargo test -p rs_cam_core -q --test tier_islands_i1`
+- `cargo test -p rs_cam_core -q --test the_test_doors_are_gated_fld0405`
 
 ## Do not
 

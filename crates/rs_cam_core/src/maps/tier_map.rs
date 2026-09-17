@@ -171,7 +171,8 @@ pub fn drop_call_count() -> u64 {
 /// **Test door.** The harnesses
 /// `crates/rs_cam_core/tests/tier_map_slope_t2.rs` and
 /// `crates/rs_cam_core/tests/tier_map_cache_t3.rs` are the only callers. No
-/// production path reads it.
+/// production path reads it, so it sits behind `test-support` (FLD-05).
+#[cfg(feature = "test-support")]
 pub fn reset_drop_call_count() {
     DROP_CALLS.store(0, Ordering::Relaxed);
 }
@@ -496,7 +497,9 @@ impl TierMap {
     /// Label at `(row, col)`, or `None` off the grid.
     ///
     /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
-    /// only callers. No production path reads it.
+    /// only callers. No production path reads it, so it sits behind
+    /// `test-support` (FLD-05).
+    #[cfg(feature = "test-support")]
     #[must_use]
     pub fn label_at(&self, row: usize, col: usize) -> Option<u8> {
         if row >= self.ny || col >= self.nx {

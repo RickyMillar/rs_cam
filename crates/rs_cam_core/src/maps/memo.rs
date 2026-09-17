@@ -63,6 +63,10 @@ impl CacheCounters {
     }
 
     /// Read the counters as `(builds, hits)`.
+    ///
+    /// **Test door** (FLD-04). The four `stats()` readers are its only
+    /// callers, and they sit behind the same feature.
+    #[cfg(feature = "test-support")]
     pub(crate) fn read(&self) -> (u64, u64) {
         (
             self.builds.load(Ordering::Relaxed),

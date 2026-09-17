@@ -74,8 +74,8 @@ workspace's denied clippy lints and `unsafe_code`.
 | Format | `cargo fmt --all -- --check` |
 | One sentry | `cargo test -p <crate> -q --test <name>` |
 | Focused crate tests | `cargo test -p <crate> -q` (viz, cli, mcp; core `--lib`) |
-| Full lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research -- -D warnings` |
-| Core full gate (CI) | `cargo test -p rs_cam_core --features heavy-tests,research --no-fail-fast -- -q` |
+| Full lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research,rs_cam_core/test-support -- -D warnings` |
+| Core full gate (CI) | `cargo test -p rs_cam_core --features heavy-tests,research,test-support --no-fail-fast -- -q` |
 
 Local loop: the folder sentries for the folders you touched, the focused
 crate tests, then clippy. CI runs the core full gate; do not run it locally

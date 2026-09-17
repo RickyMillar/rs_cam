@@ -159,9 +159,10 @@ fn table() -> &'static Mutex<Table> {
 
 /// Cumulative counters for the memo, since process start.
 ///
-/// **Test door.** Stays `pub` for two reasons: `geom_cache::stats` returns
-/// it, and the harness `tests/geometry_cache_g8.rs` binds it
-/// (S29, 2026-09-16).
+/// **Test door** (FLD-04). Only [`stats`] produces it, and only the harness
+/// `crates/rs_cam_core/tests/geometry_cache_g8.rs` reads it. No product
+/// surface shows these counters, so both sit behind `test-support`.
+#[cfg(feature = "test-support")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct GeomCacheStats {
     pub index_builds: u64,
@@ -182,6 +183,9 @@ static TRANSFORM: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCou
 /// Read the counters. This is the measurement instrument for G8: the point of
 /// the change is that these `*_builds` stay at one per model across a whole
 /// `generate_all` instead of rising with the toolpath count.
+///
+/// **Test door** (FLD-04). No product path reads it.
+#[cfg(feature = "test-support")]
 #[must_use]
 pub fn stats() -> GeomCacheStats {
     let (index_builds, index_hits) = INDEX.read();

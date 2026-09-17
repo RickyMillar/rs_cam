@@ -21,7 +21,7 @@ disable-model-invocation: true
 |------|---------|
 | Per-crate (recommended) | `cargo test -p rs_cam_core -q && cargo test -p rs_cam_cli -q && cargo test -p rs_cam_viz -q && cargo test -p rs_cam_mcp -q` |
 | Core only (dev loop) | `cargo test -p rs_cam_core -q` |
-| Core FULL gate | `cargo test -p rs_cam_core --features heavy-tests,research --no-fail-fast -- -q` |
+| Core FULL gate | `cargo test -p rs_cam_core --features heavy-tests,research,test-support --no-fail-fast -- -q` |
 | CLI integration | `cargo test -p rs_cam_cli --test integration` |
 | Viz regression | `cargo test -p rs_cam_viz controller::tests::` |
 | Compute worker | `cargo test -p rs_cam_viz compute::worker::tests::` |
@@ -38,7 +38,7 @@ Note: the 12 heaviest core binaries sit behind the `heavy-tests` feature (75% of
 
 | What | Command |
 |------|---------|
-| Lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research -- -D warnings` |
+| Lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research,rs_cam_core/test-support -- -D warnings` |
 | Format check | `cargo fmt --check` |
 | Format fix | `cargo fmt` |
 | Benchmark | `cargo bench -p rs_cam_core` |

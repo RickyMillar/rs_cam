@@ -138,8 +138,10 @@ fn table() -> &'static Mutex<Table> {
 
 /// Cumulative counters for the memo, since process start.
 ///
-/// Stays `pub`: `tier_map_cache::stats` returns it, so a crate-private form
-/// raises `private_interfaces` (S29, 2026-09-16).
+/// **Test door** (FLD-04). Only [`stats`] produces it, and only
+/// `crates/rs_cam_core/tests/tier_map_cache_t3.rs` reads it. No product
+/// surface shows these counters, so both sit behind `test-support`.
+#[cfg(feature = "test-support")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TierMapCacheStats {
     pub builds: u64,
@@ -152,6 +154,9 @@ pub struct TierMapCacheStats {
 static COUNTERS: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
 
 /// Read the counters.
+///
+/// **Test door** (FLD-04). No product path reads it.
+#[cfg(feature = "test-support")]
 #[must_use]
 pub fn stats() -> TierMapCacheStats {
     let (builds, hits) = COUNTERS.read();

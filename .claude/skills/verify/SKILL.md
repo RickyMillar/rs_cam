@@ -21,7 +21,7 @@ Fix: `cargo fmt` then review changes.
 This is the CI gate. Locally, run it only with the operator's go-ahead: the core line takes 30+ minutes. The usual local loop is the folder sentries, the focused crate tests and step 3.
 
 ```bash
-cargo test -p rs_cam_core --features heavy-tests,research --no-fail-fast -- -q
+cargo test -p rs_cam_core --features heavy-tests,research,test-support --no-fail-fast -- -q
 cargo test -p rs_cam_cli -q
 cargo test -p rs_cam_viz -q
 cargo test -p rs_cam_mcp -q
@@ -32,9 +32,9 @@ Fix: run failing test alone with `cargo test -p <crate> <name> -- --nocapture`.
 
 ### 3. Clippy (zero warnings)
 ```bash
-cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research -- -D warnings
+cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research,rs_cam_core/test-support -- -D warnings
 ```
-Both features belong here: without `heavy-tests` the 12 heavy binaries are never linted, and without `research` the three `finish/` research arms (`conformal_spiral`, `direction_field`, `spiral_finish_compact`) and their eight harnesses are never linted. Either way the code drifts silently.
+All three features belong here: without `heavy-tests` the 12 heavy binaries are never linted, without `research` the three `finish/` research arms (`conformal_spiral`, `direction_field`, `spiral_finish_compact`) and their eight harnesses are never linted, and without `test-support` the eight harnesses that bind a `maps/` or `surface/` test door are never linted. Any of the three drifts silently.
 Fix: address each warning — the project enforces `-D warnings`.
 
 ### 4. Demo job smoke test

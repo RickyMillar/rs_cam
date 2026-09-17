@@ -21,11 +21,13 @@ The two cutter walks and the derived surface fields. The entry point is
 - `flow_accum` traces surface drainage. That is a different curve family from
   a rest ridge. Keep the module; do not route pencil through it.
 - The valley-reach policy is canonical. Do not derive a second band width.
+- `GridZ::is_covered` is a test door behind the `test-support` feature. A
+  product path reads a cell through `z_at`, and matches the variant.
 
 ## Sentries
 
 - `cargo test -p rs_cam_core -q --test reach_policy_pr4`
-- `cargo test -p rs_cam_core -q --test grid_z_uncovered_contract_c2`
+- `... --features test-support -q --test grid_z_uncovered_contract_c2`
 - `cargo test -p rs_cam_core -q --test rest_routing_probe_e9`
 - `cargo test -p rs_cam_core -q --test catchment_basin_census_w0`
 - `cargo test -p rs_cam_core -q --test drop_cutter_off_mesh`

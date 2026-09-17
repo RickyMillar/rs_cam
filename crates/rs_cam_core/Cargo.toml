@@ -26,6 +26,17 @@ heavy-tests = []
 #   cargo test -p rs_cam_core --features research --test spiral_finish_compact_c1
 # Most of their tests are `#[ignore]` evidence runs and need `-- --ignored`.
 research = []
+# Gates the twelve test doors in `maps/` and `surface/` — the four cache-stats
+# types with their four `stats()` readers, `reach_map_for_mesh`,
+# `reset_drop_call_count`, `TierMap::label_at` and `GridZ::is_covered`. No
+# product path reads any of them, and each one is bound by an integration-test
+# crate, so `cfg(test)` cannot hide them. Off by default, so the default
+# public API of this crate carries no test door. The eight `[[test]]` sections
+# below name the harnesses that bind them, and `rs_cam_viz` enables the
+# feature from its `[dev-dependencies]` for `tests/reach_overlay_p5.rs`.
+# Run one with, for example:
+#   cargo test -p rs_cam_core --features test-support --test reach_map_p5
+test-support = []
 
 [dependencies]
 nalgebra = { workspace = true }
@@ -168,3 +179,39 @@ required-features = ["research"]
 [[test]]
 name = "whole_board_spiral_ledger_g1"
 required-features = ["research"]
+
+# The test-door harnesses. Each one binds a `maps/` or `surface/` item behind
+# the `test-support` feature, so each one needs that feature to compile. The
+# audit row FLD-04 + FLD-05 listed seven of them; `rg` found eight
+# (`finish_surface_cache` binds `stats` through a use-list).
+[[test]]
+name = "finish_surface_cache"
+required-features = ["test-support"]
+
+[[test]]
+name = "geometry_cache_g8"
+required-features = ["test-support"]
+
+[[test]]
+name = "grid_z_uncovered_contract_c2"
+required-features = ["test-support"]
+
+[[test]]
+name = "reach_map_p5"
+required-features = ["test-support"]
+
+[[test]]
+name = "reach_map_residual_p5_1"
+required-features = ["test-support"]
+
+[[test]]
+name = "tier_map_cache_t3"
+required-features = ["test-support"]
+
+[[test]]
+name = "tier_map_slope_t2"
+required-features = ["test-support"]
+
+[[test]]
+name = "tier_map_walk_t1"
+required-features = ["test-support"]

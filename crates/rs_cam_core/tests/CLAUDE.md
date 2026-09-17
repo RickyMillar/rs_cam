@@ -20,9 +20,10 @@ part says what the file protects. Search by claim words, not by code.
 
 - One sentry: `cargo test -p rs_cam_core -q --test <name>`. Each folder
   `CLAUDE.md` under `src/` names the sentries for that folder.
-- The twelve heaviest binaries sit behind `--features heavy-tests`; their
-  names and durations are in `Cargo.toml`. CI runs them. Locally, name one
-  binary and ask the operator first.
+- `heavy-tests` (the twelve heaviest, with durations), `research` (eight)
+  and `test-support` (eight that bind a door such as `reach_map_for_mesh`)
+  gate test targets in `Cargo.toml`; a named run without its feature errors.
+  CI runs them. Locally, name one binary and ask the operator first.
 - `#[ignore]` marks an instrument or an evidence run, not a broken test.
   Run one by name with `-- --ignored`. Never use `--include-ignored`.
 - A `planning/…` path in a doc comment may no longer exist; the tag
@@ -34,7 +35,6 @@ part says what the file protects. Search by claim words, not by code.
   present before you assert its property, and do not match comments.
 - Inject the guarded defect once and confirm the test goes red before you
   trust it.
-- The lint allowances for a test module are in `../CLAUDE.md`; this file
-  does not repeat them.
+- The lint allowances for a test module are in `../CLAUDE.md`.
 - Tests that need the wanaka project run for minutes. Say so in the
   folder file that names them.

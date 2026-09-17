@@ -21,12 +21,13 @@ jobs:
         run: cargo fmt --check
 
       - name: Test
-        run: cargo test -q --features rs_cam_core/heavy-tests,rs_cam_core/research
+        run: cargo test -q --features rs_cam_core/heavy-tests,rs_cam_core/research,rs_cam_core/test-support
 
       - name: Clippy
         # `research` gates the three finish research arms; without it they are
-        # never linted. `heavy-tests` does the same for the 12 heavy binaries.
-        run: cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research -- -D warnings
+        # never linted. `heavy-tests` does the same for the 12 heavy binaries,
+        # and `test-support` for the 8 that bind a `maps/` or `surface/` door.
+        run: cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research,rs_cam_core/test-support -- -D warnings
 
       - name: Demo job smoke test
         run: |

@@ -39,3 +39,9 @@ rs_cam_mcp = { path = "../rs_cam_mcp", optional = true }
 [features]
 default = ["mcp"]
 mcp = ["dep:rmcp", "dep:tokio", "dep:rs_cam_mcp"]
+
+[dev-dependencies]
+# `tests/reach_overlay_p5.rs` calls `maps::reach_map::reach_map_for_mesh`, a
+# test door behind the core `test-support` feature (FLD-05). A dev-dependency
+# adds the feature to the test targets only; the GUI binary never enables it.
+rs_cam_core = { path = "../rs_cam_core", features = ["step", "test-support"] }
