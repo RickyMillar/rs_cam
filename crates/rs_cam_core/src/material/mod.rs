@@ -9,6 +9,52 @@ pub mod wood_species_library;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
+/// Where the `Kc` base of a [`WoodSpecies`] comes from.
+///
+/// [`Material::kc_n_per_mm2`] returns the same `Some(value)` shape for every
+/// solid-wood species, so the number alone cannot tell a citation from a
+/// guess. A gate, a diagnostic row or an operator reads this tag to learn
+/// which one it holds. The tag names the source. It does not change a value
+/// and it does not scale one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum KcProvenance {
+    /// One named row of the primary source: USDA Forest Service Wood
+    /// Handbook FPL-GTR-190 (2010), Chapter 5, Table 5-3a.
+    FplTableRow,
+    /// The mid-band of several named rows of that same primary source. The
+    /// species is a generic stand-in, not one botanical species.
+    FplBandMidpoint,
+    /// No primary source. The value is shop folklore, kept because the
+    /// species has no published shear row yet. A gate that needs a citation
+    /// must treat this as unmeasured.
+    Folklore,
+}
+
+impl KcProvenance {
+    /// Every variant, so a reader covers the set without a match.
+    pub const ALL: [KcProvenance; 3] = [
+        KcProvenance::FplTableRow,
+        KcProvenance::FplBandMidpoint,
+        KcProvenance::Folklore,
+    ];
+
+    /// `true` when no primary source backs the value.
+    #[must_use]
+    pub const fn is_folklore(self) -> bool {
+        matches!(self, KcProvenance::Folklore)
+    }
+
+    /// Short label for a diagnostic row or an operator report.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            KcProvenance::FplTableRow => "FPL Table 5-3a row",
+            KcProvenance::FplBandMidpoint => "FPL Table 5-3a band mid-point",
+            KcProvenance::Folklore => "folklore (no primary source)",
+        }
+    }
+}
+
 /// Wood species with Janka hardness data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WoodSpecies {
@@ -25,6 +71,45 @@ pub enum WoodSpecies {
 }
 
 impl WoodSpecies {
+    /// Every species, so a gate or a test covers each arm of the `Kc` and
+    /// Janka tables. A new species must be added here.
+    pub const ALL: [WoodSpecies; 10] = [
+        WoodSpecies::GenericSoftwood,
+        WoodSpecies::RadiataPine,
+        WoodSpecies::LongleafPine,
+        WoodSpecies::GenericHardwood,
+        WoodSpecies::HardMaple,
+        WoodSpecies::Walnut,
+        WoodSpecies::Birch,
+        WoodSpecies::WhiteOak,
+        WoodSpecies::Jarrah,
+        WoodSpecies::Ipe,
+    ];
+
+    /// Where this species' `Kc` base comes from. See [`KcProvenance`].
+    ///
+    /// Three species carry folklore: `RadiataPine`, `Jarrah` and `Ipe`. They
+    /// are absent from FPL Chapter 5 and their literals are named
+    /// `KC_FOLKLORE_*` in [`Material::kc_n_per_mm2`].
+    #[must_use]
+    pub const fn kc_provenance(self) -> KcProvenance {
+        match self {
+            // No FPL Chapter 5 row for these three species.
+            WoodSpecies::RadiataPine | WoodSpecies::Jarrah | WoodSpecies::Ipe => {
+                KcProvenance::Folklore
+            }
+            // A mid-band over several cited rows, not one species row.
+            WoodSpecies::GenericSoftwood | WoodSpecies::GenericHardwood => {
+                KcProvenance::FplBandMidpoint
+            }
+            WoodSpecies::LongleafPine
+            | WoodSpecies::HardMaple
+            | WoodSpecies::Walnut
+            | WoodSpecies::Birch
+            | WoodSpecies::WhiteOak => KcProvenance::FplTableRow,
+        }
+    }
+
     pub fn janka_lbf(self) -> f64 {
         match self {
             WoodSpecies::GenericSoftwood => 600.0,
@@ -813,6 +898,24 @@ impl Material {
     /// Phase 3 derivation. See planning/KC_MILLING_CALIBRATION_2026-06-17.md.
     pub(crate) const MILLING_KC_FACTOR: f64 = 2.7;
 
+    /// Radiata pine shear-parallel base, N/mm². Folklore: the species has
+    /// no FPL Chapter 5 row. TODO: source from CSIRO or FRI publications.
+    /// [`WoodSpecies::kc_provenance`] reports it as
+    /// [`KcProvenance::Folklore`].
+    const KC_FOLKLORE_RADIATA_PINE: f64 = 6.0;
+
+    /// Jarrah shear-parallel base, N/mm². Folklore: the AU species has no
+    /// FPL Chapter 5 row. TODO: source from CSIRO publications.
+    /// [`WoodSpecies::kc_provenance`] reports it as
+    /// [`KcProvenance::Folklore`].
+    const KC_FOLKLORE_JARRAH: f64 = 19.0;
+
+    /// Ipe shear-parallel base, N/mm². Folklore: the Brazilian species has
+    /// no FPL Chapter 5 row. TODO: source from EMBRAPA / IPT.
+    /// [`WoodSpecies::kc_provenance`] reports it as
+    /// [`KcProvenance::Folklore`].
+    const KC_FOLKLORE_IPE: f64 = 28.0;
+
     /// Specific cutting force in N/mm² (**peripheral-milling regime**).
     /// Used for power and deflection force predictions.
     ///
@@ -827,6 +930,11 @@ impl Material {
     /// rather than predicting force from a fabricated constant. This
     /// keeps the type system honest about which materials carry a
     /// validated cutting-force model.
+    ///
+    /// `Some(value)` does not mean "cited". Three solid-wood species return
+    /// a folklore base named `KC_FOLKLORE_*` below. Read
+    /// [`WoodSpecies::kc_provenance`] to tell a citation from a guess; the
+    /// number alone cannot say.
     pub fn kc_n_per_mm2(&self) -> Option<f64> {
         match self {
             // Phase 5 Step 5.4 (2026-06-01): per-species values now
@@ -839,7 +947,9 @@ impl Material {
             //
             // The per-species literals below are the FPL Table 5-3a
             // shear-parallel-to-grain rows (~6–16 N/mm² N.American, 28
-            // Ipe). `MILLING_KC_FACTOR` lifts them to the peripheral-
+            // Ipe), except the three named `KC_FOLKLORE_*`, which no FPL
+            // row backs. `WoodSpecies::kc_provenance` reports which is
+            // which. `MILLING_KC_FACTOR` lifts them to the peripheral-
             // milling regime (the "3–5× size-effect" the old Phase-6
             // TODO deferred), paralleling Phase 2B for sheet goods, which
             // swapped raw shear for measured milling Kc and kept
@@ -852,9 +962,7 @@ impl Material {
                         // Mid-band of common low-density softwoods (Pondersa
                         // pine 7.8, white spruce 6.7, western redcedar 6.8).
                         WoodSpecies::GenericSoftwood => 6.5,
-                        // NZ/AU species, not in FPL Ch.5 — folklore retained.
-                        // TODO: source from CSIRO or FRI publications.
-                        WoodSpecies::RadiataPine => 6.0,
+                        WoodSpecies::RadiataPine => Self::KC_FOLKLORE_RADIATA_PINE,
                         // FPL: "Longleaf 12% ... 10,400" (kPa shear ∥).
                         WoodSpecies::LongleafPine => 10.4,
                         // Mid-band of common North American hardwoods (Beech
@@ -870,12 +978,8 @@ impl Material {
                         // FPL: "White 12% 0.68 ... 13,800" (kPa shear ∥;
                         // Quercus alba primary row in the white-oak group).
                         WoodSpecies::WhiteOak => 13.8,
-                        // AU species, not in FPL Ch.5 — folklore retained.
-                        // TODO: source from CSIRO publications.
-                        WoodSpecies::Jarrah => 19.0,
-                        // Brazilian species, not in FPL Ch.5 — folklore
-                        // retained. TODO: source from EMBRAPA / IPT.
-                        WoodSpecies::Ipe => 28.0,
+                        WoodSpecies::Jarrah => Self::KC_FOLKLORE_JARRAH,
+                        WoodSpecies::Ipe => Self::KC_FOLKLORE_IPE,
                     },
             ),
             // Parametric variant — `janka_to_kc_n_per_mm2` returns

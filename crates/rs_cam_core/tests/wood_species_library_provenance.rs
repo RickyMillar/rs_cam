@@ -82,3 +82,79 @@ fn find_by_display_name_is_case_insensitive() {
     assert_eq!(upper, lower);
     assert_eq!(lower, mixed);
 }
+
+// ── Per-arm Kc provenance (EDG-01, 2026-09-17) ──────────────────────────
+//
+// `Material::kc_n_per_mm2` hands every solid-wood species the same
+// `Some(value)` shape. Three of the ten arms are folklore, not a citation.
+// `WoodSpecies::kc_provenance` is the only thing that says which, so these
+// cases pin the tag per arm. They do not pin a Kc value.
+
+use rs_cam_core::material::{KcProvenance, Material, WoodSpecies};
+
+/// The three species absent from FPL Chapter 5.
+const FOLKLORE_SPECIES: [WoodSpecies; 3] = [
+    WoodSpecies::RadiataPine,
+    WoodSpecies::Jarrah,
+    WoodSpecies::Ipe,
+];
+
+#[test]
+fn every_species_reports_a_kc_provenance() {
+    assert_eq!(
+        WoodSpecies::ALL.len(),
+        10,
+        "WoodSpecies::ALL must list every species; a new arm needs a \
+         provenance tag too"
+    );
+    for species in WoodSpecies::ALL {
+        let tag = species.kc_provenance();
+        assert!(
+            KcProvenance::ALL.contains(&tag),
+            "{} reports a provenance outside KcProvenance::ALL",
+            species.label()
+        );
+        assert!(
+            Material::SolidWood { species }.kc_n_per_mm2().is_some(),
+            "{} must still carry a Kc value; EDG-01 changes the tag, not \
+             the number",
+            species.label()
+        );
+    }
+}
+
+#[test]
+fn only_the_three_uncited_species_report_folklore() {
+    for species in WoodSpecies::ALL {
+        let is_folklore = species.kc_provenance().is_folklore();
+        let expected = FOLKLORE_SPECIES.contains(&species);
+        assert_eq!(
+            is_folklore,
+            expected,
+            "{} reports provenance {} — expected folklore: {expected}. \
+             RadiataPine, Jarrah and Ipe have no FPL Ch.5 row; every other \
+             species does. Source the value before you retag it.",
+            species.label(),
+            species.kc_provenance().label()
+        );
+    }
+}
+
+#[test]
+fn a_generic_species_is_a_band_midpoint_not_a_row() {
+    // The two generic stand-ins average several cited rows. Reporting them
+    // as one FPL row would claim a citation that does not exist.
+    assert_eq!(
+        WoodSpecies::GenericSoftwood.kc_provenance(),
+        KcProvenance::FplBandMidpoint
+    );
+    assert_eq!(
+        WoodSpecies::GenericHardwood.kc_provenance(),
+        KcProvenance::FplBandMidpoint
+    );
+    assert_eq!(
+        WoodSpecies::WhiteOak.kc_provenance(),
+        KcProvenance::FplTableRow,
+        "White oak is the Quercus alba row of FPL Table 5-3a"
+    );
+}
