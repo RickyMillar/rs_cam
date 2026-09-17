@@ -979,7 +979,7 @@ pub struct SetDressupConfigParam {
 pub struct SetDressupFieldParam {
     /// Toolpath index (0-based)
     pub index: usize,
-    /// Dressup field name (e.g. "link_moves", "arc_fitting", "retract_strategy")
+    /// Dressup field name (e.g. "link_moves", "arc_fitting")
     pub key: String,
     /// New value for the field (JSON). Pass enum values as bare JSON
     /// strings — e.g. `"ramp"` (NOT `"\"ramp\""`); pass booleans as
