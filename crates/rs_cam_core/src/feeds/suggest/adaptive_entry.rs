@@ -12,9 +12,8 @@ use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole, ToolGeometryHint};
 use crate::machine::MachineProfile;
 
-use super::{
-    FeedRecalibrationCap, SuggestContext, SuggestScope, SuggestWarning, clamp_plunge_to_feed,
-};
+use super::invariants::clamp_plunge_to_feed;
+use super::{FeedRecalibrationCap, SuggestContext, SuggestScope, SuggestWarning};
 
 /// v1.3 combined-Suggest: DPP / tool-diameter ratio above which the
 /// plunge-entry transient breaches the deflection gate on an

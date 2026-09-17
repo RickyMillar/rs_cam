@@ -8,6 +8,12 @@
     clippy::indexing_slicing
 )]
 
+use super::axial_envelope::recompute_chipload_bounds_for_dpp;
+use super::invariants::{
+    DEFLECTION_BACKOFF_DPP_FLOOR_MM, DEFLECTION_BACKOFF_TARGET_UM,
+    STEPOVER_BACKOFF_DIAMETER_FRACTION, STEPOVER_BACKOFF_MAX_ITERATIONS,
+    STEPOVER_BACKOFF_TARGET_MOVES,
+};
 use super::*;
 use crate::compute::operation_configs::{DropCutterConfig, PocketConfig};
 use crate::compute::tool_config::{ToolId, ToolType};
