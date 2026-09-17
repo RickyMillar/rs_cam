@@ -155,7 +155,7 @@ fn draw_verdict_hud(
                 .collision_report
                 .as_ref()
                 .into_iter()
-                .flat_map(|r| r.collisions.iter().map(|c| c.move_idx)),
+                .flat_map(|r| r.collisions.iter().map(|c| c.move_index)),
         )
         .chain(sim.checks.rapid_collision_move_indices.iter().copied())
         .min();
@@ -1361,10 +1361,10 @@ fn draw_boundary_timeline(
     if let Some(ref report) = sim.checks.collision_report {
         let holder_color = crate::ui::tokens::DANGER;
         for col in &report.collisions {
-            if !in_focus(col.move_idx) {
+            if !in_focus(col.move_index) {
                 continue;
             }
-            let x = global_x(col.move_idx);
+            let x = global_x(col.move_index);
             painter.line_segment(
                 [egui::pos2(x, op_rect.min.y), egui::pos2(x, op_rect.max.y)],
                 egui::Stroke::new(2.0_f32, holder_color),
@@ -1971,15 +1971,15 @@ fn nearest_marker_tooltip(
     // Holder collisions
     if let Some(report) = sim.checks.collision_report.as_ref() {
         for col in &report.collisions {
-            if !in_focus(col.move_idx) {
+            if !in_focus(col.move_index) {
                 continue;
             }
             consider(
-                col.move_idx,
+                col.move_index,
                 format!(
                     "{}: holder collision at move {} — click to navigate",
-                    tp_name_for_move(col.move_idx),
-                    col.move_idx
+                    tp_name_for_move(col.move_index),
+                    col.move_index
                 ),
             );
         }

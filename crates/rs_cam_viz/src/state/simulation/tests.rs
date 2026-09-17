@@ -545,10 +545,10 @@ fn evidence_movement_invalidates_the_cached_triage() {
     // (a) the async holder-collision report lands.
     sim.checks.collision_report = Some(CollisionReport {
         collisions: vec![rs_cam_core::stock::collision::CollisionEvent {
-            move_idx: 4,
+            move_index: 4,
             position: P3::new(1.0, 1.0, -1.0),
             penetration_depth: 0.8,
-            segment: "holder".to_owned(),
+            segment: rs_cam_core::stock::collision::AssemblySegment::Holder,
             kind: rs_cam_core::stock::collision::CollisionKind::Workpiece,
         }],
         min_safe_stickout: 42.0,

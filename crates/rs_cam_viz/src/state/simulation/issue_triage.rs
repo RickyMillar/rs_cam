@@ -236,7 +236,7 @@ impl SimulationState {
             Some(report) => {
                 report.collisions.len().hash(&mut hasher);
                 for collision in &report.collisions {
-                    collision.move_idx.hash(&mut hasher);
+                    collision.move_index.hash(&mut hasher);
                 }
             }
             // Distinguish "no report yet" from "report with no collisions":
@@ -375,12 +375,12 @@ impl SimulationState {
         if let Some(report) = self.checks.collision_report.as_ref() {
             for collision in &report.collisions {
                 let toolpath_id = self
-                    .move_to_local_toolpath_move(collision.move_idx)
+                    .move_to_local_toolpath_move(collision.move_index)
                     .map(|(_, id, _)| id);
                 issues.push(SimulationIssue {
                     kind: SimulationIssueKind::HolderCollision,
                     toolpath_id,
-                    move_index: collision.move_idx,
+                    move_index: collision.move_index,
                     label: format!("{} collision", collision.segment),
                     semantic_item_id: None,
                     debug_span_id: None,
@@ -444,7 +444,7 @@ impl SimulationState {
         }
         if let Some(report) = self.checks.collision_report.as_ref() {
             for collision in &report.collisions {
-                collision.move_idx.hash(&mut collision_hasher);
+                collision.move_index.hash(&mut collision_hasher);
             }
         }
         let collision_fingerprint = collision_hasher.finish();

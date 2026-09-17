@@ -59,6 +59,19 @@ impl ToolAssembly {
         self.cutter_length + self.shank_length
     }
 
+    /// Which assembly part a collision at `radius` belongs to.
+    ///
+    /// STK-10: both collision classifiers open-coded this comparison. The
+    /// tolerance keeps a segment exactly at the shank radius on the shank
+    /// side, which is the behaviour the two copies had.
+    pub fn segment_at(&self, radius: f64) -> AssemblySegment {
+        if radius > self.shank_diameter / 2.0 - 0.01 {
+            AssemblySegment::Holder
+        } else {
+            AssemblySegment::Shank
+        }
+    }
+
     /// Segments of the assembly from tip upward, as (z_offset, max_radius, length).
     fn segments(&self) -> Vec<(f64, f64, f64)> {
         let mut segs = Vec::new();
@@ -130,17 +143,48 @@ pub struct CollisionObstacle {
     pub aabb: BoundingBox3,
 }
 
+/// Which part of the assembly above the flutes collided.
+///
+/// STK-10: this was a `String` that both classifiers built from the same
+/// open-coded radius comparison. A stringly-typed door invites a fourth
+/// spelling; the rule now lives once, in [`ToolAssembly::segment_at`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssemblySegment {
+    /// The shank, immediately above the cutting flutes.
+    Shank,
+    /// The collet or holder body, above the shank.
+    Holder,
+}
+
+impl AssemblySegment {
+    /// The wire and report name. Unchanged from the string this replaced.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Shank => "shank",
+            Self::Holder => "holder",
+        }
+    }
+}
+
+impl std::fmt::Display for AssemblySegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// A single collision event.
 #[derive(Debug, Clone)]
 pub struct CollisionEvent {
     /// Index of the move in the toolpath that caused the collision.
-    pub move_idx: usize,
+    ///
+    /// STK-10: spelled `move_index`, the same name [`RapidCollision`] uses.
+    pub move_index: usize,
     /// Position of the tool tip when collision occurs.
     pub position: P3,
     /// How deep the holder penetrates the obstacle (mm, positive = penetration).
     pub penetration_depth: f64,
-    /// Which segment collided: "shank" or "holder".
-    pub segment: String,
+    /// Which segment collided.
+    pub segment: AssemblySegment,
     /// What was hit — the workpiece mesh or a specific fixture.
     pub kind: CollisionKind,
 }
@@ -311,17 +355,11 @@ pub fn check_collisions_interpolated_with_cancel(
 
                 let penetration = cl.z - seg_bottom_z;
                 if penetration > 0.01 {
-                    let seg_name = if seg_radius > assembly.shank_diameter / 2.0 - 0.01 {
-                        "holder"
-                    } else {
-                        "shank"
-                    };
-
                     collisions.push(CollisionEvent {
-                        move_idx,
+                        move_index: move_idx,
                         position: *tip,
                         penetration_depth: penetration,
-                        segment: seg_name.to_owned(),
+                        segment: assembly.segment_at(seg_radius),
                         kind: CollisionKind::Workpiece,
                     });
 
@@ -445,16 +483,11 @@ pub fn check_obstacle_collisions_with_cancel(
                     }
                     let penetration = aabb.max.z - seg_bottom_z;
                     if penetration > 0.01 {
-                        let seg_name = if seg_radius > assembly.shank_diameter / 2.0 - 0.01 {
-                            "holder"
-                        } else {
-                            "shank"
-                        };
                         collisions.push(CollisionEvent {
-                            move_idx,
+                            move_index: move_idx,
                             position: *tip,
                             penetration_depth: penetration,
-                            segment: seg_name.to_owned(),
+                            segment: assembly.segment_at(seg_radius),
                             kind: CollisionKind::Fixture {
                                 fixture_id: obstacle.id,
                             },
@@ -1217,7 +1250,7 @@ mod tests {
         .unwrap();
         assert_eq!(hits.len(), 1, "holder should hit the fixture box");
         assert_eq!(hits[0].kind, CollisionKind::Fixture { fixture_id: 7 });
-        assert_eq!(hits[0].segment, "holder");
+        assert_eq!(hits[0].segment, AssemblySegment::Holder);
         assert!(hits[0].penetration_depth > 0.0);
     }
 

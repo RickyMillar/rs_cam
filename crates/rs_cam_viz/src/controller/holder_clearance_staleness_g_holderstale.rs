@@ -209,10 +209,10 @@ pub(super) fn report_for(verdict: Verdict) -> CollisionReport {
         },
         Verdict::Colliding => CollisionReport {
             collisions: vec![CollisionEvent {
-                move_idx: 0,
+                move_index: 0,
                 position: P3::new(0.0, 0.0, 0.0),
                 penetration_depth: 1.5,
-                segment: "holder".to_owned(),
+                segment: rs_cam_core::stock::collision::AssemblySegment::Holder,
                 kind: CollisionKind::Workpiece,
             }],
             min_safe_stickout: 58.0,

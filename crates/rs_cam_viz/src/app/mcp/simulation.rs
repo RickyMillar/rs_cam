@@ -125,21 +125,22 @@ impl RsCamApp {
         let mut rapid_by_tp: std::collections::BTreeMap<usize, Vec<serde_json::Value>> =
             std::collections::BTreeMap::new();
 
-        // Holder/shank collisions live in collision_report. Their `move_idx`
-        // is in global move space; map back to (toolpath_id, local_move).
+        // Holder/shank collisions live in collision_report. Their
+        // `move_index` is in global move space; map back to
+        // (toolpath_id, local_move).
         if let Some(report) = sim.checks.collision_report.as_ref() {
             for c in &report.collisions {
                 let (tp_id, local_move) = sim
-                    .move_to_local_toolpath_move(c.move_idx)
+                    .move_to_local_toolpath_move(c.move_index)
                     .map(|(_, id, local)| (id.0, local))
-                    .unwrap_or((usize::MAX, c.move_idx));
+                    .unwrap_or((usize::MAX, c.move_index));
                 holder_by_tp
                     .entry(tp_id)
                     .or_default()
                     .push(serde_json::json!({
-                        "global_move": c.move_idx,
+                        "global_move": c.move_index,
                         "local_move": local_move,
-                        "segment": format!("{:?}", c.segment),
+                        "segment": c.segment.as_str(),
                     }));
             }
         }

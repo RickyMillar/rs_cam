@@ -402,10 +402,10 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
     controller.state.simulation.checks.collision_report =
         Some(rs_cam_core::stock::collision::CollisionReport {
             collisions: vec![rs_cam_core::stock::collision::CollisionEvent {
-                move_idx: 1,
+                move_index: 1,
                 position: rs_cam_core::geo::P3::new(10.0, 0.0, -1.0),
                 penetration_depth: 0.4,
-                segment: "holder".to_owned(),
+                segment: rs_cam_core::stock::collision::AssemblySegment::Holder,
                 kind: rs_cam_core::stock::collision::CollisionKind::Workpiece,
             }],
             min_safe_stickout: 30.0,

@@ -291,7 +291,7 @@ impl SimulationState {
         let mut counts: Vec<(ToolpathId, usize)> = Vec::new();
         if let Some(report) = self.checks.collision_report.as_ref() {
             for collision in &report.collisions {
-                if let Some((_, id, _)) = self.move_to_local_toolpath_move(collision.move_idx) {
+                if let Some((_, id, _)) = self.move_to_local_toolpath_move(collision.move_index) {
                     match counts.iter_mut().find(|(cid, _)| *cid == id) {
                         Some((_, count)) => *count += 1,
                         None => counts.push((id, 1)),
