@@ -8,6 +8,9 @@ post and one operation. The entry point is `ui::properties::mod`.
 - `mod.rs` — the tab frame and the dispatch.
 - `operations/` — one editor per operation family: 2D boundary, drilling,
   engraving, finishing, 3D surface, project curve.
+  Its children beside `mod.rs`: `shape_diagrams.rs` (the thirteen parameter
+  minimaps, `StepoverPattern`), `height_diagram.rs` (height-versus-stock
+  profile), `validate.rs` (toolpath validation, inspector diagnostics).
 - `setup.rs`, `stock.rs`, `tool.rs`, `post.rs` — the four resource tabs.
 - `pills.rs` — `PillSuggestions`, what the per-field pills offer.
 

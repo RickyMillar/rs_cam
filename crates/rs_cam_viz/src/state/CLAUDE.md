@@ -12,6 +12,9 @@ project. The entry point is `state::AppState` in `mod.rs`.
   and configuration support.
 - `simulation.rs`, `job.rs`, `runtime.rs` — the simulation state, the job
   lane state and the GUI-only runtime overlay state.
+- `simulation/` — `playback_state.rs` (results, boundaries, playhead),
+  `issue_triage.rs` (issue list, caches, evidence), `semantic_trace.rs`
+  (active semantic item, trace targets), `tests.rs`.
 - `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport, the selection
   and the Overlays panel state.
 - `history.rs`, `wizard.rs`, `multitool_planner.rs`, `rest_dependency.rs` —
