@@ -10,8 +10,9 @@ use std::sync::atomic::AtomicBool;
 use tracing::instrument;
 
 use crate::compute::cutter::build_cutter;
+use crate::compute::sim_prefix::SimMemo;
 use crate::compute::simulate::{
-    SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation,
+    SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation_memoized,
 };
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::FaceUp;
@@ -105,11 +106,40 @@ impl ProjectSession {
     }
 
     /// Run tri-dexel stock simulation over all computed toolpaths.
+    ///
+    /// Equivalent to [`Self::run_simulation_memoized`] with no memo. A caller
+    /// that runs the fixpoint ladder — where round N+1 re-simulates round N's
+    /// toolpaths plus one more — should pass a cache instead.
     #[instrument(skip(self, opts))]
     pub fn run_simulation(
         &mut self,
         opts: &SimulationOptions,
         cancel: &AtomicBool,
+    ) -> Result<&super::SimulationResult, SessionError> {
+        self.run_simulation_memoized(opts, cancel, None)
+    }
+
+    /// Run tri-dexel stock simulation, resuming from a cached prefix.
+    ///
+    /// CMP-23: the S5 prefix memo used to reach exactly one production
+    /// caller, the GUI compute worker, because `run_simulation` offered no
+    /// way to pass one. The CLI ran the same fixpoint ladder the memo was
+    /// built for and paid the full replay every round.
+    ///
+    /// The CACHE IS THE CALLER'S. `ProjectSession` derives `Clone` and the
+    /// `optimize_toolpath` job copies the session, so a session-owned cache
+    /// would be copied per job and the memo's soundness argument — one
+    /// in-process, single-slot cache — would not survive. `SimulationOptions`
+    /// stays lifetime-free for the same kind of reason: it has 188 use sites
+    /// and is stored by value in several of them.
+    ///
+    /// `memo: None` is byte-identical to no memo at all.
+    #[instrument(skip(self, opts, memo))]
+    pub fn run_simulation_memoized(
+        &mut self,
+        opts: &SimulationOptions,
+        cancel: &AtomicBool,
+        memo: Option<SimMemo<'_>>,
     ) -> Result<&super::SimulationResult, SessionError> {
         let stock_bbox = self.stock_bbox();
 
@@ -203,7 +233,7 @@ impl ProjectSession {
                         tool: tool_def,
                         flute_count,
                         tool_summary,
-                        semantic_trace: result.semantic_trace.as_ref().map(|t| Arc::new(t.clone())),
+                        semantic_trace: result.semantic_trace.clone(),
                         spindle_rpm: tc.operation.spindle_rpm(),
                         metrics_not_applicable,
                         drill_op: result.drill_op().cloned(),
@@ -310,7 +340,7 @@ impl ProjectSession {
             opts.use_predicted_feed_in_gates,
         );
 
-        let mut result = run_simulation(&request, cancel)?;
+        let mut result = run_simulation_memoized(&request, cancel, |_| {}, memo)?;
 
         // F-036b — adaptive feed modulation post-pass.
         //

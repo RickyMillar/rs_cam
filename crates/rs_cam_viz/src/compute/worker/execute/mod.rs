@@ -312,7 +312,8 @@ pub(super) fn run_compute_with_phase_tracker(
                 semantic_trace,
             } = computed;
             let debug_trace = debug_trace.map(Arc::new);
-            let semantic_trace = semantic_trace.map(Arc::new);
+            // CMP-23: core already hands this back as an `Arc` so the S5
+            // prefix memo can key it by pointer identity.
             // The artifact file, written only when the operator asked for a
             // trace. Core returns both traces on every generation, so the
             // gate is here and not on the recorders.

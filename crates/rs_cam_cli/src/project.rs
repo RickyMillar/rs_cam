@@ -202,6 +202,16 @@ struct ProjectSummary {
     /// `collision_count` is a sum over every toolpath.
     collision_checks_failed: usize,
     rapid_collision_count: usize,
+    /// CMP-25: the stale-default validator's findings for this project.
+    ///
+    /// The validator reached the GUI, MCP and the core export precondition
+    /// and not this command, so the batch CLI's only machine-readable
+    /// artifact carried no stale-default row at all.
+    ///
+    /// An EMPTY list means none of the validator's four rules fired. It does
+    /// NOT mean the project carries no stale defaults — the rule library is
+    /// closed at four, and `compute::validate`'s header says why.
+    stale_defaults: Vec<rs_cam_core::compute::validate::StaleDefault>,
     per_toolpath: Vec<ToolpathSummaryEntry>,
     verdict: String,
     /// Checkpoint K (g2) — the operating point `verdict` and every
@@ -338,7 +348,20 @@ pub fn run_project_command(
         modulation_strategy,
         modulation_aggressiveness,
     };
-    session.run_simulation(&sim_opts, &cancel)?;
+    // CMP-23: the S5 prefix memo. Every ladder round re-simulates the
+    // previous round's toolpaths plus whatever became generatable, so round
+    // N+1's request has round N's as a PREFIX — exactly the shape the memo
+    // exists for. The cache is local to this run: it holds one snapshot, it
+    // is single-slot and in-process, and it dies with the command.
+    let mut sim_cache = rs_cam_core::compute::sim_prefix::SimPrefixCache::new();
+    session.run_simulation_memoized(
+        &sim_opts,
+        &cancel,
+        Some(rs_cam_core::compute::sim_prefix::SimMemo {
+            cache: &mut sim_cache,
+            store: true,
+        }),
+    )?;
 
     // 4b. F.4 fixpoint ladder, mirroring MCP `generate_all`'s default:
     // each simulation can unlock `FromRemainingStock` ops that were
@@ -375,8 +398,22 @@ pub fn run_project_command(
             remaining = pending.len(),
             "fixpoint ladder round"
         );
-        session.run_simulation(&sim_opts, &cancel)?;
+        session.run_simulation_memoized(
+            &sim_opts,
+            &cancel,
+            Some(rs_cam_core::compute::sim_prefix::SimMemo {
+                cache: &mut sim_cache,
+                store: true,
+            }),
+        )?;
     }
+    let sim_memo_stats = sim_cache.stats();
+    tracing::info!(
+        lookups = sim_memo_stats.lookups,
+        hits = sim_memo_stats.hits,
+        entries_reused = sim_memo_stats.entries_reused,
+        "S5 prefix memo over the fixpoint ladder"
+    );
 
     // 5. Run collision checks per toolpath and collect results
     let tp_count = session.toolpath_count();
@@ -465,7 +502,7 @@ pub fn run_project_command(
         let diagnostic = ToolpathDiagnostic::from_core(
             core_diag,
             result.debug_trace.as_ref(),
-            result.semantic_trace.as_ref(),
+            result.semantic_trace.as_deref(),
             collision_count,
             min_safe,
         );
@@ -615,6 +652,22 @@ pub fn run_project_command(
         "OK".to_owned()
     };
 
+    // CMP-25: the stale-default validator, on the one artifact a batch run
+    // leaves behind. The adapter already turns these into `Diagnostic`s for
+    // the GUI and MCP; the CLI simply had no call.
+    let stale_defaults = rs_cam_core::compute::validate::validate_stale_defaults(&session);
+    if !stale_defaults.is_empty() {
+        for finding in &stale_defaults {
+            warn!(
+                toolpath = %finding.toolpath_name,
+                rule = finding.rule_id.id(),
+                "stale default: {} — {}",
+                finding.title,
+                finding.detail
+            );
+        }
+    }
+
     let project_summary = ProjectSummary {
         project: session.name().to_owned(),
         setup_count: session.setup_count().max(1),
@@ -630,6 +683,7 @@ pub fn run_project_command(
         // a sum over SOME toolpaths, not all of them.
         collision_checks_failed: collision_check_failed.len(),
         rapid_collision_count: diag.rapid_collision_count,
+        stale_defaults,
         per_toolpath,
         verdict: verdict.clone(),
         adaptive_feed_modulation,

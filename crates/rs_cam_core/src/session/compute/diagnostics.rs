@@ -311,7 +311,7 @@ impl ProjectSession {
 
         Ok(crate::trace::narrate::narrate_toolpath_with_context(
             result.annotated(),
-            result.semantic_trace.as_ref(),
+            result.semantic_trace.as_deref(),
             cut_trace,
             result.debug_trace.as_ref(),
             &tool_def,

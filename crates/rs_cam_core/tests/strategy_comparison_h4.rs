@@ -662,7 +662,7 @@ fn measure_op(
         None => (None, None),
     };
 
-    let mix = region_mix_with_distance(result.semantic_trace.as_ref(), moves);
+    let mix = region_mix_with_distance(result.semantic_trace.as_deref(), moves);
 
     OpReport {
         label: label.to_owned(),

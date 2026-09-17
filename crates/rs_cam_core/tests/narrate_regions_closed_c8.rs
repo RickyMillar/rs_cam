@@ -146,9 +146,8 @@ fn scallop_narration_reports_its_regions() {
         .get_result(0)
         .unwrap()
         .semantic_trace
-        .as_ref()
-        .unwrap()
-        .clone();
+        .clone()
+        .unwrap();
     let region_ids: Vec<_> = trace
         .items
         .iter()
@@ -289,9 +288,8 @@ fn scallop_inside_unified_finish_does_not_add_a_second_region_population() {
         .get_result(0)
         .expect("generated result")
         .semantic_trace
-        .as_ref()
-        .expect("semantic trace")
-        .clone();
+        .clone()
+        .expect("semantic trace");
     let labels: Vec<&str> = trace
         .items
         .iter()

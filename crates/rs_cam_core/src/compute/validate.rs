@@ -17,8 +17,23 @@
 //! - [`StaleDefaultRule::WoodAdaptiveStepoverPreFix1`] — Fix 1
 //! - [`StaleDefaultRule::ProjectCurveNegativeDepth`] — A1 (UX dial-in 2026-05-20)
 //!
-//! Adding a rule per future B-roadmap entry is the ongoing convention
-//! (see F5 doc).
+//! # The library is CLOSED at four rules (CMP-25, 2026-09-18)
+//!
+//! "Adding a rule per future B-roadmap entry is the ongoing convention" was
+//! the header's claim, and no rule has been added since 2026-05-20. A
+//! convention nobody follows reads as a promise the module keeps, and the
+//! consequence is live: an EMPTY result means "none of these four rules
+//! fired", not "this project carries no stale defaults".
+//!
+//! A rule is not an engineer's to author. Each of the four names a dated
+//! default change and the auto-fix that follows from it, so a fifth needs
+//! the roadmap entry first. Read the four as a fixed list until one exists.
+//!
+//! Reach, 2026-09-18: `validate_stale_defaults` runs on the MCP project
+//! summary (`rs_cam_viz/src/app/mcp/project.rs`) and on the CLI `project`
+//! command, which carries the findings on `summary.json`.
+//! `validate_one_toolpath` runs in the GUI properties panel, the core export
+//! precondition and `diagnose_toolpath_with_trace`.
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::cutter::build_cutter;

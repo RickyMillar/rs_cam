@@ -974,7 +974,11 @@ pub struct ToolpathComputeResult {
     pub op_data: crate::ops::drill_op::OpData,
     pub stats: ToolpathStats,
     pub debug_trace: Option<ToolpathDebugTrace>,
-    pub semantic_trace: Option<ToolpathSemanticTrace>,
+    /// CMP-23: an `Arc`, not an owned value, so a `SimulationRequest` built
+    /// twice from the same result hands the S5 prefix memo the SAME pointer.
+    /// `EntryKey` keys this by `Weak` identity; a fresh `Arc::new(t.clone())`
+    /// per request build made the memo miss on every session ladder round.
+    pub semantic_trace: Option<Arc<ToolpathSemanticTrace>>,
 }
 
 impl ToolpathComputeResult {

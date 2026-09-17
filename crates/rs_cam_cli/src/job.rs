@@ -1246,7 +1246,7 @@ fn execute_op_via_session(
             &tool_summary,
             request_snapshot,
             result.debug_trace.clone(),
-            result.semantic_trace.clone(),
+            result.semantic_trace.as_deref().cloned(),
         ))
     } else {
         None

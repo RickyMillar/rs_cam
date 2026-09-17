@@ -912,3 +912,112 @@ fn prefix_key_may_omit_stamp_dispatch_only_while_it_is_a_process_constant() {
          constant and the OnceLock argument above is void"
     );
 }
+
+// ── CMP-23: the memo reaches the session door ───────────────────────────
+
+mod common;
+
+/// Two ladder rounds through `ProjectSession::run_simulation_memoized` hit
+/// the memo.
+///
+/// CMP-23: the memo used to reach exactly one production caller, the GUI
+/// compute worker, because `ProjectSession::run_simulation` offered no way
+/// to pass a cache. The CLI ran the same fixpoint ladder the memo was built
+/// for and paid a full replay on every round. This drives the new door the
+/// way the CLI drives it — one cache, carried across rounds — and asserts
+/// the cache is not inert.
+///
+/// Non-vacuity: `lookups` must be 2 (the second round consulted the cache)
+/// and `entries_reused` must be non-zero (it actually skipped work). A door
+/// that silently passed `None` would show a hit count of zero.
+#[test]
+fn a_session_ladder_hits_the_memo_on_its_second_round() {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::operation_configs::PocketConfig;
+    use rs_cam_core::session::SimulationOptions;
+
+    let mut session = common::session::single_op_session(
+        common::session::stock_over(20.0, 6.0),
+        common::tools::endmill_tool_config(6.0),
+        common::session::polygon_model(vec![common::session::square_polygon(15.0)], "square"),
+        "Pocket 1",
+        OperationConfig::Pocket(PocketConfig {
+            depth: 2.0,
+            depth_per_pass: 1.0,
+            ..PocketConfig::default()
+        }),
+    );
+    // A second op, so round two's request has round one's as a PREFIX —
+    // which is the shape the memo answers.
+    let tool_id = session.list_tools()[0].id.0;
+    let model_id = session.models()[0].id;
+    let second = common::session::toolpath_config(
+        "Pocket 2",
+        OperationConfig::Pocket(PocketConfig {
+            depth: 3.0,
+            depth_per_pass: 1.0,
+            ..PocketConfig::default()
+        }),
+        tool_id,
+        model_id,
+    );
+    let _ = session
+        .apply(rs_cam_core::session::Command::AddToolpath(
+            rs_cam_core::session::AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(second),
+            },
+        ))
+        .expect("add the second toolpath");
+
+    let cancel = AtomicBool::new(false);
+    let opts = SimulationOptions {
+        resolution: 0.5,
+        metrics_enabled: false,
+        auto_resolution: false,
+        ..SimulationOptions::default()
+    };
+    let mut cache = SimPrefixCache::new();
+
+    // Round one: only the first toolpath is generated, so only it simulates.
+    common::session::generate(&mut session, 0);
+    session
+        .run_simulation_memoized(
+            &opts,
+            &cancel,
+            Some(SimMemo {
+                cache: &mut cache,
+                store: true,
+            }),
+        )
+        .expect("round one simulates");
+
+    // Round two: the second toolpath joins, exactly as a ladder round does.
+    common::session::generate(&mut session, 1);
+    session
+        .run_simulation_memoized(
+            &opts,
+            &cancel,
+            Some(SimMemo {
+                cache: &mut cache,
+                store: true,
+            }),
+        )
+        .expect("round two simulates");
+
+    let stats = cache.stats();
+    assert_eq!(
+        stats.lookups, 2,
+        "both rounds must consult the cache; a door that drops the memo \
+         shows fewer lookups. stats = {stats:?}"
+    );
+    assert_eq!(
+        stats.hits, 1,
+        "round two's request has round one's as a prefix, so it must hit. \
+         stats = {stats:?}"
+    );
+    assert!(
+        stats.entries_reused > 0,
+        "a hit that reuses no entry is an inert memo. stats = {stats:?}"
+    );
+}

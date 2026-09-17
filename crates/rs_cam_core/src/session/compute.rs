@@ -851,7 +851,7 @@ pub fn execute_job(
                 op_data,
                 stats,
                 debug_trace: Some(debug_trace),
-                semantic_trace: Some(semantic_trace),
+                semantic_trace: Some(Arc::new(semantic_trace)),
             })
         }
         Err(e) => {
