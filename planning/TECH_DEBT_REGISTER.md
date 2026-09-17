@@ -31,6 +31,7 @@ need a register.
 | T-15 | Pass 9 can raise a feed the power ladder just clamped | open — reachable by hand TODAY |
 | T-16 | The deflection bending diameter cites a source that does not say it | **closed** — diagnostic only; see T-17 |
 | T-17 | The deflection integrator gives a fluted end mill a solid cross-section | open — under-states deflection 1.6x to 3.2x |
+| T-18 | Three feed lifts cap against the gantry TRAVEL rate, not the cutting ceiling | open — latent on shipped presets only |
 
 ---
 
@@ -939,6 +940,78 @@ neither does.
 **This needs an operator ruling before it ships**, for the reason T-16 gave:
 the 2-flute figure rests on medium-low confidence literature (0.889 against
 0.920, two of eight source rows disagreeing), and here it is load-bearing.
+
+---
+
+## T-18 — three feed lifts cap against the travel rate, not the cutting ceiling
+
+A machine profile carries two different feed limits, and they are not
+interchangeable:
+
+- `max_feed_mm_min` — the gantry TRAVEL rate. What the axes can move at.
+- `cutting_feed_ceiling_mm_min()` (`machine/mod.rs:136`) —
+  `min(max_cutting_feed_mm_min ?? 6000, max_feed_mm_min)`. What the machine may
+  CUT at. Its own doc says it never exceeds the travel rate.
+
+The second exists only to express the difference. Step 7 of `feeds::calculate`
+says so in a comment (`feeds/mod.rs:2223`):
+
+> F4: the calculator emits CUTTING feeds — clamp at the cutting ceiling,
+> not the gantry travel rate.
+
+Three later sites then cap against the travel rate instead.
+
+| Site | Caps against | Right? |
+|---|---|---|
+| `feeds/mod.rs:2225` (Step 7) | `cutting_feed_ceiling_mm_min()` | yes |
+| `feeds/suggest/adaptive_entry.rs:421` | `cutting_feed_ceiling_mm_min()` | yes |
+| `feeds/mod.rs:2349` (rubbing-floor lift) | `max_feed_mm_min * safety_factor` | **no** |
+| `feeds/mod.rs:2381` (drill envelope clamp) | `max_feed_mm_min * safety_factor` | **no** |
+| `feeds/suggest/adaptive_entry.rs:470` | `max_feed_mm_min * safety_factor` | **no** |
+
+`adaptive_entry.rs` uses both, 49 lines apart, in one file.
+
+## What it costs
+
+A lift that fires after Step 7 can restore a feed ABOVE the cutting ceiling
+Step 7 just enforced. On a profile with `max_feed_mm_min` 10 000, no explicit
+`max_cutting_feed_mm_min` and `safety_factor` 0.75, Step 7 clamps at 6 000 and
+the lift may target 7 500 — **25 % above the ceiling**, with no warning,
+because the lift believes it is under a limit.
+
+## Why no gate catches it
+
+Each site is locally sensible. `max_feed_mm_min * safety_factor` reads like a
+machine limit, and it IS one — just not the one that governs a cutting move.
+The two quantities have the same units, the same order of magnitude and
+similar names. Only the ordering makes it wrong, and no test asserts the
+ordering.
+
+## It is latent today, and that is not a defence
+
+Verified: the rubbing floor caps chipload at 0.025 mm/tooth on every shipped
+preset, so the lift target cannot currently reach the travel cap. That makes
+this unreachable on our sample. It does not make it correct.
+
+The operator ruling of 2026-09-17 applies directly: **a sweep that does not
+fire is evidence about the sweep.** A profile with a higher `max_feed_mm_min`,
+an explicit `max_cutting_feed_mm_min` well below travel, or a vendor row with
+a higher floor, all move the lift toward the cap. The code would then cap a
+cutting feed against a traverse rate.
+
+## The fix
+
+Replace all three with `machine.cutting_feed_ceiling_mm_min()`. Decide
+deliberately whether the safety factor applies — Step 7 does NOT apply it to
+the ceiling, and the three lift sites DO apply it to travel, so the two paths
+disagree on that too. Pick one and state why.
+
+## Relation to T-15
+
+Same structure: a late step raises a feed that an earlier step clamped. T-15
+is the power ladder's version, this is the machine ceiling's. A fix for either
+that only patches its own site leaves the shape intact. Consider one guard
+that re-checks every ceiling after the last lift, instead of three patches.
 
 ---
 
