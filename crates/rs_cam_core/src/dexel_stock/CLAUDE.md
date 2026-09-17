@@ -8,9 +8,9 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 - `mod.rs` — the stock type and the public facade.
 - `simulation.rs` — the `simulate_*` methods.
 - `stamping.rs`, `swept.rs` — the stamping helpers and swept-volume stamping.
-- `band.rs`, `band_batch.rs` — row bands, and the ONE batch dispatcher.
+- `band.rs`, `band_batch.rs`, `tile_mip.rs` — row bands, the ONE batch
+  dispatcher, and the coarse mip for tile rejection.
 - `whole_path.rs`, `playback.rs` — each route's caps, job shape and serial tail.
-- `tile_mip.rs` — the coarse mip, for tile rejection.
 - `cut_direction.rs` — `StockCutDirection`, the side the tool approaches from.
 
 ## Invariants
@@ -18,8 +18,7 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 - A 2D operation cuts at negative Z. `StockConfig.origin_z` in
   `compute/stock_config.rs` is therefore negative and the stock top sits at
   Z zero. A positive `origin_z` puts the retract plane inside the stock.
-- The simulation cell must be much smaller than the tool tip radius. It cannot
-  resolve a cut at its own size.
+- The simulation cell must be much smaller than the tool tip radius.
 - The metric route and the playback route must agree on the stamped volume.
   They share `band_batch.rs` and differ only in what they record.
 - Production stamps the Z grid only; the side grids are test-reachable. Keep
@@ -34,6 +33,8 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 - `cargo test -p rs_cam_core -q --test swept_stamping_s1`
 - `cargo test -p rs_cam_core -q --test band_stamping_determinism_s3`
 - `cargo test -p rs_cam_core -q --test sub_cell_stamping_fa`
+- `cargo test -p rs_cam_core -q --lib -- the_six_cell_loops` — the STK-01
+  bit net, and it runs ONLY under `--lib`.
 
 ## Do not
 
