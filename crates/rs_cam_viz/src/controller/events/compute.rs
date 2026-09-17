@@ -404,624 +404,23 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    // SAFETY: tp_index from position() within setup.toolpaths, slice always in bounds
-    #[allow(clippy::indexing_slicing)]
+    /// Take every result the lanes have finished and adopt it.
+    ///
+    /// One dispatch, one named method per `ComputeMessage` kind. Three of
+    /// the six arms already delegated to a named method; SHL-04 finished
+    /// the pattern for the other three, which held 610 of this
+    /// function's 636 lines inline.
+    ///
+    /// Each adopt method carries its own revision check. A result that
+    /// names a revision the session has moved past is not adopted — see
+    /// `compute/CLAUDE.md`, "a result arrives with the revision it was
+    /// computed for".
     pub(crate) fn drain_compute_results(&mut self) {
         for message in self.compute.drain_results() {
             match message {
-                ComputeMessage::Toolpath(result) => {
-                    let tp_id = result.toolpath_id;
-                    // WP11b: read before the match below moves `result`.
-                    let reply_revision = result.revision;
-                    // G-REGEN-RACE — the supersede is not an outcome.
-                    //
-                    // The toolpath lane's submit rule is
-                    // resubmit-cancels-and-requeues, so any second submit
-                    // of a toolpath that is currently the lane's active job
-                    // aborts that job and queues the replacement. Both the
-                    // GUI's `process_auto_regen` sweep and MCP
-                    // `generate_all` submit through this controller, and
-                    // after a `load_project` (which marks every toolpath
-                    // stale) the sweep is guaranteed to have a job in
-                    // flight 500 ms later — so an agent's `generate_all`
-                    // superseded its own work and then read the resulting
-                    // `Cancelled` as a *failure of the toolpath*, reporting
-                    // "`<name>`: generation cancelled" with `generated: 0`
-                    // while the replacement it had just queued went on to
-                    // succeed unobserved.
-                    //
-                    // The fix is here, at the one place that turns a lane
-                    // message into a toolpath outcome: a superseded job has
-                    // no outcome at all. The toolpath is still `Computing`,
-                    // no MCP waiter resolves, no `generate_all` bucket
-                    // moves, and the replacement's own result does all
-                    // three. A cancel with no supersede behind it — the
-                    // `cancel_generation` escape hatch, the GUI's cancel
-                    // button — is untouched and still terminal.
-                    let expected_supersede = self.superseded_toolpaths.remove(&tp_id);
-                    if expected_supersede && matches!(result.result, Err(ComputeError::Cancelled)) {
-                        continue;
-                    }
-                    let rt = self.state.gui.toolpath_rt_or_default(tp_id);
-                    rt.debug_trace = result.debug_trace.clone();
-                    rt.semantic_trace = result.semantic_trace.clone();
-                    rt.debug_trace_path = result.debug_trace_path.clone();
-                    match result.result {
-                        Ok(computed) => {
-                            rt.status = ComputeStatus::Done;
-                            // Sync the core-side `session.results` cache so the
-                            // single point of truth for "this toolpath has a
-                            // fresh result" is `ProjectSession`, not the
-                            // viz-side `gui.toolpath_rt`. Without this, the
-                            // gcode export / load-report paths read stale-empty
-                            // `session.results[idx]` after Apply (see
-                            // `planning/F1_RCA.md`).
-                            // G-LATERESULT (F2.4): the core cache is what
-                            // `FreshnessState` reads for `Current`, so writing
-                            // a late result into it is what made an edit
-                            // silently lose. If an input moved while this job
-                            // ran, the result is KEPT — `rt.result` below, so
-                            // the viewport still draws it and the operator
-                            // does not lose a long 3D generation — but the
-                            // core slot stays empty, which derives
-                            // `EditedSince` and puts STALE on every surface
-                            // F2.2 wired.
-                            //
-                            // The auto-regen arm was already safe by a
-                            // different route: a resubmit supersedes, and
-                            // G-REGEN-RACE drops the abandoned result before
-                            // it reaches here. Nothing supersedes on a 3D
-                            // manual-regen operation, which is why the row
-                            // names that arm.
-                            //
-                            // WP3: the refusal itself lives in core, at
-                            // `Command::AdoptResult`. This door hands the
-                            // stamp over and reads the answer; it does not
-                            // compare revisions of its own any more.
-                            if let Some((tp_index, _)) =
-                                self.state.session.find_toolpath_config_by_id(tp_id)
-                            {
-                                // Honour the §6.E dual-representation
-                                // invariant: drill ops carry both the
-                                // DrillOp payload and the annotated
-                                // toolpath. The worker already built the
-                                // DrillOp into `computed.drill_op`;
-                                // routing it through here so
-                                // `session.results[idx].drill_op()`
-                                // returns Some for drill TPs matches the
-                                // `session.generate_toolpath` production
-                                // path. Without this, drill_gates on the
-                                // tool-load report never populate (the
-                                // gate evaluator reads `result.drill_op()`).
-                                let op_data = match &computed.drill_op {
-                                    Some(drill_op_arc) => {
-                                        rs_cam_core::ops::drill_op::OpData::DrillOp(
-                                            Arc::clone(drill_op_arc),
-                                            Arc::clone(&computed.annotated),
-                                        )
-                                    }
-                                    None => rs_cam_core::ops::drill_op::OpData::Toolpath(
-                                        Arc::clone(&computed.annotated),
-                                    ),
-                                };
-                                let core_result = rs_cam_core::session::ToolpathComputeResult {
-                                    op_data,
-                                    stats: computed.stats.clone(),
-                                    // Debug + semantic traces stay viz-side
-                                    // (Arc'd on `rt.debug_trace` /
-                                    // `rt.semantic_trace` above). Core readers
-                                    // currently only consume `annotated.spans`
-                                    // from `session.results`; bloating the
-                                    // cache with owned trace copies is wasted
-                                    // work.
-                                    debug_trace: None,
-                                    semantic_trace: None,
-                                };
-                                // WP11b: the revision rides the REPLY,
-                                // stamped from the handle `start`
-                                // produced. `None` means a hand-built
-                                // reply in a test, and reproduces the
-                                // pre-WP3 accept-when-unstamped arm.
-                                let revision = match reply_revision {
-                                    Some(submitted) => submitted,
-                                    None => self.state.session.toolpath_revision(tp_index),
-                                };
-                                let adopted = self.state.session.apply(
-                                    rs_cam_core::session::Command::AdoptResult(
-                                        rs_cam_core::session::AdoptResultArgs {
-                                            index: tp_index,
-                                            revision,
-                                            result: Box::new(core_result),
-                                        },
-                                    ),
-                                );
-                                // The `Ok` effects are empty: a completion
-                                // records an answer, it moves no revision.
-                                // On a refusal the core slot stays empty,
-                                // which derives `EditedSince`. `rt.result`
-                                // below still keeps the geometry, so the
-                                // viewport draws it and the operator does
-                                // not lose a long 3D generation. That is
-                                // what the deleted viz gate did, and the
-                                // outcome is the same.
-                                if let Err(e) = adopted {
-                                    tracing::debug!(
-                                        toolpath = tp_index,
-                                        "compute result not adopted: {e}"
-                                    );
-                                }
-                            }
-                            rt.result = Some(computed);
-                            // Any toolpath whose `DerivedRestRegions` boundary
-                            // depends on this one just saw its source result
-                            // replaced (rest_regions may have appeared,
-                            // changed, or vanished) — force a regenerate so
-                            // the dependent re-resolves against the fresh
-                            // regions instead of clipping against a stale set.
-                            self.mark_derived_rest_dependents_stale(tp_id);
-                        }
-                        Err(ComputeError::Cancelled) => {
-                            rt.status = ComputeStatus::Pending;
-                            rt.result = None;
-                            Self::forget_core_result(&mut self.state.session, tp_id);
-                        }
-                        Err(ComputeError::Message(error)) => {
-                            rt.status = ComputeStatus::Error(error);
-                            rt.result = None;
-                            // G-STICKYEMPTY: clear the CORE cache too, not
-                            // just `rt.result`. `Ok` writes both caches
-                            // (`AdoptResult`, above); a failure used to
-                            // clear only the viz one, so the previous
-                            // parameter set's toolpath stayed in
-                            // `session.results[idx]` — exportable,
-                            // simulatable, and counted as "generated" by
-                            // `PhantomPriorStockScan`, which is what
-                            // withholds a pending rest op's phantom
-                            // prior-stock snapshot and leaves it unable to
-                            // regenerate until the project is reloaded.
-                            Self::forget_core_result(&mut self.state.session, tp_id);
-                        }
-                    }
-                    self.pending_upload = true;
-
-                    // U4 reconciliation: clear this toolpath from the
-                    // pending list. When the list empties we kick the
-                    // reconciliation sim — this fires once, after the
-                    // last applied toolpath finishes regenerating.
-                    self.state
-                        .pending_reconciliation_for_ids
-                        .retain(|id| *id != tp_id);
-                    if self.state.pending_reconciliation_for_ids.is_empty()
-                        && matches!(
-                            self.state.optimize_project.as_ref().map(|v| &v.status),
-                            Some(crate::state::OptimizeProjectStatus::Reconciling(_))
-                        )
-                    {
-                        let _submitted = self.run_simulation_with_all();
-                    }
-
-                    // Roadmap F.2 — auto-verify after per-TP Apply. If
-                    // this regen is for the just-applied candidate,
-                    // clear the pending flag and kick a full project
-                    // sim so the user sees the verified live verdict
-                    // without having to click Run Simulation by hand.
-                    if self.state.pending_apply_resim == Some(tp_id.0) {
-                        self.state.pending_apply_resim = None;
-                        let _submitted = self.run_simulation_with_all();
-                    }
-
-                    // Resolve whoever is waiting on this toolpath — the MCP
-                    // waiter, the `generate_all` ladder, or neither.
-                    self.toolpath_completion_landed(tp_id);
-                }
-                ComputeMessage::Simulation(result) => match result {
-                    Ok(simulation) => {
-                        // N12 item 10 — one simulation state. The GUI
-                        // simulates on its own lane, so the session never
-                        // saw this answer and `ProjectSession::start`
-                        // refused every `FromRemainingStock` operation in
-                        // the GUI process. The core-typed copy is built
-                        // HERE, before the view state consumes the fields;
-                        // the cut trace is attached below, after the
-                        // modulation post-pass rewrites it.
-                        let mut adopted = core_simulation_from_lane(&simulation);
-                        if simulation.core.resolution_clamped {
-                            self.push_notification(
-                                "Sim resolution was coarsened to fit grid limits — \
-                                 consider reducing stock size or increasing resolution"
-                                    .to_owned(),
-                                crate::controller::Severity::Warning,
-                            );
-                        }
-                        if simulation.core.mesh.indices.is_empty() {
-                            self.push_notification(
-                                "Simulation produced an empty mesh — \
-                                 try increasing resolution or check stock dimensions"
-                                    .to_owned(),
-                                crate::controller::Severity::Warning,
-                            );
-                        }
-                        let boundaries = simulation.core.boundaries.clone();
-
-                        let setup_boundaries = {
-                            let mut sbs = Vec::new();
-                            let mut last_setup_id = None;
-                            for boundary in &boundaries {
-                                let setup_id = self.setup_of_toolpath(boundary.id);
-                                if setup_id != last_setup_id {
-                                    if let Some(setup_id) = setup_id {
-                                        let setup_name = self
-                                            .state
-                                            .session
-                                            .list_setups()
-                                            .iter()
-                                            .find(|s| s.id == setup_id.0)
-                                            .map(|s| s.name.clone())
-                                            .unwrap_or_default();
-                                        sbs.push(crate::state::simulation::SetupBoundary {
-                                            setup_id,
-                                            setup_name,
-                                            start_move: boundary.start_move,
-                                        });
-                                    }
-                                    last_setup_id = setup_id;
-                                }
-                            }
-                            sbs
-                        };
-
-                        let checkpoints: Vec<_> = simulation
-                            .core
-                            .checkpoints
-                            .into_iter()
-                            .map(|checkpoint| crate::state::simulation::SimCheckpoint {
-                                boundary_index: checkpoint.boundary_index,
-                                core: checkpoint,
-                            })
-                            .collect();
-
-                        // F.4 — retain the per-toolpath (and phantom)
-                        // prior-stock snapshots so the submit-time
-                        // FromRemainingStock gate can look them up by id.
-                        let prior_stocks = simulation.core.prior_stocks;
-
-                        if !simulation.core.rapid_collisions.is_empty() {
-                            tracing::warn!(
-                                "{} rapid collisions detected",
-                                simulation.core.rapid_collisions.len()
-                            );
-                        }
-                        self.state.simulation.checks.rapid_collisions =
-                            simulation.core.rapid_collisions;
-                        self.state.simulation.checks.rapid_collision_move_indices =
-                            simulation.core.rapid_collision_move_indices;
-
-                        self.state.simulation.playback.display_deviations =
-                            simulation.core.deviations;
-                        self.state.simulation.playback.display_mesh = None;
-                        self.state.simulation.playback.display_mesh_move = None;
-                        self.state.simulation.playback.last_mesh_upload_at = None;
-                        self.state.simulation.playback.tool_gpu_move = None;
-                        self.state.simulation.playback.display_mesh_preview = false;
-                        self.state.simulation.playback.scrub_drag_active = false;
-
-                        let stock = self.state.session.stock_config();
-                        let stock_bbox = rs_cam_core::geo::BoundingBox3 {
-                            min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                            max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
-                        };
-
-                        self.state.simulation.results = Some(SimulationResults {
-                            mesh: simulation.core.mesh,
-                            total_moves: simulation.core.total_moves,
-                            boundaries,
-                            setup_boundaries,
-                            checkpoints,
-                            selected_toolpaths: None,
-                            playback_data: simulation.playback_data,
-                            stock_bbox,
-                            cut_trace: simulation.core.cut_trace,
-                            cut_trace_path: simulation.cut_trace_path,
-                            column_grid_cell_mm: simulation.core.column_grid_cell_mm,
-                            prior_stocks,
-                        });
-
-                        // F-039 — apply adaptive feed modulation to the
-                        // just-completed sim trace (unified load model §10.6,
-                        // option A). The async worker runs the dexel sim only;
-                        // modulation needs session context (material / machine
-                        // / vendor LUT) so it runs here on the main thread. The
-                        // post-pass stamps `modulation_summaries` onto the trace
-                        // — so the Feeds-tab "operating point" card + the
-                        // tool-load report populate — and swaps the modulated
-                        // toolpaths into `session.results`, which G-code export
-                        // reads, so exported feeds are the optimized per-move
-                        // schedule. That last clause was aspirational until
-                        // 2026-08-22: the viz exporter read the worker's
-                        // pre-modulation IR out of `gui.toolpath_rt` instead
-                        // (G-MODEXPORT). `io::export::emitted_toolpaths` now
-                        // resolves from `session.results`, so the claim holds
-                        // on the GUI/MCP path as well as the CLI one — sentried
-                        // by `tests/modulated_feeds_reach_gcode_g_modexport.rs`.
-                        // Default-on in the GUI. Take the trace out
-                        // and put it back so the session (results) and the
-                        // viz-side cut_trace are borrowed disjointly.
-                        {
-                            let opts = rs_cam_core::session::SimulationOptions {
-                                adaptive_feed_modulation: true,
-                                modulation_strategy:
-                                    rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-                                modulation_aggressiveness: 1.0,
-                                ..Default::default()
-                            };
-                            let mut cut_trace = self
-                                .state
-                                .simulation
-                                .results
-                                .as_mut()
-                                .and_then(|r| r.cut_trace.take());
-                            if cut_trace.is_some() {
-                                self.state
-                                    .session
-                                    .modulate_simulation_trace(&mut cut_trace, &opts);
-                                if let Some(results) = self.state.simulation.results.as_mut() {
-                                    results.cut_trace = cut_trace;
-                                }
-                            }
-                        }
-
-                        // N12 item 10 — the session adopts the simulation
-                        // the viewport just adopted, so `start` sees the
-                        // prior stock a `FromRemainingStock` operation
-                        // needs.
-                        //
-                        // The trace is attached HERE and not in
-                        // `core_simulation_from_lane`. The modulation pass
-                        // above rewrites the trace through `Arc::make_mut`,
-                        // which COPIES while a second `Arc` exists — so a
-                        // copy taken before that pass would leave the
-                        // session reading the pre-modulation trace and the
-                        // viewport reading the modulated one. Taken after
-                        // it, the two share one `Arc`.
-                        adopted.cut_trace = self
-                            .state
-                            .simulation
-                            .results
-                            .as_ref()
-                            .and_then(|results| results.cut_trace.as_ref())
-                            .map(Arc::clone);
-                        let args = AdoptSimulationArgs {
-                            result: Box::new(adopted),
-                        };
-                        let adopt = Command::AdoptSimulation(args);
-                        // WP19: the `Ok` arm stays absent on purpose.
-                        // Storing a simulation leaves the session's
-                        // `Some`, so `stale` is empty and
-                        // `simulation_cleared` is false.
-                        if let Err(error) = self.state.session.apply(adopt) {
-                            tracing::warn!("simulation not adopted into the session: {error}");
-                        }
-
-                        let inspect_target =
-                            self.state.simulation.debug.pending_inspect_toolpath.take();
-                        if let Some(move_index) = inspect_target.and_then(|toolpath_id| {
-                            self.state
-                                .simulation
-                                .boundaries()
-                                .iter()
-                                .find(|boundary| boundary.id == toolpath_id)
-                                .map(|boundary| boundary.start_move)
-                        }) {
-                            self.state.simulation.playback.current_move = move_index;
-                            self.state.simulation.playback.playing = false;
-                        } else {
-                            self.state.simulation.playback.current_move = 0;
-                            self.state.simulation.playback.playing = false;
-                        }
-
-                        let initial_stock = TriDexelStock::from_bounds(
-                            &stock_bbox,
-                            self.state.simulation.resolution,
-                        );
-                        self.state.simulation.playback.live_stock = Some(initial_stock);
-                        self.state.simulation.playback.live_sim_move = 0;
-                        // Unclaimed: this stock is in the global frame, and
-                        // whether that is the right frame for the group the
-                        // playhead lands in is a question only the new
-                        // `playback_data` can answer (G-LATERALSCRUB). Leaving
-                        // a previous run's group id here would let a lateral
-                        // group inherit a global-frame stock unchallenged,
-                        // because the group ORDINAL can match across runs
-                        // while the frame does not.
-                        self.state.simulation.playback.live_stock_group = None;
-
-                        let prev_gen = self
-                            .state
-                            .simulation
-                            .last_run
-                            .as_ref()
-                            .map_or(0, |m| m.sim_generation);
-                        // G-LATESIM (F2.10): the counter as it stood at
-                        // SUBMIT, not now. Stamping the live counter here
-                        // recorded the run as having been made against every
-                        // edit that landed while it ran, so an operator who
-                        // changed a parameter mid-simulation was shown the
-                        // old run as current evidence — with no "stale" chip,
-                        // no Readiness warning and no dimmed readout.
-                        //
-                        // The result itself is KEPT, exactly as F2.4 keeps a
-                        // late toolpath result: a simulation is minutes of
-                        // work, and discarding it would leave the operator
-                        // with nothing and no way to tell a cancelled run
-                        // from one that never happened. Stored, and marked
-                        // not-current.
-                        let submitted_at = self
-                            .state
-                            .simulation
-                            .submitted_edit_counter
-                            .take()
-                            .unwrap_or(self.state.gui.edit_counter);
-                        self.state.simulation.last_run = Some(SimulationRunMeta {
-                            sim_generation: prev_gen + 1,
-                            last_sim_edit_counter: submitted_at,
-                            // Recording preferences are runtime-only. This
-                            // result carries the capture revision it was
-                            // SUBMITTED with; a toggle while the worker ran
-                            // still needs a re-run, and an unstamped late
-                            // result reads stale, never current.
-                            accepted_metric_options_revision: self
-                                .state
-                                .simulation
-                                .submitted_metric_options_revision
-                                .take(),
-                        });
-
-                        self.pending_upload = true;
-
-                        // U4 reconciliation: if the rollup is in
-                        // Reconciling state, populate per-row
-                        // reconciled values from the new trace and
-                        // transition to Reconciled.
-                        self.maybe_finalize_reconciliation();
-
-                        // Notify pending MCP simulation request
-                        #[cfg(feature = "mcp")]
-                        self.notify_mcp_simulation_complete();
-                        // A/M11: if this simulation was the fixpoint loop's
-                        // own, the blocked rest ops can now see their upstream
-                        // stock — start the next round. Ungated since Phase O:
-                        // the GUI's Generate All runs the same ladder.
-                        self.resume_generate_all_after_simulation(None);
-                    }
-                    Err(ComputeError::Cancelled) => {
-                        let _ = (
-                            self.state.simulation.submitted_edit_counter.take(),
-                            self.state
-                                .simulation
-                                .submitted_metric_options_revision
-                                .take(),
-                        );
-                        #[cfg(feature = "mcp")]
-                        self.notify_mcp_simulation_error("Simulation cancelled");
-                        self.resume_generate_all_after_simulation(Some(
-                            "the simulation was cancelled".to_owned(),
-                        ));
-                    }
-                    Err(ComputeError::Message(error)) => {
-                        let _ = (
-                            self.state.simulation.submitted_edit_counter.take(),
-                            self.state
-                                .simulation
-                                .submitted_metric_options_revision
-                                .take(),
-                        );
-                        tracing::error!("Simulation failed: {error}");
-                        self.push_notification(
-                            format!("Simulation failed: {error}"),
-                            super::super::Severity::Error,
-                        );
-                        #[cfg(feature = "mcp")]
-                        self.notify_mcp_simulation_error(&error);
-                        self.resume_generate_all_after_simulation(Some(error));
-                    }
-                },
-                ComputeMessage::Collision(result) => match result {
-                    Ok(collision) => {
-                        let count = collision.report.collisions.len();
-                        if count == 0 {
-                            tracing::info!("No holder clearance issues detected");
-                            self.push_notification(
-                                "No holder clearance issues detected".into(),
-                                super::super::Severity::Info,
-                            );
-                        } else {
-                            let msg = format!(
-                                "{} holder clearance issues, min safe stickout: {:.1} mm",
-                                count, collision.report.min_safe_stickout
-                            );
-                            tracing::warn!("{msg}");
-                            self.push_notification(msg, super::super::Severity::Warning);
-                        }
-                        self.state.simulation.checks.holder_collision_count = count;
-                        self.state.simulation.checks.min_safe_stickout = if count > 0 {
-                            Some(collision.report.min_safe_stickout)
-                        } else {
-                            None
-                        };
-                        // G-HOLDERSTALE (F2.12): record WHEN this verdict was
-                        // asked for, from the submit stamp rather than from
-                        // the live counter, so an edit made while the lane
-                        // worked is not folded into the record of when the
-                        // check ran. Same rule F2.10 gave the simulation.
-                        //
-                        // The result itself is KEPT and marked not-current,
-                        // for F2.10's reason: it is still the only evidence
-                        // there is, and an emptied row cannot be told from
-                        // one that never ran.
-                        //
-                        // A result with NO stamp of its own cannot say when
-                        // it was measured. The simulation falls back to the
-                        // live counter there; this row does not, because a
-                        // holder verdict is a safety claim and "I do not
-                        // know when this was measured" is not one to make.
-                        // `None` reads as "Not checked".
-                        self.state.simulation.checks.checked_at_edit_counter = self
-                            .state
-                            .simulation
-                            .submitted_collision_edit_counter
-                            .take();
-                        // G-HOLDERSCOPE (F2.13): and the population the check
-                        // covered, from the same submit. A result with no
-                        // stamp of its own leaves the EMPTY population, which
-                        // `covers_the_job` refuses — an unstamped verdict
-                        // cannot claim the job.
-                        self.state.simulation.checks.checked_scope = self
-                            .state
-                            .simulation
-                            .submitted_collision_scope
-                            .take()
-                            .unwrap_or_default();
-                        // Extract MCP response data before moving ownership
-                        #[cfg(feature = "mcp")]
-                        let mcp_collision_count = collision.report.collisions.len();
-                        #[cfg(feature = "mcp")]
-                        let mcp_min_safe_stickout = collision.report.min_safe_stickout;
-                        #[cfg(feature = "mcp")]
-                        let mcp_is_clear = collision.report.is_clear();
-
-                        self.state.simulation.checks.collision_report = Some(collision.report);
-                        self.collision_positions = collision.positions;
-                        self.pending_upload = true;
-
-                        // Notify pending MCP collision request
-                        #[cfg(feature = "mcp")]
-                        self.notify_mcp_collision_complete(
-                            mcp_collision_count,
-                            mcp_min_safe_stickout,
-                            mcp_is_clear,
-                        );
-                    }
-                    Err(ComputeError::Cancelled) => {
-                        // The stamp describes a check that produced nothing.
-                        // Clearing it here keeps it from being read by a
-                        // later arrival that had no submit of its own.
-                        self.state.simulation.submitted_collision_edit_counter = None;
-                        self.state.simulation.submitted_collision_scope = None;
-                        #[cfg(feature = "mcp")]
-                        self.notify_mcp_collision_error("Collision check cancelled");
-                    }
-                    Err(ComputeError::Message(error)) => {
-                        self.state.simulation.submitted_collision_edit_counter = None;
-                        self.state.simulation.submitted_collision_scope = None;
-                        tracing::error!("Collision check failed: {error}");
-                        self.push_notification(
-                            format!("Collision check failed: {error}"),
-                            super::super::Severity::Error,
-                        );
-                        #[cfg(feature = "mcp")]
-                        self.notify_mcp_collision_error(&error);
-                    }
-                },
+                ComputeMessage::Toolpath(result) => self.adopt_toolpath_result(*result),
+                ComputeMessage::Simulation(result) => self.adopt_simulation_result(result),
+                ComputeMessage::Collision(result) => self.adopt_collision_result(result),
                 ComputeMessage::Optimize(result) => {
                     self.handle_optimize_result(*result);
                 }
@@ -1031,6 +430,641 @@ impl<B: ComputeBackend> AppController<B> {
                 ComputeMessage::Job(result) => {
                     self.handle_job_result(*result);
                 }
+            }
+        }
+    }
+
+    /// Adopt one toolpath-lane result.
+    ///
+    /// Revision check: the result carries the revision it was computed
+    /// for, and the arms below compare it against the session's current
+    /// revision before they write the core result cache or resolve an
+    /// MCP waiter.
+    fn adopt_toolpath_result(&mut self, result: crate::compute::ComputeResult) {
+        let tp_id = result.toolpath_id;
+        // WP11b: read before the match below moves `result`.
+        let reply_revision = result.revision;
+        // G-REGEN-RACE — the supersede is not an outcome.
+        //
+        // The toolpath lane's submit rule is
+        // resubmit-cancels-and-requeues, so any second submit
+        // of a toolpath that is currently the lane's active job
+        // aborts that job and queues the replacement. Both the
+        // GUI's `process_auto_regen` sweep and MCP
+        // `generate_all` submit through this controller, and
+        // after a `load_project` (which marks every toolpath
+        // stale) the sweep is guaranteed to have a job in
+        // flight 500 ms later — so an agent's `generate_all`
+        // superseded its own work and then read the resulting
+        // `Cancelled` as a *failure of the toolpath*, reporting
+        // "`<name>`: generation cancelled" with `generated: 0`
+        // while the replacement it had just queued went on to
+        // succeed unobserved.
+        //
+        // The fix is here, at the one place that turns a lane
+        // message into a toolpath outcome: a superseded job has
+        // no outcome at all. The toolpath is still `Computing`,
+        // no MCP waiter resolves, no `generate_all` bucket
+        // moves, and the replacement's own result does all
+        // three. A cancel with no supersede behind it — the
+        // `cancel_generation` escape hatch, the GUI's cancel
+        // button — is untouched and still terminal.
+        let expected_supersede = self.superseded_toolpaths.remove(&tp_id);
+        if expected_supersede && matches!(result.result, Err(ComputeError::Cancelled)) {
+            // Was a `continue` while this arm sat inside the drain loop.
+            // It skipped THIS message only, so the method returns and the
+            // loop goes on to the next result exactly as before.
+            return;
+        }
+        let rt = self.state.gui.toolpath_rt_or_default(tp_id);
+        rt.debug_trace = result.debug_trace.clone();
+        rt.semantic_trace = result.semantic_trace.clone();
+        rt.debug_trace_path = result.debug_trace_path.clone();
+        match result.result {
+            Ok(computed) => {
+                rt.status = ComputeStatus::Done;
+                // Sync the core-side `session.results` cache so the
+                // single point of truth for "this toolpath has a
+                // fresh result" is `ProjectSession`, not the
+                // viz-side `gui.toolpath_rt`. Without this, the
+                // gcode export / load-report paths read stale-empty
+                // `session.results[idx]` after Apply (see
+                // `planning/F1_RCA.md`).
+                // G-LATERESULT (F2.4): the core cache is what
+                // `FreshnessState` reads for `Current`, so writing
+                // a late result into it is what made an edit
+                // silently lose. If an input moved while this job
+                // ran, the result is KEPT — `rt.result` below, so
+                // the viewport still draws it and the operator
+                // does not lose a long 3D generation — but the
+                // core slot stays empty, which derives
+                // `EditedSince` and puts STALE on every surface
+                // F2.2 wired.
+                //
+                // The auto-regen arm was already safe by a
+                // different route: a resubmit supersedes, and
+                // G-REGEN-RACE drops the abandoned result before
+                // it reaches here. Nothing supersedes on a 3D
+                // manual-regen operation, which is why the row
+                // names that arm.
+                //
+                // WP3: the refusal itself lives in core, at
+                // `Command::AdoptResult`. This door hands the
+                // stamp over and reads the answer; it does not
+                // compare revisions of its own any more.
+                if let Some((tp_index, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
+                    // Honour the §6.E dual-representation
+                    // invariant: drill ops carry both the
+                    // DrillOp payload and the annotated
+                    // toolpath. The worker already built the
+                    // DrillOp into `computed.drill_op`;
+                    // routing it through here so
+                    // `session.results[idx].drill_op()`
+                    // returns Some for drill TPs matches the
+                    // `session.generate_toolpath` production
+                    // path. Without this, drill_gates on the
+                    // tool-load report never populate (the
+                    // gate evaluator reads `result.drill_op()`).
+                    let op_data = match &computed.drill_op {
+                        Some(drill_op_arc) => rs_cam_core::ops::drill_op::OpData::DrillOp(
+                            Arc::clone(drill_op_arc),
+                            Arc::clone(&computed.annotated),
+                        ),
+                        None => rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::clone(
+                            &computed.annotated,
+                        )),
+                    };
+                    let core_result = rs_cam_core::session::ToolpathComputeResult {
+                        op_data,
+                        stats: computed.stats.clone(),
+                        // Debug + semantic traces stay viz-side
+                        // (Arc'd on `rt.debug_trace` /
+                        // `rt.semantic_trace` above). Core readers
+                        // currently only consume `annotated.spans`
+                        // from `session.results`; bloating the
+                        // cache with owned trace copies is wasted
+                        // work.
+                        debug_trace: None,
+                        semantic_trace: None,
+                    };
+                    // WP11b: the revision rides the REPLY,
+                    // stamped from the handle `start`
+                    // produced. `None` means a hand-built
+                    // reply in a test, and reproduces the
+                    // pre-WP3 accept-when-unstamped arm.
+                    let revision = match reply_revision {
+                        Some(submitted) => submitted,
+                        None => self.state.session.toolpath_revision(tp_index),
+                    };
+                    let adopted =
+                        self.state
+                            .session
+                            .apply(rs_cam_core::session::Command::AdoptResult(
+                                rs_cam_core::session::AdoptResultArgs {
+                                    index: tp_index,
+                                    revision,
+                                    result: Box::new(core_result),
+                                },
+                            ));
+                    // The `Ok` effects are empty: a completion
+                    // records an answer, it moves no revision.
+                    // On a refusal the core slot stays empty,
+                    // which derives `EditedSince`. `rt.result`
+                    // below still keeps the geometry, so the
+                    // viewport draws it and the operator does
+                    // not lose a long 3D generation. That is
+                    // what the deleted viz gate did, and the
+                    // outcome is the same.
+                    if let Err(e) = adopted {
+                        tracing::debug!(toolpath = tp_index, "compute result not adopted: {e}");
+                    }
+                }
+                rt.result = Some(computed);
+                // Any toolpath whose `DerivedRestRegions` boundary
+                // depends on this one just saw its source result
+                // replaced (rest_regions may have appeared,
+                // changed, or vanished) — force a regenerate so
+                // the dependent re-resolves against the fresh
+                // regions instead of clipping against a stale set.
+                self.mark_derived_rest_dependents_stale(tp_id);
+            }
+            Err(ComputeError::Cancelled) => {
+                rt.status = ComputeStatus::Pending;
+                rt.result = None;
+                Self::forget_core_result(&mut self.state.session, tp_id);
+            }
+            Err(ComputeError::Message(error)) => {
+                rt.status = ComputeStatus::Error(error);
+                rt.result = None;
+                // G-STICKYEMPTY: clear the CORE cache too, not
+                // just `rt.result`. `Ok` writes both caches
+                // (`AdoptResult`, above); a failure used to
+                // clear only the viz one, so the previous
+                // parameter set's toolpath stayed in
+                // `session.results[idx]` — exportable,
+                // simulatable, and counted as "generated" by
+                // `PhantomPriorStockScan`, which is what
+                // withholds a pending rest op's phantom
+                // prior-stock snapshot and leaves it unable to
+                // regenerate until the project is reloaded.
+                Self::forget_core_result(&mut self.state.session, tp_id);
+            }
+        }
+        self.pending_upload = true;
+
+        // U4 reconciliation: clear this toolpath from the
+        // pending list. When the list empties we kick the
+        // reconciliation sim — this fires once, after the
+        // last applied toolpath finishes regenerating.
+        self.state
+            .pending_reconciliation_for_ids
+            .retain(|id| *id != tp_id);
+        if self.state.pending_reconciliation_for_ids.is_empty()
+            && matches!(
+                self.state.optimize_project.as_ref().map(|v| &v.status),
+                Some(crate::state::OptimizeProjectStatus::Reconciling(_))
+            )
+        {
+            let _submitted = self.run_simulation_with_all();
+        }
+
+        // Roadmap F.2 — auto-verify after per-TP Apply. If
+        // this regen is for the just-applied candidate,
+        // clear the pending flag and kick a full project
+        // sim so the user sees the verified live verdict
+        // without having to click Run Simulation by hand.
+        if self.state.pending_apply_resim == Some(tp_id.0) {
+            self.state.pending_apply_resim = None;
+            let _submitted = self.run_simulation_with_all();
+        }
+
+        // Resolve whoever is waiting on this toolpath — the MCP
+        // waiter, the `generate_all` ladder, or neither.
+        self.toolpath_completion_landed(tp_id);
+    }
+
+    /// Adopt one simulation-lane result.
+    ///
+    /// Revision check: the accepted run's capture revision decides
+    /// whether the metric evidence is stale, and a run stamped for a
+    /// superseded revision does not clear the marker.
+    fn adopt_simulation_result(
+        &mut self,
+        result: Result<Box<crate::compute::SimulationResult>, ComputeError>,
+    ) {
+        match result {
+            Ok(simulation) => {
+                // N12 item 10 — one simulation state. The GUI
+                // simulates on its own lane, so the session never
+                // saw this answer and `ProjectSession::start`
+                // refused every `FromRemainingStock` operation in
+                // the GUI process. The core-typed copy is built
+                // HERE, before the view state consumes the fields;
+                // the cut trace is attached below, after the
+                // modulation post-pass rewrites it.
+                let mut adopted = core_simulation_from_lane(&simulation);
+                if simulation.core.resolution_clamped {
+                    self.push_notification(
+                        "Sim resolution was coarsened to fit grid limits — \
+                     consider reducing stock size or increasing resolution"
+                            .to_owned(),
+                        crate::controller::Severity::Warning,
+                    );
+                }
+                if simulation.core.mesh.indices.is_empty() {
+                    self.push_notification(
+                        "Simulation produced an empty mesh — \
+                     try increasing resolution or check stock dimensions"
+                            .to_owned(),
+                        crate::controller::Severity::Warning,
+                    );
+                }
+                let boundaries = simulation.core.boundaries.clone();
+
+                let setup_boundaries = {
+                    let mut sbs = Vec::new();
+                    let mut last_setup_id = None;
+                    for boundary in &boundaries {
+                        let setup_id = self.setup_of_toolpath(boundary.id);
+                        if setup_id != last_setup_id {
+                            if let Some(setup_id) = setup_id {
+                                let setup_name = self
+                                    .state
+                                    .session
+                                    .list_setups()
+                                    .iter()
+                                    .find(|s| s.id == setup_id.0)
+                                    .map(|s| s.name.clone())
+                                    .unwrap_or_default();
+                                sbs.push(crate::state::simulation::SetupBoundary {
+                                    setup_id,
+                                    setup_name,
+                                    start_move: boundary.start_move,
+                                });
+                            }
+                            last_setup_id = setup_id;
+                        }
+                    }
+                    sbs
+                };
+
+                let checkpoints: Vec<_> = simulation
+                    .core
+                    .checkpoints
+                    .into_iter()
+                    .map(|checkpoint| crate::state::simulation::SimCheckpoint {
+                        boundary_index: checkpoint.boundary_index,
+                        core: checkpoint,
+                    })
+                    .collect();
+
+                // F.4 — retain the per-toolpath (and phantom)
+                // prior-stock snapshots so the submit-time
+                // FromRemainingStock gate can look them up by id.
+                let prior_stocks = simulation.core.prior_stocks;
+
+                if !simulation.core.rapid_collisions.is_empty() {
+                    tracing::warn!(
+                        "{} rapid collisions detected",
+                        simulation.core.rapid_collisions.len()
+                    );
+                }
+                self.state.simulation.checks.rapid_collisions = simulation.core.rapid_collisions;
+                self.state.simulation.checks.rapid_collision_move_indices =
+                    simulation.core.rapid_collision_move_indices;
+
+                self.state.simulation.playback.display_deviations = simulation.core.deviations;
+                self.state.simulation.playback.display_mesh = None;
+                self.state.simulation.playback.display_mesh_move = None;
+                self.state.simulation.playback.last_mesh_upload_at = None;
+                self.state.simulation.playback.tool_gpu_move = None;
+                self.state.simulation.playback.display_mesh_preview = false;
+                self.state.simulation.playback.scrub_drag_active = false;
+
+                let stock = self.state.session.stock_config();
+                let stock_bbox = rs_cam_core::geo::BoundingBox3 {
+                    min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+                    max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
+                };
+
+                self.state.simulation.results = Some(SimulationResults {
+                    mesh: simulation.core.mesh,
+                    total_moves: simulation.core.total_moves,
+                    boundaries,
+                    setup_boundaries,
+                    checkpoints,
+                    selected_toolpaths: None,
+                    playback_data: simulation.playback_data,
+                    stock_bbox,
+                    cut_trace: simulation.core.cut_trace,
+                    cut_trace_path: simulation.cut_trace_path,
+                    column_grid_cell_mm: simulation.core.column_grid_cell_mm,
+                    prior_stocks,
+                });
+
+                // F-039 — apply adaptive feed modulation to the
+                // just-completed sim trace (unified load model §10.6,
+                // option A). The async worker runs the dexel sim only;
+                // modulation needs session context (material / machine
+                // / vendor LUT) so it runs here on the main thread. The
+                // post-pass stamps `modulation_summaries` onto the trace
+                // — so the Feeds-tab "operating point" card + the
+                // tool-load report populate — and swaps the modulated
+                // toolpaths into `session.results`, which G-code export
+                // reads, so exported feeds are the optimized per-move
+                // schedule. That last clause was aspirational until
+                // 2026-08-22: the viz exporter read the worker's
+                // pre-modulation IR out of `gui.toolpath_rt` instead
+                // (G-MODEXPORT). `io::export::emitted_toolpaths` now
+                // resolves from `session.results`, so the claim holds
+                // on the GUI/MCP path as well as the CLI one — sentried
+                // by `tests/modulated_feeds_reach_gcode_g_modexport.rs`.
+                // Default-on in the GUI. Take the trace out
+                // and put it back so the session (results) and the
+                // viz-side cut_trace are borrowed disjointly.
+                {
+                    let opts = rs_cam_core::session::SimulationOptions {
+                    adaptive_feed_modulation: true,
+                    modulation_strategy:
+                        rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
+                    modulation_aggressiveness: 1.0,
+                    ..Default::default()
+                };
+                    let mut cut_trace = self
+                        .state
+                        .simulation
+                        .results
+                        .as_mut()
+                        .and_then(|r| r.cut_trace.take());
+                    if cut_trace.is_some() {
+                        self.state
+                            .session
+                            .modulate_simulation_trace(&mut cut_trace, &opts);
+                        if let Some(results) = self.state.simulation.results.as_mut() {
+                            results.cut_trace = cut_trace;
+                        }
+                    }
+                }
+
+                // N12 item 10 — the session adopts the simulation
+                // the viewport just adopted, so `start` sees the
+                // prior stock a `FromRemainingStock` operation
+                // needs.
+                //
+                // The trace is attached HERE and not in
+                // `core_simulation_from_lane`. The modulation pass
+                // above rewrites the trace through `Arc::make_mut`,
+                // which COPIES while a second `Arc` exists — so a
+                // copy taken before that pass would leave the
+                // session reading the pre-modulation trace and the
+                // viewport reading the modulated one. Taken after
+                // it, the two share one `Arc`.
+                adopted.cut_trace = self
+                    .state
+                    .simulation
+                    .results
+                    .as_ref()
+                    .and_then(|results| results.cut_trace.as_ref())
+                    .map(Arc::clone);
+                let args = AdoptSimulationArgs {
+                    result: Box::new(adopted),
+                };
+                let adopt = Command::AdoptSimulation(args);
+                // WP19: the `Ok` arm stays absent on purpose.
+                // Storing a simulation leaves the session's
+                // `Some`, so `stale` is empty and
+                // `simulation_cleared` is false.
+                if let Err(error) = self.state.session.apply(adopt) {
+                    tracing::warn!("simulation not adopted into the session: {error}");
+                }
+
+                let inspect_target = self.state.simulation.debug.pending_inspect_toolpath.take();
+                if let Some(move_index) = inspect_target.and_then(|toolpath_id| {
+                    self.state
+                        .simulation
+                        .boundaries()
+                        .iter()
+                        .find(|boundary| boundary.id == toolpath_id)
+                        .map(|boundary| boundary.start_move)
+                }) {
+                    self.state.simulation.playback.current_move = move_index;
+                    self.state.simulation.playback.playing = false;
+                } else {
+                    self.state.simulation.playback.current_move = 0;
+                    self.state.simulation.playback.playing = false;
+                }
+
+                let initial_stock =
+                    TriDexelStock::from_bounds(&stock_bbox, self.state.simulation.resolution);
+                self.state.simulation.playback.live_stock = Some(initial_stock);
+                self.state.simulation.playback.live_sim_move = 0;
+                // Unclaimed: this stock is in the global frame, and
+                // whether that is the right frame for the group the
+                // playhead lands in is a question only the new
+                // `playback_data` can answer (G-LATERALSCRUB). Leaving
+                // a previous run's group id here would let a lateral
+                // group inherit a global-frame stock unchallenged,
+                // because the group ORDINAL can match across runs
+                // while the frame does not.
+                self.state.simulation.playback.live_stock_group = None;
+
+                let prev_gen = self
+                    .state
+                    .simulation
+                    .last_run
+                    .as_ref()
+                    .map_or(0, |m| m.sim_generation);
+                // G-LATESIM (F2.10): the counter as it stood at
+                // SUBMIT, not now. Stamping the live counter here
+                // recorded the run as having been made against every
+                // edit that landed while it ran, so an operator who
+                // changed a parameter mid-simulation was shown the
+                // old run as current evidence — with no "stale" chip,
+                // no Readiness warning and no dimmed readout.
+                //
+                // The result itself is KEPT, exactly as F2.4 keeps a
+                // late toolpath result: a simulation is minutes of
+                // work, and discarding it would leave the operator
+                // with nothing and no way to tell a cancelled run
+                // from one that never happened. Stored, and marked
+                // not-current.
+                let submitted_at = self
+                    .state
+                    .simulation
+                    .submitted_edit_counter
+                    .take()
+                    .unwrap_or(self.state.gui.edit_counter);
+                self.state.simulation.last_run = Some(SimulationRunMeta {
+                    sim_generation: prev_gen + 1,
+                    last_sim_edit_counter: submitted_at,
+                    // Recording preferences are runtime-only. This
+                    // result carries the capture revision it was
+                    // SUBMITTED with; a toggle while the worker ran
+                    // still needs a re-run, and an unstamped late
+                    // result reads stale, never current.
+                    accepted_metric_options_revision: self
+                        .state
+                        .simulation
+                        .submitted_metric_options_revision
+                        .take(),
+                });
+
+                self.pending_upload = true;
+
+                // U4 reconciliation: if the rollup is in
+                // Reconciling state, populate per-row
+                // reconciled values from the new trace and
+                // transition to Reconciled.
+                self.maybe_finalize_reconciliation();
+
+                // Notify pending MCP simulation request
+                #[cfg(feature = "mcp")]
+                self.notify_mcp_simulation_complete();
+                // A/M11: if this simulation was the fixpoint loop's
+                // own, the blocked rest ops can now see their upstream
+                // stock — start the next round. Ungated since Phase O:
+                // the GUI's Generate All runs the same ladder.
+                self.resume_generate_all_after_simulation(None);
+            }
+            Err(ComputeError::Cancelled) => {
+                let _ = (
+                    self.state.simulation.submitted_edit_counter.take(),
+                    self.state
+                        .simulation
+                        .submitted_metric_options_revision
+                        .take(),
+                );
+                #[cfg(feature = "mcp")]
+                self.notify_mcp_simulation_error("Simulation cancelled");
+                self.resume_generate_all_after_simulation(Some(
+                    "the simulation was cancelled".to_owned(),
+                ));
+            }
+            Err(ComputeError::Message(error)) => {
+                let _ = (
+                    self.state.simulation.submitted_edit_counter.take(),
+                    self.state
+                        .simulation
+                        .submitted_metric_options_revision
+                        .take(),
+                );
+                tracing::error!("Simulation failed: {error}");
+                self.push_notification(
+                    format!("Simulation failed: {error}"),
+                    super::super::Severity::Error,
+                );
+                #[cfg(feature = "mcp")]
+                self.notify_mcp_simulation_error(&error);
+                self.resume_generate_all_after_simulation(Some(error));
+            }
+        }
+    }
+
+    /// Adopt one collision-lane result.
+    ///
+    /// Freshness check: the holder-clearance verdict carries no lane
+    /// revision. It is stamped with the edit counter the check was
+    /// SUBMITTED at (G-HOLDERSTALE, F2.12), so an edit made while the
+    /// lane worked withdraws the verdict rather than folding into it.
+    fn adopt_collision_result(
+        &mut self,
+        result: Result<crate::compute::CollisionResult, ComputeError>,
+    ) {
+        match result {
+            Ok(collision) => {
+                let count = collision.report.collisions.len();
+                if count == 0 {
+                    tracing::info!("No holder clearance issues detected");
+                    self.push_notification(
+                        "No holder clearance issues detected".into(),
+                        super::super::Severity::Info,
+                    );
+                } else {
+                    let msg = format!(
+                        "{} holder clearance issues, min safe stickout: {:.1} mm",
+                        count, collision.report.min_safe_stickout
+                    );
+                    tracing::warn!("{msg}");
+                    self.push_notification(msg, super::super::Severity::Warning);
+                }
+                self.state.simulation.checks.holder_collision_count = count;
+                self.state.simulation.checks.min_safe_stickout = if count > 0 {
+                    Some(collision.report.min_safe_stickout)
+                } else {
+                    None
+                };
+                // G-HOLDERSTALE (F2.12): record WHEN this verdict was
+                // asked for, from the submit stamp rather than from
+                // the live counter, so an edit made while the lane
+                // worked is not folded into the record of when the
+                // check ran. Same rule F2.10 gave the simulation.
+                //
+                // The result itself is KEPT and marked not-current,
+                // for F2.10's reason: it is still the only evidence
+                // there is, and an emptied row cannot be told from
+                // one that never ran.
+                //
+                // A result with NO stamp of its own cannot say when
+                // it was measured. The simulation falls back to the
+                // live counter there; this row does not, because a
+                // holder verdict is a safety claim and "I do not
+                // know when this was measured" is not one to make.
+                // `None` reads as "Not checked".
+                self.state.simulation.checks.checked_at_edit_counter = self
+                    .state
+                    .simulation
+                    .submitted_collision_edit_counter
+                    .take();
+                // G-HOLDERSCOPE (F2.13): and the population the check
+                // covered, from the same submit. A result with no
+                // stamp of its own leaves the EMPTY population, which
+                // `covers_the_job` refuses — an unstamped verdict
+                // cannot claim the job.
+                self.state.simulation.checks.checked_scope = self
+                    .state
+                    .simulation
+                    .submitted_collision_scope
+                    .take()
+                    .unwrap_or_default();
+                // Extract MCP response data before moving ownership
+                #[cfg(feature = "mcp")]
+                let mcp_collision_count = collision.report.collisions.len();
+                #[cfg(feature = "mcp")]
+                let mcp_min_safe_stickout = collision.report.min_safe_stickout;
+                #[cfg(feature = "mcp")]
+                let mcp_is_clear = collision.report.is_clear();
+
+                self.state.simulation.checks.collision_report = Some(collision.report);
+                self.collision_positions = collision.positions;
+                self.pending_upload = true;
+
+                // Notify pending MCP collision request
+                #[cfg(feature = "mcp")]
+                self.notify_mcp_collision_complete(
+                    mcp_collision_count,
+                    mcp_min_safe_stickout,
+                    mcp_is_clear,
+                );
+            }
+            Err(ComputeError::Cancelled) => {
+                // The stamp describes a check that produced nothing.
+                // Clearing it here keeps it from being read by a
+                // later arrival that had no submit of its own.
+                self.state.simulation.submitted_collision_edit_counter = None;
+                self.state.simulation.submitted_collision_scope = None;
+                #[cfg(feature = "mcp")]
+                self.notify_mcp_collision_error("Collision check cancelled");
+            }
+            Err(ComputeError::Message(error)) => {
+                self.state.simulation.submitted_collision_edit_counter = None;
+                self.state.simulation.submitted_collision_scope = None;
+                tracing::error!("Collision check failed: {error}");
+                self.push_notification(
+                    format!("Collision check failed: {error}"),
+                    super::super::Severity::Error,
+                );
+                #[cfg(feature = "mcp")]
+                self.notify_mcp_collision_error(&error);
             }
         }
     }
