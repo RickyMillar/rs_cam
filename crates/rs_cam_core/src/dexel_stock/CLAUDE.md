@@ -5,8 +5,7 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 
 ## Files
 
-- `mod.rs`, `simulation.rs` — the stock type, the facade, the `simulate_*`
-  methods.
+- `mod.rs`, `simulation.rs` — the stock type, the facade, `simulate_*`.
 - `stamping.rs`, `swept.rs` — the stamping helpers and swept-volume stamping.
 - `band.rs`, `band_batch.rs`, `tile_mip.rs` — row bands, the ONE batch
   dispatcher, the coarse mip.
