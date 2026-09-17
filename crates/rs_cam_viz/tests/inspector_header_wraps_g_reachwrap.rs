@@ -64,16 +64,55 @@
     clippy::indexing_slicing
 )]
 
-const PROPERTIES_SRC: &str = include_str!("../src/ui/properties/mod.rs");
+/// Every `.rs` file directly in `src/ui/properties/`, concatenated in
+/// file-name order.
+///
+/// P4 (2026-09-17) split `properties/mod.rs` into `mod.rs` plus seven panel
+/// children beside it, so the inspector's source is the folder, not one
+/// file. `operations/` is a sub-folder and is not read; it carries its own
+/// sentries.
+fn properties_src() -> String {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties");
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "rs"))
+        .collect();
+    paths.sort();
+    assert!(!paths.is_empty(), "no source under {}", dir.display());
+    let mut out = String::new();
+    for path in paths {
+        out.push_str(
+            &std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
+        );
+        out.push('\n');
+    }
+    out
+}
 
 /// The body of `fn <name>` up to the next top-level `fn` or the end.
+///
+/// # Why the end marker reads the visibility prefix
+///
+/// It used to be the bare string `"\nfn "`. P4 (2026-09-17) moved these
+/// helpers into child modules of `ui/properties/` and gave several of their
+/// neighbours `pub(super)`, which a bare `"\nfn "` walks straight past: the
+/// slice then swallows the next two or three items. Every assertion below is
+/// NEGATIVE, so a longer slice passes MORE easily — the silent direction.
+/// The marker now reads each visibility a top-level `fn` can carry.
 fn function_body<'a>(src: &'a str, name: &str) -> &'a str {
     let needle = format!("fn {name}(");
     let start = src
         .find(&needle)
-        .unwrap_or_else(|| panic!("no fn {name} in properties/mod.rs"));
+        .unwrap_or_else(|| panic!("no fn {name} under ui/properties/"));
     let rest = &src[start + needle.len()..];
-    let end = rest.find("\nfn ").unwrap_or(rest.len());
+    let end = ["\nfn ", "\npub fn ", "\npub(crate) fn ", "\npub(super) fn "]
+        .iter()
+        .filter_map(|marker| rest.find(marker))
+        .min()
+        .unwrap_or(rest.len());
     &rest[..end]
 }
 
@@ -152,7 +191,8 @@ fn reach_block(src: &str) -> &str {
 /// Pre-fix all three were inside it.
 #[test]
 fn the_reach_readings_get_the_panel_width_not_the_row_remainder() {
-    let block = reach_block(PROPERTIES_SRC);
+    let src = properties_src();
+    let block = reach_block(&src);
     let horizontal = block
         .find("ui.horizontal(|ui| {")
         .expect("the checkbox still sits in a horizontal row");
@@ -179,7 +219,8 @@ fn the_reach_readings_get_the_panel_width_not_the_row_remainder() {
 /// And they are drawn through the wrapped helper, not a bare `ui.label`.
 #[test]
 fn the_reach_readings_are_constructed_wrapped() {
-    let block = reach_block(PROPERTIES_SRC);
+    let src = properties_src();
+    let block = reach_block(&src);
     for reading in [
         "unreachable {unreachable_pct:.1} %",
         "grid_note.clone()",
@@ -205,7 +246,8 @@ fn the_reach_readings_are_constructed_wrapped() {
 /// sentence must not be added to that row later on the strength of it.
 #[test]
 fn only_short_status_words_share_the_checkbox_row() {
-    let block = reach_block(PROPERTIES_SRC);
+    let src = properties_src();
+    let block = reach_block(&src);
     for status in ["reach: computing…", "reach: not measured"] {
         assert!(
             block.contains(status),
@@ -222,7 +264,8 @@ fn only_short_status_words_share_the_checkbox_row() {
 /// width, a truncation or a text change — this is a layout fix.
 #[test]
 fn the_wrapped_helper_only_wraps() {
-    let body = function_body(PROPERTIES_SRC, "wrapped_small_label");
+    let src = properties_src();
+    let body = function_body(&src, "wrapped_small_label");
     assert!(body.contains(".wrap()"), "the helper must wrap");
     assert!(
         !body.contains("truncate"),
@@ -239,7 +282,8 @@ fn the_wrapped_helper_only_wraps() {
 /// `horizontal_wrapped`. Pre-fix this row was a bare `ui.label`.
 #[test]
 fn the_diagnostic_message_is_constructed_wrapped() {
-    let body = function_body(PROPERTIES_SRC, "render_diagnostic_row");
+    let src = properties_src();
+    let body = function_body(&src, "render_diagnostic_row");
     let at = body
         .find("format!(\"{prefix}{}\", d.message)")
         .expect("the diagnostic message line moved");
@@ -259,10 +303,11 @@ fn the_diagnostic_message_is_constructed_wrapped() {
 /// operation…"), so they get the same treatment while it is being applied.
 #[test]
 fn the_validation_errors_are_constructed_wrapped() {
-    let at = PROPERTIES_SRC
+    let src = properties_src();
+    let at = src
         .find("for err in &validation_errors {")
         .expect("the validation-error loop moved");
-    let body = &PROPERTIES_SRC[at..(at + 500).min(PROPERTIES_SRC.len())];
+    let body = &src[at..(at + 500).min(src.len())];
     assert!(
         body.contains("wrapped_small_label("),
         "validator sentences wrap too:\n{body}"
@@ -278,14 +323,15 @@ fn the_validation_errors_are_constructed_wrapped() {
 #[test]
 fn every_sentence_in_the_header_is_wrapped() {
     // The header runs from the Name row to the diagnostics ribbon.
-    let start = PROPERTIES_SRC
+    let src = properties_src();
+    let start = src
         .find("// ── Shared header (always visible above tabs)")
         .expect("the header marker moved");
-    let end = PROPERTIES_SRC[start..]
+    let end = src[start..]
         .find("// Contextual diagnostics")
         .map(|at| start + at)
         .expect("the header's end marker moved");
-    let header = &PROPERTIES_SRC[start..end];
+    let header = &src[start..end];
 
     // Already wrapped before this commit: the two Generate-row statuses.
     for existing in ["Waiting on upstream stock", "Error: {e}"] {

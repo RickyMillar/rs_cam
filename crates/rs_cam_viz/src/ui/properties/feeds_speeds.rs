@@ -243,7 +243,9 @@ fn draw_feeds_card(
 ///
 /// The per-field suggestion builder lives in `pills.rs` and still uses this
 /// mapping even though UR4 removes the duplicate pills from the Feeds tab.
-pub(super) fn prov_from_chipload(source: &rs_cam_core::feeds::ChiploadSource) -> (ProvKind, Option<&str>) {
+pub(super) fn prov_from_chipload(
+    source: &rs_cam_core::feeds::ChiploadSource,
+) -> (ProvKind, Option<&str>) {
     use rs_cam_core::feeds::ChiploadSource;
 
     match source {
