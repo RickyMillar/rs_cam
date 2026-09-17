@@ -65,8 +65,13 @@ struct FlatRegion {
 /// 3. For each region, raster across the XY bounding box, including only points
 ///    where the underlying triangle is flat.
 /// 4. Insert rapids to skip non-flat stretches; retract between regions.
+///
+/// **Test-only (FIN-11).** The product path calls the cancellable form; this
+/// wrapper only saved the module's own tests a `run_uncancellable` line, so
+/// it is `#[cfg(test)]` and no longer public API.
+#[cfg(test)]
 #[allow(clippy::indexing_slicing, clippy::expect_used)]
-pub fn horizontal_finish_toolpath(
+fn horizontal_finish_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,

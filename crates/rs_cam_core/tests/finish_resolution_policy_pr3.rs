@@ -44,12 +44,8 @@ use rs_cam_core::finish::ramp_finish::{
     RampFinishParams, ramp_finish_generation_resolution, ramp_finish_toolpath,
     ramp_finish_toolpath_structured_annotated_with_resolution,
 };
-use rs_cam_core::finish::scallop::{
-    ScallopParams, scallop_generation_resolution, scallop_toolpath,
-};
-use rs_cam_core::finish::steep_shallow::{
-    SteepShallowParams, steep_shallow_generation_resolution, steep_shallow_toolpath,
-};
+use rs_cam_core::finish::scallop::{ScallopParams, scallop_generation_resolution};
+use rs_cam_core::finish::steep_shallow::{SteepShallowParams, steep_shallow_generation_resolution};
 use rs_cam_core::geo::P3;
 use rs_cam_core::measurement::{
     CellSource, MeasurementDomain, MeasurementProvenance, MeasurementStage,
@@ -64,6 +60,41 @@ use common::tools::{ball_cutter, wanaka_taper as taper};
 use rs_cam_core::finish::unified_finish::{
     unified_finish_classification_resolution, unified_finish_mid_steep_generation_resolution,
 };
+
+// ── FIN-11: the non-cancellable wrappers left the public API ─────────────
+//
+// `scallop_toolpath` and `steep_shallow_toolpath` are `#[cfg(test)]` inside
+// `rs_cam_core` now, because the product path calls the cancellable form.
+// These local helpers keep the harness's call shape and route through that
+// same cancellable form, so the pinned fingerprints below measure the same
+// generator.
+
+fn scallop_toolpath(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+) -> rs_cam_core::toolpath::Toolpath {
+    rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        rs_cam_core::finish::scallop::scallop_toolpath_structured_annotated_with_cancel(
+            mesh, index, cutter, params, None, None, cancel,
+        )
+        .map(|(tp, _, _)| tp)
+    })
+}
+
+fn steep_shallow_toolpath(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &SteepShallowParams,
+) -> rs_cam_core::toolpath::Toolpath {
+    rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        rs_cam_core::finish::steep_shallow::steep_shallow_toolpath_with_cancel(
+            mesh, index, cutter, params, None, cancel,
+        )
+    })
+}
 
 /// A 20×20 ridge with a gentle along-Y ripple: shallow flanks, a crest, and
 /// enough curvature that stepover, ring decimation and slope classification

@@ -1003,16 +1003,25 @@ pub fn scallop_generation_resolution(
 ///
 /// Produces concentric offset contours with variable stepover that maintains
 /// constant scallop height across the surface regardless of slope and curvature.
+///
+/// **Test-only (FIN-11).** The product path calls the cancellable form; this
+/// wrapper only saved the module's own tests a `run_uncancellable` line, so
+/// it is `#[cfg(test)]` and no longer public API.
+#[cfg(test)]
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(scallop_height = params.scallop_height))]
 #[allow(clippy::indexing_slicing)] // ring/filtered indexing is guarded by len checks
-pub fn scallop_toolpath(
+fn scallop_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &ScallopParams,
 ) -> Toolpath {
-    let (tp, _, _) = scallop_toolpath_structured_annotated(mesh, index, cutter, params, None);
-    tp
+    crate::interrupt::run_uncancellable(|cancel| {
+        scallop_toolpath_structured_annotated_with_cancel(
+            mesh, index, cutter, params, None, None, cancel,
+        )
+        .map(|(tp, _, _)| tp)
+    })
 }
 
 impl crate::compute::spans::RuntimeLabel for ScallopRuntimeAnnotation {
@@ -1025,21 +1034,7 @@ impl crate::compute::spans::RuntimeLabel for ScallopRuntimeAnnotation {
     }
 }
 
-fn scallop_toolpath_structured_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &ScallopParams,
-    debug: Option<&ToolpathDebugContext>,
-) -> (Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport) {
-    crate::interrupt::run_uncancellable(|cancel| {
-        scallop_toolpath_structured_annotated_with_cancel(
-            mesh, index, cutter, params, debug, None, cancel,
-        )
-    })
-}
-
-/// Cancellable variant of `scallop_toolpath_structured_annotated`. Polls
+/// The structured, annotated scallop entry point. Polls
 /// `cancel` once per ring during 3D ring generation (`ring_to_3d`'s
 /// per-point drop-cutter queries are the expensive step) and once per ring
 /// again while chaining rings into the toolpath.

@@ -1778,7 +1778,12 @@ fn sweep_scallop_height() {
             if let Some(v) = ov {
                 p.scallop_height = v.as_f64().unwrap();
             }
-            rs_cam_core::finish::scallop::scallop_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::scallop::scallop_toolpath_structured_annotated_with_cancel(
+                    &mesh, &index, &cutter, &p, None, None, cancel,
+                )
+                .map(|(tp, _, _)| tp)
+            })
         },
     );
     for v in &result.variants {
@@ -1803,7 +1808,12 @@ fn sweep_scallop_direction() {
             if ov.is_some() {
                 p.direction = ScallopDirection::InsideOut;
             }
-            rs_cam_core::finish::scallop::scallop_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::scallop::scallop_toolpath_structured_annotated_with_cancel(
+                    &mesh, &index, &cutter, &p, None, None, cancel,
+                )
+                .map(|(tp, _, _)| tp)
+            })
         },
     );
     // On a symmetric hemisphere, OutsideIn vs InsideOut may produce identical
@@ -1848,7 +1858,11 @@ fn sweep_steep_shallow_threshold() {
             if let Some(v) = ov {
                 p.threshold_angle = v.as_f64().unwrap();
             }
-            rs_cam_core::finish::steep_shallow::steep_shallow_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::steep_shallow::steep_shallow_toolpath_with_cancel(
+                    &mesh, &index, &cutter, &p, None, cancel,
+                )
+            })
         },
     );
     for v in &result.variants {
@@ -1962,7 +1976,12 @@ fn sweep_spiral_finish_stepover() {
             if let Some(v) = ov {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::finish::spiral_finish::spiral_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::spiral_finish::spiral_finish_toolpath_structured_annotated_with_cancel(
+                    &mesh, &index, &cutter, &p, None, None, cancel,
+                )
+                .map(|(tp, _)| tp)
+            })
         },
     );
     for v in &result.variants {
@@ -1987,7 +2006,12 @@ fn sweep_spiral_finish_direction() {
             if ov.is_some() {
                 p.direction = SpiralDirection::OutsideIn;
             }
-            rs_cam_core::finish::spiral_finish::spiral_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::spiral_finish::spiral_finish_toolpath_structured_annotated_with_cancel(
+                    &mesh, &index, &cutter, &p, None, None, cancel,
+                )
+                .map(|(tp, _)| tp)
+            })
         },
     );
     for v in &result.variants {
@@ -2026,7 +2050,11 @@ fn sweep_radial_finish_angular_step() {
             if let Some(v) = ov {
                 p.angular_step = v.as_f64().unwrap();
             }
-            rs_cam_core::finish::radial_finish::radial_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::radial_finish::radial_finish_toolpath_with_cancel(
+                    &mesh, &index, &cutter, &p, None, cancel,
+                )
+            })
         },
     );
     for v in &result.variants {
@@ -2066,9 +2094,11 @@ fn sweep_horizontal_finish_angle_threshold() {
             if let Some(v) = ov {
                 p.angle_threshold = v.as_f64().unwrap();
             }
-            rs_cam_core::finish::horizontal_finish::horizontal_finish_toolpath(
-                &mesh, &index, &cutter, &p,
-            )
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::horizontal_finish::horizontal_finish_toolpath_with_cancel(
+                    &mesh, &index, &cutter, &p, None, cancel,
+                )
+            })
         },
     );
     for v in &result.variants {
@@ -2092,9 +2122,11 @@ fn sweep_horizontal_finish_stepover() {
             if let Some(v) = ov {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::finish::horizontal_finish::horizontal_finish_toolpath(
-                &mesh, &index, &cutter, &p,
-            )
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::horizontal_finish::horizontal_finish_toolpath_with_cancel(
+                    &mesh, &index, &cutter, &p, None, cancel,
+                )
+            })
         },
     );
     for v in &result.variants {

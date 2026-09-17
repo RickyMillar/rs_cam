@@ -562,8 +562,13 @@ pub fn steep_shallow_generation_resolution(
 /// Splits the surface into steep and shallow regions based on slope angle,
 /// then generates waterline passes for steep areas and parallel raster passes
 /// for shallow areas, with configurable overlap and wall clearance.
+///
+/// **Test-only (FIN-11).** The product path calls the cancellable form; this
+/// wrapper only saved the module's own tests a `run_uncancellable` line, so
+/// it is `#[cfg(test)]` and no longer public API.
+#[cfg(test)]
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(threshold = params.threshold_angle))]
-pub fn steep_shallow_toolpath(
+fn steep_shallow_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,

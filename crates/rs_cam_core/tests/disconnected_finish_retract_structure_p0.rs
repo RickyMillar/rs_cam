@@ -79,12 +79,33 @@ use common::meshes::disconnected_hemispheres;
 use rs_cam_core::compute::operation_configs::ScallopConfig;
 use rs_cam_core::dressup::entry_audit::{buried_fed_chords, fed_moves_outside_region};
 use rs_cam_core::dressup::{EntrySurfaceProbe, OffMeshEntry};
-use rs_cam_core::finish::scallop::{ScallopParams, scallop_toolpath};
+use rs_cam_core::finish::scallop::ScallopParams;
 use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
+
+// ── FIN-11: the non-cancellable wrappers left the public API ─────────────
+//
+// `scallop_toolpath` and its four siblings are `#[cfg(test)]` inside
+// `rs_cam_core` now, because the product path calls the cancellable form.
+// These local helpers keep the harness's call shape and route through that
+// same cancellable form.
+
+fn scallop_toolpath(
+    mesh: &rs_cam_core::mesh::TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+) -> Toolpath {
+    rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        rs_cam_core::finish::scallop::scallop_toolpath_structured_annotated_with_cancel(
+            mesh, index, cutter, params, None, None, cancel,
+        )
+        .map(|(tp, _, _)| tp)
+    })
+}
 
 /// The 4 island centres, 30 mm apart on both axes. Copied from
 /// `capability_link_moves_safety.rs`'s `SCALLOP_ISLAND_CENTERS`.
@@ -143,7 +164,7 @@ fn shipped_params() -> ScallopParams {
     assert!(
         !cfg.iso_field,
         "the shipped default takes the offset cascade, which is the door \
-         `scallop_toolpath` opens; `iso_field` now defaults ON, so this \
+         the scallop generator opens; `iso_field` now defaults ON, so this \
          fixture drives the wrong generator"
     );
     ScallopParams {

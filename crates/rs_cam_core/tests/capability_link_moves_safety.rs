@@ -78,10 +78,10 @@ use rs_cam_core::{
     compute::execute::apply_dressups,
     compute::operation_configs::ScallopConfig,
     dexel_stock::{StockCutDirection, TriDexelStock},
-    finish::horizontal_finish::{HorizontalFinishParams, horizontal_finish_toolpath},
+    finish::horizontal_finish::HorizontalFinishParams,
     finish::pencil::{PencilParams, pencil_toolpath},
-    finish::radial_finish::{RadialFinishParams, radial_finish_toolpath},
-    finish::scallop::{ScallopDirection, ScallopParams, scallop_toolpath},
+    finish::radial_finish::RadialFinishParams,
+    finish::scallop::{ScallopDirection, ScallopParams},
     geo::{BoundingBox3, P2, P3},
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
     ops::chamfer::{ChamferParams, chamfer_toolpath},
@@ -94,6 +94,53 @@ use rs_cam_core::{
     toolpath::{MoveIntent, MoveType, Toolpath},
     trace::transform_provenance::ReconcileSet,
 };
+
+// ── FIN-11: the non-cancellable wrappers left the public API ─────────────
+//
+// `scallop_toolpath` and its four siblings are `#[cfg(test)]` inside
+// `rs_cam_core` now, because the product path calls the cancellable form.
+// These local helpers keep the harness's call shape and route through that
+// same cancellable form.
+
+fn scallop_toolpath(
+    mesh: &rs_cam_core::mesh::TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+) -> Toolpath {
+    rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        rs_cam_core::finish::scallop::scallop_toolpath_structured_annotated_with_cancel(
+            mesh, index, cutter, params, None, None, cancel,
+        )
+        .map(|(tp, _, _)| tp)
+    })
+}
+
+fn radial_finish_toolpath(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RadialFinishParams,
+) -> Toolpath {
+    rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        rs_cam_core::finish::radial_finish::radial_finish_toolpath_with_cancel(
+            mesh, index, cutter, params, None, cancel,
+        )
+    })
+}
+
+fn horizontal_finish_toolpath(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &HorizontalFinishParams,
+) -> Toolpath {
+    rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        rs_cam_core::finish::horizontal_finish::horizontal_finish_toolpath_with_cancel(
+            mesh, index, cutter, params, None, cancel,
+        )
+    })
+}
 
 // ── Common helpers ───────────────────────────────────────────────────────
 
@@ -1192,10 +1239,10 @@ fn scallop_discrete_reorder_preserves_cuts_and_link_moves_are_now_safe() {
     // now runs unconditionally inside `apply_link_moves` regardless of
     // capability flags, so even this deliberately-permissive scenario
     // should measure neutral — see PART 3's updated comment below.
-    // Fixture note: this drives the REAL generator — `scallop_toolpath`,
-    // the same function `compute/execute.rs`'s Scallop generation path
-    // calls — over a real (if synthetic) 4-island mesh, not a hand-built
-    // Toolpath.
+    // Fixture note: this drives the REAL generator —
+    // `scallop_toolpath_structured_annotated_with_cancel`, the same function
+    // `compute/execute.rs`'s Scallop generation path calls — over a real (if
+    // synthetic) 4-island mesh, not a hand-built Toolpath.
     let (mesh, index) = scallop_island_mesh();
     let cutter = BallEndmill::new(3.0, 25.0);
     let params = scallop_island_params(false);

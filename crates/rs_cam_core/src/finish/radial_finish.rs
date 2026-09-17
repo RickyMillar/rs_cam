@@ -50,7 +50,12 @@ impl Default for RadialFinishParams {
 /// come from `point_drop_cutter`. Even-numbered spokes run center-to-edge;
 /// odd-numbered spokes run edge-to-center (zigzag linking). Between spokes
 /// the tool rapids to `safe_z`.
-pub fn radial_finish_toolpath(
+///
+/// **Test-only (FIN-11).** The product path calls the cancellable form; this
+/// wrapper only saved the module's own tests a `run_uncancellable` line, so
+/// it is `#[cfg(test)]` and no longer public API.
+#[cfg(test)]
+fn radial_finish_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,

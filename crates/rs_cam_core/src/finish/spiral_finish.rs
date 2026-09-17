@@ -90,15 +90,23 @@ struct SpiralSample2d {
 ///
 /// Produces an Archimedean spiral of drop-cutter points covering the mesh XY
 /// footprint. Points that miss the mesh entirely are skipped.
-pub fn spiral_finish_toolpath(
+///
+/// **Test-only (FIN-11).** The product path calls the cancellable form; this
+/// wrapper only saved the module's own tests a `run_uncancellable` line, so
+/// it is `#[cfg(test)]` and no longer public API.
+#[cfg(test)]
+fn spiral_finish_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &SpiralFinishParams,
 ) -> Toolpath {
-    let (tp, _) =
-        spiral_finish_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
-    tp
+    crate::interrupt::run_uncancellable(|cancel| {
+        spiral_finish_toolpath_structured_annotated_with_cancel(
+            mesh, index, cutter, params, None, None, cancel,
+        )
+        .map(|(tp, _)| tp)
+    })
 }
 
 impl crate::compute::spans::RuntimeLabel for SpiralFinishRuntimeAnnotation {
@@ -111,28 +119,7 @@ impl crate::compute::spans::RuntimeLabel for SpiralFinishRuntimeAnnotation {
     }
 }
 
-fn spiral_finish_toolpath_structured_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &SpiralFinishParams,
-    debug: Option<&ToolpathDebugContext>,
-    boundary_regions: Option<&RegionSet<'_>>,
-) -> (Toolpath, Vec<SpiralFinishRuntimeAnnotation>) {
-    crate::interrupt::run_uncancellable(|cancel| {
-        spiral_finish_toolpath_structured_annotated_with_cancel(
-            mesh,
-            index,
-            cutter,
-            params,
-            debug,
-            boundary_regions,
-            cancel,
-        )
-    })
-}
-
-/// Cancellable variant of `spiral_finish_toolpath_structured_annotated`.
+/// The structured, annotated spiral-finish entry point.
 /// Polls `cancel` every [`CANCEL_POLL_STRIDE`] points in both the drop-cutter
 /// sampling loop and the toolpath-emission loop (a full-radius fine-stepover
 /// spiral can carry tens of thousands of points).
