@@ -6,18 +6,7 @@
 
 use super::feeds_speeds::{calculate_and_apply_feeds, draw_speed_controls, draw_vendor_lut_viewer};
 use super::linking_dressup::{draw_dressup_params, draw_linking_params, dressup_active_count};
-use super::operations::{
-    StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
-    draw_chamfer_params, draw_drill_params, draw_dropcutter_params, draw_face_params,
-    draw_height_diagram, draw_heights_params, draw_horizontal_finish_params, draw_inlay_diagram,
-    draw_inlay_params, draw_outline_diagram, draw_pencil_diagram, draw_pencil_params,
-    draw_pocket_params, draw_point_set_diagram, draw_profile_params, draw_project_curve_params,
-    draw_radial_diagram, draw_radial_finish_params, draw_ramp_finish_diagram,
-    draw_ramp_finish_params, draw_rest_params, draw_scallop_params, draw_spiral_diagram,
-    draw_spiral_finish_params, draw_steep_shallow_diagram, draw_steep_shallow_params,
-    draw_stepover_diagram, draw_trace_params, draw_unified_finish_params, draw_vcarve_params,
-    draw_waterline_params, draw_zigzag_params, validate_toolpath,
-};
+use super::operations::{draw_height_diagram, draw_heights_params, validate_toolpath};
 use super::pills::PillSuggestions;
 use super::tab_badges::{
     RowTier, compute_tab_badges, draw_geometry_wiring, draw_toolpath_tabs,
@@ -30,7 +19,7 @@ use super::{
 };
 use crate::state::toolpath::{
     BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, HeightContext,
-    OperationConfig, ProfileSide, SpiralDirection, TraceCompensation, UiProcessRole,
+    OperationConfig, UiProcessRole,
 };
 use crate::ui::AppEvent;
 
@@ -592,7 +581,6 @@ fn draw_geometry_tab(
     // A/M6: read before the mutable borrow of `entry.operation`
     // below. Both are `Copy`, so nothing is held across it.
     let resolved_claims_reference = entry.result.as_ref().and_then(|r| r.stats.claims_reference);
-    let stock_source_for_claims = entry.stock_source;
     // G-DEPTHSTOCK (UX-R03-007): the same rule the header ribbon
     // prints, read once here and handed to the depth field's row.
     // `Copy`, so nothing is held across the mutable borrow below.
@@ -608,194 +596,48 @@ fn draw_geometry_tab(
         _ => None,
     };
     let through_cut = through_cut.as_ref();
-    match &mut entry.operation {
-        OperationConfig::Face(cfg) => {
-            draw_face_params(ui, cfg, feeds_for_pills, depth_caution);
-        }
-        OperationConfig::Pocket(cfg) => {
-            draw_pocket_params(ui, cfg, feeds_for_pills, depth_caution);
-        }
-        OperationConfig::Profile(cfg) => {
-            draw_profile_params(ui, cfg, feeds_for_pills, depth_caution, through_cut);
-        }
-        OperationConfig::Adaptive(cfg) => {
-            draw_adaptive_params(ui, cfg, feeds_for_pills, depth_caution);
-        }
-        OperationConfig::VCarve(cfg) => {
-            draw_vcarve_params(ui, cfg, feeds_for_pills, depth_caution);
-        }
-        OperationConfig::Rest(cfg) => {
-            draw_rest_params(ui, cfg, tools, feeds_for_pills, depth_caution);
-        }
-        OperationConfig::Inlay(cfg) => {
-            draw_inlay_params(ui, cfg, feeds_for_pills, depth_caution);
-        }
-        OperationConfig::Zigzag(cfg) => {
-            draw_zigzag_params(ui, cfg, feeds_for_pills, depth_caution);
-        }
-        OperationConfig::Trace(cfg) => {
-            draw_trace_params(ui, cfg, feeds_for_pills, depth_caution);
-        }
-        OperationConfig::Drill(cfg) => {
-            draw_drill_params(
-                ui,
-                cfg,
-                drill_layers,
-                drill_targets,
-                feeds_for_pills,
-                depth_caution,
-            );
-        }
-        OperationConfig::Chamfer(cfg) => {
-            draw_chamfer_params(ui, cfg, feeds_for_pills, depth_caution);
-        }
-        OperationConfig::DropCutter(cfg) => {
-            draw_dropcutter_params(ui, cfg, feeds_for_pills);
-        }
-        OperationConfig::Adaptive3d(cfg) => {
-            // The "Optimal load" knob needs the active tool's
-            // radius to map engagement ↔ stepover.
-            let tool_radius = tool_configs
-                .iter()
-                .find(|(id, _)| *id == entry.tool_id)
-                .map(|(_, t)| t.diameter / 2.0)
-                .unwrap_or(0.0);
-            draw_adaptive3d_params(ui, cfg, tool_radius, feeds_for_pills);
-        }
-        OperationConfig::Waterline(cfg) => {
-            draw_waterline_params(ui, cfg, feeds_for_pills);
-        }
-        OperationConfig::Pencil(cfg) => {
-            // Pencil is special-cased (not part of the uniform
-            // `draw_*_params(ui, cfg, ...)` shape above): its
-            // "Rest reference" group needs `stock_source` and a
-            // stale flag alongside `cfg` — see the P2 consolidation
-            // comment on `draw_pencil_params`. `entry.stock_source`
-            // is a field disjoint from `entry.operation` (borrowed
-            // above as `cfg`), so both are borrowable here.
-            let mut pencil_ref_changed = false;
-            draw_pencil_params(
-                ui,
-                cfg,
-                tools,
-                feeds_for_pills,
-                &mut entry.stock_source,
-                &mut pencil_ref_changed,
-            );
-            if pencil_ref_changed {
-                entry.stale_since = Some(std::time::Instant::now());
-            }
-        }
-        OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg, feeds_for_pills),
-        OperationConfig::UnifiedFinish(cfg) => {
-            // A/M6: the claims block needs two things the config
-            // does not carry — what the LAST generation resolved
-            // `claims_reference` to (a `ToolpathStats` finding), and
-            // this op's stock source, which is what `Auto` derives
-            // against. Both are read-only here; `entry.result` and
-            // `entry.stock_source` are disjoint from
-            // `entry.operation`, which is borrowed mutably by the
-            // enclosing `match`.
-            draw_unified_finish_params(
-                ui,
-                cfg,
-                feeds_for_pills,
-                resolved_claims_reference,
-                stock_source_for_claims,
-            );
-        }
-        OperationConfig::SteepShallow(cfg) => {
-            draw_steep_shallow_params(ui, cfg, feeds_for_pills);
-        }
-        OperationConfig::RampFinish(cfg) => {
-            draw_ramp_finish_params(ui, cfg, feeds_for_pills);
-        }
-        OperationConfig::SpiralFinish(cfg) => {
-            draw_spiral_finish_params(ui, cfg, feeds_for_pills);
-        }
-        OperationConfig::RadialFinish(cfg) => {
-            draw_radial_finish_params(ui, cfg, feeds_for_pills);
-        }
-        OperationConfig::HorizontalFinish(cfg) => {
-            draw_horizontal_finish_params(ui, cfg, feeds_for_pills);
-        }
-        OperationConfig::ProjectCurve(cfg) => {
-            draw_project_curve_params(ui, cfg, models, feeds_for_pills);
-        }
-        OperationConfig::AlignmentPinDrill(cfg) => {
-            draw_alignment_pin_drill_params(ui, cfg, drill_layers, drill_targets, feeds_for_pills);
-        }
+    // UI-05: one registry row per operation carries the editor, the diagram
+    // and the validation arm. The editor match and the diagram match used to
+    // sit here, and the diagram one ended `_ => {}` — a new operation drew
+    // nothing and nothing said so. `operations::registry::OP_UI_ROWS` is the
+    // table, and `operations_registry` holds it against
+    // `OperationType::ALL`.
+    //
+    // `entry.operation` and `entry.stock_source` are disjoint fields, so both
+    // are borrowed at once; the Pencil editor is the one that writes the
+    // stock source.
+    // The Adaptive3d "Optimal load" knob needs the active tool's radius to
+    // map engagement to stepover.
+    let tool_radius = tool_configs
+        .iter()
+        .find(|(id, _)| *id == entry.tool_id)
+        .map_or(0.0, |(_, t)| t.diameter / 2.0);
+    let mut stock_source_changed = false;
+    let mut draw_ctx = operations::registry::OpDrawCtx {
+        tools,
+        models,
+        drill_layers,
+        drill_targets,
+        pills: feeds_for_pills,
+        depth_caution,
+        through_cut,
+        tool_radius,
+        resolved_claims_reference,
+        stock_source: &mut entry.stock_source,
+        stock_source_changed: &mut stock_source_changed,
+    };
+    operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
+    if stock_source_changed {
+        entry.stale_since = Some(std::time::Instant::now());
     }
-    // G-PILLCLAMP: a ⚡ pill wrote its field this frame — stamp the
-    // recommendation's provenance (the value is the funnel's, not a
-    // hand edit) and remember it for the flush.
+    // G-PILLCLAMP: a pill wrote its field this frame — stamp the
+    // recommendation's provenance (the value is the funnel's, not a hand
+    // edit) and remember it for the flush.
     if let Some((field, preview)) = pills.as_ref().and_then(|p| p.take_clicked()) {
         entry
             .feeds_provenance
             .set(field, preview.provenance.clone());
         entry.pill_stamped_fields.push(field);
-    }
-
-    // Pattern diagrams for all operation types
-    ui.add_space(6.0);
-    if let Some(pattern) = StepoverPattern::from_operation(&entry.operation) {
-        draw_stepover_diagram(ui, &pattern);
-    } else {
-        match &entry.operation {
-            OperationConfig::Profile(cfg) => {
-                let side = match cfg.side {
-                    ProfileSide::Outside => "Outside",
-                    ProfileSide::Inside => "Inside",
-                };
-                draw_outline_diagram(ui, &format!("Profile ({side})"), Some(side));
-            }
-            OperationConfig::Chamfer(_) => {
-                draw_outline_diagram(ui, "Chamfer (edge contour)", None);
-            }
-            OperationConfig::Trace(cfg) => {
-                let comp = match cfg.compensation {
-                    TraceCompensation::None => None,
-                    TraceCompensation::Left => Some("Inside"),
-                    TraceCompensation::Right => Some("Outside"),
-                };
-                draw_outline_diagram(ui, "Trace", comp);
-            }
-            OperationConfig::ProjectCurve(_) => {
-                draw_outline_diagram(ui, "Project Curve", None);
-            }
-            OperationConfig::Adaptive(cfg) => {
-                draw_spiral_diagram(ui, cfg.stepover, true);
-            }
-            OperationConfig::Adaptive3d(cfg) => {
-                draw_spiral_diagram(ui, cfg.stepover, true);
-            }
-            OperationConfig::SpiralFinish(cfg) => {
-                let outward = cfg.direction == SpiralDirection::InsideOut;
-                draw_spiral_diagram(ui, cfg.stepover, outward);
-            }
-            OperationConfig::RadialFinish(cfg) => {
-                draw_radial_diagram(ui, cfg.angular_step);
-            }
-            OperationConfig::Drill(_) => {
-                draw_point_set_diagram(ui, "Drill Points");
-            }
-            OperationConfig::AlignmentPinDrill(_) => {
-                draw_point_set_diagram(ui, "Pin Drill Holes");
-            }
-            OperationConfig::Pencil(cfg) => {
-                draw_pencil_diagram(ui, cfg.num_offset_passes, cfg.offset_stepover);
-            }
-            OperationConfig::SteepShallow(cfg) => {
-                draw_steep_shallow_diagram(ui, cfg.threshold_angle);
-            }
-            OperationConfig::RampFinish(cfg) => {
-                draw_ramp_finish_diagram(ui, cfg.max_stepdown);
-            }
-            OperationConfig::Inlay(cfg) => {
-                draw_inlay_diagram(ui, cfg.pocket_depth, cfg.glue_gap, cfg.flat_depth);
-            }
-            _ => {}
-        }
     }
 
     // ── Machining Boundary ─────────────────────────────────────

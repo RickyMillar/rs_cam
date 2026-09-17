@@ -17,10 +17,10 @@ pub struct ToolpathValidationContext {
     setups: Vec<ValidationSetup>,
 }
 
-struct ValidationTool {
-    id: crate::state::job::ToolId,
-    tool_type: ToolType,
-    diameter: f64,
+pub(in crate::ui::properties) struct ValidationTool {
+    pub(in crate::ui::properties) id: crate::state::job::ToolId,
+    pub(in crate::ui::properties) tool_type: ToolType,
+    pub(in crate::ui::properties) diameter: f64,
 }
 
 struct ValidationModel {
@@ -41,6 +41,18 @@ struct ValidationSetup {
 }
 
 impl ToolpathValidationContext {
+    /// The diameter of one tool, or `None` when the project has no such
+    /// tool. The Rest arm on the registry row reads it.
+    pub(in crate::ui::properties) fn tool_diameter(
+        &self,
+        id: crate::state::job::ToolId,
+    ) -> Option<f64> {
+        self.tools
+            .iter()
+            .find(|tool| tool.id == id)
+            .map(|tool| tool.diameter)
+    }
+
     /// Build from a `ProjectSession`.
     pub fn from_session(session: &rs_cam_core::session::ProjectSession) -> Self {
         Self {
@@ -95,7 +107,6 @@ pub fn validate_toolpath_config(
         errs.push("No tool selected".into());
         return errs;
     };
-    let tool_diameter = tool.diameter;
 
     // Geometry validation (inline, operating on tc fields)
     if !tc.operation.is_stock_based() {
@@ -133,57 +144,19 @@ pub fn validate_toolpath_config(
         }
     }
 
-    match &tc.operation {
-        OperationConfig::Pocket(c) => {
-            if c.stepover >= tool_diameter {
-                errs.push("Stepover must be less than tool diameter".into());
-            }
-        }
-        OperationConfig::Adaptive(c) => {
-            if c.stepover >= tool_diameter {
-                errs.push("Stepover must be less than tool diameter".into());
-            }
-        }
-        OperationConfig::VCarve(_) => {
-            if tool.tool_type != ToolType::VBit {
-                errs.push("VCarve requires a V-Bit tool".into());
-            }
-        }
-        OperationConfig::Inlay(_) => {
-            if tool.tool_type != ToolType::VBit {
-                errs.push("Inlay requires a V-Bit tool".into());
-            }
-        }
-        OperationConfig::Chamfer(_) => {
-            if tool.tool_type != ToolType::VBit {
-                errs.push("Chamfer requires a V-Bit tool".into());
-            }
-        }
-        OperationConfig::Rest(c) => {
-            if c.prev_tool_id.is_none() {
-                errs.push("Previous tool not selected".into());
-            } else if let Some(prev) = c.prev_tool_id {
-                let prev_d = ctx.tools.iter().find(|t| t.id == prev).map(|t| t.diameter);
-                if let Some(pd) = prev_d
-                    && pd <= tool_diameter
-                {
-                    errs.push("Previous tool must be larger than current tool".into());
-                }
-                if !has_prior_rest_source(ctx, tp_id, model_id, prev) {
-                    errs.push(
-                        "Rest machining requires an earlier enabled operation in the same setup using the previous tool on the same model"
-                            .into(),
-                    );
-                }
-            }
-        }
-        OperationConfig::Drill(c) => {
-            if let Some(msg) = drill_targets_refusal(ctx, model_id, c) {
-                errs.push(msg.to_owned());
-            }
-        }
-        _ => {}
-    }
+    // UI-05: the per-operation checks live on the registry row, so this
+    // entry point and `validate_toolpath` cannot drift. They used to carry
+    // byte-identical copies of the same match, messages included.
+    super::registry::op_errors(
+        &tc.operation,
+        &super::registry::OpValidateCtx {
+            tool,
+            ctx,
+            tp_id,
+            model_id,
+        },
+        &mut errs,
+    );
 
     errs
 }
@@ -192,7 +165,7 @@ pub fn validate_toolpath_config(
 /// with, read against the target model's drill-target count, so Generate is
 /// disabled with the generator's own sentence instead of a hole appearing
 /// at a polygon centroid.
-fn drill_targets_refusal(
+pub(in crate::ui::properties) fn drill_targets_refusal(
     ctx: &ToolpathValidationContext,
     model_id: crate::state::job::ModelId,
     cfg: &crate::state::toolpath::DrillConfig,
@@ -212,65 +185,19 @@ pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext)
         errs.push("No tool selected".into());
         return errs;
     };
-    let tool_diameter = tool.diameter;
 
     validate_geometry_selection(entry, ctx, &mut errs);
 
-    match &entry.operation {
-        OperationConfig::Pocket(c) => {
-            if c.stepover >= tool_diameter {
-                errs.push("Stepover must be less than tool diameter".into());
-            }
-        }
-        OperationConfig::Adaptive(c) => {
-            if c.stepover >= tool_diameter {
-                errs.push("Stepover must be less than tool diameter".into());
-            }
-        }
-        OperationConfig::VCarve(_) => {
-            if tool.tool_type != ToolType::VBit {
-                errs.push("VCarve requires a V-Bit tool".into());
-            }
-        }
-        OperationConfig::Inlay(_) => {
-            if tool.tool_type != ToolType::VBit {
-                errs.push("Inlay requires a V-Bit tool".into());
-            }
-        }
-        OperationConfig::Chamfer(_) => {
-            if tool.tool_type != ToolType::VBit {
-                errs.push("Chamfer requires a V-Bit tool".into());
-            }
-        }
-        OperationConfig::Rest(c) => {
-            if c.prev_tool_id.is_none() {
-                errs.push("Previous tool not selected".into());
-            } else if let Some(prev) = c.prev_tool_id {
-                let prev_d = ctx
-                    .tools
-                    .iter()
-                    .find(|tool| tool.id == prev)
-                    .map(|tool| tool.diameter);
-                if let Some(pd) = prev_d
-                    && pd <= tool_diameter
-                {
-                    errs.push("Previous tool must be larger than current tool".into());
-                }
-                if !has_prior_rest_source(ctx, entry.id, entry.model_id, prev) {
-                    errs.push(
-                        "Rest machining requires an earlier enabled operation in the same setup using the previous tool on the same model"
-                            .into(),
-                    );
-                }
-            }
-        }
-        OperationConfig::Drill(c) => {
-            if let Some(msg) = drill_targets_refusal(ctx, entry.model_id, c) {
-                errs.push(msg.to_owned());
-            }
-        }
-        _ => {}
-    }
+    super::registry::op_errors(
+        &entry.operation,
+        &super::registry::OpValidateCtx {
+            tool,
+            ctx,
+            tp_id: entry.id,
+            model_id: entry.model_id,
+        },
+        &mut errs,
+    );
 
     errs
 }
@@ -324,7 +251,7 @@ fn validate_geometry_selection(
 /// Does the Rest op `rest_id` have a predecessor under the one rule in
 /// [`crate::state::rest_dependency`]? The Operations card badge
 /// (`ui::toolpath_panel::rest_badge`) reads the same rule (G-RESTBADGE).
-fn has_prior_rest_source(
+pub(in crate::ui::properties) fn has_prior_rest_source(
     ctx: &ToolpathValidationContext,
     rest_id: ToolpathId,
     rest_model_id: crate::state::job::ModelId,

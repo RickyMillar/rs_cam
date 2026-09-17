@@ -4,6 +4,7 @@ mod engrave;
 mod finishing;
 mod height_diagram;
 mod project;
+pub mod registry;
 mod shape_diagrams;
 mod surface_3d;
 mod validate;

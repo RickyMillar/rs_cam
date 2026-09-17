@@ -2,7 +2,7 @@ mod feeds_speeds;
 mod linking_dressup;
 mod machine_panel;
 mod model_sim_panels;
-mod operations;
+pub mod operations;
 mod panel_apply;
 mod pills;
 pub mod post;
