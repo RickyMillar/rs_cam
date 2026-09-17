@@ -52,10 +52,8 @@ folder's file map, invariants, sentries and traps.
 - Update visible-product docs with visible surface changes.
 - Update `CREDITS.md` when adding external datasets, formulas or algorithm
   references.
-- A `planning/…` path in a doc comment or a document that no longer exists was
-  deleted by the structure purge of 2026-09-17. Retrieve it with
-  `git show planning-pre-purge-2026-09-17:<path>`; `planning/DELETED_INDEX.md`
-  says what each deleted package decided.
+- A `planning/…` path that no longer exists was deleted on 2026-09-17;
+  `planning/CLAUDE.md` gives the retrieval tag and the index.
 
 ## Codebase discovery
 
@@ -80,14 +78,5 @@ workspace's denied clippy lints and `unsafe_code`.
 Do not use workspace-wide `cargo test`; it can loop in this repository. Run the
 smallest relevant test first, then the appropriate gate before committing.
 
-Test modules may allow only `unwrap_used`, `expect_used`, `panic` and
-`indexing_slicing`; `println!` / `eprintln!` remain denied unless a test has a
-specific `print_stderr` allowance. Prefer a local, documented allow with a
-`SAFETY:` comment over a file-wide production-code allow.
-
-## Regression sentries
-
-The F-024..F-040 acceptance findings remain protected by tests under
-`crates/rs_cam_core/tests/`, including `_litmatrix_*.rs`. When a change touches
-one of those behaviours, find and run its sentry; see
-`crates/rs_cam_core/CLAUDE.md` for the core-specific rules.
+Every production `allow(...)` carries a `// SAFETY:` line; the lint rules for
+test modules are in `crates/rs_cam_core/CLAUDE.md`.

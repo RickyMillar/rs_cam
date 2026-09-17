@@ -46,6 +46,13 @@ sentries and traps, which this file does not repeat.
 
 ## Tests and evidence
 
+- The F-024..F-040 acceptance findings are protected by tests under `tests/`,
+  including `_litmatrix_*.rs`. When a change touches one of those behaviours,
+  find and run its sentry.
+- Test modules may allow only `unwrap_used`, `expect_used`, `panic` and
+  `indexing_slicing`; `println!` / `eprintln!` stay denied unless a test has
+  a specific `print_stderr` allowance. Prefer a local allow with a `SAFETY:`
+  comment over a file-wide production allow.
 - Tests live close to the code they protect. The heavy core binaries sit
   behind `heavy-tests`. Run the smallest relevant sentry; each folder file
   names the sentries for its own folder.
