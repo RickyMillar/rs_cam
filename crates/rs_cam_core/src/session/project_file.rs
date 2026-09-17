@@ -79,6 +79,18 @@ pub enum ProjectLoadWarning {
     /// A tool section carried a tool-type token the vocabulary does not
     /// hold. The loader substitutes an end mill.
     UnknownToolType { tool: String, token: String },
+    /// A setup section carried a `face_up` token the vocabulary does not
+    /// hold. The loader substitutes Top.
+    ///
+    /// CMP-15: `FaceUp::from_key` used to end `_ => FaceUp::Top` and say
+    /// nothing. `face_up` chooses the cut direction, the local stock bbox
+    /// and the whole emission frame, so one typo turned a bottom setup
+    /// into a top one with no word to anyone.
+    UnknownFaceUp { setup: String, token: String },
+    /// A setup section carried a `z_rotation` token the vocabulary does
+    /// not hold. The loader substitutes 0 degrees. Same defect class as
+    /// [`Self::UnknownFaceUp`].
+    UnknownZRotation { setup: String, token: String },
     /// A toolpath names a tool id no `[[tools]]` section defines.
     MissingToolReference { toolpath: String, tool_id: usize },
     /// A toolpath names a model id no `[[models]]` section defines.
@@ -105,6 +117,14 @@ impl ProjectLoadWarning {
             Self::UnknownToolType { tool, token } => {
                 format!("Tool '{tool}' has unknown tool type '{token}' — defaulted to End Mill.")
             }
+            Self::UnknownFaceUp { setup, token } => format!(
+                "Setup '{setup}' has unknown face up '{token}' — defaulted to Top. The cut \
+                 direction, the local stock box and the emission frame all follow this value."
+            ),
+            Self::UnknownZRotation { setup, token } => format!(
+                "Setup '{setup}' has unknown Z rotation '{token}' — defaulted to 0 degrees. \
+                 Valid values are 0, 90, 180 and 270."
+            ),
             Self::MissingToolReference { toolpath, tool_id } => format!(
                 "Toolpath '{toolpath}' references missing tool id {tool_id} and needs reassignment."
             ),
@@ -589,6 +609,55 @@ pub(crate) fn parse_tool_type(
     })
 }
 
+/// Read a setup's `face_up` key. An unknown token warns and takes Top —
+/// the Q4 policy stated on `tool_config.rs` (a file-loading surface warns
+/// and defaults; the MCP mutation surface refuses, which `add_setup` and
+/// `set_setup_face` already do).
+///
+/// CMP-15: the loader used to call `FaceUp::from_key` and get a silent
+/// `Top` for any token at all.
+fn parse_face_up(s: &str, setup_name: &str, warnings: &mut Vec<ProjectLoadWarning>) -> FaceUp {
+    FaceUp::from_key(s).unwrap_or_else(|| {
+        tracing::warn!(
+            face_up = s,
+            setup = setup_name,
+            "unknown face up in project file — defaulting to top"
+        );
+        warnings.push(ProjectLoadWarning::UnknownFaceUp {
+            setup: setup_name.to_owned(),
+            token: s.to_owned(),
+        });
+        FaceUp::Top
+    })
+}
+
+/// Read a setup's `z_rotation` key. See [`parse_face_up`] for the policy.
+///
+/// The EMPTY string is the field's own serde default — a file that never
+/// wrote the key. That is not a bad token, so it takes the default in
+/// silence.
+fn parse_z_rotation(
+    s: &str,
+    setup_name: &str,
+    warnings: &mut Vec<ProjectLoadWarning>,
+) -> ZRotation {
+    if s.is_empty() {
+        return ZRotation::Deg0;
+    }
+    ZRotation::from_key(s).unwrap_or_else(|| {
+        tracing::warn!(
+            z_rotation = s,
+            setup = setup_name,
+            "unknown Z rotation in project file — defaulting to 0 degrees"
+        );
+        warnings.push(ProjectLoadWarning::UnknownZRotation {
+            setup: setup_name.to_owned(),
+            token: s.to_owned(),
+        });
+        ZRotation::Deg0
+    })
+}
+
 pub(crate) fn tool_from_project_section(
     ts: &ProjectToolSection,
     idx: usize,
@@ -1036,8 +1105,8 @@ pub(super) fn build_session_from_project(
 
     for (setup_idx, setup_section) in project.setups.iter().enumerate() {
         let setup_id = setup_section.id.unwrap_or(setup_idx);
-        let face_up = FaceUp::from_key(&setup_section.face_up);
-        let z_rotation = ZRotation::from_key(&setup_section.z_rotation);
+        let face_up = parse_face_up(&setup_section.face_up, &setup_section.name, warnings);
+        let z_rotation = parse_z_rotation(&setup_section.z_rotation, &setup_section.name, warnings);
         let mut tp_indices = Vec::new();
 
         for tp_section in &setup_section.toolpaths {

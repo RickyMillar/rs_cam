@@ -49,7 +49,7 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::compute::transform::FaceUp;
+use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::geo::P3;
 
 /// Deliberately three different numbers: a transform that lands on the right
@@ -176,4 +176,113 @@ fn the_forward_map_puts_the_named_world_face_on_top() {
             back.z
         );
     }
+}
+
+// ── CMP-15: the stored key is a door, and it must not fail open ────────
+
+/// Every variant's own key parses back to that variant. The table above
+/// says what a name MEANS; this says the file format can still express it.
+#[test]
+fn every_face_up_key_round_trips_g_frontname() {
+    for face_up in [
+        FaceUp::Top,
+        FaceUp::Bottom,
+        FaceUp::Front,
+        FaceUp::Back,
+        FaceUp::Left,
+        FaceUp::Right,
+    ] {
+        assert_eq!(
+            FaceUp::from_key(face_up.to_key()),
+            Some(face_up),
+            "`FaceUp::{face_up:?}` does not survive its own key"
+        );
+    }
+    for rotation in [
+        ZRotation::Deg0,
+        ZRotation::Deg90,
+        ZRotation::Deg180,
+        ZRotation::Deg270,
+    ] {
+        assert_eq!(
+            ZRotation::from_key(rotation.to_key()),
+            Some(rotation),
+            "`ZRotation::{rotation:?}` does not survive its own key"
+        );
+    }
+}
+
+/// A token the vocabulary does not hold is refused, not silently mapped.
+///
+/// CMP-15: both parsers ended in a wildcard that produced `Top` and
+/// `Deg0`. The empty string is in the list on purpose — it is what serde
+/// hands a `face_up` key that is present and blank.
+#[test]
+fn an_unknown_key_is_refused_g_frontname() {
+    for token in ["topp", "TOP", "", "up", "bottom ", "45"] {
+        assert_eq!(
+            FaceUp::from_key(token),
+            None,
+            "`FaceUp::from_key({token:?})` invented an orientation"
+        );
+    }
+    for token in ["360", "90.0", "", "ninety", "-90"] {
+        assert_eq!(
+            ZRotation::from_key(token),
+            None,
+            "`ZRotation::from_key({token:?})` invented a rotation"
+        );
+    }
+}
+
+/// The load case the finding names: a project file with `face_up = "topp"`
+/// warns and names the offending token.
+///
+/// The Q4 policy (`compute/tool_config.rs`) is that a file-loading surface
+/// warns and takes the default while a mutation surface refuses. MCP
+/// honoured its half; the loader did neither — it defaulted and stayed
+/// quiet. The consequence is not cosmetic: a bottom setup read as a top
+/// one moves the cut direction, the local stock box and the emission
+/// frame.
+#[test]
+fn a_typo_in_face_up_warns_on_load_g_frontname() {
+    const PROJECT: &str = r#"format_version = 3
+
+[job]
+name = "CMP-15 unknown face up"
+
+[[setups]]
+id = 0
+name = "Back face"
+face_up = "topp"
+z_rotation = "45"
+"#;
+
+    let dir = std::env::temp_dir().join(format!("rs_cam_cmp15_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let path = dir.join("unknown_face_up.toml");
+    std::fs::write(&path, PROJECT).expect("write project");
+
+    let (session, warnings) =
+        rs_cam_core::session::ProjectSession::load_with_warnings(&path).expect("load project");
+
+    let messages: Vec<String> = warnings.iter().map(|w| w.message()).collect();
+    assert!(
+        messages.iter().any(|m| m.contains("topp")),
+        "the loader took an unknown `face_up` in silence. Warnings were: {messages:?}"
+    );
+    assert!(
+        messages.iter().any(|m| m.contains("45")),
+        "the loader took an unknown `z_rotation` in silence. Warnings were: {messages:?}"
+    );
+    assert!(
+        messages.iter().any(|m| m.contains("Back face")),
+        "a warning must name the setup it is about. Warnings were: {messages:?}"
+    );
+
+    // The load still succeeds and takes the default — that is the Q4
+    // policy, not an accident.
+    let setup = &session.list_setups()[0];
+    assert_eq!(setup.face_up, FaceUp::Top);
+    assert_eq!(setup.z_rotation, ZRotation::Deg0);
 }

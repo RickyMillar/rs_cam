@@ -62,14 +62,25 @@ impl FaceUp {
         }
     }
 
-    pub fn from_key(s: &str) -> Self {
+    /// Parse a stored key. `None` for a token this vocabulary does not
+    /// hold.
+    ///
+    /// CMP-15: this used to return `Self` and end `_ => FaceUp::Top`, so a
+    /// project file with a typo loaded as a Top setup and nothing said so.
+    /// `face_up` chooses the cut direction, the local stock bbox and the
+    /// whole emission frame, so that typo turns a bottom setup into a top
+    /// one. The Q4 policy (`tool_config.rs`) is: a file-loading surface
+    /// warns and takes the default, a mutation surface refuses. Neither
+    /// half is possible while the answer is a bare `Self`.
+    pub fn from_key(s: &str) -> Option<Self> {
         match s {
-            "bottom" => FaceUp::Bottom,
-            "front" => FaceUp::Front,
-            "back" => FaceUp::Back,
-            "left" => FaceUp::Left,
-            "right" => FaceUp::Right,
-            _ => FaceUp::Top,
+            "top" => Some(FaceUp::Top),
+            "bottom" => Some(FaceUp::Bottom),
+            "front" => Some(FaceUp::Front),
+            "back" => Some(FaceUp::Back),
+            "left" => Some(FaceUp::Left),
+            "right" => Some(FaceUp::Right),
+            _ => None,
         }
     }
 
@@ -195,12 +206,20 @@ impl ZRotation {
         }
     }
 
-    pub fn from_key(s: &str) -> Self {
+    /// Parse a stored key. `None` for a token this vocabulary does not
+    /// hold. See [`FaceUp::from_key`] for why this is not a bare `Self`
+    /// (CMP-15).
+    ///
+    /// The empty string is NOT a valid token. `ProjectSetupSection`
+    /// defaults the field to `""`, and the loader reads an empty key as
+    /// "unset" before it calls this.
+    pub fn from_key(s: &str) -> Option<Self> {
         match s {
-            "90" => ZRotation::Deg90,
-            "180" => ZRotation::Deg180,
-            "270" => ZRotation::Deg270,
-            _ => ZRotation::Deg0,
+            "0" => Some(ZRotation::Deg0),
+            "90" => Some(ZRotation::Deg90),
+            "180" => Some(ZRotation::Deg180),
+            "270" => Some(ZRotation::Deg270),
+            _ => None,
         }
     }
 
