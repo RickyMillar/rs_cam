@@ -42,7 +42,7 @@
 use rs_cam_core::compute::config::{
     BoundaryClipDroppedFinding, BoundaryContainment, ClaimsReferenceFinding, ClippedBandFinding,
     DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding, InertClaimsDialFinding,
-    TipFloatFinding, ToolpathStats, ZeroRemovalFinding,
+    MeasuredBands, TipFloatFinding, ToolpathStats, ZeroRemovalFinding,
 };
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
@@ -92,6 +92,11 @@ fn every_finding_recorded() -> GenerationFindings {
             area_mm2: 14.0,
             clip_z_mm: -1.5,
             clip_label: "bottom_z",
+            bands_measured: MeasuredBands {
+                very_steep: true,
+                mid_steep: true,
+                shallow: false,
+            },
             provenance: provenance(),
         }),
         clipped_band: Some(ClippedBandFinding {
@@ -107,6 +112,11 @@ fn every_finding_recorded() -> GenerationFindings {
             planned_levels: 6,
             resolved_levels: 4,
             max_lost_height_mm: 0.5,
+            bands_measured: MeasuredBands {
+                very_steep: true,
+                mid_steep: false,
+                shallow: true,
+            },
             provenance: provenance(),
         }),
         tip_float: Some(TipFloatFinding {

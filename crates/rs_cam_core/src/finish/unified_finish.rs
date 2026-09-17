@@ -1065,6 +1065,7 @@ pub fn clipped_band_finding(
         area_mm2: report.clipped_bands.iter().map(|c| c.area_mm2).sum(),
         clip_z_mm: worst.clip.clip_z_mm,
         clip_label: worst.clip.clip.label(),
+        bands_measured: report.height_clip_measured,
         requested_top_z_mm: worst.clip.requested_top_z_mm,
         requested_bottom_z_mm: worst.clip.requested_bottom_z_mm,
         delivered_top_z_mm: worst.clip.delivered_top_z_mm,
@@ -1102,6 +1103,7 @@ pub fn dropped_band_finding(
         area_mm2: report.dropped_bands.iter().map(|d| d.area_mm2).sum(),
         clip_z_mm: worst.clip_z_mm,
         clip_label: worst.clip.label(),
+        bands_measured: report.height_clip_measured,
         provenance: report.provenance,
     })
 }
@@ -1170,6 +1172,15 @@ pub struct UnifiedFinishReport {
     /// [`clipped_band_finding`]. Disjoint from [`Self::dropped_bands`] by
     /// construction — a region appears in exactly one of them, or neither.
     pub clipped_bands: Vec<ClippedBand>,
+    /// FIN-14: which bands compared their own Z span against the resolved
+    /// heights on this run.
+    ///
+    /// Empty means no band did, and it never means "no band was clipped":
+    /// [`Self::dropped_bands`] and [`Self::clipped_bands`] can only speak
+    /// for the bands in this set. Only the `VerySteep` arm reads `top_z` and
+    /// `bottom_z`, so only that arm can enter the set today — see
+    /// [`crate::compute::config::MeasuredBands`].
+    pub height_clip_measured: crate::compute::config::MeasuredBands,
     /// Wave D1: tip float measured on the crease node's centrelines.
     /// `None` when the claims pipeline never ran, so no centrelines existed
     /// to measure — never read as "nothing floated".
@@ -2004,6 +2015,12 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 let planned_levels =
                     waterline_z_levels(band_max_z, band_min_z, params.z_step).len();
                 let resolved_levels = waterline_z_levels(start_z, final_z, params.z_step).len();
+                // FIN-14: the comparison happened, whatever it found. The
+                // record of WHERE the instrument was taken travels with the
+                // finding, so a `MidSteep` or `Shallow` region — whose arm
+                // reads neither resolved height — reads as "not measured"
+                // and never as a clean band.
+                report.height_clip_measured.insert(FinishBand::VerySteep);
                 if resolved_levels < planned_levels {
                     // Attribute to whichever clamp actually bit. When both
                     // did, the floor is the one an operator can act on

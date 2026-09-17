@@ -1054,20 +1054,29 @@ fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'
                  region(s) — the {band} band emitted NO cutting because the \
                  resolved {clip} = {clip_z:.3} mm clipped its Z range away. \
                  That feature will be left standing at full stock. Pin \
-                 {clip} to the real depth of the feature. [{provenance}. \
+                 {clip} to the real depth of the feature. Band clip \
+                 coverage: {coverage}. [{provenance}. \
                  Report-only — no gate consumes this.]\n",
                 area = f.area_mm2,
                 count = f.region_count,
                 band = f.band_label,
                 clip = f.clip_label,
                 clip_z = f.clip_z_mm,
+                coverage = f.bands_measured.describe(),
                 provenance = f.provenance.describe(),
             ));
         }
         None if plans_bands => {
+            // FIN-14: "none" is true only of the bands that MEASURED their
+            // Z span. `top_z` and `bottom_z` reach the waterline arm alone,
+            // so a dropped `MidSteep` or `Shallow` region cannot produce a
+            // finding and this line must not claim one would have.
             output.push_str(
-                "Unmachined band: none — every planned finish band still cut \
-                 after height resolution.\n",
+                "Unmachined band: none on the VerySteep band, which is the \
+                 only arm that compares its Z ladder with the resolved \
+                 heights. The MidSteep and Shallow arms read neither \
+                 height, so they are NOT measured here. Absence of a \
+                 number is not a zero.\n",
             );
         }
         None => {
@@ -1232,9 +1241,14 @@ fn append_clipped_band(output: &mut String, context: &ToolpathNarrationContext<'
             output.push_str(&format!("Partly machined band: {}\n", f.message()));
         }
         None if plans_bands => {
+            // FIN-14: same limit as [`append_dropped_band`]'s — one arm
+            // measures, so "none" can only speak for that arm.
             output.push_str(
-                "Partly machined band: none — every planned finish band \
-                 laddered its whole Z range.\n",
+                "Partly machined band: none on the VerySteep band, which is \
+                 the only arm that compares its Z ladder with the resolved \
+                 heights. The MidSteep and Shallow arms read neither \
+                 height, so they are NOT measured here. Absence of a \
+                 number is not a zero.\n",
             );
         }
         None => {

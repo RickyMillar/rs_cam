@@ -321,6 +321,12 @@ fn pinned_heights_machine_the_band_and_report_nothing_dropped() {
         narration.contains("Unmachined band: none"),
         "narration must state the measured-clean case explicitly, not stay silent"
     );
+    // FIN-14: "none" speaks for the VerySteep arm alone, and the line says
+    // so. The other two arms read no resolved height.
+    assert!(
+        narration.contains("MidSteep and Shallow arms read neither"),
+        "the clean line must name the bands it did NOT measure:\n{narration}"
+    );
 
     let diags = session
         .diagnose_toolpath_with_trace(0, None)

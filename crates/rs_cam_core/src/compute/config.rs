@@ -1159,6 +1159,117 @@ impl DerivedStepoverFinding {
     }
 }
 
+/// Which finish bands COMPARED their own Z span against the resolved
+/// heights on this run (FIN-14).
+///
+/// The three-state contract (`diagnostics/CLAUDE.md`) applied to the band
+/// clip: a band outside this set did not measure zero, it did not measure at
+/// all. The distinction is real and not defensive. `top_z` and `bottom_z`
+/// reach exactly ONE arm of the unified planner — the `VerySteep` waterline
+/// ladder. The `MidSteep` (scallop) and `Shallow` (drop-cutter raster) arms
+/// read neither height, so they can neither clip a band nor report a clip,
+/// and a clipped region there reads as clean on every surface that renders
+/// the finding.
+///
+/// The set is a RUN measurement, not a constant, so an arm that learns to
+/// measure its own span reports the widened coverage without a second
+/// vocabulary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MeasuredBands {
+    /// The waterline arm compared its planned ladder with the resolved one.
+    pub very_steep: bool,
+    /// The scallop arm did.
+    pub mid_steep: bool,
+    /// The raster arm did.
+    pub shallow: bool,
+}
+
+impl MeasuredBands {
+    /// Nothing measured — the value a run starts from.
+    pub const NONE: Self = Self {
+        very_steep: false,
+        mid_steep: false,
+        shallow: false,
+    };
+
+    /// Mark one band measured.
+    pub fn insert(&mut self, band: crate::finish::finish_planner::FinishBand) {
+        use crate::finish::finish_planner::FinishBand;
+        match band {
+            FinishBand::VerySteep => self.very_steep = true,
+            FinishBand::MidSteep => self.mid_steep = true,
+            FinishBand::Shallow => self.shallow = true,
+        }
+    }
+
+    /// Did this band measure its own clip?
+    #[must_use]
+    pub const fn contains(self, band: crate::finish::finish_planner::FinishBand) -> bool {
+        use crate::finish::finish_planner::FinishBand;
+        match band {
+            FinishBand::VerySteep => self.very_steep,
+            FinishBand::MidSteep => self.mid_steep,
+            FinishBand::Shallow => self.shallow,
+        }
+    }
+
+    /// The measured bands as stable tokens, in band order. Empty when the
+    /// run measured none.
+    #[must_use]
+    pub fn measured_labels(self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.very_steep {
+            out.push("VerySteep");
+        }
+        if self.mid_steep {
+            out.push("MidSteep");
+        }
+        if self.shallow {
+            out.push("Shallow");
+        }
+        out
+    }
+
+    /// The bands this run did NOT measure, as stable tokens, in band order.
+    #[must_use]
+    pub fn unmeasured_labels(self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if !self.very_steep {
+            out.push("VerySteep");
+        }
+        if !self.mid_steep {
+            out.push("MidSteep");
+        }
+        if !self.shallow {
+            out.push("Shallow");
+        }
+        out
+    }
+
+    /// One clause for an operator sentence: which bands measured their clip
+    /// and which did not. Never empty, so no surface can render the coverage
+    /// as silence.
+    #[must_use]
+    pub fn describe(self) -> String {
+        let measured = self.measured_labels();
+        let unmeasured = self.unmeasured_labels();
+        let measured_text = if measured.is_empty() {
+            "no band measured its Z span".to_owned()
+        } else {
+            format!("measured on {}", measured.join(", "))
+        };
+        if unmeasured.is_empty() {
+            format!("{measured_text}; every band measured")
+        } else {
+            format!(
+                "{measured_text}; NOT measured on {} — those arms read no \
+                 resolved height, so a clip there is invisible",
+                unmeasured.join(", ")
+            )
+        }
+    }
+}
+
 /// A finish band whose planned cutting was entirely removed by height
 /// resolution (Wave D1, ledger task #15).
 ///
@@ -1189,6 +1300,10 @@ pub struct DroppedBandFinding {
     pub clip_z_mm: f64,
     /// Which resolved height it was: `"bottom_z"` or `"top_z"`.
     pub clip_label: &'static str,
+    /// FIN-14: which bands compared their Z span with the resolved heights
+    /// on this run. A band outside the set was NOT measured, so this finding
+    /// says nothing about it — see [`MeasuredBands`].
+    pub bands_measured: MeasuredBands,
     /// What [`Self::area_mm2`] means. Carried per-instance rather than as a
     /// module constant because the band polygons are quantised by the
     /// classification grid, whose cell size is derived from the TOOL
@@ -1231,12 +1346,13 @@ impl DroppedBandFinding {
 /// Changing `UnifiedFinishConfig`'s depth semantics is a behavioural change;
 /// this is the instrument that has to exist first.
 ///
-/// **Known limit, stated rather than implied**: only the `VerySteep` arm
-/// measures its clip today. The `MidSteep` (scallop) and `Shallow`
-/// (drop-cutter raster) arms never set one, so a partial clip there is
-/// still invisible — Wave D1 built the instrument on the arm whose ladder is
-/// explicit, and C8 widened what that instrument REPORTS without widening
-/// where it is taken.
+/// **Known limit, carried rather than implied**: only the `VerySteep` arm
+/// measures its clip today, because `top_z` and `bottom_z` reach no other
+/// arm. FIN-14 put that limit IN the finding — [`Self::bands_measured`]
+/// names the bands this run compared — so a clipped `MidSteep` or `Shallow`
+/// region reads as "not measured" and never as clean. Wave D1 built the
+/// instrument on the arm whose ladder is explicit, C8 widened what it
+/// REPORTS, and FIN-14 widened what it ADMITS.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClippedBandFinding {
     /// Stable band token — names the band of the LARGEST clipped region.
@@ -1266,6 +1382,10 @@ pub struct ClippedBandFinding {
     /// requested height minus delivered height. This is the number that
     /// answers "how much of the wall is unfinished".
     pub max_lost_height_mm: f64,
+    /// FIN-14: which bands compared their Z span with the resolved heights
+    /// on this run. A band outside the set was NOT measured, so this finding
+    /// says nothing about it — see [`MeasuredBands`].
+    pub bands_measured: MeasuredBands,
     /// What [`Self::area_mm2`] means. Per-instance for the same reason as
     /// [`DroppedBandFinding::provenance`]: the band polygons are quantised
     /// by a TOOL-derived classification cell.
@@ -1307,6 +1427,7 @@ impl ClippedBandFinding {
              ({planned} levels planned, {resolved} laddered), leaving up to \
              {lost:.3} mm of the feature unfinished. If that was not \
              deliberate, pin {clip} to the real depth of the feature. \
+             Band clip coverage: {coverage}. \
              [{provenance}. Report-only — no gate consumes this.]",
             area = self.area_mm2,
             band = self.band_label,
@@ -1320,6 +1441,7 @@ impl ClippedBandFinding {
             planned = self.planned_levels,
             resolved = self.resolved_levels,
             lost = self.max_lost_height_mm,
+            coverage = self.bands_measured.describe(),
             provenance = self.provenance.describe(),
         )
     }

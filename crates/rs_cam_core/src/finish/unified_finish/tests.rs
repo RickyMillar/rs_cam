@@ -425,6 +425,77 @@ fn steep_cone_generates_multiple_bands() {
     assert_eq!(tp.moves.len(), expected_total);
 }
 
+/// FIN-14: the height-clip finding says WHERE it was taken, so a clipped
+/// `MidSteep` region reads as "not measured" and never as a clean band.
+///
+/// The fixture is the hemisphere, which bands by height: `VerySteep` below
+/// z ≈ 7.8 mm, `MidSteep` between z ≈ 7.8 and z ≈ 21.2 mm, `Shallow` above.
+/// A `bottom_z` of 15 mm therefore cuts straight through the `MidSteep`
+/// span and takes the whole `VerySteep` ladder away.
+///
+/// The `MidSteep` arm reports nothing, and it cannot: `top_z` and
+/// `bottom_z` reach the waterline arm alone. What the finding must carry is
+/// that fact.
+#[test]
+fn a_clamped_mid_steep_band_reads_as_not_measured() {
+    let (mesh, index, cutter, planner) = steep_cone_fixture();
+    let params = steep_cone_params();
+    let never_cancel = || false;
+
+    let (_tp, _anns, report) = unified_finish_toolpath_with_cancel(
+        &mesh,
+        &index,
+        &cutter,
+        35.0,
+        15.0,
+        &params,
+        &planner,
+        None,
+        None,
+        None,
+        None,
+        &never_cancel,
+    )
+    .unwrap();
+
+    assert!(
+        report.mid_steep.region_count > 0,
+        "the fixture must plan a MidSteep region for this case to mean \
+         anything; got {:?}",
+        report.mid_steep
+    );
+    assert!(
+        report.height_clip_measured.very_steep,
+        "the VerySteep arm compares its ladder with the resolved heights, \
+         so it must enter the measured set"
+    );
+    assert!(
+        !report.height_clip_measured.mid_steep,
+        "the MidSteep arm reads no resolved height, so it must NOT read as \
+         measured"
+    );
+    assert!(
+        !report.height_clip_measured.shallow,
+        "the Shallow arm reads no resolved height either"
+    );
+
+    let dropped = dropped_band_finding(&report);
+    let clipped = clipped_band_finding(&report);
+    let measured = dropped
+        .map(|f| f.bands_measured)
+        .or_else(|| clipped.map(|f| f.bands_measured))
+        .expect("a bottom_z of 15 mm must clip the VerySteep ladder");
+    assert!(
+        measured.contains(FinishBand::VerySteep) && !measured.contains(FinishBand::MidSteep),
+        "the finding must carry the measured set, not an empty claim: {measured:?}"
+    );
+    let described = measured.describe();
+    assert!(
+        described.contains("NOT measured on MidSteep"),
+        "the operator sentence must name the unmeasured bands; got {described}"
+    );
+}
+
 #[test]
 fn annotations_shifted_by_concat_offset() {
     let (mesh, index, cutter, planner) = steep_cone_fixture();

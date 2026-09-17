@@ -683,12 +683,14 @@ fn unmachined_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
              region(s) emitted NO cutting: the resolved {clip} = \
              {clip_z:.3} mm clipped its Z range away, so the feature will be \
              left at full stock. Pin {clip} to the real depth of the \
-             feature. [{provenance}. Report-only — no gate.]",
+             feature. Band clip coverage: {coverage}. \
+             [{provenance}. Report-only — no gate.]",
             area = f.area_mm2,
             band = f.band_label,
             count = f.region_count,
             clip = f.clip_label,
             clip_z = f.clip_z_mm,
+            coverage = f.bands_measured.describe(),
             provenance = f.provenance.describe(),
         ),
         evidence: None,

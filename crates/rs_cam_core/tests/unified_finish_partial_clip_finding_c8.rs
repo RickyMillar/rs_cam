@@ -282,6 +282,11 @@ fn fully_pinned_heights_clip_nothing_and_say_so() {
         narration.contains("Partly machined band: none"),
         "narration must state the measured-clean case explicitly:\n{narration}"
     );
+    // FIN-14: and it must name the two arms that measured nothing.
+    assert!(
+        narration.contains("MidSteep and Shallow arms read neither"),
+        "the clean line must name the bands it did NOT measure:\n{narration}"
+    );
 
     let diags = session
         .diagnose_toolpath_with_trace(0, None)
